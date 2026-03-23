@@ -180,7 +180,7 @@ function NouveauChantierForm() {
 
             {form.frais_statut !== 'offerts' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Montant HT (€)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Montant TTC (€)</label>
                 <input
                   type="number"
                   step="0.01"
