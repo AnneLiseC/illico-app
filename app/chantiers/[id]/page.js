@@ -118,6 +118,7 @@ export default function FicheChantier({ params }) {
   const [photos, setPhotos] = useState([])
   const [categorie, setCategorie] = useState('avant')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [uploadingDoc, setUploadingDoc] = useState(null) // devisId en cours d'upload
   const [photoOuverte, setPhotoOuverte] = useState(null)
   const [rdvsDossier, setRdvsDossier] = useState([])
   const [modalRdvOuvert, setModalRdvOuvert] = useState(false)
@@ -403,6 +404,59 @@ export default function FicheChantier({ params }) {
     if (!confirm('Supprimer ce devis ?')) return
     await supabase.from('devis_artisans').delete().eq('id', devisId)
     await chargerDevis()
+  }
+
+  // ── UPLOAD DEVIS SIGNÉ ──
+  const uploadDevisSigne = async (devisId, fichier) => {
+    if (!fichier) return
+    setUploadingDoc(devisId)
+    const ext = fichier.name.split('.').pop()
+    const chemin = `chantiers/${id}/devis_signes/${devisId}.${ext}`
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+    if (!error) {
+      await supabase.from('devis_artisans').update({ devis_signe_path: chemin }).eq('id', devisId)
+      await chargerDevis()
+      setSucces('Devis signé uploadé ✓')
+    } else { setErreur('Erreur upload : ' + error.message) }
+    setUploadingDoc(null)
+  }
+
+  const supprimerDevisSigne = async (devisId, path) => {
+    if (!confirm('Supprimer le devis signé ?')) return
+    await supabase.storage.from('documents').remove([path])
+    await supabase.from('devis_artisans').update({ devis_signe_path: null }).eq('id', devisId)
+    await chargerDevis()
+    setSucces('Devis signé supprimé ✓')
+  }
+
+  // ── UPLOAD FACTURE ARTISAN ──
+  const uploadFacture = async (devisId, fichier) => {
+    if (!fichier) return
+    setUploadingDoc(devisId + '_fact')
+    const ext = fichier.name.split('.').pop()
+    const chemin = `chantiers/${id}/factures/${devisId}.${ext}`
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+    if (!error) {
+      await supabase.from('devis_artisans').update({ facture_path: chemin }).eq('id', devisId)
+      await chargerDevis()
+      setSucces('Facture uploadée ✓')
+    } else { setErreur('Erreur upload : ' + error.message) }
+    setUploadingDoc(null)
+  }
+
+  const supprimerFacture = async (devisId, path) => {
+    if (!confirm('Supprimer la facture ?')) return
+    await supabase.storage.from('documents').remove([path])
+    await supabase.from('devis_artisans').update({ facture_path: null }).eq('id', devisId)
+    await chargerDevis()
+    setSucces('Facture supprimée ✓')
+  }
+
+  // ── URL SIGNÉE DOCUMENT ──
+  const ouvrirDocument = async (path) => {
+    const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    else setErreur('Impossible d\'ouvrir le document')
   }
 
   const typologieLabel = (t) => ({ courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' })[t] || t
@@ -933,6 +987,50 @@ export default function FicheChantier({ params }) {
                           {statutDevisConfig[st].label}
                         </button>
                       ))}
+                    </div>
+
+                    {/* ── DOCUMENTS : Devis signé + Facture ── */}
+                    <div className="pt-2 border-t border-gray-100 space-y-2">
+                      {/* Devis signé */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-500 font-medium">📄 Devis signé client</span>
+                        <div className="flex items-center gap-2">
+                          {d.devis_signe_path ? (
+                            <>
+                              <button onClick={() => ouvrirDocument(d.devis_signe_path)}
+                                className="text-xs text-blue-600 hover:underline">Voir PDF</button>
+                              <button onClick={() => supprimerDevisSigne(d.id, d.devis_signe_path)}
+                                className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
+                            </>
+                          ) : (
+                            <label className={`text-xs cursor-pointer px-2 py-1 rounded border transition-all ${uploadingDoc === d.id ? 'text-gray-400 border-gray-200' : 'text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
+                              {uploadingDoc === d.id ? 'Upload...' : '+ Uploader'}
+                              <input type="file" accept=".pdf" className="hidden" disabled={uploadingDoc === d.id}
+                                onChange={e => e.target.files[0] && uploadDevisSigne(d.id, e.target.files[0])} />
+                            </label>
+                          )}
+                        </div>
+                      </div>
+                      {/* Facture artisan */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-500 font-medium">🧾 Facture artisan</span>
+                        <div className="flex items-center gap-2">
+                          {d.facture_path ? (
+                            <>
+                              <button onClick={() => ouvrirDocument(d.facture_path)}
+                                className="text-xs text-blue-600 hover:underline">Voir PDF</button>
+                              <button onClick={() => supprimerFacture(d.id, d.facture_path)}
+                                className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
+                            </>
+                          ) : (
+                            <label className={`text-xs cursor-pointer px-2 py-1 rounded border transition-all ${uploadingDoc === d.id + '_fact' ? 'text-gray-400 border-gray-200' : 'text-green-600 border-green-200 hover:bg-green-50'}`}>
+                              {uploadingDoc === d.id + '_fact' ? 'Upload...' : '+ Uploader'}
+                              <input type="file" accept=".pdf" className="hidden" disabled={uploadingDoc === d.id + '_fact'}
+                                onChange={e => e.target.files[0] && uploadFacture(d.id, e.target.files[0])} />
+                            </label>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="pt-2 border-t border-gray-50">
