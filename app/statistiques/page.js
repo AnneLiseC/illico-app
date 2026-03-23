@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import {
-  MOIS_LABELS, formatEuro, getDossiersVisibles, filterDossiersByYear, getAnneesDisponibles, enrichDossiersWithStats, buildGlobalStats, buildTopArtisans, buildTopClients, buildTypologieStats, buildStatsParUtilisatrice, getStatTabs,
+  MOIS_LABELS, TYPOLOGIE_LABELS,TYPOLOGIE_COLORS, getDossiersVisibles, filterDossiersByYear, getAnneesDisponibles, enrichDossiersWithStats, buildGlobalStats, buildTopArtisans, buildTopClients, buildTypologieStats, buildStatsParUtilisatrice, getStatTabs,
 } from '../lib/stats'
 
 function StatCard({ label, value, sub, color, icon }) {
@@ -77,8 +77,10 @@ export default function Statistiques() {
     utilisatrices
   )
 
-  const fmt = (n) => formatEuro
-
+  const fmt = (n) => {
+    const num = Math.round(n || 0)
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' €'
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
