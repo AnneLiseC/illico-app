@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { getDossiersByScope, getFilteredDossiers, getAlertesDevis, getCompteurs } from '../lib/dossiers'
 
 export default function Chantiers() {
   const [dossiers, setDossiers] = useState([])
@@ -23,7 +24,7 @@ export default function Chantiers() {
         .from('profiles').select('*').eq('id', user.id).single()
       setProfile(profData)
 
-      const query = supabase
+      let query = supabase
         .from('dossiers')
         .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse), referente:profiles(id, prenom, nom, role)')
         .order('created_at', { ascending: false })
@@ -70,29 +71,15 @@ export default function Chantiers() {
   const isMarine = profile?.role === 'admin'
 
   // Filtrage par onglet — dynamique par ID d'agente
-  const dossiersFiltresOnglet = dossiers.filter(d => {
-    if (!isMarine) return true
-    if (onglet === 'tous') return true
-    if (onglet === 'moi') return d.referente?.role === 'admin'
-    // Onglet agente : clé = ID de l'agente
-    return d.referente?.id === onglet
-  })
+  const dossiersFiltresOnglet = getDossiersByScope(dossiers, profile, onglet, agentes)
 
-  const dossiersFiltres = dossiersFiltresOnglet.filter(d => {
-    const matchRecherche = `${d.reference} ${nomClient(d.client)} ${d.client?.adresse}`.toLowerCase()
-      .includes(recherche.toLowerCase())
-    const matchStatut = filtreStatut === 'tous' || d.statut === filtreStatut
-    const matchTypo = filtreTypo === 'tous' || d.typologie === filtreTypo
-    return matchRecherche && matchStatut && matchTypo
-  })
+  const dossiersFiltres = getFilteredDossiers(dossiersFiltresOnglet, recherche, filtreStatut, filtreTypo, nomClient )
 
   const aujourdhui = new Date()
-  const alertes = dossiersFiltresOnglet.filter(d => {
-    if (!d.date_limite_devis) return false
-    const limite = new Date(d.date_limite_devis)
-    const diff = (limite - aujourdhui) / (1000 * 60 * 60 * 24)
-    return diff <= 7 && diff >= 0 && d.statut === 'en_cours'
-  })
+
+  const alertes = getAlertesDevis(dossiersFiltresOnglet)
+
+  const compteurs = getCompteurs(dossiersFiltresOnglet)
 
   // Onglets dynamiques : "Mes chantiers" + une tab par agente + "Tous"
   const ongletsList = isMarine ? [
@@ -185,10 +172,10 @@ export default function Chantiers() {
         {/* Compteurs */}
         <div className="grid grid-cols-4 gap-3">
           {[
-            { label: 'En cours', count: dossiersFiltresOnglet.filter(d => d.statut === 'en_cours').length, color: 'text-green-600' },
-            { label: 'En attente', count: dossiersFiltresOnglet.filter(d => d.statut === 'en_attente').length, color: 'text-yellow-600' },
-            { label: 'Terminés', count: dossiersFiltresOnglet.filter(d => d.statut === 'termine').length, color: 'text-gray-500' },
-            { label: 'Total', count: dossiersFiltresOnglet.length, color: 'text-blue-600' },
+            { label: 'En cours', count: compteurs.enCours },
+            { label: 'En attente', count: compteurs.enAttente },
+            { label: 'Terminés', count: compteurs.termines },
+            { label: 'Total', count: compteurs.total },
           ].map(({ label, count, color }) => (
             <div key={label} className="bg-white border border-gray-200 rounded-xl p-4 text-center">
               <p className={`text-2xl font-bold ${color}`}>{count}</p>
