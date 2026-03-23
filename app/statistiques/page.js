@@ -2,32 +2,9 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
-
-const MOIS_LABELS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
-
-const TYPOLOGIE_LABELS = {
-  courtage: 'Courtage',
-  amo: 'AMO',
-  estimo: 'Estimo',
-  audit_energetique: 'Audit énergétique',
-  studio_jardin: 'Studio de jardin',
-}
-
-const TYPOLOGIE_COLORS = {
-  courtage: '#2563EB',
-  amo: '#7C3AED',
-  estimo: '#059669',
-  audit_energetique: '#D97706',
-  studio_jardin: '#DB2777',
-}
-
-// Couleurs fixes pour les utilisatrices (évite les classes Tailwind dynamiques)
-const USER_COLORS = [
-  { bg: '#F3E8FF', border: '#D8B4FE', text: '#7C3AED', dot: '#9333EA' }, // purple - admin
-  { bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8', dot: '#2563EB' }, // blue
-  { bg: '#F0FDF4', border: '#BBF7D0', text: '#15803D', dot: '#16A34A' }, // green
-  { bg: '#FFF7ED', border: '#FED7AA', text: '#C2410C', dot: '#EA580C' }, // orange
-]
+import {
+  MOIS_LABELS, formatEuro, getDossiersVisibles, filterDossiersByYear, getAnneesDisponibles, enrichDossiersWithStats, buildGlobalStats, buildTopArtisans, buildTopClients, buildTypologieStats, buildStatsParUtilisatrice, getStatTabs,
+} from '../lib/stats'
 
 function StatCard({ label, value, sub, color, icon }) {
   return (
@@ -82,161 +59,26 @@ export default function Statistiques() {
 
   const isMarine = profile?.role === 'admin'
 
-  // Une agente ne voit que ses propres dossiers
-  const dossiersVisibles = isMarine
-    ? dossiers
-    : dossiers.filter(d => d.referente?.id === profile?.id)
+  const dossiersVisibles = getDossiersVisibles(dossiers, profile)
+  const dossiersFiltres = filterDossiersByYear(dossiersVisibles, anneeFiltre)
+  const anneesDispos = getAnneesDisponibles(dossiers)
+  const stats = enrichDossiersWithStats(dossiersFiltres)
+  const { totalCA, totalComHT, totalComTTC, totalHonoraires, totalFrais, totalRoyalties, totalNet, totalPartAgente, totalPartAdmin, parStatut, caParMois, maxMois, totalDossiers,
+  } = buildGlobalStats(stats)
 
-  const dossiersFiltres = dossiersVisibles.filter(d => {
-    if (anneeFiltre === 'tous') return true
-    const date = d.date_signature_contrat || d.created_at
-    if (!date) return false
-    return new Date(date).getFullYear() === parseInt(anneeFiltre)
-  })
+  const { topArtisans, maxArtisanVolume } = buildTopArtisans(stats)
+  const { topClients, maxClientCA } = buildTopClients(stats)
+  const typologies = buildTypologieStats(stats)
 
-  const calculerDossier = (d) => {
-    const estChantierMarine = d.referente?.role === 'admin'
-    const devisActifs = (d.devis_artisans || []).filter(dv => dv.statut !== 'refuse')
-    const devisSignes = devisActifs.filter(dv => dv.statut === 'accepte' && dv.date_signature)
-    let comHT = 0, comTTC = 0, royaltiesCom = 0, net = 0, partAgente = 0, partAdmin = 0
-    devisActifs.forEach(dv => {
-      const cHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
-      const cTTC = cHT * 1.2
-      const roy = cHT * 0.05 * 1.2
-      const n = cTTC - roy
-      comHT += cHT; comTTC += cTTC; royaltiesCom += roy; net += n
-      partAgente += estChantierMarine ? 0 : n * (dv.part_agente || 0.5)
-      partAdmin += estChantierMarine ? n : n * (1 - (dv.part_agente || 0.5))
-    })
-    const totalHT = devisActifs.reduce((s, dv) => s + (dv.montant_ht || 0), 0)
-    const totalTTCSignes = devisSignes.reduce((s, dv) => s + (dv.montant_ttc || 0), 0)
-    const honorairesCourtage = ['courtage', 'amo'].includes(d.typologie) ? totalTTCSignes * 0.06 : 0
-    const honorairesAMO = d.typologie === 'amo' ? totalTTCSignes * ((d.honoraires_amo_taux || 9) / 100) : 0
-    const honorairesTTC = honorairesCourtage + honorairesAMO
-    const royaltiesHonoraires = (honorairesCourtage + honorairesAMO) * 0.05 * 1.2
-    const fraisTTC = parseFloat(d.frais_consultation || 0)
-    const fraisRoyalties = (fraisTTC / 1.2) * 0.05 * 1.2
-    const sommeRoyalties = royaltiesCom + fraisRoyalties + royaltiesHonoraires
-    const totalEncaissement = fraisTTC + honorairesTTC + comTTC - sommeRoyalties
-    return {
-      estChantierMarine, totalHT, comHT, comTTC, royaltiesCom, net,
-      partAgente, partAdmin, honorairesTTC, fraisTTC, sommeRoyalties,
-      totalEncaissement, nbDevis: devisActifs.length, nbDevisSignes: devisSignes.length,
-    }
-  }
+  const ongletsList = getStatTabs(isMarine)
 
-  const anneesDispos = [...new Set(dossiers.map(d => {
-    const date = d.date_signature_contrat || d.created_at
-    return date ? new Date(date).getFullYear() : null
-  }).filter(Boolean))].sort((a, b) => b - a)
-
-  const fmt = (n) => {
-    const num = Math.round(n || 0)
-    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' €'
-  }
-
-  if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <p className="text-gray-400">Chargement...</p>
-    </div>
+  const { statsParUtilisatrice, maxMoisU } = buildStatsParUtilisatrice(
+    dossiersFiltres,
+    utilisatrices
   )
 
-  const stats = dossiersFiltres.map(d => ({ ...d, _calc: calculerDossier(d) }))
+  const fmt = (n) => formatEuro
 
-  const totalCA = stats.reduce((s, d) => s + d._calc.totalHT, 0)
-  const totalComHT = stats.reduce((s, d) => s + d._calc.comHT, 0)
-  const totalComTTC = stats.reduce((s, d) => s + d._calc.comTTC, 0)
-  const totalHonoraires = stats.reduce((s, d) => s + d._calc.honorairesTTC, 0)
-  const totalFrais = stats.reduce((s, d) => s + d._calc.fraisTTC, 0)
-  const totalRoyalties = stats.reduce((s, d) => s + d._calc.sommeRoyalties, 0)
-  const totalNet = stats.reduce((s, d) => s + d._calc.totalEncaissement, 0)
-  const totalPartAgente = stats.reduce((s, d) => s + d._calc.partAgente, 0)
-  const totalPartAdmin = stats.reduce((s, d) => s + d._calc.partAdmin, 0)
-
-  const parStatut = {
-    en_cours: stats.filter(d => d.statut === 'en_cours').length,
-    en_attente: stats.filter(d => d.statut === 'en_attente').length,
-    termine: stats.filter(d => d.statut === 'termine').length,
-    annule: stats.filter(d => d.statut === 'annule').length,
-  }
-
-  const caParMois = Array(12).fill(0)
-  stats.forEach(d => {
-    const date = d.date_signature_contrat || d.created_at
-    if (!date) return
-    caParMois[new Date(date).getMonth()] += d._calc.totalHT
-  })
-  const maxMois = Math.max(...caParMois, 1)
-
-  // Artisans
-  const artisansMap = {}
-  stats.forEach(d => {
-    (d.devis_artisans || []).filter(dv => dv.statut !== 'refuse').forEach(dv => {
-      const id = dv.artisan?.id; if (!id) return
-      if (!artisansMap[id]) artisansMap[id] = { id, entreprise: dv.artisan?.entreprise, metier: dv.artisan?.metier, volumeHT: 0, comHT: 0, nbDevis: 0, nbDevisSignes: 0, chantiers: new Set() }
-      artisansMap[id].volumeHT += (dv.montant_ht || 0)
-      artisansMap[id].comHT += (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
-      artisansMap[id].nbDevis++
-      if (dv.statut === 'accepte') artisansMap[id].nbDevisSignes++
-      artisansMap[id].chantiers.add(d.id)
-    })
-  })
-  const topArtisans = Object.values(artisansMap).map(a => ({ ...a, nbChantiers: a.chantiers.size })).sort((a, b) => b.volumeHT - a.volumeHT).slice(0, 15)
-  const maxArtisanVolume = topArtisans[0]?.volumeHT || 1
-
-  // Clients
-  const clientsMap = {}
-  stats.forEach(d => {
-    const id = d.client?.id; if (!id) return
-    if (!clientsMap[id]) clientsMap[id] = { id, prenom: d.client?.prenom, nom: d.client?.nom, caHT: 0, comHT: 0, nbDossiers: 0, typologies: new Set() }
-    clientsMap[id].caHT += d._calc.totalHT
-    clientsMap[id].comHT += d._calc.comHT
-    clientsMap[id].nbDossiers++
-    clientsMap[id].typologies.add(d.typologie)
-  })
-  const topClients = Object.values(clientsMap).map(c => ({ ...c, typologies: [...c.typologies] })).sort((a, b) => b.caHT - a.caHT).slice(0, 15)
-  const maxClientCA = topClients[0]?.caHT || 1
-
-  // Typologies
-  const typologiesMap = {}
-  stats.forEach(d => {
-    const t = d.typologie
-    if (!typologiesMap[t]) typologiesMap[t] = { label: TYPOLOGIE_LABELS[t] || t, color: TYPOLOGIE_COLORS[t] || '#6B7280', nbDossiers: 0, caHT: 0, comHT: 0 }
-    typologiesMap[t].nbDossiers++
-    typologiesMap[t].caHT += d._calc.totalHT
-    typologiesMap[t].comHT += d._calc.comHT
-  })
-  const typologies = Object.entries(typologiesMap).sort((a, b) => b[1].nbDossiers - a[1].nbDossiers)
-  const totalDossiers = stats.length || 1
-
-  // ── ONGLETS selon le rôle (utilisatrices = admin seulement) ──
-  const ongletsList = [
-    { key: 'agence', label: '🏢 Agence globale' },
-    ...(isMarine ? [{ key: 'utilisatrices', label: '👥 Par utilisatrice' }] : []),
-    { key: 'artisans', label: '🔨 Par artisan' },
-    { key: 'clients', label: '🏠 Par client' },
-    { key: 'typologies', label: '📋 Par typologie' },
-  ]
-
-  // ── STATS PAR UTILISATRICE (dynamique, scalable) ──
-  const statsParUtilisatrice = utilisatrices.map((u, idx) => {
-    const dossiersU = dossiersFiltres.filter(d => d.referente?.id === u.id)
-    const statsU = dossiersU.map(d => ({ ...d, _calc: calculerDossier(d) }))
-    const isAdmin = u.role === 'admin'
-    const caHT = statsU.reduce((s, d) => s + d._calc.totalHT, 0)
-    const comHT = statsU.reduce((s, d) => s + d._calc.comHT, 0)
-    const honoraires = statsU.reduce((s, d) => s + d._calc.honorairesTTC, 0)
-    const frais = statsU.reduce((s, d) => s + d._calc.fraisTTC, 0)
-    const gains = statsU.reduce((s, d) => s + (isAdmin ? d._calc.partAdmin : d._calc.partAgente), 0)
-    const caParMoisU = Array(12).fill(0)
-    statsU.forEach(d => {
-      const date = d.date_signature_contrat || d.created_at
-      if (!date) return
-      caParMoisU[new Date(date).getMonth()] += d._calc.totalHT
-    })
-    return { user: u, color: USER_COLORS[idx % USER_COLORS.length], nbDossiers: dossiersU.length, caHT, comHT, honoraires, frais, gains, caParMois: caParMoisU }
-  })
-  const maxMoisU = Math.max(...statsParUtilisatrice.flatMap(u => u.caParMois), 1)
 
   return (
     <div className="min-h-screen bg-gray-50">
