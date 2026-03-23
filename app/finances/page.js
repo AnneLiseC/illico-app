@@ -58,20 +58,20 @@ export default function Finances() {
     const estChantierMarine = d.referente?.role === 'admin'
     const devisActifs = (d.devis_artisans || []).filter(dv => dv.statut !== 'refuse')
     const devisAcceptes = devisActifs.filter(dv => dv.statut === 'accepte')
-    let comHT = 0, comTTC = 0, royaltiesCom = 0, net = 0, partAL = 0, partMarine = 0
-    let apporteurTTC = 0, apporteurPartAL = 0, apporteurPartMarine = 0
+    let comHT = 0, comTTC = 0, royaltiesCom = 0, net = 0, partAgente = 0, partMarine = 0
+    let apporteurTTC = 0, apporteurPartAgente = 0, apporteurPartMarine = 0
     devisActifs.forEach(dv => {
       const cHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
       const cTTC = cHT * 1.2
       const roy = cHT * 0.05 * 1.2
       const n = cTTC - roy
       comHT += cHT; comTTC += cTTC; royaltiesCom += roy; net += n
-      partAL += estChantierMarine ? 0 : n * (dv.part_al || 0.5)
+      partAgente += estChantierMarine ? 0 : n * (dv.part_al || 0.5)
       partMarine += estChantierMarine ? n : n * (1 - (dv.part_al || 0.5))
       if (d.client?.apporteur_affaires && d.client?.apporteur_base === 'par_devis') {
         const appTTC = (dv.montant_ht || 0) * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2
         apporteurTTC += appTTC
-        apporteurPartAL += estChantierMarine ? 0 : appTTC * (dv.part_al || 0.5)
+        apporteurPartAgente += estChantierMarine ? 0 : appTTC * (dv.part_al || 0.5)
         apporteurPartMarine += estChantierMarine ? appTTC : appTTC * (1 - (dv.part_al || 0.5))
       }
     })
@@ -79,14 +79,14 @@ export default function Finances() {
       const totalHT = devisActifs.reduce((s, dv) => s + (dv.montant_ht || 0), 0)
       apporteurTTC = totalHT * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2
       const ref = estChantierMarine ? 0 : (devisActifs[0]?.part_al || 0.5)
-      apporteurPartAL = apporteurTTC * ref
+      apporteurPartAgente = apporteurTTC * ref
       apporteurPartMarine = apporteurTTC * (1 - ref)
     }
     const fraisTTC = parseFloat(d.frais_consultation || 0)
     const fraisHT = fraisTTC / 1.2
     const fraisRoyalties = fraisHT * 0.05 * 1.2
     const fraisNet = fraisTTC - fraisRoyalties
-    const fraisPartAL = estChantierMarine ? 0 : fraisNet
+    const fraisPartAgente = estChantierMarine ? 0 : fraisNet
     const fraisPartMarine = estChantierMarine ? fraisNet : 0
     const devisSignes = (d.devis_artisans || []).filter(dv => dv.statut === 'accepte' && dv.date_signature && dv.montant_ttc)
     const totalTTCSignes = devisSignes.reduce((s, dv) => s + (dv.montant_ttc || 0), 0)
@@ -99,11 +99,11 @@ export default function Finances() {
     const honorairesCourtageNet = honorairesCourtage - royaltiesCourtage
     const honorairesAMONet = honorairesAMOSolde - royaltiesAMO
     const honorairesTotalNet = honorairesCourtageNet + honorairesAMONet
-    const partALRef = estChantierMarine ? 0 : (devisActifs[0]?.part_al || 0.5)
-    const partALHonoraires = honorairesTotalNet * partALRef
-    const partMarineHonoraires = honorairesTotalNet * (1 - partALRef)
+    const partAgenteRef = estChantierMarine ? 0 : (devisActifs[0]?.part_al || 0.5)
+    const partAgenteHonoraires = honorairesTotalNet * partAgenteRef
+    const partMarineHonoraires = honorairesTotalNet * (1 - partAgenteRef)
     const totalEncaissement = fraisTTC + honorairesTotalTTC + comTTC - sommeRoyalties
-    let gainsALReels = 0
+    let gainsAgenteReels = 0
     devisAcceptes.filter(dv => dv.date_signature).forEach(dv => {
       const cHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
       const n = cHT * 1.2 - cHT * 0.05 * 1.2
@@ -113,20 +113,20 @@ export default function Finances() {
         const appTTC = (dv.montant_ht || 0) * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2
         appAL = estChantierMarine ? 0 : appTTC * (dv.part_al || 0.5)
       }
-      gainsALReels += pAL - appAL
+      gainsAgenteReels += pAL - appAL
     })
-    if (d.frais_statut === 'regle') gainsALReels += fraisPartAL
+    if (d.frais_statut === 'regle') gainsAgenteReels += fraisPartAgente
     return {
-      comHT, comTTC, royalties: royaltiesCom, net, partAL, partMarine,
-      apporteurTTC, apporteurPartAL, apporteurPartMarine,
-      fraisHT, fraisTTC, fraisRoyalties, fraisNet, fraisPartAL, fraisPartMarine,
+      comHT, comTTC, royalties: royaltiesCom, net, partAgente, partMarine,
+      apporteurTTC, apporteurPartAgente, apporteurPartMarine,
+      fraisHT, fraisTTC, fraisRoyalties, fraisNet, fraisPartAgente, fraisPartMarine,
       honorairesCourtage, honorairesAMOSolde, honorairesTotalTTC,
       royaltiesCourtage, royaltiesAMO, sommeRoyalties,
       honorairesCourtageNet, honorairesAMONet, honorairesTotalNet,
-      partALHonoraires, partMarineHonoraires, totalEncaissement,
-      gainsALPrevi: partAL - apporteurPartAL + fraisPartAL + partALHonoraires,
+      partAgenteHonoraires, partMarineHonoraires, totalEncaissement,
+      gainsAgentePrevi: partAgente - apporteurPartAgente + fraisPartAgente + partAgenteHonoraires,
       netMarinePrevi: partMarine - apporteurPartMarine + fraisPartMarine + partMarineHonoraires,
-      gainsALReels, estChantierMarine, devisActifs, devisAcceptes,
+      gainsAgenteReels, estChantierMarine, devisActifs, devisAcceptes,
     }
   }
 
@@ -173,21 +173,21 @@ export default function Finances() {
 
   // ── TOTAUX GLOBAUX CTP (toutes agentes) ──
   const totalRedevancesReglees = redevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
-  const totalGainsAgentesReels = dossiersAgentes.reduce((s, d) => s + calculer(d).gainsALReels, 0)
-  const totalGainsAgentesPrevi = dossiersAgentes.reduce((s, d) => s + calculer(d).gainsALPrevi, 0)
-  const totalApporteurAgenteDu = dossiersAgentes.reduce((s, d) => s + calculer(d).apporteurPartAL, 0)
+  const totalGainsAgentesReels = dossiersAgentes.reduce((s, d) => s + calculer(d).gainsAgenteReels, 0)
+  const totalGainsAgentesPrevi = dossiersAgentes.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
+  const totalApporteurAgenteDu = dossiersAgentes.reduce((s, d) => s + calculer(d).apporteurPartAgente, 0)
 
   // Totaux pour l'agente sélectionnée (onglet admin)
-  const gainsAgenteReels = dossiersAgente.reduce((s, d) => s + calculer(d).gainsALReels, 0)
-  const gainsAgentePrevi = dossiersAgente.reduce((s, d) => s + calculer(d).gainsALPrevi, 0)
-  const apporteurAgenteDu = dossiersAgente.reduce((s, d) => s + calculer(d).apporteurPartAL, 0)
+  const gainsAgenteReels = dossiersAgente.reduce((s, d) => s + calculer(d).gainsAgenteReels, 0)
+  const gainsAgentePrevi = dossiersAgente.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
+  const apporteurAgenteDu = dossiersAgente.reduce((s, d) => s + calculer(d).apporteurPartAgente, 0)
   const redevancesAgenteReglees = redevancesAgente.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
   const netAgenteSelectionnee = gainsAgenteReels - redevancesAgenteReglees - apporteurAgenteDu
 
   // Totaux pour l'agente connectée (vue agente)
-  const mesDossiersGainsReels = mesDossiers.reduce((s, d) => s + calculer(d).gainsALReels, 0)
-  const mesDossiersGainsPrevi = mesDossiers.reduce((s, d) => s + calculer(d).gainsALPrevi, 0)
-  const mesApporteurDu = mesDossiers.reduce((s, d) => s + calculer(d).apporteurPartAL, 0)
+  const mesDossiersGainsReels = mesDossiers.reduce((s, d) => s + calculer(d).gainsAgenteReels, 0)
+  const mesDossiersGainsPrevi = mesDossiers.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
+  const mesApporteurDu = mesDossiers.reduce((s, d) => s + calculer(d).apporteurPartAgente, 0)
   const mesRedevancesReglees = mesRedevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
   const monNet = mesDossiersGainsReels - mesRedevancesReglees - mesApporteurDu
 
@@ -211,13 +211,13 @@ export default function Finances() {
   }
 
   const emptyAgg = () => ({
-    comHT: 0, comTTC: 0, royalties: 0, net: 0, partAL: 0, partMarine: 0,
-    apporteurTTC: 0, apporteurPartAL: 0, apporteurPartMarine: 0,
-    fraisNet: 0, fraisTTC: 0, fraisPartAL: 0, fraisPartMarine: 0, fraisRoyalties: 0,
-    gainsALReels: 0, gainsALPrevi: 0, netMarinePrevi: 0,
+    comHT: 0, comTTC: 0, royalties: 0, net: 0, partAgente: 0, partMarine: 0,
+    apporteurTTC: 0, apporteurPartAgente: 0, apporteurPartMarine: 0,
+    fraisNet: 0, fraisTTC: 0, fraisPartAgente: 0, fraisPartMarine: 0, fraisRoyalties: 0,
+    gainsAgenteReels: 0, gainsAgentePrevi: 0, netMarinePrevi: 0,
     honorairesTotalTTC: 0, honorairesTotalNet: 0,
     royaltiesCourtage: 0, royaltiesAMO: 0, sommeRoyalties: 0,
-    partALHonoraires: 0, partMarineHonoraires: 0, totalEncaissement: 0,
+    partAgenteHonoraires: 0, partMarineHonoraires: 0, totalEncaissement: 0,
   })
 
   const agrégerMois = (listeDossiers) => {
@@ -291,7 +291,7 @@ export default function Finances() {
             ...c.devisAcceptes.map(dv => dv.date_signature && alertes7j(dv.date_signature) && getSuivi(d, 'acompte_artisan', dv.artisan_id)?.statut_client !== 'regle'),
             d.date_fin_chantier && d.typologie === 'amo' && alertes48h(d.date_fin_chantier) && getSuivi(d, 'honoraires_illico')?.statut_client !== 'regle',
           ].filter(Boolean).length
-          const headerRight = showBadge ? null : (isMarine ? c.totalEncaissement : c.gainsALPrevi)
+          const headerRight = showBadge ? null : (isMarine ? c.totalEncaissement : c.gainsAgentePrevi)
           return (
             <div key={d.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
@@ -310,7 +310,7 @@ export default function Finances() {
                 <div className="flex items-center gap-4">
                   {showBadge ? (
                     <>
-                      {!c.estChantierMarine && <span className="text-sm text-blue-700 font-medium">{nomReferente(d)} : {c.gainsALReels.toFixed(2)} €</span>}
+                      {!c.estChantierMarine && <span className="text-sm text-blue-700 font-medium">{nomReferente(d)} : {c.gainsAgenteReels.toFixed(2)} €</span>}
                       <span className="text-sm text-purple-700 font-medium">CTP : {(c.netMarinePrevi + c.apporteurPartMarine).toFixed(2)} €</span>
                     </>
                   ) : (
@@ -451,7 +451,7 @@ export default function Finances() {
                       <p className="text-xs font-medium text-orange-700 uppercase mb-2">Apporteur — {d.client.apporteur_nom} ({d.client.apporteur_pourcentage}%)</p>
                       <div className="flex items-center gap-4 text-xs flex-wrap">
                         <span className="text-orange-600">Total : {c.apporteurTTC.toFixed(2)} € TTC</span>
-                        {!c.estChantierMarine && <span className="text-blue-600">Part agente : {c.apporteurPartAL.toFixed(2)} €</span>}
+                        {!c.estChantierMarine && <span className="text-blue-600">Part agente : {c.apporteurPartAgente.toFixed(2)} €</span>}
                         {!c.estChantierMarine && (
                           <select value={getSuivi(d, 'apporteur_al')?.statut_ctp || 'en_attente'} onChange={e => majSuivi(d.id, 'apporteur_al', null, 'statut_ctp', e.target.value)} className="border border-orange-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white">
                             <option value="en_attente">Agente → CTP : En attente</option>
@@ -470,7 +470,7 @@ export default function Finances() {
                         <div className="flex justify-between"><span className="text-gray-400">COM TTC</span><span className="font-medium">{c.comTTC.toFixed(2)} €</span></div>
                         <div className="flex justify-between"><span className="text-red-400">Royalties com</span><span className="text-red-400">- {c.royalties.toFixed(2)} €</span></div>
                         <div className="flex justify-between"><span className="text-gray-400">Net</span><span className="font-medium">{c.net.toFixed(2)} €</span></div>
-                        {!c.estChantierMarine && <div className="flex justify-between col-span-2"><span className="text-blue-500">Part {nomReferente(d)}</span><span className="font-medium text-blue-700">{c.partAL.toFixed(2)} €</span></div>}
+                        {!c.estChantierMarine && <div className="flex justify-between col-span-2"><span className="text-blue-500">Part {nomReferente(d)}</span><span className="font-medium text-blue-700">{c.partAgente.toFixed(2)} €</span></div>}
                       </div>
                     </div>
                   )}
@@ -488,7 +488,7 @@ export default function Finances() {
                       {showParts && !c.estChantierMarine && (
                         <div className="flex justify-between font-bold">
                           <span className="text-blue-600">{nomReferente(d)}</span>
-                          <span className="text-blue-700">{c.gainsALPrevi.toFixed(2)} €</span>
+                          <span className="text-blue-700">{c.gainsAgentePrevi.toFixed(2)} €</span>
                         </div>
                       )}
                       {(showParts || (!showParts && isMarine)) && (
@@ -521,7 +521,7 @@ export default function Finances() {
     const rows = agrégerMois(listeDossiers)
     const getVals = (c) => isMarine
       ? { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurTTC, total: c.netMarinePrevi }
-      : { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurPartAL, total: c.gainsALPrevi }
+      : { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurPartAgente, total: c.gainsAgentePrevi }
     return (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
@@ -551,8 +551,8 @@ export default function Finances() {
               {tdR(fmt(rows.reduce((s, [, c]) => s + c.comTTC, 0)))}
               {tdR(fmt(rows.reduce((s, [, c]) => s + c.honorairesTotalTTC, 0)))}
               <td className="px-3 py-3 text-right text-red-400">- {rows.reduce((s, [, c]) => s + c.sommeRoyalties, 0).toFixed(2)} €</td>
-              <td className="px-3 py-3 text-right text-orange-500">- {rows.reduce((s, [, c]) => s + (isMarine ? c.apporteurTTC : c.apporteurPartAL), 0).toFixed(2)} €</td>
-              {tdTotal(rows.reduce((s, [, c]) => s + (isMarine ? c.netMarinePrevi : c.gainsALPrevi), 0))}
+              <td className="px-3 py-3 text-right text-orange-500">- {rows.reduce((s, [, c]) => s + (isMarine ? c.apporteurTTC : c.apporteurPartAgente), 0).toFixed(2)} €</td>
+              {tdTotal(rows.reduce((s, [, c]) => s + (isMarine ? c.netMarinePrevi : c.gainsAgentePrevi), 0))}
             </tr>
           </tfoot>
         </table>
@@ -564,7 +564,7 @@ export default function Finances() {
     const rows = agrégerAnnee(listeDossiers)
     const getVals = (c) => isMarine
       ? { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurTTC, total: c.netMarinePrevi }
-      : { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurPartAL, total: c.gainsALPrevi }
+      : { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurPartAgente, total: c.gainsAgentePrevi }
     return (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
@@ -593,8 +593,8 @@ export default function Finances() {
               {tdR(fmt(rows.reduce((s, [, c]) => s + c.comTTC, 0)))}
               {tdR(fmt(rows.reduce((s, [, c]) => s + c.honorairesTotalTTC, 0)))}
               <td className="px-3 py-3 text-right text-red-400">- {rows.reduce((s, [, c]) => s + c.sommeRoyalties, 0).toFixed(2)} €</td>
-              <td className="px-3 py-3 text-right text-orange-500">- {rows.reduce((s, [, c]) => s + (isMarine ? c.apporteurTTC : c.apporteurPartAL), 0).toFixed(2)} €</td>
-              {tdTotal(rows.reduce((s, [, c]) => s + (isMarine ? c.netMarinePrevi : c.gainsALPrevi), 0))}
+              <td className="px-3 py-3 text-right text-orange-500">- {rows.reduce((s, [, c]) => s + (isMarine ? c.apporteurTTC : c.apporteurPartAgente), 0).toFixed(2)} €</td>
+              {tdTotal(rows.reduce((s, [, c]) => s + (isMarine ? c.netMarinePrevi : c.gainsAgentePrevi), 0))}
             </tr>
           </tfoot>
         </table>
@@ -620,7 +620,7 @@ export default function Finances() {
                   {tdR(fmt(c.fraisTTC))}{tdR(fmt(c.comTTC))}{tdR(fmt(c.honorairesTotalTTC))}
                   <td className="px-3 py-3 text-right text-red-400">- {c.sommeRoyalties.toFixed(2)} €</td>
                   <td className="px-3 py-3 text-right text-orange-500">{c.apporteurTTC > 0 ? `- ${c.apporteurTTC.toFixed(2)} €` : '—'}</td>
-                  <td className="px-3 py-3 text-right text-blue-600">{fmt(c.gainsALPrevi)}</td>
+                  <td className="px-3 py-3 text-right text-blue-600">{fmt(c.gainsAgentePrevi)}</td>
                   <td className="px-3 py-3 text-right text-purple-600">{fmt(c.netMarinePrevi)}</td>
                 </tr>
               )
@@ -635,7 +635,7 @@ export default function Finances() {
               {tdR(fmt(rows.reduce((s, [, c]) => s + c.honorairesTotalTTC, 0)))}
               <td className="px-3 py-3 text-right text-red-400">- {rows.reduce((s, [, c]) => s + c.sommeRoyalties, 0).toFixed(2)} €</td>
               <td className="px-3 py-3 text-right text-orange-500">- {rows.reduce((s, [, c]) => s + c.apporteurTTC, 0).toFixed(2)} €</td>
-              <td className="px-3 py-3 text-right text-blue-600">{fmt(rows.reduce((s, [, c]) => s + c.gainsALPrevi, 0))}</td>
+              <td className="px-3 py-3 text-right text-blue-600">{fmt(rows.reduce((s, [, c]) => s + c.gainsAgentePrevi, 0))}</td>
               <td className="px-3 py-3 text-right text-purple-600">{fmt(rows.reduce((s, [, c]) => s + c.netMarinePrevi, 0))}</td>
             </tr>
           </tfoot>
@@ -659,7 +659,7 @@ export default function Finances() {
                 {tdR(fmt(c.fraisTTC))}{tdR(fmt(c.comTTC))}{tdR(fmt(c.honorairesTotalTTC))}
                 <td className="px-3 py-3 text-right text-red-400">- {c.sommeRoyalties.toFixed(2)} €</td>
                 <td className="px-3 py-3 text-right text-orange-500">{c.apporteurTTC > 0 ? `- ${c.apporteurTTC.toFixed(2)} €` : '—'}</td>
-                <td className="px-3 py-3 text-right text-blue-600">{fmt(c.gainsALPrevi)}</td>
+                <td className="px-3 py-3 text-right text-blue-600">{fmt(c.gainsAgentePrevi)}</td>
                 <td className="px-3 py-3 text-right text-purple-600">{fmt(c.netMarinePrevi)}</td>
               </tr>
             ))}
@@ -722,7 +722,7 @@ export default function Finances() {
                 {tdR(fmt(c.fraisTTC))}{tdR(fmt(c.comTTC))}{tdR(fmt(c.honorairesTotalTTC))}
                 <td className="px-3 py-3 text-right text-red-400">- {c.sommeRoyalties.toFixed(2)} €</td>
                 <td className="px-3 py-3 text-right text-orange-500">{c.apporteurTTC > 0 ? `- ${c.apporteurTTC.toFixed(2)} €` : '—'}</td>
-                <td className="px-3 py-3 text-right text-blue-500">{c.gainsALPrevi > 0 ? fmt(c.gainsALPrevi) : '—'}</td>
+                <td className="px-3 py-3 text-right text-blue-500">{c.gainsAgentePrevi > 0 ? fmt(c.gainsAgentePrevi) : '—'}</td>
                 {tdTotal(c.netMarinePrevi)}
               </tr>
             )
@@ -748,7 +748,7 @@ export default function Finances() {
               const [annee, mois] = key.split('-')
               const c = rowsDossiers.find(([k]) => k === key)?.[1] || {}
               const redevMontant = redevances.filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
-              const total = (c.fraisTTC || 0) + (c.comTTC || 0) + (c.honorairesTotalTTC || 0) + redevMontant - (c.sommeRoyalties || 0) - (c.gainsALReels || 0) - (c.apporteurTTC || 0)
+              const total = (c.fraisTTC || 0) + (c.comTTC || 0) + (c.honorairesTotalTTC || 0) + redevMontant - (c.sommeRoyalties || 0) - (c.gainsAgenteReels || 0) - (c.apporteurTTC || 0)
               return (
                 <tr key={key} className="hover:bg-gray-50">
                   <td className="px-3 py-3 font-medium">{MOIS[parseInt(mois)]} {annee}</td>
@@ -780,7 +780,7 @@ export default function Finances() {
             {annees.map(annee => {
               const c = rowsDossiers.find(([k]) => k === annee)?.[1] || {}
               const redevAnnee = redevances.filter(r => r.statut === 'regle' && r.annee === parseInt(annee)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
-              const total = (c.fraisTTC || 0) + (c.comTTC || 0) + (c.honorairesTotalTTC || 0) + redevAnnee - (c.sommeRoyalties || 0) - (c.gainsALReels || 0) - (c.apporteurTTC || 0)
+              const total = (c.fraisTTC || 0) + (c.comTTC || 0) + (c.honorairesTotalTTC || 0) + redevAnnee - (c.sommeRoyalties || 0) - (c.gainsAgenteReels || 0) - (c.apporteurTTC || 0)
               return (
                 <tr key={annee} className="hover:bg-gray-50">
                   <td className="px-3 py-3 font-bold text-gray-800">{annee}</td>
@@ -801,9 +801,9 @@ export default function Finances() {
   // ── ONGLET AGENTES (vue Marine) — paramétré ──
   const renderRecapAgente = (listeDossiers, listeRedevances, agente) => {
     const nom = agente ? `${agente.prenom} ${agente.nom}` : 'Agente'
-    const gainsReels = listeDossiers.reduce((s, d) => s + calculer(d).gainsALReels, 0)
-    const gainsPrevi = listeDossiers.reduce((s, d) => s + calculer(d).gainsALPrevi, 0)
-    const apporteurDu = listeDossiers.reduce((s, d) => s + calculer(d).apporteurPartAL, 0)
+    const gainsReels = listeDossiers.reduce((s, d) => s + calculer(d).gainsAgenteReels, 0)
+    const gainsPrevi = listeDossiers.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
+    const apporteurDu = listeDossiers.reduce((s, d) => s + calculer(d).apporteurPartAgente, 0)
     const redevReglees = listeRedevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
     const net = gainsReels - redevReglees - apporteurDu
     return (
@@ -834,14 +834,14 @@ export default function Finances() {
           <p className="text-xs text-gray-500">Part agente sur les commissions et frais de ses chantiers</p>
           {listeDossiers.map(d => {
             const c = calculer(d)
-            if (c.gainsALReels === 0) return null
+            if (c.gainsAgenteReels === 0) return null
             return (
               <div key={d.id} className="flex items-center justify-between py-1 border-b border-blue-100 last:border-0">
                 <div>
                   <p className="text-sm font-medium text-blue-900">{d.reference}</p>
                   <p className="text-xs text-gray-400">{d.client?.prenom} {d.client?.nom}</p>
                 </div>
-                <span className="text-sm font-medium text-blue-700">+ {c.gainsALReels.toFixed(2)} €</span>
+                <span className="text-sm font-medium text-blue-700">+ {c.gainsAgenteReels.toFixed(2)} €</span>
               </div>
             )
           })}
@@ -867,17 +867,17 @@ export default function Finances() {
                 </div>
               </div>
             ))}
-            {listeDossiers.filter(d => calculer(d).apporteurPartAL > 0).length > 0 && (
+            {listeDossiers.filter(d => calculer(d).apporteurPartAgente > 0).length > 0 && (
               <>
                 <p className="text-xs font-medium text-gray-600 pt-2">Remboursements apporteur</p>
-                {listeDossiers.filter(d => calculer(d).apporteurPartAL > 0).map(d => {
+                {listeDossiers.filter(d => calculer(d).apporteurPartAgente > 0).map(d => {
                   const c = calculer(d)
                   const suivi = getSuivi(d, 'apporteur_al')
                   return (
                     <div key={d.id} className="flex items-center justify-between py-1 border-b border-purple-100">
                       <p className="text-sm text-gray-700">{d.reference} — {d.client?.apporteur_nom}</p>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-orange-600">{c.apporteurPartAL.toFixed(2)} €</span>
+                        <span className="text-sm font-medium text-orange-600">{c.apporteurPartAgente.toFixed(2)} €</span>
                         <span className={`text-xs px-2 py-0.5 rounded-full ${suivi?.statut_ctp === 'rembourse' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
                           {suivi?.statut_ctp === 'rembourse' ? '✅ Remboursé' : '⏳ À rembourser'}
                         </span>
@@ -898,8 +898,8 @@ export default function Finances() {
   }
 
   const renderDetailAgenteMarine = (listeDossiers, nom) => {
-    const gainsReels = listeDossiers.reduce((s, d) => s + calculer(d).gainsALReels, 0)
-    const apporteurDu = listeDossiers.reduce((s, d) => s + calculer(d).apporteurPartAL, 0)
+    const gainsReels = listeDossiers.reduce((s, d) => s + calculer(d).gainsAgenteReels, 0)
+    const apporteurDu = listeDossiers.reduce((s, d) => s + calculer(d).apporteurPartAgente, 0)
     return (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-gray-100"><p className="font-medium text-gray-800">Détail par chantier — {nom}</p></div>
@@ -910,16 +910,16 @@ export default function Finances() {
           <tbody className="divide-y divide-gray-100">
             {listeDossiers.map(d => {
               const c = calculer(d)
-              if (c.gainsALPrevi === 0 && c.gainsALReels === 0) return null
+              if (c.gainsAgentePrevi === 0 && c.gainsAgenteReels === 0) return null
               return (
                 <tr key={d.id} className="hover:bg-gray-50">
                   <td className="px-3 py-3">
                     <p className="font-medium text-blue-900">{d.reference}</p>
                     <p className="text-xs text-gray-400">{d.client?.prenom} {d.client?.nom}</p>
                   </td>
-                  <td className="px-3 py-3 text-right text-green-600">+ {c.gainsALReels.toFixed(2)} €</td>
-                  <td className="px-3 py-3 text-right text-orange-500">{c.apporteurPartAL > 0 ? `- ${c.apporteurPartAL.toFixed(2)} €` : '—'}</td>
-                  {tdTotal(c.gainsALReels - c.apporteurPartAL)}
+                  <td className="px-3 py-3 text-right text-green-600">+ {c.gainsAgenteReels.toFixed(2)} €</td>
+                  <td className="px-3 py-3 text-right text-orange-500">{c.apporteurPartAgente > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
+                  {tdTotal(c.gainsAgenteReels - c.apporteurPartAgente)}
                 </tr>
               )
             })}
@@ -950,15 +950,15 @@ export default function Finances() {
           <tbody className="divide-y divide-gray-100">
             {cles.map(key => {
               const [annee, mois] = key.split('-')
-              const c = rowsDossiers.find(([k]) => k === key)?.[1] || { gainsALReels: 0, apporteurPartAL: 0 }
+              const c = rowsDossiers.find(([k]) => k === key)?.[1] || { gainsAgenteReels: 0, apporteurPartAgente: 0 }
               const redevMontant = listeRedevances.filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
-              const reel = (c.gainsALReels || 0) - redevMontant - (c.apporteurPartAL || 0)
+              const reel = (c.gainsAgenteReels || 0) - redevMontant - (c.apporteurPartAgente || 0)
               return (
                 <tr key={key} className="hover:bg-gray-50">
                   <td className="px-3 py-3 font-medium">{MOIS[parseInt(mois)]} {annee}</td>
-                  <td className="px-3 py-3 text-right text-green-600">+ {(c.gainsALReels || 0).toFixed(2)} €</td>
+                  <td className="px-3 py-3 text-right text-green-600">+ {(c.gainsAgenteReels || 0).toFixed(2)} €</td>
                   <td className="px-3 py-3 text-right text-red-400">{redevMontant > 0 ? `- ${redevMontant.toFixed(2)} €` : '—'}</td>
-                  <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurPartAL || 0) > 0 ? `- ${c.apporteurPartAL.toFixed(2)} €` : '—'}</td>
+                  <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurPartAgente || 0) > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
                   {tdTotal(reel)}
                 </tr>
               )
@@ -981,15 +981,15 @@ export default function Finances() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {annees.map(annee => {
-              const c = rowsDossiers.find(([k]) => k === annee)?.[1] || { gainsALReels: 0, apporteurPartAL: 0 }
+              const c = rowsDossiers.find(([k]) => k === annee)?.[1] || { gainsAgenteReels: 0, apporteurPartAgente: 0 }
               const redevAnnee = listeRedevances.filter(r => r.statut === 'regle' && r.annee === parseInt(annee)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
-              const reel = (c.gainsALReels || 0) - redevAnnee - (c.apporteurPartAL || 0)
+              const reel = (c.gainsAgenteReels || 0) - redevAnnee - (c.apporteurPartAgente || 0)
               return (
                 <tr key={annee} className="hover:bg-gray-50">
                   <td className="px-3 py-3 font-bold text-gray-800">{annee}</td>
-                  <td className="px-3 py-3 text-right text-green-600">+ {(c.gainsALReels || 0).toFixed(2)} €</td>
+                  <td className="px-3 py-3 text-right text-green-600">+ {(c.gainsAgenteReels || 0).toFixed(2)} €</td>
                   <td className="px-3 py-3 text-right text-red-400">- {redevAnnee.toFixed(2)} €</td>
-                  <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurPartAL || 0) > 0 ? `- ${c.apporteurPartAL.toFixed(2)} €` : '—'}</td>
+                  <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurPartAgente || 0) > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
                   {tdTotal(reel)}
                 </tr>
               )
@@ -1005,9 +1005,9 @@ export default function Finances() {
     <div className="grid grid-cols-2 gap-4">
       <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
         <p className="font-medium text-green-800 mb-3">📥 Mes encaissements</p>
-        <div className="flex justify-between text-sm"><span className="text-gray-600">Part honoraires (courtage/AMO)</span><span className="font-medium text-green-700">+ {mesDossiers.reduce((s, d) => s + calculer(d).partALHonoraires, 0).toFixed(2)} €</span></div>
-        <div className="flex justify-between text-sm"><span className="text-gray-600">Part commissions artisans</span><span className="font-medium text-green-700">+ {mesDossiers.reduce((s, d) => s + calculer(d).partAL, 0).toFixed(2)} €</span></div>
-        <div className="flex justify-between text-sm"><span className="text-gray-600">Part frais de consultation</span><span className="font-medium text-green-700">+ {mesDossiers.reduce((s, d) => s + calculer(d).fraisPartAL, 0).toFixed(2)} €</span></div>
+        <div className="flex justify-between text-sm"><span className="text-gray-600">Part honoraires (courtage/AMO)</span><span className="font-medium text-green-700">+ {mesDossiers.reduce((s, d) => s + calculer(d).partAgenteHonoraires, 0).toFixed(2)} €</span></div>
+        <div className="flex justify-between text-sm"><span className="text-gray-600">Part commissions artisans</span><span className="font-medium text-green-700">+ {mesDossiers.reduce((s, d) => s + calculer(d).partAgente, 0).toFixed(2)} €</span></div>
+        <div className="flex justify-between text-sm"><span className="text-gray-600">Part frais de consultation</span><span className="font-medium text-green-700">+ {mesDossiers.reduce((s, d) => s + calculer(d).fraisPartAgente, 0).toFixed(2)} €</span></div>
         <div className="flex justify-between text-sm border-t border-green-200 pt-2 font-bold"><span>Total prévisionnel</span><span className="text-green-700">+ {mesDossiersGainsPrevi.toFixed(2)} €</span></div>
       </div>
       <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
@@ -1035,7 +1035,7 @@ export default function Finances() {
         <tbody className="divide-y divide-gray-100">
           {mesDossiers.map(d => {
             const c = calculer(d)
-            if (c.gainsALPrevi === 0 && c.gainsALReels === 0) return null
+            if (c.gainsAgentePrevi === 0 && c.gainsAgenteReels === 0) return null
             return (
               <tr key={d.id} className="hover:bg-gray-50">
                 <td className="px-3 py-3">
@@ -1044,8 +1044,8 @@ export default function Finances() {
                 </td>
                 {tdR(fmt(c.fraisTTC))}{tdR(fmt(c.comTTC))}{tdR(fmt(c.honorairesTotalTTC))}
                 <td className="px-3 py-3 text-right text-red-400">- {c.sommeRoyalties.toFixed(2)} €</td>
-                <td className="px-3 py-3 text-right text-orange-500">{c.apporteurPartAL > 0 ? `- ${c.apporteurPartAL.toFixed(2)} €` : '—'}</td>
-                {tdTotal(c.gainsALPrevi)}
+                <td className="px-3 py-3 text-right text-orange-500">{c.apporteurPartAgente > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
+                {tdTotal(c.gainsAgentePrevi)}
               </tr>
             )
           })}
@@ -1080,14 +1080,14 @@ export default function Finances() {
               const [annee, mois] = key.split('-')
               const c = rows.find(([k]) => k === key)?.[1] || {}
               const redevMontant = mesRedevances.filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
-              const total = (c.gainsALPrevi || 0) - redevMontant
+              const total = (c.gainsAgentePrevi || 0) - redevMontant
               return (
                 <tr key={key} className="hover:bg-gray-50">
                   <td className="px-3 py-3 font-medium">{MOIS[parseInt(mois)]} {annee}</td>
                   {tdR(fmt(c.fraisTTC))}{tdR(fmt(c.comTTC))}{tdR(fmt(c.honorairesTotalTTC))}
                   <td className="px-3 py-3 text-right text-red-400">{redevMontant > 0 ? `- ${redevMontant.toFixed(2)} €` : '—'}</td>
                   <td className="px-3 py-3 text-right text-red-400">- {(c.sommeRoyalties || 0).toFixed(2)} €</td>
-                  <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurPartAL || 0) > 0 ? `- ${c.apporteurPartAL.toFixed(2)} €` : '—'}</td>
+                  <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurPartAgente || 0) > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
                   {tdTotal(total)}
                 </tr>
               )
@@ -1112,14 +1112,14 @@ export default function Finances() {
             {annees.map(annee => {
               const c = rows.find(([k]) => k === annee)?.[1] || {}
               const redevAnnee = mesRedevances.filter(r => r.statut === 'regle' && r.annee === parseInt(annee)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
-              const total = (c.gainsALPrevi || 0) - redevAnnee
+              const total = (c.gainsAgentePrevi || 0) - redevAnnee
               return (
                 <tr key={annee} className="hover:bg-gray-50">
                   <td className="px-3 py-3 font-bold text-gray-800">{annee}</td>
                   {tdR(fmt(c.fraisTTC))}{tdR(fmt(c.comTTC))}{tdR(fmt(c.honorairesTotalTTC))}
                   <td className="px-3 py-3 text-right text-red-400">- {redevAnnee.toFixed(2)} €</td>
                   <td className="px-3 py-3 text-right text-red-400">- {(c.sommeRoyalties || 0).toFixed(2)} €</td>
-                  <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurPartAL || 0) > 0 ? `- ${c.apporteurPartAL.toFixed(2)} €` : '—'}</td>
+                  <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurPartAgente || 0) > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
                   {tdTotal(total)}
                 </tr>
               )
@@ -1140,7 +1140,7 @@ export default function Finances() {
       {mesDossiers.map(d => {
         const c = calculer(d)
         const items = []
-        if (d.frais_statut === 'regle' && c.fraisPartAL > 0) items.push({ label: 'Frais de consultation', montant: c.fraisPartAL, type: 'frais' })
+        if (d.frais_statut === 'regle' && c.fraisPartAgente > 0) items.push({ label: 'Frais de consultation', montant: c.fraisPartAgente, type: 'frais' })
         c.devisAcceptes.filter(dv => dv.date_signature).forEach(dv => {
           const cHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
           const n = cHT * 1.2 - cHT * 0.05 * 1.2
@@ -1149,13 +1149,13 @@ export default function Finances() {
             ? (dv.montant_ht || 0) * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2 * (dv.part_al || 0.5) : 0
           if (pAL > 0) items.push({ label: `Commission ${dv.artisan?.entreprise}`, montant: pAL - appAL, type: 'commission', date: dv.date_signature })
         })
-        if (c.partALHonoraires > 0) {
+        if (c.partAgenteHonoraires > 0) {
           const suiviCourtage = getSuivi(d, 'honoraires_courtage')
           const suiviSoldeAMO = getSuivi(d, 'solde_amo')
           if (suiviCourtage?.statut_client === 'regle' && c.honorairesCourtageNet > 0)
-            items.push({ label: 'Honoraires courtage (ma part)', montant: c.partALHonoraires * (c.honorairesCourtageNet / (c.honorairesTotalNet || 1)), type: 'honoraire' })
+            items.push({ label: 'Honoraires courtage (ma part)', montant: c.partAgenteHonoraires * (c.honorairesCourtageNet / (c.honorairesTotalNet || 1)), type: 'honoraire' })
           if (suiviSoldeAMO?.statut_client === 'regle' && c.honorairesAMONet > 0)
-            items.push({ label: 'Honoraires AMO solde (ma part)', montant: c.partALHonoraires * (c.honorairesAMONet / (c.honorairesTotalNet || 1)), type: 'honoraire' })
+            items.push({ label: 'Honoraires AMO solde (ma part)', montant: c.partAgenteHonoraires * (c.honorairesAMONet / (c.honorairesTotalNet || 1)), type: 'honoraire' })
         }
         if (items.length === 0) return null
         return (
@@ -1210,11 +1210,11 @@ export default function Finances() {
             {rows.map(([key, c]) => {
               const isAnnee = !key.includes('-')
               const label = isAnnee ? key : (() => { const [a, m] = key.split('-'); return `${MOIS[parseInt(m)]} ${a}` })()
-              const total = c.fraisPartAL + (c.partAL - c.apporteurPartAL) + c.partALHonoraires
+              const total = c.fraisPartAgente + (c.partAgente - c.apporteurPartAgente) + c.partAgenteHonoraires
               return (
                 <tr key={key} className="hover:bg-gray-50">
                   <td className={`px-3 py-3 ${isAnnee ? 'font-bold' : 'font-medium'}`}>{label}</td>
-                  {tdR(fmt(c.fraisPartAL))}{tdR(fmt(c.partAL - c.apporteurPartAL))}{tdR(fmt(c.partALHonoraires))}{tdTotal(total)}
+                  {tdR(fmt(c.fraisPartAgente))}{tdR(fmt(c.partAgente - c.apporteurPartAgente))}{tdR(fmt(c.partAgenteHonoraires))}{tdTotal(total)}
                 </tr>
               )
             })}
@@ -1223,10 +1223,10 @@ export default function Finances() {
           <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-bold">
             <tr>
               <td className="px-3 py-3">Total</td>
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.fraisPartAL, 0)))}
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.partAL - c.apporteurPartAL, 0)))}
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.partALHonoraires, 0)))}
-              {tdTotal(rows.reduce((s, [, c]) => s + c.fraisPartAL + (c.partAL - c.apporteurPartAL) + c.partALHonoraires, 0))}
+              {tdR(fmt(rows.reduce((s, [, c]) => s + c.fraisPartAgente, 0)))}
+              {tdR(fmt(rows.reduce((s, [, c]) => s + c.partAgente - c.apporteurPartAgente, 0)))}
+              {tdR(fmt(rows.reduce((s, [, c]) => s + c.partAgenteHonoraires, 0)))}
+              {tdTotal(rows.reduce((s, [, c]) => s + c.fraisPartAgente + (c.partAgente - c.apporteurPartAgente) + c.partAgenteHonoraires, 0))}
             </tr>
           </tfoot>
         </table>
@@ -1246,12 +1246,12 @@ export default function Finances() {
     { key: 'ctp', label: 'Suivi financier' },
     { key: 'agentes', label: 'Agentes' },
   ]
-  const ongletsAL = [
+  const ongletsAgente = [
     { key: 'mes_chantiers', label: 'Mes chantiers' },
     { key: 'financier', label: 'Mon suivi financier' },
     { key: 'facturation', label: 'Facturation' },
   ]
-  const ongletsList = isMarine ? ongletsMarine : ongletsAL
+  const ongletsList = isMarine ? ongletsMarine : ongletsAgente
 
   return (
     <div className="min-h-screen bg-gray-50">

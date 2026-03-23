@@ -94,14 +94,14 @@ export default function Statistiques() {
     const estChantierMarine = d.referente?.role === 'admin'
     const devisActifs = (d.devis_artisans || []).filter(dv => dv.statut !== 'refuse')
     const devisSignes = devisActifs.filter(dv => dv.statut === 'accepte' && dv.date_signature)
-    let comHT = 0, comTTC = 0, royaltiesCom = 0, net = 0, partAL = 0, partMarine = 0
+    let comHT = 0, comTTC = 0, royaltiesCom = 0, net = 0, partAgente = 0, partMarine = 0
     devisActifs.forEach(dv => {
       const cHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
       const cTTC = cHT * 1.2
       const roy = cHT * 0.05 * 1.2
       const n = cTTC - roy
       comHT += cHT; comTTC += cTTC; royaltiesCom += roy; net += n
-      partAL += estChantierMarine ? 0 : n * (dv.part_al || 0.5)
+      partAgente += estChantierMarine ? 0 : n * (dv.part_al || 0.5)
       partMarine += estChantierMarine ? n : n * (1 - (dv.part_al || 0.5))
     })
     const totalHT = devisActifs.reduce((s, dv) => s + (dv.montant_ht || 0), 0)
@@ -116,7 +116,7 @@ export default function Statistiques() {
     const totalEncaissement = fraisTTC + honorairesTTC + comTTC - sommeRoyalties
     return {
       estChantierMarine, totalHT, comHT, comTTC, royaltiesCom, net,
-      partAL, partMarine, honorairesTTC, fraisTTC, sommeRoyalties,
+      partAgente, partMarine, honorairesTTC, fraisTTC, sommeRoyalties,
       totalEncaissement, nbDevis: devisActifs.length, nbDevisSignes: devisSignes.length,
     }
   }
@@ -146,7 +146,7 @@ export default function Statistiques() {
   const totalFrais = stats.reduce((s, d) => s + d._calc.fraisTTC, 0)
   const totalRoyalties = stats.reduce((s, d) => s + d._calc.sommeRoyalties, 0)
   const totalNet = stats.reduce((s, d) => s + d._calc.totalEncaissement, 0)
-  const totalPartAL = stats.reduce((s, d) => s + d._calc.partAL, 0)
+  const totalPartAgente = stats.reduce((s, d) => s + d._calc.partAgente, 0)
   const totalPartMarine = stats.reduce((s, d) => s + d._calc.partMarine, 0)
 
   const parStatut = {
@@ -223,7 +223,7 @@ export default function Statistiques() {
     const comHT = statsU.reduce((s, d) => s + d._calc.comHT, 0)
     const honoraires = statsU.reduce((s, d) => s + d._calc.honorairesTTC, 0)
     const frais = statsU.reduce((s, d) => s + d._calc.fraisTTC, 0)
-    const gains = statsU.reduce((s, d) => s + (isAdmin ? d._calc.partMarine : d._calc.partAL), 0)
+    const gains = statsU.reduce((s, d) => s + (isAdmin ? d._calc.partMarine : d._calc.partAgente), 0)
     const caParMoisU = Array(12).fill(0)
     statsU.forEach(d => {
       const date = d.date_signature_contrat || d.created_at
@@ -272,11 +272,11 @@ export default function Statistiques() {
               <StatCard label="Frais consultation" value={fmt(totalFrais)} sub="TTC encaissés" icon="📝" />
               {isMarine ? (
                 <>
-                  <StatCard label="Part agentes" value={fmt(totalPartAL)} sub="Sur commissions" color="#2563EB" icon="👩" />
+                  <StatCard label="Part agentes" value={fmt(totalPartAgente)} sub="Sur commissions" color="#2563EB" icon="👩" />
                   <StatCard label="Part Marine" value={fmt(totalPartMarine)} sub="Sur commissions" color="#7C3AED" icon="👩" />
                 </>
               ) : (
-                <StatCard label="Ma part" value={fmt(totalPartAL)} sub="Sur commissions" color="#2563EB" icon="👩" />
+                <StatCard label="Ma part" value={fmt(totalPartAgente)} sub="Sur commissions" color="#2563EB" icon="👩" />
               )}
             </div>
 
@@ -427,7 +427,7 @@ export default function Statistiques() {
                     <td className="px-3 py-3 text-right text-blue-700">{fmt(totalCA)}</td>
                     <td className="px-3 py-3 text-right text-gray-700">{fmt(totalComHT)}</td>
                     <td className="px-3 py-3 text-right text-gray-700">{fmt(totalHonoraires)}</td>
-                    <td className="px-3 py-3 text-right text-green-700">{fmt(totalPartAL + totalPartMarine)}</td>
+                    <td className="px-3 py-3 text-right text-green-700">{fmt(totalPartAgente + totalPartMarine)}</td>
                   </tr>
                 </tfoot>
               </table>
