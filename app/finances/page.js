@@ -16,6 +16,7 @@ export default function Finances() {
   const [saving, setSaving] = useState(false)
   const [agentes, setAgentes] = useState([])
   const [agenteSelectionnee, setAgenteSelectionnee] = useState(null)
+  const [nomFranchisee, setNomFranchisee] = useState('CTP')
   const router = useRouter()
 
   const chargerTout = async () => {
@@ -36,6 +37,10 @@ export default function Finances() {
       .from('profiles').select('*').eq('role', 'agente').order('prenom')
     setAgentes(agentesData || [])
     setAgenteSelectionnee(prev => prev || agentesData?.[0]?.id || null)
+    // Charger le nom de la franchisée (admin) pour les labels dynamiques
+    const { data: adminData } = await supabase
+      .from('profiles').select('prenom, nom').eq('role', 'admin').single()
+    if (adminData) setNomFranchisee(`${adminData.prenom} ${adminData.nom}`)
   }
 
   useEffect(() => {
@@ -58,8 +63,8 @@ export default function Finances() {
     const estChantierMarine = d.referente?.role === 'admin'
     const devisActifs = (d.devis_artisans || []).filter(dv => dv.statut !== 'refuse')
     const devisAcceptes = devisActifs.filter(dv => dv.statut === 'accepte')
-    let comHT = 0, comTTC = 0, royaltiesCom = 0, net = 0, partAgente = 0, partMarine = 0
-    let apporteurTTC = 0, apporteurPartAgente = 0, apporteurPartMarine = 0
+    let comHT = 0, comTTC = 0, royaltiesCom = 0, net = 0, partAgente = 0, partAdmin = 0
+    let apporteurTTC = 0, apporteurPartAgente = 0, apporteurPartAdmin = 0
     devisActifs.forEach(dv => {
       const cHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
       const cTTC = cHT * 1.2
@@ -67,12 +72,12 @@ export default function Finances() {
       const n = cTTC - roy
       comHT += cHT; comTTC += cTTC; royaltiesCom += roy; net += n
       partAgente += estChantierMarine ? 0 : n * (dv.part_agente || 0.5)
-      partMarine += estChantierMarine ? n : n * (1 - (dv.part_agente || 0.5))
+      partAdmin += estChantierMarine ? n : n * (1 - (dv.part_agente || 0.5))
       if (d.client?.apporteur_affaires && d.client?.apporteur_base === 'par_devis') {
         const appTTC = (dv.montant_ht || 0) * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2
         apporteurTTC += appTTC
         apporteurPartAgente += estChantierMarine ? 0 : appTTC * (dv.part_agente || 0.5)
-        apporteurPartMarine += estChantierMarine ? appTTC : appTTC * (1 - (dv.part_agente || 0.5))
+        apporteurPartAdmin += estChantierMarine ? appTTC : appTTC * (1 - (dv.part_agente || 0.5))
       }
     })
     if (d.client?.apporteur_affaires && d.client?.apporteur_base === 'total_chantier') {
@@ -80,14 +85,14 @@ export default function Finances() {
       apporteurTTC = totalHT * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2
       const ref = estChantierMarine ? 0 : (devisActifs[0]?.part_agente || 0.5)
       apporteurPartAgente = apporteurTTC * ref
-      apporteurPartMarine = apporteurTTC * (1 - ref)
+      apporteurPartAdmin = apporteurTTC * (1 - ref)
     }
     const fraisTTC = parseFloat(d.frais_consultation || 0)
     const fraisHT = fraisTTC / 1.2
     const fraisRoyalties = fraisHT * 0.05 * 1.2
     const fraisNet = fraisTTC - fraisRoyalties
     const fraisPartAgente = estChantierMarine ? 0 : fraisNet
-    const fraisPartMarine = estChantierMarine ? fraisNet : 0
+    const fraisPartAdmin = estChantierMarine ? fraisNet : 0
     const devisSignes = (d.devis_artisans || []).filter(dv => dv.statut === 'accepte' && dv.date_signature && dv.montant_ttc)
     const totalTTCSignes = devisSignes.reduce((s, dv) => s + (dv.montant_ttc || 0), 0)
     const honorairesCourtage = ['courtage', 'amo'].includes(d.typologie) ? totalTTCSignes * 0.06 : 0
@@ -101,7 +106,7 @@ export default function Finances() {
     const honorairesTotalNet = honorairesCourtageNet + honorairesAMONet
     const partAgenteRef = estChantierMarine ? 0 : (devisActifs[0]?.part_agente || 0.5)
     const partAgenteHonoraires = honorairesTotalNet * partAgenteRef
-    const partMarineHonoraires = honorairesTotalNet * (1 - partAgenteRef)
+    const partAdminHonoraires = honorairesTotalNet * (1 - partAgenteRef)
     const totalEncaissement = fraisTTC + honorairesTotalTTC + comTTC - sommeRoyalties
     let gainsAgenteReels = 0
     devisAcceptes.filter(dv => dv.date_signature).forEach(dv => {
@@ -117,15 +122,15 @@ export default function Finances() {
     })
     if (d.frais_statut === 'regle') gainsAgenteReels += fraisPartAgente
     return {
-      comHT, comTTC, royalties: royaltiesCom, net, partAgente, partMarine,
-      apporteurTTC, apporteurPartAgente, apporteurPartMarine,
-      fraisHT, fraisTTC, fraisRoyalties, fraisNet, fraisPartAgente, fraisPartMarine,
+      comHT, comTTC, royalties: royaltiesCom, net, partAgente, partAdmin,
+      apporteurTTC, apporteurPartAgente, apporteurPartAdmin,
+      fraisHT, fraisTTC, fraisRoyalties, fraisNet, fraisPartAgente, fraisPartAdmin,
       honorairesCourtage, honorairesAMOSolde, honorairesTotalTTC,
       royaltiesCourtage, royaltiesAMO, sommeRoyalties,
       honorairesCourtageNet, honorairesAMONet, honorairesTotalNet,
-      partAgenteHonoraires, partMarineHonoraires, totalEncaissement,
+      partAgenteHonoraires, partAdminHonoraires, totalEncaissement,
       gainsAgentePrevi: partAgente - apporteurPartAgente + fraisPartAgente + partAgenteHonoraires,
-      netMarinePrevi: partMarine - apporteurPartMarine + fraisPartMarine + partMarineHonoraires,
+      netAdminPrevi: partAdmin - apporteurPartAdmin + fraisPartAdmin + partAdminHonoraires,
       gainsAgenteReels, estChantierMarine, devisActifs, devisAcceptes,
     }
   }
@@ -152,7 +157,7 @@ export default function Finances() {
   // Tous les dossiers agentes (pour CTP global)
   const dossiersAgentes = dossiers.filter(d => d.referente?.role === 'agente')
   const dossiersMarine = dossiers.filter(d => d.referente?.role === 'admin')
-  // Mes dossiers : admin = Marine, agente = ses propres dossiers
+  // Mes dossiers : admin = franchisée, agente = ses propres dossiers
   const mesDossiers = isMarine ? dossiersMarine : dossiers.filter(d => d.referente?.id === profile?.id)
 
   // Dossiers de l'agente sélectionnée (onglet admin "agentes")
@@ -200,8 +205,8 @@ export default function Finances() {
   const decCTP = totalGainsAgentesReels + totalApporteurTTC
   const netCTP = encCTP - decCTP
 
-  const totalMarineDoitAgentes = totalGainsAgentesReels
-  const totalAgentesDoiventMarine = totalRedevancesReglees + totalApporteurAgenteDu
+  const totalAdminDoitAgentes = totalGainsAgentesReels
+  const totalAgentesDoiventAdmin = totalRedevancesReglees + totalApporteurAgenteDu
 
   // ── AGRÉGATION ──
   const getKeyMois = (d) => {
@@ -211,13 +216,13 @@ export default function Finances() {
   }
 
   const emptyAgg = () => ({
-    comHT: 0, comTTC: 0, royalties: 0, net: 0, partAgente: 0, partMarine: 0,
-    apporteurTTC: 0, apporteurPartAgente: 0, apporteurPartMarine: 0,
-    fraisNet: 0, fraisTTC: 0, fraisPartAgente: 0, fraisPartMarine: 0, fraisRoyalties: 0,
-    gainsAgenteReels: 0, gainsAgentePrevi: 0, netMarinePrevi: 0,
+    comHT: 0, comTTC: 0, royalties: 0, net: 0, partAgente: 0, partAdmin: 0,
+    apporteurTTC: 0, apporteurPartAgente: 0, apporteurPartAdmin: 0,
+    fraisNet: 0, fraisTTC: 0, fraisPartAgente: 0, fraisPartAdmin: 0, fraisRoyalties: 0,
+    gainsAgenteReels: 0, gainsAgentePrevi: 0, netAdminPrevi: 0,
     honorairesTotalTTC: 0, honorairesTotalNet: 0,
     royaltiesCourtage: 0, royaltiesAMO: 0, sommeRoyalties: 0,
-    partAgenteHonoraires: 0, partMarineHonoraires: 0, totalEncaissement: 0,
+    partAgenteHonoraires: 0, partAdminHonoraires: 0, totalEncaissement: 0,
   })
 
   const agrégerMois = (listeDossiers) => {
@@ -311,7 +316,7 @@ export default function Finances() {
                   {showBadge ? (
                     <>
                       {!c.estChantierMarine && <span className="text-sm text-blue-700 font-medium">{nomReferente(d)} : {c.gainsAgenteReels.toFixed(2)} €</span>}
-                      <span className="text-sm text-purple-700 font-medium">CTP : {(c.netMarinePrevi + c.apporteurPartMarine).toFixed(2)} €</span>
+                      <span className="text-sm text-purple-700 font-medium">CTP : {(c.netAdminPrevi + c.apporteurPartAdmin).toFixed(2)} €</span>
                     </>
                   ) : (
                     headerRight !== null && <span className="text-sm text-gray-700 font-medium">{isMarine ? 'Encaissement : ' : 'Net : '}{headerRight.toFixed(2)} €</span>
@@ -494,7 +499,7 @@ export default function Finances() {
                       {(showParts || (!showParts && isMarine)) && (
                         <div className="flex justify-between font-bold">
                           <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-600'}>{c.estChantierMarine ? 'Net' : 'Marine'}</span>
-                          <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>{c.netMarinePrevi.toFixed(2)} €</span>
+                          <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>{c.netAdminPrevi.toFixed(2)} €</span>
                         </div>
                       )}
                       {!showParts && isMarine && (
@@ -520,7 +525,7 @@ export default function Finances() {
   const renderMesChantiersMois = (listeDossiers) => {
     const rows = agrégerMois(listeDossiers)
     const getVals = (c) => isMarine
-      ? { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurTTC, total: c.netMarinePrevi }
+      ? { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurTTC, total: c.netAdminPrevi }
       : { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurPartAgente, total: c.gainsAgentePrevi }
     return (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -552,7 +557,7 @@ export default function Finances() {
               {tdR(fmt(rows.reduce((s, [, c]) => s + c.honorairesTotalTTC, 0)))}
               <td className="px-3 py-3 text-right text-red-400">- {rows.reduce((s, [, c]) => s + c.sommeRoyalties, 0).toFixed(2)} €</td>
               <td className="px-3 py-3 text-right text-orange-500">- {rows.reduce((s, [, c]) => s + (isMarine ? c.apporteurTTC : c.apporteurPartAgente), 0).toFixed(2)} €</td>
-              {tdTotal(rows.reduce((s, [, c]) => s + (isMarine ? c.netMarinePrevi : c.gainsAgentePrevi), 0))}
+              {tdTotal(rows.reduce((s, [, c]) => s + (isMarine ? c.netAdminPrevi : c.gainsAgentePrevi), 0))}
             </tr>
           </tfoot>
         </table>
@@ -563,7 +568,7 @@ export default function Finances() {
   const renderMesChantiersAnnee = (listeDossiers) => {
     const rows = agrégerAnnee(listeDossiers)
     const getVals = (c) => isMarine
-      ? { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurTTC, total: c.netMarinePrevi }
+      ? { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurTTC, total: c.netAdminPrevi }
       : { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurPartAgente, total: c.gainsAgentePrevi }
     return (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -594,7 +599,7 @@ export default function Finances() {
               {tdR(fmt(rows.reduce((s, [, c]) => s + c.honorairesTotalTTC, 0)))}
               <td className="px-3 py-3 text-right text-red-400">- {rows.reduce((s, [, c]) => s + c.sommeRoyalties, 0).toFixed(2)} €</td>
               <td className="px-3 py-3 text-right text-orange-500">- {rows.reduce((s, [, c]) => s + (isMarine ? c.apporteurTTC : c.apporteurPartAgente), 0).toFixed(2)} €</td>
-              {tdTotal(rows.reduce((s, [, c]) => s + (isMarine ? c.netMarinePrevi : c.gainsAgentePrevi), 0))}
+              {tdTotal(rows.reduce((s, [, c]) => s + (isMarine ? c.netAdminPrevi : c.gainsAgentePrevi), 0))}
             </tr>
           </tfoot>
         </table>
@@ -609,7 +614,7 @@ export default function Finances() {
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>{thL('Mois')}{thR('Frais consul. TTC')}{thR('Commission TTC')}{thR('Honoraire TTC')}{thR('Somme royalties')}{thR('Apporteur')}{thR('Part agentes')}{thR('Part Marine')}</tr>
+            <tr>{thL('Mois')}{thR('Frais consul. TTC')}{thR('Commission TTC')}{thR('Honoraire TTC')}{thR('Somme royalties')}{thR('Apporteur')}{thR('Part agentes')}{thR(nomFranchisee)}</tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.map(([key, c]) => {
@@ -621,7 +626,7 @@ export default function Finances() {
                   <td className="px-3 py-3 text-right text-red-400">- {c.sommeRoyalties.toFixed(2)} €</td>
                   <td className="px-3 py-3 text-right text-orange-500">{c.apporteurTTC > 0 ? `- ${c.apporteurTTC.toFixed(2)} €` : '—'}</td>
                   <td className="px-3 py-3 text-right text-blue-600">{fmt(c.gainsAgentePrevi)}</td>
-                  <td className="px-3 py-3 text-right text-purple-600">{fmt(c.netMarinePrevi)}</td>
+                  <td className="px-3 py-3 text-right text-purple-600">{fmt(c.netAdminPrevi)}</td>
                 </tr>
               )
             })}
@@ -636,7 +641,7 @@ export default function Finances() {
               <td className="px-3 py-3 text-right text-red-400">- {rows.reduce((s, [, c]) => s + c.sommeRoyalties, 0).toFixed(2)} €</td>
               <td className="px-3 py-3 text-right text-orange-500">- {rows.reduce((s, [, c]) => s + c.apporteurTTC, 0).toFixed(2)} €</td>
               <td className="px-3 py-3 text-right text-blue-600">{fmt(rows.reduce((s, [, c]) => s + c.gainsAgentePrevi, 0))}</td>
-              <td className="px-3 py-3 text-right text-purple-600">{fmt(rows.reduce((s, [, c]) => s + c.netMarinePrevi, 0))}</td>
+              <td className="px-3 py-3 text-right text-purple-600">{fmt(rows.reduce((s, [, c]) => s + c.netAdminPrevi, 0))}</td>
             </tr>
           </tfoot>
         </table>
@@ -650,7 +655,7 @@ export default function Finances() {
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>{thL('Année')}{thR('Frais consul. TTC')}{thR('Commission TTC')}{thR('Honoraire TTC')}{thR('Somme royalties')}{thR('Apporteur')}{thR('Part agentes')}{thR('Part Marine')}</tr>
+            <tr>{thL('Année')}{thR('Frais consul. TTC')}{thR('Commission TTC')}{thR('Honoraire TTC')}{thR('Somme royalties')}{thR('Apporteur')}{thR('Part agentes')}{thR(nomFranchisee)}</tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.map(([annee, c]) => (
@@ -660,7 +665,7 @@ export default function Finances() {
                 <td className="px-3 py-3 text-right text-red-400">- {c.sommeRoyalties.toFixed(2)} €</td>
                 <td className="px-3 py-3 text-right text-orange-500">{c.apporteurTTC > 0 ? `- ${c.apporteurTTC.toFixed(2)} €` : '—'}</td>
                 <td className="px-3 py-3 text-right text-blue-600">{fmt(c.gainsAgentePrevi)}</td>
-                <td className="px-3 py-3 text-right text-purple-600">{fmt(c.netMarinePrevi)}</td>
+                <td className="px-3 py-3 text-right text-purple-600">{fmt(c.netAdminPrevi)}</td>
               </tr>
             ))}
             {rows.length === 0 && <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400 text-sm">Aucune donnée</td></tr>}
@@ -702,7 +707,7 @@ export default function Finances() {
       <div className="p-4 border-b border-gray-100"><p className="font-medium text-gray-800">Détail par chantier</p></div>
       <table className="w-full text-sm">
         <thead className="bg-gray-50 border-b border-gray-200">
-          <tr>{thL('Chantier')}{thL('Référente')}{thR('Frais consul. TTC')}{thR('Commission TTC')}{thR('Honoraire TTC')}{thR('Somme royalties')}{thR('Apporteur')}{thR('Part agente')}{thR('Part Marine')}</tr>
+          <tr>{thL('Chantier')}{thL('Référente')}{thR('Frais consul. TTC')}{thR('Commission TTC')}{thR('Honoraire TTC')}{thR('Somme royalties')}{thR('Apporteur')}{thR('Part agente')}{thR(nomFranchisee)}</tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {dossiers.map(d => {
@@ -723,7 +728,7 @@ export default function Finances() {
                 <td className="px-3 py-3 text-right text-red-400">- {c.sommeRoyalties.toFixed(2)} €</td>
                 <td className="px-3 py-3 text-right text-orange-500">{c.apporteurTTC > 0 ? `- ${c.apporteurTTC.toFixed(2)} €` : '—'}</td>
                 <td className="px-3 py-3 text-right text-blue-500">{c.gainsAgentePrevi > 0 ? fmt(c.gainsAgentePrevi) : '—'}</td>
-                {tdTotal(c.netMarinePrevi)}
+                {tdTotal(c.netAdminPrevi)}
               </tr>
             )
           })}
@@ -798,7 +803,7 @@ export default function Finances() {
     )
   }
 
-  // ── ONGLET AGENTES (vue Marine) — paramétré ──
+  // ── ONGLET AGENTES (vue franchisée) — paramétré ──
   const renderRecapAgente = (listeDossiers, listeRedevances, agente) => {
     const nom = agente ? `${agente.prenom} ${agente.nom}` : 'Agente'
     const gainsReels = listeDossiers.reduce((s, d) => s + calculer(d).gainsAgenteReels, 0)
@@ -828,9 +833,9 @@ export default function Finances() {
           </div>
         </div>
 
-        {/* Ce que Marine doit verser */}
+        {/* Ce que la franchisée doit verser */}
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
-          <p className="font-semibold text-blue-800">💸 Ce que Marine (CTP) doit verser à {nom}</p>
+          <p className="font-semibold text-blue-800">💸 Ce que {nomFranchisee} (CTP) doit verser à {nom}</p>
           <p className="text-xs text-gray-500">Part agente sur les commissions et frais de ses chantiers</p>
           {listeDossiers.map(d => {
             const c = calculer(d)
@@ -853,7 +858,7 @@ export default function Finances() {
 
         {/* Ce que l'agente doit verser */}
         <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-3">
-          <p className="font-semibold text-purple-800">💸 Ce que {nom} doit verser à Marine (CTP)</p>
+          <p className="font-semibold text-purple-800">💸 Ce que {nom} doit verser à {nomFranchisee} (CTP)</p>
           <div className="space-y-2">
             <p className="text-xs font-medium text-gray-600">Redevances mensuelles</p>
             {listeRedevances.slice(0, 6).map(r => (
@@ -889,7 +894,7 @@ export default function Finances() {
             )}
           </div>
           <div className="flex justify-between font-bold border-t border-purple-200 pt-2">
-            <span className="text-purple-800">Total {nom} doit à Marine</span>
+            <span className="text-purple-800">Total {nom} doit à {nomFranchisee}</span>
             <span className="text-purple-700 text-lg">{(redevReglees + apporteurDu).toFixed(2)} €</span>
           </div>
         </div>
@@ -897,7 +902,7 @@ export default function Finances() {
     )
   }
 
-  const renderDetailAgenteMarine = (listeDossiers, nom) => {
+  const renderDetailAgenteAdmin = (listeDossiers, nom) => {
     const gainsReels = listeDossiers.reduce((s, d) => s + calculer(d).gainsAgenteReels, 0)
     const apporteurDu = listeDossiers.reduce((s, d) => s + calculer(d).apporteurPartAgente, 0)
     return (
@@ -1134,7 +1139,7 @@ export default function Finances() {
   const renderFacturationMoi = () => (
     <div className="space-y-4">
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-        <p className="text-sm font-medium text-blue-800 mb-1">📋 Ce que tu dois facturer à Marine (CTP)</p>
+        <p className="text-sm font-medium text-blue-800 mb-1">📋 Ce que tu dois facturer à {nomFranchisee} (CTP)</p>
         <p className="text-xs text-gray-500">Frais de consultation réglés + commissions sur devis signés + honoraires réglés</p>
       </div>
       {mesDossiers.map(d => {
@@ -1185,12 +1190,12 @@ export default function Finances() {
         )
       })}
       <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-3">
-        <p className="font-semibold text-purple-800">💳 Ce que tu dois payer à Marine (CTP)</p>
+        <p className="font-semibold text-purple-800">💳 Ce que tu dois payer à {nomFranchisee} (CTP)</p>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between"><span className="text-gray-600">Redevances mensuelles</span><span className="font-medium text-purple-700">{mesRedevancesReglees.toFixed(2)} €</span></div>
           <div className="flex justify-between"><span className="text-gray-600">Remboursements apporteur</span><span className="font-medium text-orange-600">{mesApporteurDu.toFixed(2)} €</span></div>
           <div className="flex justify-between font-bold border-t border-purple-200 pt-2">
-            <span className="text-purple-800">Total à payer à Marine</span>
+            <span className="text-purple-800">Total à payer à {nomFranchisee}</span>
             <span className="text-purple-700">{(mesRedevancesReglees + mesApporteurDu).toFixed(2)} €</span>
           </div>
         </div>
@@ -1201,7 +1206,7 @@ export default function Finances() {
   const renderFacturationMoiTableau = (rows, colLabel) => (
     <div className="space-y-4">
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="p-3 border-b border-gray-100"><p className="text-xs font-medium text-gray-600 uppercase">À facturer à Marine</p></div>
+        <div className="p-3 border-b border-gray-100"><p className="text-xs font-medium text-gray-600 uppercase">À facturer à {nomFranchisee}</p></div>
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>{thL(colLabel)}{thR('Frais consul.')}{thR('Commissions')}{thR('Honoraires')}{thR('Total à facturer')}</tr>
@@ -1232,7 +1237,7 @@ export default function Finances() {
         </table>
       </div>
       <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-sm">
-        <p className="font-medium text-purple-800 mb-2">💳 À payer à Marine</p>
+        <p className="font-medium text-purple-800 mb-2">💳 À payer à {nomFranchisee}</p>
         <div className="flex justify-between"><span className="text-gray-600">Redevances + apporteurs</span><span className="font-bold text-purple-700">{(mesRedevancesReglees + mesApporteurDu).toFixed(2)} €</span></div>
       </div>
     </div>
@@ -1240,7 +1245,7 @@ export default function Finances() {
 
   if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-gray-400">Chargement...</p></div>
 
-  const ongletsMarine = [
+  const ongletsAdmin = [
     { key: 'mes_chantiers', label: 'Mes chantiers' },
     { key: 'tous_chantiers', label: 'Tous les chantiers' },
     { key: 'ctp', label: 'Suivi financier' },
@@ -1251,7 +1256,7 @@ export default function Finances() {
     { key: 'financier', label: 'Mon suivi financier' },
     { key: 'facturation', label: 'Facturation' },
   ]
-  const ongletsList = isMarine ? ongletsMarine : ongletsAgente
+  const ongletsList = isMarine ? ongletsAdmin : ongletsAgente
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1318,7 +1323,7 @@ export default function Finances() {
           </div>
         )}
 
-        {/* TOUS LES CHANTIERS (Marine) */}
+        {/* TOUS LES CHANTIERS (Admin) */}
         {onglet === 'tous_chantiers' && isMarine && (
           <div className="space-y-4">
             {renderSousOnglets()}
@@ -1328,7 +1333,7 @@ export default function Finances() {
           </div>
         )}
 
-        {/* SUIVI FINANCIER CTP (Marine) */}
+        {/* SUIVI FINANCIER CTP (Admin) */}
         {onglet === 'ctp' && isMarine && (
           <div className="space-y-4">
             {renderSousOnglets()}
@@ -1338,7 +1343,7 @@ export default function Finances() {
           </div>
         )}
 
-        {/* AGENTES (Marine voit) */}
+        {/* AGENTES (Admin voit) */}
         {onglet === 'agentes' && isMarine && (
           <div className="space-y-4">
             {renderSélecteurAgente()}
@@ -1346,7 +1351,7 @@ export default function Finances() {
             {sousOnglet === 'chantier' && (
               <div className="space-y-4">
                 {renderRecapAgente(dossiersAgente, redevancesAgente, agenteActuelle)}
-                {renderDetailAgenteMarine(dossiersAgente, nomAgente)}
+                {renderDetailAgenteAdmin(dossiersAgente, nomAgente)}
               </div>
             )}
             {sousOnglet === 'mois' && renderAgenteMois(dossiersAgente, redevancesAgente)}

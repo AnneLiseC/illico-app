@@ -30,7 +30,7 @@ export default function Chantiers() {
 
       // Agente → uniquement ses chantiers
       if (profData.role === 'agente') {
-        query.eq('referente_id', profData.id)
+        query = query.eq('referente_id', profData.id)
       }
 
       const { data } = await query
