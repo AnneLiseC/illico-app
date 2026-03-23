@@ -84,6 +84,7 @@ export default function Dashboard() {
             { label: 'Artisans', emoji: '🔨', href: '/artisans', desc: 'Partenaires & contacts' },
             { label: 'Planning', emoji: '📅', href: '/planning', desc: 'Rendez-vous' },
             { label: 'Finances', emoji: '💶', href: '/finances', desc: 'Suivi financier' },
+            { label: 'Statistiques', emoji: '📊', href: '/statistiques', desc: 'Tableaux de bord' },
           ].map((item) => (
             <button
               key={item.label}

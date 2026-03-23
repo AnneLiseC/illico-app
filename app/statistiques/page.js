@@ -21,14 +21,22 @@ const TYPOLOGIE_COLORS = {
   studio_jardin: '#DB2777',
 }
 
-function StatCard({ label, value, sub, color = 'text-gray-800', icon }) {
+// Couleurs fixes pour les utilisatrices (évite les classes Tailwind dynamiques)
+const USER_COLORS = [
+  { bg: '#F3E8FF', border: '#D8B4FE', text: '#7C3AED', dot: '#9333EA' }, // purple - admin
+  { bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8', dot: '#2563EB' }, // blue
+  { bg: '#F0FDF4', border: '#BBF7D0', text: '#15803D', dot: '#16A34A' }, // green
+  { bg: '#FFF7ED', border: '#FED7AA', text: '#C2410C', dot: '#EA580C' }, // orange
+]
+
+function StatCard({ label, value, sub, color, icon }) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4">
       <div className="flex items-center justify-between mb-1">
         <p className="text-xs text-gray-400">{label}</p>
         {icon && <span className="text-lg">{icon}</span>}
       </div>
-      <p className={`text-xl font-bold ${color}`}>{value}</p>
+      <p className="text-xl font-bold" style={{ color: color || '#1F2937' }}>{value}</p>
       {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
     </div>
   )
@@ -37,6 +45,7 @@ function StatCard({ label, value, sub, color = 'text-gray-800', icon }) {
 export default function Statistiques() {
   const [profile, setProfile] = useState(null)
   const [dossiers, setDossiers] = useState([])
+  const [utilisatrices, setUtilisatrices] = useState([])
   const [loading, setLoading] = useState(true)
   const [onglet, setOnglet] = useState('agence')
   const [anneeFiltre, setAnneeFiltre] = useState(new Date().getFullYear())
@@ -55,6 +64,13 @@ export default function Statistiques() {
           client:clients(id, prenom, nom, civilite),
           devis_artisans(*, artisan:artisans(id, entreprise, metier))`)
       setDossiers(data || [])
+      // Charger toutes les utilisatrices dynamiquement
+      const { data: usersData } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('role', ['admin', 'agente'])
+        .order('prenom')
+      setUtilisatrices(usersData || [])
       setLoading(false)
     }
     init()
@@ -62,7 +78,12 @@ export default function Statistiques() {
 
   const isMarine = profile?.role === 'admin'
 
-  const dossiersFiltres = dossiers.filter(d => {
+  // Une agente ne voit que ses propres dossiers
+  const dossiersVisibles = isMarine
+    ? dossiers
+    : dossiers.filter(d => d.referente?.id === profile?.id)
+
+  const dossiersFiltres = dossiersVisibles.filter(d => {
     if (anneeFiltre === 'tous') return true
     const date = d.date_signature_contrat || d.created_at
     if (!date) return false
@@ -117,8 +138,6 @@ export default function Statistiques() {
   )
 
   const stats = dossiersFiltres.map(d => ({ ...d, _calc: calculerDossier(d) }))
-  const dossiersAL = stats.filter(d => d.referente?.role === 'agente')
-  const dossiersMarine = stats.filter(d => d.referente?.role === 'admin')
 
   const totalCA = stats.reduce((s, d) => s + d._calc.totalHT, 0)
   const totalComHT = stats.reduce((s, d) => s + d._calc.comHT, 0)
@@ -186,13 +205,34 @@ export default function Statistiques() {
   const typologies = Object.entries(typologiesMap).sort((a, b) => b[1].nbDossiers - a[1].nbDossiers)
   const totalDossiers = stats.length || 1
 
-  const onglets = [
+  // ── ONGLETS selon le rôle (utilisatrices = admin seulement) ──
+  const ongletsList = [
     { key: 'agence', label: '🏢 Agence globale' },
-    { key: 'utilisatrices', label: '👥 Par utilisatrice' },
+    ...(isMarine ? [{ key: 'utilisatrices', label: '👥 Par utilisatrice' }] : []),
     { key: 'artisans', label: '🔨 Par artisan' },
     { key: 'clients', label: '🏠 Par client' },
     { key: 'typologies', label: '📋 Par typologie' },
   ]
+
+  // ── STATS PAR UTILISATRICE (dynamique, scalable) ──
+  const statsParUtilisatrice = utilisatrices.map((u, idx) => {
+    const dossiersU = dossiersFiltres.filter(d => d.referente?.id === u.id)
+    const statsU = dossiersU.map(d => ({ ...d, _calc: calculerDossier(d) }))
+    const isAdmin = u.role === 'admin'
+    const caHT = statsU.reduce((s, d) => s + d._calc.totalHT, 0)
+    const comHT = statsU.reduce((s, d) => s + d._calc.comHT, 0)
+    const honoraires = statsU.reduce((s, d) => s + d._calc.honorairesTTC, 0)
+    const frais = statsU.reduce((s, d) => s + d._calc.fraisTTC, 0)
+    const gains = statsU.reduce((s, d) => s + (isAdmin ? d._calc.partMarine : d._calc.partAL), 0)
+    const caParMoisU = Array(12).fill(0)
+    statsU.forEach(d => {
+      const date = d.date_signature_contrat || d.created_at
+      if (!date) return
+      caParMoisU[new Date(date).getMonth()] += d._calc.totalHT
+    })
+    return { user: u, color: USER_COLORS[idx % USER_COLORS.length], nbDossiers: dossiersU.length, caHT, comHT, honoraires, frais, gains, caParMois: caParMoisU }
+  })
+  const maxMoisU = Math.max(...statsParUtilisatrice.flatMap(u => u.caParMois), 1)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -210,7 +250,7 @@ export default function Statistiques() {
 
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
         <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
-          {onglets.map(({ key, label }) => (
+          {ongletsList.map(({ key, label }) => (
             <button key={key} onClick={() => setOnglet(key)}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${onglet === key ? 'border-blue-800 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
               {label}
@@ -223,15 +263,21 @@ export default function Statistiques() {
           <div className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <StatCard label="Chantiers" value={stats.length} sub={`${parStatut.en_cours} en cours · ${parStatut.termine} terminés`} icon="📁" />
-              <StatCard label="CA total HT" value={fmt(totalCA)} sub="Montant devis actifs" icon="💰" color="text-blue-700" />
-              <StatCard label="Commissions HT" value={fmt(totalComHT)} sub={`TTC : ${fmt(totalComTTC)}`} icon="📊" color="text-green-700" />
-              <StatCard label="Net encaissé" value={fmt(totalNet)} sub={`Royalties : ${fmt(totalRoyalties)}`} icon="✅" color="text-purple-700" />
+              <StatCard label="CA total HT" value={fmt(totalCA)} sub="Montant devis actifs" icon="💰" color="#1D4ED8" />
+              <StatCard label="Commissions HT" value={fmt(totalComHT)} sub={`TTC : ${fmt(totalComTTC)}`} icon="📊" color="#15803D" />
+              <StatCard label="Net encaissé" value={fmt(totalNet)} sub={`Royalties : ${fmt(totalRoyalties)}`} icon="✅" color="#7C3AED" />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <StatCard label="Honoraires" value={fmt(totalHonoraires)} sub="Courtage + AMO" icon="🏷️" />
               <StatCard label="Frais consultation" value={fmt(totalFrais)} sub="TTC encaissés" icon="📝" />
-              <StatCard label="Part Anne-Lise" value={fmt(totalPartAL)} sub="Sur commissions" color="text-blue-600" icon="👩" />
-              <StatCard label="Part Marine" value={fmt(totalPartMarine)} sub="Sur commissions" color="text-purple-600" icon="👩" />
+              {isMarine ? (
+                <>
+                  <StatCard label="Part agentes" value={fmt(totalPartAL)} sub="Sur commissions" color="#2563EB" icon="👩" />
+                  <StatCard label="Part Marine" value={fmt(totalPartMarine)} sub="Sur commissions" color="#7C3AED" icon="👩" />
+                </>
+              ) : (
+                <StatCard label="Ma part" value={fmt(totalPartAL)} sub="Sur commissions" color="#2563EB" icon="👩" />
+              )}
             </div>
 
             {/* Graphique CA mensuel */}
@@ -248,7 +294,7 @@ export default function Statistiques() {
                         backgroundColor: val > 0 ? '#2563EB' : '#E5E7EB',
                         borderRadius: '4px 4px 0 0',
                         marginTop: 'auto'
-                      }} className="flex items-end" />
+                      }} />
                     </div>
                     <p className="text-xs text-gray-400">{MOIS_LABELS[i]}</p>
                   </div>
@@ -259,45 +305,48 @@ export default function Statistiques() {
             {/* Statuts */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { label: 'En cours', val: parStatut.en_cours, color: 'bg-green-100 text-green-700' },
-                { label: 'En attente', val: parStatut.en_attente, color: 'bg-yellow-100 text-yellow-700' },
-                { label: 'Terminés', val: parStatut.termine, color: 'bg-gray-100 text-gray-600' },
-                { label: 'Annulés', val: parStatut.annule, color: 'bg-red-100 text-red-600' },
-              ].map(({ label, val, color }) => (
+                { label: 'En cours', val: parStatut.en_cours, bg: '#DCFCE7', color: '#15803D' },
+                { label: 'En attente', val: parStatut.en_attente, bg: '#FEF9C3', color: '#A16207' },
+                { label: 'Terminés', val: parStatut.termine, bg: '#F3F4F6', color: '#4B5563' },
+                { label: 'Annulés', val: parStatut.annule, bg: '#FEE2E2', color: '#DC2626' },
+              ].map(({ label, val, bg, color }) => (
                 <div key={label} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between">
                   <span className="text-sm text-gray-600">{label}</span>
-                  <span className={`text-lg font-bold px-3 py-1 rounded-full ${color}`}>{val}</span>
+                  <span className="text-lg font-bold px-3 py-1 rounded-full" style={{ backgroundColor: bg, color }}>{val}</span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* ── PAR UTILISATRICE ── */}
-        {onglet === 'utilisatrices' && (
+        {/* ── PAR UTILISATRICE (admin seulement, 100% dynamique) ── */}
+        {onglet === 'utilisatrices' && isMarine && (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-6">
-              {[
-                { label: 'Marine Michelangeli', data: dossiersMarine, color: 'purple', partKey: 'partMarine' },
-                { label: 'Anne-Lise Caillet', data: dossiersAL, color: 'blue', partKey: 'partAL' },
-              ].map(({ label, data, color, partKey }) => (
-                <div key={label} className={`bg-white border border-${color}-200 rounded-xl p-6`}>
+            {/* Cartes par utilisatrice */}
+            <div className={`grid gap-6 ${statsParUtilisatrice.length <= 2 ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-3'}`}>
+              {statsParUtilisatrice.map(({ user, color, nbDossiers, caHT, comHT, honoraires, frais, gains }) => (
+                <div key={user.id} className="rounded-xl p-6"
+                  style={{ backgroundColor: color.bg, border: `1px solid ${color.border}` }}>
                   <div className="flex items-center gap-2 mb-4">
-                    <div className={`w-3 h-3 rounded-full bg-${color}-500`} />
-                    <h2 className={`font-semibold text-${color}-900`}>{label}</h2>
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color.dot }} />
+                    <h2 className="font-semibold" style={{ color: color.text }}>{user.prenom} {user.nom}</h2>
+                    <span className="text-xs px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: color.dot }}>
+                      {user.role === 'admin' ? 'Franchisée' : 'Agente'}
+                    </span>
                   </div>
                   <div className="space-y-2">
                     {[
-                      ['Chantiers', data.length + ' chantiers'],
-                      ['CA HT', fmt(data.reduce((s, d) => s + d._calc.totalHT, 0))],
-                      ['COM HT', fmt(data.reduce((s, d) => s + d._calc.comHT, 0))],
-                      ['Honoraires', fmt(data.reduce((s, d) => s + d._calc.honorairesTTC, 0))],
-                      ['Frais consul.', fmt(data.reduce((s, d) => s + d._calc.fraisTTC, 0))],
-                      ['Net gains', fmt(data.reduce((s, d) => s + d._calc[partKey], 0))],
+                      ['Chantiers', nbDossiers + (nbDossiers > 1 ? ' chantiers' : ' chantier')],
+                      ['CA HT', fmt(caHT)],
+                      ['COM HT', fmt(comHT)],
+                      ['Honoraires', fmt(honoraires)],
+                      ['Frais consul.', fmt(frais)],
+                      ['Net gains', fmt(gains)],
                     ].map(([lbl, val]) => (
-                      <div key={lbl} className="flex justify-between items-center py-1.5 border-b border-gray-100 last:border-0">
+                      <div key={lbl} className="flex justify-between items-center py-1.5 border-b last:border-0"
+                        style={{ borderColor: color.border }}>
                         <span className="text-sm text-gray-500">{lbl}</span>
-                        <span className={`text-sm font-bold text-${color}-700`}>{val}</span>
+                        <span className="text-sm font-bold" style={{ color: color.text }}>{val}</span>
                       </div>
                     ))}
                   </div>
@@ -305,35 +354,83 @@ export default function Statistiques() {
               ))}
             </div>
 
-            {/* Graphique comparaison CA par mois */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6">
-              <h2 className="font-semibold text-gray-800 mb-6">CA mensuel comparé</h2>
-              <div className="flex items-end gap-2" style={{ height: 140 }}>
-                {MOIS_LABELS.map((mois, i) => {
-                  const caMarine = dossiersMarine.filter(d => {
-                    const date = d.date_signature_contrat || d.created_at
-                    return date && new Date(date).getMonth() === i
-                  }).reduce((s, d) => s + d._calc.totalHT, 0)
-                  const caAL = dossiersAL.filter(d => {
-                    const date = d.date_signature_contrat || d.created_at
-                    return date && new Date(date).getMonth() === i
-                  }).reduce((s, d) => s + d._calc.totalHT, 0)
-                  const max = Math.max(caMarine, caAL, maxMois / 12, 1)
-                  return (
+            {/* Graphique comparaison CA par mois (si plusieurs utilisatrices) */}
+            {statsParUtilisatrice.length > 1 && (
+              <div className="bg-white border border-gray-200 rounded-xl p-6">
+                <h2 className="font-semibold text-gray-800 mb-6">CA mensuel comparé</h2>
+                <div className="flex items-end gap-2" style={{ height: 140 }}>
+                  {MOIS_LABELS.map((mois, i) => (
                     <div key={mois} className="flex-1 flex flex-col items-center gap-1">
                       <div className="w-full flex items-end gap-0.5" style={{ height: 110 }}>
-                        <div style={{ flex: 1, height: `${Math.max(3, (caMarine / max) * 100)}%`, backgroundColor: '#7C3AED', borderRadius: '3px 3px 0 0' }} />
-                        <div style={{ flex: 1, height: `${Math.max(3, (caAL / max) * 100)}%`, backgroundColor: '#2563EB', borderRadius: '3px 3px 0 0' }} />
+                        {statsParUtilisatrice.map((u) => (
+                          <div key={u.user.id} style={{
+                            flex: 1,
+                            height: `${Math.max(3, (u.caParMois[i] / maxMoisU) * 100)}%`,
+                            backgroundColor: u.color.dot,
+                            borderRadius: '3px 3px 0 0'
+                          }} />
+                        ))}
                       </div>
                       <p className="text-xs text-gray-400">{mois}</p>
                     </div>
-                  )
-                })}
+                  ))}
+                </div>
+                <div className="flex items-center gap-4 mt-3 flex-wrap">
+                  {statsParUtilisatrice.map((u) => (
+                    <div key={u.user.id} className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded" style={{ backgroundColor: u.color.dot }} />
+                      <span className="text-xs text-gray-500">{u.user.prenom} {u.user.nom}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="flex items-center gap-4 mt-3">
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded bg-purple-600" /><span className="text-xs text-gray-500">Marine</span></div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded bg-blue-600" /><span className="text-xs text-gray-500">Anne-Lise</span></div>
+            )}
+
+            {/* Tableau récap toutes utilisatrices */}
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="p-4 border-b border-gray-100">
+                <p className="font-medium text-gray-800">Récapitulatif — Toutes les utilisatrices</p>
               </div>
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left px-3 py-3 text-xs font-medium text-gray-500 uppercase">Utilisatrice</th>
+                    <th className="text-right px-3 py-3 text-xs font-medium text-gray-500 uppercase">Chantiers</th>
+                    <th className="text-right px-3 py-3 text-xs font-medium text-gray-500 uppercase">CA HT</th>
+                    <th className="text-right px-3 py-3 text-xs font-medium text-gray-500 uppercase">COM HT</th>
+                    <th className="text-right px-3 py-3 text-xs font-medium text-gray-500 uppercase">Honoraires</th>
+                    <th className="text-right px-3 py-3 text-xs font-medium text-gray-500 uppercase">Net gains</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {statsParUtilisatrice.map(({ user, color, nbDossiers, caHT, comHT, honoraires, gains }) => (
+                    <tr key={user.id} className="hover:bg-gray-50">
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color.dot }} />
+                          <span className="font-medium text-gray-800">{user.prenom} {user.nom}</span>
+                          <span className="text-xs text-gray-400">{user.role === 'admin' ? 'Franchisée' : 'Agente'}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 text-right text-gray-600">{nbDossiers}</td>
+                      <td className="px-3 py-3 text-right font-medium" style={{ color: color.dot }}>{fmt(caHT)}</td>
+                      <td className="px-3 py-3 text-right text-gray-600">{fmt(comHT)}</td>
+                      <td className="px-3 py-3 text-right text-gray-600">{fmt(honoraires)}</td>
+                      <td className="px-3 py-3 text-right font-bold" style={{ color: color.dot }}>{fmt(gains)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-bold">
+                  <tr>
+                    <td className="px-3 py-3 text-gray-700">Total</td>
+                    <td className="px-3 py-3 text-right text-gray-700">{stats.length}</td>
+                    <td className="px-3 py-3 text-right text-blue-700">{fmt(totalCA)}</td>
+                    <td className="px-3 py-3 text-right text-gray-700">{fmt(totalComHT)}</td>
+                    <td className="px-3 py-3 text-right text-gray-700">{fmt(totalHonoraires)}</td>
+                    <td className="px-3 py-3 text-right text-green-700">{fmt(totalPartAL + totalPartMarine)}</td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
           </div>
         )}
@@ -434,7 +531,6 @@ export default function Statistiques() {
               <p className="text-center text-gray-400 text-sm py-12 bg-white border border-gray-200 rounded-xl">Aucune donnée pour cette période</p>
             ) : (
               <>
-                {/* Barre de répartition */}
                 <div className="bg-white border border-gray-200 rounded-xl p-6">
                   <h2 className="font-semibold text-gray-800 mb-4">Répartition par nombre de chantiers</h2>
                   <div className="flex rounded-lg overflow-hidden h-10 mb-4">
@@ -457,8 +553,6 @@ export default function Statistiques() {
                     ))}
                   </div>
                 </div>
-
-                {/* Détail */}
                 <div className="space-y-3">
                   {typologies.map(([key, t]) => (
                     <div key={key} className="bg-white border border-gray-200 rounded-xl p-5">
