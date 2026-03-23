@@ -154,9 +154,7 @@ export default function Finances() {
 
     // Encaissement réel CTP :
     // commissions nettes après retenue illiCO + honoraires/frais - royalties CTP
-    const totalEncaissement = round2(
-      net + honorairesTotalTTC + fraisTTC - sommeRoyalties
-    )
+    const totalEncaissement = finance.agence.netAvantApporteur
 
     const commissionsSignees = finance.commissions.devis
       .filter(item => item.signed)
@@ -404,7 +402,7 @@ export default function Finances() {
   )
 
   // ── ACCORDÉON ──
-  const renderAccordeon = (listeDossiers, showBadge = false) => {
+fin  const renderAccordeon = (listeDossiers, showBadge = false) => {
     const showParts = showBadge || !isMarine
     return (
       <div className="space-y-2">
