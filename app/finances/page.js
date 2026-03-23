@@ -2,18 +2,23 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
-import { calculateApporteurFinance, calculateCommissionsFinance,calculateDevisFinance,calculateDossierFinance,calculateFinancesForDossiers,calculateFraisFinance,calculateHonorairesFinance } from '../lib/finance'
+import { calculateDossierFinance } from '../lib/finance'
+
 const MOIS = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+
 const round2 = (n) => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100
+
 const splitAmount = (amount, partAgente) => {
   const agente = round2((amount || 0) * (partAgente || 0))
   const admin = round2((amount || 0) - agente)
   return { agente, admin }
 }
+
 const normalizeApporteurMode = (mode) => {
   if (mode === 'total_chantier') return 'total_chantier_ht'
   return mode || 'par_devis'
 }
+
 const normalizeDossierForFinance = (d) => ({
   ...d,
   taux_amo: d?.taux_amo ?? d?.honoraires_amo_taux,
@@ -47,16 +52,18 @@ export default function Finances() {
         devis_artisans(*, artisan:artisans(id, entreprise)),
         suivi_financier(*)`)
       .order('created_at', { ascending: false })
-    setDossiers(dossiersData || [])
+
     const { data: redevancesData } = await supabase
       .from('redevances').select('*')
       .order('annee', { ascending: false })
       .order('mois', { ascending: false })
     setRedevances(redevancesData || [])
+
     const { data: agentesData } = await supabase
       .from('profiles').select('*').eq('role', 'agente').order('prenom')
     setAgentes(agentesData || [])
     setAgenteSelectionnee(prev => prev || agentesData?.[0]?.id || null)
+    
     // Charger le nom de la franchisée (admin) pour les labels dynamiques
     const { data: adminData } = await supabase
       .from('profiles').select('prenom, nom').eq('role', 'admin').single()
@@ -90,7 +97,6 @@ export default function Finances() {
     const apporteurParDevis = new Map((finance.apporteur?.lines || []).map(line => [line.devisId, line]))
 
     const partAgenteRate = finance.settings.partAgente
-    const partAdminRate = finance.settings.partAdmin
 
     const comHT = round2(finance.commissions.comHT)
     const comTTC = round2(finance.commissions.comTTC)
@@ -113,8 +119,10 @@ export default function Finances() {
     const royaltiesCourtage = round2(finance.honoraires.courtage.royalties)
     const royaltiesAMO = round2(finance.honoraires.amo.royaltiesSolde)
 
+    // IMPORTANT :
+    // royaltiesCom reste utilisée pour le partage commissions,
+    // mais n'entre pas dans la somme des royalties CTP
     const sommeRoyalties = round2(
-      royaltiesCom +
       fraisRoyalties +
       royaltiesCourtage +
       royaltiesAMO
@@ -136,8 +144,10 @@ export default function Finances() {
     const apporteurPartAgente = round2(finance.apporteur.parts.agente)
     const apporteurPartAdmin = round2(finance.apporteur.parts.admin)
 
+    // Encaissement réel CTP :
+    // commissions nettes après retenue illiCO + honoraires/frais - royalties CTP
     const totalEncaissement = round2(
-      finance.encaissements.brutCTP - sommeRoyalties
+      net + honorairesTotalTTC + fraisTTC - sommeRoyalties
     )
 
     const commissionsSignees = finance.commissions.devis
@@ -193,8 +203,6 @@ export default function Finances() {
 
       tauxCourtagePct: round2(finance.settings.tauxCourtage * 100),
       tauxAmoPct: round2(finance.settings.tauxAmo * 100),
-      partAgenteRate,
-      partAdminRate,
 
       comHT,
       comTTC,
@@ -394,7 +402,7 @@ export default function Finances() {
           const nbAlertes = [
             d.contrat_signe && d.date_signature_contrat && d.frais_statut !== 'regle' && alertes48h(d.date_signature_contrat),
             ...c.devisAcceptes.map(dv => dv.date_signature && alertes7j(dv.date_signature) && getSuivi(d, 'acompte_artisan', dv.artisan_id)?.statut_client !== 'regle'),
-            d.date_fin_chantier && d.typologie === 'amo' && alertes48h(d.date_fin_chantier) && getSuivi(d, 'honoraires_illico')?.statut_client !== 'regle',
+            d.date_fin_chantier && d.typologie === 'amo' && alertes48h(d.date_fin_chantier) && getSuivi(d, 'solde_amo')?.statut_client !== 'regle',
           ].filter(Boolean).length
           const headerRight = showBadge ? null : (isMarine ? c.totalEncaissement : c.gainsAgentePrevi)
           return (
@@ -456,7 +464,7 @@ export default function Finances() {
                     <div className="border border-gray-100 rounded-lg p-3 space-y-2">
                       <p className="text-xs font-medium text-gray-600 uppercase mb-1">Honoraires client</p>
                       <div className="bg-gray-50 rounded p-2 text-xs space-y-1">
-                        <div className="flex justify-between"><span className="font-medium text-gray-600">Courtage (6%)</span><span className="font-medium">{c.honorairesCourtage.toFixed(2)} €</span></div>
+                        <div className="flex justify-between"><span className="font-medium text-gray-600">Courtage ({c.tauxCourtagePct}%)</span><span className="font-medium">{c.honorairesCourtage.toFixed(2)} €</span></div>
                         <div className="flex justify-between"><span className="text-red-400">Royalties illiCO (5%)</span><span className="text-red-400">- {c.royaltiesCourtage.toFixed(2)} €</span></div>
                         <div className="flex justify-between border-t border-gray-200 pt-1"><span className="text-gray-400">Net courtage</span><span className="font-medium">{c.honorairesCourtageNet.toFixed(2)} €</span></div>
                         <select value={getSuivi(d, 'honoraires_courtage')?.statut_client || 'en_attente'}
@@ -469,7 +477,7 @@ export default function Finances() {
                       </div>
                       {d.typologie === 'amo' && (
                         <div className="bg-blue-50 rounded p-2 text-xs space-y-1">
-                          <div className="flex justify-between"><span className="font-medium text-blue-700">AMO solde ({d.honoraires_amo_taux || 9}%)</span><span className="font-medium text-blue-800">{c.honorairesAMOSolde.toFixed(2)} €</span></div>
+                          <div className="flex justify-between"><span className="font-medium text-blue-700">AMO solde ({c.tauxAmoPct}%)</span><span className="font-medium text-blue-800">{c.honorairesAMOSolde.toFixed(2)} €</span></div>
                           <div className="flex justify-between"><span className="text-red-400">Royalties illiCO (5%)</span><span className="text-red-400">- {c.royaltiesAMO.toFixed(2)} €</span></div>
                           <div className="flex justify-between border-t border-blue-200 pt-1"><span className="text-blue-500">Net AMO</span><span className="font-medium text-blue-700">{c.honorairesAMONet.toFixed(2)} €</span></div>
                           <select value={getSuivi(d, 'solde_amo')?.statut_client || 'en_attente'}

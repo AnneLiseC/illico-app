@@ -383,15 +383,15 @@ export function calculateDossierFinance(dossier) {
   const apporteur = calculateApporteurFinance(dossier)
 
   const royalties = {
-    com: round2(commissions.royaltiesCom),
+    com: round2(commissions.royaltiesCom), // informatif uniquement, pas dans le net CTP
     frais: round2(frais.royaltiesFrais),
     courtage: round2(honoraires.courtage.royalties),
     amo: round2(honoraires.amo.royaltiesTotal),
   }
 
+  // Royalties réellement supportées dans le flux CTP
   const royaltiesTotal = round2(
-    royalties.com +
-      royalties.frais +
+    royalties.frais +
       royalties.courtage +
       royalties.amo
   )
