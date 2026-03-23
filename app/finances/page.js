@@ -402,7 +402,7 @@ export default function Finances() {
   )
 
   // ── ACCORDÉON ──
-fin  const renderAccordeon = (listeDossiers, showBadge = false) => {
+  const renderAccordeon = (listeDossiers, showBadge = false) => {
     const showParts = showBadge || !isMarine
     return (
       <div className="space-y-2">
