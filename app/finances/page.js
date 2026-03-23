@@ -2,8 +2,28 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
-
+import { calculateApporteurFinance, calculateCommissionsFinance,calculateDevisFinance,calculateDossierFinance,calculateFinancesForDossiers,calculateFraisFinance,calculateHonorairesFinance } from '../lib/finance'
 const MOIS = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+const round2 = (n) => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100
+const splitAmount = (amount, partAgente) => {
+  const agente = round2((amount || 0) * (partAgente || 0))
+  const admin = round2((amount || 0) - agente)
+  return { agente, admin }
+}
+const normalizeApporteurMode = (mode) => {
+  if (mode === 'total_chantier') return 'total_chantier_ht'
+  return mode || 'par_devis'
+}
+const normalizeDossierForFinance = (d) => ({
+  ...d,
+  taux_amo: d?.taux_amo ?? d?.honoraires_amo_taux,
+  client: d?.client
+    ? {
+        ...d.client,
+        apporteur_mode: normalizeApporteurMode(d.client?.apporteur_mode || d.client?.apporteur_base),
+      }
+    : null,
+})
 
 export default function Finances() {
   const [profile, setProfile] = useState(null)
@@ -23,7 +43,7 @@ export default function Finances() {
     const { data: dossiersData } = await supabase
       .from('dossiers')
       .select(`*, referente:profiles(id, prenom, nom, role),
-        client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
+        client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base, apporteur_mode),
         devis_artisans(*, artisan:artisans(id, entreprise)),
         suivi_financier(*)`)
       .order('created_at', { ascending: false })
@@ -60,78 +80,158 @@ export default function Finances() {
 
   // ── CALCULER ──
   const calculer = (d) => {
+    const normalized = normalizeDossierForFinance(d)
+    const finance = calculateDossierFinance(normalized)
+
     const estChantierMarine = d.referente?.role === 'admin'
     const devisActifs = (d.devis_artisans || []).filter(dv => dv.statut !== 'refuse')
     const devisAcceptes = devisActifs.filter(dv => dv.statut === 'accepte')
-    let comHT = 0, comTTC = 0, royaltiesCom = 0, net = 0, partAgente = 0, partAdmin = 0
-    let apporteurTTC = 0, apporteurPartAgente = 0, apporteurPartAdmin = 0
-    devisActifs.forEach(dv => {
-      const cHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
-      const cTTC = cHT * 1.2
-      const roy = cHT * 0.05 * 1.2
-      const n = cTTC - roy
-      comHT += cHT; comTTC += cTTC; royaltiesCom += roy; net += n
-      partAgente += estChantierMarine ? 0 : n * (dv.part_agente || 0.5)
-      partAdmin += estChantierMarine ? n : n * (1 - (dv.part_agente || 0.5))
-      if (d.client?.apporteur_affaires && d.client?.apporteur_base === 'par_devis') {
-        const appTTC = (dv.montant_ht || 0) * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2
-        apporteurTTC += appTTC
-        apporteurPartAgente += estChantierMarine ? 0 : appTTC * (dv.part_agente || 0.5)
-        apporteurPartAdmin += estChantierMarine ? appTTC : appTTC * (1 - (dv.part_agente || 0.5))
-      }
-    })
-    if (d.client?.apporteur_affaires && d.client?.apporteur_base === 'total_chantier') {
-      const totalHT = devisActifs.reduce((s, dv) => s + (dv.montant_ht || 0), 0)
-      apporteurTTC = totalHT * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2
-      const ref = estChantierMarine ? 0 : (devisActifs[0]?.part_agente || 0.5)
-      apporteurPartAgente = apporteurTTC * ref
-      apporteurPartAdmin = apporteurTTC * (1 - ref)
-    }
-    const fraisTTC = parseFloat(d.frais_consultation || 0)
-    const fraisHT = fraisTTC / 1.2
-    const fraisRoyalties = fraisHT * 0.05 * 1.2
-    const fraisNet = fraisTTC - fraisRoyalties
-    const fraisPartAgente = estChantierMarine ? 0 : fraisNet
-    const fraisPartAdmin = estChantierMarine ? fraisNet : 0
-    const devisSignes = (d.devis_artisans || []).filter(dv => dv.statut === 'accepte' && dv.date_signature && dv.montant_ttc)
-    const totalTTCSignes = devisSignes.reduce((s, dv) => s + (dv.montant_ttc || 0), 0)
-    const honorairesCourtage = ['courtage', 'amo'].includes(d.typologie) ? totalTTCSignes * 0.06 : 0
-    const honorairesAMOSolde = d.typologie === 'amo' ? totalTTCSignes * ((d.honoraires_amo_taux || 9) / 100) : 0
-    const honorairesTotalTTC = honorairesCourtage + honorairesAMOSolde
-    const royaltiesCourtage = honorairesCourtage * 0.05 * 1.2
-    const royaltiesAMO = honorairesAMOSolde * 0.05 * 1.2
-    const sommeRoyalties = royaltiesCom + fraisRoyalties + royaltiesCourtage + royaltiesAMO
-    const honorairesCourtageNet = honorairesCourtage - royaltiesCourtage
-    const honorairesAMONet = honorairesAMOSolde - royaltiesAMO
-    const honorairesTotalNet = honorairesCourtageNet + honorairesAMONet
-    const partAgenteRef = estChantierMarine ? 0 : (devisActifs[0]?.part_agente || 0.5)
-    const partAgenteHonoraires = honorairesTotalNet * partAgenteRef
-    const partAdminHonoraires = honorairesTotalNet * (1 - partAgenteRef)
-    const totalEncaissement = fraisTTC + honorairesTotalTTC + comTTC - sommeRoyalties
+    const devisParId = new Map((d.devis_artisans || []).map(dv => [dv.id, dv]))
+    const apporteurParDevis = new Map((finance.apporteur?.lines || []).map(line => [line.devisId, line]))
+
+    const partAgenteRate = finance.settings.partAgente
+    const partAdminRate = finance.settings.partAdmin
+
+    const comHT = round2(finance.commissions.comHT)
+    const comTTC = round2(finance.commissions.comTTC)
+    const royaltiesCom = round2(finance.commissions.royaltiesCom)
+    const net = round2(finance.commissions.netCom)
+    const partAgente = round2(finance.commissions.gainsBruts.agente)
+    const partAdmin = round2(finance.commissions.gainsBruts.admin)
+
+    const fraisHT = round2(finance.frais.fraisHT)
+    const fraisTTC = round2(finance.frais.fraisTTC)
+    const fraisRoyalties = round2(finance.frais.royaltiesFrais)
+    const fraisNet = round2(finance.frais.netFrais)
+    const fraisPartAgente = round2(finance.frais.gainsBruts.agente)
+    const fraisPartAdmin = round2(finance.frais.gainsBruts.admin)
+
+    const honorairesCourtage = round2(finance.honoraires.courtage.ttc)
+    const honorairesAMOSolde = round2(finance.honoraires.amo.soldeTTC)
+    const honorairesTotalTTC = round2(finance.honoraires.totalTTC)
+
+    const royaltiesCourtage = round2(finance.honoraires.courtage.royalties)
+    const royaltiesAMO = round2(finance.honoraires.amo.royaltiesSolde)
+
+    const sommeRoyalties = round2(
+      royaltiesCom +
+      fraisRoyalties +
+      royaltiesCourtage +
+      royaltiesAMO
+    )
+
+    const honorairesCourtageNet = round2(finance.honoraires.courtage.net)
+    const honorairesAMONet = round2(
+      finance.honoraires.amo.soldeTTC - finance.honoraires.amo.royaltiesSolde
+    )
+    const honorairesTotalNet = round2(honorairesCourtageNet + honorairesAMONet)
+
+    const partAgenteHonoraires = round2(finance.honoraires.gainsBruts.agente)
+    const partAdminHonoraires = round2(finance.honoraires.gainsBruts.admin)
+
+    const partAgenteCourtage = round2(splitAmount(honorairesCourtageNet, partAgenteRate).agente)
+    const partAgenteAMO = round2(splitAmount(honorairesAMONet, partAgenteRate).agente)
+
+    const apporteurTTC = round2(finance.apporteur.totalTTC)
+    const apporteurPartAgente = round2(finance.apporteur.parts.agente)
+    const apporteurPartAdmin = round2(finance.apporteur.parts.admin)
+
+    const totalEncaissement = round2(
+      finance.encaissements.brutCTP - sommeRoyalties
+    )
+
+    const commissionsSignees = finance.commissions.devis
+      .filter(item => item.signed)
+      .map(item => {
+        const original = devisParId.get(item.id)
+        const apporteurLine = finance.apporteur.mode === 'par_devis'
+          ? apporteurParDevis.get(item.id)
+          : null
+
+        const apporteurAgente = round2(apporteurLine?.agente || 0)
+
+        return {
+          ...item,
+          artisan_id: original?.artisan_id,
+          artisan: original?.artisan,
+          date_signature: original?.date_signature,
+          apporteurAgente,
+          netAgente: round2(item.gainsBruts.agente - apporteurAgente),
+        }
+      })
+
     let gainsAgenteReels = 0
-    devisAcceptes.filter(dv => dv.date_signature).forEach(dv => {
-      const cHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
-      const n = cHT * 1.2 - cHT * 0.05 * 1.2
-      const pAgente = estChantierMarine ? 0 : n * (dv.part_agente || 0.5)
-      let appAgente = 0
-      if (d.client?.apporteur_affaires && d.client?.apporteur_base === 'par_devis') {
-        const appTTC = (dv.montant_ht || 0) * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2
-        appAgente = estChantierMarine ? 0 : appTTC * (dv.part_agente || 0.5)
+
+    if (!estChantierMarine) {
+      gainsAgenteReels += commissionsSignees.reduce((s, item) => s + item.netAgente, 0)
+
+      if (finance.apporteur.mode === 'total_chantier_ht' && apporteurPartAgente > 0) {
+        gainsAgenteReels -= apporteurPartAgente
       }
-      gainsAgenteReels += pAgente - appAgente
-    })
-    if (d.frais_statut === 'regle') gainsAgenteReels += fraisPartAgente
+
+      if (d.frais_statut === 'regle') {
+        gainsAgenteReels += fraisPartAgente
+      }
+
+      if (getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle') {
+        gainsAgenteReels += partAgenteCourtage
+      }
+
+      if (d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle') {
+        gainsAgenteReels += partAgenteAMO
+      }
+    }
+
+    gainsAgenteReels = round2(gainsAgenteReels)
+
     return {
-      comHT, comTTC, royalties: royaltiesCom, net, partAgente, partAdmin,
-      apporteurTTC, apporteurPartAgente, apporteurPartAdmin,
-      fraisHT, fraisTTC, fraisRoyalties, fraisNet, fraisPartAgente, fraisPartAdmin,
-      honorairesCourtage, honorairesAMOSolde, honorairesTotalTTC,
-      royaltiesCourtage, royaltiesAMO, sommeRoyalties,
-      honorairesCourtageNet, honorairesAMONet, honorairesTotalNet,
-      partAgenteHonoraires, partAdminHonoraires, totalEncaissement,
-      gainsAgentePrevi: partAgente - apporteurPartAgente + fraisPartAgente + partAgenteHonoraires,
-      netAdminPrevi: partAdmin - apporteurPartAdmin + fraisPartAdmin + partAdminHonoraires,
-      gainsAgenteReels, estChantierMarine, devisActifs, devisAcceptes,
+      finance,
+      estChantierMarine,
+      devisActifs,
+      devisAcceptes,
+      commissionsSignees,
+
+      tauxCourtagePct: round2(finance.settings.tauxCourtage * 100),
+      tauxAmoPct: round2(finance.settings.tauxAmo * 100),
+      partAgenteRate,
+      partAdminRate,
+
+      comHT,
+      comTTC,
+      royalties: royaltiesCom,
+      net,
+      partAgente,
+      partAdmin,
+
+      apporteurTTC,
+      apporteurPartAgente,
+      apporteurPartAdmin,
+
+      fraisHT,
+      fraisTTC,
+      fraisRoyalties,
+      fraisNet,
+      fraisPartAgente,
+      fraisPartAdmin,
+
+      honorairesCourtage,
+      honorairesAMOSolde,
+      honorairesTotalTTC,
+      royaltiesCourtage,
+      royaltiesAMO,
+      sommeRoyalties,
+      honorairesCourtageNet,
+      honorairesAMONet,
+      honorairesTotalNet,
+      partAgenteHonoraires,
+      partAdminHonoraires,
+      partAgenteCourtage,
+      partAgenteAMO,
+
+      totalEncaissement,
+      gainsAgentePrevi: round2(finance.gains.nets.agente),
+      netAdminPrevi: round2(finance.gains.nets.admin),
+      gainsAgenteReels,
     }
   }
 
@@ -1146,21 +1246,31 @@ export default function Finances() {
         const c = calculer(d)
         const items = []
         if (d.frais_statut === 'regle' && c.fraisPartAgente > 0) items.push({ label: 'Frais de consultation', montant: c.fraisPartAgente, type: 'frais' })
-        c.devisAcceptes.filter(dv => dv.date_signature).forEach(dv => {
-          const cHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
-          const n = cHT * 1.2 - cHT * 0.05 * 1.2
-          const pAgente = n * (dv.part_agente || 0.5)
-          const appAgente = d.client?.apporteur_affaires && d.client?.apporteur_base === 'par_devis'
-            ? (dv.montant_ht || 0) * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2 * (dv.part_agente || 0.5) : 0
-          if (pAgente > 0) items.push({ label: `Commission ${dv.artisan?.entreprise}`, montant: pAgente - appAgente, type: 'commission', date: dv.date_signature })
+        c.commissionsSignees.forEach(item => {
+          if (item.netAgente > 0) {
+            items.push({
+              label: `Commission ${item.artisan?.entreprise || 'Artisan'}`,
+              montant: item.netAgente,
+              type: 'commission',
+              date: item.date_signature,
+            })
+          }
         })
-        if (c.partAgenteHonoraires > 0) {
-          const suiviCourtage = getSuivi(d, 'honoraires_courtage')
-          const suiviSoldeAMO = getSuivi(d, 'solde_amo')
-          if (suiviCourtage?.statut_client === 'regle' && c.honorairesCourtageNet > 0)
-            items.push({ label: 'Honoraires courtage (ma part)', montant: c.partAgenteHonoraires * (c.honorairesCourtageNet / (c.honorairesTotalNet || 1)), type: 'honoraire' })
-          if (suiviSoldeAMO?.statut_client === 'regle' && c.honorairesAMONet > 0)
-            items.push({ label: 'Honoraires AMO solde (ma part)', montant: c.partAgenteHonoraires * (c.honorairesAMONet / (c.honorairesTotalNet || 1)), type: 'honoraire' })
+
+        if (getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle' && c.partAgenteCourtage > 0) {
+          items.push({
+            label: 'Honoraires courtage (ma part)',
+            montant: c.partAgenteCourtage,
+            type: 'honoraire',
+          })
+        }
+
+        if (d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle' && c.partAgenteAMO > 0) {
+          items.push({
+            label: 'Honoraires AMO solde (ma part)',
+            montant: c.partAgenteAMO,
+            type: 'honoraire',
+          })
         }
         if (items.length === 0) return null
         return (
