@@ -656,7 +656,7 @@ export default function FicheChantier({ params }) {
                   </div>
                   {!estChantierMarine && (
                     <div className="flex justify-between">
-                      <span className="text-xs text-blue-500">Part Anne-Lise</span>
+                      <span className="text-xs text-blue-500">Part {dossier.referente?.prenom || 'Agente'}</span>
                       <span className="font-medium text-blue-700">{frais.partAL.toFixed(2)} €</span>
                     </div>
                   )}
@@ -874,7 +874,7 @@ export default function FicheChantier({ params }) {
                           </div>
                           {/* Part AL : toujours visible si chantier AL */}
                           {!estChantierMarine && (
-                            <div className="flex justify-between"><span className="text-blue-500">Anne-Lise</span><span className="font-medium text-blue-700">{partAL.toFixed(2)} €</span></div>
+                            <div className="flex justify-between"><span className="text-blue-500">{dossier.referente?.prenom || 'Agente'}</span><span className="font-medium text-blue-700">{partAL.toFixed(2)} €</span></div>
                           )}
                           {/* Part Marine : visible sauf si c'est Marine qui regarde ses propres chantiers */}
                           {!(isMarine && estChantierMarine) && (
@@ -886,7 +886,7 @@ export default function FicheChantier({ params }) {
                           <div className="bg-orange-50 rounded p-3 space-y-1 text-xs">
                             <p className="font-medium text-orange-700 uppercase mb-1">Apporteur — {client.apporteur_nom} ({client.apporteur_pourcentage}%)</p>
                             <div className="flex justify-between"><span className="text-orange-500">Total TTC</span><span className="font-medium text-orange-600">- {apporteurTTC.toFixed(2)} €</span></div>
-                            {!estChantierMarine && <div className="flex justify-between"><span className="text-orange-400">Anne-Lise</span><span className="font-medium text-orange-500">- {apporteurPartAL.toFixed(2)} €</span></div>}
+                            {!estChantierMarine && <div className="flex justify-between"><span className="text-orange-400">{dossier.referente?.prenom || 'Agente'}</span><span className="font-medium text-orange-500">- {apporteurPartAL.toFixed(2)} €</span></div>}
                             {!(isMarine && estChantierMarine) && (
                               <div className="flex justify-between"><span className="text-orange-400">Marine</span><span className="font-medium text-orange-500">- {apporteurPartMarine.toFixed(2)} €</span></div>
                             )}
@@ -897,7 +897,7 @@ export default function FicheChantier({ params }) {
                           <p className="font-medium text-gray-700 uppercase mb-1">Total gains ce devis</p>
                           {!estChantierMarine && (
                             <div className="flex justify-between">
-                              <span className="text-blue-600 font-medium">Anne-Lise</span>
+                              <span className="text-blue-600 font-medium">{dossier.referente?.prenom || 'Agente'}</span>
                               <span className="font-bold text-blue-700">{(partAL - apporteurPartAL).toFixed(2)} €</span>
                             </div>
                           )}
@@ -1017,7 +1017,7 @@ export default function FicheChantier({ params }) {
                       <span className="text-gray-400">Royalties illiCO com TTC</span>
                       <span className="text-red-500">- {totalRoyalties.toFixed(2)} €</span>
                     </div>
-                    {!estChantierMarine && <div className="flex justify-between"><span className="text-blue-500">Anne-Lise</span><span className="text-blue-700">{totalPartAL.toFixed(2)} €</span></div>}
+                    {!estChantierMarine && <div className="flex justify-between"><span className="text-blue-500">{dossier.referente?.prenom || 'Agente'}</span><span className="text-blue-700">{totalPartAL.toFixed(2)} €</span></div>}
                     <div className="flex justify-between"><span className="text-purple-500">Marine</span><span className="text-purple-700">{totalPartMarine.toFixed(2)} €</span></div>
                   </div>
 
@@ -1028,7 +1028,7 @@ export default function FicheChantier({ params }) {
                         Apporteur — {client.apporteur_nom} ({client.apporteur_pourcentage}% {client.apporteur_base === 'par_devis' ? 'par devis' : 'sur total chantier'})
                       </p>
                       <div className="flex justify-between"><span className="text-orange-500">Total TTC</span><span className="text-orange-600">- {totalApporteurTTC.toFixed(2)} €</span></div>
-                      {!estChantierMarine && <div className="flex justify-between"><span className="text-orange-400">Anne-Lise</span><span className="text-orange-500">- {totalApporteurPartAL.toFixed(2)} €</span></div>}
+                      {!estChantierMarine && <div className="flex justify-between"><span className="text-orange-400">{dossier.referente?.prenom || 'Agente'}</span><span className="text-orange-500">- {totalApporteurPartAL.toFixed(2)} €</span></div>}
                       <div className="flex justify-between"><span className="text-orange-400">Marine</span><span className="text-orange-500">- {totalApporteurPartMarine.toFixed(2)} €</span></div>
                     </div>
                   )}
@@ -1037,7 +1037,7 @@ export default function FicheChantier({ params }) {
                   {honTotal > 0 && (
                     <div className="bg-blue-50 rounded p-3 space-y-1 text-xs">
                       <p className="font-medium text-blue-700 uppercase mb-1">Part honoraires</p>
-                      {!estChantierMarine && <div className="flex justify-between"><span className="text-blue-500">Anne-Lise</span><span className="text-blue-700">{honAL.toFixed(2)} €</span></div>}
+                      {!estChantierMarine && <div className="flex justify-between"><span className="text-blue-500">{dossier.referente?.prenom || 'Agente'}</span><span className="text-blue-700">{honAL.toFixed(2)} €</span></div>}
                       <div className="flex justify-between"><span className="text-purple-500">Marine</span><span className="text-purple-700">{honMarine.toFixed(2)} €</span></div>
                     </div>
                   )}
@@ -1047,7 +1047,7 @@ export default function FicheChantier({ params }) {
                     <p className="font-bold text-gray-700 uppercase mb-1">Total gains</p>
                     {!estChantierMarine && (
                       <div className="flex justify-between">
-                        <span className="text-blue-600 font-bold">Anne-Lise</span>
+                        <span className="text-blue-600 font-bold">{dossier.referente?.prenom || 'Agente'}</span>
                         <span className="font-bold text-blue-700">{totalGainAL.toFixed(2)} €</span>
                       </div>
                     )}

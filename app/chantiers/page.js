@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 export default function Chantiers() {
   const [dossiers, setDossiers] = useState([])
   const [profile, setProfile] = useState(null)
+  const [agentes, setAgentes] = useState([])
   const [loading, setLoading] = useState(true)
   const [recherche, setRecherche] = useState('')
   const [filtreStatut, setFiltreStatut] = useState('tous')
@@ -34,6 +35,14 @@ export default function Chantiers() {
 
       const { data } = await query
       setDossiers(data || [])
+
+      // Charger les agentes dynamiquement (admin seulement)
+      if (profData.role === 'admin') {
+        const { data: agentesData } = await supabase
+          .from('profiles').select('id, prenom, nom').eq('role', 'agente').order('prenom')
+        setAgentes(agentesData || [])
+      }
+
       setLoading(false)
     }
     init()
@@ -60,13 +69,13 @@ export default function Chantiers() {
 
   const isMarine = profile?.role === 'admin'
 
-  // Filtrage par onglet (Marine uniquement)
+  // Filtrage par onglet — dynamique par ID d'agente
   const dossiersFiltresOnglet = dossiers.filter(d => {
     if (!isMarine) return true
     if (onglet === 'tous') return true
     if (onglet === 'moi') return d.referente?.role === 'admin'
-    if (onglet === 'al') return d.referente?.role === 'agente'
-    return true
+    // Onglet agente : clé = ID de l'agente
+    return d.referente?.id === onglet
   })
 
   const dossiersFiltres = dossiersFiltresOnglet.filter(d => {
@@ -84,6 +93,16 @@ export default function Chantiers() {
     const diff = (limite - aujourdhui) / (1000 * 60 * 60 * 24)
     return diff <= 7 && diff >= 0 && d.statut === 'en_cours'
   })
+
+  // Onglets dynamiques : "Mes chantiers" + une tab par agente + "Tous"
+  const ongletsList = isMarine ? [
+    { key: 'moi', label: 'Mes chantiers' },
+    ...agentes.map(a => ({ key: a.id, label: `Chantiers ${a.prenom} ${a.nom}` })),
+    { key: 'tous', label: 'Tous les chantiers' },
+  ] : []
+
+  // Afficher la colonne référente si on est sur "tous" ou un onglet agente
+  const afficherReferente = isMarine && (onglet === 'tous' || agentes.some(a => a.id === onglet))
 
   if (loading) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -104,16 +123,12 @@ export default function Chantiers() {
 
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
 
-        {/* Onglets Marine uniquement */}
+        {/* Onglets Marine uniquement — dynamiques */}
         {isMarine && (
-          <div className="flex gap-2 border-b border-gray-200">
-            {[
-              { key: 'moi', label: 'Mes chantiers' },
-              { key: 'tous', label: 'Tous les chantiers' },
-              { key: 'al', label: 'Chantiers Anne-Lise' },
-            ].map(({ key, label }) => (
+          <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
+            {ongletsList.map(({ key, label }) => (
               <button key={key} onClick={() => setOnglet(key)}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-all ${
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
                   onglet === key ? 'border-blue-800 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}>
                 {label}
@@ -196,7 +211,7 @@ export default function Chantiers() {
                   <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Référence</th>
                   <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Client</th>
                   <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Typologie</th>
-                  {isMarine && onglet === 'tous' && (
+                  {afficherReferente && (
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Référente</th>
                   )}
                   <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Statut</th>
@@ -222,7 +237,7 @@ export default function Chantiers() {
                       <td className="px-6 py-4">
                         <span className="text-xs text-gray-600">{typologieLabel(d.typologie)}</span>
                       </td>
-                      {isMarine && onglet === 'tous' && (
+                      {afficherReferente && (
                         <td className="px-6 py-4 text-sm text-gray-600">
                           {d.referente ? `${d.referente.prenom} ${d.referente.nom}` : '—'}
                         </td>

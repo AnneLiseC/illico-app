@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 export default function Clients() {
   const [clients, setClients] = useState([])
   const [profile, setProfile] = useState(null)
+  const [agentes, setAgentes] = useState([])
   const [loading, setLoading] = useState(true)
   const [recherche, setRecherche] = useState('')
   const [onglet, setOnglet] = useState('moi')
@@ -32,6 +33,14 @@ export default function Clients() {
 
       const { data } = await query
       setClients(data || [])
+
+      // Charger les agentes dynamiquement (admin seulement)
+      if (prof.role === 'admin') {
+        const { data: agentesData } = await supabase
+          .from('profiles').select('id, prenom, nom').eq('role', 'agente').order('prenom')
+        setAgentes(agentesData || [])
+      }
+
       setLoading(false)
     }
     init()
@@ -39,19 +48,29 @@ export default function Clients() {
 
   const isMarine = profile?.role === 'admin'
 
-  // Filtrage par onglet (Marine uniquement)
+  // Filtrage par onglet (Marine uniquement) — dynamique par ID d'agente
   const clientsFiltresOnglet = clients.filter(c => {
     if (!isMarine) return true
     if (onglet === 'tous') return true
     if (onglet === 'moi') return c.referente?.role === 'admin'
-    if (onglet === 'al') return c.referente?.role === 'agente'
-    return true
+    // Onglet dynamique par agente : clé = ID de l'agente
+    return c.referente?.id === onglet
   })
 
   const clientsFiltres = clientsFiltresOnglet.filter(c =>
     `${c.nom} ${c.prenom} ${c.email} ${c.adresse}`.toLowerCase()
       .includes(recherche.toLowerCase())
   )
+
+  // Onglets dynamiques : "Mes clients" + une tab par agente + "Tous"
+  const ongletsList = isMarine ? [
+    { key: 'moi', label: 'Mes clients' },
+    ...agentes.map(a => ({ key: a.id, label: `Clients ${a.prenom} ${a.nom}` })),
+    { key: 'tous', label: 'Tous les clients' },
+  ] : []
+
+  // Afficher la colonne référente si on est sur "tous" ou sur un onglet agente
+  const afficherReferente = isMarine && (onglet === 'tous' || agentes.some(a => a.id === onglet))
 
   if (loading) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -77,17 +96,12 @@ export default function Clients() {
 
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
 
-        {/* Onglets Marine uniquement */}
+        {/* Onglets Marine uniquement — dynamiques */}
         {isMarine && (
-          <div className="flex gap-2 border-b border-gray-200">
-            {[
-              { key: 'moi', label: 'Mes clients' },
-              { key: 'tous', label: 'Tous les clients' },
-              { key: 'al', label: 'Clients Anne-Lise' },
-
-            ].map(({ key, label }) => (
+          <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
+            {ongletsList.map(({ key, label }) => (
               <button key={key} onClick={() => setOnglet(key)}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-all ${
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
                   onglet === key ? 'border-blue-800 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}>
                 {label}
@@ -127,7 +141,7 @@ export default function Clients() {
                   <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Client</th>
                   <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Contact</th>
                   <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Type</th>
-                  {isMarine && onglet === 'tous' && (
+                  {afficherReferente && (
                     <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Référente</th>
                   )}
                   <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Apporteur</th>
@@ -157,7 +171,7 @@ export default function Clients() {
                         {client.type_client === 'professionnel' ? 'Pro' : 'Particulier'}
                       </span>
                     </td>
-                    {isMarine && onglet === 'tous' && (
+                    {afficherReferente && (
                       <td className="px-6 py-4 text-sm text-gray-600">
                         {client.referente ? `${client.referente.prenom} ${client.referente.nom}` : '—'}
                       </td>
