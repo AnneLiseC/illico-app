@@ -1180,9 +1180,9 @@ export default function FicheChantier({ params }) {
               <select value={suiviCourtage?.statut_client || 'en_attente'}
                 onChange={e => majSuiviChantier('honoraires_courtage', honorairesCourtage, 'statut_client', e.target.value)}
                 className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="en_attente">Client : En attente</option>
-                <option value="envoye">Client : Facturé</option>
-                <option value="regle">Client : ✅ Réglé</option>
+                <option value="en_attente">En attente</option>
+                <option value="envoye">Facturé</option>
+                <option value="regle">✅ Réglé</option>
               </select>
             </div>
 
@@ -1190,7 +1190,7 @@ export default function FicheChantier({ params }) {
               <div className="border border-blue-100 rounded-lg p-4 bg-blue-50">
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-sm font-medium text-blue-800">
-                    Honoraires AMO total ({((0.06 + (dossier.honoraires_amo_taux || 9) / 100) * 100).toFixed(0)}%)
+                    Honoraires AMO ({((0.06 + (dossier.honoraires_amo_taux || 9) / 100) * 100).toFixed(0)}%)
                   </p>
                   <span className="text-sm font-bold text-blue-900">{honorairesAMO.toFixed(2)} €</span>
                 </div>
@@ -1201,7 +1201,7 @@ export default function FicheChantier({ params }) {
                 {/* Taux AMO modifiable toujours */}
                 <div className="mb-4 flex items-center gap-3">
                   <label className="text-xs font-medium text-blue-700">Taux AMO (%)</label>
-                  <input type="number" step="0.5" min="0" max="20"
+                  <input type="number" step="0.1" min="5" max="20"
                     value={dossier.honoraires_amo_taux || 9}
                     onChange={async e => {
                       const taux = parseFloat(e.target.value)
