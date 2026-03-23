@@ -66,19 +66,19 @@ export default function Finances() {
       const roy = cHT * 0.05 * 1.2
       const n = cTTC - roy
       comHT += cHT; comTTC += cTTC; royaltiesCom += roy; net += n
-      partAgente += estChantierMarine ? 0 : n * (dv.part_al || 0.5)
-      partMarine += estChantierMarine ? n : n * (1 - (dv.part_al || 0.5))
+      partAgente += estChantierMarine ? 0 : n * (dv.part_agente || 0.5)
+      partMarine += estChantierMarine ? n : n * (1 - (dv.part_agente || 0.5))
       if (d.client?.apporteur_affaires && d.client?.apporteur_base === 'par_devis') {
         const appTTC = (dv.montant_ht || 0) * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2
         apporteurTTC += appTTC
-        apporteurPartAgente += estChantierMarine ? 0 : appTTC * (dv.part_al || 0.5)
-        apporteurPartMarine += estChantierMarine ? appTTC : appTTC * (1 - (dv.part_al || 0.5))
+        apporteurPartAgente += estChantierMarine ? 0 : appTTC * (dv.part_agente || 0.5)
+        apporteurPartMarine += estChantierMarine ? appTTC : appTTC * (1 - (dv.part_agente || 0.5))
       }
     })
     if (d.client?.apporteur_affaires && d.client?.apporteur_base === 'total_chantier') {
       const totalHT = devisActifs.reduce((s, dv) => s + (dv.montant_ht || 0), 0)
       apporteurTTC = totalHT * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2
-      const ref = estChantierMarine ? 0 : (devisActifs[0]?.part_al || 0.5)
+      const ref = estChantierMarine ? 0 : (devisActifs[0]?.part_agente || 0.5)
       apporteurPartAgente = apporteurTTC * ref
       apporteurPartMarine = apporteurTTC * (1 - ref)
     }
@@ -99,7 +99,7 @@ export default function Finances() {
     const honorairesCourtageNet = honorairesCourtage - royaltiesCourtage
     const honorairesAMONet = honorairesAMOSolde - royaltiesAMO
     const honorairesTotalNet = honorairesCourtageNet + honorairesAMONet
-    const partAgenteRef = estChantierMarine ? 0 : (devisActifs[0]?.part_al || 0.5)
+    const partAgenteRef = estChantierMarine ? 0 : (devisActifs[0]?.part_agente || 0.5)
     const partAgenteHonoraires = honorairesTotalNet * partAgenteRef
     const partMarineHonoraires = honorairesTotalNet * (1 - partAgenteRef)
     const totalEncaissement = fraisTTC + honorairesTotalTTC + comTTC - sommeRoyalties
@@ -107,13 +107,13 @@ export default function Finances() {
     devisAcceptes.filter(dv => dv.date_signature).forEach(dv => {
       const cHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
       const n = cHT * 1.2 - cHT * 0.05 * 1.2
-      const pAL = estChantierMarine ? 0 : n * (dv.part_al || 0.5)
-      let appAL = 0
+      const pAgente = estChantierMarine ? 0 : n * (dv.part_agente || 0.5)
+      let appAgente = 0
       if (d.client?.apporteur_affaires && d.client?.apporteur_base === 'par_devis') {
         const appTTC = (dv.montant_ht || 0) * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2
-        appAL = estChantierMarine ? 0 : appTTC * (dv.part_al || 0.5)
+        appAgente = estChantierMarine ? 0 : appTTC * (dv.part_agente || 0.5)
       }
-      gainsAgenteReels += pAL - appAL
+      gainsAgenteReels += pAgente - appAgente
     })
     if (d.frais_statut === 'regle') gainsAgenteReels += fraisPartAgente
     return {
@@ -453,7 +453,7 @@ export default function Finances() {
                         <span className="text-orange-600">Total : {c.apporteurTTC.toFixed(2)} € TTC</span>
                         {!c.estChantierMarine && <span className="text-blue-600">Part agente : {c.apporteurPartAgente.toFixed(2)} €</span>}
                         {!c.estChantierMarine && (
-                          <select value={getSuivi(d, 'apporteur_al')?.statut_ctp || 'en_attente'} onChange={e => majSuivi(d.id, 'apporteur_al', null, 'statut_ctp', e.target.value)} className="border border-orange-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white">
+                          <select value={getSuivi(d, 'apporteur_agente')?.statut_ctp || 'en_attente'} onChange={e => majSuivi(d.id, 'apporteur_agente', null, 'statut_ctp', e.target.value)} className="border border-orange-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white">
                             <option value="en_attente">Agente → CTP : En attente</option>
                             <option value="rembourse">Agente → CTP : ✅ Remboursé</option>
                           </select>
@@ -872,7 +872,7 @@ export default function Finances() {
                 <p className="text-xs font-medium text-gray-600 pt-2">Remboursements apporteur</p>
                 {listeDossiers.filter(d => calculer(d).apporteurPartAgente > 0).map(d => {
                   const c = calculer(d)
-                  const suivi = getSuivi(d, 'apporteur_al')
+                  const suivi = getSuivi(d, 'apporteur_agente')
                   return (
                     <div key={d.id} className="flex items-center justify-between py-1 border-b border-purple-100">
                       <p className="text-sm text-gray-700">{d.reference} — {d.client?.apporteur_nom}</p>
@@ -1144,10 +1144,10 @@ export default function Finances() {
         c.devisAcceptes.filter(dv => dv.date_signature).forEach(dv => {
           const cHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
           const n = cHT * 1.2 - cHT * 0.05 * 1.2
-          const pAL = n * (dv.part_al || 0.5)
-          const appAL = d.client?.apporteur_affaires && d.client?.apporteur_base === 'par_devis'
-            ? (dv.montant_ht || 0) * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2 * (dv.part_al || 0.5) : 0
-          if (pAL > 0) items.push({ label: `Commission ${dv.artisan?.entreprise}`, montant: pAL - appAL, type: 'commission', date: dv.date_signature })
+          const pAgente = n * (dv.part_agente || 0.5)
+          const appAgente = d.client?.apporteur_affaires && d.client?.apporteur_base === 'par_devis'
+            ? (dv.montant_ht || 0) * ((d.client.apporteur_pourcentage || 0) / 100) * 1.2 * (dv.part_agente || 0.5) : 0
+          if (pAgente > 0) items.push({ label: `Commission ${dv.artisan?.entreprise}`, montant: pAgente - appAgente, type: 'commission', date: dv.date_signature })
         })
         if (c.partAgenteHonoraires > 0) {
           const suiviCourtage = getSuivi(d, 'honoraires_courtage')

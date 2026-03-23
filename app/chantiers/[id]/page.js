@@ -42,7 +42,7 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
     montant_ht: devis.montant_ht || '',
     montant_ttc: devis.montant_ttc || '',
     commission_pourcentage: devis.commission_pourcentage ? (devis.commission_pourcentage * 100).toFixed(1) : '',
-    part_al: isMarine ? '0' : (devis.part_al || '0.5'),
+    part_agente: isMarine ? '0' : (devis.part_agente || '0.5'),
     date_reception: devis.date_reception || '',
     date_limite: devis.date_limite || '',
   })
@@ -71,7 +71,7 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
         {!isMarine && (
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Répartition</label>
-            <select value={form.part_al} onChange={e => set('part_al', e.target.value)}
+            <select value={form.part_agente} onChange={e => set('part_agente', e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="0.5">50 / 50</option>
               <option value="0.6">60 / 40</option>
@@ -127,7 +127,7 @@ export default function FicheChantier({ params }) {
   const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '' })
   const [fichesTechChantier, setFichesTechChantier] = useState({})
   const [fichesPanelOuvert, setFichesPanelOuvert] = useState(null)
-  const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', part_al: '0.5', date_reception: '', date_limite: '', fichier: null })
+  const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', part_agente: '0.5', date_reception: '', date_limite: '', fichier: null })
   const [suiviFinancier, setSuiviFinancier] = useState([])
   const router = useRouter()
 
@@ -302,13 +302,13 @@ export default function FicheChantier({ params }) {
     const royalties = (comHT * 0.05) * 1.2          // 5% sur Commissions HT × 1.2
     const royaltiesArtisan = (d.montant_ht || 0) * 0.05 * 1.2  // 5% sur montant devis HT × 1.2
     const net = comTTC - royalties
-    const partAgente = estChantierMarine ? 0 : net * (d.part_al || 0.5)
-    const partMarine = estChantierMarine ? net : net * (1 - (d.part_al || 0.5))
+    const partAgente = estChantierMarine ? 0 : net * (d.part_agente || 0.5)
+    const partMarine = estChantierMarine ? net : net * (1 - (d.part_agente || 0.5))
     let apporteurTTC = 0, apporteurPartAgente = 0, apporteurPartMarine = 0
     if (client?.apporteur_affaires && client?.apporteur_base === 'par_devis') {
       apporteurTTC = (d.montant_ht || 0) * (client.apporteur_pourcentage / 100) * 1.2
-      apporteurPartAgente = estChantierMarine ? 0 : apporteurTTC * (d.part_al || 0.5)
-      apporteurPartMarine = estChantierMarine ? apporteurTTC : apporteurTTC * (1 - (d.part_al || 0.5))
+      apporteurPartAgente = estChantierMarine ? 0 : apporteurTTC * (d.part_agente || 0.5)
+      apporteurPartMarine = estChantierMarine ? apporteurTTC : apporteurTTC * (1 - (d.part_agente || 0.5))
     }
     return { comHT, comTTC, royalties, royaltiesArtisan, net, partAgente, partMarine, apporteurTTC, apporteurPartAgente, apporteurPartMarine }
   }
@@ -342,13 +342,13 @@ export default function FicheChantier({ params }) {
   const sauvegarderDevis = async () => {
     if (!nouveauDevis.artisan_id) return
     setSavingDevis(true)
-    const partAgente = estChantierMarine ? 0 : parseFloat(nouveauDevis.part_al)
+    const partAgente = estChantierMarine ? 0 : parseFloat(nouveauDevis.part_agente)
     const { data: devisInsere, error } = await supabase.from('devis_artisans').insert({
       dossier_id: id, artisan_id: nouveauDevis.artisan_id,
       montant_ht: nouveauDevis.montant_ht ? parseFloat(nouveauDevis.montant_ht) : null,
       montant_ttc: nouveauDevis.montant_ttc ? parseFloat(nouveauDevis.montant_ttc) : null,
       commission_pourcentage: nouveauDevis.commission_pourcentage ? parseFloat(nouveauDevis.commission_pourcentage) / 100 : null,
-      part_al: partAgente, date_reception: nouveauDevis.date_reception || null, date_limite: nouveauDevis.date_limite || null,
+      part_agente: partAgente, date_reception: nouveauDevis.date_reception || null, date_limite: nouveauDevis.date_limite || null,
       statut: nouveauDevis.date_reception ? 'recu' : 'en_attente',
     }).select()
     if (!error && nouveauDevis.fichier && devisInsere?.[0]) {
@@ -358,19 +358,19 @@ export default function FicheChantier({ params }) {
     if (!error) {
       await chargerDevis()
       setAjouterDevis(false)
-      setNouveauDevis({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', part_al: '0.5', date_reception: '', date_limite: '', fichier: null })
+      setNouveauDevis({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', part_agente: '0.5', date_reception: '', date_limite: '', fichier: null })
       setSucces('Devis ajouté ✓')
     } else { setErreur('Erreur : ' + error.message) }
     setSavingDevis(false)
   }
 
   const modifierDevis = async (devisId, updates) => {
-    const partAgente = estChantierMarine ? 0 : parseFloat(updates.part_al)
+    const partAgente = estChantierMarine ? 0 : parseFloat(updates.part_agente)
     await supabase.from('devis_artisans').update({
       montant_ht: updates.montant_ht ? parseFloat(updates.montant_ht) : null,
       montant_ttc: updates.montant_ttc ? parseFloat(updates.montant_ttc) : null,
       commission_pourcentage: updates.commission_pourcentage ? parseFloat(updates.commission_pourcentage) / 100 : null,
-      part_al: partAgente, date_reception: updates.date_reception || null, date_limite: updates.date_limite || null,
+      part_agente: partAgente, date_reception: updates.date_reception || null, date_limite: updates.date_limite || null,
     }).eq('id', devisId)
     await chargerDevis()
     setDevisEnEdition(null)
@@ -437,12 +437,12 @@ export default function FicheChantier({ params }) {
   const totalApporteurPartAgente = (() => {
     if (!client?.apporteur_affaires || estChantierMarine) return 0
     if (client.apporteur_base === 'par_devis') return devisActifs.reduce((s, d) => s + calculer(d).apporteurPartAgente, 0)
-    return totalApporteurTTC * (devisActifs[0]?.part_al || 0.5)
+    return totalApporteurTTC * (devisActifs[0]?.part_agente || 0.5)
   })()
   const totalApporteurPartMarine = (() => {
     if (!client?.apporteur_affaires) return 0
     if (client.apporteur_base === 'par_devis') return devisActifs.reduce((s, d) => s + calculer(d).apporteurPartMarine, 0)
-    return totalApporteurTTC * (1 - (estChantierMarine ? 0 : (devisActifs[0]?.part_al || 0.5)))
+    return totalApporteurTTC * (1 - (estChantierMarine ? 0 : (devisActifs[0]?.part_agente || 0.5)))
   })()
 
   const frais = calculerFrais()
@@ -475,7 +475,7 @@ export default function FicheChantier({ params }) {
   const f = fraisStatutConfig[dossier.frais_statut]
 
   // Calcul parts honoraires
-  const partAgenteRef = estChantierMarine ? 0 : (devisActifs[0]?.part_al || 0.5)
+  const partAgenteRef = estChantierMarine ? 0 : (devisActifs[0]?.part_agente || 0.5)
   const honTotal = ['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCSignes > 0
     ? (dossier.typologie === 'amo' ? honorairesAMO : honorairesCourtage) : 0
   const honAgente = honTotal * partAgenteRef
@@ -732,7 +732,7 @@ export default function FicheChantier({ params }) {
                 {!estChantierMarine && (
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">Répartition</label>
-                    <select value={nouveauDevis.part_al} onChange={e => setND('part_al', e.target.value)}
+                    <select value={nouveauDevis.part_agente} onChange={e => setND('part_agente', e.target.value)}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                       <option value="0.5">50 / 50</option>
                       <option value="0.6">60 / 40</option>
@@ -838,7 +838,7 @@ export default function FicheChantier({ params }) {
                       {!estChantierMarine && (
                         <div className="flex justify-between">
                           <span className="text-xs text-gray-400">Répartition</span>
-                          <span className="font-medium">{d.part_al === 0.6 ? '60/40' : '50/50'}</span>
+                          <span className="font-medium">{d.part_agente === 0.6 ? '60/40' : '50/50'}</span>
                         </div>
                       )}
                       {d.date_signature && (

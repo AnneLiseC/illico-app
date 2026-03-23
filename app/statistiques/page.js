@@ -101,8 +101,8 @@ export default function Statistiques() {
       const roy = cHT * 0.05 * 1.2
       const n = cTTC - roy
       comHT += cHT; comTTC += cTTC; royaltiesCom += roy; net += n
-      partAgente += estChantierMarine ? 0 : n * (dv.part_al || 0.5)
-      partMarine += estChantierMarine ? n : n * (1 - (dv.part_al || 0.5))
+      partAgente += estChantierMarine ? 0 : n * (dv.part_agente || 0.5)
+      partMarine += estChantierMarine ? n : n * (1 - (dv.part_agente || 0.5))
     })
     const totalHT = devisActifs.reduce((s, dv) => s + (dv.montant_ht || 0), 0)
     const totalTTCSignes = devisSignes.reduce((s, dv) => s + (dv.montant_ttc || 0), 0)
