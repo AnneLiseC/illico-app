@@ -55,7 +55,7 @@ export default function Finances() {
     const { data: dossiersData } = await supabase
       .from('dossiers')
       .select(`*, referente:profiles(id, prenom, nom, role),
-        client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base, apporteur_mode),
+        client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
         devis_artisans(*, artisan:artisans(id, entreprise)),
         suivi_financier(*)`)
       .order('created_at', { ascending: false })
@@ -306,6 +306,10 @@ export default function Finances() {
   const netAgenteSelectionnee = gainsAgenteReels - redevancesAgenteReglees - apporteurAgenteDu
 
   // Totaux pour l'agente connectée (vue agente)
+  const mesDossiersGainsBruts = mesDossiers.reduce((s, d) => {
+    const c = calculer(d)
+    return s + c.partAgente + c.partAgenteHonoraires + c.fraisPartAgente
+  }, 0)
   const mesDossiersGainsReels = mesDossiers.reduce((s, d) => s + calculer(d).gainsAgenteReels, 0)
   const mesDossiersGainsPrevi = mesDossiers.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
   const mesApporteurDu = mesDossiers.reduce((s, d) => s + calculer(d).apporteurPartAgente, 0)
@@ -601,7 +605,7 @@ export default function Finances() {
                     <div className="space-y-1 text-xs mb-2">
                       {c.fraisTTC > 0 && <div className="flex justify-between"><span className="text-gray-400">Frais consul. TTC</span><span>+ {c.fraisTTC.toFixed(2)} €</span></div>}
                       {c.honorairesTotalTTC > 0 && <div className="flex justify-between"><span className="text-gray-400">Honoraires TTC</span><span>+ {c.honorairesTotalTTC.toFixed(2)} €</span></div>}
-                      <div className="flex justify-between"><span className="text-gray-400">COM TTC</span><span>+ {c.comTTC.toFixed(2)} €</span></div>
+                      <div className="flex justify-between"><span className="text-gray-400">Commissions nettes</span><span>+ {c.net.toFixed(2)} €</span></div>
                       <div className="flex justify-between"><span className="text-red-400">Somme royalties</span><span className="text-red-400">- {c.sommeRoyalties.toFixed(2)} €</span></div>
                       {c.apporteurTTC > 0 && <div className="flex justify-between"><span className="text-orange-500">Apporteur</span><span className="text-orange-500">- {c.apporteurTTC.toFixed(2)} €</span></div>}
                     </div>
@@ -1129,7 +1133,7 @@ export default function Finances() {
         <div className="flex justify-between text-sm"><span className="text-gray-600">Part honoraires (courtage/AMO)</span><span className="font-medium text-green-700">+ {mesDossiers.reduce((s, d) => s + calculer(d).partAgenteHonoraires, 0).toFixed(2)} €</span></div>
         <div className="flex justify-between text-sm"><span className="text-gray-600">Part commissions artisans</span><span className="font-medium text-green-700">+ {mesDossiers.reduce((s, d) => s + calculer(d).partAgente, 0).toFixed(2)} €</span></div>
         <div className="flex justify-between text-sm"><span className="text-gray-600">Part frais de consultation</span><span className="font-medium text-green-700">+ {mesDossiers.reduce((s, d) => s + calculer(d).fraisPartAgente, 0).toFixed(2)} €</span></div>
-        <div className="flex justify-between text-sm border-t border-green-200 pt-2 font-bold"><span>Total prévisionnel</span><span className="text-green-700">+ {mesDossiersGainsPrevi.toFixed(2)} €</span></div>
+        <div className="flex justify-between text-sm border-t border-green-200 pt-2 font-bold"><span>Total brut prévisionnel</span><span className="text-green-700">+ {mesDossiersGainsBruts.toFixed(2)} €</span></div>
       </div>
       <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
         <p className="font-medium text-red-800 mb-3">📤 Mes décaissements</p>
@@ -1151,7 +1155,7 @@ export default function Finances() {
       <div className="p-4 border-b border-gray-100"><p className="font-medium text-gray-800">Détail par chantier — Ma part</p></div>
       <table className="w-full text-sm">
         <thead className="bg-gray-50 border-b border-gray-200">
-          <tr>{thL('Chantier')}{thR('Frais consul. TTC')}{thR('Commission TTC')}{thR('Honoraire TTC')}{thR('Somme royalties')}{thR('Apporteur')}{thR('Ma part')}</tr>
+          <tr>{thL('Chantier')}{thR('Frais consul. (ma part)')}{thR('Commissions (ma part)')}{thR('Honoraires (ma part)')}{thR('Apporteur')}{thR('Ma part')}</tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {mesDossiers.map(d => {
@@ -1163,8 +1167,7 @@ export default function Finances() {
                   <p className="font-medium text-blue-900">{d.reference}</p>
                   <p className="text-xs text-gray-400">{d.client?.prenom} {d.client?.nom}</p>
                 </td>
-                {tdR(fmt(c.fraisTTC))}{tdR(fmt(c.comTTC))}{tdR(fmt(c.honorairesTotalTTC))}
-                <td className="px-3 py-3 text-right text-red-400">- {c.sommeRoyalties.toFixed(2)} €</td>
+                {tdR(fmt(c.fraisPartAgente))}{tdR(fmt(c.partAgente))}{tdR(fmt(c.partAgenteHonoraires))}
                 <td className="px-3 py-3 text-right text-orange-500">{c.apporteurPartAgente > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
                 {tdTotal(c.gainsAgentePrevi)}
               </tr>
@@ -1174,10 +1177,9 @@ export default function Finances() {
         <tfoot className="bg-gray-50 border-t border-gray-200">
           <tr>
             <td className="px-3 py-3 font-medium">Total</td>
-            {tdR(fmt(mesDossiers.reduce((s, d) => s + calculer(d).fraisTTC, 0)))}
-            {tdR(fmt(mesDossiers.reduce((s, d) => s + calculer(d).comTTC, 0)))}
-            {tdR(fmt(mesDossiers.reduce((s, d) => s + calculer(d).honorairesTotalTTC, 0)))}
-            <td className="px-3 py-3 text-right text-red-400">- {fmt(mesDossiers.reduce((s, d) => s + calculer(d).sommeRoyalties, 0))}</td>
+            {tdR(fmt(mesDossiers.reduce((s, d) => s + calculer(d).fraisPartAgente, 0)))}
+            {tdR(fmt(mesDossiers.reduce((s, d) => s + calculer(d).partAgente, 0)))}
+            {tdR(fmt(mesDossiers.reduce((s, d) => s + calculer(d).partAgenteHonoraires, 0)))}
             <td className="px-3 py-3 text-right text-orange-500">- {fmt(mesApporteurDu)}</td>
             {tdTotal(mesDossiersGainsPrevi)}
           </tr>
@@ -1194,7 +1196,7 @@ export default function Finances() {
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>{thL('Mois')}{thR('Frais consul. TTC')}{thR('Commission TTC')}{thR('Honoraire TTC')}{thR('Redevance')}{thR('Somme royalties')}{thR('Apporteur')}{thR('Total')}</tr>
+            <tr>{thL('Mois')}{thR('Frais consul. (ma part)')}{thR('Commissions (ma part)')}{thR('Honoraires (ma part)')}{thR('Apporteur')}{thR('Redevance CTP')}{thR('Total')}</tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {cles.map(key => {
@@ -1205,10 +1207,9 @@ export default function Finances() {
               return (
                 <tr key={key} className="hover:bg-gray-50">
                   <td className="px-3 py-3 font-medium">{MOIS[parseInt(mois)]} {annee}</td>
-                  {tdR(fmt(c.fraisTTC))}{tdR(fmt(c.comTTC))}{tdR(fmt(c.honorairesTotalTTC))}
-                  <td className="px-3 py-3 text-right text-red-400">{redevMontant > 0 ? `- ${redevMontant.toFixed(2)} €` : '—'}</td>
-                  <td className="px-3 py-3 text-right text-red-400">- {(c.sommeRoyalties || 0).toFixed(2)} €</td>
+                  {tdR(fmt(c.fraisPartAgente))}{tdR(fmt(c.partAgente))}{tdR(fmt(c.partAgenteHonoraires))}
                   <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurPartAgente || 0) > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
+                  <td className="px-3 py-3 text-right text-red-400">{redevMontant > 0 ? `- ${redevMontant.toFixed(2)} €` : '—'}</td>
                   {tdTotal(total)}
                 </tr>
               )
@@ -1227,7 +1228,7 @@ export default function Finances() {
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>{thL('Année')}{thR('Frais consul. TTC')}{thR('Commission TTC')}{thR('Honoraire TTC')}{thR('Redevance')}{thR('Somme royalties')}{thR('Apporteur')}{thR('Total')}</tr>
+            <tr>{thL('Année')}{thR('Frais consul. (ma part)')}{thR('Commissions (ma part)')}{thR('Honoraires (ma part)')}{thR('Apporteur')}{thR('Redevance CTP')}{thR('Total')}</tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {annees.map(annee => {
@@ -1237,10 +1238,9 @@ export default function Finances() {
               return (
                 <tr key={annee} className="hover:bg-gray-50">
                   <td className="px-3 py-3 font-bold text-gray-800">{annee}</td>
-                  {tdR(fmt(c.fraisTTC))}{tdR(fmt(c.comTTC))}{tdR(fmt(c.honorairesTotalTTC))}
-                  <td className="px-3 py-3 text-right text-red-400">- {redevAnnee.toFixed(2)} €</td>
-                  <td className="px-3 py-3 text-right text-red-400">- {(c.sommeRoyalties || 0).toFixed(2)} €</td>
+                  {tdR(fmt(c.fraisPartAgente))}{tdR(fmt(c.partAgente))}{tdR(fmt(c.partAgenteHonoraires))}
                   <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurPartAgente || 0) > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
+                  <td className="px-3 py-3 text-right text-red-400">- {redevAnnee.toFixed(2)} €</td>
                   {tdTotal(total)}
                 </tr>
               )
