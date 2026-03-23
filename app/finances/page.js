@@ -19,16 +19,23 @@ const normalizeApporteurMode = (mode) => {
   return mode || 'par_devis'
 }
 
-const normalizeDossierForFinance = (d) => ({
-  ...d,
-  taux_amo: d?.taux_amo ?? d?.honoraires_amo_taux,
-  client: d?.client
-    ? {
-        ...d.client,
-        apporteur_mode: normalizeApporteurMode(d.client?.apporteur_mode || d.client?.apporteur_base),
-      }
-    : null,
-})
+const normalizeDossierForFinance = (d) => {
+  // Dériver part_agente depuis le premier devis actif (même split pour tout le dossier)
+  const devisActifs = (d.devis_artisans || []).filter(dv => dv.statut !== 'refuse')
+  const partAgente = devisActifs[0]?.part_agente ?? (d.referente?.role === 'admin' ? 0 : 0.5)
+
+  return {
+    ...d,
+    part_agente: partAgente,
+    taux_amo: d?.taux_amo ?? d?.honoraires_amo_taux,
+    client: d?.client
+      ? {
+          ...d.client,
+          apporteur_mode: normalizeApporteurMode(d.client?.apporteur_mode || d.client?.apporteur_base),
+        }
+      : null,
+  }
+}
 
 export default function Finances() {
   const [profile, setProfile] = useState(null)
@@ -52,6 +59,7 @@ export default function Finances() {
         devis_artisans(*, artisan:artisans(id, entreprise)),
         suivi_financier(*)`)
       .order('created_at', { ascending: false })
+    setDossiers(dossiersData || [])
 
     const { data: redevancesData } = await supabase
       .from('redevances').select('*')
@@ -415,7 +423,7 @@ export default function Finances() {
                   <span className="text-xs text-gray-400">{d.typologie}</span>
                   {showBadge && (
                     <span className={`text-xs px-2 py-0.5 rounded-full ${c.estChantierMarine ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                      {c.estChantierMarine ? 'Marine' : nomReferente(d)}
+                      {c.estChantierMarine ? nomFranchisee : nomReferente(d)}
                     </span>
                   )}
                   {nbAlertes > 0 && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">⚠️ {nbAlertes}</span>}
@@ -606,7 +614,7 @@ export default function Finances() {
                       )}
                       {(showParts || (!showParts && isMarine)) && (
                         <div className="flex justify-between font-bold">
-                          <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-600'}>{c.estChantierMarine ? 'Net' : 'Marine'}</span>
+                          <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-600'}>{c.estChantierMarine ? 'Net' : nomFranchisee}</span>
                           <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>{c.netAdminPrevi.toFixed(2)} €</span>
                         </div>
                       )}
@@ -829,7 +837,7 @@ export default function Finances() {
                 </td>
                 <td className="px-3 py-3">
                   <span className={`text-xs px-2 py-0.5 rounded-full ${c.estChantierMarine ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                    {c.estChantierMarine ? 'Marine' : nomReferente(d)}
+                    {c.estChantierMarine ? nomFranchisee : nomReferente(d)}
                   </span>
                 </td>
                 {tdR(fmt(c.fraisTTC))}{tdR(fmt(c.comTTC))}{tdR(fmt(c.honorairesTotalTTC))}
