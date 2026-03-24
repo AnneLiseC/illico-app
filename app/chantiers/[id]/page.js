@@ -119,6 +119,12 @@ export default function FicheChantier({ params }) {
   const [categorie, setCategorie] = useState('avant')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [uploadingDoc, setUploadingDoc] = useState(null) // devisId en cours d'upload
+  const [comptesRendus, setComptesRendus] = useState([])
+  const [messages, setMessages] = useState([])
+  const [nouveauCR, setNouveauCR] = useState({ type_visite: '', notes_brutes: '', contenu_final: '', date_visite: '', valide: false })
+  const [ajouterCR, setAjouterCR] = useState(false)
+  const [savingCR, setSavingCR] = useState(false)
+  const [nbMsgNonLus, setNbMsgNonLus] = useState(0)
   const [photoOuverte, setPhotoOuverte] = useState(null)
   const [rdvsDossier, setRdvsDossier] = useState([])
   const [modalRdvOuvert, setModalRdvOuvert] = useState(false)
@@ -166,6 +172,15 @@ export default function FicheChantier({ params }) {
         .select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
       setInterventionsDossier(intData || [])
       const { data: suiviData } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+
+      // Comptes-rendus et messages espace client
+      const { data: crData } = await supabase
+        .from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
+      setComptesRendus(crData || [])
+      const { data: msgData } = await supabase
+        .from('messages').select('*, auteur:profiles(prenom, nom, role)').eq('dossier_id', id).order('created_at')
+      setMessages(msgData || [])
+      setNbMsgNonLus((msgData || []).filter(m => m.auteur_role === 'client' && !m.lu_agence).length)
       setSuiviFinancier(suiviData || [])
       const { data: fichesChantierData } = await supabase.from('chantier_fiches_techniques')
         .select('*, fiche:fiches_techniques(id, nom, description)').eq('dossier_id', id)
@@ -461,6 +476,64 @@ export default function FicheChantier({ params }) {
     const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
     else setErreur('Impossible d\'ouvrir le document')
+  }
+
+  // ── COMPTES-RENDUS (schéma : type_visite, notes_brutes, contenu_final, valide) ──
+  const sauvegarderCR = async () => {
+    if (!nouveauCR.type_visite) return
+    setSavingCR(true)
+    await supabase.from('comptes_rendus').insert({
+      dossier_id: id,
+      auteur_id: profile?.id,
+      type_visite: nouveauCR.type_visite,
+      notes_brutes: nouveauCR.notes_brutes || null,
+      contenu_final: nouveauCR.contenu_final || null,
+      date_visite: nouveauCR.date_visite || null,
+      valide: nouveauCR.valide,
+    })
+    const { data } = await supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
+    setComptesRendus(data || [])
+    setNouveauCR({ type_visite: '', notes_brutes: '', contenu_final: '', date_visite: '', valide: false })
+    setAjouterCR(false)
+    setSucces('Compte-rendu ajouté ✓')
+    setSavingCR(false)
+  }
+
+  const supprimerCR = async (crId) => {
+    if (!confirm('Supprimer ce compte-rendu ?')) return
+    await supabase.from('comptes_rendus').delete().eq('id', crId)
+    setComptesRendus(prev => prev.filter(c => c.id !== crId))
+  }
+
+  const toggleValide = async (crId, valide) => {
+    await supabase.from('comptes_rendus').update({ valide }).eq('id', crId)
+    setComptesRendus(prev => prev.map(c => c.id === crId ? { ...c, valide } : c))
+  }
+
+  // ── MESSAGES AGENTE → CLIENT (schéma : messages avec auteur_role + lu_agence) ──
+  const [reponseMsg, setReponseMsg] = useState('')
+  const [sendingMsg, setSendingMsg] = useState(false)
+  const envoyerReponse = async () => {
+    if (!reponseMsg.trim()) return
+    setSendingMsg(true)
+    await supabase.from('messages').insert({
+      dossier_id: id,
+      auteur_id: profile?.id,
+      auteur_role: profile?.role === 'admin' ? 'admin' : 'agente',
+      contenu: reponseMsg.trim(),
+      lu: false,        // pas encore lu par le client
+      lu_agence: true,  // lu par l'agente (elle l'a écrit)
+    })
+    // Marquer les messages client comme lus par l'agence
+    await supabase.from('messages').update({ lu_agence: true })
+      .eq('dossier_id', id).eq('auteur_role', 'client')
+    const { data } = await supabase.from('messages')
+      .select('*, auteur:profiles(prenom, nom, role)')
+      .eq('dossier_id', id).order('created_at')
+    setMessages(data || [])
+    setNbMsgNonLus(0)
+    setReponseMsg('')
+    setSendingMsg(false)
   }
 
   const typologieLabel = (t) => ({ courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' })[t] || t
@@ -1554,6 +1627,177 @@ export default function FicheChantier({ params }) {
           <p className="text-xs text-gray-400">CR de visites</p>
           <p className="text-xs text-blue-400 mt-2">Bientôt disponible</p>
         </div>
+
+
+        {/* ── ESPACE CLIENT AMO ── */}
+        {dossier?.typologie === 'amo' && (
+          <div className="space-y-4">
+
+            {/* Comptes-rendus */}
+            <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-gray-800">
+                  Comptes-rendus de visite
+                  {comptesRendus.length > 0 && (
+                    <span className="ml-2 text-sm font-normal text-gray-400">({comptesRendus.length})</span>
+                  )}
+                </h2>
+                <button onClick={() => setAjouterCR(!ajouterCR)}
+                  className="text-sm text-blue-600 hover:underline">
+                  {ajouterCR ? 'Annuler' : '+ Nouveau CR'}
+                </button>
+              </div>
+
+              {/* Formulaire nouveau CR */}
+              {ajouterCR && (
+                <div className="border border-blue-100 rounded-xl p-4 bg-blue-50 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Type de visite *</label>
+                      <select value={nouveauCR.type_visite}
+                        onChange={e => setNouveauCR(c => ({ ...c, type_visite: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">— Choisir —</option>
+                        <option value="r1">R1 — Visite client</option>
+                        <option value="r2">R2 — Visite avec artisan</option>
+                        <option value="r3">R3 — Présentation devis</option>
+                        <option value="suivi">Visite de suivi</option>
+                        <option value="reception">Réception chantier</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Date de visite</label>
+                      <input type="date" value={nouveauCR.date_visite}
+                        onChange={e => setNouveauCR(c => ({ ...c, date_visite: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Notes brutes (terrain)</label>
+                    <textarea value={nouveauCR.notes_brutes}
+                      onChange={e => setNouveauCR(c => ({ ...c, notes_brutes: e.target.value }))}
+                      rows={3} placeholder="Notes prises sur place..."
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Compte-rendu final (visible client si publié)</label>
+                    <textarea value={nouveauCR.contenu_final}
+                      onChange={e => setNouveauCR(c => ({ ...c, contenu_final: e.target.value }))}
+                      rows={4} placeholder="Rédaction finale du compte-rendu..."
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={nouveauCR.valide}
+                        onChange={e => setNouveauCR(c => ({ ...c, valide: e.target.checked }))}
+                        className="w-4 h-4 accent-blue-700" />
+                      <span className="text-xs text-gray-600">Publier au client maintenant</span>
+                    </label>
+                    <button onClick={sauvegarderCR} disabled={savingCR || !nouveauCR.type_visite}
+                      className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
+                      {savingCR ? 'Enregistrement...' : 'Enregistrer'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Liste CRs */}
+              {comptesRendus.length === 0 && !ajouterCR ? (
+                <p className="text-sm text-gray-400 text-center py-4">Aucun compte-rendu pour ce chantier</p>
+              ) : (
+                <div className="space-y-2">
+                  {comptesRendus.map(cr => (
+                    <div key={cr.id} className="border border-gray-100 rounded-xl p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium text-gray-800">
+                              {{ r1: 'R1 — Visite client', r2: 'R2 — Visite avec artisan', r3: 'R3 — Présentation devis', suivi: 'Visite de suivi', reception: 'Réception chantier' }[cr.type_visite] || cr.type_visite || 'Compte-rendu'}
+                            </p>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${cr.valide ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                              {cr.valide ? '👁 Publié client' : '🔒 Brouillon'}
+                            </span>
+                          </div>
+                          {cr.date_visite && (
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              Visite du {new Date(cr.date_visite).toLocaleDateString('fr-FR')}
+                            </p>
+                          )}
+                          {cr.notes_brutes && !cr.contenu_final && (
+                            <p className="text-xs text-gray-400 mt-2 italic">Notes brutes — {cr.notes_brutes.slice(0, 80)}{cr.notes_brutes.length > 80 ? '...' : ''}</p>
+                          )}
+                          {cr.contenu_final && (
+                            <p className="text-xs text-gray-600 mt-2 leading-relaxed whitespace-pre-wrap">{cr.contenu_final.slice(0, 120)}{cr.contenu_final.length > 120 ? '...' : ''}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button onClick={() => toggleValide(cr.id, !cr.valide)}
+                            className="text-xs text-gray-400 hover:text-blue-600">
+                            {cr.valide ? 'Masquer' : 'Publier'}
+                          </button>
+                          <button onClick={() => supprimerCR(cr.id)}
+                            className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Messagerie */}
+            <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-gray-800">
+                  Messagerie client
+                </h2>
+                {nbMsgNonLus > 0 && (
+                  <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full font-medium">
+                    {nbMsgNonLus} message{nbMsgNonLus > 1 ? 's' : ''} non lu{nbMsgNonLus > 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+
+              {/* Messages */}
+              <div className="border border-gray-100 rounded-xl p-3 max-h-72 overflow-y-auto space-y-3 bg-gray-50">
+                {messages.length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-6">Aucun message</p>
+                ) : (
+                  messages.map(msg => {
+                    const isClient = msg.auteur_role === 'client'
+                    return (
+                      <div key={msg.id} className={`flex ${isClient ? 'justify-start' : 'justify-end'}`}>
+                        <div className={`max-w-xs rounded-2xl px-3 py-2 ${isClient ? 'bg-white border border-gray-200' : 'bg-blue-800 text-white'}`}>
+                          <p className={`text-xs font-medium mb-0.5 ${isClient ? 'text-gray-500' : 'text-blue-200'}`}>
+                            {isClient ? `${msg.auteur?.prenom || 'Client'} (client)` : `${msg.auteur?.prenom || 'Équipe'}`}
+                          </p>
+                          <p className="text-sm">{msg.contenu}</p>
+                          <p className={`text-xs mt-1 opacity-60`}>
+                            {new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+
+              {/* Répondre */}
+              <div className="flex gap-2">
+                <input type="text" value={reponseMsg}
+                  onChange={e => setReponseMsg(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && envoyerReponse()}
+                  placeholder="Répondre au client..."
+                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <button onClick={envoyerReponse} disabled={!reponseMsg.trim() || sendingMsg}
+                  className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
+                  {sendingMsg ? '...' : 'Envoyer'}
+                </button>
+              </div>
+            </div>
+
+          </div>
+        )}
 
       </main>
     </div>
