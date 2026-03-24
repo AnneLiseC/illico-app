@@ -320,13 +320,17 @@ export default function FicheChantier({ params }) {
   }
 
   const calculerFrais = () => {
-    if (!dossier?.frais_consultation) return null
-    const ttc = dossier.frais_consultation  // TTC saisi
+    if (dossier?.frais_consultation === null || dossier?.frais_consultation === undefined || dossier?.frais_consultation === '') {
+      return null
+    }
+
+    const ttc = parseFloat(dossier.frais_consultation) || 0
     const ht = ttc / 1.2
     const royalties = (ht * 0.05) * 1.2
     const net = ttc - royalties
     const partAgente = estChantierMarine ? 0 : net
     const partAdmin = estChantierMarine ? net : 0
+
     return { ht, ttc, royalties, net, partAgente, partAdmin }
   }
 
@@ -339,7 +343,7 @@ export default function FicheChantier({ params }) {
       frais_consultation: dossier.frais_consultation, frais_statut: dossier.frais_statut,
       date_limite_devis: dossier.date_limite_devis, contrat_signe: dossier.contrat_signe,
       date_signature_contrat: dossier.date_signature_contrat, date_demarrage_chantier: dossier.date_demarrage_chantier,
-      date_fin_chantier: dossier.date_fin_chantier, honoraires_amo_taux: dossier.honoraires_amo_taux,
+      date_fin_chantier: dossier.date_fin_chantier, taux_courtage: dossier.taux_courtage, honoraires_amo_taux: dossier.honoraires_amo_taux,
     }).eq('id', id)
     if (error) { setErreur('Erreur : ' + error.message) } else { setSucces('Modifications enregistrées ✓'); setMode('lecture') }
     setSaving(false)
@@ -507,8 +511,12 @@ export default function FicheChantier({ params }) {
   const frais = calculerFrais()
   const devisSignes = devis.filter(d => d.statut === 'accepte' && d.date_signature && d.montant_ttc)
   const totalDevisTTCSignes = devisSignes.reduce((s, d) => s + (d.montant_ttc || 0), 0)
-  const honorairesCourtage = totalDevisTTCSignes * 0.06
-  const honorairesAMO = totalDevisTTCSignes * (0.06 + (dossier?.honoraires_amo_taux || 9) / 100)
+  const tauxCourtage = (dossier?.taux_courtage ?? 0.06)
+  const tauxCourtagePct = (tauxCourtage * 100).toFixed(1)
+  const tauxAmo = ((dossier?.honoraires_amo_taux ?? 9) / 100)
+  const tauxAmoPct = (tauxAmo * 100).toFixed(1)
+  const honorairesCourtage = totalDevisTTCSignes * tauxCourtage
+  const honorairesAMO = totalDevisTTCSignes * (tauxCourtage + tauxAmo)  
   const suiviCourtage = suiviFinancier.find(s => s.type_echeance === 'honoraires_courtage')
   const suiviAcompteAMO = suiviFinancier.find(s => s.type_echeance === 'acompte_amo')
   const suiviSoldeAMO = suiviFinancier.find(s => s.type_echeance === 'solde_amo')
@@ -743,7 +751,7 @@ export default function FicheChantier({ params }) {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Montant TTC (€)</label>
                   <input type="number" step="0.01" min="0" value={dossier.frais_consultation || ''}
-                    onChange={e => set('frais_consultation', e.target.value)}
+                    onChange={e => set('frais_consultation', e.target.value === ''?'' :parseFloat(e.target.value))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               )}
@@ -920,12 +928,8 @@ export default function FicheChantier({ params }) {
                           <div className="flex justify-between"><span className="text-gray-400">Commissions HT</span><span className="font-medium">{comHT.toFixed(2)} €</span></div>
                           <div className="flex justify-between"><span className="text-gray-400">Commissions TTC</span><span className="font-medium">{comTTC.toFixed(2)} €</span></div>
                           <div className="flex justify-between">
-                            <span className="text-gray-400">Royalties illiCO artisans TTC (5% × HT devis)</span>
+                            <span className="text-gray-400">Royalties illiCO artisans TTC</span>
                             <span className="font-medium text-red-400"> {royaltiesArtisan.toFixed(2)} €</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-400">Royalties illiCO com TTC (5% × Commissions HT)</span>
-                            <span className="font-medium text-red-500">- {royalties.toFixed(2)} €</span>
                           </div>
                           <div className="flex justify-between border-t border-gray-200 pt-1">
                             <span className="text-gray-400">Net</span>
@@ -1083,9 +1087,10 @@ export default function FicheChantier({ params }) {
                 <div className="space-y-1 border-t border-gray-200 pt-2">
                   <p className="text-xs text-gray-400 font-medium">Honoraires client (sur {totalDevisTTCSignes.toFixed(2)} € TTC signés)</p>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Honoraires courtage (6%)</span>
+                    <span className="text-gray-500">Honoraires courtage ({tauxCourtagePct}%)</span>
                     <span className="font-medium text-gray-800">{honorairesCourtage.toFixed(2)} €</span>
                   </div>
+
                   {dossier.typologie === 'amo' && (
                     <>
                       <div className="flex justify-between text-sm">
@@ -1169,17 +1174,43 @@ export default function FicheChantier({ params }) {
         {['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCSignes > 0 && (
           <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
             <h2 className="font-semibold text-gray-800">Honoraires client</h2>
-            <p className="text-xs text-gray-400">Calculés sur {totalDevisTTCSignes.toFixed(2)} € TTC de devis signés</p>
+            <p className="text-xs text-gray-400">
+              Calculés sur {totalDevisTTCSignes.toFixed(2)} € TTC de devis signés
+            </p>
 
             <div className="border border-gray-100 rounded-lg p-4">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-gray-700">Honoraires courtage (6%)</p>
-                <span className="text-sm font-bold text-gray-800">{honorairesCourtage.toFixed(2)} €</span>
+                <p className="text-sm font-medium text-gray-700">
+                  Honoraires courtage ({tauxCourtagePct}%)
+                </p>
+                <span className="text-sm font-bold text-gray-800">
+                  {honorairesCourtage.toFixed(2)} €
+                </span>
               </div>
-              <p className="text-xs text-gray-400 mb-3">6% × {totalDevisTTCSignes.toFixed(2)} € TTC — Échéance : 48h après signature devis</p>
-              <select value={suiviCourtage?.statut_client || 'en_attente'}
+              <p className="text-xs text-gray-400 mb-3">
+                {tauxCourtagePct}% × {totalDevisTTCSignes.toFixed(2)} € TTC — Échéance : 48h après signature devis
+              </p>
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs font-medium text-blue-700">Taux courtage (%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="20"
+                      value={(dossier.taux_courtage ?? 0.06) * 100}
+                      onChange={async e => {
+                        const taux = parseFloat(e.target.value || 0) / 100
+                        set('taux_courtage', taux)
+                        await supabase.from('dossiers').update({ taux_courtage: taux }).eq('id', id)
+                      }}
+                      className="w-24 border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                  </div>
+              <select
+                value={suiviCourtage?.statut_client || 'en_attente'}
                 onChange={e => majSuiviChantier('honoraires_courtage', honorairesCourtage, 'statut_client', e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
                 <option value="en_attente">En attente</option>
                 <option value="envoye">Facturé</option>
                 <option value="regle">✅ Réglé</option>
@@ -1190,51 +1221,66 @@ export default function FicheChantier({ params }) {
               <div className="border border-blue-100 rounded-lg p-4 bg-blue-50">
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-sm font-medium text-blue-800">
-                    Honoraires AMO ({((0.06 + (dossier.honoraires_amo_taux || 9) / 100) * 100).toFixed(0)}%)
+                    Honoraires AMO ({(Number(tauxCourtagePct) + Number(tauxAmoPct)).toFixed(1)}%)
                   </p>
-                  <span className="text-sm font-bold text-blue-900">{honorairesAMO.toFixed(2)} €</span>
+                  <span className="text-sm font-bold text-blue-900">
+                    {honorairesAMO.toFixed(2)} €
+                  </span>
                 </div>
                 <p className="text-xs text-blue-500 mb-3">
-                  6% courtage + {dossier.honoraires_amo_taux || 9}% AMO × {totalDevisTTCSignes.toFixed(2)} € TTC
+                  {tauxCourtagePct}% courtage + {tauxAmoPct}% AMO × {totalDevisTTCSignes.toFixed(2)} € TTC
                 </p>
 
-                {/* Taux AMO modifiable toujours */}
-                <div className="mb-4 flex items-center gap-3">
-                  <label className="text-xs font-medium text-blue-700">Taux AMO (%)</label>
-                  <input type="number" step="0.1" min="5" max="20"
-                    value={dossier.honoraires_amo_taux || 9}
-                    onChange={async e => {
-                      const taux = parseFloat(e.target.value)
-                      set('honoraires_amo_taux', taux)
-                      await supabase.from('dossiers').update({ honoraires_amo_taux: taux }).eq('id', id)
-                    }}
-                    className="w-24 border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs font-medium text-blue-700">Taux AMO (%)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="20"
+                      value={dossier.honoraires_amo_taux ?? 9}
+                      onChange={async e => {
+                        const taux = parseFloat(e.target.value || 0)
+                        set('honoraires_amo_taux', taux)
+                        await supabase.from('dossiers').update({ honoraires_amo_taux: taux }).eq('id', id)
+                      }}
+                      className="w-24 border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-3">
                   <div className="bg-white rounded-lg p-3 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-blue-700">Acompte AMO (6%) — {honorairesCourtage.toFixed(2)} €</span>
+                      <span className="text-xs font-medium text-blue-700">
+                        Acompte AMO ({tauxCourtagePct}%) — {honorairesCourtage.toFixed(2)} €
+                      </span>
                       <span className="text-xs text-blue-400">Signature devis</span>
                     </div>
-                    <select value={suiviAcompteAMO?.statut_client || 'en_attente'}
+                    <select
+                      value={suiviAcompteAMO?.statut_client || 'en_attente'}
                       onChange={e => majSuiviChantier('acompte_amo', honorairesCourtage, 'statut_client', e.target.value)}
-                      className="border border-blue-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white">
+                      className="border border-blue-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
+                    >
                       <option value="en_attente">En attente</option>
                       <option value="envoye">Facturé</option>
                       <option value="regle">✅ Réglé</option>
                     </select>
                   </div>
+
                   <div className="bg-white rounded-lg p-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-medium text-blue-700">
-                        Solde AMO ({dossier.honoraires_amo_taux || 9}%) — {(honorairesAMO - honorairesCourtage).toFixed(2)} €
+                        Solde AMO ({tauxAmoPct}%) — {(honorairesAMO - honorairesCourtage).toFixed(2)} €
                       </span>
                       <span className="text-xs text-blue-400">Fin de chantier</span>
                     </div>
-                    <select value={suiviSoldeAMO?.statut_client || 'en_attente'}
+                    <select
+                      value={suiviSoldeAMO?.statut_client || 'en_attente'}
                       onChange={e => majSuiviChantier('solde_amo', honorairesAMO - honorairesCourtage, 'statut_client', e.target.value)}
-                      className="border border-blue-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white">
+                      className="border border-blue-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
+                    >
                       <option value="en_attente">En attente</option>
                       <option value="envoye">Facturé</option>
                       <option value="regle">✅ Réglé</option>
