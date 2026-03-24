@@ -13,7 +13,7 @@ export default function Dashboard() {
       const { data: { user }, error: authError } = await supabase.auth.getUser()
       
       if (authError || !user) {
-        router.push('/login')
+        router.replace('/login')
         return
       }
 
@@ -28,6 +28,11 @@ export default function Dashboard() {
         return
       }
 
+      // Rediriger le client AVANT setProfile pour ne jamais afficher le dashboard
+      if (data.role === 'client') {
+        router.replace('/espace-client')
+        return
+      }
       setProfile(data)
     }
     getProfile()

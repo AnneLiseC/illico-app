@@ -15,7 +15,7 @@ export default function Login() {
     setLoading(true)
     setError('')
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data: authData, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
@@ -23,8 +23,17 @@ export default function Login() {
     if (error) {
       setError('Email ou mot de passe incorrect')
       setLoading(false)
+      return
+    }
+
+    // Vérifier le rôle pour rediriger directement
+    const { data: profData } = await supabase
+      .from('profiles').select('role').eq('id', authData.user.id).single()
+
+    if (profData?.role === 'client') {
+      router.replace('/espace-client')
     } else {
-      router.push('/dashboard')
+      router.replace('/dashboard')
     }
   }
 

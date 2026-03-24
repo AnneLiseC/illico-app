@@ -87,7 +87,7 @@ export default function EspaceClient() {
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
+      if (!user) { router.replace('/login'); return }
 
       const { data: profData } = await supabase
         .from('profiles')
@@ -97,7 +97,7 @@ export default function EspaceClient() {
       setProfile(profData)
 
       if (profData?.role !== 'client' || !profData?.client_id) {
-        router.push('/dashboard'); return
+        router.replace('/dashboard'); return
       }
 
       // Dossier AMO du client
