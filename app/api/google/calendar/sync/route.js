@@ -66,7 +66,7 @@ function interventionToGoogleEvent(intervention) {
         `[illico-int:${intervention.id}]`,
       ].filter(Boolean).join('\n'),
       start: { date: intervention.date_debut },
-      end: { date: intervention.date_fin },
+      end: { date: (() => { const d = new Date(intervention.date_fin); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10) })() },
     }]
   } else {
     // Jours spécifiques → un événement par jour
