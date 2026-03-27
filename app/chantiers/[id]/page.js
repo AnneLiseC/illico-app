@@ -625,6 +625,111 @@ export default function FicheChantier({ params }) {
   const totalGainAgente = totalPartAgente - totalApporteurPartAgente + honAgente + fraisAgente
   const totalGainAdmin = totalPartAdmin - totalApporteurPartAdmin + honAdmin + fraisAdmin
 
+  const supprimerChantier = async () => {
+    const ok = confirm(
+      'Supprimer définitivement ce chantier, tous ses devis, photos, documents, RDV, interventions et suivis financiers ? Cette action est irréversible.'
+    )
+    if (!ok) return
+
+    setSaving(true)
+    setErreur('')
+    setSucces('')
+
+    try {
+      // 1) Charger ce qu'il faut pour supprimer proprement les fichiers connus
+      const { data: photosData, error: photosErr } = await supabase
+        .from('photos')
+        .select('id, url')
+        .eq('dossier_id', id)
+
+      if (photosErr) throw photosErr
+
+      const { data: devisData, error: devisErr } = await supabase
+        .from('devis_artisans')
+        .select('id, devis_signe_path, facture_path')
+        .eq('dossier_id', id)
+
+      if (devisErr) throw devisErr
+
+      // 2) Supprimer les fichiers Storage connus
+      const photoPaths = (photosData || [])
+        .map(p => p.url)
+        .filter(Boolean)
+
+      const documentPaths = (devisData || [])
+        .flatMap(d => [d.devis_signe_path, d.facture_path])
+        .filter(Boolean)
+
+      if (photoPaths.length > 0) {
+        const { error } = await supabase.storage.from('photos').remove(photoPaths)
+        if (error) throw error
+      }
+
+      if (documentPaths.length > 0) {
+        const { error } = await supabase.storage.from('documents').remove(documentPaths)
+        if (error) throw error
+      }
+
+      // 3) Supprimer aussi les dossiers Storage du chantier pour éviter les fichiers orphelins
+      // (ex: devis uploadés sans chemin stocké en base)
+      const removeFolderContents = async (bucket, folder) => {
+        const { data: listed, error: listErr } = await supabase.storage.from(bucket).list(folder, {
+          limit: 1000,
+          offset: 0,
+        })
+        if (listErr) throw listErr
+
+        const files = (listed || [])
+          .filter(item => item.name && !item.id?.endsWith?.('/'))
+          .map(item => `${folder}/${item.name}`)
+
+        if (files.length > 0) {
+          const { error: removeErr } = await supabase.storage.from(bucket).remove(files)
+          if (removeErr) throw removeErr
+        }
+      }
+
+      // bucket photos
+      await removeFolderContents('photos', `chantiers/${id}/avant`)
+      await removeFolderContents('photos', `chantiers/${id}/pendant`)
+      await removeFolderContents('photos', `chantiers/${id}/apres`)
+      await removeFolderContents('photos', `chantiers/${id}/maquette`)
+      await removeFolderContents('photos', `chantiers/${id}/illustration`)
+
+      // bucket documents
+      await removeFolderContents('documents', `chantiers/${id}/devis`)
+      await removeFolderContents('documents', `chantiers/${id}/devis_signes`)
+      await removeFolderContents('documents', `chantiers/${id}/factures`)
+
+      // 4) Supprimer les lignes liées en base
+      const deletes = [
+        supabase.from('suivi_financier').delete().eq('dossier_id', id),
+        supabase.from('chantier_fiches_techniques').delete().eq('dossier_id', id),
+        supabase.from('rendez_vous').delete().eq('dossier_id', id),
+        supabase.from('interventions_artisans').delete().eq('dossier_id', id),
+        supabase.from('photos').delete().eq('dossier_id', id),
+        supabase.from('devis_artisans').delete().eq('dossier_id', id),
+      ]
+
+      const results = await Promise.all(deletes)
+      const deleteError = results.find(r => r.error)?.error
+      if (deleteError) throw deleteError
+
+      // 5) Supprimer le dossier chantier
+      const { error: dossierErr } = await supabase
+        .from('dossiers')
+        .delete()
+        .eq('id', id)
+
+      if (dossierErr) throw dossierErr
+
+      router.push('/chantiers')
+    } catch (err) {
+      setErreur('Erreur suppression chantier : ' + err.message)
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
@@ -766,6 +871,13 @@ export default function FicheChantier({ params }) {
               </div>
             </div>
           )}
+          <button
+            onClick={supprimerChantier}
+            disabled={saving}
+            className="px-4 py-2 rounded-lg border border-red-200 text-res-600 hover:bg-red-50 text-sm font medium disabled:opacity-50"
+            >
+              Supprimer le chantier
+            </button>
         </div>
 
         {/* Frais de consultation */}

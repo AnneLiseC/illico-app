@@ -39,6 +39,7 @@ export default function EspaceClient() {
   const [comptesRendus, setComptesRendus] = useState([])
   const [messages, setMessages]       = useState([])
   const [loading, setLoading]         = useState(true)
+  const [accesDenied, setAccesDenied]  = useState(false)
   const [onglet, setOnglet]           = useState('accueil')
   const [categoriePhoto, setCategoriePhoto] = useState('avant')
   const [lightbox, setLightbox]       = useState({ open: false, index: 0 })
@@ -89,16 +90,27 @@ export default function EspaceClient() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.replace('/login'); return }
 
+      // Charger d'abord le profil seul (sans join pour éviter l'échec si FK manquante)
       const { data: profData } = await supabase
         .from('profiles')
-        .select('*, client:clients(id, prenom, nom, civilite, email)')
+        .select('*')
         .eq('id', user.id)
         .single()
-      setProfile(profData)
 
-      if (profData?.role !== 'client' || !profData?.client_id) {
-        router.replace('/dashboard'); return
+      if (!profData || profData.role !== 'client' || !profData.client_id) {
+        setAccesDenied(true)
+        setLoading(false)
+        return
       }
+
+      // Charger ensuite les infos du client séparément
+      const { data: clientData } = await supabase
+        .from('clients')
+        .select('id, prenom, nom, civilite, email')
+        .eq('id', profData.client_id)
+        .single()
+
+      setProfile({ ...profData, client: clientData })
 
       // Dossier AMO du client
       const { data: dossierData } = await supabase
@@ -150,6 +162,18 @@ export default function EspaceClient() {
   if (loading) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <p className="text-gray-400">Chargement...</p>
+    </div>
+  )
+
+  if (accesDenied) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        <p className="text-4xl mb-4">🔒</p>
+        <p className="text-gray-600 font-medium">Accès non autorisé</p>
+        <button onClick={handleLogout} className="mt-6 text-sm text-blue-600 hover:underline">
+          Se déconnecter
+        </button>
+      </div>
     </div>
   )
 
@@ -306,8 +330,12 @@ export default function EspaceClient() {
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   {photos.slice(0, 3).map((p) => (
-                    <img key={p.id} src={p.url_signee} alt=""
-                      className="rounded-lg aspect-square object-cover w-full" />
+                    <div key={p.id}
+                      onClick={() => { setCategoriePhoto(p.categorie); setOnglet('photos') }}
+                      className="cursor-pointer rounded-lg overflow-hidden aspect-square bg-gray-100">
+                      <img src={p.url_signee} alt=""
+                        className="w-full h-full object-cover hover:scale-105 transition-transform" />
+                    </div>
                   ))}
                 </div>
               </div>
@@ -348,17 +376,25 @@ export default function EspaceClient() {
                   ))}
                 </div>
 
-                {lightbox.open && (
-                  <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4"
+                {lightbox.open && photosCatActuelle[lightbox.index]?.url_signee && (
+                  <div className="fixed inset-0 bg-black bg-opacity-95 z-50 flex items-center justify-center p-4"
                     onClick={() => setLightbox(l => ({ ...l, open: false }))}>
-                    <button className="absolute top-4 right-4 text-white text-2xl z-10">✕</button>
-                    <button className="absolute left-4 text-white text-3xl z-10 p-2"
-                      onClick={e => { e.stopPropagation(); setLightbox(l => ({ ...l, index: l.index > 0 ? l.index - 1 : photosCatActuelle.length - 1 })) }}>‹</button>
-                    <img src={photosCatActuelle[lightbox.index]?.url_signee} alt=""
-                      className="max-h-screen max-w-full object-contain rounded-lg"
-                      onClick={e => e.stopPropagation()} />
-                    <button className="absolute right-4 text-white text-3xl z-10 p-2"
-                      onClick={e => { e.stopPropagation(); setLightbox(l => ({ ...l, index: (l.index + 1) % photosCatActuelle.length })) }}>›</button>
+                    <button className="absolute top-4 right-4 text-white text-3xl z-10 w-10 h-10 flex items-center justify-center hover:bg-white hover:bg-opacity-20 rounded-full"
+                      onClick={e => { e.stopPropagation(); setLightbox(l => ({ ...l, open: false })) }}>✕</button>
+                    {photosCatActuelle.length > 1 && (
+                      <button className="absolute left-4 text-white text-4xl z-10 p-3 hover:bg-white hover:bg-opacity-20 rounded-full"
+                        onClick={e => { e.stopPropagation(); setLightbox(l => ({ ...l, index: l.index > 0 ? l.index - 1 : photosCatActuelle.length - 1 })) }}>‹</button>
+                    )}
+                    <img
+                      src={photosCatActuelle[lightbox.index].url_signee}
+                      alt=""
+                      className="max-h-[85vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
+                      onClick={e => e.stopPropagation()}
+                    />
+                    {photosCatActuelle.length > 1 && (
+                      <button className="absolute right-4 text-white text-4xl z-10 p-3 hover:bg-white hover:bg-opacity-20 rounded-full"
+                        onClick={e => { e.stopPropagation(); setLightbox(l => ({ ...l, index: (l.index + 1) % photosCatActuelle.length })) }}>›</button>
+                    )}
                     <p className="absolute bottom-4 text-white text-sm opacity-70">{lightbox.index + 1} / {photosCatActuelle.length}</p>
                   </div>
                 )}
