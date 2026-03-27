@@ -85,21 +85,16 @@ function interventionToGoogleEvent(intervention) {
 
 export async function POST(request) {
   try {
-    // Auth : récupérer l'utilisateur depuis le cookie
-    const cookieHeader = request.headers.get('cookie') || ''
-    const supabaseWithCookie = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      { global: { headers: { cookie: cookieHeader } } }
-    )
-    const { data: { user } } = await supabaseWithCookie.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 })
+    // Auth : lire userId depuis le body (Supabase session = localStorage, pas cookie)
+    const body = await request.json()
+    const userId = body?.userId
+    if (!userId) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 })
 
     // Récupérer les tokens Google
     const { data: tokenData } = await supabaseAdmin
       .from('google_tokens')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .single()
 
     if (!tokenData) {
@@ -232,19 +227,14 @@ export async function POST(request) {
 // GET : vérifier si l'utilisateur est connecté à Google
 export async function GET(request) {
   try {
-    const cookieHeader = request.headers.get('cookie') || ''
-    const supabaseWithCookie = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      { global: { headers: { cookie: cookieHeader } } }
-    )
-    const { data: { user } } = await supabaseWithCookie.auth.getUser()
-    if (!user) return NextResponse.json({ connected: false })
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get('userId')
+    if (!userId) return NextResponse.json({ connected: false })
 
     const { data } = await supabaseAdmin
       .from('google_tokens')
       .select('updated_at')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .single()
 
     return NextResponse.json({ connected: !!data, lastSync: data?.updated_at || null })

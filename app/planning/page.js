@@ -94,7 +94,7 @@ export default function Planning() {
       await chargerTout()
 
       // Vérifier connexion Google Calendar
-      const res = await fetch('/api/google/calendar/sync')
+      const res = await fetch(`/api/google/calendar/sync?userId=${profData.id}`)
       const googleData = await res.json()
       setGoogleConnected(googleData.connected)
 
@@ -302,7 +302,11 @@ export default function Planning() {
     setSyncing(true)
     setSyncMessage('')
     try {
-      const res = await fetch('/api/google/calendar/sync', { method: 'POST' })
+      const res = await fetch('/api/google/calendar/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: profile?.id }),
+      })
       const data = await res.json()
       if (data.success) {
         setSyncMessage(`✅ ${data.message}`)
