@@ -107,6 +107,7 @@ export default function FicheChantier({ params }) {
   const [nomFranchisee, setNomFranchisee] = useState('Franchisée')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [generatingPDF, setGeneratingPDF] = useState(null) // 'recapitulatif' | 'dossier_fin'
   const [erreur, setErreur] = useState('')
   const [succes, setSucces] = useState('')
   const [mode, setMode] = useState('lecture')
@@ -584,6 +585,37 @@ export default function FicheChantier({ params }) {
     setSendingMsg(false)
   }
 
+  const generatePDF = async (type) => {
+    setGeneratingPDF(type)
+    try {
+      const res = await fetch('/api/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dossierId: id, type, userId: profile?.id }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        setErreur('Erreur PDF : ' + err.error)
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const filename = type === 'recapitulatif'
+        ? `Recapitulatif_${dossier.reference}.pdf`
+        : `DossierFin_${dossier.reference}.pdf`
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+      setSucces('PDF généré avec succès ✓')
+    } catch (err) {
+      setErreur('Erreur lors de la génération : ' + err.message)
+    } finally {
+      setGeneratingPDF(null)
+    }
+  }
+
   const typologieLabel = (t) => ({ courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' })[t] || t
 
   const statutConfig = {
@@ -805,7 +837,21 @@ export default function FicheChantier({ params }) {
         </div>
         <div className="flex items-center gap-3">
           {mode === 'lecture' ? (
-            <button onClick={() => setMode('edition')} className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900">Modifier</button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => generatePDF('recapitulatif')}
+                disabled={!!generatingPDF}
+                className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">
+                {generatingPDF === 'recapitulatif' ? '⏳ Génération...' : '📄 Récapitulatif'}
+              </button>
+              <button
+                onClick={() => generatePDF('dossier_fin')}
+                disabled={!!generatingPDF}
+                className="border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
+                {generatingPDF === 'dossier_fin' ? '⏳ Génération...' : '📦 Dossier fin chantier'}
+              </button>
+              <button onClick={() => setMode('edition')} className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900">Modifier</button>
+            </div>
           ) : (
             <>
               <button onClick={() => setMode('lecture')} className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
