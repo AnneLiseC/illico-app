@@ -206,9 +206,54 @@ export async function POST(request) {
       orderBy: 'startTime',
     })
 
-    // On ne traite que les événements qui ont un tag illico (déjà gérés par push)
-    // Les autres ne sont pas importés pour éviter les doublons
-    // (La synchro bidirectionnelle complète nécessiterait un webhook Google)
+    // ── PUSH : Dates démarrage/fin chantiers → Google ──
+    const { data: dossiers } = await supabaseAdmin
+      .from('dossiers')
+      .select('id, reference, date_demarrage_chantier, date_fin_chantier, google_start_event_id, google_end_event_id, client:clients(prenom, nom)')
+
+    for (const dossier of (dossiers || [])) {
+      // Démarrage chantier
+      if (dossier.date_demarrage_chantier) {
+        try {
+          const eventStart = {
+            summary: `illiCO — 🏗 Démarrage ${dossier.reference}${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
+            description: `[illico-start:${dossier.id}]`,
+            start: { date: dossier.date_demarrage_chantier },
+            end: { date: dossier.date_demarrage_chantier },
+            colorId: '2', // vert
+          }
+          if (dossier.google_start_event_id) {
+            await calendar.events.update({ calendarId: CALENDAR_ID, eventId: dossier.google_start_event_id, requestBody: eventStart })
+            results.updated++
+          } else {
+            const res = await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: eventStart })
+            await supabaseAdmin.from('dossiers').update({ google_start_event_id: res.data.id }).eq('id', dossier.id)
+            results.pushed++
+          }
+        } catch (err) { results.errors.push(`Démarrage ${dossier.id}: ${err.message}`) }
+      }
+
+      // Fin chantier
+      if (dossier.date_fin_chantier) {
+        try {
+          const eventEnd = {
+            summary: `illiCO — 🏁 Fin ${dossier.reference}${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
+            description: `[illico-end:${dossier.id}]`,
+            start: { date: dossier.date_fin_chantier },
+            end: { date: dossier.date_fin_chantier },
+            colorId: '6', // orange
+          }
+          if (dossier.google_end_event_id) {
+            await calendar.events.update({ calendarId: CALENDAR_ID, eventId: dossier.google_end_event_id, requestBody: eventEnd })
+            results.updated++
+          } else {
+            const res = await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: eventEnd })
+            await supabaseAdmin.from('dossiers').update({ google_end_event_id: res.data.id }).eq('id', dossier.id)
+            results.pushed++
+          }
+        } catch (err) { results.errors.push(`Fin ${dossier.id}: ${err.message}`) }
+      }
+    }
 
     return NextResponse.json({
       success: true,
