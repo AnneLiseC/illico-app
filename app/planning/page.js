@@ -25,6 +25,10 @@ export default function Planning() {
   const [saving, setSaving] = useState(false)
   const [erreur, setErreur] = useState('')
   const [devis, setDevis] = useState([])
+  const [googleConnected, setGoogleConnected] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState('')
+  const [googleParam, setGoogleParam] = useState('')
 
   const [formRdv, setFormRdv] = useState({
     dossier_id: '',
@@ -88,6 +92,23 @@ export default function Planning() {
       setProfile(profData)
 
       await chargerTout()
+
+      // Vérifier connexion Google Calendar
+      const res = await fetch('/api/google/calendar/sync')
+      const googleData = await res.json()
+      setGoogleConnected(googleData.connected)
+
+      // Détecter les params URL (retour OAuth)
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('google') === 'connected') {
+        setSyncMessage('✅ Google Calendar connecté avec succès !')
+        setGoogleConnected(true)
+        window.history.replaceState({}, '', '/planning')
+      } else if (params.get('google') === 'error') {
+        setSyncMessage('❌ Erreur de connexion Google Calendar')
+        window.history.replaceState({}, '', '/planning')
+      }
+
       setLoading(false)
     }
     init()
@@ -277,6 +298,23 @@ export default function Planning() {
     fermerModal()
   }
 
+  const syncGoogle = async () => {
+    setSyncing(true)
+    setSyncMessage('')
+    try {
+      const res = await fetch('/api/google/calendar/sync', { method: 'POST' })
+      const data = await res.json()
+      if (data.success) {
+        setSyncMessage(`✅ ${data.message}`)
+      } else {
+        setSyncMessage(`❌ ${data.error}`)
+      }
+    } catch {
+      setSyncMessage('❌ Erreur lors de la synchronisation')
+    }
+    setSyncing(false)
+  }
+
   const fermerModal = () => {
     setModalOuvert(false)
     setElementSelectionne(null)
@@ -306,6 +344,18 @@ export default function Planning() {
           <h1 className="text-lg font-bold text-blue-900">Planning</h1>
         </div>
         <div className="flex gap-2">
+          {/* Boutons Google Calendar */}
+          {!googleConnected ? (
+            <a href="/api/auth/google"
+              className="flex items-center gap-2 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">
+              <span>📅</span> Connecter Google Calendar
+            </a>
+          ) : (
+            <button onClick={syncGoogle} disabled={syncing}
+              className="flex items-center gap-2 border border-green-300 text-green-700 px-3 py-2 rounded-lg text-sm hover:bg-green-50 disabled:opacity-50">
+              {syncing ? '⏳ Synchro...' : '🔄 Sync Google'}
+            </button>
+          )}
           <button
             onClick={() => { setModalType('intervention'); setElementSelectionne(null); setModeEdition(false); setModalOuvert(true) }}
             className="border border-green-300 text-green-700 px-4 py-2 rounded-lg text-sm hover:bg-green-50">
@@ -320,6 +370,18 @@ export default function Planning() {
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+        {syncMessage && (
+          <div className={`text-sm px-4 py-2 rounded-lg border ${syncMessage.startsWith('✅') ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-600'}`}>
+            {syncMessage}
+            <button onClick={() => setSyncMessage('')} className="ml-3 opacity-50 hover:opacity-100">✕</button>
+          </div>
+        )}
+        {googleConnected && (
+          <div className="flex items-center gap-2 text-xs text-green-600">
+            <span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
+            Google Calendar connecté
+          </div>
+        )}
 
         {/* Filtres */}
         <div className="flex gap-3 flex-wrap items-center">
