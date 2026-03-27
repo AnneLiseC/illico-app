@@ -596,7 +596,6 @@ export default function FicheChantier({ params }) {
 
   const majSuiviChantier = async (type, montant, champ, valeur) => {
     const upsertOne = async (t, m) => {
-      // Interroger la BDD directement (pas le state) pour éviter les problèmes de double appel
       const { data: existing } = await supabase
         .from('suivi_financier')
         .select('id')
@@ -605,9 +604,11 @@ export default function FicheChantier({ params }) {
         .is('artisan_id', null)
         .maybeSingle()
       if (existing) {
-        await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
+        const { error } = await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
+        if (error) console.error('UPDATE ERROR:', JSON.stringify(error))
       } else {
-        await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: t, montant_ttc: m, [champ]: valeur })
+        const { error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: t, montant_ttc: m, [champ]: valeur })
+        if (error) console.error('INSERT ERROR:', JSON.stringify(error))
       }
     }
     await upsertOne(type, montant)
@@ -1374,9 +1375,8 @@ export default function FicheChantier({ params }) {
             <p className="text-xs text-gray-400">
               Calculés sur {totalDevisTTCSignes.toFixed(2)} € TTC de devis signés
             </p>
-
-            <div className="border border-gray-100 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
+            <div className="border border-gray-100 rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between">
                 <p className="text-sm font-medium text-gray-700">
                   Honoraires courtage ({tauxCourtagePct}%)
                 </p>
@@ -1384,41 +1384,36 @@ export default function FicheChantier({ params }) {
                   {honorairesCourtage.toFixed(2)} €
                 </span>
               </div>
-              <p className="text-xs text-gray-400 mb-3">
+              <p className="text-xs text-gray-400">
                 {tauxCourtagePct}% × {totalDevisTTCSignes.toFixed(2)} € TTC — Échéance : 48h après signature devis
               </p>
-                  <div className="flex items-center gap-3">
-                    <label className="text-xs font-medium text-blue-700">Taux courtage (%)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="20"
-                      value={(dossier.taux_courtage ?? 0.06) * 100}
-                      onChange={async e => {
-                        const taux = parseFloat(e.target.value || 0) / 100
-                        set('taux_courtage', taux)
-                        await supabase.from('dossiers').update({ taux_courtage: taux }).eq('id', id)
-                      }}
-                      className="w-24 border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    />
-                  </div>
-              <div className="mt-3">
-                <select
-                  value={suiviCourtage?.statut_client || 'en_attente'}
-                  onChange={e => majSuiviChantier('honoraires_courtage', honorairesCourtage, 'statut_client', e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer"
-                >
-                  <option value="en_attente">⏳ En attente</option>
-                  <option value="envoye">📤 Facturé</option>
-                  <option value="regle">✅ Réglé</option>
-                </select>
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-medium text-blue-700">Taux courtage (%)</label>
+                <input
+                  type="number" step="0.1" min="0" max="20"
+                  value={(dossier.taux_courtage ?? 0.06) * 100}
+                  onChange={async e => {
+                    const taux = parseFloat(e.target.value || 0) / 100
+                    set('taux_courtage', taux)
+                    await supabase.from('dossiers').update({ taux_courtage: taux }).eq('id', id)
+                  }}
+                  className="w-24 border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                />
               </div>
+              <select
+                value={suiviCourtage?.statut_client || 'en_attente'}
+                onChange={e => majSuiviChantier('honoraires_courtage', honorairesCourtage, 'statut_client', e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer"
+              >
+                <option value="en_attente">⏳ En attente</option>
+                <option value="envoye">📤 Facturé</option>
+                <option value="regle">✅ Réglé</option>
+              </select>
             </div>
 
             {dossier.typologie === 'amo' && (
-              <div className="border border-blue-100 rounded-lg p-4 bg-blue-50">
-                <div className="flex items-center justify-between mb-1">
+              <div className="border border-blue-100 rounded-lg p-4 bg-blue-50 space-y-3">
+                <div className="flex items-center justify-between">
                   <p className="text-sm font-medium text-blue-800">
                     Honoraires AMO ({(Number(tauxCourtagePct) + Number(tauxAmoPct)).toFixed(1)}%)
                   </p>
@@ -1426,29 +1421,22 @@ export default function FicheChantier({ params }) {
                     {honorairesAMO.toFixed(2)} €
                   </span>
                 </div>
-                <p className="text-xs text-blue-500 mb-3">
+                <p className="text-xs text-blue-500">
                   {tauxCourtagePct}% courtage + {tauxAmoPct}% AMO × {totalDevisTTCSignes.toFixed(2)} € TTC
                 </p>
-
-                <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="flex items-center gap-3">
-                    <label className="text-xs font-medium text-blue-700">Taux AMO (%)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="20"
-                      value={dossier.honoraires_amo_taux ?? 9}
-                      onChange={async e => {
-                        const taux = parseFloat(e.target.value || 0)
-                        set('honoraires_amo_taux', taux)
-                        await supabase.from('dossiers').update({ honoraires_amo_taux: taux }).eq('id', id)
-                      }}
-                      className="w-24 border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    />
-                  </div>
+                <div className="flex items-center gap-3">
+                  <label className="text-xs font-medium text-blue-700">Taux AMO (%)</label>
+                  <input
+                    type="number" step="0.1" min="0" max="20"
+                    value={dossier.honoraires_amo_taux ?? 9}
+                    onChange={async e => {
+                      const taux = parseFloat(e.target.value || 0)
+                      set('honoraires_amo_taux', taux)
+                      await supabase.from('dossiers').update({ honoraires_amo_taux: taux }).eq('id', id)
+                    }}
+                    className="w-24 border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
                 </div>
-
                 <div className="space-y-3">
                   <div className="bg-white rounded-lg p-3 space-y-2">
                     <div className="flex items-center justify-between">
@@ -1460,14 +1448,13 @@ export default function FicheChantier({ params }) {
                     <select
                       value={suiviAcompteAMO?.statut_client || 'en_attente'}
                       onChange={e => majSuiviChantier('acompte_amo', honorairesCourtage, 'statut_client', e.target.value)}
-                      className="border border-blue-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
+                      className="w-full border border-blue-200 rounded-lg px-3 py-2 text-xs focus:outline-none bg-white cursor-pointer"
                     >
-                      <option value="en_attente">En attente</option>
-                      <option value="envoye">Facturé</option>
+                      <option value="en_attente">⏳ En attente</option>
+                      <option value="envoye">📤 Facturé</option>
                       <option value="regle">✅ Réglé</option>
                     </select>
                   </div>
-
                   <div className="bg-white rounded-lg p-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-medium text-blue-700">
@@ -1478,10 +1465,10 @@ export default function FicheChantier({ params }) {
                     <select
                       value={suiviSoldeAMO?.statut_client || 'en_attente'}
                       onChange={e => majSuiviChantier('solde_amo', honorairesAMO - honorairesCourtage, 'statut_client', e.target.value)}
-                      className="border border-blue-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
+                      className="w-full border border-blue-200 rounded-lg px-3 py-2 text-xs focus:outline-none bg-white cursor-pointer"
                     >
-                      <option value="en_attente">En attente</option>
-                      <option value="envoye">Facturé</option>
+                      <option value="en_attente">⏳ En attente</option>
+                      <option value="envoye">📤 Facturé</option>
                       <option value="regle">✅ Réglé</option>
                     </select>
                   </div>
