@@ -64,7 +64,7 @@ export default function Planning() {
 
     const { data: dossiersData } = await supabase
       .from('dossiers')
-      .select('id, reference, referente_id, client:clients(civilite, prenom, nom)')
+      .select('id, reference, referente_id, date_demarrage_chantier, date_fin_chantier, client:clients(civilite, prenom, nom)')
       .order('reference')
     setDossiers(dossiersData || [])
 
@@ -180,7 +180,39 @@ export default function Planning() {
       }
     })
 
-  const tousEvenements = [...evenementsRdv, ...evenementsInterventions]
+  // Événements dates clés chantiers (démarrage + fin)
+  const evenementsDates = dossiers.flatMap(d => {
+    const evts = []
+    if (d.date_demarrage_chantier) {
+      evts.push({
+        id: 'start-' + d.id,
+        title: `🏗 Démarrage — ${d.reference}`,
+        start: d.date_demarrage_chantier,
+        allDay: true,
+        backgroundColor: '#F0FDF4',
+        borderColor: '#16A34A',
+        textColor: '#15803D',
+        display: 'block',
+        extendedProps: { type: 'date_cle', data: d },
+      })
+    }
+    if (d.date_fin_chantier) {
+      evts.push({
+        id: 'end-' + d.id,
+        title: `🏁 Fin — ${d.reference}`,
+        start: d.date_fin_chantier,
+        allDay: true,
+        backgroundColor: '#FFF7ED',
+        borderColor: '#EA580C',
+        textColor: '#C2410C',
+        display: 'block',
+        extendedProps: { type: 'date_cle', data: d },
+      })
+    }
+    return evts
+  })
+
+  const tousEvenements = [...evenementsRdv, ...evenementsInterventions, ...evenementsDates]
 
   const handleDateClick = (info) => {
     if (modalType === 'intervention') {
@@ -441,6 +473,14 @@ export default function Planning() {
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded border-2" style={{ backgroundColor: '#7F77DD33', borderColor: '#7F77DD' }}></div>
             <span className="text-xs text-gray-500">Intervention artisan</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded" style={{ backgroundColor: '#F0FDF4', border: '2px solid #16A34A' }}></div>
+            <span className="text-xs text-gray-500">Démarrage chantier</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded" style={{ backgroundColor: '#FFF7ED', border: '2px solid #EA580C' }}></div>
+            <span className="text-xs text-gray-500">Fin de chantier</span>
           </div>
         </div>
 

@@ -133,6 +133,9 @@ export default function FicheChantier({ params }) {
   const [modalInterventionOuvert, setModalInterventionOuvert] = useState(false)
   const [interventionsDossier, setInterventionsDossier] = useState([])
   const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '' })
+  const [modalCreerIntervOuvert, setModalCreerIntervOuvert] = useState(false)
+  const [nouvIntervArtisanId, setNouvIntervArtisanId] = useState(null)
+  const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '' })
   const [fichesTechChantier, setFichesTechChantier] = useState({})
   const [fichesPanelOuvert, setFichesPanelOuvert] = useState(null)
   const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', part_agente: '0.5', date_reception: '', date_limite: '', fichier: null })
@@ -284,6 +287,35 @@ export default function FicheChantier({ params }) {
     if (intervention?.google_event_id) await deleteGoogleEvent(intervention.google_event_id)
     const { data } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
     setInterventionsDossier(data || [])
+  }
+
+  const creerInterventionDossier = async () => {
+    if (!nouvIntervArtisanId) return
+    setSaving(true)
+    const payload = {
+      dossier_id: id,
+      artisan_id: nouvIntervArtisanId,
+      type_intervention: nouvIntervForm.type_intervention,
+      date_debut: nouvIntervForm.date_debut || null,
+      date_fin: nouvIntervForm.type_intervention === 'periode' ? nouvIntervForm.date_fin || null : null,
+      jours_specifiques: nouvIntervForm.type_intervention === 'jours_specifiques' ? nouvIntervForm.jours_specifiques : null,
+      notes: nouvIntervForm.notes || null,
+    }
+    const { data: intData } = await supabase.from('interventions_artisans').insert(payload).select('*, artisan:artisans(id, entreprise)')
+    // Sync Google si connecté
+    if (intData?.[0] && profile?.id) {
+      await fetch('/api/google/calendar/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: profile.id, singleIntervId: intData[0].id }),
+      })
+    }
+    await chargerRdvsDossier()
+    setModalCreerIntervOuvert(false)
+    setNouvIntervArtisanId(null)
+    setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '' })
+    setSucces('Intervention planifiée ✓')
+    setSaving(false)
   }
 
   const modifierInterventionDossier = async () => {
@@ -1258,6 +1290,26 @@ export default function FicheChantier({ params }) {
                         <FichesTechPanel artisanId={d.artisan_id} fichesCochees={fichesTechChantier[d.artisan_id] || []} onToggle={toggleFicheTech} />
                       )}
                     </div>
+                    {/* Bouton intervention rapide sur devis accepté */}
+                    {d.statut === 'accepte' && (
+                      <div className="pt-2 border-t border-gray-50">
+                        <button
+                          onClick={() => { setNouvIntervArtisanId(d.artisan_id); setModalCreerIntervOuvert(true) }}
+                          className="text-xs text-green-700 border border-green-200 px-2 py-1 rounded hover:bg-green-50">
+                          📅 Planifier une intervention
+                        </button>
+                        {/* Interventions existantes pour cet artisan */}
+                        {interventionsDossier.filter(i => i.artisan_id === d.artisan_id).map(i => (
+                          <div key={i.id} className="mt-1 text-xs text-gray-500 flex items-center gap-2">
+                            <span>🔨</span>
+                            {i.type_intervention === 'periode'
+                              ? `${new Date(i.date_debut).toLocaleDateString('fr-FR')} → ${new Date(i.date_fin).toLocaleDateString('fr-FR')}`
+                              : `${i.jours_specifiques?.length} jour(s)`}
+                            {i.notes && <span className="text-gray-400">— {i.notes}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -1564,7 +1616,11 @@ export default function FicheChantier({ params }) {
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">Planning</h2>
-            <button onClick={() => setModalRdvOuvert(true)} className="text-sm bg-blue-800 text-white px-3 py-1.5 rounded-lg hover:bg-blue-900">+ RDV</button>
+            <div className="flex gap-2">
+              <button onClick={() => { setNouvIntervArtisanId(null); setModalCreerIntervOuvert(true) }}
+                className="text-sm border border-green-300 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-50">+ Intervention</button>
+              <button onClick={() => setModalRdvOuvert(true)} className="text-sm bg-blue-800 text-white px-3 py-1.5 rounded-lg hover:bg-blue-900">+ RDV</button>
+            </div>
           </div>
           {rdvsDossier.length > 0 && (
             <div>
@@ -1940,6 +1996,113 @@ export default function FicheChantier({ params }) {
 
           </div>
         )}
+
+      {/* Modal Créer Intervention */}
+      {modalCreerIntervOuvert && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+          onClick={() => setModalCreerIntervOuvert(false)}>
+          <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+            <h2 className="font-semibold text-gray-800">Planifier une intervention</h2>
+
+            {/* Sélecteur artisan (si pas pré-sélectionné depuis un devis) */}
+            {!nouvIntervArtisanId && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Artisan *</label>
+                <select
+                  value={nouvIntervArtisanId || ''}
+                  onChange={e => setNouvIntervArtisanId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">— Choisir un artisan —</option>
+                  {devis.filter(d => d.statut === 'accepte').map(d => (
+                    <option key={d.artisan_id} value={d.artisan_id}>{d.artisan?.entreprise}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {nouvIntervArtisanId && (
+              <p className="text-sm font-medium text-green-700">
+                🔨 {devis.find(d => d.artisan_id === nouvIntervArtisanId)?.artisan?.entreprise}
+              </p>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Type d&apos;intervention</label>
+              <div className="flex gap-3">
+                {[{ value: 'periode', label: 'Période continue' }, { value: 'jours_specifiques', label: 'Jours spécifiques' }].map(({ value, label }) => (
+                  <label key={value} className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="nouv_type_int" value={value}
+                      checked={nouvIntervForm.type_intervention === value}
+                      onChange={e => setNouvIntervForm(f => ({ ...f, type_intervention: e.target.value, jours_specifiques: [] }))}
+                      className="accent-blue-700" />
+                    <span className="text-sm text-gray-700">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {nouvIntervForm.type_intervention === 'periode' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date de début *</label>
+                  <input type="date" value={nouvIntervForm.date_debut}
+                    onChange={e => setNouvIntervForm(f => ({ ...f, date_debut: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date de fin *</label>
+                  <input type="date" value={nouvIntervForm.date_fin}
+                    onChange={e => setNouvIntervForm(f => ({ ...f, date_fin: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+            )}
+
+            {nouvIntervForm.type_intervention === 'jours_specifiques' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ajouter des jours</label>
+                <input type="date"
+                  onChange={e => {
+                    const date = e.target.value
+                    if (!date) return
+                    setNouvIntervForm(f => ({
+                      ...f,
+                      jours_specifiques: f.jours_specifiques.includes(date)
+                        ? f.jours_specifiques.filter(j => j !== date)
+                        : [...f.jours_specifiques, date].sort()
+                    }))
+                    e.target.value = ''
+                  }}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2" />
+                <div className="flex flex-wrap gap-1">
+                  {nouvIntervForm.jours_specifiques.map(j => (
+                    <span key={j} className="flex items-center gap-1 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                      {new Date(j).toLocaleDateString('fr-FR')}
+                      <button onClick={() => setNouvIntervForm(f => ({ ...f, jours_specifiques: f.jours_specifiques.filter(d => d !== j) }))}>×</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+              <textarea value={nouvIntervForm.notes}
+                onChange={e => setNouvIntervForm(f => ({ ...f, notes: e.target.value }))}
+                rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={() => { setModalCreerIntervOuvert(false); setNouvIntervArtisanId(null) }}
+                className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
+              <button onClick={creerInterventionDossier}
+                disabled={!nouvIntervArtisanId || saving || (nouvIntervForm.type_intervention === 'periode' && (!nouvIntervForm.date_debut || !nouvIntervForm.date_fin))}
+                className="flex-1 bg-green-700 text-white py-2 rounded-lg text-sm hover:bg-green-800 disabled:opacity-50">
+                {saving ? 'Enregistrement...' : 'Planifier'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       </main>
     </div>
