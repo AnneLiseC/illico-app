@@ -24,6 +24,7 @@ export default function Planning() {
   const [modeEdition, setModeEdition] = useState(false)
   const [saving, setSaving] = useState(false)
   const [erreur, setErreur] = useState('')
+  const [formDateCle, setFormDateCle] = useState({ date_demarrage_chantier: '', date_fin_chantier: '' })
   const [devis, setDevis] = useState([])
   const [googleConnected, setGoogleConnected] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -247,7 +248,7 @@ export default function Planning() {
         artisan_id: data.artisan_id || '',
         notes: data.notes || '',
       })
-    } else {
+    } else if (type === 'intervention') {
       setFormIntervention({
         dossier_id: data.dossier_id,
         artisan_id: data.artisan_id,
@@ -256,6 +257,11 @@ export default function Planning() {
         date_fin: data.date_fin || '',
         jours_specifiques: data.jours_specifiques || [],
         notes: data.notes || '',
+      })
+    } else if (type === 'date_cle') {
+      setFormDateCle({
+        date_demarrage_chantier: data.date_demarrage_chantier || '',
+        date_fin_chantier: data.date_fin_chantier || '',
       })
     }
     setModalOuvert(true)
@@ -367,6 +373,24 @@ export default function Planning() {
     } catch (err) {
       console.error('Erreur suppression Google event:', err)
     }
+  }
+
+  const sauvegarderDateCle = async () => {
+    if (!elementSelectionne?.data?.id) return
+    setSaving(true)
+    setErreur('')
+    const { error } = await supabase.from('dossiers').update({
+      date_demarrage_chantier: formDateCle.date_demarrage_chantier || null,
+      date_fin_chantier: formDateCle.date_fin_chantier || null,
+    }).eq('id', elementSelectionne.data.id)
+    if (error) { setErreur('Erreur : ' + error.message); setSaving(false); return }
+    // Mettre à jour localement
+    setDossiers(prev => prev.map(d => d.id === elementSelectionne.data.id
+      ? { ...d, date_demarrage_chantier: formDateCle.date_demarrage_chantier || null, date_fin_chantier: formDateCle.date_fin_chantier || null }
+      : d
+    ))
+    fermerModal()
+    setSaving(false)
   }
 
   const fermerModal = () => {
@@ -762,6 +786,43 @@ export default function Planning() {
                     disabled={(!formIntervention.dossier_id && !modeEdition) || !formIntervention.artisan_id || saving}
                     className="flex-1 bg-green-700 text-white py-2 rounded-lg text-sm hover:bg-green-800 disabled:opacity-50">
                     {saving ? 'Enregistrement...' : modeEdition ? 'Enregistrer' : "Planifier l'intervention"}
+                  </button>
+                </div>
+              </>
+            )}
+          {/* Formulaire date clé chantier */}
+            {elementSelectionne?.type === 'date_cle' && (
+              <>
+                <div className="flex items-center justify-between">
+                  <h2 className="font-semibold text-gray-800">
+                    {elementSelectionne.data.reference} — Dates chantier
+                  </h2>
+                </div>
+                <p className="text-xs text-gray-400">
+                  {elementSelectionne.data.client?.prenom} {elementSelectionne.data.client?.nom}
+                </p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">🏗 Date de démarrage</label>
+                    <input type="date"
+                      value={formDateCle.date_demarrage_chantier}
+                      onChange={e => setFormDateCle(f => ({ ...f, date_demarrage_chantier: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">🏁 Date de fin</label>
+                    <input type="date"
+                      value={formDateCle.date_fin_chantier}
+                      onChange={e => setFormDateCle(f => ({ ...f, date_fin_chantier: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+                {erreur && <p className="text-red-500 text-sm">{erreur}</p>}
+                <div className="flex gap-2">
+                  <button onClick={fermerModal} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
+                  <button onClick={sauvegarderDateCle} disabled={saving}
+                    className="flex-1 bg-blue-800 text-white py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
+                    {saving ? 'Enregistrement...' : 'Enregistrer'}
                   </button>
                 </div>
               </>
