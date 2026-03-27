@@ -74,7 +74,7 @@ const S = StyleSheet.create({
   summaryValue: { fontSize: 8, fontFamily: 'Helvetica-Bold' },
   summaryValueOrange: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: ORANGE },
   footerCenter: { position: 'absolute', bottom: 24, left: 35, right: 35, alignItems: 'center', borderTopWidth: 1, borderTopColor: '#e5e7eb', paddingTop: 6 },
-  footerSlogan: { fontSize: 8, color: BLEU_CLAIR, fontFamily: 'Helvetica-Bold', fontStyle: 'italic' },
+  footerSlogan: { fontSize: 8, color: BLEU_CLAIR, fontFamily: 'Helvetica-Oblique' },
   sectionTitle: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: BLEU_FONCE, marginTop: 12, marginBottom: 4 },
   infoGrid: { flexDirection: 'row', marginBottom: 8 },
   infoBlock: { flex: 1 },
