@@ -346,7 +346,7 @@ export default function Planning() {
         <div className="flex gap-2">
           {/* Boutons Google Calendar */}
           {!googleConnected ? (
-            <a href="/api/auth/google"
+            <a href={`/api/auth/google?userId=${profile?.id}`}
               className="flex items-center gap-2 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">
               <span>📅</span> Connecter Google Calendar
             </a>

@@ -1,6 +1,4 @@
 // app/api/auth/google/callback/route.js
-// Reçoit le code Google, échange contre des tokens, les stocke dans Supabase
-
 import { google } from 'googleapis'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
@@ -20,49 +18,27 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const error = searchParams.get('error')
+  const userId = searchParams.get('state') // userId passé dans le state OAuth
 
-  if (error || !code) {
-    return NextResponse.redirect(
-      new URL('/planning?google=error', request.url)
-    )
+  if (error || !code || !userId) {
+    console.error('Callback error:', { error, code: !!code, userId })
+    return NextResponse.redirect(new URL('/planning?google=error', request.url))
   }
 
   try {
-    // Échanger le code contre des tokens
     const { tokens } = await oauth2Client.getToken(code)
 
-    // Récupérer le cookie de session Supabase pour identifier l'utilisateur
-    const cookieHeader = request.headers.get('cookie') || ''
-    const supabaseWithCookie = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      { global: { headers: { cookie: cookieHeader } } }
-    )
-
-    const { data: { user } } = await supabaseWithCookie.auth.getUser()
-
-    if (!user) {
-      return NextResponse.redirect(
-        new URL('/login', request.url)
-      )
-    }
-
-    // Stocker les tokens dans Supabase
     await supabaseAdmin.from('google_tokens').upsert({
-      user_id: user.id,
+      user_id: userId,
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token || null,
       expiry_date: tokens.expiry_date || null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id' })
 
-    return NextResponse.redirect(
-      new URL('/planning?google=connected', request.url)
-    )
+    return NextResponse.redirect(new URL('/planning?google=connected', request.url))
   } catch (err) {
-    console.error('Google OAuth error:', err)
-    return NextResponse.redirect(
-      new URL('/planning?google=error', request.url)
-    )
+    console.error('Google OAuth callback error:', err)
+    return NextResponse.redirect(new URL('/planning?google=error', request.url))
   }
 }
