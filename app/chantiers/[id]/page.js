@@ -596,7 +596,14 @@ export default function FicheChantier({ params }) {
 
   const majSuiviChantier = async (type, montant, champ, valeur) => {
     const upsertOne = async (t, m) => {
-      const existing = suiviFinancier.find(s => s.type_echeance === t)
+      // Interroger la BDD directement (pas le state) pour éviter les problèmes de double appel
+      const { data: existing } = await supabase
+        .from('suivi_financier')
+        .select('id')
+        .eq('dossier_id', id)
+        .eq('type_echeance', t)
+        .is('artisan_id', null)
+        .maybeSingle()
       if (existing) {
         await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
       } else {
@@ -604,7 +611,6 @@ export default function FicheChantier({ params }) {
       }
     }
     await upsertOne(type, montant)
-    // honoraires_courtage et acompte_amo sont équivalents sur un dossier AMO
     if (type === 'honoraires_courtage' && dossier?.typologie === 'amo') await upsertOne('acompte_amo', montant)
     if (type === 'acompte_amo' && dossier?.typologie === 'amo') await upsertOne('honoraires_courtage', montant)
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
