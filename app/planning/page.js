@@ -289,11 +289,14 @@ export default function Planning() {
   const supprimer = async () => {
     if (!elementSelectionne) return
     if (!confirm('Supprimer ?')) return
+    const googleEventId = elementSelectionne.data.google_event_id
     if (elementSelectionne.type === 'rdv') {
       await supabase.from('rendez_vous').delete().eq('id', elementSelectionne.data.id)
     } else {
       await supabase.from('interventions_artisans').delete().eq('id', elementSelectionne.data.id)
     }
+    // Supprimer aussi dans Google Calendar si synchronisé
+    if (googleEventId) await deleteGoogleEvent(googleEventId)
     await chargerTout()
     fermerModal()
   }
@@ -317,6 +320,19 @@ export default function Planning() {
       setSyncMessage('❌ Erreur lors de la synchronisation')
     }
     setSyncing(false)
+  }
+
+  const deleteGoogleEvent = async (googleEventId) => {
+    if (!googleEventId || !profile?.id) return
+    try {
+      await fetch('/api/google/calendar/event', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: profile.id, googleEventId }),
+      })
+    } catch (err) {
+      console.error('Erreur suppression Google event:', err)
+    }
   }
 
   const fermerModal = () => {

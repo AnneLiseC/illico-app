@@ -244,9 +244,24 @@ export default function FicheChantier({ params }) {
     }
   }
 
+  const deleteGoogleEvent = async (googleEventId) => {
+    if (!googleEventId || !profile?.id) return
+    try {
+      await fetch('/api/google/calendar/event', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: profile.id, googleEventId }),
+      })
+    } catch (err) {
+      console.error('Erreur suppression Google event:', err)
+    }
+  }
+
   const supprimerRdvDossier = async (rdvId) => {
     if (!confirm('Supprimer ce RDV ?')) return
+    const rdv = rdvsDossier.find(r => r.id === rdvId)
     await supabase.from('rendez_vous').delete().eq('id', rdvId)
+    if (rdv?.google_event_id) await deleteGoogleEvent(rdv.google_event_id)
     await chargerRdvsDossier()
   }
 
@@ -264,7 +279,9 @@ export default function FicheChantier({ params }) {
 
   const supprimerInterventionDossier = async (intId) => {
     if (!confirm('Supprimer cette intervention ?')) return
+    const intervention = interventionsDossier.find(i => i.id === intId)
     await supabase.from('interventions_artisans').delete().eq('id', intId)
+    if (intervention?.google_event_id) await deleteGoogleEvent(intervention.google_event_id)
     const { data } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
     setInterventionsDossier(data || [])
   }
