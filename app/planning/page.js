@@ -154,11 +154,12 @@ export default function Planning() {
       const color = couleurArtisan(i.artisan_id)
       const titre = `🔨 ${i.artisan?.entreprise || ''} — ${i.dossier?.client?.prenom || ''} ${i.dossier?.client?.nom || ''}`
       if (i.type_intervention === 'periode') {
+        const endDateExclusive = (() => { const d = new Date(i.date_fin); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10) })()
         return [{
           id: 'int-' + i.id,
           title: titre,
           start: i.date_debut,
-          end: i.date_fin,
+          end: endDateExclusive,
           backgroundColor: color + '33',
           borderColor: color,
           textColor: color,
@@ -203,6 +204,7 @@ export default function Planning() {
   const handleEventClick = (info) => {
     const { type, data } = info.event.extendedProps
     setElementSelectionne({ type, data })
+    setModalType(type)
     setModeEdition(false)
     if (type === 'rdv') {
       setFormRdv({
