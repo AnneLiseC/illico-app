@@ -595,12 +595,18 @@ export default function FicheChantier({ params }) {
   const suiviSoldeAMO = suiviFinancier.find(s => s.type_echeance === 'solde_amo')
 
   const majSuiviChantier = async (type, montant, champ, valeur) => {
-    const existing = suiviFinancier.find(s => s.type_echeance === type)
-    if (existing) {
-      await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
-    } else {
-      await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: type, montant_ttc: montant, [champ]: valeur })
+    const upsertOne = async (t, m) => {
+      const existing = suiviFinancier.find(s => s.type_echeance === t)
+      if (existing) {
+        await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
+      } else {
+        await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: t, montant_ttc: m, [champ]: valeur })
+      }
     }
+    await upsertOne(type, montant)
+    // honoraires_courtage et acompte_amo sont équivalents sur un dossier AMO
+    if (type === 'honoraires_courtage' && dossier?.typologie === 'amo') await upsertOne('acompte_amo', montant)
+    if (type === 'acompte_amo' && dossier?.typologie === 'amo') await upsertOne('honoraires_courtage', montant)
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -1391,15 +1397,17 @@ export default function FicheChantier({ params }) {
                       className="w-24 border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                     />
                   </div>
-              <select
-                value={suiviCourtage?.statut_client || 'en_attente'}
-                onChange={e => majSuiviChantier('honoraires_courtage', honorairesCourtage, 'statut_client', e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="en_attente">En attente</option>
-                <option value="envoye">Facturé</option>
-                <option value="regle">✅ Réglé</option>
-              </select>
+              <div className="mt-3">
+                <select
+                  value={suiviCourtage?.statut_client || 'en_attente'}
+                  onChange={e => majSuiviChantier('honoraires_courtage', honorairesCourtage, 'statut_client', e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer"
+                >
+                  <option value="en_attente">⏳ En attente</option>
+                  <option value="envoye">📤 Facturé</option>
+                  <option value="regle">✅ Réglé</option>
+                </select>
+              </div>
             </div>
 
             {dossier.typologie === 'amo' && (
