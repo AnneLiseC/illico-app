@@ -352,7 +352,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier }) {
 }
 
 // ── DOSSIER FIN DE CHANTIER ──
-function DossierFinChantierPDF({ dossier, devis, comptes_rendus, referente }) {
+function DossierFinChantierPDF({ dossier, devis, referente }) {
   const client = dossier.client
   const nomClient = client
     ? `${client.civilite || ''} ${client.prenom || ''} ${client.nom || ''}`.trim()
@@ -369,16 +369,43 @@ function DossierFinChantierPDF({ dossier, devis, comptes_rendus, referente }) {
   }[dossier.typologie] || dossier.typologie || '—'
 
   const devisAcceptes = (devis || []).filter((d) => d.statut === 'accepte')
+  const totalHT = devisAcceptes.reduce((s, d) => s + toNumber(d.montant_ht), 0)
   const totalTTC = devisAcceptes.reduce((s, d) => s + toNumber(d.montant_ttc), 0)
-  const comptesRendusValides = (comptes_rendus || []).filter((cr) => cr.valide)
+
+  const tauxCourtage = toNumber(dossier.taux_courtage ?? 0.06)
+  const tauxAmo = toNumber(dossier.honoraires_amo_taux ?? 9) / 100
+  const fraisTTC = dossier.frais_statut === 'offerts' ? 0 : toNumber(dossier.frais_consultation)
+
+  const honoraires = dossier.typologie === 'amo'
+    ? totalTTC * (tauxCourtage + tauxAmo)
+    : ['courtage', 'amo'].includes(dossier.typologie)
+      ? totalTTC * tauxCourtage
+      : 0
+
+  const totalProjet = totalTTC + honoraires + fraisTTC
+
+  const descriptifProjet =
+    dossier.descriptif_projet ||
+    dossier.description ||
+    dossier.objet_travaux ||
+    'Descriptif du projet à compléter.'
+
+  const planningItems = Array.isArray(dossier.planning_indicatif)
+    ? dossier.planning_indicatif
+    : []
+
+  const referencesProduits = Array.isArray(dossier.references_produits)
+    ? dossier.references_produits
+    : []
 
   return (
     <Document>
+      {/* PAGE DE GARDE */}
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
           {logoBase64 ? <PdfImage src={logoBase64} style={styles.logo} /> : <View style={styles.logo} />}
           <View style={styles.headerRight}>
-            <Text style={styles.headerTitle}>Dossier de fin de chantier</Text>
+            <Text style={styles.headerTitle}>Dossier de présentation</Text>
             <Text style={styles.headerSub}>illiCO travaux Martigues</Text>
           </View>
         </View>
@@ -392,25 +419,15 @@ function DossierFinChantierPDF({ dossier, devis, comptes_rendus, referente }) {
         <View style={styles.infoGrid}>
           <View style={styles.infoBlock}>
             <Text style={styles.infoLabel}>Référente</Text>
-            <Text style={styles.infoValue}>
-              {referente?.prenom || ''} {referente?.nom || ''}
-            </Text>
+            <Text style={styles.infoValue}>{referente?.prenom || ''} {referente?.nom || ''}</Text>
           </View>
           <View style={styles.infoBlock}>
-            <Text style={styles.infoLabel}>Démarrage</Text>
-            <Text style={styles.infoValue}>
-              {dossier.date_demarrage_chantier
-                ? new Date(dossier.date_demarrage_chantier).toLocaleDateString('fr-FR')
-                : '—'}
-            </Text>
+            <Text style={styles.infoLabel}>Client</Text>
+            <Text style={styles.infoValue}>{nomClient}</Text>
           </View>
           <View style={styles.infoBlock}>
-            <Text style={styles.infoLabel}>Fin de chantier</Text>
-            <Text style={styles.infoValue}>
-              {dossier.date_fin_chantier
-                ? new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR')
-                : '—'}
-            </Text>
+            <Text style={styles.infoLabel}>Référence chantier</Text>
+            <Text style={styles.infoValue}>{dossier.reference || '—'}</Text>
           </View>
           <View style={styles.infoBlock}>
             <Text style={styles.infoLabel}>Établi le</Text>
@@ -418,13 +435,183 @@ function DossierFinChantierPDF({ dossier, devis, comptes_rendus, referente }) {
           </View>
         </View>
 
-        <View style={[styles.divider, { marginVertical: 16 }]} />
+        {client?.adresse ? (
+          <View style={{ marginTop: 6 }}>
+            <Text style={styles.infoLabel}>Adresse</Text>
+            <Text style={styles.cell}>{client.adresse}</Text>
+          </View>
+        ) : null}
 
-        <Text style={styles.sectionTitle}>Artisans intervenus</Text>
+        <View style={styles.footer} fixed>
+          <Text style={styles.footerText}>illiCO travaux Martigues — {dossier.reference}</Text>
+          <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
+        </View>
+      </Page>
+
+      {/* DESCRIPTIF DU PROJET */}
+      <Page size="A4" style={styles.page}>
+        <View style={styles.header}>
+          {logoBase64 ? <PdfImage src={logoBase64} style={styles.logo} /> : <View style={styles.logo} />}
+          <View style={styles.headerRight}>
+            <Text style={styles.headerTitle}>Descriptif du projet</Text>
+            <Text style={styles.headerSub}>{dossier.reference} — {nomClient}</Text>
+          </View>
+        </View>
+
+        <Text style={[styles.cell, { lineHeight: 1.7 }]}>
+          {descriptifProjet}
+        </Text>
+
+        <View style={styles.footer} fixed>
+          <Text style={styles.footerText}>illiCO travaux Martigues — {dossier.reference}</Text>
+          <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
+        </View>
+      </Page>
+
+      {/* ILLUSTRATIONS & VUES 3D */}
+      <Page size="A4" style={styles.page}>
+        <View style={styles.header}>
+          {logoBase64 ? <PdfImage src={logoBase64} style={styles.logo} /> : <View style={styles.logo} />}
+          <View style={styles.headerRight}>
+            <Text style={styles.headerTitle}>Illustrations & vues 3D</Text>
+            <Text style={styles.headerSub}>{dossier.reference} — {nomClient}</Text>
+          </View>
+        </View>
+
+        <Text style={[styles.cell, { marginBottom: 14, lineHeight: 1.6, color: GRIS_TEXTE }]}>
+          Les illustrations graphiques, coupes 3D ou plans reproduits dans ce dossier sont des illustrations commerciales. Elles ne constituent pas des plans d’exécution et ne peuvent pas servir de base à la réalisation de l’ouvrage.
+        </Text>
+
+        <View
+          style={{
+            borderWidth: 1,
+            borderColor: '#D1D5DB',
+            borderRadius: 6,
+            minHeight: 420,
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 20,
+          }}
+        >
+          <Text style={{ color: GRIS_TEXTE, fontSize: 10, textAlign: 'center' }}>
+            Emplacement réservé aux photos, illustrations et futures vues de maquette 3D.
+          </Text>
+        </View>
+
+        <View style={styles.footer} fixed>
+          <Text style={styles.footerText}>illiCO travaux Martigues — {dossier.reference}</Text>
+          <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
+        </View>
+      </Page>
+
+      {/* SYNTHÈSE BUDGÉTAIRE */}
+      <Page size="A4" style={styles.page}>
+        <View style={styles.header}>
+          {logoBase64 ? <PdfImage src={logoBase64} style={styles.logo} /> : <View style={styles.logo} />}
+          <View style={styles.headerRight}>
+            <Text style={styles.headerTitle}>Synthèse budgétaire</Text>
+            <Text style={styles.headerSub}>{dossier.reference} — {nomClient}</Text>
+          </View>
+        </View>
+
         <View style={styles.table}>
           <View style={styles.tableHeader}>
-            <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Artisan</Text>
-            <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>Montant HT</Text>
+            <Text style={[styles.tableHeaderCell, { flex: 4 }]}>Poste</Text>
+            <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>Montant</Text>
+          </View>
+
+          <View style={styles.tableRow}>
+            <Text style={[styles.cell, { flex: 4 }]}>Total devis HT</Text>
+            <Text style={[styles.cellRight, { flex: 2 }]}>{fmt(totalHT)}</Text>
+          </View>
+
+          <View style={styles.tableRowAlt}>
+            <Text style={[styles.cell, { flex: 4 }]}>Total devis TTC</Text>
+            <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(totalTTC)}</Text>
+          </View>
+
+          <View style={styles.tableRow}>
+            <Text style={[styles.cell, { flex: 4 }]}>Frais de consultation</Text>
+            <Text style={[styles.cellRight, { flex: 2 }]}>
+              {dossier.frais_statut === 'offerts' ? 'Offerts' : fmt(fraisTTC)}
+            </Text>
+          </View>
+
+          <View style={styles.tableRowAlt}>
+            <Text style={[styles.cell, { flex: 4 }]}>Honoraires illiCO travaux</Text>
+            <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(honoraires)}</Text>
+          </View>
+
+          <View style={styles.tableRowTotal}>
+            <Text style={[styles.cellBold, { flex: 4 }]}>TOTAL PROJET</Text>
+            <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(totalProjet)}</Text>
+          </View>
+        </View>
+
+        <View style={styles.footer} fixed>
+          <Text style={styles.footerText}>illiCO travaux Martigues — {dossier.reference}</Text>
+          <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
+        </View>
+      </Page>
+
+      {/* PLANNING PROVISOIRE INDICATIF */}
+      <Page size="A4" style={styles.page}>
+        <View style={styles.header}>
+          {logoBase64 ? <PdfImage src={logoBase64} style={styles.logo} /> : <View style={styles.logo} />}
+          <View style={styles.headerRight}>
+            <Text style={styles.headerTitle}>Planning provisoire indicatif</Text>
+            <Text style={styles.headerSub}>{dossier.reference} — {nomClient}</Text>
+          </View>
+        </View>
+
+        <Text style={[styles.cell, { marginBottom: 14, lineHeight: 1.6, color: GRIS_TEXTE }]}>
+          Ce planning est communiqué à titre purement indicatif. Il ne possède aucune valeur contractuelle et peut évoluer selon les disponibilités des entreprises, des matériaux ou l’évolution du projet.
+        </Text>
+
+        {planningItems.length > 0 ? (
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Intervenant</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 4 }]}>Intervention</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'center' }]}>Période</Text>
+            </View>
+
+            {planningItems.map((item, idx) => (
+              <View key={`${item.intervenant || 'planning'}-${idx}`} style={idx % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
+                <Text style={[styles.cell, { flex: 3 }]}>{item.intervenant || '—'}</Text>
+                <Text style={[styles.cell, { flex: 4 }]}>{item.intervention || '—'}</Text>
+                <Text style={[styles.cell, { flex: 2, textAlign: 'center' }]}>{item.periode || '—'}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <View style={{ borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 6, padding: 16 }}>
+            <Text style={{ color: GRIS_TEXTE, fontSize: 10 }}>
+              Planning partagé à intégrer.
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.footer} fixed>
+          <Text style={styles.footerText}>illiCO travaux Martigues — {dossier.reference}</Text>
+          <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
+        </View>
+      </Page>
+
+      {/* DEVIS */}
+      <Page size="A4" style={styles.page}>
+        <View style={styles.header}>
+          {logoBase64 ? <PdfImage src={logoBase64} style={styles.logo} /> : <View style={styles.logo} />}
+          <View style={styles.headerRight}>
+            <Text style={styles.headerTitle}>Devis</Text>
+            <Text style={styles.headerSub}>{dossier.reference} — {nomClient}</Text>
+          </View>
+        </View>
+
+        <View style={styles.table}>
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Entreprise</Text>
+            <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Objet</Text>
             <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>Montant TTC</Text>
             <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'center' }]}>Date signature</Text>
           </View>
@@ -432,152 +619,96 @@ function DossierFinChantierPDF({ dossier, devis, comptes_rendus, referente }) {
           {devisAcceptes.map((d, idx) => (
             <View key={d.id} style={idx % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
               <Text style={[styles.cell, { flex: 3 }]}>{d.artisan?.entreprise || '—'}</Text>
-              <Text style={[styles.cellRight, { flex: 2 }]}>{fmt(d.montant_ht)}</Text>
+              <Text style={[styles.cell, { flex: 3 }]}>{d.notes || d.description || 'Devis signé'}</Text>
               <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(d.montant_ttc)}</Text>
               <Text style={[styles.cell, { flex: 2, textAlign: 'center' }]}>
-                {d.date_signature
-                  ? new Date(d.date_signature).toLocaleDateString('fr-FR')
-                  : '—'}
+                {d.date_signature ? new Date(d.date_signature).toLocaleDateString('fr-FR') : '—'}
               </Text>
             </View>
           ))}
-
-          <View style={styles.tableRowTotal}>
-            <Text style={[styles.cellBold, { flex: 3 }]}>TOTAL TRAVAUX</Text>
-            <Text style={{ flex: 2 }} />
-            <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(totalTTC)}</Text>
-            <Text style={{ flex: 2 }} />
-          </View>
         </View>
 
         <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>
-            illiCO travaux Martigues — Dossier de fin de chantier — {dossier.reference}
-          </Text>
-          <Text
-            style={styles.footerText}
-            render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`}
-          />
+          <Text style={styles.footerText}>illiCO travaux Martigues — {dossier.reference}</Text>
+          <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
         </View>
       </Page>
 
-      {comptesRendusValides.length > 0 && (
-        <Page size="A4" style={styles.page}>
-          <View style={styles.header}>
-            {logoBase64 ? <PdfImage src={logoBase64} style={styles.logo} /> : <View style={styles.logo} />}
-            <View style={styles.headerRight}>
-              <Text style={styles.headerTitle}>Comptes-rendus de visite</Text>
-              <Text style={styles.headerSub}>
-                {dossier.reference} — {nomClient}
-              </Text>
-            </View>
-          </View>
-
-          {comptesRendusValides.map((cr, idx) => {
-            const typeLabel = {
-              r1: 'R1 — Visite client',
-              r2: 'R2 — Visite avec artisan',
-              r3: 'R3 — Présentation devis',
-              suivi: 'Visite de suivi',
-              reception: 'Réception chantier',
-            }[cr.type_visite] || cr.type_visite
-
-            return (
-              <View key={cr.id} style={{ marginBottom: 16 }} wrap={false}>
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    marginBottom: 4,
-                  }}
-                >
-                  <Text style={[styles.cellBold, { color: BLEU }]}>{typeLabel}</Text>
-                  <Text style={styles.infoRowLabel}>
-                    {cr.date_visite
-                      ? new Date(cr.date_visite).toLocaleDateString('fr-FR')
-                      : new Date(cr.created_at).toLocaleDateString('fr-FR')}
-                  </Text>
-                </View>
-
-                {cr.contenu_final ? (
-                  <Text style={[styles.cell, { lineHeight: 1.6, color: '#374151' }]}>
-                    {cr.contenu_final}
-                  </Text>
-                ) : cr.notes_brutes ? (
-                  <Text style={[styles.cell, { lineHeight: 1.6, color: GRIS_TEXTE }]}>
-                    {cr.notes_brutes}
-                  </Text>
-                ) : null}
-
-                {idx < comptesRendusValides.length - 1 && (
-                  <View style={[styles.divider, { marginTop: 12 }]} />
-                )}
-              </View>
-            )
-          })}
-
-          <View style={styles.footer} fixed>
-            <Text style={styles.footerText}>
-              illiCO travaux Martigues — Dossier de fin de chantier — {dossier.reference}
-            </Text>
-            <Text
-              style={styles.footerText}
-              render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`}
-            />
-          </View>
-        </Page>
-      )}
-
+      {/* RÉFÉRENCES PRODUITS */}
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
           {logoBase64 ? <PdfImage src={logoBase64} style={styles.logo} /> : <View style={styles.logo} />}
           <View style={styles.headerRight}>
-            <Text style={styles.headerTitle}>Attestation de réception</Text>
-            <Text style={styles.headerSub}>
-              {dossier.reference} — {nomClient}
-            </Text>
+            <Text style={styles.headerTitle}>Références produits</Text>
+            <Text style={styles.headerSub}>{dossier.reference} — {nomClient}</Text>
           </View>
         </View>
 
-        <View style={{ marginBottom: 32 }}>
-          <Text style={[styles.cell, { lineHeight: 1.8, marginBottom: 16 }]}>
-            Je soussigné(e) <Text style={{ fontFamily: 'Helvetica-Bold' }}>{nomClient}</Text>,
-            certifie avoir reçu et accepté la réception des travaux réalisés dans le cadre du
-            dossier <Text style={{ fontFamily: 'Helvetica-Bold' }}>{dossier.reference}</Text>,
-            supervisé par illiCO travaux Martigues.
-          </Text>
-          <Text style={[styles.cell, { lineHeight: 1.8, marginBottom: 16 }]}>
-            Les travaux ont été réalisés conformément aux devis signés. Le dossier de fin de
-            chantier m’a été remis.
-          </Text>
-        </View>
+        {referencesProduits.length > 0 ? (
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Produit</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Référence</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Marque</Text>
+            </View>
 
-        <View style={{ flexDirection: 'row', gap: 40 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.infoLabel}>Fait à _____________, le _____________</Text>
-            <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Signature client</Text>
-            <View style={styles.signatureBox} />
-            <Text style={styles.signatureLabel}>{nomClient}</Text>
+            {referencesProduits.map((p, idx) => (
+              <View key={`${p.reference || 'produit'}-${idx}`} style={idx % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
+                <Text style={[styles.cell, { flex: 3 }]}>{p.nom || '—'}</Text>
+                <Text style={[styles.cell, { flex: 3 }]}>{p.reference || '—'}</Text>
+                <Text style={[styles.cell, { flex: 2 }]}>{p.marque || '—'}</Text>
+              </View>
+            ))}
           </View>
-
-          <View style={{ flex: 1 }}>
-            <Text style={styles.infoLabel}>Cachet et signature illiCO travaux</Text>
-            <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Signature référente</Text>
-            <View style={styles.signatureBox} />
-            <Text style={styles.signatureLabel}>
-              {referente?.prenom || ''} {referente?.nom || ''} — illiCO travaux Martigues
+        ) : (
+          <View style={{ borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 6, padding: 16 }}>
+            <Text style={{ color: GRIS_TEXTE, fontSize: 10 }}>
+              Fiches techniques / références produits à intégrer.
             </Text>
           </View>
+        )}
+
+        <View style={styles.footer} fixed>
+          <Text style={styles.footerText}>illiCO travaux Martigues — {dossier.reference}</Text>
+          <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
+        </View>
+      </Page>
+
+      {/* QUALIFICATIONS ET ASSURANCES */}
+      <Page size="A4" style={styles.page}>
+        <View style={styles.header}>
+          {logoBase64 ? <PdfImage src={logoBase64} style={styles.logo} /> : <View style={styles.logo} />}
+          <View style={styles.headerRight}>
+            <Text style={styles.headerTitle}>Qualifications et assurances</Text>
+            <Text style={styles.headerSub}>{dossier.reference} — {nomClient}</Text>
+          </View>
+        </View>
+
+        <View style={styles.table}>
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Entreprise</Text>
+            <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'center' }]}>KBIS</Text>
+            <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'center' }]}>Décennale</Text>
+            <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Observations</Text>
+          </View>
+
+          {devisAcceptes.map((d, idx) => (
+            <View key={d.id} style={idx % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
+              <Text style={[styles.cell, { flex: 3 }]}>{d.artisan?.entreprise || '—'}</Text>
+              <Text style={[styles.cell, { flex: 2, textAlign: 'center' }]}>
+                {d.artisan?.kbis_fourni ? 'Oui' : 'À joindre'}
+              </Text>
+              <Text style={[styles.cell, { flex: 2, textAlign: 'center' }]}>
+                {d.artisan?.decennale_fournie ? 'Oui' : 'À joindre'}
+              </Text>
+              <Text style={[styles.cell, { flex: 3 }]}>Pièces administratives artisan</Text>
+            </View>
+          ))}
         </View>
 
         <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>
-            illiCO travaux Martigues — Dossier de fin de chantier — {dossier.reference}
-          </Text>
-          <Text
-            style={styles.footerText}
-            render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`}
-          />
+          <Text style={styles.footerText}>illiCO travaux Martigues — {dossier.reference}</Text>
+          <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
         </View>
       </Page>
     </Document>
@@ -592,11 +723,10 @@ function buildRecapitulatifDocument({ dossier, devis, suiviFinancier }) {
   })
 }
 
-function buildDossierFinDocument({ dossier, devis, comptes_rendus, referente }) {
+function buildDossierFinDocument({ dossier, devis, referente }) {
   return React.createElement(DossierFinChantierPDF, {
     dossier,
     devis,
-    comptes_rendus,
     referente,
   })
 }
@@ -654,20 +784,9 @@ export async function POST(request) {
 
       pdfBuffer = await renderToBuffer(doc)
     } else if (type === 'dossier_fin') {
-      const { data: comptes_rendus, error: comptesRendusError } = await supabaseAdmin
-        .from('comptes_rendus')
-        .select('*')
-        .eq('dossier_id', dossierId)
-        .order('date_visite')
-
-      if (comptesRendusError) {
-        return NextResponse.json({ error: comptesRendusError.message }, { status: 500 })
-      }
-
       const doc = buildDossierFinDocument({
         dossier,
         devis: devis || [],
-        comptes_rendus: comptes_rendus || [],
         referente: dossier.referente,
       })
 
@@ -679,7 +798,7 @@ export async function POST(request) {
     const filename =
       type === 'recapitulatif'
         ? `Recapitulatif_${dossier.reference}.pdf`
-        : `DossierFin_${dossier.reference}.pdf`
+        : `Dossier_${dossier.reference}.pdf`
 
     return new Response(pdfBuffer, {
       headers: {
