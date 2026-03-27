@@ -25,13 +25,13 @@ export default function Clients() {
         .from('clients')
         .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role)')
         .order('created_at', { ascending: false })
+
       // Agente → uniquement ses clients
       if (prof.role === 'agente') {
         query = query.eq('referente', prof.id)
       }
 
-      const { data, error } = await query
-      console.log('clients:', data?.length, 'error:', error?.message)
+      const { data } = await query
       setClients(data || [])
 
       // Charger les agentes dynamiquement (admin seulement)

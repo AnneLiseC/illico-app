@@ -26,7 +26,7 @@ export default function Chantiers() {
 
       let query = supabase
         .from('dossiers')
-        .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse), referente:profiles(id, prenom, nom, role)')
+        .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role)')
         .order('created_at', { ascending: false })
 
       // Agente → uniquement ses chantiers

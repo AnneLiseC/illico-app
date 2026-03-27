@@ -36,7 +36,7 @@ export default function FicheClient({ params }) {
 
       const { data: clientData } = await supabase
         .from('clients')
-        .select('*, referente:profiles(id, prenom, nom, role)')
+        .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role)')
         .eq('id', id)
         .single()
       setClient(clientData)

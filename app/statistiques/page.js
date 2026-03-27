@@ -38,7 +38,7 @@ export default function Statistiques() {
       const { data } = await supabase
         .from('dossiers')
         .select(`*,
-          referente:profiles(id, prenom, nom, role),
+          referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role),
           client:clients(id, prenom, nom, civilite),
           devis_artisans(*, artisan:artisans(id, entreprise, metier))`)
       setDossiers(data || [])

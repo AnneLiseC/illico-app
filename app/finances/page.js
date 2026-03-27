@@ -54,7 +54,7 @@ export default function Finances() {
   const chargerTout = async () => {
     const { data: dossiersData } = await supabase
       .from('dossiers')
-      .select(`*, referente:profiles(id, prenom, nom, role),
+      .select(`*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role),
         client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
         devis_artisans(*, artisan:artisans(id, entreprise)),
         suivi_financier(*)`)

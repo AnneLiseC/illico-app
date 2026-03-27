@@ -115,7 +115,7 @@ export default function EspaceClient() {
       // Dossier AMO du client
       const { data: dossierData } = await supabase
         .from('dossiers')
-        .select('*, referente:profiles(prenom, nom), devis_artisans(id, statut, artisan:artisans(entreprise))')
+        .select('*, referente:profiles!dossiers_referente_id_fkey(prenom, nom), devis_artisans(id, statut, artisan:artisans(entreprise))')
         .eq('client_id', profData.client_id)
         .eq('typologie', 'amo')
         .order('created_at', { ascending: false })
