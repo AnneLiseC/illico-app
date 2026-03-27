@@ -23,15 +23,15 @@ export default function Clients() {
 
       let query = supabase
         .from('clients')
-        .select('*, referente:profiles(id, prenom, nom, role)')
+        .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role)')
         .order('created_at', { ascending: false })
-
       // Agente → uniquement ses clients
       if (prof.role === 'agente') {
         query = query.eq('referente', prof.id)
       }
 
-      const { data } = await query
+      const { data, error } = await query
+      console.log('clients:', data?.length, 'error:', error?.message)
       setClients(data || [])
 
       // Charger les agentes dynamiquement (admin seulement)
