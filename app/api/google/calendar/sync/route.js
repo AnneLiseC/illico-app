@@ -38,7 +38,7 @@ function rdvToGoogleEvent(rdv) {
   const end = new Date(start.getTime() + (rdv.duree_minutes || 60) * 60000)
 
   return {
-    summary: `illiCO — ${label}${nomClient ? ' | ' + nomClient : ''}${artisan ? ' x ' + artisan : ''}`,
+    summary: ` ${label}${nomClient ? ' | ' + nomClient : ''}${artisan ? ' x ' + artisan : ''}`,
     description: [
       rdv.dossier?.reference ? `Chantier : ${rdv.dossier.reference}` : '',
       rdv.notes ? `Notes : ${rdv.notes}` : '',
@@ -59,7 +59,7 @@ function interventionToGoogleEvent(intervention) {
 
   if (intervention.type_intervention === 'periode') {
     return [{
-      summary: `illiCO — 🔨 ${artisan}${nomClient ? ' | ' + nomClient : ''}`,
+      summary: `🔨 ${artisan}${nomClient ? ' | ' + nomClient : ''}`,
       description: [
         intervention.dossier?.reference ? `Chantier : ${intervention.dossier.reference}` : '',
         intervention.notes ? `Notes : ${intervention.notes}` : '',
@@ -71,7 +71,7 @@ function interventionToGoogleEvent(intervention) {
   } else {
     // Jours spécifiques → un événement par jour
     return (intervention.jours_specifiques || []).map((jour, idx) => ({
-      summary: `illiCO — 🔨 ${artisan}${nomClient ? ' | ' + nomClient : ''}`,
+      summary: ` 🔨 ${artisan}${nomClient ? ' | ' + nomClient : ''}`,
       description: [
         intervention.dossier?.reference ? `Chantier : ${intervention.dossier.reference}` : '',
         intervention.notes ? `Notes : ${intervention.notes}` : '',
@@ -216,7 +216,7 @@ export async function POST(request) {
       if (dossier.date_demarrage_chantier) {
         try {
           const eventStart = {
-            summary: `illiCO — 🏗 Démarrage ${dossier.reference}${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
+            summary: `🏗 Démarrage ${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
             description: `[illico-start:${dossier.id}]`,
             start: { date: dossier.date_demarrage_chantier },
             end: { date: dossier.date_demarrage_chantier },
@@ -237,7 +237,7 @@ export async function POST(request) {
       if (dossier.date_fin_chantier) {
         try {
           const eventEnd = {
-            summary: `illiCO — 🏁 Fin ${dossier.reference}${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
+            summary: `🏁 Fin ${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
             description: `[illico-end:${dossier.id}]`,
             start: { date: dossier.date_fin_chantier },
             end: { date: dossier.date_fin_chantier },
