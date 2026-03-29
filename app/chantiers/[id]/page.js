@@ -120,6 +120,7 @@ export default function FicheChantier({ params }) {
   const [categorie, setCategorie] = useState('avant')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [uploadingDoc, setUploadingDoc] = useState(null) // devisId en cours d'upload
+  const [uploadingQual, setUploadingQual] = useState(null) // devisId pour qualification
   const [comptesRendus, setComptesRendus] = useState([])
   const [messages, setMessages] = useState([])
   const [nouveauCR, setNouveauCR] = useState({ type_visite: '', notes_brutes: '', contenu_final: '', date_visite: '', valide: false })
@@ -408,6 +409,7 @@ export default function FicheChantier({ params }) {
       date_limite_devis: dossier.date_limite_devis, contrat_signe: dossier.contrat_signe,
       date_signature_contrat: dossier.date_signature_contrat, date_demarrage_chantier: dossier.date_demarrage_chantier,
       date_fin_chantier: dossier.date_fin_chantier, taux_courtage: dossier.taux_courtage, honoraires_amo_taux: dossier.honoraires_amo_taux,
+      resume_projet: dossier.resume_projet || null,
     }).eq('id', id)
     if (error) { setErreur('Erreur : ' + error.message) } else { setSucces('Modifications enregistrées ✓'); setMode('lecture') }
     setSaving(false)
@@ -518,6 +520,29 @@ export default function FicheChantier({ params }) {
     await supabase.from('devis_artisans').update({ facture_path: null }).eq('id', devisId)
     await chargerDevis()
     setSucces('Facture supprimée ✓')
+  }
+
+  // ── UPLOAD QUALIFICATION ARTISAN ──
+  const uploadQualification = async (devisId, fichier) => {
+    if (!fichier) return
+    setUploadingQual(devisId)
+    const ext = fichier.name.split('.').pop()
+    const chemin = `chantiers/${id}/qualifications/${devisId}.${ext}`
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+    if (!error) {
+      await supabase.from('devis_artisans').update({ qualification_path: chemin }).eq('id', devisId)
+      await chargerDevis()
+      setSucces('Qualification uploadée ✓')
+    } else { setErreur('Erreur upload : ' + error.message) }
+    setUploadingQual(null)
+  }
+
+  const supprimerQualification = async (devisId, path) => {
+    if (!confirm('Supprimer la qualification ?')) return
+    await supabase.storage.from('documents').remove([path])
+    await supabase.from('devis_artisans').update({ qualification_path: null }).eq('id', devisId)
+    await chargerDevis()
+    setSucces('Qualification supprimée ✓')
   }
 
   // ── URL SIGNÉE DOCUMENT ──
@@ -845,12 +870,6 @@ export default function FicheChantier({ params }) {
                 {generatingPDF === 'recapitulatif' ? '⏳ Génération...' : '📄 Récapitulatif'}
               </button>
               <button
-                onClick={() => generatePDF('dossier_fin')}
-                disabled={!!generatingPDF}
-                className="border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
-                {generatingPDF === 'dossier_fin' ? '⏳ Génération...' : '📦 Dossier fin chantier'}
-              </button>
-              <button
                 onClick={() => generatePDF('dossier_restitution')}
                 disabled={!!generatingPDF}
                 className="border border-orange-300 text-orange-700 px-3 py-2 rounded-lg text-sm hover:bg-orange-50 disabled:opacity-50">
@@ -893,6 +912,12 @@ export default function FicheChantier({ params }) {
                   </div>
                 ))}
               </div>
+              {dossier.resume_projet && (
+                <div className="border-t border-gray-100 pt-3">
+                  <p className="text-xs text-gray-400 mb-1">Résumé du projet</p>
+                  <p className="text-sm text-gray-700 leading-relaxed">{dossier.resume_projet}</p>
+                </div>
+              )}
               <div className="border-t border-gray-100 pt-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-700">Contrat de prestation</p>
@@ -1328,6 +1353,26 @@ export default function FicheChantier({ params }) {
                               {uploadingDoc === d.id + '_fact' ? 'Upload...' : '+ Uploader'}
                               <input type="file" accept=".pdf" className="hidden" disabled={uploadingDoc === d.id + '_fact'}
                                 onChange={e => e.target.files[0] && uploadFacture(d.id, e.target.files[0])} />
+                            </label>
+                          )}
+                        </div>
+                      </div>
+                      {/* Qualification artisan */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-500 font-medium">🏅 Qualification (RGE, Qualibat…)</span>
+                        <div className="flex items-center gap-2">
+                          {d.qualification_path ? (
+                            <>
+                              <button onClick={() => ouvrirDocument(d.qualification_path)}
+                                className="text-xs text-blue-600 hover:underline">Voir PDF</button>
+                              <button onClick={() => supprimerQualification(d.id, d.qualification_path)}
+                                className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
+                            </>
+                          ) : (
+                            <label className={`text-xs cursor-pointer px-2 py-1 rounded border transition-all ${uploadingQual === d.id ? 'text-gray-400 border-gray-200' : 'text-purple-600 border-purple-200 hover:bg-purple-50'}`}>
+                              {uploadingQual === d.id ? 'Upload...' : '+ Uploader'}
+                              <input type="file" accept=".pdf" className="hidden" disabled={uploadingQual === d.id}
+                                onChange={e => e.target.files[0] && uploadQualification(d.id, e.target.files[0])} />
                             </label>
                           )}
                         </div>

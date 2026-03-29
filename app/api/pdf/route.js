@@ -2,6 +2,7 @@
 // Génération PDF : récapitulatif financier client + dossier fin de chantier
 
 import React from 'react'
+import { buildDossierRestitution } from './restitution.js'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import  {renderToBuffer, Document,  Page,  Text,  View,  Image as PdfImage,  StyleSheet,} from '@react-pdf/renderer'
@@ -783,26 +784,18 @@ export async function POST(request) {
       })
 
       pdfBuffer = await renderToBuffer(doc)
-    } else if (type === 'dossier_fin') {
-      const doc = buildDossierFinDocument({
-        dossier,
-        devis: devis || [],
-        referente: dossier.referente,
-      })
-
-      pdfBuffer = await renderToBuffer(doc)
     } else if (type === 'dossier_restitution') {
-      // Charger toutes les données nécessaires
+      // Charger toutes les données nécessaires pour le dossier de restitution
+      const { data: devisComplets } = await supabaseAdmin
+        .from('devis_artisans')
+        .select('*, artisan:artisans(id, entreprise, metier, kbis_url, decennale_url, decennale_expiration)')
+        .eq('dossier_id', dossierId).order('created_at')
+
       const { data: photos } = await supabaseAdmin
         .from('photos').select('*')
         .eq('dossier_id', dossierId)
         .in('categorie', ['maquette', 'illustration'])
         .order('created_at')
-
-      const { data: fichesTech } = await supabaseAdmin
-        .from('chantier_fiches_techniques')
-        .select('*, fiche:fiches_techniques(id, nom, description), artisan:artisans(id, entreprise)')
-        .eq('dossier_id', dossierId)
 
       const { data: interventions } = await supabaseAdmin
         .from('interventions_artisans')
@@ -812,13 +805,7 @@ export async function POST(request) {
       const { data: suiviFinancier } = await supabaseAdmin
         .from('suivi_financier').select('*').eq('dossier_id', dossierId)
 
-      // Enrichir les devis avec les infos artisan complètes
-      const { data: devisComplets } = await supabaseAdmin
-        .from('devis_artisans')
-        .select('*, artisan:artisans(id, entreprise, metier, kbis_url, decennale_url, decennale_expiration)')
-        .eq('dossier_id', dossierId).order('created_at')
-
-      // Charger les photos maquette/illustration en base64
+      // Charger photos maquette en base64
       const photosWithBase64 = await Promise.all((photos || []).map(async (photo) => {
         try {
           const { data: fileData } = await supabaseAdmin.storage.from('photos').download(photo.url)
@@ -833,16 +820,14 @@ export async function POST(request) {
       }))
 
       const logoSrc = getLogoBase64()
-      const doc = React.createElement(DossierRestitutionPDF, {
+      pdfBuffer = await buildDossierRestitution({
         dossier,
         devis: devisComplets || [],
         photos: photosWithBase64,
-        fichesTech: fichesTech || [],
         interventions: interventions || [],
         suiviFinancier: suiviFinancier || [],
-        logoSrc,
+        logo: logoSrc,
       })
-      pdfBuffer = await renderToBuffer(doc)
     } else {
       return NextResponse.json({ error: 'Type de PDF inconnu' }, { status: 400 })
     }
