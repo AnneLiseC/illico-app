@@ -850,6 +850,12 @@ export default function FicheChantier({ params }) {
                 className="border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
                 {generatingPDF === 'dossier_fin' ? '⏳ Génération...' : '📦 Dossier fin chantier'}
               </button>
+              <button
+                onClick={() => generatePDF('dossier_restitution')}
+                disabled={!!generatingPDF}
+                className="border border-orange-300 text-orange-700 px-3 py-2 rounded-lg text-sm hover:bg-orange-50 disabled:opacity-50">
+                {generatingPDF === 'dossier_restitution' ? '⏳ Génération...' : '🎁 Dossier restitution'}
+              </button>
               <button onClick={() => setMode('edition')} className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900">Modifier</button>
             </div>
           ) : (

@@ -742,7 +742,7 @@ export async function POST(request) {
 
     const { data: dossier, error: dossierError } = await supabaseAdmin
       .from('dossiers')
-      .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom), client:clients(*)')
+      .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, email), client:clients(*)')
       .eq('id', dossierId)
       .single()
 
@@ -791,6 +791,58 @@ export async function POST(request) {
       })
 
       pdfBuffer = await renderToBuffer(doc)
+    } else if (type === 'dossier_restitution') {
+      // Charger toutes les données nécessaires
+      const { data: photos } = await supabaseAdmin
+        .from('photos').select('*')
+        .eq('dossier_id', dossierId)
+        .in('categorie', ['maquette', 'illustration'])
+        .order('created_at')
+
+      const { data: fichesTech } = await supabaseAdmin
+        .from('chantier_fiches_techniques')
+        .select('*, fiche:fiches_techniques(id, nom, description), artisan:artisans(id, entreprise)')
+        .eq('dossier_id', dossierId)
+
+      const { data: interventions } = await supabaseAdmin
+        .from('interventions_artisans')
+        .select('*, artisan:artisans(id, entreprise)')
+        .eq('dossier_id', dossierId).order('date_debut')
+
+      const { data: suiviFinancier } = await supabaseAdmin
+        .from('suivi_financier').select('*').eq('dossier_id', dossierId)
+
+      // Enrichir les devis avec les infos artisan complètes
+      const { data: devisComplets } = await supabaseAdmin
+        .from('devis_artisans')
+        .select('*, artisan:artisans(id, entreprise, metier, kbis_url, decennale_url, decennale_expiration)')
+        .eq('dossier_id', dossierId).order('created_at')
+
+      // Charger les photos maquette/illustration en base64
+      const photosWithBase64 = await Promise.all((photos || []).map(async (photo) => {
+        try {
+          const { data: fileData } = await supabaseAdmin.storage.from('photos').download(photo.url)
+          if (fileData) {
+            const buf = Buffer.from(await fileData.arrayBuffer())
+            const ext = (photo.url || '').split('.').pop().toLowerCase()
+            const mime = ext === 'png' ? 'image/png' : 'image/jpeg'
+            return { ...photo, base64: `data:${mime};base64,${buf.toString('base64')}` }
+          }
+        } catch {}
+        return photo
+      }))
+
+      const logoSrc = getLogoBase64()
+      const doc = React.createElement(DossierRestitutionPDF, {
+        dossier,
+        devis: devisComplets || [],
+        photos: photosWithBase64,
+        fichesTech: fichesTech || [],
+        interventions: interventions || [],
+        suiviFinancier: suiviFinancier || [],
+        logoSrc,
+      })
+      pdfBuffer = await renderToBuffer(doc)
     } else {
       return NextResponse.json({ error: 'Type de PDF inconnu' }, { status: 400 })
     }
@@ -798,6 +850,8 @@ export async function POST(request) {
     const filename =
       type === 'recapitulatif'
         ? `Recapitulatif_${dossier.reference}.pdf`
+        : type === 'dossier_restitution'
+        ? `DossierRestitution_${dossier.reference}.pdf`
         : `Dossier_${dossier.reference}.pdf`
 
     return new Response(pdfBuffer, {
@@ -810,4 +864,491 @@ export async function POST(request) {
     console.error('PDF generation error:', err)
     return NextResponse.json({ error: err.message || 'Erreur PDF' }, { status: 500 })
   }
+}
+// ─────────────────────────────────────────────────────────
+// DOSSIER DE RESTITUTION
+// ─────────────────────────────────────────────────────────
+
+// Mapping téléphone par prénom (en attendant la colonne telephone dans profiles)
+function getTelReferente(referente) {
+  if (!referente) return '06 59 81 06 81'
+  const prenom = (referente.prenom || '').toLowerCase()
+  const email = (referente.email || '').toLowerCase()
+  if (prenom === 'marine' || email.includes('marine')) return '06 59 81 06 81'
+  if (prenom.includes('anne') || email.includes('anne')) return '06 74 95 04 02'
+  return referente.telephone || '06 59 81 06 81'
+}
+
+function getNomCompletReferente(referente) {
+  if (!referente) return 'Marine MICHELANGELI'
+  const prenom = (referente.prenom || '').toLowerCase()
+  if (prenom === 'marine') return 'Marine MICHELANGELI'
+  if (prenom.includes('anne')) return 'Anne-Lise CAILLET'
+  return `${referente.prenom || ''} ${(referente.nom || '').toUpperCase()}`.trim()
+}
+
+// Styles spécifiques dossier restitution
+const RS = StyleSheet.create({
+  page: { padding: 0, fontFamily: 'Helvetica', fontSize: 10, backgroundColor: '#ffffff' },
+
+  // Page de garde
+  coverPage: { flex: 1, backgroundColor: '#ffffff' },
+  coverHeader: { backgroundColor: '#00578e', height: 8 },
+  coverLogoArea: { padding: 30, paddingBottom: 10 },
+  coverLogo: { width: 140, height: 56 },
+  coverHeroBand: { marginTop: 40, marginBottom: 0, position: 'relative' },
+  coverBlueBand: { backgroundColor: '#00578e', height: 180, marginLeft: 0, marginRight: 0 },
+  coverOrangeBand: { backgroundColor: '#f37f2b', height: 12, marginLeft: 0, marginRight: 100 },
+  coverTitle: { position: 'absolute', top: 30, left: 30, color: '#ffffff', fontSize: 36, fontFamily: 'Helvetica-Bold', lineHeight: 1.2 },
+  coverFooter: { position: 'absolute', bottom: 60, left: 0, right: 0, alignItems: 'center' },
+  coverFooterName: { fontSize: 11, color: '#00578e', textAlign: 'center', marginBottom: 3 },
+  coverFooterText: { fontSize: 10, color: '#374151', textAlign: 'center', marginBottom: 2 },
+  coverSlogan: { fontSize: 10, color: '#2f8dcb', textAlign: 'center', fontFamily: 'Helvetica-Oblique', marginTop: 10 },
+
+  // Page séparateur section
+  sepPage: { flex: 1, backgroundColor: '#ffffff', position: 'relative' },
+  sepTopBand: { height: 8, backgroundColor: '#00578e' },
+  sepHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: 30, paddingTop: 25, paddingBottom: 10 },
+  sepLogo: { width: 120, height: 48 },
+  sepTitleArea: { flex: 1, paddingLeft: 30, alignItems: 'flex-end' },
+  sepTitle: { fontSize: 28, fontFamily: 'Helvetica-Bold', color: '#00578e', textAlign: 'right', lineHeight: 1.25 },
+  sepDiamondOuter: { width: 260, height: 260, alignSelf: 'center', marginTop: 40, backgroundColor: '#e8f4fb', transform: 'rotate(45deg)' },
+  sepDecorRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingRight: 30, marginTop: 10 },
+  sepOrangeSquare: { width: 60, height: 60, backgroundColor: '#f37f2b' },
+  sepBlueRectBot: { position: 'absolute', bottom: 0, right: 0, width: 160, height: 280, backgroundColor: '#00578e' },
+  sepBlueMidRect: { position: 'absolute', bottom: 120, right: 120, width: 100, height: 180, backgroundColor: '#2f8dcb' },
+  sepSloganArea: { position: 'absolute', bottom: 30, left: 0, right: 0, paddingHorizontal: 30 },
+  sepSlogan: { fontSize: 9, color: '#6b7280', fontFamily: 'Helvetica-Oblique' },
+
+  // Pages contenu
+  contentPage: { padding: 35, fontFamily: 'Helvetica', fontSize: 9, backgroundColor: '#ffffff' },
+  contentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 10, borderBottomWidth: 2, borderBottomColor: '#00578e' },
+  contentLogo: { width: 90, height: 36 },
+  contentTitle: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: '#00578e', textAlign: 'right' },
+  contentSubTitle: { fontSize: 8, color: '#6b7280', textAlign: 'right', marginTop: 2 },
+  sectionH: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#00578e', marginTop: 14, marginBottom: 6, paddingBottom: 3, borderBottomWidth: 1, borderBottomColor: '#e8f4fb' },
+  tableHdr: { flexDirection: 'row', backgroundColor: '#00578e', paddingVertical: 5, paddingHorizontal: 4 },
+  thCell: { color: '#ffffff', fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  trEven: { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
+  trOdd: { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', backgroundColor: '#f0f7fb' },
+  trTotal: { flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 4, backgroundColor: '#00578e' },
+  tdNorm: { fontSize: 8 },
+  tdBold: { fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  tdR: { fontSize: 8, textAlign: 'right' },
+  tdRBold: { fontSize: 8, fontFamily: 'Helvetica-Bold', textAlign: 'right' },
+  tdWBold: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#ffffff' },
+  tdRWBold: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#ffffff', textAlign: 'right' },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  infoLabel: { fontSize: 8, color: '#6b7280', flex: 1 },
+  infoValue: { fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  summaryLabel: { fontSize: 8, color: '#6b7280', flex: 1 },
+  summaryValue: { fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  summaryRowOrange: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 6, backgroundColor: '#fff0e0', marginTop: 2, borderRadius: 2 },
+  summaryLabelOrange: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#f37f2b', flex: 1 },
+  summaryValueOrange: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#f37f2b' },
+  badgeOk: { backgroundColor: '#dcfce7', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 8 },
+  badgeWarn: { backgroundColor: '#fff3e0', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 8 },
+  badgeErr: { backgroundColor: '#fde8e8', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 8 },
+  badgeOkText: { fontSize: 7, color: '#166534', fontFamily: 'Helvetica-Bold' },
+  badgeWarnText: { fontSize: 7, color: '#c2410c', fontFamily: 'Helvetica-Bold' },
+  badgeErrText: { fontSize: 7, color: '#991b1b', fontFamily: 'Helvetica-Bold' },
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  photoImg: { width: 150, height: 112, objectFit: 'cover', borderRadius: 4 },
+  contentFooter: { position: 'absolute', bottom: 20, left: 35, right: 35, flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e5e7eb', paddingTop: 5 },
+  footerTxt: { fontSize: 7, color: '#6b7280' },
+  footerSlogan: { fontSize: 7, color: '#2f8dcb', fontFamily: 'Helvetica-Oblique' },
+})
+
+function SepPage({ title, logoSrc, note }) {
+  const lines = title.split('\n')
+  return React.createElement(Page, { size: 'A4', style: RS.sepPage },
+    // Bande bleue top
+    React.createElement(View, { style: RS.sepTopBand }),
+    // Header : logo + titre
+    React.createElement(View, { style: RS.sepHeaderRow },
+      React.createElement(View, null,
+        logoSrc
+          ? React.createElement(PdfImage, { src: logoSrc, style: RS.sepLogo })
+          : React.createElement(Text, { style: { fontSize: 14, fontFamily: 'Helvetica-Bold', color: '#00578e' } }, 'illiCO travaux'),
+      ),
+      React.createElement(View, { style: RS.sepTitleArea },
+        ...lines.map((line, i) => React.createElement(Text, { key: i, style: RS.sepTitle }, line)),
+      ),
+    ),
+    // Décorations géométriques — losange stylisé simplifié
+    React.createElement(View, { style: { marginTop: 40, alignItems: 'center' } },
+      React.createElement(View, { style: { width: 240, height: 240, backgroundColor: '#e8f4fb', transform: [{ rotate: '45deg' }] } }),
+    ),
+    // Carré orange + rectangle bleu superposé
+    React.createElement(View, { style: { position: 'absolute', bottom: 100, right: 60 } },
+      React.createElement(View, { style: { width: 64, height: 64, backgroundColor: '#f37f2b' } }),
+    ),
+    React.createElement(View, { style: { position: 'absolute', bottom: 0, right: 0, width: 140, height: 260, backgroundColor: '#00578e' } }),
+    React.createElement(View, { style: { position: 'absolute', bottom: 100, right: 110, width: 90, height: 160, backgroundColor: '#2f8dcb' } }),
+    // Note en bas
+    note && React.createElement(View, { style: { position: 'absolute', bottom: 28, left: 30, right: 180 } },
+      React.createElement(Text, { style: { fontSize: 7, color: '#6b7280', fontFamily: 'Helvetica-Oblique', lineHeight: 1.4 } }, note),
+    ),
+  )
+}
+
+function ContentHeader({ title, sub, logoSrc }) {
+  return React.createElement(View, { style: RS.contentHeader },
+    logoSrc
+      ? React.createElement(PdfImage, { src: logoSrc, style: RS.contentLogo })
+      : React.createElement(Text, { style: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#00578e' } }, 'illiCO'),
+    React.createElement(View, { style: { alignItems: 'flex-end' } },
+      React.createElement(Text, { style: RS.contentTitle }, title),
+      sub && React.createElement(Text, { style: RS.contentSubTitle }, sub),
+    ),
+  )
+}
+
+function ContentFooter({ ref, page }) {
+  return React.createElement(View, { style: RS.contentFooter, fixed: true },
+    React.createElement(Text, { style: RS.footerTxt }, `illiCO travaux Martigues — ${ref}`),
+    React.createElement(Text, { style: RS.footerSlogan }, 'Quand vous pensez travaux, pensez illiCO !'),
+    React.createElement(Text, { style: RS.footerTxt, render: ({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}` }),
+  )
+}
+
+function DossierRestitutionPDF({ dossier, devis, photos, fichesTech, interventions, suiviFinancier, logoSrc }) {
+  const client = dossier.client
+  const ref = dossier.referente
+  const nomClient = client
+    ? [client.civilite, client.prenom, client.nom, client.prenom2 ? `& ${client.prenom2} ${client.nom2}` : null].filter(Boolean).join(' ')
+    : '—'
+  const nomRef = getNomCompletReferente(ref)
+  const telRef = getTelReferente(ref)
+  const emailRef = ref?.email || 'marine.michelangeli@illico-travaux.com'
+  const dateAuj = new Date().toLocaleDateString('fr-FR')
+
+  const isAMO = dossier.typologie === 'amo'
+  const devisAcceptes = (devis || []).filter(d => d.statut === 'accepte')
+  const totalDevisHT = devisAcceptes.reduce((s, d) => s + toNumber(d.montant_ht), 0)
+  const totalDevisTTC = devisAcceptes.reduce((s, d) => s + toNumber(d.montant_ttc), 0)
+
+  const tauxCourtage = toNumber(dossier.taux_courtage || 0.06)
+  const tauxAmo = toNumber(dossier.honoraires_amo_taux ?? 9) / 100
+  const fraisTTC = toNumber(dossier.frais_consultation)
+  const fraisHT = fraisTTC / 1.2
+  const honCourtage = totalDevisTTC * tauxCourtage
+  const honAMO = totalDevisTTC * (tauxCourtage + tauxAmo)
+
+  const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette' || p.categorie === 'illustration')
+
+  // Grouper fiches par artisan
+  const fichesParArtisan = {}
+  ;(fichesTech || []).forEach(f => {
+    const nomArt = f.artisan?.entreprise || f.artisan_id
+    if (!fichesParArtisan[nomArt]) fichesParArtisan[nomArt] = []
+    fichesParArtisan[nomArt].push(f.fiche)
+  })
+
+  const pages = []
+
+  // ── PAGE DE GARDE ──
+  pages.push(
+    React.createElement(Page, { key: 'cover', size: 'A4', style: RS.coverPage },
+      React.createElement(View, { style: RS.coverHeader }),
+      React.createElement(View, { style: RS.coverLogoArea },
+        logoSrc
+          ? React.createElement(PdfImage, { src: logoSrc, style: RS.coverLogo })
+          : React.createElement(Text, { style: { fontSize: 18, fontFamily: 'Helvetica-Bold', color: '#00578e' } }, 'illiCO travaux'),
+      ),
+      React.createElement(View, { style: RS.coverHeroBand },
+        React.createElement(View, { style: RS.coverBlueBand },
+          React.createElement(Text, { style: RS.coverTitle }, `Votre projet avec\nilliCO travaux`),
+        ),
+        React.createElement(View, { style: RS.coverOrangeBand }),
+      ),
+      React.createElement(View, { style: RS.coverFooter },
+        React.createElement(Text, { style: RS.coverFooterName }, nomRef),
+        React.createElement(Text, { style: RS.coverFooterText }, 'Société CONSEIL TRAVAUX PROVENCE - CTP'),
+        React.createElement(Text, { style: RS.coverFooterText }, '22 rue ramade, quartier Jonquières'),
+        React.createElement(Text, { style: RS.coverFooterText }, '13 500 MARTIGUES'),
+        React.createElement(Text, { style: RS.coverFooterText }, telRef),
+        React.createElement(Text, { style: RS.coverSlogan }, 'Quand vous pensez travaux, pensez illiCO !'),
+      ),
+    )
+  )
+
+  // ── DESCRIPTIF DU PROJET ──
+  pages.push(React.createElement(SepPage, { key: 'sep-desc', title: 'Descriptif du\nprojet', logoSrc }))
+  pages.push(
+    React.createElement(Page, { key: 'desc', size: 'A4', style: RS.contentPage },
+      React.createElement(ContentHeader, { title: 'Descriptif du projet', sub: `${dossier.reference} — ${nomClient}`, logoSrc }),
+      React.createElement(View, { style: { marginBottom: 12 } },
+        React.createElement(View, { style: RS.infoRow },
+          React.createElement(Text, { style: RS.infoLabel }, 'Référence'),
+          React.createElement(Text, { style: RS.infoValue }, dossier.reference || '—'),
+        ),
+        React.createElement(View, { style: RS.infoRow },
+          React.createElement(Text, { style: RS.infoLabel }, 'Client'),
+          React.createElement(Text, { style: RS.infoValue }, nomClient),
+        ),
+        client?.adresse && React.createElement(View, { style: RS.infoRow },
+          React.createElement(Text, { style: RS.infoLabel }, 'Adresse'),
+          React.createElement(Text, { style: RS.infoValue }, client.adresse),
+        ),
+        React.createElement(View, { style: RS.infoRow },
+          React.createElement(Text, { style: RS.infoLabel }, 'Prestation'),
+          React.createElement(Text, { style: RS.infoValue }, { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }[dossier.typologie] || dossier.typologie),
+        ),
+        React.createElement(View, { style: RS.infoRow },
+          React.createElement(Text, { style: RS.infoLabel }, 'Référente'),
+          React.createElement(Text, { style: RS.infoValue }, nomRef),
+        ),
+        dossier.date_demarrage_chantier && React.createElement(View, { style: RS.infoRow },
+          React.createElement(Text, { style: RS.infoLabel }, 'Démarrage chantier'),
+          React.createElement(Text, { style: RS.infoValue }, new Date(dossier.date_demarrage_chantier).toLocaleDateString('fr-FR')),
+        ),
+        dossier.date_fin_chantier && React.createElement(View, { style: RS.infoRow },
+          React.createElement(Text, { style: RS.infoLabel }, 'Fin de chantier'),
+          React.createElement(Text, { style: RS.infoValue }, new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR')),
+        ),
+        React.createElement(View, { style: RS.infoRow },
+          React.createElement(Text, { style: RS.infoLabel }, 'Document établi le'),
+          React.createElement(Text, { style: RS.infoValue }, dateAuj),
+        ),
+      ),
+      React.createElement(ContentFooter, { ref: dossier.reference }),
+    )
+  )
+
+  // ── RÉCAPITULATIF FINANCIER ──
+  pages.push(React.createElement(SepPage, { key: 'sep-recap', title: 'Récapitulatif\nfinancier', logoSrc }))
+  const isC = ['courtage', 'amo'].includes(dossier.typologie)
+  let rowNum = 0
+  pages.push(
+    React.createElement(Page, { key: 'recap', size: 'A4', style: RS.contentPage },
+      React.createElement(ContentHeader, { title: 'Récapitulatif financier', sub: `${dossier.reference} — ${nomClient}`, logoSrc }),
+      // Tableau artisans
+      React.createElement(View, { style: RS.tableHdr },
+        React.createElement(Text, { style: [RS.thCell, { width: 18 }] }, ' '),
+        React.createElement(Text, { style: [RS.thCell, { flex: 3 }] }, 'Intervenant'),
+        React.createElement(Text, { style: [RS.thCell, { flex: 4 }] }, 'Description'),
+        React.createElement(Text, { style: [RS.thCell, { flex: 2, textAlign: 'right' }] }, 'Montant HT'),
+        React.createElement(Text, { style: [RS.thCell, { flex: 2, textAlign: 'right' }] }, 'Montant TTC'),
+      ),
+      fraisTTC > 0 && dossier.frais_statut !== 'offerts' && React.createElement(View, { style: RS.trEven },
+        React.createElement(Text, { style: [RS.tdNorm, { width: 18, color: '#6b7280' }] }, '0'),
+        React.createElement(Text, { style: [RS.tdNorm, { flex: 3 }] }, 'illiCO travaux'),
+        React.createElement(Text, { style: [RS.tdNorm, { flex: 4 }] }, 'Frais de consultation'),
+        React.createElement(Text, { style: [RS.tdR, { flex: 2 }] }, fmt(fraisHT)),
+        React.createElement(Text, { style: [RS.tdRBold, { flex: 2 }] }, fmt(fraisTTC)),
+      ),
+      ...devisAcceptes.map(d => {
+        const n = ++rowNum
+        return React.createElement(View, { key: d.id, style: n % 2 === 0 ? RS.trEven : RS.trOdd },
+          React.createElement(Text, { style: [RS.tdNorm, { width: 18, color: '#6b7280' }] }, String(n)),
+          React.createElement(Text, { style: [RS.tdNorm, { flex: 3 }] }, d.artisan?.entreprise || '—'),
+          React.createElement(Text, { style: [RS.tdNorm, { flex: 4, color: '#6b7280' }] }, d.notes || '—'),
+          React.createElement(Text, { style: [RS.tdR, { flex: 2 }] }, fmt(d.montant_ht)),
+          React.createElement(Text, { style: [RS.tdRBold, { flex: 2 }] }, fmt(d.montant_ttc)),
+        )
+      }),
+      React.createElement(View, { style: { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 4, backgroundColor: '#ddeef8' } },
+        React.createElement(Text, { style: [RS.tdBold, { width: 18 }] }, ' '),
+        React.createElement(Text, { style: [RS.tdBold, { flex: 7 }] }, 'Total devis HT'),
+        React.createElement(Text, { style: [RS.tdRBold, { flex: 2, color: '#00578e' }] }, fmt(totalDevisHT + fraisHT)),
+        React.createElement(Text, { style: { flex: 2 } }, ''),
+      ),
+      React.createElement(View, { style: RS.trTotal },
+        React.createElement(Text, { style: [RS.tdWBold, { width: 18 }] }, ' '),
+        React.createElement(Text, { style: [RS.tdWBold, { flex: 7 }] }, 'Total devis TTC'),
+        React.createElement(Text, { style: { flex: 2 } }, ''),
+        React.createElement(Text, { style: [RS.tdRWBold, { flex: 2 }] }, fmt(totalDevisTTC + fraisTTC)),
+      ),
+      // Honoraires
+      isC && totalDevisTTC > 0 && React.createElement(View, { style: { marginTop: 12 } },
+        React.createElement(Text, { style: RS.sectionH }, 'Honoraires illiCO travaux'),
+        React.createElement(View, { style: RS.summaryRow },
+          React.createElement(Text, { style: RS.summaryLabel }, `Honoraires courtage (${(tauxCourtage * 100).toFixed(1)}%)`),
+          React.createElement(Text, { style: RS.summaryValue }, fmt(honCourtage)),
+        ),
+        isAMO && React.createElement(View, { style: RS.summaryRowOrange },
+          React.createElement(Text, { style: RS.summaryLabelOrange }, `Honoraires AMO total (${((tauxCourtage + tauxAmo) * 100).toFixed(1)}%)`),
+          React.createElement(Text, { style: RS.summaryValueOrange }, fmt(honAMO)),
+        ),
+        React.createElement(View, { style: { flexDirection: 'row', justifyContent: 'space-between', padding: 8, backgroundColor: '#00578e', borderRadius: 4, marginTop: 6 } },
+          React.createElement(Text, { style: { color: '#ffffff', fontSize: 9, fontFamily: 'Helvetica-Bold' } }, 'TOTAL CHANTIER'),
+          React.createElement(Text, { style: { color: '#ffffff', fontSize: 12, fontFamily: 'Helvetica-Bold' } }, fmt(totalDevisTTC + fraisTTC + (isAMO ? honAMO : honCourtage))),
+        ),
+      ),
+      React.createElement(ContentFooter, { ref: dossier.reference }),
+    )
+  )
+
+  // ── DEVIS, FACTURES ──
+  pages.push(React.createElement(SepPage, { key: 'sep-devis', title: 'Devis,\nFactures', logoSrc }))
+  pages.push(
+    React.createElement(Page, { key: 'devis', size: 'A4', style: RS.contentPage },
+      React.createElement(ContentHeader, { title: 'Devis & Factures', sub: `${dossier.reference} — ${nomClient}`, logoSrc }),
+      React.createElement(Text, { style: RS.sectionH }, 'Devis artisans signés'),
+      React.createElement(View, { style: RS.tableHdr },
+        React.createElement(Text, { style: [RS.thCell, { flex: 3 }] }, 'Artisan'),
+        React.createElement(Text, { style: [RS.thCell, { flex: 2, textAlign: 'right' }] }, 'Montant TTC'),
+        React.createElement(Text, { style: [RS.thCell, { flex: 2, textAlign: 'center' }] }, 'Signature'),
+        React.createElement(Text, { style: [RS.thCell, { flex: 2, textAlign: 'center' }] }, 'Devis signé'),
+        React.createElement(Text, { style: [RS.thCell, { flex: 2, textAlign: 'center' }] }, 'Facture'),
+      ),
+      ...devisAcceptes.map((d, idx) => React.createElement(View, { key: d.id, style: idx % 2 === 0 ? RS.trEven : RS.trOdd },
+        React.createElement(Text, { style: [RS.tdNorm, { flex: 3 }] }, d.artisan?.entreprise || '—'),
+        React.createElement(Text, { style: [RS.tdRBold, { flex: 2 }] }, fmt(d.montant_ttc)),
+        React.createElement(Text, { style: [RS.tdNorm, { flex: 2, textAlign: 'center' }] }, d.date_signature ? new Date(d.date_signature).toLocaleDateString('fr-FR') : '—'),
+        React.createElement(Text, { style: [RS.tdNorm, { flex: 2, textAlign: 'center', color: d.devis_signe_path ? '#166534' : '#6b7280' }] }, d.devis_signe_path ? '✓ Oui' : 'Non'),
+        React.createElement(Text, { style: [RS.tdNorm, { flex: 2, textAlign: 'center', color: d.facture_path ? '#166534' : '#6b7280' }] }, d.facture_path ? '✓ Oui' : 'Non'),
+      )),
+      React.createElement(ContentFooter, { ref: dossier.reference }),
+    )
+  )
+
+  // ── QUALIFICATION ──
+  pages.push(React.createElement(SepPage, { key: 'sep-qual', title: 'Qualification', logoSrc }))
+  pages.push(
+    React.createElement(Page, { key: 'qual', size: 'A4', style: RS.contentPage },
+      React.createElement(ContentHeader, { title: 'Qualification artisans', sub: `${dossier.reference} — ${nomClient}`, logoSrc }),
+      React.createElement(View, { style: RS.tableHdr },
+        React.createElement(Text, { style: [RS.thCell, { flex: 3 }] }, 'Artisan'),
+        React.createElement(Text, { style: [RS.thCell, { flex: 2 }] }, 'Métier'),
+        React.createElement(Text, { style: [RS.thCell, { flex: 2, textAlign: 'center' }] }, 'Kbis'),
+        React.createElement(Text, { style: [RS.thCell, { flex: 3, textAlign: 'center' }] }, 'Décennale'),
+      ),
+      ...devisAcceptes.map((d, idx) => {
+        const art = d.artisan || {}
+        const today = new Date()
+        const decExp = art.decennale_expiration ? new Date(art.decennale_expiration) : null
+        const diffDays = decExp ? Math.round((decExp - today) / (1000 * 60 * 60 * 24)) : null
+        const decStatus = !decExp ? '—' : diffDays < 0 ? '❌ Expirée' : diffDays <= 30 ? '⚠️ < 30 jours' : `✓ ${decExp.toLocaleDateString('fr-FR')}`
+        const decColor = !decExp ? '#6b7280' : diffDays < 0 ? '#991b1b' : diffDays <= 30 ? '#c2410c' : '#166534'
+        return React.createElement(View, { key: d.id, style: idx % 2 === 0 ? RS.trEven : RS.trOdd },
+          React.createElement(Text, { style: [RS.tdBold, { flex: 3 }] }, art.entreprise || '—'),
+          React.createElement(Text, { style: [RS.tdNorm, { flex: 2 }] }, art.metier || '—'),
+          React.createElement(Text, { style: [RS.tdNorm, { flex: 2, textAlign: 'center', color: art.kbis_url ? '#166534' : '#6b7280' }] }, art.kbis_url ? '✓ Présent' : 'Manquant'),
+          React.createElement(Text, { style: [RS.tdNorm, { flex: 3, textAlign: 'center', color: decColor }] }, decStatus),
+        )
+      }),
+      React.createElement(ContentFooter, { ref: dossier.reference }),
+    )
+  )
+
+  // ── PLANNING PROVISOIRE (AMO uniquement) ──
+  if (isAMO) {
+    pages.push(React.createElement(SepPage, {
+      key: 'sep-plan',
+      title: 'Planning\nprovisoire indicatif',
+      logoSrc,
+      note: "Ce planning est communiqué à titre purement indicatif et ne possède aucune valeur contractuelle. Il est susceptible d'évoluer en fonction des disponibilités des entreprises/des matériaux ou de l'évolution du projet du maître d'ouvrage.",
+    }))
+    if ((interventions || []).length > 0) {
+      pages.push(
+        React.createElement(Page, { key: 'plan', size: 'A4', style: RS.contentPage },
+          React.createElement(ContentHeader, { title: 'Planning des interventions', sub: `${dossier.reference} — ${nomClient}`, logoSrc }),
+          React.createElement(View, { style: RS.tableHdr },
+            React.createElement(Text, { style: [RS.thCell, { flex: 3 }] }, 'Artisan'),
+            React.createElement(Text, { style: [RS.thCell, { flex: 3 }] }, 'Type'),
+            React.createElement(Text, { style: [RS.thCell, { flex: 3, textAlign: 'center' }] }, 'Période'),
+          ),
+          ...(interventions || []).map((i, idx) => React.createElement(View, { key: i.id, style: idx % 2 === 0 ? RS.trEven : RS.trOdd },
+            React.createElement(Text, { style: [RS.tdBold, { flex: 3 }] }, i.artisan?.entreprise || '—'),
+            React.createElement(Text, { style: [RS.tdNorm, { flex: 3 }] }, i.type_intervention === 'periode' ? 'Période continue' : 'Jours spécifiques'),
+            React.createElement(Text, { style: [RS.tdNorm, { flex: 3, textAlign: 'center' }] },
+              i.type_intervention === 'periode'
+                ? `${i.date_debut ? new Date(i.date_debut).toLocaleDateString('fr-FR') : '?'} → ${i.date_fin ? new Date(i.date_fin).toLocaleDateString('fr-FR') : '?'}`
+                : `${(i.jours_specifiques || []).length} jour(s)`
+            ),
+          )),
+          React.createElement(Text, { style: { fontSize: 7, color: '#6b7280', fontFamily: 'Helvetica-Oblique', marginTop: 16, lineHeight: 1.4 } },
+            "Ce planning est communiqué à titre purement indicatif et ne possède aucune valeur contractuelle. Il est susceptible d'évoluer en fonction des disponibilités des entreprises/des matériaux ou de l'évolution du projet du maître d'ouvrage.",
+          ),
+          React.createElement(ContentFooter, { ref: dossier.reference }),
+        )
+      )
+    }
+  }
+
+  // ── MAQUETTE & VUES 3D ──
+  pages.push(React.createElement(SepPage, {
+    key: 'sep-maquette',
+    title: 'Maquette\n& vues 3D',
+    logoSrc,
+    note: "Les illustrations graphiques, coupes 3D, ou plans ci-dessus reproduits sont des illustrations commerciales qui ne peuvent servir de base à la réalisation du chantier.",
+  }))
+  if (photosMaquette.length > 0) {
+    // Grouper par 4 photos max par page
+    for (let i = 0; i < photosMaquette.length; i += 4) {
+      const chunk = photosMaquette.slice(i, i + 4)
+      pages.push(
+        React.createElement(Page, { key: `maquette-${i}`, size: 'A4', style: RS.contentPage },
+          React.createElement(ContentHeader, { title: 'Maquette & vues 3D', sub: `${dossier.reference} — ${nomClient}`, logoSrc }),
+          React.createElement(View, { style: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } },
+            ...chunk.map(p => p.base64
+              ? React.createElement(PdfImage, { key: p.id, src: p.base64, style: RS.photoImg })
+              : React.createElement(View, { key: p.id, style: [RS.photoImg, { backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' }] },
+                  React.createElement(Text, { style: { fontSize: 7, color: '#6b7280' } }, 'Photo non disponible')
+                )
+            ),
+          ),
+          React.createElement(ContentFooter, { ref: dossier.reference }),
+        )
+      )
+    }
+  }
+
+  // ── RÉFÉRENCES PRODUITS ──
+  pages.push(React.createElement(SepPage, { key: 'sep-refs', title: 'Références\nproduits', logoSrc }))
+  if (Object.keys(fichesParArtisan).length > 0) {
+    pages.push(
+      React.createElement(Page, { key: 'refs', size: 'A4', style: RS.contentPage },
+        React.createElement(ContentHeader, { title: 'Références produits', sub: `${dossier.reference} — ${nomClient}`, logoSrc }),
+        ...Object.entries(fichesParArtisan).map(([artisan, fiches]) =>
+          React.createElement(View, { key: artisan, style: { marginBottom: 12 } },
+            React.createElement(Text, { style: RS.sectionH }, artisan),
+            ...(fiches || []).map((f, i) => React.createElement(View, { key: i, style: RS.infoRow },
+              React.createElement(Text, { style: [RS.infoLabel, { fontFamily: 'Helvetica-Bold', color: '#374151' }] }, f?.nom || '—'),
+              React.createElement(Text, { style: [RS.infoValue, { color: '#6b7280', flex: 2, textAlign: 'right' }] }, f?.description || ''),
+            )),
+          )
+        ),
+        React.createElement(ContentFooter, { ref: dossier.reference }),
+      )
+    )
+  }
+
+  // ── KBIS - ASSURANCES ──
+  pages.push(React.createElement(SepPage, { key: 'sep-kbis', title: 'KBIS -\nAssurances', logoSrc }))
+  pages.push(
+    React.createElement(Page, { key: 'kbis', size: 'A4', style: RS.contentPage },
+      React.createElement(ContentHeader, { title: 'KBIS & Assurances', sub: `${dossier.reference} — ${nomClient}`, logoSrc }),
+      React.createElement(Text, { style: [RS.tdNorm, { color: '#6b7280', marginBottom: 12 }] }, "Documents de qualification des artisans intervenus sur ce chantier."),
+      ...devisAcceptes.map((d, idx) => {
+        const art = d.artisan || {}
+        const today = new Date()
+        const decExp = art.decennale_expiration ? new Date(art.decennale_expiration) : null
+        const diffDays = decExp ? Math.round((decExp - today) / (1000 * 60 * 60 * 24)) : null
+        return React.createElement(View, { key: d.id, style: { marginBottom: 10, padding: 8, backgroundColor: idx % 2 === 0 ? '#f8fafc' : '#ffffff', borderLeftWidth: 3, borderLeftColor: '#00578e' } },
+          React.createElement(Text, { style: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: '#00578e', marginBottom: 4 } }, art.entreprise || '—'),
+          React.createElement(View, { style: RS.infoRow },
+            React.createElement(Text, { style: RS.infoLabel }, 'Métier'),
+            React.createElement(Text, { style: RS.infoValue }, art.metier || '—'),
+          ),
+          React.createElement(View, { style: RS.infoRow },
+            React.createElement(Text, { style: RS.infoLabel }, 'Kbis'),
+            React.createElement(Text, { style: [RS.infoValue, { color: art.kbis_url ? '#166534' : '#991b1b' }] }, art.kbis_url ? '✓ Document présent' : '⚠ Document manquant'),
+          ),
+          React.createElement(View, { style: RS.infoRow },
+            React.createElement(Text, { style: RS.infoLabel }, 'Assurance décennale'),
+            React.createElement(Text, { style: [RS.infoValue, { color: !decExp ? '#6b7280' : diffDays < 0 ? '#991b1b' : diffDays <= 30 ? '#c2410c' : '#166534' }] },
+              !decExp ? 'Non renseignée' : diffDays < 0 ? '❌ Expirée' : diffDays <= 30 ? `⚠ Expire le ${decExp.toLocaleDateString('fr-FR')}` : `✓ Valide jusqu'au ${decExp.toLocaleDateString('fr-FR')}`
+            ),
+          ),
+        )
+      }),
+      React.createElement(ContentFooter, { ref: dossier.reference }),
+    )
+  )
+
+  return React.createElement(Document, null, ...pages)
 }
