@@ -781,7 +781,7 @@ export async function POST(request) {
         dossier,
         devis: devis || [],
         suiviFinancier: suiviFinancier || [],
-      })
+      }) 
 
       pdfBuffer = await renderToBuffer(doc)
     } else if (type === 'dossier_restitution') {
