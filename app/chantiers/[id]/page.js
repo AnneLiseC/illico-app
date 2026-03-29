@@ -685,13 +685,14 @@ ${s.contenu}`).join('')
     setSendingMsg(false)
   }
 
-  const generatePDF = async (type) => {
-    setGeneratingPDF(type)
+  const generatePDF = async (type, crId = null) => {
+    const key = crId ? `cr-${crId}` : type
+    setGeneratingPDF(key)
     try {
       const res = await fetch('/api/pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dossierId: id, type, userId: profile?.id }),
+        body: JSON.stringify({ dossierId: id, type, crId, userId: profile?.id }),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -703,12 +704,16 @@ ${s.contenu}`).join('')
       const a = document.createElement('a')
       const filename = type === 'recapitulatif'
         ? `Recapitulatif_${dossier.reference}.pdf`
-        : `DossierFin_${dossier.reference}.pdf`
+        : type === 'dossier_restitution'
+        ? `DossierRestitution_${dossier.reference}.pdf`
+        : type === 'cr'
+        ? `CR_${dossier.reference}.pdf`
+        : `Dossier_${dossier.reference}.pdf`
       a.href = url
       a.download = filename
       a.click()
       URL.revokeObjectURL(url)
-      setSucces('PDF généré avec succès ✓')
+      setSucces('PDF généré ✓')
     } catch (err) {
       setErreur('Erreur lors de la génération : ' + err.message)
     } finally {
@@ -2005,8 +2010,13 @@ ${s.contenu}`).join('')
                     </div>
                   </div>
                   {cr.contenu_final && (
-                    <div className="px-4 py-3 text-xs text-gray-600 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">
-                      {cr.contenu_final.slice(0, 400)}{cr.contenu_final.length > 400 ? '…' : ''}
+                    <div className="px-4 py-3 border-t border-gray-100">
+                      <button
+                        onClick={() => generatePDF('cr', cr.id)}
+                        disabled={generatingPDF === `cr-${cr.id}`}
+                        className="text-xs text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 disabled:opacity-50">
+                        {generatingPDF === `cr-${cr.id}` ? '⏳ Génération...' : '📄 Télécharger le PDF'}
+                      </button>
                     </div>
                   )}
                 </div>

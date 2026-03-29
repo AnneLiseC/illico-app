@@ -732,10 +732,163 @@ function buildDossierFinDocument({ dossier, devis, referente }) {
   })
 }
 
+// ── COMPTE-RENDU PDF ──
+function buildCRDocument({ dossier, cr, sections, logo }) {
+  const client = dossier.client
+  const nomClient = client
+    ? [client.civilite, client.prenom, client.nom, client.prenom2 ? '& ' + client.prenom2 + ' ' + client.nom2 : null].filter(Boolean).join(' ')
+    : '—'
+  const ref = dossier.referente
+  const nomRef = ref ? (ref.prenom + ' ' + ref.nom) : 'illiCO travaux Martigues'
+
+  const TITRES = {
+    r1:       'COMPTE RENDU DE PREMIÈRE VISITE',
+    r2:       'COMPTE RENDU DE VISITE TECHNIQUE',
+    r3:       'COMPTE RENDU DE PRÉSENTATION DES DEVIS',
+    suivi:    'COMPTE RENDU DE SUIVI DE CHANTIER',
+    reception:'COMPTE RENDU DE RÉCEPTION DE CHANTIER',
+  }
+  const titre = TITRES[cr.type_visite] || 'COMPTE RENDU DE VISITE'
+  const dateVisite = cr.date_visite
+    ? new Date(cr.date_visite).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+    : new Date(cr.created_at).toLocaleDateString('fr-FR')
+  const dateEmis = new Date(cr.created_at || Date.now()).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+
+  const CRS = StyleSheet.create({
+    page:       { padding: 40, paddingBottom: 60, fontFamily: 'Helvetica', fontSize: 9, backgroundColor: '#ffffff' },
+    logoImg:    { width: 120, height: 48, marginBottom: 12 },
+    titleBlock: { marginBottom: 18, borderBottomWidth: 2, borderBottomColor: BLEU, paddingBottom: 10 },
+    mainTitle:  { fontSize: 16, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 3 },
+    emis:       { fontSize: 9, color: '#6b7280' },
+    secWrap:    { marginBottom: 14 },
+    secHeader:  { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+    secNum:     { fontSize: 11, fontFamily: 'Helvetica-Bold', color: BLEU, marginRight: 6 },
+    secTitle:   { fontSize: 11, fontFamily: 'Helvetica-Bold', color: BLEU, flex: 1 },
+    secLine:    { height: 1.5, backgroundColor: BLEU, marginBottom: 8 },
+    para:       { fontSize: 9, color: '#1f2937', lineHeight: 1.65, marginBottom: 5 },
+    listRow:    { flexDirection: 'row', marginBottom: 4, paddingLeft: 4 },
+    listBullet: { fontSize: 9, color: '#1f2937', width: 14 },
+    listText:   { fontSize: 9, color: '#1f2937', flex: 1, lineHeight: 1.55 },
+    bold:       { fontFamily: 'Helvetica-Bold' },
+    footer:     { position: 'absolute', bottom: 22, left: 40, right: 40, flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e5e7eb', paddingTop: 5 },
+    footerTxt:  { fontSize: 7.5, color: '#6b7280' },
+  })
+
+  // ── Rendu inline : **gras** ──
+  const inlineEl = (text) => {
+    const parts = text.split(/\*\*(.+?)\*\*/g)
+    if (parts.length === 1) return text
+    return parts.map((p, i) =>
+      i % 2 === 1 ? React.createElement(Text, { key: i, style: CRS.bold }, p) : p
+    )
+  }
+
+  // ── Table 2 colonnes : KV pour Identification ──
+  const renderKVTable = (rows, col1Label, col2Label) => {
+    const thStyle = { color: '#ffffff', fontSize: 9, fontFamily: 'Helvetica-Bold' }
+    return React.createElement(View, { style: { marginBottom: 8 } },
+      React.createElement(View, { style: { flexDirection: 'row', backgroundColor: BLEU, paddingVertical: 5, paddingHorizontal: 8 } },
+        React.createElement(Text, { style: [thStyle, { flex: 1.8 }] }, col1Label),
+        React.createElement(Text, { style: [thStyle, { flex: 2.2 }] }, col2Label),
+      ),
+      ...rows.map(([k, v], i) =>
+        React.createElement(View, { key: i, style: { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', backgroundColor: i % 2 === 0 ? '#f9fafb' : '#ffffff' } },
+          React.createElement(Text, { style: { fontSize: 9, fontFamily: 'Helvetica-Bold', flex: 1.8, color: '#374151' } }, k),
+          React.createElement(Text, { style: { fontSize: 9, flex: 2.2, color: '#1f2937' } }, v),
+        )
+      )
+    )
+  }
+
+  // ── Rendu principal d'une section ──
+  const renderContent = (contenu, secTitre) => {
+    if (!contenu) return []
+    const lines = contenu.split('\n').filter(l => l !== undefined)
+    const isIdent   = /identification/i.test(secTitre || '')
+    const isPlanning = /planning/i.test(secTitre || '')
+
+    // Détecter les lignes **Label :** Valeur
+    const kvLines = lines.filter(l => l.trim()).map(l => {
+      const m = l.match(/^\*\*(.+?)\s*:\*\*\s*(.*)/) || l.match(/^\*\*(.+?):\s*\*\*(.*)/)
+      return m ? [m[1].trim(), m[2].trim()] : null
+    })
+    const allKV = kvLines.length > 0 && kvLines.every(Boolean)
+
+    // Tableau identification
+    if (isIdent && allKV) {
+      return [renderKVTable(kvLines, 'Champ', 'Information')]
+    }
+    // Tableau planning
+    if (isPlanning && allKV) {
+      return [renderKVTable(kvLines, 'Date', 'Interventions prévues')]
+    }
+
+    // Rendu standard : sous-titres, listes, paragraphes
+    const blocks = []
+    let listItems = []
+    const flushList = () => {
+      if (!listItems.length) return
+      blocks.push(React.createElement(View, { key: 'l' + blocks.length, style: { marginBottom: 6 } },
+        ...listItems.map((item, i) =>
+          React.createElement(View, { key: i, style: CRS.listRow },
+            React.createElement(Text, { style: CRS.listBullet }, '–'),
+            React.createElement(Text, { style: CRS.listText }, inlineEl(item)),
+          )
+        )
+      ))
+      listItems = []
+    }
+    lines.forEach((line, i) => {
+      const bullet = line.match(/^[-–]\s+(.+)/)
+      if (bullet) { listItems.push(bullet[1]); return }
+      if (!line.trim()) { flushList(); return }
+      flushList()
+      // Sous-titre type **Artisan :**
+      const subhead = line.match(/^\*\*(.+?)\s*:\*\*\s*$/) || line.match(/^\*\*(.+?):\s*\*\*\s*$/)
+      if (subhead) {
+        blocks.push(React.createElement(Text, { key: i, style: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: '#1f2937', marginTop: 6, marginBottom: 3 } }, subhead[1].trim() + ' :'))
+        return
+      }
+      blocks.push(React.createElement(Text, { key: i, style: CRS.para }, inlineEl(line.trim())))
+    })
+    flushList()
+    return blocks
+  }
+
+  return React.createElement(Document, null,
+    React.createElement(Page, { size: 'A4', style: CRS.page },
+      // Logo
+      logo && React.createElement(PdfImage, { src: logo, style: CRS.logoImg }),
+      // Titre principal
+      React.createElement(View, { style: CRS.titleBlock },
+        React.createElement(Text, { style: CRS.mainTitle }, titre),
+        React.createElement(Text, { style: CRS.emis }, 'Émis le ' + dateEmis),
+      ),
+      // Sections
+      ...sections.map((s, i) =>
+        React.createElement(View, { key: i, style: CRS.secWrap, wrap: false },
+          React.createElement(View, { style: CRS.secHeader },
+            s.numero && React.createElement(Text, { style: CRS.secNum }, s.numero + '.'),
+            React.createElement(Text, { style: CRS.secTitle }, (s.titre || '').toUpperCase()),
+          ),
+          React.createElement(View, { style: CRS.secLine }),
+          ...renderContent(s.contenu, s.titre),
+        )
+      ),
+      // Footer
+      React.createElement(View, { style: CRS.footer, fixed: true },
+        React.createElement(Text, { style: CRS.footerTxt }, 'Document établi le ' + dateEmis + ' – Chantier ' + nomClient),
+        React.createElement(Text, { style: CRS.footerTxt }, nomRef + ' – illiCO travaux Martigues'),
+        React.createElement(Text, { style: CRS.footerTxt, render: ({ pageNumber, totalPages }) => pageNumber + ' / ' + totalPages }),
+      ),
+    )
+  )
+}
+
 // ── ROUTE API ──
 export async function POST(request) {
   try {
-    const { dossierId, type } = await request.json()
+    const { dossierId, type, crId } = await request.json()
 
     if (!dossierId || !type) {
       return NextResponse.json({ error: 'Paramètres manquants' }, { status: 400 })
@@ -832,15 +985,38 @@ export async function POST(request) {
         logo: logoSrc,
         supabaseAdmin,
       })
+    } else if (type === 'cr') {
+      if (!crId) return NextResponse.json({ error: 'crId manquant' }, { status: 400 })
+
+      const { data: cr } = await supabaseAdmin
+        .from('comptes_rendus').select('*').eq('id', crId).single()
+
+      if (!cr) return NextResponse.json({ error: 'CR non trouvé' }, { status: 404 })
+
+      // Parser les sections depuis le contenu_final (format ## N. Titre)
+      const sections = (cr.contenu_final || '').split(/(?=## \d+\.)/).map(block => {
+        const match = block.match(/^## (\d+)\. (.+?)\n([\s\S]*)/)
+        if (match) return { numero: match[1], titre: match[2].trim(), contenu: match[3].trim() }
+        const trimmed = block.trim()
+        if (!trimmed) return null
+        return { numero: '', titre: '', contenu: trimmed }
+      }).filter(Boolean).filter(s => s.contenu)
+
+      const doc = buildCRDocument({ dossier, cr, sections, logo: getLogoBase64() })
+      pdfBuffer = await renderToBuffer(doc)
+
     } else {
       return NextResponse.json({ error: 'Type de PDF inconnu' }, { status: 400 })
     }
 
+    const TYPES_LABEL = { r1: 'R1', r2: 'R2', r3: 'R3', suivi: 'Suivi', reception: 'Reception' }
     const filename =
       type === 'recapitulatif'
         ? `Recapitulatif_${dossier.reference}.pdf`
         : type === 'dossier_restitution'
         ? `DossierRestitution_${dossier.reference}.pdf`
+        : type === 'cr'
+        ? `CR_${TYPES_LABEL[dossier?.cr?.type_visite] || 'visite'}_${dossier.reference}.pdf`
         : `Dossier_${dossier.reference}.pdf`
 
     return new Response(pdfBuffer, {

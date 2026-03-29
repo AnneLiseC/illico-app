@@ -37,11 +37,17 @@ TYPE DE VISITE : ${typLabel}
 CONSIGNES :
 - Ton professionnel, précis, clair — style AMO (Assistance à Maîtrise d'Ouvrage)
 - Français impeccable
-- Sections numérotées, bullet points pour les listes, texte continu pour les constats
 - Reprendre exactement les noms des artisans, pièces, produits mentionnés dans les notes
 - Mettre en valeur les points critiques, retards, incidents, décisions importantes
 - Si des images sont fournies (photos de cahier, captures), extraire et intégrer leur contenu
-- Sections attendues :
+
+FORMATS OBLIGATOIRES :
+- Section "Identification du chantier" : chaque ligne DOIT être au format **Label :** Valeur (une info par ligne, sans tiret)
+- Section "Planning prévisionnel" : chaque ligne DOIT être au format **Date :** Interventions prévues — une ligne par date/événement. Cette section est OBLIGATOIRE pour les visites de suivi.
+- Section "Avancement des travaux par lot" : pour chaque artisan/lot, mettre **Nom de l'entreprise :** en titre de sous-section, suivi des bullets avec statut et observations
+- Toutes les autres sections : listes avec tirets –, texte continu pour les constats
+
+SECTIONS ATTENDUES (respecter cet ordre et ces titres exactement) :
 ${sections}
 
 RÉPONSE : JSON strict uniquement, aucun texte avant ou après :

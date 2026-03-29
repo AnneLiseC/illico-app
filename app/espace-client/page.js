@@ -12,11 +12,25 @@ const ETAPES = [
   { key: 'reception',label: 'Réception chantier',  icon: '✅' },
 ]
 
-const STATUT_TO_ETAPE = {
-  en_attente: 0,
-  en_cours: 2,
-  termine: 4,
-  annule: -1,
+// Étape calculée dynamiquement selon l'avancement réel du dossier
+function calcEtape(dossier) {
+  if (!dossier) return 0
+  if (dossier.statut === 'termine') return 5 // tout coché
+
+  const arts = dossier.devis_artisans || []
+  const nonRefuse = arts.filter(d => d.statut !== 'refuse')
+  const hasAccepte = arts.some(d => d.statut === 'accepte')
+  // R2 faite = au moins un devis a changé de statut (reçu/accepté/refusé)
+  const r2Done = arts.some(d => ['recu', 'accepte', 'refuse'].includes(d.statut))
+  // Tous les devis reçus = aucun encore en attente parmi les non-refusés
+  const allRecus = nonRefuse.length > 0 && nonRefuse.every(d => ['recu', 'accepte'].includes(d.statut))
+  const demarre = dossier.date_demarrage_chantier && new Date(dossier.date_demarrage_chantier) <= new Date()
+
+  if (hasAccepte && demarre) return 4  // Réception active
+  if (allRecus)              return 3  // Travaux en cours active
+  if (r2Done)                return 2  // Devis artisans active
+  if (dossier.contrat_signe) return 1  // Visite technique active
+  return 0                             // Prise de contact active
 }
 
 const CAT_LABELS = {
@@ -66,6 +80,7 @@ export default function EspaceClient() {
       .select('*, auteur:profiles(prenom, nom)')
       .eq('dossier_id', dossierId)
       .eq('valide', true)
+      .eq('type_visite', 'suivi')
       .order('created_at', { ascending: false })
     setComptesRendus(data || [])
   }
@@ -189,7 +204,7 @@ export default function EspaceClient() {
   )
 
   // ── Données calculées ──
-  const etapeActuelle     = STATUT_TO_ETAPE[dossier.statut] ?? 0
+  const etapeActuelle     = calcEtape(dossier)
   const photosCatActuelle = photos.filter(p => p.categorie === categoriePhoto)
   const nbMsgNonLus       = messages.filter(m => m.auteur_role !== 'client' && !m.lu).length
   const devisAcceptes     = (dossier.devis_artisans || []).filter(d => d.statut === 'accepte')
@@ -200,6 +215,33 @@ export default function EspaceClient() {
     { key: 'cr',        label: `Comptes-rendus (${comptesRendus.length})`,          icon: '📄' },
     { key: 'messages',  label: `Messages${nbMsgNonLus > 0 ? ` (${nbMsgNonLus})` : ''}`, icon: '💬' },
   ]
+
+  // ── Rendu markdown simplifié ──
+  const renderInline = (text) => {
+    const parts = text.split(/\*\*(.+?)\*\*/g)
+    return parts.map((part, i) => i % 2 === 1 ? <strong key={i}>{part}</strong> : part)
+  }
+  const renderMarkdown = (text) => {
+    if (!text) return null
+    const lines = text.split('\n')
+    const els = []
+    let listItems = []
+    const flushList = () => {
+      if (!listItems.length) return
+      els.push(<ul key={`l${els.length}`} className="list-disc list-inside space-y-1 ml-2 mb-3">{listItems.map((it, i) => <li key={i} className="text-sm text-gray-700">{renderInline(it)}</li>)}</ul>)
+      listItems = []
+    }
+    lines.forEach((line, i) => {
+      const h = line.match(/^## +(?:\d+\.\s*)?(.+)/)
+      if (h) { flushList(); els.push(<p key={i} className="font-bold text-blue-900 text-sm mt-4 mb-1 pb-1 border-b border-gray-100">{h[1].trim()}</p>); return }
+      if (line.match(/^[-–] /)) { listItems.push(line.slice(2)); return }
+      if (!line.trim()) { flushList(); return }
+      flushList()
+      els.push(<p key={i} className="text-sm text-gray-700 mb-2 leading-relaxed">{renderInline(line)}</p>)
+    })
+    flushList()
+    return els
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -434,10 +476,31 @@ export default function EspaceClient() {
                     <span className="text-gray-400 text-sm">{crOuvert === cr.id ? '▲' : '▼'}</span>
                   </div>
                   {crOuvert === cr.id && (cr.contenu_final || cr.notes_brutes) && (
-                    <div className="border-t border-gray-100 px-4 py-4">
-                      <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                        {cr.contenu_final || cr.notes_brutes}
+                    <div className="border-t border-gray-100 px-4 py-4 space-y-3">
+                      <div className="prose prose-sm max-w-none">
+                        {renderMarkdown(cr.contenu_final || cr.notes_brutes)}
                       </div>
+                      {cr.contenu_final && (
+                        <button
+                          onClick={async () => {
+                            const res = await fetch('/api/pdf', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ dossierId: dossier.id, type: 'cr', crId: cr.id }),
+                            })
+                            if (!res.ok) return
+                            const blob = await res.blob()
+                            const url = URL.createObjectURL(blob)
+                            const a = document.createElement('a')
+                            a.href = url
+                            a.download = `CR_${dossier.reference}.pdf`
+                            a.click()
+                            URL.revokeObjectURL(url)
+                          }}
+                          className="text-xs text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50">
+                          📄 Télécharger en PDF
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
