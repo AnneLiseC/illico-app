@@ -3,7 +3,8 @@
 
 import React from 'react'
 import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
-import { PDFDocument, degrees } from 'pdf-lib'
+import { PDFDocument, degrees, rgb, StandardFonts } from 'pdf-lib'
+import { SEP_PAGE_GARDE } from '../../lib/sep_page_garde.js'
 import { SEP_DESCRIPTIF }    from '../../lib/sep_descriptif.js'
 import { SEP_ILLUSTRATIONS } from '../../lib/sep_illustrations.js'
 import { SEP_RECAP }         from '../../lib/sep_recap.js'
@@ -106,27 +107,47 @@ function Ftr({ ref: r }) {
   )
 }
 
-// ── Page de garde dynamique ──
-function makeCoverPage({ nomRef, telRef, logo }) {
-  return React.createElement(Page, { size: 'A4', style: CS.coverPage },
-    React.createElement(View, { style: CS.coverTopBand }),
-    React.createElement(View, { style: CS.coverLogoArea },
-      logo ? React.createElement(PdfImage, { src: logo, style: CS.coverLogo }) : null,
-    ),
-    React.createElement(View, { style: CS.coverBlueBand },
-      React.createElement(Text, { style: CS.coverTitle }, 'Votre projet avec'),
-      React.createElement(Text, { style: CS.coverTitle }, 'illiCO travaux'),
-    ),
-    React.createElement(View, { style: CS.coverOrangeBand }),
-    React.createElement(View, { style: CS.coverBottom },
-      React.createElement(Text, { style: CS.coverName }, nomRef),
-      React.createElement(Text, { style: CS.coverText }, 'Société CONSEIL TRAVAUX PROVENCE - CTP'),
-      React.createElement(Text, { style: CS.coverText }, '22 rue ramade, quartier Jonquières'),
-      React.createElement(Text, { style: CS.coverText }, '13 500 MARTIGUES'),
-      React.createElement(Text, { style: CS.coverText }, telRef),
-      React.createElement(Text, { style: CS.coverSlogan }, 'Quand vous pensez travaux, pensez illiCO !'),
-    ),
-  )
+// ── Page de garde : template illiCO + overlay texte référente ──
+async function makeCoverPage({ nomRef, telRef }) {
+  // Charger le template (design illiCO sans les coordonnées)
+  const tplBytes = Buffer.from(SEP_PAGE_GARDE, 'base64')
+  const tplPdf = await PDFDocument.load(tplBytes)
+  const finalCover = await PDFDocument.create()
+  const [page] = await finalCover.copyPages(tplPdf, [0])
+  finalCover.addPage(page)
+
+  // Polices
+  const fontNormal = await finalCover.embedFont(StandardFonts.Helvetica)
+  const fontBold   = await finalCover.embedFont(StandardFonts.HelveticaBold)
+
+  const pageW = page.getWidth() // 595
+  const bleu  = rgb(0/255, 87/255, 142/255)   // #00578e
+  const gris  = rgb(55/255, 65/255, 81/255)    // #374151
+
+  // Lignes de contact — centrées, au-dessus du slogan (y=29)
+  const lignes = [
+    { text: nomRef,                               font: fontBold,   size: 11, color: bleu },
+    { text: 'Société CONSEIL TRAVAUX PROVENCE - CTP', font: fontNormal, size: 10, color: gris },
+    { text: '22 rue ramade, quartier Jonquières', font: fontNormal, size: 10, color: gris },
+    { text: '13 500 MARTIGUES',                  font: fontNormal, size: 10, color: gris },
+    { text: telRef,                               font: fontNormal, size: 10, color: gris },
+  ]
+
+  const lineHeight = 17
+  const blockHeight = lignes.length * lineHeight
+  // Centre de la zone blanche (entre y=55 et y=215) → midY ≈ 135
+  const midY = 135
+  let y = midY + blockHeight / 2
+
+  for (const { text, font, size, color } of lignes) {
+    const textWidth = font.widthOfTextAtSize(text, size)
+    const x = (pageW - textWidth) / 2
+    page.drawText(text, { x, y, size, font, color })
+    y -= lineHeight
+  }
+
+  const bytes = await finalCover.save()
+  return Buffer.from(bytes)
 }
 
 // ── Génère les pages de contenu ──
@@ -372,9 +393,7 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
   // ── Page de garde (générée dynamiquement) ──
   const nomRef = getNomRef(dossier.referente)
   const telRef = getTelReferente(dossier.referente)
-  const coverBuf = await renderToBuffer(
-    React.createElement(Document, null, makeCoverPage({ nomRef, telRef, logo }))
-  )
+  const coverBuf = await makeCoverPage({ nomRef, telRef })
   const coverPdf = await PDFDocument.load(coverBuf)
   const [coverPage] = await final.copyPages(coverPdf, [0])
   final.addPage(coverPage)

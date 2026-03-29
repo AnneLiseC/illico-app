@@ -125,6 +125,18 @@ export default function FicheChantier({ params }) {
   const [nouveauCR, setNouveauCR] = useState({ type_visite: '', notes_brutes: '', contenu_final: '', date_visite: '', valide: false })
   const [ajouterCR, setAjouterCR] = useState(false)
   const [savingCR, setSavingCR] = useState(false)
+  // CR avec IA
+  const [crModal, setCrModal] = useState(false)
+  const [crEtape, setCrEtape] = useState(1) // 1=config, 2=notes, 3=relecture
+  const [crForm, setCrForm] = useState({ type_visite: '', date_visite: '', intervenants: '' })
+  const [crNotes, setCrNotes] = useState('')
+  const [crImages, setCrImages] = useState([]) // base64
+  const [crVocal, setCrVocal] = useState(false)
+  const [crVocalTexte, setCrVocalTexte] = useState('')
+  const [crGenerating, setCrGenerating] = useState(false)
+  const [crGenere, setCrGenere] = useState(null) // { titre, sections[] }
+  const [crSectionsEditees, setCrSectionsEditees] = useState([])
+  const [crSavingFinal, setCrSavingFinal] = useState(false)
   const [nbMsgNonLus, setNbMsgNonLus] = useState(0)
   const [photoOuverte, setPhotoOuverte] = useState(null)
   const [rdvsDossier, setRdvsDossier] = useState([])
@@ -547,6 +559,93 @@ export default function FicheChantier({ params }) {
     setAjouterCR(false)
     setSucces('Compte-rendu ajouté ✓')
     setSavingCR(false)
+  }
+
+  // ── GÉNÉRER CR AVEC IA ──
+  const genererCRAvecIA = async () => {
+    if (!crForm.type_visite) return
+    const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('')
+    if (!notesCombinees.trim() && crImages.length === 0) return
+    setCrGenerating(true)
+    try {
+      const res = await fetch('/api/cr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dossierId: id,
+          userId: profile?.id,
+          typeVisite: crForm.type_visite,
+          dateVisite: crForm.date_visite,
+          intervenants: crForm.intervenants ? crForm.intervenants.split(',').map(s => s.trim()).filter(Boolean) : [],
+          notesBrutes: notesCombinees,
+          imagesBase64: crImages,
+        }),
+      })
+      const data = await res.json()
+      if (data.error) { setErreur('Erreur IA : ' + data.error); return }
+      setCrGenere(data.cr)
+      setCrSectionsEditees(data.cr.sections.map(s => ({ ...s })))
+      setCrEtape(3)
+    } finally {
+      setCrGenerating(false)
+    }
+  }
+
+  const sauvegarderCRGenere = async (publier = false) => {
+    if (!crGenere) return
+    setCrSavingFinal(true)
+    const contenuFinal = crSectionsEditees.map(s => `## ${s.numero}. ${s.titre}
+
+${s.contenu}`).join('')
+    const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('')
+    await supabase.from('comptes_rendus').insert({
+      dossier_id: id,
+      type_visite: crForm.type_visite,
+      date_visite: crForm.date_visite || null,
+      notes_brutes: notesCombinees || null,
+      contenu_final: contenuFinal,
+      valide: publier,
+    })
+    const { data } = await supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
+    setComptesRendus(data || [])
+    setCrModal(false)
+    setCrEtape(1)
+    setCrForm({ type_visite: '', date_visite: '', intervenants: '' })
+    setCrNotes('')
+    setCrImages([])
+    setCrVocalTexte('')
+    setCrGenere(null)
+    setCrSectionsEditees([])
+    setCrSavingFinal(false)
+    setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
+  }
+
+  const demarrerVocal = () => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      setErreur('Reconnaissance vocale non supportée sur ce navigateur (utilisez Chrome)')
+      return
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    const recognition = new SR()
+    recognition.lang = 'fr-FR'
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.onresult = (e) => {
+      let transcript = ''
+      for (let i = 0; i < e.results.length; i++) {
+        transcript += e.results[i][0].transcript + ' '
+      }
+      setCrVocalTexte(transcript.trim())
+    }
+    recognition.onend = () => setCrVocal(false)
+    recognition.start()
+    setCrVocal(true)
+    window._crRecognition = recognition
+  }
+
+  const arreterVocal = () => {
+    window._crRecognition?.stop()
+    setCrVocal(false)
   }
 
   const supprimerCR = async (crId) => {
@@ -1872,12 +1971,245 @@ export default function FicheChantier({ params }) {
           </div>
         )}
 
-        {/* Comptes-rendus — bientôt */}
-        <div className="bg-white border border-gray-200 rounded-xl p-5 opacity-60">
-          <p className="font-medium text-gray-700 mb-1">📝 Comptes-rendus</p>
-          <p className="text-xs text-gray-400">CR de visites</p>
-          <p className="text-xs text-blue-400 mt-2">Bientôt disponible</p>
+        {/* ── COMPTES-RENDUS ── */}
+        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-gray-800">📝 Comptes-rendus ({comptesRendus.length})</h2>
+            <button onClick={() => { setCrModal(true); setCrEtape(1) }}
+              className="text-sm bg-blue-800 text-white px-3 py-1.5 rounded-lg hover:bg-blue-900 flex items-center gap-1.5">
+              ✨ Nouveau CR avec IA
+            </button>
+          </div>
+
+          {comptesRendus.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">Aucun compte-rendu</p>
+          ) : (
+            <div className="space-y-3">
+              {comptesRendus.map(cr => (
+                <div key={cr.id} className={`border rounded-xl overflow-hidden ${cr.valide ? 'border-green-200' : 'border-gray-100'}`}>
+                  <div className={`flex items-center justify-between px-4 py-3 ${cr.valide ? 'bg-green-50' : 'bg-gray-50'}`}>
+                    <div>
+                      <span className="text-sm font-medium text-gray-800">
+                        {cr.type_visite === 'r1' ? 'R1 – Visite technique' : cr.type_visite === 'r2' ? 'R2 – Visite artisans' : cr.type_visite === 'r3' ? 'R3 – Présentation devis' : cr.type_visite === 'suivi' ? 'Suivi de chantier' : cr.type_visite === 'reception' ? 'Réception' : cr.type_visite}
+                      </span>
+                      {cr.date_visite && (
+                        <span className="text-xs text-gray-400 ml-2">— {new Date(cr.date_visite).toLocaleDateString('fr-FR')}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => toggleValide(cr.id, !cr.valide)}
+                        className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all ${cr.valide ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                        {cr.valide ? '✓ Publié' : 'Brouillon'}
+                      </button>
+                      <button onClick={() => supprimerCR(cr.id)} className="text-red-300 hover:text-red-500 text-xs">✕</button>
+                    </div>
+                  </div>
+                  {cr.contenu_final && (
+                    <div className="px-4 py-3 text-xs text-gray-600 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">
+                      {cr.contenu_final.slice(0, 400)}{cr.contenu_final.length > 400 ? '…' : ''}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+
+        {/* ── MODAL CR AVEC IA ── */}
+        {crModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4"
+            onClick={() => setCrModal(false)}>
+            <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+
+              {/* Header modal */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10">
+                <div>
+                  <p className="font-semibold text-gray-800">✨ Nouveau CR avec IA</p>
+                  <div className="flex gap-1 mt-1.5">
+                    {[1,2,3].map(n => (
+                      <div key={n} className={`h-1.5 rounded-full transition-all ${n <= crEtape ? 'bg-blue-800 w-8' : 'bg-gray-200 w-8'}`} />
+                    ))}
+                    <span className="text-xs text-gray-400 ml-2">Étape {crEtape}/3</span>
+                  </div>
+                </div>
+                <button onClick={() => setCrModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+              </div>
+
+              <div className="p-6 space-y-5">
+
+                {/* ── ÉTAPE 1 : Configuration ── */}
+                {crEtape === 1 && (
+                  <div className="space-y-4">
+                    <p className="text-sm font-medium text-gray-700">Configuration de la visite</p>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Type de visite *</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { value: 'r1', label: 'R1 – Visite technique', emoji: '🔍' },
+                          { value: 'r2', label: 'R2 – Visite artisans', emoji: '🔨' },
+                          { value: 'r3', label: 'R3 – Présentation devis', emoji: '📋' },
+                          { value: 'suivi', label: 'Suivi de chantier', emoji: '📊' },
+                          { value: 'reception', label: 'Réception', emoji: '✅' },
+                        ].map(({ value, label, emoji }) => (
+                          <button key={value} onClick={() => setCrForm(f => ({ ...f, type_visite: value }))}
+                            className={`text-left px-3 py-2.5 rounded-xl border text-sm transition-all ${crForm.type_visite === value ? 'border-blue-800 bg-blue-50 text-blue-800 font-medium' : 'border-gray-200 hover:border-gray-300'}`}>
+                            {emoji} {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Date de la visite</label>
+                        <input type="date" value={crForm.date_visite}
+                          onChange={e => setCrForm(f => ({ ...f, date_visite: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Intervenants présents</label>
+                        <input type="text" value={crForm.intervenants}
+                          onChange={e => setCrForm(f => ({ ...f, intervenants: e.target.value }))}
+                          placeholder="Plaquiste, Électricien…"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                    </div>
+
+                    <button onClick={() => crForm.type_visite && setCrEtape(2)}
+                      disabled={!crForm.type_visite}
+                      className="w-full bg-blue-800 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-blue-900 disabled:opacity-40 mt-2">
+                      Suivant →
+                    </button>
+                  </div>
+                )}
+
+                {/* ── ÉTAPE 2 : Notes brutes ── */}
+                {crEtape === 2 && (
+                  <div className="space-y-4">
+                    <p className="text-sm font-medium text-gray-700">Saisie des notes brutes</p>
+                    <p className="text-xs text-gray-400">Combinez plusieurs sources — l'IA synthétise tout</p>
+
+                    {/* Texte */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">📝 Texte (copier-coller depuis OneNote, Outlook…)</label>
+                      <textarea value={crNotes} onChange={e => setCrNotes(e.target.value)}
+                        rows={5} placeholder="Coller vos notes brutes ici — bullet points, phrases incomplètes, tout est ok..."
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+                    </div>
+
+                    {/* Vocal */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">🎤 Vocal (dictée dans l'app)</label>
+                      <div className="flex gap-2 items-start">
+                        <button onClick={crVocal ? arreterVocal : demarrerVocal}
+                          className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all ${crVocal ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                          {crVocal ? '⏹ Arrêter' : '🎙 Dicter'}
+                        </button>
+                        {crVocalTexte && (
+                          <div className="flex-1 text-xs text-gray-600 bg-gray-50 rounded-xl p-2.5 min-h-[40px]">
+                            {crVocalTexte}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Photos */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">📷 Photos (cahier, capture d'écran, document)</label>
+                      <div className="flex flex-wrap gap-2">
+                        {crImages.map((img, i) => (
+                          <div key={i} className="relative">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={img} alt="" className="w-20 h-20 object-cover rounded-lg border border-gray-200" />
+                            <button onClick={() => setCrImages(imgs => imgs.filter((_, j) => j !== i))}
+                              className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-xs flex items-center justify-center">✕</button>
+                          </div>
+                        ))}
+                        <label className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-blue-400 transition-colors">
+                          <span className="text-2xl text-gray-300">+</span>
+                          <input type="file" accept="image/*" multiple className="hidden"
+                            onChange={e => {
+                              Array.from(e.target.files || []).forEach(file => {
+                                const reader = new FileReader()
+                                reader.onload = ev => setCrImages(imgs => [...imgs, ev.target.result])
+                                reader.readAsDataURL(file)
+                              })
+                            }} />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                      <button onClick={() => setCrEtape(1)} className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-xl text-sm hover:bg-gray-50">
+                        ← Retour
+                      </button>
+                      <button onClick={genererCRAvecIA}
+                        disabled={crGenerating || (!crNotes.trim() && !crVocalTexte.trim() && crImages.length === 0)}
+                        className="flex-1 bg-blue-800 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-blue-900 disabled:opacity-40">
+                        {crGenerating ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            Génération en cours…
+                          </span>
+                        ) : '✨ Générer le CR'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── ÉTAPE 3 : Relecture ── */}
+                {crEtape === 3 && crGenere && (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-gray-800">{crGenere.titre}</p>
+                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Généré ✓</span>
+                    </div>
+
+                    <div className="space-y-4">
+                      {crSectionsEditees.map((section, idx) => (
+                        <div key={idx} className={`border rounded-xl overflow-hidden ${section.important ? 'border-orange-200' : 'border-gray-100'}`}>
+                          <div className={`px-4 py-2 flex items-center gap-2 ${section.important ? 'bg-orange-50' : 'bg-gray-50'}`}>
+                            <span className="text-xs font-bold text-gray-500">{section.numero}.</span>
+                            <input
+                              type="text"
+                              value={section.titre}
+                              onChange={e => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, titre: e.target.value } : s))}
+                              className="flex-1 text-sm font-medium bg-transparent focus:outline-none" />
+                            <button onClick={() => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, important: !s.important } : s))}
+                              className={`text-xs px-2 py-0.5 rounded ${section.important ? 'text-orange-600' : 'text-gray-300 hover:text-orange-400'}`}>
+                              ⚠
+                            </button>
+                          </div>
+                          <textarea
+                            value={section.contenu}
+                            onChange={e => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, contenu: e.target.value } : s))}
+                            rows={Math.max(3, Math.ceil(section.contenu.length / 80))}
+                            className="w-full px-4 py-3 text-xs text-gray-700 resize-none focus:outline-none focus:bg-blue-50 transition-colors leading-relaxed" />
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                      <button onClick={() => setCrEtape(2)} className="border border-gray-300 text-gray-700 px-4 py-2.5 rounded-xl text-sm hover:bg-gray-50">
+                        ← Retravailler
+                      </button>
+                      <button onClick={() => sauvegarderCRGenere(false)} disabled={crSavingFinal}
+                        className="flex-1 border border-blue-800 text-blue-800 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-50 disabled:opacity-40">
+                        Sauvegarder brouillon
+                      </button>
+                      <button onClick={() => sauvegarderCRGenere(true)} disabled={crSavingFinal}
+                        className="flex-1 bg-green-700 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-green-800 disabled:opacity-40">
+                        ✓ Publier au client
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            </div>
+          </div>
+        )}
 
 
         {/* ── ESPACE CLIENT AMO ── */}
