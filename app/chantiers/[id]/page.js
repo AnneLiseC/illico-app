@@ -120,7 +120,6 @@ export default function FicheChantier({ params }) {
   const [categorie, setCategorie] = useState('avant')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [uploadingDoc, setUploadingDoc] = useState(null) // devisId en cours d'upload
-  const [uploadingQual, setUploadingQual] = useState(null) // devisId pour qualification
   const [comptesRendus, setComptesRendus] = useState([])
   const [messages, setMessages] = useState([])
   const [nouveauCR, setNouveauCR] = useState({ type_visite: '', notes_brutes: '', contenu_final: '', date_visite: '', valide: false })
@@ -522,29 +521,6 @@ export default function FicheChantier({ params }) {
     setSucces('Facture supprimée ✓')
   }
 
-  // ── UPLOAD QUALIFICATION ARTISAN ──
-  const uploadQualification = async (devisId, fichier) => {
-    if (!fichier) return
-    setUploadingQual(devisId)
-    const ext = fichier.name.split('.').pop()
-    const chemin = `chantiers/${id}/qualifications/${devisId}.${ext}`
-    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
-    if (!error) {
-      await supabase.from('devis_artisans').update({ qualification_path: chemin }).eq('id', devisId)
-      await chargerDevis()
-      setSucces('Qualification uploadée ✓')
-    } else { setErreur('Erreur upload : ' + error.message) }
-    setUploadingQual(null)
-  }
-
-  const supprimerQualification = async (devisId, path) => {
-    if (!confirm('Supprimer la qualification ?')) return
-    await supabase.storage.from('documents').remove([path])
-    await supabase.from('devis_artisans').update({ qualification_path: null }).eq('id', devisId)
-    await chargerDevis()
-    setSucces('Qualification supprimée ✓')
-  }
-
   // ── URL SIGNÉE DOCUMENT ──
   const ouvrirDocument = async (path) => {
     const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600)
@@ -811,6 +787,7 @@ export default function FicheChantier({ params }) {
       await removeFolderContents('photos', `chantiers/${id}/pendant`)
       await removeFolderContents('photos', `chantiers/${id}/apres`)
       await removeFolderContents('photos', `chantiers/${id}/maquette`)
+      await removeFolderContents('photos', `chantiers/${id}/illustration`)
 
       // bucket documents
       await removeFolderContents('documents', `chantiers/${id}/devis`)
@@ -1356,26 +1333,6 @@ export default function FicheChantier({ params }) {
                           )}
                         </div>
                       </div>
-                      {/* Qualification artisan */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-500 font-medium">🏅 Qualification (RGE, Qualibat…)</span>
-                        <div className="flex items-center gap-2">
-                          {d.qualification_path ? (
-                            <>
-                              <button onClick={() => ouvrirDocument(d.qualification_path)}
-                                className="text-xs text-blue-600 hover:underline">Voir PDF</button>
-                              <button onClick={() => supprimerQualification(d.id, d.qualification_path)}
-                                className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
-                            </>
-                          ) : (
-                            <label className={`text-xs cursor-pointer px-2 py-1 rounded border transition-all ${uploadingQual === d.id ? 'text-gray-400 border-gray-200' : 'text-purple-600 border-purple-200 hover:bg-purple-50'}`}>
-                              {uploadingQual === d.id ? 'Upload...' : '+ Uploader'}
-                              <input type="file" accept=".pdf" className="hidden" disabled={uploadingQual === d.id}
-                                onChange={e => e.target.files[0] && uploadQualification(d.id, e.target.files[0])} />
-                            </label>
-                          )}
-                        </div>
-                      </div>
                     </div>
 
                     <div className="pt-2 border-t border-gray-50">
@@ -1659,17 +1616,17 @@ export default function FicheChantier({ params }) {
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
           <h2 className="font-semibold text-gray-800">Photos du chantier</h2>
           <div className="flex gap-2 flex-wrap">
-            {['avant', 'pendant', 'apres', 'maquette'].map(cat => (
+            {['avant', 'pendant', 'apres', 'maquette', 'illustration'].map(cat => (
               <button key={cat} onClick={() => setCategorie(cat)}
                 className={`text-xs px-3 py-1.5 rounded-full border transition-all ${categorie === cat ? 'bg-blue-800 text-white border-blue-800' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                {cat === 'avant' ? 'Avant' : cat === 'pendant' ? 'Pendant' : cat === 'apres' ? 'Après' : 'Maquette'}
+                {cat === 'avant' ? 'Avant' : cat === 'pendant' ? 'Pendant' : cat === 'apres' ? 'Après' : cat === 'maquette' ? 'Maquette' : 'Illustration'}
                 {photos.filter(p => p.categorie === cat).length > 0 && <span className="ml-1">({photos.filter(p => p.categorie === cat).length})</span>}
               </button>
             ))}
           </div>
           <div className="flex items-center gap-3">
             <label className={`cursor-pointer flex items-center gap-2 text-xs px-3 py-2 rounded-lg border transition-all ${uploadingPhoto ? 'bg-gray-100 text-gray-400' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}`}>
-              {uploadingPhoto ? 'Upload en cours...' : `+ Ajouter une photo (${categorie === 'avant' ? 'Avant' : categorie === 'pendant' ? 'Pendant' : categorie === 'apres' ? 'Après' : 'Maquette'})`}
+              {uploadingPhoto ? 'Upload en cours...' : `+ Ajouter une photo (${categorie === 'avant' ? 'Avant' : categorie === 'pendant' ? 'Pendant' : categorie === 'apres' ? 'Après' : categorie === 'maquette' ? 'Maquette' : 'Illustration'})`}
               <input type="file" accept="image/*" multiple className="hidden" disabled={uploadingPhoto} onChange={e => uploadPhotos(Array.from(e.target.files))} />
             </label>
           </div>
@@ -1926,119 +1883,6 @@ export default function FicheChantier({ params }) {
         {/* ── ESPACE CLIENT AMO ── */}
         {dossier?.typologie === 'amo' && (
           <div className="space-y-4">
-
-            {/* Comptes-rendus */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="font-semibold text-gray-800">
-                  Comptes-rendus de visite
-                  {comptesRendus.length > 0 && (
-                    <span className="ml-2 text-sm font-normal text-gray-400">({comptesRendus.length})</span>
-                  )}
-                </h2>
-                <button onClick={() => setAjouterCR(!ajouterCR)}
-                  className="text-sm text-blue-600 hover:underline">
-                  {ajouterCR ? 'Annuler' : '+ Nouveau CR'}
-                </button>
-              </div>
-
-              {/* Formulaire nouveau CR */}
-              {ajouterCR && (
-                <div className="border border-blue-100 rounded-xl p-4 bg-blue-50 space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Type de visite *</label>
-                      <select value={nouveauCR.type_visite}
-                        onChange={e => setNouveauCR(c => ({ ...c, type_visite: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="">— Choisir —</option>
-                        <option value="r1">R1 — Visite client</option>
-                        <option value="r2">R2 — Visite avec artisan</option>
-                        <option value="r3">R3 — Présentation devis</option>
-                        <option value="suivi">Visite de suivi</option>
-                        <option value="reception">Réception chantier</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Date de visite</label>
-                      <input type="date" value={nouveauCR.date_visite}
-                        onChange={e => setNouveauCR(c => ({ ...c, date_visite: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Notes brutes (terrain)</label>
-                    <textarea value={nouveauCR.notes_brutes}
-                      onChange={e => setNouveauCR(c => ({ ...c, notes_brutes: e.target.value }))}
-                      rows={3} placeholder="Notes prises sur place..."
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Compte-rendu final (visible client si publié)</label>
-                    <textarea value={nouveauCR.contenu_final}
-                      onChange={e => setNouveauCR(c => ({ ...c, contenu_final: e.target.value }))}
-                      rows={4} placeholder="Rédaction finale du compte-rendu..."
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={nouveauCR.valide}
-                        onChange={e => setNouveauCR(c => ({ ...c, valide: e.target.checked }))}
-                        className="w-4 h-4 accent-blue-700" />
-                      <span className="text-xs text-gray-600">Publier au client maintenant</span>
-                    </label>
-                    <button onClick={sauvegarderCR} disabled={savingCR || !nouveauCR.type_visite}
-                      className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
-                      {savingCR ? 'Enregistrement...' : 'Enregistrer'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Liste CRs */}
-              {comptesRendus.length === 0 && !ajouterCR ? (
-                <p className="text-sm text-gray-400 text-center py-4">Aucun compte-rendu pour ce chantier</p>
-              ) : (
-                <div className="space-y-2">
-                  {comptesRendus.map(cr => (
-                    <div key={cr.id} className="border border-gray-100 rounded-xl p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-sm font-medium text-gray-800">
-                              {{ r1: 'R1 — Visite client', r2: 'R2 — Visite avec artisan', r3: 'R3 — Présentation devis', suivi: 'Visite de suivi', reception: 'Réception chantier' }[cr.type_visite] || cr.type_visite || 'Compte-rendu'}
-                            </p>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${cr.valide ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                              {cr.valide ? '👁 Publié client' : '🔒 Brouillon'}
-                            </span>
-                          </div>
-                          {cr.date_visite && (
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              Visite du {new Date(cr.date_visite).toLocaleDateString('fr-FR')}
-                            </p>
-                          )}
-                          {cr.notes_brutes && !cr.contenu_final && (
-                            <p className="text-xs text-gray-400 mt-2 italic">Notes brutes — {cr.notes_brutes.slice(0, 80)}{cr.notes_brutes.length > 80 ? '...' : ''}</p>
-                          )}
-                          {cr.contenu_final && (
-                            <p className="text-xs text-gray-600 mt-2 leading-relaxed whitespace-pre-wrap">{cr.contenu_final.slice(0, 120)}{cr.contenu_final.length > 120 ? '...' : ''}</p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <button onClick={() => toggleValide(cr.id, !cr.valide)}
-                            className="text-xs text-gray-400 hover:text-blue-600">
-                            {cr.valide ? 'Masquer' : 'Publier'}
-                          </button>
-                          <button onClick={() => supprimerCR(cr.id)}
-                            className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* Messagerie */}
             <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
               <div className="flex items-center justify-between">

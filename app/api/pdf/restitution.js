@@ -1,19 +1,24 @@
 // app/api/pdf/restitution.js
-// Génération du dossier de restitution avec merge du template PDF illiCO
+// Dossier de restitution : page de garde dynamique + séparateurs illiCO + vraies pièces PDF
 
 import React from 'react'
 import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
 import { PDFDocument } from 'pdf-lib'
-import path from 'path'
-import fs from 'fs'
+import { SEP_DESCRIPTIF }    from '../../lib/sep_descriptif.js'
+import { SEP_ILLUSTRATIONS } from '../../lib/sep_illustrations.js'
+import { SEP_RECAP }         from '../../lib/sep_recap.js'
+import { SEP_DEVIS }         from '../../lib/sep_devis.js'
+import { SEP_PLANNING }      from '../../lib/sep_planning.js'
+import { SEP_REFS }          from '../../lib/sep_refs.js'
+import { SEP_KBIS }         from '../../lib/sep_kbis.js'
+import { SEP_QUALIFICATION } from '../../lib/sep_qualification.js'
 
-// ── Couleurs charte ──
+// ── Couleurs ──
 const BLEU  = '#00578e'
 const BLEU2 = '#2f8dcb'
 const GRIS  = '#6b7280'
 const BLANC = '#ffffff'
-const ROUGE = '#991b1b'
-const ORANGE_TX = '#c2410c'
+const VERT  = '#166534'
 
 const toNum = (v) => {
   if (!v && v !== 0) return 0
@@ -22,29 +27,6 @@ const toNum = (v) => {
 }
 const fmt = (n) => `${toNum(n).toFixed(2).replace('.', ',')} €`
 
-// Indices des pages du template (0-based)
-const TPL = {
-  cover: 0,
-  coverBlank: 1,
-  descriptif: 2,
-  descriptifBlank: 3,
-  recap: 4,
-  recapBlank: 5,
-  devisFactures: 6,
-  devisFacturesBlank: 7,
-  qualification: 8,
-  qualificationBlank: 9,
-  planning: 10,
-  planningBlank: 11,
-  maquette: 12,     // "Illustrations & vues 3D"
-  maquetteBlank: 13,
-  refsProds: 14,
-  refsProdBlank: 15,
-  kbisAssur: 16,
-  kbisAssurBlank: 17,
-  // 18 = Audit énergétique → on skip
-}
-
 function getTelReferente(ref) {
   if (!ref) return '06 59 81 06 81'
   const p = (ref.prenom || '').toLowerCase()
@@ -52,7 +34,6 @@ function getTelReferente(ref) {
   if (p.includes('anne')) return '06 74 95 04 02'
   return ref.telephone || '06 59 81 06 81'
 }
-
 function getNomRef(ref) {
   if (!ref) return 'Marine MICHELANGELI'
   const p = (ref.prenom || '').toLowerCase()
@@ -61,56 +42,62 @@ function getNomRef(ref) {
   return `${ref.prenom || ''} ${(ref.nom || '').toUpperCase()}`.trim()
 }
 
-// ── Styles pour pages de contenu ──
+// ── Styles ──
 const CS = StyleSheet.create({
-  page: { padding: 38, fontFamily: 'Helvetica', fontSize: 9, backgroundColor: '#ffffff' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 10, borderBottomWidth: 2, borderBottomColor: BLEU },
-  logo: { width: 110, height: 44 },
-  headerRight: { alignItems: 'flex-end' },
-  headerTitle: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: BLEU },
-  headerSub: { fontSize: 8, color: GRIS, marginTop: 2 },
-  sectionH: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: BLEU, marginTop: 14, marginBottom: 5, paddingBottom: 3, borderBottomWidth: 1, borderBottomColor: '#e8f4fb' },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  infoLabel: { fontSize: 8, color: GRIS, flex: 1 },
-  infoValue: { fontSize: 8, fontFamily: 'Helvetica-Bold' },
-  tableHdr: { flexDirection: 'row', backgroundColor: BLEU, paddingVertical: 5, paddingHorizontal: 4 },
-  th: { color: BLANC, fontSize: 8, fontFamily: 'Helvetica-Bold' },
-  tr: { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
-  trAlt: { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', backgroundColor: '#f0f7fb' },
-  trTotal: { flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 4, backgroundColor: BLEU },
-  trSub: { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 4, backgroundColor: '#ddeef8' },
-  td: { fontSize: 8 },
-  tdB: { fontSize: 8, fontFamily: 'Helvetica-Bold' },
-  tdR: { fontSize: 8, textAlign: 'right' },
-  tdRB: { fontSize: 8, fontFamily: 'Helvetica-Bold', textAlign: 'right' },
-  tdW: { fontSize: 8, color: BLANC },
-  tdWB: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: BLANC },
-  tdRWB: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: BLANC, textAlign: 'right' },
-  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  sumLabel: { fontSize: 8, color: GRIS, flex: 1 },
-  sumValue: { fontSize: 8, fontFamily: 'Helvetica-Bold' },
-  sumRowOrange: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 6, backgroundColor: '#fff0e0', marginTop: 2, borderRadius: 2 },
-  sumLabelOrange: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#f37f2b', flex: 1 },
-  sumValueOrange: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#f37f2b' },
-  totalBlock: { flexDirection: 'row', justifyContent: 'space-between', padding: 9, backgroundColor: BLEU, borderRadius: 4, marginTop: 8 },
-  totalLabel: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' },
-  totalValue: { color: BLANC, fontSize: 13, fontFamily: 'Helvetica-Bold' },
-  photoImg: { width: 148, height: 110, objectFit: 'cover', borderRadius: 4 },
-  footer: { position: 'absolute', bottom: 22, left: 38, right: 38, flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e5e7eb', paddingTop: 5 },
-  footerTxt: { fontSize: 7, color: GRIS },
-  footerSlogan: { fontSize: 7, color: BLEU2, fontFamily: 'Helvetica-Oblique' },
+  page:        { padding: 38, fontFamily: 'Helvetica', fontSize: 9, backgroundColor: '#ffffff' },
+  header:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 10, borderBottomWidth: 2, borderBottomColor: BLEU },
+  logo:        { width: 110, height: 44 },
+  headerTitle: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: BLEU, textAlign: 'right' },
+  headerSub:   { fontSize: 8, color: GRIS, marginTop: 2, textAlign: 'right' },
+  sectionH:    { fontSize: 10, fontFamily: 'Helvetica-Bold', color: BLEU, marginTop: 14, marginBottom: 5, paddingBottom: 3, borderBottomWidth: 1, borderBottomColor: '#e8f4fb' },
+  infoRow:     { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  infoLabel:   { fontSize: 8, color: GRIS, flex: 1 },
+  infoValue:   { fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  tableHdr:    { flexDirection: 'row', backgroundColor: BLEU, paddingVertical: 5, paddingHorizontal: 4 },
+  th:          { color: BLANC, fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  tr:          { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
+  trAlt:       { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', backgroundColor: '#f0f7fb' },
+  trTotal:     { flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 4, backgroundColor: BLEU },
+  trSub:       { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 4, backgroundColor: '#ddeef8' },
+  td:          { fontSize: 8 },
+  tdB:         { fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  tdR:         { fontSize: 8, textAlign: 'right' },
+  tdRB:        { fontSize: 8, fontFamily: 'Helvetica-Bold', textAlign: 'right' },
+  tdW:         { fontSize: 8, color: BLANC },
+  tdWB:        { fontSize: 8, fontFamily: 'Helvetica-Bold', color: BLANC },
+  tdRWB:       { fontSize: 8, fontFamily: 'Helvetica-Bold', color: BLANC, textAlign: 'right' },
+  sumRow:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  sumLabel:    { fontSize: 8, color: GRIS, flex: 1 },
+  sumValue:    { fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  sumOrange:   { flexDirection: 'row', justifyContent: 'space-between', padding: 6, backgroundColor: '#fff0e0', marginTop: 2, borderRadius: 2 },
+  totalBlock:  { flexDirection: 'row', justifyContent: 'space-between', padding: 9, backgroundColor: BLEU, borderRadius: 4, marginTop: 8 },
+  photoImg:    { width: 148, height: 110, objectFit: 'cover', borderRadius: 4 },
+  footer:      { position: 'absolute', bottom: 22, left: 38, right: 38, flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e5e7eb', paddingTop: 5 },
+  footerTxt:   { fontSize: 7, color: GRIS },
+  footerSlogan:{ fontSize: 7, color: BLEU2, fontFamily: 'Helvetica-Oblique' },
+  // Cover
+  coverPage:   { padding: 0, backgroundColor: '#ffffff' },
+  coverTopBand:{ height: 8, backgroundColor: '#00578e' },
+  coverLogoArea:{ padding: 30, paddingBottom: 0 },
+  coverLogo:   { width: 140, height: 56 },
+  coverBlueBand:{ backgroundColor: '#00578e', paddingVertical: 40, paddingLeft: 32, marginTop: 50 },
+  coverTitle:  { color: BLANC, fontSize: 38, fontFamily: 'Helvetica-Bold', lineHeight: 1.2 },
+  coverOrangeBand:{ backgroundColor: '#f37f2b', height: 14, marginRight: 80 },
+  coverBottom: { position: 'absolute', bottom: 56, left: 0, right: 0, alignItems: 'center' },
+  coverName:   { fontSize: 11, color: BLEU, textAlign: 'center', marginBottom: 3 },
+  coverText:   { fontSize: 10, color: '#374151', textAlign: 'center', marginBottom: 2 },
+  coverSlogan: { fontSize: 10, color: BLEU2, textAlign: 'center', fontFamily: 'Helvetica-Oblique', marginTop: 8 },
 })
 
 function Hdr({ title, sub, logo }) {
   return React.createElement(View, { style: CS.header },
-    logo ? React.createElement(PdfImage, { src: logo, style: CS.logo }) : React.createElement(Text, { style: { fontSize: 12, fontFamily: 'Helvetica-Bold', color: BLEU } }, 'illiCO'),
-    React.createElement(View, { style: CS.headerRight },
+    logo ? React.createElement(PdfImage, { src: logo, style: CS.logo }) : null,
+    React.createElement(View, { style: { alignItems: 'flex-end' } },
       React.createElement(Text, { style: CS.headerTitle }, title),
       sub && React.createElement(Text, { style: CS.headerSub }, sub),
     ),
   )
 }
-
 function Ftr({ ref: r }) {
   return React.createElement(View, { style: CS.footer, fixed: true },
     React.createElement(Text, { style: CS.footerTxt }, `illiCO travaux Martigues — ${r}`),
@@ -119,62 +106,76 @@ function Ftr({ ref: r }) {
   )
 }
 
+// ── Page de garde dynamique ──
+function makeCoverPage({ nomRef, telRef, logo }) {
+  return React.createElement(Page, { size: 'A4', style: CS.coverPage },
+    React.createElement(View, { style: CS.coverTopBand }),
+    React.createElement(View, { style: CS.coverLogoArea },
+      logo ? React.createElement(PdfImage, { src: logo, style: CS.coverLogo }) : null,
+    ),
+    React.createElement(View, { style: CS.coverBlueBand },
+      React.createElement(Text, { style: CS.coverTitle }, 'Votre projet avec'),
+      React.createElement(Text, { style: CS.coverTitle }, 'illiCO travaux'),
+    ),
+    React.createElement(View, { style: CS.coverOrangeBand }),
+    React.createElement(View, { style: CS.coverBottom },
+      React.createElement(Text, { style: CS.coverName }, nomRef),
+      React.createElement(Text, { style: CS.coverText }, 'Société CONSEIL TRAVAUX PROVENCE - CTP'),
+      React.createElement(Text, { style: CS.coverText }, '22 rue ramade, quartier Jonquières'),
+      React.createElement(Text, { style: CS.coverText }, '13 500 MARTIGUES'),
+      React.createElement(Text, { style: CS.coverText }, telRef),
+      React.createElement(Text, { style: CS.coverSlogan }, 'Quand vous pensez travaux, pensez illiCO !'),
+    ),
+  )
+}
+
 // ── Génère les pages de contenu ──
-function buildContentPDF({ dossier, devis, photos, interventions, suiviFinancier, logo }) {
+async function buildContentPDF({ dossier, devis, photos, interventions, logo }) {
   const client = dossier.client
   const ref = dossier.referente
   const nomClient = client
     ? [client.civilite, client.prenom, client.nom, client.prenom2 ? `& ${client.prenom2} ${client.nom2}` : null].filter(Boolean).join(' ')
     : '—'
+  const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
   const nomRef = getNomRef(ref)
   const dateAuj = new Date().toLocaleDateString('fr-FR')
-  const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
 
   const devisAcceptes = (devis || []).filter(d => d.statut === 'accepte')
-  const totalHT = devisAcceptes.reduce((s, d) => s + toNum(d.montant_ht), 0)
+  const totalHT  = devisAcceptes.reduce((s, d) => s + toNum(d.montant_ht), 0)
   const totalTTC = devisAcceptes.reduce((s, d) => s + toNum(d.montant_ttc), 0)
   const fraisTTC = toNum(dossier.frais_consultation)
-  const fraisHT = fraisTTC / 1.2
+  const fraisHT  = fraisTTC / 1.2
   const tauxC = toNum(dossier.taux_courtage || 0.06)
   const tauxA = toNum(dossier.honoraires_amo_taux ?? 9) / 100
-  const honC = totalTTC * tauxC
-  const honAMO = totalTTC * (tauxC + tauxA)
+  const honC  = totalTTC * tauxC
+  const honAMO= totalTTC * (tauxC + tauxA)
   const isAMO = dossier.typologie === 'amo'
-  const isC = ['courtage', 'amo'].includes(dossier.typologie)
-
-  // Acomptes
-  const totalAcomptes = devisAcceptes.reduce((s, d) => {
-    const ttc = toNum(d.montant_ttc)
-    return s + (d.acompte_pourcentage === -1 ? toNum(d.acompte_montant_fixe) : ttc * (toNum(d.acompte_pourcentage || 30) / 100))
-  }, 0)
-
+  const isC   = ['courtage', 'amo'].includes(dossier.typologie)
   const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
 
-  let rowNum = 0
   const pages = []
 
-  // ── PAGE 0 : Descriptif du projet ──
+  // ── Descriptif du projet ──
   pages.push(
     React.createElement(Page, { key: 'desc', size: 'A4', style: CS.page },
       React.createElement(Hdr, { title: 'Descriptif du projet', sub: `${dossier.reference} — ${nomClient}`, logo }),
-      React.createElement(View, { style: { marginBottom: 14 } },
+      React.createElement(View, null,
         ...[
-          ['Référence', dossier.reference || '—'],
-          ['Client', nomClient],
+          ['Référence',          dossier.reference || '—'],
+          ['Client',             nomClient],
           client?.adresse ? ['Adresse', client.adresse] : null,
-          ['Prestation', TYPO[dossier.typologie] || dossier.typologie],
-          ['Référente', nomRef],
+          ['Prestation',         TYPO[dossier.typologie] || dossier.typologie],
+          ['Référente',          nomRef],
           dossier.date_demarrage_chantier ? ['Démarrage chantier', new Date(dossier.date_demarrage_chantier).toLocaleDateString('fr-FR')] : null,
           dossier.date_fin_chantier ? ['Fin de chantier', new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR')] : null,
           ['Document établi le', dateAuj],
-        ].filter(Boolean).map(([label, value]) =>
-          React.createElement(View, { key: label, style: CS.infoRow },
-            React.createElement(Text, { style: CS.infoLabel }, label),
-            React.createElement(Text, { style: CS.infoValue }, value),
+        ].filter(Boolean).map(([l, v]) =>
+          React.createElement(View, { key: l, style: CS.infoRow },
+            React.createElement(Text, { style: CS.infoLabel }, l),
+            React.createElement(Text, { style: CS.infoValue }, v),
           )
         ),
       ),
-      // Résumé du projet
       dossier.resume_projet && React.createElement(View, null,
         React.createElement(Text, { style: CS.sectionH }, 'Résumé du projet'),
         React.createElement(Text, { style: { fontSize: 8.5, lineHeight: 1.6, color: '#374151' } }, dossier.resume_projet),
@@ -183,11 +184,11 @@ function buildContentPDF({ dossier, devis, photos, interventions, suiviFinancier
     )
   )
 
-  // ── PAGE 1 : Récapitulatif financier ──
+  // ── Récapitulatif financier ──
+  let rowNum = 0
   pages.push(
     React.createElement(Page, { key: 'recap', size: 'A4', style: CS.page },
       React.createElement(Hdr, { title: 'Récapitulatif financier', sub: `${dossier.reference} — ${nomClient}`, logo }),
-      // Tableau principal
       React.createElement(View, { style: CS.tableHdr },
         React.createElement(Text, { style: [CS.th, { width: 18 }] }, ' '),
         React.createElement(Text, { style: [CS.th, { flex: 3 }] }, 'Intervenant'),
@@ -214,62 +215,50 @@ function buildContentPDF({ dossier, devis, photos, interventions, suiviFinancier
       }),
       React.createElement(View, { style: CS.trSub },
         React.createElement(Text, { style: [CS.tdB, { width: 18 }] }, ' '),
-        React.createElement(Text, { style: [CS.tdB, { flex: 9 }] }, 'Total devis HT'),
+        React.createElement(Text, { style: [CS.tdB, { flex: 9 }] }, 'Total HT'),
         React.createElement(Text, { style: [CS.tdRB, { flex: 2, color: BLEU }] }, fmt(totalHT + fraisHT)),
         React.createElement(Text, { style: { flex: 2 } }, ''),
       ),
       React.createElement(View, { style: CS.trTotal },
         React.createElement(Text, { style: [CS.tdW, { width: 18 }] }, ' '),
-        React.createElement(Text, { style: [CS.tdWB, { flex: 9 }] }, 'Total devis TTC'),
+        React.createElement(Text, { style: [CS.tdWB, { flex: 9 }] }, 'Total TTC'),
         React.createElement(Text, { style: { flex: 2 } }, ''),
         React.createElement(Text, { style: [CS.tdRWB, { flex: 2 }] }, fmt(totalTTC + fraisTTC)),
       ),
-
       // Acomptes
       devisAcceptes.length > 0 && React.createElement(View, { style: { marginTop: 14 } },
-        React.createElement(Text, { style: CS.sectionH }, 'Acomptes entreprises de 30% à 40% à la signature des devis'),
+        React.createElement(Text, { style: CS.sectionH }, 'Acomptes entreprises'),
         ...devisAcceptes.map(d => {
           const ttc = toNum(d.montant_ttc)
           const acompte = d.acompte_pourcentage === -1 ? toNum(d.acompte_montant_fixe) : ttc * (toNum(d.acompte_pourcentage || 30) / 100)
           const pct = d.acompte_pourcentage === -1 ? '' : ` (${d.acompte_pourcentage || 30}%)`
-          return React.createElement(View, { key: d.id, style: CS.summaryRow },
+          return React.createElement(View, { key: d.id, style: CS.sumRow },
             React.createElement(Text, { style: CS.sumLabel }, `${d.artisan?.entreprise || '—'}${pct}`),
             React.createElement(Text, { style: CS.sumValue }, fmt(acompte)),
           )
         }),
-        isC && React.createElement(View, { style: [CS.summaryRow, { borderBottomWidth: 0 }] },
-          React.createElement(Text, { style: CS.sumLabel }, 'Acompte illiCO travaux (valeur du courtage)'),
-          React.createElement(Text, { style: CS.sumValue }, fmt(honC)),
-        ),
       ),
-
       // Honoraires
       isC && totalTTC > 0 && React.createElement(View, { style: { marginTop: 10 } },
         React.createElement(Text, { style: CS.sectionH }, 'Honoraires illiCO travaux'),
-        React.createElement(View, { style: CS.summaryRow },
+        React.createElement(View, { style: CS.sumRow },
           React.createElement(Text, { style: CS.sumLabel }, `Honoraires courtage (${(tauxC * 100).toFixed(1)}%)`),
           React.createElement(Text, { style: CS.sumValue }, fmt(honC)),
         ),
-        !isAMO && React.createElement(View, { style: [CS.summaryRow, { borderBottomWidth: 0 }] },
-          React.createElement(Text, { style: [CS.sumLabel, { color: '#9ca3af' }] }, 'TOTAL CHANTIER si COURTAGE'),
-          React.createElement(Text, { style: [CS.sumValue, { color: '#9ca3af' }] }, fmt(totalTTC + fraisTTC + honC)),
-        ),
-        isAMO && React.createElement(View, null,
-          React.createElement(View, { style: CS.sumRowOrange },
-            React.createElement(Text, { style: CS.sumLabelOrange }, `Honoraires AMO (${((tauxC + tauxA) * 100).toFixed(1)}%)`),
-            React.createElement(Text, { style: CS.sumValueOrange }, fmt(honAMO)),
-          ),
+        isAMO && React.createElement(View, { style: CS.sumOrange },
+          React.createElement(Text, { style: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#f37f2b', flex: 1 } }, `Honoraires AMO (${((tauxC + tauxA) * 100).toFixed(1)}%)`),
+          React.createElement(Text, { style: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#f37f2b' } }, fmt(honAMO)),
         ),
         React.createElement(View, { style: CS.totalBlock },
-          React.createElement(Text, { style: CS.totalLabel }, 'TOTAL CHANTIER'),
-          React.createElement(Text, { style: CS.totalValue }, fmt(totalTTC + fraisTTC + (isAMO ? honAMO : honC))),
+          React.createElement(Text, { style: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' } }, 'TOTAL CHANTIER'),
+          React.createElement(Text, { style: { color: BLANC, fontSize: 13, fontFamily: 'Helvetica-Bold' } }, fmt(totalTTC + fraisTTC + (isAMO ? honAMO : honC))),
         ),
       ),
       React.createElement(Ftr, { ref: dossier.reference }),
     )
   )
 
-  // ── PAGE 2 (optionnel) : Planning — AMO uniquement ──
+  // ── Planning (AMO) ──
   if (isAMO && (interventions || []).length > 0) {
     pages.push(
       React.createElement(Page, { key: 'plan', size: 'A4', style: CS.page },
@@ -285,7 +274,7 @@ function buildContentPDF({ dossier, devis, photos, interventions, suiviFinancier
           React.createElement(Text, { style: [CS.td, { flex: 4, textAlign: 'center' }] },
             i.type_intervention === 'periode'
               ? `${i.date_debut ? new Date(i.date_debut).toLocaleDateString('fr-FR') : '?'} → ${i.date_fin ? new Date(i.date_fin).toLocaleDateString('fr-FR') : '?'}`
-              : `${(i.jours_specifiques || []).slice(0, 3).map(j => new Date(j).toLocaleDateString('fr-FR')).join(', ')}${(i.jours_specifiques || []).length > 3 ? '…' : ''}`
+              : `${(i.jours_specifiques || []).slice(0, 4).map(j => new Date(j).toLocaleDateString('fr-FR')).join(', ')}${(i.jours_specifiques || []).length > 4 ? '…' : ''}`
           ),
         )),
         React.createElement(Text, { style: { fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', marginTop: 14, lineHeight: 1.4 } },
@@ -296,21 +285,20 @@ function buildContentPDF({ dossier, devis, photos, interventions, suiviFinancier
     )
   }
 
-  // ── PAGE 3 (optionnel) : Photos maquette/illustration ──
+  // ── Photos maquette ──
   if (photosMaquette.length > 0) {
     for (let i = 0; i < photosMaquette.length; i += 4) {
       const chunk = photosMaquette.slice(i, i + 4)
       pages.push(
         React.createElement(Page, { key: `maq-${i}`, size: 'A4', style: CS.page },
-          React.createElement(Hdr, { title: 'Maquette & vues 3D', sub: `${dossier.reference} — ${nomClient}`, logo }),
+          React.createElement(Hdr, { title: 'Illustrations & vues 3D', sub: `${dossier.reference} — ${nomClient}`, logo }),
           React.createElement(View, { style: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } },
-            ...chunk.map(ph => ph.base64
-              ? React.createElement(PdfImage, { key: ph.id, src: ph.base64, style: CS.photoImg })
-              : null
-            ).filter(Boolean),
+            ...chunk.filter(p => p.base64).map(ph =>
+              React.createElement(PdfImage, { key: ph.id, src: ph.base64, style: CS.photoImg })
+            ),
           ),
           React.createElement(Text, { style: { fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', marginTop: 16, lineHeight: 1.4 } },
-            "Les illustrations graphiques, coupes 3D, ou plans reproduits sont des illustrations commerciales qui ne peuvent servir de base à la réalisation du chantier.",
+            "Les illustrations graphiques reproduites sont des illustrations commerciales qui ne peuvent servir de base à la réalisation du chantier.",
           ),
           React.createElement(Ftr, { ref: dossier.reference }),
         )
@@ -318,94 +306,139 @@ function buildContentPDF({ dossier, devis, photos, interventions, suiviFinancier
     }
   }
 
-  return React.createElement(Document, null, ...pages)
+  return renderToBuffer(React.createElement(Document, null, ...pages))
 }
 
-// ── Merge template + contenu ──
-export async function buildDossierRestitution({ dossier, devis, photos, interventions, suiviFinancier, logo }) {
-  const isAMO = dossier.typologie === 'amo'
-  const hasQualif = (devis || []).some(d => d.qualification_path)
-  const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
-  const hasPlanning = isAMO && (interventions || []).length > 0
+// ── Télécharger un PDF depuis Supabase Storage ──
+async function downloadPDF(supabaseAdmin, bucket, path) {
+  try {
+    const { data, error } = await supabaseAdmin.storage.from(bucket).download(path)
+    if (error || !data) return null
+    return Buffer.from(await data.arrayBuffer())
+  } catch {
+    return null
+  }
+}
 
-  // 1. Générer les pages de contenu avec react-pdf
-  const contentDoc = buildContentPDF({ dossier, devis, photos, interventions, suiviFinancier, logo })
-  const contentBuffer = await renderToBuffer(contentDoc)
+// ── Merge principal ──
+export async function buildDossierRestitution({ dossier, devis, photos, interventions, logo, supabaseAdmin }) {
+  const isAMO = dossier.typologie === 'amo'
+  const devisAcceptes = (devis || []).filter(d => d.statut === 'accepte')
+  const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
+  const hasQualif = devisAcceptes.some(d => d.artisan?.qualification_url)
+
+  // Charger les séparateurs
+  const loadSep = async (b64) => PDFDocument.load(Buffer.from(b64, 'base64'))
+
+  const [sepDescriptif, sepIllustrations, sepRecap, sepDevis, sepPlanning, sepRefs, sepKbis, sepQualification] = await Promise.all([
+    loadSep(SEP_DESCRIPTIF), loadSep(SEP_ILLUSTRATIONS), loadSep(SEP_RECAP),
+    loadSep(SEP_DEVIS), loadSep(SEP_PLANNING), loadSep(SEP_REFS),
+    loadSep(SEP_KBIS), loadSep(SEP_QUALIFICATION),
+  ])
+
+  // Générer les pages de contenu
+  const contentBuffer = await buildContentPDF({ dossier, devis, photos, interventions, logo })
   const contentPdf = await PDFDocument.load(contentBuffer)
 
-  // 2. Charger le template
-  const templatePath = path.join(process.cwd(), 'public', 'template_restitution.pdf')
-  const templateBytes = fs.readFileSync(templatePath)
-  const templatePdf = await PDFDocument.load(templateBytes)
-
-  // 3. Construire le PDF final
+  // PDF final
   const final = await PDFDocument.create()
+  let cIdx = 0 // index dans contentPdf
 
-  // Copier une page du template
-  const fromTpl = async (pageIdx) => {
-    const [p] = await final.copyPages(templatePdf, [pageIdx])
+  const addSep = async (sepPdf) => {
+    const [p] = await final.copyPages(sepPdf, [0])
     final.addPage(p)
   }
-  // Copier une page du contenu généré
-  const fromContent = async (pageIdx) => {
-    const [p] = await final.copyPages(contentPdf, [pageIdx])
+  const addContent = async () => {
+    const [p] = await final.copyPages(contentPdf, [cIdx++])
     final.addPage(p)
   }
-
-  // Index des pages de contenu
-  let contentIdx = 0
-
-  // ── Cover
-  await fromTpl(TPL.cover)
-  // Pas de blank cover pour plus de compacité — optionnel, on l'enlève
-
-  // ── Descriptif du projet
-  await fromTpl(TPL.descriptif)
-  await fromContent(contentIdx++) // page descriptif
-
-  // ── Récapitulatif financier
-  await fromTpl(TPL.recap)
-  await fromContent(contentIdx++) // page récap
-
-  // ── Devis, Factures (separator + blanc pour insertion physique)
-  await fromTpl(TPL.devisFactures)
-  await fromTpl(TPL.devisFacturesBlank)
-
-  // ── Qualification (seulement si fichiers de qualification présents)
-  if (hasQualif) {
-    await fromTpl(TPL.qualification)
-    await fromTpl(TPL.qualificationBlank)
+  const addExternalPDF = async (buf) => {
+    if (!buf) return
+    try {
+      const ext = await PDFDocument.load(buf)
+      const pages = await final.copyPages(ext, ext.getPageIndices())
+      pages.forEach(p => final.addPage(p))
+    } catch {}
   }
 
-  // ── Planning (AMO uniquement)
-  if (isAMO) {
-    await fromTpl(TPL.planning)
-    if (hasPlanning) {
-      await fromContent(contentIdx++) // page planning
-    } else {
-      await fromTpl(TPL.planningBlank)
+  // ── Page de garde (générée dynamiquement) ──
+  const nomRef = getNomRef(dossier.referente)
+  const telRef = getTelReferente(dossier.referente)
+  const coverBuf = await renderToBuffer(
+    React.createElement(Document, null, makeCoverPage({ nomRef, telRef, logo }))
+  )
+  const coverPdf = await PDFDocument.load(coverBuf)
+  const [coverPage] = await final.copyPages(coverPdf, [0])
+  final.addPage(coverPage)
+
+  // ── Descriptif du projet ──
+  await addSep(sepDescriptif)
+  await addContent()  // page descriptif
+
+  // ── Récapitulatif financier ──
+  await addSep(sepRecap)
+  await addContent()  // page récap
+
+  // ── Devis, Factures, PV réception ──
+  await addSep(sepDevis)
+  // Merger les vrais PDFs devis signés + factures
+  for (const d of devisAcceptes) {
+    if (d.devis_signe_path) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', d.devis_signe_path)
+      await addExternalPDF(buf)
+    }
+    if (d.facture_path) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', d.facture_path)
+      await addExternalPDF(buf)
     }
   }
 
-  // ── Maquette & vues 3D (seulement si photos)
+  // ── Qualification (seulement si au moins un artisan en a une) ──
+  if (hasQualif) {
+    await addSep(sepQualification)
+    for (const d of devisAcceptes) {
+      if (d.artisan?.qualification_url) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', d.artisan.qualification_url)
+        await addExternalPDF(buf)
+      }
+    }
+  }
+
+  // ── Planning provisoire indicatif (AMO uniquement) ──
+  if (isAMO) {
+    await addSep(sepPlanning)
+    if ((interventions || []).length > 0) {
+      await addContent()  // page planning
+    }
+  }
+
+  // ── Illustrations & vues 3D (seulement si photos maquette) ──
   if (photosMaquette.length > 0) {
-    await fromTpl(TPL.maquette)
-    // Toutes les pages photos maquette
+    await addSep(sepIllustrations)
     const nbPhotoPages = Math.ceil(photosMaquette.length / 4)
     for (let i = 0; i < nbPhotoPages; i++) {
-      await fromContent(contentIdx++)
+      await addContent()
     }
   }
 
-  // ── Références produits (separator + blanc)
-  await fromTpl(TPL.refsProds)
-  await fromTpl(TPL.refsProdBlank)
+  // ── Références produits ──
+  await addSep(sepRefs)
 
-  // ── KBIS - Assurances (separator + blanc)
-  await fromTpl(TPL.kbisAssur)
-  await fromTpl(TPL.kbisAssurBlank)
+  // ── KBIS - Assurances ──
+  await addSep(sepKbis)
+  // Merger les vrais PDFs Kbis + décennales
+  for (const d of devisAcceptes) {
+    const art = d.artisan || {}
+    if (art.kbis_url) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', art.kbis_url)
+      await addExternalPDF(buf)
+    }
+    if (art.decennale_url) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', art.decennale_url)
+      await addExternalPDF(buf)
+    }
+  }
 
-  // 4. Sauvegarder
   const bytes = await final.save()
   return Buffer.from(bytes)
 }

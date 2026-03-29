@@ -101,6 +101,7 @@ export default function FicheArtisan({ params }) {
 
     const champ = type === 'kbis' ? 'kbis_url'
       : type === 'decennale' ? 'decennale_url'
+      : type === 'qualification' ? 'qualification_url'
       : 'fiche_technique_url'
 
     await supabase.from('artisans').update({ [champ]: chemin }).eq('id', id)
@@ -347,6 +348,27 @@ export default function FicheArtisan({ params }) {
                 {UploadEnCours.decennale ? 'Upload...' : artisan.decennale_url ? 'Remplacer' : '+ Ajouter'}
                 <input type="file" accept=".pdf" className="hidden"
                   onChange={e => e.target.files[0] && uploadFichier(e.target.files[0], 'decennale')} />
+              </label>
+            </div>
+          </div>
+
+          {/* Qualification (RGE, Qualibat, etc.) */}
+          <div className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
+            <div>
+              <p className="text-sm font-medium text-gray-800">Qualification</p>
+              <p className="text-xs text-gray-400">RGE, Qualibat, ou autre qualification (optionnel)</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {artisan.qualification_url && (
+                <button onClick={() => ouvrirDocument(artisan.qualification_url)}
+                  className="text-blue-600 text-sm hover:underline">Voir →</button>
+              )}
+              <label className={`cursor-pointer text-xs px-3 py-1.5 rounded-lg border ${
+                UploadEnCours.qualification ? 'bg-gray-100 text-gray-400' : 'border-gray-300 hover:bg-gray-50 text-gray-700'
+              }`}>
+                {UploadEnCours.qualification ? 'Upload...' : artisan.qualification_url ? 'Remplacer' : '+ Ajouter'}
+                <input type="file" accept=".pdf" className="hidden"
+                  onChange={e => e.target.files[0] && uploadFichier(e.target.files[0], 'qualification')} />
               </label>
             </div>
           </div>

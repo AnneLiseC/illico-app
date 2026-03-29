@@ -825,8 +825,8 @@ export async function POST(request) {
         devis: devisComplets || [],
         photos: photosWithBase64,
         interventions: interventions || [],
-        suiviFinancier: suiviFinancier || [],
         logo: logoSrc,
+        supabaseAdmin,
       })
     } else {
       return NextResponse.json({ error: 'Type de PDF inconnu' }, { status: 400 })
