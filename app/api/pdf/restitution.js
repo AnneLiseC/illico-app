@@ -3,7 +3,7 @@
 
 import React from 'react'
 import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
-import { PDFDocument } from 'pdf-lib'
+import { PDFDocument, degrees } from 'pdf-lib'
 import { SEP_DESCRIPTIF }    from '../../lib/sep_descriptif.js'
 import { SEP_ILLUSTRATIONS } from '../../lib/sep_illustrations.js'
 import { SEP_RECAP }         from '../../lib/sep_recap.js'
@@ -321,11 +321,12 @@ async function downloadPDF(supabaseAdmin, bucket, path) {
 }
 
 // ── Merge principal ──
-export async function buildDossierRestitution({ dossier, devis, photos, interventions, logo, supabaseAdmin }) {
+export async function buildDossierRestitution({ dossier, devis, photos, interventions, fichesTech, logo, supabaseAdmin }) {
   const isAMO = dossier.typologie === 'amo'
   const devisAcceptes = (devis || []).filter(d => d.statut === 'accepte')
   const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
   const hasQualif = devisAcceptes.some(d => d.artisan?.qualification_url)
+  const hasFichesTech = (fichesTech || []).length > 0
 
   // Charger les séparateurs
   const loadSep = async (b64) => PDFDocument.load(Buffer.from(b64, 'base64'))
@@ -356,8 +357,15 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
     if (!buf) return
     try {
       const ext = await PDFDocument.load(buf)
-      const pages = await final.copyPages(ext, ext.getPageIndices())
-      pages.forEach(p => final.addPage(p))
+      const copied = await final.copyPages(ext, ext.getPageIndices())
+      copied.forEach(p => {
+        // Normaliser en portrait : si paysage, pivoter de 90°
+        const { width, height } = p.getSize()
+        if (width > height) {
+          p.setRotation(degrees(90))
+        }
+        final.addPage(p)
+      })
     } catch {}
   }
 
@@ -421,8 +429,10 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
     }
   }
 
-  // ── Références produits ──
-  await addSep(sepRefs)
+  // ── Références produits (seulement si fiches techniques cochées) ──
+  if (hasFichesTech) {
+    await addSep(sepRefs)
+  }
 
   // ── KBIS - Assurances ──
   await addSep(sepKbis)

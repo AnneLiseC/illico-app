@@ -794,7 +794,7 @@ export async function POST(request) {
       const { data: photos } = await supabaseAdmin
         .from('photos').select('*')
         .eq('dossier_id', dossierId)
-        .in('categorie', ['maquette', 'illustration'])
+        .eq('categorie', 'maquette')
         .order('created_at')
 
       const { data: interventions } = await supabaseAdmin
@@ -802,8 +802,11 @@ export async function POST(request) {
         .select('*, artisan:artisans(id, entreprise)')
         .eq('dossier_id', dossierId).order('date_debut')
 
-      const { data: suiviFinancier } = await supabaseAdmin
-        .from('suivi_financier').select('*').eq('dossier_id', dossierId)
+      // Fiches techniques cochées pour ce chantier
+      const { data: fichesTech } = await supabaseAdmin
+        .from('chantier_fiches_techniques')
+        .select('fiche:fiches_techniques(id, nom, description)')
+        .eq('dossier_id', dossierId)
 
       // Charger photos maquette en base64
       const photosWithBase64 = await Promise.all((photos || []).map(async (photo) => {
@@ -825,6 +828,7 @@ export async function POST(request) {
         devis: devisComplets || [],
         photos: photosWithBase64,
         interventions: interventions || [],
+        fichesTech: fichesTech || [],
         logo: logoSrc,
         supabaseAdmin,
       })
