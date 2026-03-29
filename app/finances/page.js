@@ -43,6 +43,9 @@ export default function Finances() {
   const [sousOnglet, setSousOnglet] = useState('chantier')
   const [dossiers, setDossiers] = useState([])
   const [redevances, setRedevances] = useState([])
+  const [redevModal, setRedevModal] = useState(false)
+  const [redevForm, setRedevForm] = useState({ agente_id: '', annee: new Date().getFullYear(), mois: new Date().getMonth() + 1, montant_ttc: 540, statut: 'en_attente', date_paiement: '', note: '' })
+  const [savingRedev, setSavingRedev] = useState(false)
   const [dossierOuvert, setDossierOuvert] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -1374,13 +1377,238 @@ export default function Finances() {
     { key: 'tous_chantiers', label: 'Tous les chantiers' },
     { key: 'ctp', label: 'Suivi financier' },
     { key: 'agentes', label: 'Agentes' },
+    { key: 'redevances', label: '💳 Redevances' },
   ]
   const ongletsAgente = [
     { key: 'mes_chantiers', label: 'Mes chantiers' },
     { key: 'financier', label: 'Mon suivi financier' },
     { key: 'facturation', label: 'Facturation' },
+    { key: 'redevances', label: '💳 Redevances' },
   ]
   const ongletsList = isMarine ? ongletsAdmin : ongletsAgente
+
+  // ── REDEVANCES CRUD ──
+  const sauvegarderRedevance = async () => {
+    setSavingRedev(true)
+    const payload = {
+      agente_id: redevForm.agente_id || profile?.id,
+      annee: parseInt(redevForm.annee),
+      mois: parseInt(redevForm.mois),
+      montant_ttc: parseFloat(redevForm.montant_ttc) || 540,
+      statut: redevForm.statut,
+      date_paiement: redevForm.statut === 'regle' ? (redevForm.date_paiement || new Date().toISOString().split('T')[0]) : null,
+      note: redevForm.note || null,
+    }
+    await supabase.from('redevances').upsert(payload, {
+      onConflict: 'agente_id,annee,mois',
+      ignoreDuplicates: false,
+    })
+    const { data } = await supabase.from('redevances').select('*').order('annee', { ascending: false }).order('mois', { ascending: false })
+    setRedevances(data || [])
+    setRedevModal(false)
+    setRedevForm({ agente_id: '', annee: new Date().getFullYear(), mois: new Date().getMonth() + 1, montant_ttc: 540, statut: 'en_attente', date_paiement: '', note: '' })
+    setSavingRedev(false)
+  }
+
+  const toggleRedevStatut = async (id, currentStatut) => {
+    const newStatut = currentStatut === 'regle' ? 'en_attente' : 'regle'
+    const updates = { statut: newStatut }
+    if (newStatut === 'regle') updates.date_paiement = new Date().toISOString().split('T')[0]
+    else updates.date_paiement = null
+    await supabase.from('redevances').update(updates).eq('id', id)
+    setRedevances(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r))
+  }
+
+  const supprimerRedevance = async (id) => {
+    if (!confirm('Supprimer cette redevance ?')) return
+    await supabase.from('redevances').delete().eq('id', id)
+    setRedevances(prev => prev.filter(r => r.id !== id))
+  }
+
+  // Générer les mois attendus depuis le début de l'année jusqu'à maintenant
+  const genererMoisAttendus = (agenteId, annee) => {
+    const now = new Date()
+    const moisMax = annee < now.getFullYear() ? 12 : now.getMonth() + 1
+    const moisAttendus = []
+    for (let m = 1; m <= moisMax; m++) {
+      const existante = redevances.find(r =>
+        (r.agente_id === agenteId || (!r.agente_id && !agenteId)) &&
+        r.annee === annee && r.mois === m
+      )
+      // Dernier jour ouvrable du mois (avant-dernier jour)
+      const lastDay = new Date(annee, m, 0)
+      lastDay.setDate(lastDay.getDate() - 1)
+      const enRetard = !existante || existante.statut !== 'regle'
+      const passee = new Date(annee, m - 1, lastDay.getDate()) < now
+      moisAttendus.push({ mois: m, redev: existante, enRetard: enRetard && passee, lastDay })
+    }
+    return moisAttendus
+  }
+
+  const MOIS_LABELS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre']
+
+  const renderRedevances = () => {
+    const anneeFiltre = new Date().getFullYear()
+    const agentesAffichees = isMarine ? agentes : agentes.filter(a => a.id === profile?.id)
+    const redevAnnee = redevances.filter(r => r.annee === anneeFiltre)
+    const totalAttendu = agentesAffichees.length * (new Date().getMonth() + 1) * 540
+    const totalRegle = redevAnnee.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
+    const totalEnAttente = totalAttendu - totalRegle
+
+    return (
+      <div className="space-y-5">
+        {/* Résumé */}
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label: 'Total attendu', val: totalAttendu, color: 'text-gray-700' },
+            { label: 'Total réglé', val: totalRegle, color: 'text-green-700' },
+            { label: 'Reste à payer', val: totalEnAttente, color: totalEnAttente > 0 ? 'text-amber-600' : 'text-green-600' },
+          ].map(({ label, val, color }) => (
+            <div key={label} className="bg-white border border-gray-200 rounded-xl p-4">
+              <p className="text-xs text-gray-400 mb-1">{label} {anneeFiltre}</p>
+              <p className={`text-xl font-bold ${color}`}>{val.toFixed(2)} €</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Bouton ajouter */}
+        <div className="flex justify-end">
+          <button onClick={() => setRedevModal(true)}
+            className="bg-blue-800 text-white text-sm px-4 py-2 rounded-lg hover:bg-blue-900">
+            + Ajouter un paiement
+          </button>
+        </div>
+
+        {/* Tableau par agente */}
+        {agentesAffichees.map(agente => {
+          const moisAttendus = genererMoisAttendus(agente.id, anneeFiltre)
+          const regle = moisAttendus.filter(m => m.redev?.statut === 'regle').length
+          const enRetard = moisAttendus.filter(m => m.enRetard).length
+          const totalAnnuel = redevances.filter(r => r.agente_id === agente.id && r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
+
+          return (
+            <div key={agente.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50">
+                <div>
+                  <p className="font-semibold text-gray-800">{agente.prenom} {agente.nom}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {regle}/{moisAttendus.length} mois réglés · Total annuel réglé : {totalAnnuel.toFixed(2)} €
+                  </p>
+                </div>
+                {enRetard > 0 && (
+                  <span className="bg-red-100 text-red-700 text-xs px-2.5 py-1 rounded-full font-medium">
+                    ⚠️ {enRetard} retard{enRetard > 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+              <div className="divide-y divide-gray-50">
+                {moisAttendus.map(({ mois, redev, enRetard: retard }) => (
+                  <div key={mois} className={`flex items-center justify-between px-5 py-3 ${retard ? 'bg-red-50' : ''}`}>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-gray-700 w-24">{MOIS_LABELS[mois - 1]}</span>
+                      {retard && <span className="text-xs text-red-600 font-medium">⚠️ En retard</span>}
+                      {redev?.note && <span className="text-xs text-gray-400 italic">{redev.note}</span>}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {redev ? (
+                        <>
+                          <span className="text-sm text-gray-600">{(redev.montant_ttc || 540).toFixed(2)} € TTC</span>
+                          {redev.date_paiement && <span className="text-xs text-gray-400">{new Date(redev.date_paiement).toLocaleDateString('fr-FR')}</span>}
+                          <button onClick={() => toggleRedevStatut(redev.id, redev.statut)}
+                            className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all ${redev.statut === 'regle' ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}>
+                            {redev.statut === 'regle' ? '✅ Réglé' : '⏳ En attente'}
+                          </button>
+                          {isMarine && <button onClick={() => supprimerRedevance(redev.id)} className="text-gray-300 hover:text-red-400 text-xs">✕</button>}
+                        </>
+                      ) : (
+                        <span className="text-xs text-gray-300 italic">Non saisie</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+
+        {/* Modal ajout */}
+        {redevModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+              <h2 className="font-semibold text-gray-800">Ajouter un paiement de redevance</h2>
+
+              {isMarine && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Agente</label>
+                  <select value={redevForm.agente_id} onChange={e => setRedevForm(f => ({ ...f, agente_id: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">— Choisir —</option>
+                    {agentes.map(a => <option key={a.id} value={a.id}>{a.prenom} {a.nom}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Mois</label>
+                  <select value={redevForm.mois} onChange={e => setRedevForm(f => ({ ...f, mois: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    {MOIS_LABELS.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Année</label>
+                  <input type="number" value={redevForm.annee} onChange={e => setRedevForm(f => ({ ...f, annee: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Montant TTC (€)</label>
+                  <input type="number" step="0.01" value={redevForm.montant_ttc} onChange={e => setRedevForm(f => ({ ...f, montant_ttc: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
+                  <select value={redevForm.statut} onChange={e => setRedevForm(f => ({ ...f, statut: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="en_attente">⏳ En attente</option>
+                    <option value="regle">✅ Réglé</option>
+                  </select>
+                </div>
+              </div>
+
+              {redevForm.statut === 'regle' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date de paiement</label>
+                  <input type="date" value={redevForm.date_paiement} onChange={e => setRedevForm(f => ({ ...f, date_paiement: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Note (optionnel)</label>
+                <input type="text" value={redevForm.note} onChange={e => setRedevForm(f => ({ ...f, note: e.target.value }))}
+                  placeholder="ex: virement reçu le..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setRedevModal(false)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-50">
+                  Annuler
+                </button>
+                <button onClick={sauvegarderRedevance} disabled={savingRedev}
+                  className="flex-1 bg-blue-800 text-white py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
+                  {savingRedev ? 'Enregistrement...' : 'Enregistrer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1502,6 +1730,8 @@ export default function Finances() {
             {sousOnglet === 'annee' && renderFacturationMoiTableau(agrégerAnnee(mesDossiers), 'Année')}
           </div>
         )}
+
+        {onglet === 'redevances' && renderRedevances()}
       </main>
     </div>
   )
