@@ -12,7 +12,6 @@ const BLEU  = '#00578e'
 const BLEU2 = '#2f8dcb'
 const GRIS  = '#6b7280'
 const BLANC = '#ffffff'
-const VERT  = '#166534'
 const ROUGE = '#991b1b'
 const ORANGE_TX = '#c2410c'
 
@@ -149,7 +148,7 @@ function buildContentPDF({ dossier, devis, photos, interventions, suiviFinancier
     return s + (d.acompte_pourcentage === -1 ? toNum(d.acompte_montant_fixe) : ttc * (toNum(d.acompte_pourcentage || 30) / 100))
   }, 0)
 
-  const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette' || p.categorie === 'illustration')
+  const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
 
   let rowNum = 0
   const pages = []
@@ -326,7 +325,7 @@ function buildContentPDF({ dossier, devis, photos, interventions, suiviFinancier
 export async function buildDossierRestitution({ dossier, devis, photos, interventions, suiviFinancier, logo }) {
   const isAMO = dossier.typologie === 'amo'
   const hasQualif = (devis || []).some(d => d.qualification_path)
-  const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette' || p.categorie === 'illustration')
+  const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
   const hasPlanning = isAMO && (interventions || []).length > 0
 
   // 1. Générer les pages de contenu avec react-pdf

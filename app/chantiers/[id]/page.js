@@ -811,7 +811,6 @@ export default function FicheChantier({ params }) {
       await removeFolderContents('photos', `chantiers/${id}/pendant`)
       await removeFolderContents('photos', `chantiers/${id}/apres`)
       await removeFolderContents('photos', `chantiers/${id}/maquette`)
-      await removeFolderContents('photos', `chantiers/${id}/illustration`)
 
       // bucket documents
       await removeFolderContents('documents', `chantiers/${id}/devis`)
@@ -1660,17 +1659,17 @@ export default function FicheChantier({ params }) {
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
           <h2 className="font-semibold text-gray-800">Photos du chantier</h2>
           <div className="flex gap-2 flex-wrap">
-            {['avant', 'pendant', 'apres', 'maquette', 'illustration'].map(cat => (
+            {['avant', 'pendant', 'apres', 'maquette'].map(cat => (
               <button key={cat} onClick={() => setCategorie(cat)}
                 className={`text-xs px-3 py-1.5 rounded-full border transition-all ${categorie === cat ? 'bg-blue-800 text-white border-blue-800' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                {cat === 'avant' ? 'Avant' : cat === 'pendant' ? 'Pendant' : cat === 'apres' ? 'Après' : cat === 'maquette' ? 'Maquette' : 'Illustration'}
+                {cat === 'avant' ? 'Avant' : cat === 'pendant' ? 'Pendant' : cat === 'apres' ? 'Après' : 'Maquette'}
                 {photos.filter(p => p.categorie === cat).length > 0 && <span className="ml-1">({photos.filter(p => p.categorie === cat).length})</span>}
               </button>
             ))}
           </div>
           <div className="flex items-center gap-3">
             <label className={`cursor-pointer flex items-center gap-2 text-xs px-3 py-2 rounded-lg border transition-all ${uploadingPhoto ? 'bg-gray-100 text-gray-400' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}`}>
-              {uploadingPhoto ? 'Upload en cours...' : `+ Ajouter une photo (${categorie === 'avant' ? 'Avant' : categorie === 'pendant' ? 'Pendant' : categorie === 'apres' ? 'Après' : categorie === 'maquette' ? 'Maquette' : 'Illustration'})`}
+              {uploadingPhoto ? 'Upload en cours...' : `+ Ajouter une photo (${categorie === 'avant' ? 'Avant' : categorie === 'pendant' ? 'Pendant' : categorie === 'apres' ? 'Après' : 'Maquette'})`}
               <input type="file" accept="image/*" multiple className="hidden" disabled={uploadingPhoto} onChange={e => uploadPhotos(Array.from(e.target.files))} />
             </label>
           </div>
