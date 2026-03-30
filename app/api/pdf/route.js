@@ -896,7 +896,7 @@ export async function POST(request) {
 
     const { data: dossier, error: dossierError } = await supabaseAdmin
       .from('dossiers')
-      .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, email), client:clients(*)')
+      .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, email, telephone), client:clients(*)')
       .eq('id', dossierId)
       .single()
 

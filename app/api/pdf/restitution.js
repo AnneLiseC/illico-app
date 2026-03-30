@@ -30,16 +30,10 @@ const fmt = (n) => `${toNum(n).toFixed(2).replace('.', ',')} €`
 
 function getTelReferente(ref) {
   if (!ref) return '06 59 81 06 81'
-  const p = (ref.prenom || '').toLowerCase()
-  if (p === 'marine') return '06 59 81 06 81'
-  if (p.includes('anne')) return '06 74 95 04 02'
   return ref.telephone || '06 59 81 06 81'
 }
 function getNomRef(ref) {
   if (!ref) return 'Marine MICHELANGELI'
-  const p = (ref.prenom || '').toLowerCase()
-  if (p === 'marine') return 'Marine MICHELANGELI'
-  if (p.includes('anne')) return 'Anne-Lise CAILLET'
   return `${ref.prenom || ''} ${(ref.nom || '').toUpperCase()}`.trim()
 }
 
