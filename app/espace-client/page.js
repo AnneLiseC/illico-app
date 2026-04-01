@@ -35,7 +35,7 @@ function calcEtape(dossier) {
 
 const CAT_LABELS = {
   avant: 'Avant', pendant: 'Pendant', apres: 'Après',
-  maquette: 'Maquette', illustration: 'Illustration',
+  maquette: 'Maquette',
 }
 
 const TYPE_VISITE_LABELS = {
