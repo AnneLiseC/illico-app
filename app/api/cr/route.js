@@ -18,8 +18,8 @@ const TYPES_VISITE = {
 }
 
 const SECTIONS_PAR_TYPE = {
-  r1:       ['Identification du projet', 'État des lieux', 'Périmètre des travaux par pièce / zone', "Points d'attention et contraintes techniques", 'Prochaines étapes'],
-  r2:       ['Identification du chantier', 'Travaux réalisés', 'Constat et points techniques', "Plan d'action et séquençage", 'Prochaines étapes'],
+  r1:       ['Identification du projet', 'État des lieux', 'Périmètre des travaux par pièce / zone', "Points d'attention et contraintes techniques", 'Artisans à solliciter', 'Prochaines étapes'],
+  r2:       ['Identification du chantier', 'Travaux à réalisés par artisan', 'Constat et points techniques', "Plan d'action et séquençage", 'Travaux manquant', 'Prochaines étapes'],  
   r3:       ['Identification du chantier', 'Récapitulatif des devis présentés', 'Points de discussion', 'Décisions prises', 'Prochaines étapes'],
   suivi:    ['Identification du chantier', 'Avancement des travaux par lot', 'Planning prévisionnel', 'Points de retard ou incidents', 'Actions requises'],
   reception:['Identification du chantier', 'Travaux réceptionnés', 'Réserves constatées', 'Délais de levée des réserves', 'Signature de réception'],
@@ -33,6 +33,11 @@ function buildSystemPrompt(type) {
   return `Tu es un expert en gestion de chantiers BTP. Tu rédiges des comptes-rendus de visite professionnels pour illiCO travaux Martigues, agence de courtage en travaux et AMO.
 
 TYPE DE VISITE : ${typLabel}
+
+${type === 'r1' ? `CONTEXTE R1 : Cette première visite réunit UNIQUEMENT le courtier illiCO travaux et le client. AUCUN artisan n'est présent ni sélectionné à ce stade.NE PAS mentionner de statut de devis, d'artisans, de planning d'intervention ou de coordination entre corps d'état — ces éléments n'existent pas encore. Le CR doit se concentrer exclusivement sur l'état des lieux, le périmètre des travaux et les contraintes techniques observées. Le CR sera transmis aux artisans sélectionnés pour qu'ils puissent préparer la visite technique (R2). Le ton doit être factuel et technique, destiné à des professionnels du bâtiment.\n` : ''}
+${type === 'r2' ? `CONTEXTE R2 : Cette visite réunit le courtier illiCO travaux, le client et les artisans sélectionnés. C'est la visite de validation technique avant préparation des devis par les artisans.\n` : ''}
+${type === 'r3' ? `CONTEXTE R3 : Cette visite réunit UNIQUEMENT le courtier illiCO travaux et le client à l'agence et non chez le client. C'est le rendez-vous du récapitulatif financier et de la présentation des devis aux clients.\n` : ''}
+
 
 CONSIGNES :
 - Ton professionnel, précis, clair — style AMO (Assistance à Maîtrise d'Ouvrage)
@@ -62,7 +67,6 @@ RÉPONSE : JSON strict uniquement, aucun texte avant ou après :
     }
   ]
 }`
-}
 
 function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants, notesBrutes, numeroCR }) {
   const client = dossier.client
@@ -146,7 +150,11 @@ export async function POST(request) {
     // Appel Claude API
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4000,
@@ -173,7 +181,7 @@ export async function POST(request) {
 
     return NextResponse.json({ cr: crJSON, numeroCR })
   } catch (err) {
-    console.error('CR AI error:', err)
+    console.error('CR AI error DETAIL:', err.message, err.stack)
     return NextResponse.json({ error: err.message || 'Erreur serveur' }, { status: 500 })
   }
 }
