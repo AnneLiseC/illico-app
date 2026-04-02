@@ -67,6 +67,7 @@ RÉPONSE : JSON strict uniquement, aucun texte avant ou après :
     }
   ]
 }`
+}
 
 function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants, notesBrutes, numeroCR }) {
   const client = dossier.client
@@ -80,22 +81,22 @@ function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants,
   const intervenantsStr = intervenants?.length ? intervenants : artisansChantier.length ? artisansChantier : ['Non précisé']
 
   return `CONTEXTE DU DOSSIER :
-- Référence : ${dossier.reference}
-- Maître d'ouvrage : ${nomClient}
-- Adresse : ${client?.adresse || 'Non renseignée'}
-- Type de prestation : ${dossier.typologie?.toUpperCase() || ''}
-- Référente illiCO : ${dossier.referente ? `${dossier.referente.prenom} ${dossier.referente.nom}` : ''}
-- Artisans du chantier : ${artisansChantier.join(', ') || 'Aucun devis accepté'}
-- Numéro de CR : N°${numeroCR}
+    - Référence : ${dossier.reference}
+    - Maître d'ouvrage : ${nomClient}
+    - Adresse : ${client?.adresse || 'Non renseignée'}
+    - Type de prestation : ${dossier.typologie?.toUpperCase() || ''}
+    - Référente illiCO : ${dossier.referente ? `${dossier.referente.prenom} ${dossier.referente.nom}` : ''}
+    - Artisans du chantier : ${artisansChantier.join(', ') || 'Aucun devis accepté'}
+    - Numéro de CR : N°${numeroCR}
 
-VISITE :
-- Date : ${dateVisite ? new Date(dateVisite).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Non précisée'}
-- Intervenants présents lors de la visite : ${intervenantsStr.join(', ')}
+    VISITE :
+    - Date : ${dateVisite ? new Date(dateVisite).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Non précisée'}
+    - Intervenants présents lors de la visite : ${intervenantsStr.join(', ')}
 
-NOTES BRUTES (à partir desquelles générer le CR) :
-${notesBrutes}
+    NOTES BRUTES (à partir desquelles générer le CR) :
+    ${notesBrutes}
 
-Génère le compte-rendu complet en JSON.`
+    Génère le compte-rendu complet en JSON.`
 }
 
 export async function POST(request) {
