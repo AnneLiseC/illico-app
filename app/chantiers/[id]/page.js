@@ -440,7 +440,9 @@ export default function FicheChantier({ params }) {
     }).select()
     if (!error && nouveauDevis.fichier && devisInsere?.[0]) {
       const ext = nouveauDevis.fichier.name.split('.').pop()
-      await supabase.storage.from('documents').upload(`chantiers/${id}/devis/${devisInsere[0].id}.${ext}`, nouveauDevis.fichier)
+      const cheminDevis = `chantiers/${id}/devis/${devisInsere[0].id}.${ext}`
+      await supabase.storage.from('documents').upload(cheminDevis, nouveauDevis.fichier)
+      await supabase.from('devis_artisans').update({ devis_pdf_path: cheminDevis }).eq('id', devisInsere[0].id)
     }
     if (!error) {
       await chargerDevis()
@@ -1397,6 +1399,14 @@ ${s.contenu}`).join('')
                     {/* ── DOCUMENTS : Devis signé + Facture ── */}
                     <div className="pt-2 border-t border-gray-100 space-y-2">
                       {/* Devis signé */}
+                      {d.devis_pdf_path && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-500 font-medium">📄 Devis artisan</span>
+                          <button onClick={() => ouvrirDocument(d.devis_pdf_path)}
+                            className="text-xs text-blue-600 hover:underline">Voir PDF</button>
+                        </div>
+                      )}
+                      {/* Devis signé client */}
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-gray-500 font-medium">📄 Devis signé client</span>
                         <div className="flex items-center gap-2">

@@ -437,7 +437,7 @@ export default function Finances() {
                   {showBadge ? (
                     <>
                       {!c.estChantierMarine && <span className="text-sm text-blue-700 font-medium">{nomReferente(d)} : {c.gainsAgenteReels.toFixed(2)} €</span>}
-                      <span className="text-sm text-purple-700 font-medium">CTP : {(c.netAdminPrevi + c.apporteurPartAdmin).toFixed(2)} €</span>
+                      <span className="text-sm text-purple-700 font-medium">CTP : {c.netAdminPrevi.toFixed(2)} €</span>
                     </>
                   ) : (
                     headerRight !== null && <span className="text-sm text-gray-700 font-medium">{isMarine ? 'Encaissement : ' : 'Net : '}{headerRight.toFixed(2)} €</span>

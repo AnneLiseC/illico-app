@@ -524,8 +524,8 @@ export default function EspaceClient() {
                   messages.map(msg => {
                     const isClient = msg.auteur_role === 'client'
                     return (
-                      <div key={msg.id} className={`flex ${isClient ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-xs rounded-2xl px-4 py-2.5 ${isClient ? 'bg-blue-800 text-white' : 'bg-gray-100 text-gray-800'}`}>
+                      <div key={msg.id} className={`flex ${isClient ? 'justify-start' : 'justify-end'}`}>
+                        <div className={`max-w-xs rounded-2xl px-4 py-2.5 ${isClient ? 'bg-gray-100 text-gray-800' : 'bg-blue-800 text-white'}`}>
                           {!isClient && (
                             <p className="text-xs font-medium mb-1 opacity-70">{msg.auteur?.prenom || 'Équipe illiCO'}</p>
                           )}
