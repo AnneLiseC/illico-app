@@ -982,17 +982,22 @@ export default function Finances() {
           <p className="font-semibold text-purple-800">💸 Ce que {nom} doit verser à {nomFranchisee} (CTP)</p>
           <div className="space-y-2">
             <p className="text-xs font-medium text-gray-600">Redevances mensuelles</p>
-            {listeRedevances.slice(0, 6).map(r => (
-              <div key={r.id} className="flex items-center justify-between py-1 border-b border-purple-100">
-                <p className="text-sm text-gray-700">{MOIS[r.mois]} {r.annee}</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{(r.montant_ttc || 540).toFixed(2)} €</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${r.statut === 'regle' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {r.statut === 'regle' ? '✅ Réglé' : '⏳ À payer'}
-                  </span>
+            {(() => {
+              const now = new Date()
+              const moisDu = now.getMonth() === 0 ? 12 : now.getMonth()
+              const anneeDu = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()
+              const redevDuMois = listeRedevances.find(r => r.mois === moisDu && r.annee === anneeDu)
+              if (!redevDuMois || redevDuMois.statut === 'regle') return <p className="text-xs text-green-600">✅ Redevance du mois réglée</p>
+              return [(
+                <div key={redevDuMois.id} className="flex items-center justify-between py-1 border-b border-purple-100">
+                  <p className="text-sm text-gray-700">{MOIS[redevDuMois.mois]} {redevDuMois.annee}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{(redevDuMois.montant_ttc || 540).toFixed(2)} €</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">⏳ À payer</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )]
+            })()}
             {listeDossiers.filter(d => calculer(d).apporteurPartAgente > 0).length > 0 && (
               <>
                 <p className="text-xs font-medium text-gray-600 pt-2">Remboursements apporteur</p>
@@ -1316,17 +1321,24 @@ export default function Finances() {
           </div>
         )
       })}
-      <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-3">
-        <p className="font-semibold text-purple-800">💳 Ce que tu dois payer à {nomFranchisee} (CTP)</p>
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between"><span className="text-gray-600">Redevances mensuelles</span><span className="font-medium text-purple-700">{mesRedevancesReglees.toFixed(2)} €</span></div>
-          <div className="flex justify-between"><span className="text-gray-600">Remboursements apporteur</span><span className="font-medium text-orange-600">{mesApporteurDu.toFixed(2)} €</span></div>
-          <div className="flex justify-between font-bold border-t border-purple-200 pt-2">
-            <span className="text-purple-800">Total à payer à {nomFranchisee}</span>
-            <span className="text-purple-700">{(mesRedevancesReglees + mesApporteurDu).toFixed(2)} €</span>
+      {(() => {
+        const now = new Date()
+        const moisDu = now.getMonth() === 0 ? 12 : now.getMonth()
+        const anneeDu = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()
+        const redevDuMois = mesRedevances.find(r => r.mois === moisDu && r.annee === anneeDu)
+        if (!redevDuMois || redevDuMois.statut === 'regle') return (
+          <div className="flex justify-between text-sm text-green-600">
+            <span>Redevance {MOIS[moisDu]} {anneeDu}</span>
+            <span className="font-medium">✅ Réglée</span>
           </div>
-        </div>
-      </div>
+        )
+        return (
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-600">Redevance {MOIS[moisDu]} {anneeDu} — à payer</span>
+            <span className="font-medium text-amber-600">{(redevDuMois.montant_ttc || 540).toFixed(2)} €</span>
+          </div>
+        )
+      })()}
     </div>
   )
 

@@ -302,17 +302,17 @@ async function buildContentPDF({ dossier, devis, photos, interventions, logo }) 
 
   // ── Photos maquette ──
   if (photosMaquette.length > 0) {
-    for (let i = 0; i < photosMaquette.length; i += 4) {
-      const chunk = photosMaquette.slice(i, i + 4)
+    for (let i = 0; i < photosMaquette.length; i += 2) {
+      const chunk = photosMaquette.slice(i, i + 2)
       pages.push(
         React.createElement(Page, { key: `maq-${i}`, size: 'A4', style: CS.page },
           React.createElement(Hdr, { title: 'Illustrations & vues 3D', sub: `${dossier.reference} — ${nomClient}`, logo }),
-          React.createElement(View, { style: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } },
+          React.createElement(View, { style: { flexDirection: 'column', gap: 16, flex: 1 } },
             ...chunk.filter(p => p.base64).map(ph =>
               React.createElement(PdfImage, { key: ph.id, src: ph.base64, style: CS.photoImg })
             ),
           ),
-          React.createElement(Text, { style: { fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', marginTop: 16, lineHeight: 1.4 } },
+          React.createElement(Text, { style: { fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', marginTop: 12, lineHeight: 1.4 } },
             "Les illustrations graphiques reproduites sont des illustrations commerciales qui ne peuvent servir de base à la réalisation du chantier.",
           ),
           React.createElement(Ftr, { ref: dossier.reference }),
@@ -436,7 +436,7 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
   // ── Illustrations & vues 3D (seulement si photos maquette) ──
   if (photosMaquette.length > 0) {
     await addSep(sepIllustrations)
-    const nbPhotoPages = Math.ceil(photosMaquette.length / 4)
+    const nbPhotoPages = Math.ceil(photosMaquette.length / 2)
     for (let i = 0; i < nbPhotoPages; i++) {
       await addContent()
     }

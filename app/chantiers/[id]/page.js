@@ -125,6 +125,11 @@ export default function FicheChantier({ params }) {
   const [nouveauCR, setNouveauCR] = useState({ type_visite: '', notes_brutes: '', contenu_final: '', date_visite: '', valide: false })
   const [ajouterCR, setAjouterCR] = useState(false)
   const [savingCR, setSavingCR] = useState(false)
+  const [factures, setFactures] = useState([])
+  const [ajouterFacture, setAjouterFacture] = useState(null) // devisId en cours
+  const [nouvelleFacture, setNouvelleFacture] = useState({ montant_ttc: '', date_paiement: '', statut: 'en_attente' })
+  const [uploadingFacturePdf, setUploadingFacturePdf] = useState(null)
+
   // CR avec IA
   const [crModal, setCrModal] = useState(false)
   const [crEtape, setCrEtape] = useState(1) // 1=config, 2=notes, 3=relecture
@@ -151,6 +156,8 @@ export default function FicheChantier({ params }) {
   const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '' })
   const [fichesTechChantier, setFichesTechChantier] = useState({})
   const [fichesPanelOuvert, setFichesPanelOuvert] = useState(null)
+  const [documents, setDocuments] = useState([])
+  const [uploadingDocChantier, setUploadingDocChantier] = useState(false)
   const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', part_agente: '0.5', date_reception: '', date_limite: '', fichier: null })
   const [suiviFinancier, setSuiviFinancier] = useState([])
   const router = useRouter()
@@ -189,6 +196,12 @@ export default function FicheChantier({ params }) {
       const { data: suiviData } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
 
       // Comptes-rendus et messages espace client
+      const { data: docsData } = await supabase
+        .from('chantier_documents').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
+      setDocuments(docsData || [])
+      const { data: facturesData } = await supabase
+        .from('factures_artisans').select('*').eq('dossier_id', id).order('created_at')
+      setFactures(facturesData || [])
       const { data: crData } = await supabase
         .from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
       setComptesRendus(crData || [])
@@ -293,15 +306,6 @@ export default function FicheChantier({ params }) {
     setSucces('RDV modifié ✓')
   }
 
-  const supprimerInterventionDossier = async (intId) => {
-    if (!confirm('Supprimer cette intervention ?')) return
-    const intervention = interventionsDossier.find(i => i.id === intId)
-    await supabase.from('interventions_artisans').delete().eq('id', intId)
-    if (intervention?.google_event_id) await deleteGoogleEvent(intervention.google_event_id)
-    const { data } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
-    setInterventionsDossier(data || [])
-  }
-
   const creerInterventionDossier = async () => {
     if (!nouvIntervArtisanId) return
     setSaving(true)
@@ -344,6 +348,15 @@ export default function FicheChantier({ params }) {
     setModalInterventionOuvert(false)
     setInterventionEnEdition(null)
     setSucces('Intervention modifiée ✓')
+  }
+
+  const supprimerInterventionDossier = async (intId) => {
+    if (!confirm('Supprimer cette intervention ?')) return
+    const intervention = interventionsDossier.find(i => i.id === intId)
+    await supabase.from('interventions_artisans').delete().eq('id', intId)
+    if (intervention?.google_event_id) await deleteGoogleEvent(intervention.google_event_id)
+    const { data } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
+    setInterventionsDossier(data || [])
   }
 
   const chargerFichesTechChantier = async () => {
@@ -410,6 +423,86 @@ export default function FicheChantier({ params }) {
     return { ht, ttc, royalties, net, partAgente, partAdmin }
   }
 
+  const chargerDocuments = async () => {
+  const { data } = await supabase.from('chantier_documents').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
+  setDocuments(data || [])
+  }
+
+  const uploadDocumentChantier = async (fichier) => {
+    if (!fichier) return
+    setUploadingDocChantier(true)
+    const ext = fichier.name.split('.').pop()
+    const chemin = `chantiers/${id}/documents/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier)
+    if (!error) {
+      await supabase.from('chantier_documents').insert({
+        dossier_id: id, nom: fichier.name, path: chemin,
+        type_mime: fichier.type, taille: fichier.size, dans_restitution: false,
+      })
+      await chargerDocuments()
+      setSucces('Document ajouté ✓')
+    } else { setErreur('Erreur upload : ' + error.message) }
+    setUploadingDocChantier(false)
+  }
+
+  const supprimerDocumentChantier = async (docId, path) => {
+    if (!confirm('Supprimer ce document ?')) return
+    await supabase.storage.from('documents').remove([path])
+    await supabase.from('chantier_documents').delete().eq('id', docId)
+    await chargerDocuments()
+  }
+
+  const toggleDansRestitution = async (docId, valeur) => {
+    await supabase.from('chantier_documents').update({ dans_restitution: valeur }).eq('id', docId)
+    setDocuments(prev => prev.map(d => d.id === docId ? { ...d, dans_restitution: valeur } : d))
+  }
+
+  const chargerFactures = async () => {
+    const { data } = await supabase.from('factures_artisans').select('*').eq('dossier_id', id).order('created_at')
+    setFactures(data || [])
+  }
+
+  const ajouterFactureArtisan = async (devisId, artisanId) => {
+    if (!nouvelleFacture.montant_ttc) return
+    await supabase.from('factures_artisans').insert({
+      devis_id: devisId, dossier_id: id, artisan_id: artisanId,
+      montant_ttc: parseFloat(nouvelleFacture.montant_ttc),
+      date_paiement: nouvelleFacture.date_paiement || null,
+      statut: nouvelleFacture.statut,
+    })
+    await chargerFactures()
+    setAjouterFacture(null)
+    setNouvelleFacture({ montant_ttc: '', date_paiement: '', statut: 'en_attente' })
+    setSucces('Facture ajoutée ✓')
+  }
+
+  const supprimerFactureArtisan = async (factureId, pdfPath) => {
+    if (!confirm('Supprimer cette facture ?')) return
+    if (pdfPath) await supabase.storage.from('documents').remove([pdfPath])
+    await supabase.from('factures_artisans').delete().eq('id', factureId)
+    await chargerFactures()
+  }
+
+  const toggleStatutFacture = async (factureId, statut) => {
+    const newStatut = statut === 'paye' ? 'en_attente' : 'paye'
+    await supabase.from('factures_artisans').update({ statut: newStatut }).eq('id', factureId)
+    setFactures(prev => prev.map(f => f.id === factureId ? { ...f, statut: newStatut } : f))
+  }
+
+  const uploadFacturePdf = async (factureId, fichier) => {
+    if (!fichier) return
+    setUploadingFacturePdf(factureId)
+    const ext = fichier.name.split('.').pop()
+    const chemin = `chantiers/${id}/factures/${factureId}.${ext}`
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+    if (!error) {
+      await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureId)
+      await chargerFactures()
+      setSucces('PDF facture uploadé ✓')
+    }
+    setUploadingFacturePdf(null)
+  }
+
   const handleSave = async () => {
     setSaving(true)
     setErreur('')
@@ -436,8 +529,7 @@ export default function FicheChantier({ params }) {
       montant_ttc: nouveauDevis.montant_ttc ? parseFloat(nouveauDevis.montant_ttc) : null,
       commission_pourcentage: nouveauDevis.commission_pourcentage ? parseFloat(nouveauDevis.commission_pourcentage) / 100 : null,
       part_agente: partAgente, date_reception: nouveauDevis.date_reception || null, date_limite: nouveauDevis.date_limite || null,
-      statut: nouveauDevis.date_reception ? 'recu' : 'en_attente',
-    }).select()
+      statut: (nouveauDevis.date_reception || nouveauDevis.fichier) ? 'recu' : 'en_attente',    }).select()
     if (!error && nouveauDevis.fichier && devisInsere?.[0]) {
       const ext = nouveauDevis.fichier.name.split('.').pop()
       const cheminDevis = `chantiers/${id}/devis/${devisInsere[0].id}.${ext}`
@@ -498,12 +590,24 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (!error) {
       await supabase.from('devis_artisans').update({ devis_signe_path: chemin }).eq('id', devisId)
+      const devisActuel = devis.find(d => d.id === devisId)
+      if (devisActuel && devisActuel.statut !== 'accepte') {
+        const aujourd_hui = new Date().toISOString().slice(0, 10)
+        const [annee, mois, jour] = aujourd_hui.split('-')
+        const dateSignature = prompt('Date de signature du devis (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
+        if (dateSignature) {
+          const [j, m, a] = dateSignature.split('/')
+          await supabase.from('devis_artisans').update({
+            statut: 'accepte',
+            date_signature: `${a}-${m.padStart(2,'0')}-${j.padStart(2,'0')}`
+          }).eq('id', devisId)
+        }
+      }
       await chargerDevis()
       setSucces('Devis signé uploadé ✓')
     } else { setErreur('Erreur upload : ' + error.message) }
     setUploadingDoc(null)
   }
-
   const supprimerDevisSigne = async (devisId, path) => {
     if (!confirm('Supprimer le devis signé ?')) return
     await supabase.storage.from('documents').remove([path])
@@ -661,33 +765,7 @@ ${s.contenu}`).join('')
     setComptesRendus(prev => prev.map(c => c.id === crId ? { ...c, valide } : c))
   }
 
-  // ── MESSAGES AGENTE → CLIENT (schéma : messages avec auteur_role + lu_agence) ──
-  const [reponseMsg, setReponseMsg] = useState('')
-  const [sendingMsg, setSendingMsg] = useState(false)
-  const envoyerReponse = async () => {
-    if (!reponseMsg.trim()) return
-    setSendingMsg(true)
-    await supabase.from('messages').insert({
-      dossier_id: id,
-      auteur_id: profile?.id,
-      auteur_role: profile?.role === 'admin' ? 'admin' : 'agente',
-      contenu: reponseMsg.trim(),
-      lu: false,        // pas encore lu par le client
-      lu_agence: true,  // lu par l'agente (elle l'a écrit)
-    })
-    // Marquer les messages client comme lus par l'agence
-    await supabase.from('messages').update({ lu_agence: true })
-      .eq('dossier_id', id).eq('auteur_role', 'client')
-    const { data } = await supabase.from('messages')
-      .select('*, auteur:profiles(prenom, nom, role)')
-      .eq('dossier_id', id).order('created_at')
-    setMessages(data || [])
-    setNbMsgNonLus(0)
-    setReponseMsg('')
-    setSendingMsg(false)
-  }
-
-  const generatePDF = async (type, crId = null) => {
+    const generatePDF = async (type, crId = null) => {
     const key = crId ? `cr-${crId}` : type
     setGeneratingPDF(key)
     try {
@@ -721,6 +799,32 @@ ${s.contenu}`).join('')
     } finally {
       setGeneratingPDF(null)
     }
+  }
+
+  // ── MESSAGES AGENTE → CLIENT (schéma : messages avec auteur_role + lu_agence) ──
+  const [reponseMsg, setReponseMsg] = useState('')
+  const [sendingMsg, setSendingMsg] = useState(false)
+  const envoyerReponse = async () => {
+    if (!reponseMsg.trim()) return
+    setSendingMsg(true)
+    await supabase.from('messages').insert({
+      dossier_id: id,
+      auteur_id: profile?.id,
+      auteur_role: profile?.role === 'admin' ? 'admin' : 'agente',
+      contenu: reponseMsg.trim(),
+      lu: false,        // pas encore lu par le client
+      lu_agence: true,  // lu par l'agente (elle l'a écrit)
+    })
+    // Marquer les messages client comme lus par l'agence
+    await supabase.from('messages').update({ lu_agence: true })
+      .eq('dossier_id', id).eq('auteur_role', 'client')
+    const { data } = await supabase.from('messages')
+      .select('*, auteur:profiles(prenom, nom, role)')
+      .eq('dossier_id', id).order('created_at')
+    setMessages(data || [])
+    setNbMsgNonLus(0)
+    setReponseMsg('')
+    setSendingMsg(false)
   }
 
   const typologieLabel = (t) => ({ courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' })[t] || t
@@ -1427,24 +1531,71 @@ ${s.contenu}`).join('')
                         </div>
                       </div>
                       {/* Facture artisan */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-500 font-medium">🧾 Facture artisan</span>
-                        <div className="flex items-center gap-2">
-                          {d.facture_path ? (
-                            <>
-                              <button onClick={() => ouvrirDocument(d.facture_path)}
-                                className="text-xs text-blue-600 hover:underline">Voir PDF</button>
-                              <button onClick={() => supprimerFacture(d.id, d.facture_path)}
-                                className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
-                            </>
-                          ) : (
-                            <label className={`text-xs cursor-pointer px-2 py-1 rounded border transition-all ${uploadingDoc === d.id + '_fact' ? 'text-gray-400 border-gray-200' : 'text-green-600 border-green-200 hover:bg-green-50'}`}>
-                              {uploadingDoc === d.id + '_fact' ? 'Upload...' : '+ Uploader'}
-                              <input type="file" accept=".pdf" className="hidden" disabled={uploadingDoc === d.id + '_fact'}
-                                onChange={e => e.target.files[0] && uploadFacture(d.id, e.target.files[0])} />
-                            </label>
-                          )}
+                      {/* Factures artisan */}
+                      <div className="pt-2 border-t border-gray-100 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-500 font-medium">🧾 Factures artisan</span>
+                          <button onClick={() => { setAjouterFacture(d.id); setNouvelleFacture({ montant_ttc: '', date_paiement: '', statut: 'en_attente' }) }}
+                            className="text-xs text-green-600 border border-green-200 px-2 py-0.5 rounded hover:bg-green-50">
+                            + Ajouter
+                          </button>
                         </div>
+                        {factures.filter(f => f.devis_id === d.id).map(f => (
+                          <div key={f.id} className="bg-gray-50 rounded-lg p-2 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-medium text-gray-700">{(f.montant_ttc || 0).toFixed(2)} € TTC</span>
+                              <div className="flex items-center gap-2">
+                                {f.date_paiement && <span className="text-xs text-gray-400">{new Date(f.date_paiement).toLocaleDateString('fr-FR')}</span>}
+                                <button onClick={() => toggleStatutFacture(f.id, f.statut)}
+                                  className={`text-xs px-2 py-0.5 rounded-full font-medium ${f.statut === 'paye' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                  {f.statut === 'paye' ? '✅ Payé' : '⏳ En attente'}
+                                </button>
+                                <button onClick={() => supprimerFactureArtisan(f.id, f.pdf_path)} className="text-red-300 hover:text-red-500 text-xs">✕</button>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {f.pdf_path ? (
+                                <button onClick={() => ouvrirDocument(f.pdf_path)} className="text-xs text-blue-600 hover:underline">📄 Voir PDF</button>
+                              ) : (
+                                <label className={`text-xs cursor-pointer px-2 py-0.5 rounded border ${uploadingFacturePdf === f.id ? 'text-gray-400 border-gray-200' : 'text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
+                                  {uploadingFacturePdf === f.id ? 'Upload...' : '+ PDF'}
+                                  <input type="file" accept=".pdf" className="hidden" disabled={uploadingFacturePdf === f.id}
+                                    onChange={e => e.target.files[0] && uploadFacturePdf(f.id, e.target.files[0])} />
+                                </label>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        {ajouterFacture === d.id && (
+                          <div className="border border-green-100 bg-green-50 rounded-lg p-3 space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Montant TTC (€) *</label>
+                                <input type="number" step="0.01" value={nouvelleFacture.montant_ttc}
+                                  onChange={e => setNouvelleFacture(f => ({ ...f, montant_ttc: e.target.value }))}
+                                  className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500" />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Date de paiement</label>
+                                <input type="date" value={nouvelleFacture.date_paiement}
+                                  onChange={e => setNouvelleFacture(f => ({ ...f, date_paiement: e.target.value }))}
+                                  className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500" />
+                              </div>
+                            </div>
+                            <select value={nouvelleFacture.statut}
+                              onChange={e => setNouvelleFacture(f => ({ ...f, statut: e.target.value }))}
+                              className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none">
+                              <option value="en_attente">⏳ En attente</option>
+                              <option value="paye">✅ Payé</option>
+                            </select>
+                            <div className="flex gap-2">
+                              <button onClick={() => setAjouterFacture(null)} className="flex-1 border border-gray-300 text-gray-600 py-1 rounded text-xs hover:bg-gray-50">Annuler</button>
+                              <button onClick={() => ajouterFactureArtisan(d.id, d.artisan_id)}
+                                disabled={!nouvelleFacture.montant_ttc}
+                                className="flex-1 bg-green-700 text-white py-1 rounded text-xs hover:bg-green-800 disabled:opacity-50">Enregistrer</button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1778,6 +1929,50 @@ ${s.contenu}`).join('')
           )}
         </div>
 
+        {/* Documents du chantier */}
+        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-gray-800">Documents ({documents.length})</h2>
+            <label className={`cursor-pointer text-sm px-3 py-1.5 rounded-lg border transition-all ${uploadingDocChantier ? 'text-gray-400 border-gray-200' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}`}>
+              {uploadingDocChantier ? 'Upload...' : '+ Ajouter un document'}
+              <input type="file" className="hidden" disabled={uploadingDocChantier}
+                onChange={e => e.target.files[0] && uploadDocumentChantier(e.target.files[0])} />
+            </label>
+          </div>
+          {documents.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">Aucun document — plans, courriers, notes...</p>
+          ) : (
+            <div className="space-y-2">
+              {documents.map(doc => (
+                <div key={doc.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:bg-gray-50">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <span className="text-lg flex-shrink-0">
+                      {doc.type_mime?.startsWith('image') ? '🖼' : doc.type_mime?.includes('pdf') ? '📄' : doc.type_mime?.includes('word') ? '📝' : '📎'}
+                    </span>
+                    <div className="min-w-0">
+                      <button onClick={() => ouvrirDocument(doc.path)}
+                        className="text-sm text-blue-600 hover:underline truncate block max-w-xs text-left">
+                        {doc.nom}
+                      </button>
+                      {doc.taille && <p className="text-xs text-gray-400">{(doc.taille / 1024).toFixed(0)} Ko</p>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="checkbox" checked={doc.dans_restitution || false}
+                        onChange={e => toggleDansRestitution(doc.id, e.target.checked)}
+                        className="accent-blue-700" />
+                      <span className="text-xs text-gray-500">Restitution</span>
+                    </label>
+                    <button onClick={() => supprimerDocumentChantier(doc.id, doc.path)}
+                      className="text-red-300 hover:text-red-500 text-xs">✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Planning du chantier */}
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
           <div className="flex items-center justify-between">
@@ -2088,10 +2283,33 @@ ${s.contenu}`).join('')
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Intervenants présents</label>
-                        <input type="text" value={crForm.intervenants}
-                          onChange={e => setCrForm(f => ({ ...f, intervenants: e.target.value }))}
-                          placeholder="Plaquiste, Électricien…"
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        {crForm.type_visite === 'r2' && devis.filter(d => d.statut === 'accepte').length > 0 ? (
+                          <div className="space-y-1 border border-gray-200 rounded-lg p-2">
+                            {devis.filter(d => d.statut === 'accepte').map(d => {
+                              const selected = (crForm.intervenants || '').split(',').map(s => s.trim()).filter(Boolean).includes(d.artisan?.entreprise)
+                              return (
+                                <label key={d.id} className="flex items-center gap-2 cursor-pointer px-2 py-1 rounded hover:bg-gray-50">
+                                  <input type="checkbox" checked={selected}
+                                    onChange={() => {
+                                      const current = (crForm.intervenants || '').split(',').map(s => s.trim()).filter(Boolean)
+                                      const updated = selected
+                                        ? current.filter(n => n !== d.artisan?.entreprise)
+                                        : [...current, d.artisan?.entreprise]
+                                      setCrForm(f => ({ ...f, intervenants: updated.join(', ') }))
+                                    }}
+                                    className="accent-blue-700" />
+                                  <span className="text-sm text-gray-700">{d.artisan?.entreprise}</span>
+                                  <span className="text-xs text-gray-400">{d.artisan?.metier}</span>
+                                </label>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <input type="text" value={crForm.intervenants}
+                            onChange={e => setCrForm(f => ({ ...f, intervenants: e.target.value }))}
+                            placeholder="Plaquiste, Électricien…"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        )}
                       </div>
                     </div>
 
@@ -2229,7 +2447,6 @@ ${s.contenu}`).join('')
             </div>
           </div>
         )}
-
 
         {/* ── ESPACE CLIENT AMO ── */}
         {dossier?.typologie === 'amo' && (
