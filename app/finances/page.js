@@ -533,6 +533,13 @@ export default function Finances() {
                                   <option value="envoye">Client : Récapitulatif envoyé</option>
                                   <option value="regle">Client : ✅ Payé illiCO France</option>
                                 </select>
+                                {suiviAcompte?.statut_client === 'regle' && (
+                                  <input type="date"
+                                    value={suiviAcompte?.date_paiement || ''}
+                                    onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id, 'date_paiement', e.target.value)}
+                                    className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none"
+                                    placeholder="Date de paiement" />
+                                )}
                                 <select value={suiviAcompte?.statut_illico || 'en_attente'} onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id, 'statut_illico', e.target.value)} className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none">
                                   <option value="en_attente">illiCO France : En attente</option>
                                   <option value="recu">illiCO France : ✅ Acompte débloqué</option>
@@ -562,6 +569,13 @@ export default function Finances() {
                                       <option value="envoye">Client : Facture reçue</option>
                                       <option value="regle">Client : ✅ Payé artisan</option>
                                     </select>
+                                    {suiviFact?.statut_client === 'regle' && (
+                                      <input type="date"
+                                        value={suiviFact?.date_paiement || ''}
+                                        onChange={e => majSuivi(d.id, 'facture_finale', dv.artisan_id, 'date_paiement', e.target.value)}
+                                        className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none"
+                                        placeholder="Date de paiement" />
+                                    )}
                                   </div>
                                 </div>
                               )
