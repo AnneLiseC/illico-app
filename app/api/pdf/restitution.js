@@ -19,7 +19,6 @@ const BLEU  = '#00578e'
 const BLEU2 = '#2f8dcb'
 const GRIS  = '#6b7280'
 const BLANC = '#ffffff'
-const VERT  = '#166534'
 
 const toNum = (v) => {
   if (!v && v !== 0) return 0
@@ -451,6 +450,71 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
   await addSep(sepKbis)
   // Merger les vrais PDFs Kbis + décennales
   for (const d of devisAcceptes) {
+    const art = d.artisan || {}
+    if (art.kbis_url) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', art.kbis_url)
+      await addExternalPDF(buf)
+    }
+    if (art.decennale_url) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', art.decennale_url)
+      await addExternalPDF(buf)
+    }
+  }
+
+  const bytes = await final.save()
+  return Buffer.from(bytes)
+}
+
+// ── DOSSIER R3 (présentation devis avant signature) ──
+export async function buildDossierR3({ dossier, devis, supabaseAdmin }) {
+  const devisRecus = (devis || []).filter(d => d.statut === 'recu')
+
+  const loadSep = async (b64) => PDFDocument.load(Buffer.from(b64, 'base64'))
+  const [sepDevis, sepKbis] = await Promise.all([
+    loadSep(SEP_DEVIS),
+    loadSep(SEP_KBIS),
+  ])
+
+  const final = await PDFDocument.create()
+
+  const addSep = async (sepPdf) => {
+    const [p] = await final.copyPages(sepPdf, [0])
+    final.addPage(p)
+  }
+
+  const addExternalPDF = async (buf) => {
+    if (!buf) return
+    try {
+      const ext = await PDFDocument.load(buf)
+      const copied = await final.copyPages(ext, ext.getPageIndices())
+      copied.forEach(p => {
+        const { width, height } = p.getSize()
+        if (width > height) p.setRotation(degrees(90))
+        final.addPage(p)
+      })
+    } catch {}
+  }
+
+  // Page de garde
+  const nomRef = getNomRef(dossier.referente)
+  const telRef = getTelReferente(dossier.referente)
+  const coverBuf = await makeCoverPage({ nomRef, telRef })
+  const coverPdf = await PDFDocument.load(coverBuf)
+  const [coverPage] = await final.copyPages(coverPdf, [0])
+  final.addPage(coverPage)
+
+  // Devis reçus
+  await addSep(sepDevis)
+  for (const d of devisRecus) {
+    if (d.devis_pdf_path) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', d.devis_pdf_path)
+      await addExternalPDF(buf)
+    }
+  }
+
+  // Kbis + décennales
+  await addSep(sepKbis)
+  for (const d of devisRecus) {
     const art = d.artisan || {}
     if (art.kbis_url) {
       const buf = await downloadPDF(supabaseAdmin, 'documents', art.kbis_url)

@@ -131,7 +131,7 @@ export function calculateDevisFinance(devis, dossier = {}) {
   const comHT = round2(montantHT * commissionPct)
   const comTTC = round2(comHT * TVA)
   const royaltiesCom = round2(comHT * ROYALTIES_RATE * TVA)
-  const netCom = round2(comTTC - royaltiesCom)
+  const netCom = round2(comHT - royaltiesCom)
 
   const gainsBruts = splitAmount(netCom, partAgente)
 
