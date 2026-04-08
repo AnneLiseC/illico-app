@@ -177,7 +177,7 @@ export default function FicheChantier({ params }) {
       setDossier(dossierData)
       setClient(dossierData?.client)
       const { data: devisData } = await supabase.from('devis_artisans')
-        .select('*, artisan:artisans(id, entreprise, metier)').eq('dossier_id', id).order('created_at')
+        .select('*, artisan:artisans(id, entreprise, metier, sans_royalties)').eq('dossier_id', id).order('created_at')
       setDevis(devisData || [])
       const { data: artisansData } = await supabase.from('artisans').select('id, entreprise, metier').order('entreprise')
       setArtisans(artisansData || [])

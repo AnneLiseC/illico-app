@@ -335,7 +335,7 @@ async function downloadPDF(supabaseAdmin, bucket, path) {
 }
 
 // ── Merge principal ──
-export async function buildDossierRestitution({ dossier, devis, photos, interventions, fichesTech, logo, supabaseAdmin }) {
+export async function buildDossierRestitution({ dossier, devis, photos, interventions, fichesTech, docsRestitution, logo, supabaseAdmin }) {
   const isAMO = dossier.typologie === 'amo'
   const devisAcceptes = (devis || []).filter(d => d.statut === 'accepte')
   const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
@@ -444,6 +444,14 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
   // ── Références produits (seulement si fiches techniques cochées) ──
   if (hasFichesTech) {
     await addSep(sepRefs)
+  }
+
+  // ── Documents chantier cochés "dans_restitution" ──
+  if ((docsRestitution || []).length > 0) {
+    for (const doc of docsRestitution) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path)
+      await addExternalPDF(buf)
+    }
   }
 
   // ── KBIS - Assurances ──

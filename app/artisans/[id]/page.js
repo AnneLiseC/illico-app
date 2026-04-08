@@ -70,6 +70,7 @@ export default function FicheArtisan({ params }) {
         ville: artisan.ville,
         metier: artisan.metier,
         decennale_expiration: artisan.decennale_expiration,
+        sans_royalties: artisan.sans_royalties || false,
       })
       .eq('id', id)
 
@@ -244,6 +245,13 @@ export default function FicheArtisan({ params }) {
                   <p className="text-sm font-medium text-gray-800">{valeur}</p>
                 </div>
               ))}
+              {artisan.sans_royalties && (
+                <div className="col-span-2">
+                  <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-medium">
+                    ⚠️ Sans royalties illiCO
+                  </span>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -291,6 +299,15 @@ export default function FicheArtisan({ params }) {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Ville</label>
                   <input type="text" value={artisan.ville || ''} onChange={e => set('ville', e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div className="flex items-center gap-3 pt-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={artisan.sans_royalties || false}
+                      onChange={e => set('sans_royalties', e.target.checked)}
+                      className="w-4 h-4 accent-orange-500" />
+                    <span className="text-sm text-gray-700">Sans royalties illiCO</span>
+                  </label>
+                  <span className="text-xs text-gray-400">(bureau d'études, architecte d'intérieur...)</span>
                 </div>
               </div>
             </div>
