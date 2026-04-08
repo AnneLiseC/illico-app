@@ -1163,7 +1163,7 @@ ${s.contenu}`).join('')
           <button
             onClick={supprimerChantier}
             disabled={saving}
-            className="px-4 py-2 rounded-lg border border-red-200 text-res-600 hover:bg-red-50 text-sm font medium disabled:opacity-50"
+            className="px-4 py-2 rounded-lg border border-red-200 text-res-600 hover:bg-red-50 text-sm font-medium disabled:opacity-50"
             >
               Supprimer le chantier
             </button>

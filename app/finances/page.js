@@ -468,7 +468,7 @@ export default function Finances() {
                         <div className="flex justify-between"><span className="text-gray-400">Net</span><span className="font-medium">{c.fraisNet.toFixed(2)} €</span></div>
                       </div>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${d.frais_statut === 'regle' ? 'bg-green-100 text-green-700' : d.frais_statut === 'factures' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
-                        {d.frais_statut === 'regle' ? '✅ Réglé' : d.frais_statut === 'factures' ? '⏳ Facturé' : 'Offerts'}
+                        {d.frais_statut === 'regle' ? (d.frais_deduits ? '🔄 Déduit du total client' : '✅ Réglé') : d.frais_statut === 'factures' ? '⏳ Facturé' : 'Offerts'}
                       </span>
                     </div>
                   )}
