@@ -681,6 +681,7 @@ ${s.contenu}`).join('')
     setCrSectionsEditees([])
     setCrSavingFinal(false)
     setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
+    setCrDocsSelectionnes([])
   }
 
   const demarrerVocal = () => {

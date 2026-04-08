@@ -101,7 +101,7 @@ function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants,
 
 export async function POST(request) {
   try {
-    const { dossierId, userId, typeVisite, dateVisite, intervenants, notesBrutes, imagesBase64,docsPaths } = await request.json()
+    const { dossierId, userId, typeVisite, dateVisite, intervenants, notesBrutes, imagesBase64, docsPaths } = await request.json()
 
     if (!dossierId || !userId || !typeVisite || (!notesBrutes?.trim() && !imagesBase64?.length)) {
       return NextResponse.json({ error: 'Paramètres manquants (type de visite + notes ou images requises)' }, { status: 400 })
