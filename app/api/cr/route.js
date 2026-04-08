@@ -101,7 +101,7 @@ function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants,
 
 export async function POST(request) {
   try {
-    const { dossierId, userId, typeVisite, dateVisite, intervenants, notesBrutes, imagesBase64 } = await request.json()
+    const { dossierId, userId, typeVisite, dateVisite, intervenants, notesBrutes, imagesBase64,docsPaths } = await request.json()
 
     if (!dossierId || !userId || !typeVisite || (!notesBrutes?.trim() && !imagesBase64?.length)) {
       return NextResponse.json({ error: 'Paramètres manquants (type de visite + notes ou images requises)' }, { status: 400 })
@@ -140,13 +140,32 @@ export async function POST(request) {
         const mediaType = header.includes('png') ? 'image/png' : 'image/jpeg'
         userContent.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data } })
       }
-      userContent.push({
-        type: 'text',
-        text: userText + '\n\nNote : les images ci-dessus sont des photos ou captures de notes — extraire et intégrer leur contenu textuel dans le CR.',
-      })
-    } else {
-      userContent.push({ type: 'text', text: userText })
     }
+
+    // Documents du chantier sélectionnés
+    for (const doc of (docsPaths || [])) {
+      try {
+        const { data: fileData } = await supabaseAdmin.storage.from('documents').download(doc.path)
+        if (!fileData) continue
+        const buf = Buffer.from(await fileData.arrayBuffer())
+        const b64 = buf.toString('base64')
+        if (doc.type_mime?.includes('pdf')) {
+          userContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } })
+        } else if (doc.type_mime?.startsWith('image')) {
+          const mime = doc.type_mime.includes('png') ? 'image/png' : 'image/jpeg'
+          userContent.push({ type: 'image', source: { type: 'base64', media_type: mime, data: b64 } })
+        }
+      } catch {}
+    }
+
+    // Texte
+    const hasMedia = imagesBase64?.length || (docsPaths || []).length > 0
+    userContent.push({
+      type: 'text',
+      text: hasMedia
+        ? userText + '\n\nNote : les documents et images ci-dessus sont des pièces du chantier — extraire et intégrer leur contenu dans le CR si pertinent.'
+        : userText,
+    })
 
     // Appel Claude API
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {

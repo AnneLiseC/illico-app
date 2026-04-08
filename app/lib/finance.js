@@ -131,6 +131,7 @@ export function calculateDevisFinance(devis, dossier = {}) {
   const comHT = round2(montantHT * commissionPct)
   const comTTC = round2(comHT * TVA)
   const royaltiesCom = devis?.artisan?.sans_royalties ? 0 : round2(comHT * ROYALTIES_RATE * TVA)
+  const netCom = round2(comHT - royaltiesCom)
   const gainsBruts = splitAmount(netCom, partAgente)
 
   return {
@@ -280,7 +281,8 @@ export function calculateFraisFinance(dossier) {
   const fraisTTC = round2(toNumber(dossier?.frais_consultation))
   const fraisHT = round2(fraisTTC / TVA)
   const royaltiesFrais = round2(fraisHT * ROYALTIES_RATE * TVA)
-  const netFrais = round2(fraisTTC - royaltiesFrais)
+  const fraisDeduits = dossier?.frais_deduits || false
+  const netFrais = fraisDeduits ? 0 : round2(fraisTTC - royaltiesFrais)
 
   const referenteRole =
     dossier?.referente?.role ||
@@ -295,8 +297,8 @@ export function calculateFraisFinance(dossier) {
     royaltiesFrais,
     netFrais,
     gainsBruts: {
-      agente: referentIsAdmin ? 0 : netFrais,
-      admin: referentIsAdmin ? netFrais : 0,
+      agente: fraisDeduits ? 0 : (referentIsAdmin ? 0 : netFrais),
+      admin: fraisDeduits ? 0 : (referentIsAdmin ? netFrais : 0),
     },
   }
 }

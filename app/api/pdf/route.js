@@ -144,7 +144,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier }) {
 
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: BLEU_CLAIR, paddingBottom: 4, marginBottom: 8 }}>
           <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: BLEU }}>Frais de consultation</Text>
-          <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold', color: '#000' }}>{dossier.frais_statut === 'offerts' ? 'Offerts' : fmt(fraisTTC)}</Text>
+          <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold', color: '#000' }}>{dossier.frais_statut === 'offerts' ? 'Offerts' : dossier.frais_deduits ? 'Déduits du total' : fmt(fraisTTC)}</Text>
         </View>
 
         {devisAcceptes.length > 0 ? (
@@ -213,7 +213,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier }) {
         <View style={styles.montantBlock}>
           <Text style={styles.montantLabel}>TOTAL PROJET</Text>
           <Text style={styles.montantValue}>
-            {fmt(totalDevisTTCSignes + (isAMO ? honorairesAMO : isCourtage ? honorairesCourtage : 0) + (dossier.frais_statut === 'offerts' ? 0 : fraisTTC))}
+            {fmt(totalDevisTTCSignes + (isAMO ? honorairesAMO : isCourtage ? honorairesCourtage : 0) + (dossier.frais_statut === 'offerts' || dossier.frais_deduits ? 0 : fraisTTC))}
           </Text>
         </View>
 

@@ -122,9 +122,6 @@ export default function FicheChantier({ params }) {
   const [uploadingDoc, setUploadingDoc] = useState(null) // devisId en cours d'upload
   const [comptesRendus, setComptesRendus] = useState([])
   const [messages, setMessages] = useState([])
-  const [nouveauCR, setNouveauCR] = useState({ type_visite: '', notes_brutes: '', contenu_final: '', date_visite: '', valide: false })
-  const [ajouterCR, setAjouterCR] = useState(false)
-  const [savingCR, setSavingCR] = useState(false)
   const [factures, setFactures] = useState([])
   const [ajouterFacture, setAjouterFacture] = useState(null) // devisId en cours
   const [nouvelleFacture, setNouvelleFacture] = useState({ montant_ttc: '', date_paiement: '', statut: 'en_attente' })
@@ -142,6 +139,7 @@ export default function FicheChantier({ params }) {
   const [crGenere, setCrGenere] = useState(null) // { titre, sections[] }
   const [crSectionsEditees, setCrSectionsEditees] = useState([])
   const [crSavingFinal, setCrSavingFinal] = useState(false)
+  const [crDocsSelectionnes, setCrDocsSelectionnes] = useState([])
   const [nbMsgNonLus, setNbMsgNonLus] = useState(0)
   const [photoOuverte, setPhotoOuverte] = useState(null)
   const [rdvsDossier, setRdvsDossier] = useState([])
@@ -168,6 +166,7 @@ export default function FicheChantier({ params }) {
       if (!user) { router.push('/login'); return }
       const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       setProfile(profData)
+
       // Charger le nom de la franchisée pour les labels dynamiques
       const { data: adminData } = await supabase
         .from('profiles').select('prenom, nom').eq('role', 'admin').single()
@@ -509,7 +508,8 @@ export default function FicheChantier({ params }) {
     setSucces('')
     const { error } = await supabase.from('dossiers').update({
       typologie: dossier.typologie, statut: dossier.statut,
-      frais_consultation: dossier.frais_consultation, frais_statut: dossier.frais_statut,
+      frais_consultation: dossier.frais_consultation, frais_statut: dossier.frais_statut, 
+      frais_deduits: dossier.frais_deduits || false,
       date_limite_devis: dossier.date_limite_devis, contrat_signe: dossier.contrat_signe,
       date_signature_contrat: dossier.date_signature_contrat, date_demarrage_chantier: dossier.date_demarrage_chantier,
       date_fin_chantier: dossier.date_fin_chantier, taux_courtage: dossier.taux_courtage, honoraires_amo_taux: dossier.honoraires_amo_taux,
@@ -616,55 +616,11 @@ export default function FicheChantier({ params }) {
     setSucces('Devis signé supprimé ✓')
   }
 
-  // ── UPLOAD FACTURE ARTISAN ──
-  const uploadFacture = async (devisId, fichier) => {
-    if (!fichier) return
-    setUploadingDoc(devisId + '_fact')
-    const ext = fichier.name.split('.').pop()
-    const chemin = `chantiers/${id}/factures/${devisId}.${ext}`
-    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
-    if (!error) {
-      await supabase.from('devis_artisans').update({ facture_path: chemin }).eq('id', devisId)
-      await chargerDevis()
-      setSucces('Facture uploadée ✓')
-    } else { setErreur('Erreur upload : ' + error.message) }
-    setUploadingDoc(null)
-  }
-
-  const supprimerFacture = async (devisId, path) => {
-    if (!confirm('Supprimer la facture ?')) return
-    await supabase.storage.from('documents').remove([path])
-    await supabase.from('devis_artisans').update({ facture_path: null }).eq('id', devisId)
-    await chargerDevis()
-    setSucces('Facture supprimée ✓')
-  }
-
   // ── URL SIGNÉE DOCUMENT ──
   const ouvrirDocument = async (path) => {
     const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
     else setErreur('Impossible d\'ouvrir le document')
-  }
-
-  // ── COMPTES-RENDUS (schéma : type_visite, notes_brutes, contenu_final, valide) ──
-  const sauvegarderCR = async () => {
-    if (!nouveauCR.type_visite) return
-    setSavingCR(true)
-    await supabase.from('comptes_rendus').insert({
-      dossier_id: id,
-      auteur_id: profile?.id,
-      type_visite: nouveauCR.type_visite,
-      notes_brutes: nouveauCR.notes_brutes || null,
-      contenu_final: nouveauCR.contenu_final || null,
-      date_visite: nouveauCR.date_visite || null,
-      valide: nouveauCR.valide,
-    })
-    const { data } = await supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
-    setComptesRendus(data || [])
-    setNouveauCR({ type_visite: '', notes_brutes: '', contenu_final: '', date_visite: '', valide: false })
-    setAjouterCR(false)
-    setSucces('Compte-rendu ajouté ✓')
-    setSavingCR(false)
   }
 
   // ── GÉNÉRER CR AVEC IA ──
@@ -685,6 +641,7 @@ export default function FicheChantier({ params }) {
           intervenants: crForm.intervenants ? crForm.intervenants.split(',').map(s => s.trim()).filter(Boolean) : [],
           notesBrutes: notesCombinees,
           imagesBase64: crImages,
+          docsPaths: crDocsSelectionnes.map(d => ({ path: d.path, type_mime: d.type_mime, nom: d.nom })),
         }),
       })
       const data = await res.json()
@@ -1263,6 +1220,19 @@ ${s.contenu}`).join('')
                   <option value="regle">Facturés et réglés</option>
                 </select>
               </div>
+              {frais && dossier.frais_statut === 'regle' && (
+                <label className="flex items-center gap-2 cursor-pointer mt-2">
+                  <input type="checkbox" checked={dossier.frais_deduits || false}
+                    onChange={async e => {
+                      await supabase.from('dossiers').update({ frais_deduits: e.target.checked }).eq('id', id)
+                      setDossier(d => ({ ...d, frais_deduits: e.target.checked }))
+                      setSucces('Mis à jour ✓')
+                    }}
+                    className="w-4 h-4 accent-blue-700" />
+                  <span className="text-sm text-gray-700">Frais déduits du total client</span>
+                  {dossier.frais_deduits && <span className="text-xs text-blue-600">— sera retiré du récapitulatif</span>}
+                </label>
+              )}
               {dossier.frais_statut !== 'offerts' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Montant TTC (€)</label>
@@ -2385,7 +2355,31 @@ ${s.contenu}`).join('')
                         </label>
                       </div>
                     </div>
-
+                    {documents.length > 0 && (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">📎 Documents du chantier (contexte IA)</label>
+                        <div className="border border-gray-200 rounded-xl p-2 space-y-1 max-h-36 overflow-y-auto">
+                          {documents.map(doc => {
+                            const selected = crDocsSelectionnes.some(d => d.id === doc.id)
+                            const supporté = doc.type_mime?.includes('pdf') || doc.type_mime?.startsWith('image')
+                            return (
+                              <label key={doc.id} className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer ${supporté ? 'hover:bg-gray-50' : 'opacity-40 cursor-not-allowed'}`}>
+                                <input type="checkbox" checked={selected} disabled={!supporté}
+                                  onChange={() => {
+                                    if (!supporté) return
+                                    setCrDocsSelectionnes(prev =>
+                                      selected ? prev.filter(d => d.id !== doc.id) : [...prev, doc]
+                                    )
+                                  }}
+                                  className="accent-blue-700" />
+                                <span className="text-xs text-gray-700 truncate">{doc.nom}</span>
+                                {!supporté && <span className="text-xs text-gray-400 ml-auto">non supporté</span>}
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                     <div className="flex gap-3 pt-2">
                       <button onClick={() => setCrEtape(1)} className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-xl text-sm hover:bg-gray-50">
                         ← Retour
