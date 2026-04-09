@@ -94,35 +94,38 @@ export function calculerDossierStats(dossier) {
     }
   })
 
+
   const totalHT = devisActifs.reduce((sum, dv) => sum + (dv.montant_ht || 0), 0)
+  const totalHTSignes = devisSignes.reduce((sum, dv) => sum + (dv.montant_ht || 0), 0)
   const totalTTCSignes = devisSignes.reduce((sum, dv) => sum + (dv.montant_ttc || 0), 0)
 
-  const honorairesCourtage =
-    ['courtage', 'amo'].includes(dossier.typologie) ? totalTTCSignes * 0.06 : 0
-
-  const honorairesAMO =
-    dossier.typologie === 'amo'
-      ? totalTTCSignes * ((dossier.honoraires_amo_taux || 9) / 100)
-      : 0
-
+  const honorairesCourtage = ['courtage', 'amo'].includes(dossier.typologie) ? totalTTCSignes * 0.06 : 0
+  const honorairesAMO = dossier.typologie === 'amo' ? totalTTCSignes * ((dossier.honoraires_amo_taux || 9) / 100) : 0
   const honorairesTTC = honorairesCourtage + honorairesAMO
-  const royaltiesHonoraires = honorairesTTC * 0.05 * 1.2
 
+  const royaltiesHonoraires = honorairesTTC * 0.05 * 1.2
   const fraisTTC = parseFloat(dossier.frais_consultation || 0)
   const fraisRoyalties = (fraisTTC / 1.2) * 0.05 * 1.2
-
   const sommeRoyalties = royaltiesCom + fraisRoyalties + royaltiesHonoraires
   const totalEncaissement = fraisTTC + honorairesTTC + comTTC - sommeRoyalties
+
+  const partAgentePctRef = estChantierMarine ? 0 : (devisActifs[0]?.part_agente || 0.5)
+  const netHonoraires = honorairesTTC - royaltiesHonoraires
+  const netFrais = fraisTTC - fraisRoyalties
+  const fraisNetAgente = estChantierMarine ? 0 : (fraisTTC - fraisRoyalties)
+  const totalEncaissementAgente = partAgente + ((honorairesTTC - royaltiesHonoraires) * partAgentePctRef) + fraisNetAgente
 
   return {
     estChantierMarine,
     totalHT,
+    totalHTSignes,
     comHT,
     comTTC,
     royaltiesCom,
     net,
     partAgente,
     partAdmin,
+    totalEncaissementAgente,
     honorairesTTC,
     fraisTTC,
     sommeRoyalties,
@@ -131,6 +134,7 @@ export function calculerDossierStats(dossier) {
     nbDevisSignes: devisSignes.length,
   }
 }
+
 
 export function enrichDossiersWithStats(dossiers) {
   return dossiers.map(d => ({
@@ -149,7 +153,7 @@ export function buildGlobalStats(stats) {
   const totalNet = stats.reduce((s, d) => s + d._calc.totalEncaissement, 0)
   const totalPartAgente = stats.reduce((s, d) => s + d._calc.partAgente, 0)
   const totalPartAdmin = stats.reduce((s, d) => s + d._calc.partAdmin, 0)
-
+  const totalCAAgente = stats.reduce((s, d) => s + d._calc.totalEncaissementAgente, 0)
   const parStatut = {
     en_cours: stats.filter(d => d.statut === 'en_cours').length,
     en_attente: stats.filter(d => d.statut === 'en_attente').length,
@@ -157,11 +161,13 @@ export function buildGlobalStats(stats) {
     annule: stats.filter(d => d.statut === 'annule').length,
   }
 
-  const caParMois = Array(12).fill(0)
+  const totalMontantTravauxSignes = stats.reduce((s, d) => s + d._calc.totalHTSignes, 0)
+
+  const caParMoisEncaisse = Array(12).fill(0)
   stats.forEach(d => {
     const date = d.date_signature_contrat || d.created_at
     if (!date) return
-    caParMois[new Date(date).getMonth()] += d._calc.totalHT
+    caParMoisEncaisse[new Date(date).getMonth()] += d._calc.totalEncaissement
   })
 
   return {
@@ -174,9 +180,11 @@ export function buildGlobalStats(stats) {
     totalNet,
     totalPartAgente,
     totalPartAdmin,
+    totalCAAgente,
     parStatut,
-    caParMois,
-    maxMois: Math.max(...caParMois, 1),
+    totalMontantTravauxSignes,
+    caParMoisEncaisse,
+    maxMois: Math.max(...caParMoisEncaisse, 1),
     totalDossiers: stats.length || 1,
   }
 }

@@ -4,8 +4,6 @@
 import { useState, useEffect, use } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
-import { calculateDevisFinance, calculateFraisFinance } from '../../lib/finance'
-
 function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
   const [fiches, setFiches] = useState([])
   const [loading, setLoading] = useState(true)
@@ -394,37 +392,6 @@ export default function FicheChantier({ params }) {
   const isMarine = profile?.role === 'admin'
   const estChantierMarine = dossier?.referente?.role === 'admin'
 
-  const calculer = (d) => {
-    const fin = calculateDevisFinance(d, { ...dossier, part_agente: d.part_agente })
-    const comHT = fin.comHT
-    const comTTC = fin.comTTC
-    const royaltiesArtisan = d.artisan?.sans_royalties ? 0 : (d.montant_ht || 0) * 0.05 * 1.2  // Type 1
-    const royalties = (fin.comHT) * 0.05 * 1.2  // Type 2
-    const net = fin.netCom    
-    const partAgente = fin.gainsBruts.agente
-    const partAdmin = fin.gainsBruts.admin
-
-    let apporteurTTC = 0, apporteurPartAgente = 0, apporteurPartAdmin = 0
-    if (client?.apporteur_affaires && client?.apporteur_base === 'par_devis') {
-      apporteurTTC = (d.montant_ht || 0) * (client.apporteur_pourcentage / 100) * 1.2
-      apporteurPartAgente = estChantierMarine ? 0 : apporteurTTC * (d.part_agente || 0.5)
-      apporteurPartAdmin = estChantierMarine ? apporteurTTC : apporteurTTC * (1 - (d.part_agente || 0.5))
-    }
-    return { comHT, comTTC, royalties, royaltiesArtisan, net, partAgente, partAdmin, apporteurTTC, apporteurPartAgente, apporteurPartAdmin }
-  }
-
-  const calculerFrais = () => {
-    if (dossier?.frais_consultation === null || dossier?.frais_consultation === undefined || dossier?.frais_consultation === '') return null
-    const fin = calculateFraisFinance(dossier)
-    return {
-      ht: fin.fraisHT,
-      ttc: fin.fraisTTC,
-      royalties: fin.royaltiesFrais,
-      net: fin.netFrais,
-      partAgente: fin.gainsBruts.agente,
-      partAdmin: fin.gainsBruts.admin,
-    }
-  }
 
   const chargerDocuments = async () => {
   const { data } = await supabase.from('chantier_documents').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
@@ -813,32 +780,6 @@ ${s.contenu}`).join('')
     regle: { label: 'Réglés', color: 'bg-green-100 text-green-700' },
   }
 
-  const devisActifs = devis.filter(d => d.statut !== 'refuse')
-  const totalDevisHT = devisActifs.reduce((s, d) => s + (d.montant_ht || 0), 0)
-  const totalDevisTTC = devisActifs.reduce((s, d) => s + (d.montant_ttc || 0), 0)
-  const totalComHT = devisActifs.reduce((s, d) => s + calculer(d).comHT, 0)
-  const totalComTTC = devisActifs.reduce((s, d) => s + calculer(d).comTTC, 0)
-  const totalRoyalties = devisActifs.reduce((s, d) => s + calculer(d).royalties, 0)
-  const totalRoyaltiesArtisan = devisActifs.reduce((s, d) => s + calculer(d).royaltiesArtisan, 0)
-  const totalPartAgente = devisActifs.reduce((s, d) => s + calculer(d).partAgente, 0)
-  const totalPartAdmin = devisActifs.reduce((s, d) => s + calculer(d).partAdmin, 0)
-  const totalApporteurTTC = (() => {
-    if (!client?.apporteur_affaires) return 0
-    if (client.apporteur_base === 'par_devis') return devisActifs.reduce((s, d) => s + calculer(d).apporteurTTC, 0)
-    return totalDevisHT * (client.apporteur_pourcentage / 100) * 1.2
-  })()
-  const totalApporteurPartAgente = (() => {
-    if (!client?.apporteur_affaires || estChantierMarine) return 0
-    if (client.apporteur_base === 'par_devis') return devisActifs.reduce((s, d) => s + calculer(d).apporteurPartAgente, 0)
-    return totalApporteurTTC * (devisActifs[0]?.part_agente || 0.5)
-  })()
-  const totalApporteurPartAdmin = (() => {
-    if (!client?.apporteur_affaires) return 0
-    if (client.apporteur_base === 'par_devis') return devisActifs.reduce((s, d) => s + calculer(d).apporteurPartAdmin, 0)
-    return totalApporteurTTC * (1 - (estChantierMarine ? 0 : (devisActifs[0]?.part_agente || 0.5)))
-  })()
-
-  const frais = calculerFrais()
   const devisSignes = devis.filter(d => d.statut === 'accepte' && d.date_signature && d.montant_ttc)
   const totalDevisTTCSignes = devisSignes.reduce((s, d) => s + (d.montant_ttc || 0), 0)
   const tauxCourtage = (dossier?.taux_courtage ?? 0.06)
@@ -882,17 +823,6 @@ ${s.contenu}`).join('')
   const nomComplet = client ? `${client.civilite} ${client.prenom} ${client.nom}${client.prenom2 ? ` & ${client.prenom2} ${client.nom2}` : ''}` : ''
   const s = statutConfig[dossier.statut]
   const f = fraisStatutConfig[dossier.frais_statut]
-
-  // Calcul parts honoraires
-  const partAgenteRef = estChantierMarine ? 0 : (devisActifs[0]?.part_agente || 0.5)
-  const honTotal = ['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCSignes > 0
-    ? (dossier.typologie === 'amo' ? honorairesAMO : honorairesCourtage) : 0
-  const honAgente = honTotal * partAgenteRef
-  const honAdmin = honTotal * (1 - partAgenteRef)
-  const fraisAgente = frais ? frais.partAgente : 0
-  const fraisAdmin = frais ? frais.partAdmin : 0
-  const totalGainAgente = totalPartAgente - totalApporteurPartAgente + honAgente + fraisAgente
-  const totalGainAdmin = totalPartAdmin - totalApporteurPartAdmin + honAdmin + fraisAdmin
 
   const supprimerChantier = async () => {
     const ok = confirm(
@@ -1182,53 +1112,15 @@ ${s.contenu}`).join('')
             <span className={`text-xs px-2 py-1 rounded-full font-medium ${f.color}`}>{f.label}</span>
           </div>
           {mode === 'lecture' ? (
-            <div className="space-y-2">
-              {frais ? (
-                <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-xs text-gray-400">Montant TTC</span>
-                    <span className="font-medium">{frais.ttc.toFixed(2)} €</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-xs text-gray-400">Montant HT</span>
-                    <span className="font-medium">{frais.ht.toFixed(2)} €</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-xs text-gray-400">Royalties illiCO France</span>
-                    <span className="font-medium text-red-500">- {frais.royalties.toFixed(2)} €</span>
-                  </div>
-                  <div className="flex justify-between border-t border-gray-200 pt-1">
-                    <span className="text-xs text-gray-400">Net</span>
-                    <span className="font-medium">{frais.net.toFixed(2)} €</span>
-                  </div>
-                  {!estChantierMarine && (
-                    <div className="flex justify-between">
-                      <span className="text-xs text-blue-500">Part {dossier.referente?.prenom || 'Agente'}</span>
-                      <span className="font-medium text-blue-700">{frais.partAgente.toFixed(2)} €</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-xs text-purple-500">Part {nomFranchisee}</span>
-                    <span className="font-medium text-purple-700">{frais.partAdmin.toFixed(2)} €</span>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400">Offerts</p>
-              )}
-              {frais && dossier.frais_statut !== 'offerts' && (
-                <label className="flex items-center gap-2 cursor-pointer pt-2 border-t border-gray-200">
-                  <input type="checkbox" checked={dossier.frais_deduits || false}
-                    onChange={async e => {
-                      const val = e.target.checked
-                      await supabase.from('dossiers').update({ frais_deduits: val }).eq('id', id)
-                      setDossier(d => ({ ...d, frais_deduits: val }))
-                      setSucces('Mis à jour ✓')
-                    }}
-                    className="w-4 h-4 accent-blue-700" />
-                  <span className="text-sm text-gray-700">Frais déduits du total client</span>
-                  {dossier.frais_deduits && <span className="text-xs text-blue-600">— retiré du récapitulatif</span>}
-                </label>
-              )}
+            <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-xs text-gray-400">Montant TTC</span>
+                <span className="font-medium">{(dossier.frais_consultation || 0).toFixed(2)} €</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-xs text-gray-400">Montant HT</span>
+                <span className="font-medium">{((dossier.frais_consultation || 0) / 1.2).toFixed(2)} €</span>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
@@ -1340,7 +1232,6 @@ ${s.contenu}`).join('')
           ) : (
             <div className="space-y-3">
               {devis.map(d => {
-                const { comHT, comTTC, royalties, royaltiesArtisan, net, partAgente, partAdmin, apporteurTTC, apporteurPartAgente, apporteurPartAdmin } = calculer(d)
                 const sd = statutDevisConfig[d.statut]
                 return (
                   <div key={d.id} className="border border-gray-100 rounded-lg p-4 space-y-3">
@@ -1411,70 +1302,6 @@ ${s.contenu}`).join('')
                         </div>
                       )}
                     </div>
-
-                    {/* Vision financière — accordéon */}
-                    <details className="border border-blue-100 rounded-lg">
-                      <summary className="px-3 py-2 text-xs font-medium text-blue-700 cursor-pointer hover:bg-blue-50 rounded-lg">
-                        💰 Vision financière
-                      </summary>
-                      <div className="p-3 space-y-3">
-                        {/* COM artisans */}
-                        <div className="bg-gray-50 rounded p-3 space-y-1 text-xs">
-                          <p className="font-medium text-gray-600 uppercase mb-1">Commissions artisan</p>
-                          <div className="flex justify-between"><span className="text-gray-400">Commissions HT</span><span className="font-medium">{comHT.toFixed(2)} €</span></div>
-                          <div className="flex justify-between"><span className="text-gray-400">Commissions TTC</span><span className="font-medium">{comTTC.toFixed(2)} €</span></div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-400">Royalties illiCO artisans TTC</span>
-                            <span className="font-medium text-red-400"> {royaltiesArtisan.toFixed(2)} €</span>
-                          </div>
-                          <div className="flex justify-between border-t border-gray-200 pt-1">
-                            <span className="text-gray-400">Net</span>
-                            <span className="font-medium">{net.toFixed(2)} €</span>
-                          </div>
-                          {/* Part agente : toujours visible si chantier agente */}
-                          {!estChantierMarine && (
-                            <div className="flex justify-between"><span className="text-blue-500">{dossier.referente?.prenom || 'Agente'}</span><span className="font-medium text-blue-700">{partAgente.toFixed(2)} €</span></div>
-                          )}
-                          {/* Part franchisée : visible sauf si la franchisée regarde ses propres chantiers */}
-                          {!(isMarine && estChantierMarine) && (
-                            <div className="flex justify-between"><span className="text-purple-500">{nomFranchisee}</span><span className="font-medium text-purple-700">{partAdmin.toFixed(2)} €</span></div>
-                          )}
-                        </div>
-                        {/* Apporteur par devis */}
-                        {client?.apporteur_affaires && client?.apporteur_base === 'par_devis' && apporteurTTC > 0 && (
-                          <div className="bg-orange-50 rounded p-3 space-y-1 text-xs">
-                            <p className="font-medium text-orange-700 uppercase mb-1">Apporteur — {client.apporteur_nom} ({client.apporteur_pourcentage}%)</p>
-                            <div className="flex justify-between"><span className="text-orange-500">Total TTC</span><span className="font-medium text-orange-600">- {apporteurTTC.toFixed(2)} €</span></div>
-                            {!estChantierMarine && <div className="flex justify-between"><span className="text-orange-400">{dossier.referente?.prenom || 'Agente'}</span><span className="font-medium text-orange-500">- {apporteurPartAgente.toFixed(2)} €</span></div>}
-                            {!(isMarine && estChantierMarine) && (
-                              <div className="flex justify-between"><span className="text-orange-400">{nomFranchisee}</span><span className="font-medium text-orange-500">- {apporteurPartAdmin.toFixed(2)} €</span></div>
-                            )}
-                          </div>
-                        )}
-                        {/* Total gains devis */}
-                        <div className="bg-gray-100 rounded p-3 space-y-1 text-xs">
-                          <p className="font-medium text-gray-700 uppercase mb-1">Total gains ce devis</p>
-                          {!estChantierMarine && (
-                            <div className="flex justify-between">
-                              <span className="text-blue-600 font-medium">{dossier.referente?.prenom || 'Agente'}</span>
-                              <span className="font-bold text-blue-700">{(partAgente - apporteurPartAgente).toFixed(2)} €</span>
-                            </div>
-                          )}
-                          {!(isMarine && estChantierMarine) && (
-                            <div className="flex justify-between">
-                              <span className="text-purple-600 font-medium">{nomFranchisee}</span>
-                              <span className="font-bold text-purple-700">{(partAdmin - apporteurPartAdmin).toFixed(2)} €</span>
-                            </div>
-                          )}
-                          {isMarine && estChantierMarine && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-600 font-medium">Net</span>
-                              <span className="font-bold text-gray-700">{(net - apporteurTTC).toFixed(2)} €</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </details>
 
                     {devisEnEdition === d.id && (
                       <EditDevis devis={d} isMarine={estChantierMarine} onSave={(updates) => modifierDevis(d.id, updates)} onCancel={() => setDevisEnEdition(null)} />
@@ -1656,13 +1483,13 @@ ${s.contenu}`).join('')
               <p className="text-xs font-medium text-gray-600 uppercase">Récapitulatif chantier</p>
 
               {/* Frais consultation */}
-              {frais && dossier.frais_statut !== 'offerts' && (
+              {dossier.frais_consultation > 0 && dossier.frais_statut !== 'offerts' && (
                 <div className="space-y-1">
                   <p className="text-xs text-gray-400 font-medium">Frais de consultation</p>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Montant TTC</span>
                     <span className={`font-medium ${dossier.frais_statut === 'regle' ? 'text-green-600' : 'text-gray-800'}`}>
-                      {frais.ttc.toFixed(2)} € {dossier.frais_statut === 'regle' ? '✅' : '⏳'}
+                      {(dossier.frais_consultation || 0).toFixed(2)} € {dossier.frais_statut === 'regle' ? '✅' : '⏳'}
                     </span>
                   </div>
                 </div>
@@ -1673,11 +1500,11 @@ ${s.contenu}`).join('')
                 <p className="text-xs text-gray-400 font-medium">Devis artisans signés</p>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Total HT</span>
-                  <span className="font-medium text-gray-800">{totalDevisHT.toFixed(2)} €</span>
+                  <span className="font-medium text-gray-800">{devis.filter(d => d.statut !== 'refuse').reduce((s, d) => s + (d.montant_ht || 0), 0).toFixed(2)} €</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Total TTC</span>
-                  <span className="font-medium text-gray-800">{totalDevisTTC.toFixed(2)} €</span>
+                  <span className="font-medium text-gray-800">{devis.filter(d => d.statut !== 'refuse').reduce((s, d) => s + (d.montant_ttc || 0), 0).toFixed(2)} €</span>
                 </div>
               </div>
 
@@ -1704,67 +1531,6 @@ ${s.contenu}`).join('')
                   )}
                 </div>
               )}
-
-              {/* Vision financière globale — accordéon */}
-              <details className="border-t border-gray-200 pt-2">
-                <summary className="text-xs font-medium text-blue-700 cursor-pointer hover:text-blue-900">💰 Vision financière globale</summary>
-                <div className="mt-3 space-y-2">
-
-                  {/* Totaux COM */}
-                  <div className="bg-gray-100 rounded p-3 space-y-1 text-xs">
-                    <p className="font-medium text-gray-600 uppercase mb-1">Commissions artisans (totaux)</p>
-                    <div className="flex justify-between"><span className="text-gray-400">Total Commissions HT</span><span>{totalComHT.toFixed(2)} €</span></div>
-                    <div className="flex justify-between"><span className="text-gray-400">Total Commissions TTC</span><span>{totalComTTC.toFixed(2)} €</span></div>
-                    
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Royalties illiCO artisans TTC</span>
-                      <span className="text-red-400"> {totalRoyaltiesArtisan.toFixed(2)} €</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Royalties illiCO com TTC</span>
-                      <span className="text-red-500">- {totalRoyalties.toFixed(2)} €</span>
-                    </div>
-                    {!estChantierMarine && <div className="flex justify-between"><span className="text-blue-500">{dossier.referente?.prenom || 'Agente'}</span><span className="text-blue-700">{totalPartAgente.toFixed(2)} €</span></div>}
-                    <div className="flex justify-between"><span className="text-purple-500">{nomFranchisee}</span><span className="text-purple-700">{totalPartAdmin.toFixed(2)} €</span></div>
-                  </div>
-
-                  {/* Apporteur global */}
-                  {client?.apporteur_affaires && totalApporteurTTC > 0 && (
-                    <div className="bg-orange-50 rounded p-3 space-y-1 text-xs">
-                      <p className="font-medium text-orange-700 uppercase mb-1">
-                        Apporteur — {client.apporteur_nom} ({client.apporteur_pourcentage}% {client.apporteur_base === 'par_devis' ? 'par devis' : 'sur total chantier'})
-                      </p>
-                      <div className="flex justify-between"><span className="text-orange-500">Total TTC</span><span className="text-orange-600">- {totalApporteurTTC.toFixed(2)} €</span></div>
-                      {!estChantierMarine && <div className="flex justify-between"><span className="text-orange-400">{dossier.referente?.prenom || 'Agente'}</span><span className="text-orange-500">- {totalApporteurPartAgente.toFixed(2)} €</span></div>}
-                      <div className="flex justify-between"><span className="text-orange-400">{nomFranchisee}</span><span className="text-orange-500">- {totalApporteurPartAdmin.toFixed(2)} €</span></div>
-                    </div>
-                  )}
-
-                  {/* Parts honoraires */}
-                  {honTotal > 0 && (
-                    <div className="bg-blue-50 rounded p-3 space-y-1 text-xs">
-                      <p className="font-medium text-blue-700 uppercase mb-1">Part honoraires</p>
-                      {!estChantierMarine && <div className="flex justify-between"><span className="text-blue-500">{dossier.referente?.prenom || 'Agente'}</span><span className="text-blue-700">{honAgente.toFixed(2)} €</span></div>}
-                      <div className="flex justify-between"><span className="text-purple-500">{nomFranchisee}</span><span className="text-purple-700">{honAdmin.toFixed(2)} €</span></div>
-                    </div>
-                  )}
-
-                  {/* TOTAL GAINS */}
-                  <div className="bg-gray-200 rounded p-3 space-y-1 text-xs">
-                    <p className="font-bold text-gray-700 uppercase mb-1">Total gains</p>
-                    {!estChantierMarine && (
-                      <div className="flex justify-between">
-                        <span className="text-blue-600 font-bold">{dossier.referente?.prenom || 'Agente'}</span>
-                        <span className="font-bold text-blue-700">{totalGainAgente.toFixed(2)} €</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between">
-                      <span className="text-purple-600 font-bold">{nomFranchisee}</span>
-                      <span className="font-bold text-purple-700">{totalGainAdmin.toFixed(2)} €</span>
-                    </div>
-                  </div>
-                </div>
-              </details>
             </div>
           )}
         </div>

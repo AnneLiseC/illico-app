@@ -63,7 +63,7 @@ export default function Statistiques() {
   const dossiersFiltres = filterDossiersByYear(dossiersVisibles, anneeFiltre)
   const anneesDispos = getAnneesDisponibles(dossiers)
   const stats = enrichDossiersWithStats(dossiersFiltres)
-  const { totalCA, totalComHT, totalComTTC, totalHonoraires, totalFrais, totalRoyalties, totalNet, totalPartAgente, totalPartAdmin, parStatut, caParMois, maxMois, totalDossiers,
+  const { totalCA, totalComHT, totalComTTC, totalCAAgente, totalHonoraires, totalFrais, totalRoyalties, totalNet, totalPartAgente, totalPartAdmin, parStatut, caParMoisEncaisse, maxMois, totalDossiers, totalMontantTravauxSignes,
   } = buildGlobalStats(stats)
 
   const { topArtisans, maxArtisanVolume } = buildTopArtisans(stats)
@@ -111,11 +111,12 @@ export default function Statistiques() {
           <div className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <StatCard label="Chantiers" value={stats.length} sub={`${parStatut.en_cours} en cours · ${parStatut.termine} terminés`} icon="📁" />
-              <StatCard label="CA total HT" value={fmt(totalCA)} sub="Montant devis actifs" icon="💰" color="#1D4ED8" />
-              <StatCard label="Commissions HT" value={fmt(totalComHT)} sub={`TTC : ${fmt(totalComTTC)}`} icon="📊" color="#15803D" />
-              <StatCard label="Net encaissé" value={fmt(totalNet)} sub={`Royalties : ${fmt(totalRoyalties)}`} icon="✅" color="#7C3AED" />
-            </div>
+              <StatCard label="Montant travaux HT (devis signés)" value={fmt(totalMontantTravauxSignes)} sub="Devis acceptés" icon="🏗" color="#1D4ED8" />
+              <StatCard label="Montant travaux HT prévisionnel" value={fmt(totalCA)} sub="Devis actifs non refusés" icon="📋" color="#6B7280" />
+              <StatCard label="CA encaissé Agence" value={fmt(totalNet)} sub={`Royalties : ${fmt(totalRoyalties)}`} icon="✅" color="#7C3AED" />
+            </div>            
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <StatCard label="Ma part" value={fmt(totalCAAgente)} sub="Commissions + honoraires + frais" color="#2563EB" icon="👩" />
               <StatCard label="Honoraires" value={fmt(totalHonoraires)} sub="Courtage + AMO" icon="🏷️" />
               <StatCard label="Frais consultation" value={fmt(totalFrais)} sub="TTC encaissés" icon="📝" />
               {isMarine ? (
@@ -124,17 +125,19 @@ export default function Statistiques() {
                   <StatCard label={`Part ${nomFranchisee}`} value={fmt(totalPartAdmin)} sub="Sur commissions" color="#7C3AED" icon="👩" />
                 </>
               ) : (
-                <StatCard label="Ma part" value={fmt(totalPartAgente)} sub="Sur commissions" color="#2563EB" icon="👩" />
+                <StatCard label="Mes Commissions" value={fmt(totalPartAgente)} sub="Sur commissions" color="#2563EB" icon="👩" />
               )}
             </div>
 
             {/* Graphique CA mensuel */}
             <div className="bg-white border border-gray-200 rounded-xl p-6">
-              <h2 className="font-semibold text-gray-800 mb-6">CA mensuel — Montants HT devis actifs</h2>
+              <h2 className="font-semibold text-gray-800 mb-6">
+                CA encaissé par mois — {isMarine ? 'Net CTP' : 'Ma part'}
+              </h2>
               <div className="flex items-end gap-2">
-                {caParMois.map((val, i) => (
+                {caParMoisEncaisse.map((val, i) => (
                   <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                    {val > 0 && <p className="text-xs text-gray-500">{Math.round(val / 1000)}k</p>}
+                    {val > 0 && <p className="text-xs text-gray-500" style={{ fontSize: '10px' }}>{fmt(val)}</p>}
                     <div className="w-full" style={{ height: 100 }}>
                       <div style={{
                         width: '100%',

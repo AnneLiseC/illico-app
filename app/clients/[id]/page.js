@@ -395,30 +395,13 @@ export default function FicheClient({ params }) {
             <div className="space-y-2">
               {dossiers.map(d => {
                 const s = statutLabel(d.statut)
-                const rdvTypes = {
-                  visite_technique_client: { label: 'R1', color: 'bg-blue-100 text-blue-700' },
-                  visite_technique_artisan: { label: 'R2', color: 'bg-green-100 text-green-700' },
-                  presentation_devis: { label: 'R3', color: 'bg-amber-100 text-amber-700' },
-                }
+
                 return (
                   <div key={d.id} onClick={() => router.push(`/chantiers/${d.id}`)}
                     className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:border-blue-200 cursor-pointer">
                     <div>
                       <p className="text-sm font-medium text-gray-800">{d.reference}</p>
                       <p className="text-xs text-gray-400">{typologieLabel(d.typologie)}</p>
-                      {d.rendez_vous?.length > 0 && (
-                        <div className="flex gap-1 mt-1 flex-wrap">
-                          {d.rendez_vous.sort((a, b) => new Date(a.date_heure) - new Date(b.date_heure)).map(r => {
-                            const rt = rdvTypes[r.type_rdv]
-                            return (
-                              <span key={r.id} className={`text-xs px-1.5 py-0.5 rounded font-medium ${rt.color}`}
-                                onClick={e => e.stopPropagation()}>
-                                {rt.label} {new Date(r.date_heure).toLocaleDateString('fr-FR')}
-                              </span>
-                            )
-                          })}
-                        </div>
-                      )}
                     </div>
                   <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.color}`}>{s.label}</span>
                   </div>
