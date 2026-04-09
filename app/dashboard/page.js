@@ -63,21 +63,6 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-blue-900">illiCO travaux Martigues</h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right">
-            <p className="text-sm font-medium text-gray-800">{profile.prenom} {profile.nom}</p>
-            <p className="text-xs text-gray-400">{roleLabel(profile.role)}</p>
-          </div>
-          <button onClick={handleLogout} className="text-sm text-gray-400 hover:text-red-500">
-            Déconnexion
-          </button>
-        </div>
-      </header>
-
       <main className="max-w-6xl mx-auto px-6 py-8">
         <h2 className="text-xl font-semibold text-gray-800 mb-6">
           Bonjour {profile.prenom} 👋

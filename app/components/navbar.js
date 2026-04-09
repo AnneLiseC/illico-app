@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { supabase } from '../lib/supabase'
+import {supabase} from '../lib/supabase'
+import Image from 'next/image'
 
 const NAV_LINKS = [
   { href: '/chantiers', label: 'Chantiers', emoji: '🏗' },
@@ -43,10 +44,10 @@ export default function NavBar() {
     <nav style={{ backgroundColor: '#00578e' }} className="sticky top-0 z-50 shadow-md">
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between h-14">
+
           {/* Logo */}
-          <button onClick={() => router.push('/chantiers')} className="flex items-center gap-2">
-            <span className="text-white font-bold text-sm tracking-wide">illiCO travaux</span>
-            <span className="text-blue-200 text-xs hidden sm:block">Martigues</span>
+          <button onClick={() => router.push('/dashboard')} className="flex items-center">
+            <Image src="/logo.png" alt="illiCO travaux" width={120} height={32} className="h-8 w-auto" />
           </button>
 
           {/* Nav desktop */}
