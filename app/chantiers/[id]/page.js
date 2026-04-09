@@ -1,7 +1,10 @@
+//chantier/[id]/page.js
+
 'use client'
 import { useState, useEffect, use } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { calculateDevisFinance, calculateFraisFinance } from '../../lib/finance'
 
 function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
   const [fiches, setFiches] = useState([])
@@ -381,7 +384,7 @@ export default function FicheChantier({ params }) {
   }
 
   const chargerDevis = async () => {
-    const { data } = await supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier)').eq('dossier_id', id).order('created_at')
+    const { data } = await supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier, sans_royalties)').eq('dossier_id', id).order('created_at')
     setDevis(data || [])
   }
 
@@ -392,13 +395,15 @@ export default function FicheChantier({ params }) {
   const estChantierMarine = dossier?.referente?.role === 'admin'
 
   const calculer = (d) => {
-    const comHT = (d.montant_ht || 0) * (d.commission_pourcentage || 0)
-    const comTTC = comHT * 1.2
-    const royalties = (comHT * 0.05) * 1.2          // 5% sur Commissions HT × 1.2
-    const royaltiesArtisan = (d.montant_ht || 0) * 0.05 * 1.2  // 5% sur montant devis HT × 1.2
-    const net = comTTC - royalties
-    const partAgente = estChantierMarine ? 0 : net * (d.part_agente || 0.5)
-    const partAdmin = estChantierMarine ? net : net * (1 - (d.part_agente || 0.5))
+    const fin = calculateDevisFinance(d, { ...dossier, part_agente: d.part_agente })
+    const comHT = fin.comHT
+    const comTTC = fin.comTTC
+    const royaltiesArtisan = d.artisan?.sans_royalties ? 0 : (d.montant_ht || 0) * 0.05 * 1.2  // Type 1
+    const royalties = (fin.comHT) * 0.05 * 1.2  // Type 2
+    const net = fin.netCom    
+    const partAgente = fin.gainsBruts.agente
+    const partAdmin = fin.gainsBruts.admin
+
     let apporteurTTC = 0, apporteurPartAgente = 0, apporteurPartAdmin = 0
     if (client?.apporteur_affaires && client?.apporteur_base === 'par_devis') {
       apporteurTTC = (d.montant_ht || 0) * (client.apporteur_pourcentage / 100) * 1.2
@@ -409,18 +414,16 @@ export default function FicheChantier({ params }) {
   }
 
   const calculerFrais = () => {
-    if (dossier?.frais_consultation === null || dossier?.frais_consultation === undefined || dossier?.frais_consultation === '') {
-      return null
+    if (dossier?.frais_consultation === null || dossier?.frais_consultation === undefined || dossier?.frais_consultation === '') return null
+    const fin = calculateFraisFinance(dossier)
+    return {
+      ht: fin.fraisHT,
+      ttc: fin.fraisTTC,
+      royalties: fin.royaltiesFrais,
+      net: fin.netFrais,
+      partAgente: fin.gainsBruts.agente,
+      partAdmin: fin.gainsBruts.admin,
     }
-
-    const ttc = parseFloat(dossier.frais_consultation) || 0
-    const ht = ttc / 1.2
-    const royalties = (ht * 0.05) * 1.2
-    const net = ttc - royalties
-    const partAgente = estChantierMarine ? 0 : net
-    const partAdmin = estChantierMarine ? net : 0
-
-    return { ht, ttc, royalties, net, partAgente, partAdmin }
   }
 
   const chargerDocuments = async () => {

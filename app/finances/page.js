@@ -1,3 +1,5 @@
+// /finances/page.js
+
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
@@ -52,6 +54,10 @@ export default function Finances() {
   const [agentes, setAgentes] = useState([])
   const [agenteSelectionnee, setAgenteSelectionnee] = useState(null)
   const [nomFranchisee, setNomFranchisee] = useState('CTP')
+  const [facturesAgente, setFacturesAgente] = useState([])
+  const [uploadingFactureAgente, setUploadingFactureAgente] = useState(null)
+  const [erreur, setErreur] = useState('')
+  const [succes, setSucces] = useState('')
   const router = useRouter()
 
   const chargerTout = async () => {
@@ -59,7 +65,7 @@ export default function Finances() {
       .from('dossiers')
       .select(`*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role),
         client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
-        devis_artisans(*, artisan:artisans(id, entreprise)),
+        devis_artisans(*, artisan:artisans(id, entreprise, sans_royalties)),
         suivi_financier(*)`)
       .order('created_at', { ascending: false })
     setDossiers(dossiersData || [])
@@ -70,6 +76,11 @@ export default function Finances() {
       .order('mois', { ascending: false })
     setRedevances(redevancesData || [])
 
+    const { data: facturesAgenteData } = await supabase
+      .from('factures_agente').select('*')
+      .order('annee', { ascending: false }).order('mois', { ascending: false })
+    setFacturesAgente(facturesAgenteData || [])
+
     const { data: agentesData } = await supabase
       .from('profiles').select('*').eq('role', 'agente').order('prenom')
     setAgentes(agentesData || [])
@@ -79,6 +90,7 @@ export default function Finances() {
     const { data: adminData } = await supabase
       .from('profiles').select('prenom, nom').eq('role', 'admin').single()
     if (adminData) setNomFranchisee(`${adminData.prenom} ${adminData.nom}`)
+
   }
 
   useEffect(() => {
@@ -270,6 +282,35 @@ export default function Finances() {
 
   const alertes48h = (date) => date && new Date() > new Date(new Date(date).getTime() + 48 * 3600000)
   const alertes7j = (date) => date && new Date() > new Date(new Date(date).getTime() + 7 * 24 * 3600000)
+
+  const getFactureAgenteMois = (mois, annee) =>
+    facturesAgente.find(f => f.mois === mois && f.annee === annee && f.agente_id === profile?.id)
+
+  const upsertFactureAgenteMois = async (mois, annee, montant, updates) => {
+    const existing = getFactureAgenteMois(mois, annee)
+    if (existing) {
+      await supabase.from('factures_agente').update(updates).eq('id', existing.id)
+    } else {
+      await supabase.from('factures_agente').insert({ agente_id: profile?.id, mois, annee, montant, ...updates })
+    }
+    const { data } = await supabase.from('factures_agente').select('*')
+      .order('annee', { ascending: false }).order('mois', { ascending: false })
+    setFacturesAgente(data || [])
+  }
+
+  const uploadFactureAgentePdf = async (mois, annee, montant, fichier) => {
+    setUploadingFactureAgente(`${annee}-${mois}`)
+    const ext = fichier.name.split('.').pop()
+    const chemin = `factures_agente/${profile?.id}/${annee}-${String(mois).padStart(2, '0')}.${ext}`
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+    if (!error) {
+      await upsertFactureAgenteMois(mois, annee, montant, { facture_path: chemin, statut: 'facture' })
+      setSucces('Facture uploadée ✓')
+    } else {
+      setErreur('Erreur upload : ' + error.message)
+    }
+    setUploadingFactureAgente(null)
+  }
 
   // Tous les dossiers agentes (pour CTP global)
   const dossiersAgentes = dossiers.filter(d => d.referente?.role === 'agente')
@@ -531,7 +572,7 @@ export default function Finances() {
                                 <select value={suiviAcompte?.statut_client || 'en_attente'} onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id, 'statut_client', e.target.value)} className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none">
                                   <option value="en_attente">Client : En attente</option>
                                   <option value="envoye">Client : Récapitulatif envoyé</option>
-                                  <option value="regle">Client : ✅ Payé illiCO France</option>
+                                  <option value="regle">Client : ✅ Payé </option>
                                 </select>
                                 {suiviAcompte?.statut_client === 'regle' && (
                                   <input type="date"
@@ -540,10 +581,12 @@ export default function Finances() {
                                     className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none"
                                     placeholder="Date de paiement" />
                                 )}
-                                <select value={suiviAcompte?.statut_illico || 'en_attente'} onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id, 'statut_illico', e.target.value)} className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none">
-                                  <option value="en_attente">illiCO France : En attente</option>
-                                  <option value="recu">illiCO France : ✅ Acompte débloqué</option>
-                                </select>
+                                {!dv.artisan?.sans_royalties && (
+                                  <select value={suiviAcompte?.statut_illico || 'en_attente'} onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id, 'statut_illico', e.target.value)} className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none">
+                                    <option value="en_attente">illiCO France : En attente</option>
+                                    <option value="recu">illiCO France : ✅ Acompte débloqué</option>
+                                  </select>
+                                )}
                                 {isMarine && (
                                   <select value={suiviAcompte?.statut_ctp || 'en_attente'} onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id, 'statut_ctp', e.target.value)} className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none">
                                     <option value="en_attente">CTP : En attente commission</option>
@@ -662,24 +705,59 @@ export default function Finances() {
     const getVals = (c) => isMarine
       ? { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurTTC, total: c.netAdminPrevi }
       : { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurPartAgente, total: c.gainsAgentePrevi }
+
     return (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>{thL('Mois')}{thR('Frais consul. TTC')}{thR('Commission TTC')}{thR('Honoraire TTC')}{thR('Somme royalties')}{thR('Apporteur')}{thR('Total')}</tr>
+            <tr>
+              {thL('Mois / Chantier')}
+              {thR('Frais consul. TTC')}
+              {thR('Commission TTC')}
+              {thR('Honoraire TTC')}
+              {thR('Somme royalties')}
+              {thR('Apporteur')}
+              {thR('Total')}
+            </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.map(([key, c]) => {
               const [annee, mois] = key.split('-')
               const v = getVals(c)
+              const dossiersduMois = listeDossiers.filter(d => getKeyMois(d) === key)
               return (
-                <tr key={key} className="hover:bg-gray-50">
-                  <td className="px-3 py-3 font-medium">{MOIS[parseInt(mois)]} {annee}</td>
-                  {tdR(fmt(v.frais))}{tdR(fmt(v.commission))}{tdR(fmt(v.honoraire))}
-                  <td className="px-3 py-3 text-right text-red-400">- {(v.royalties || 0).toFixed(2)} €</td>
-                  <td className="px-3 py-3 text-right text-orange-500">{v.apporteur > 0 ? `- ${v.apporteur.toFixed(2)} €` : '—'}</td>
-                  {tdTotal(v.total)}
-                </tr>
+                <>
+                  {/* Ligne mois */}
+                  <tr key={key} className="bg-blue-50">
+                    <td className="px-3 py-2 font-bold text-blue-900">{MOIS[parseInt(mois)]} {annee}</td>
+                    {tdR(fmt(v.frais))}
+                    {tdR(fmt(v.commission))}
+                    {tdR(fmt(v.honoraire))}
+                    <td className="px-3 py-2 text-right text-red-400">- {(v.royalties || 0).toFixed(2)} €</td>
+                    <td className="px-3 py-2 text-right text-orange-500">{v.apporteur > 0 ? `- ${v.apporteur.toFixed(2)} €` : '—'}</td>
+                    {tdTotal(v.total)}
+                  </tr>
+                  {/* Lignes chantiers */}
+                  {dossiersduMois.map(d => {
+                    const c2 = calculer(d)
+                    const v2 = getVals(c2)
+                    return (
+                      <tr key={d.id} className="hover:bg-gray-50 border-t border-gray-100">
+                        <td className="px-3 py-2 pl-8">
+                          <span className="text-xs text-gray-400 mr-2">↳</span>
+                          <span className="font-medium text-blue-800 text-xs">{d.reference}</span>
+                          <span className="text-xs text-gray-400 ml-2">{d.client?.prenom} {d.client?.nom}</span>
+                        </td>
+                        {tdR(<span className="text-xs">{fmt(v2.frais)}</span>)}
+                        {tdR(<span className="text-xs">{fmt(v2.commission)}</span>)}
+                        {tdR(<span className="text-xs">{fmt(v2.honoraire)}</span>)}
+                        <td className="px-3 py-2 text-right text-red-400 text-xs">{v2.royalties > 0 ? `- ${v2.royalties.toFixed(2)} €` : '—'}</td>
+                        <td className="px-3 py-2 text-right text-orange-500 text-xs">{v2.apporteur > 0 ? `- ${v2.apporteur.toFixed(2)} €` : '—'}</td>
+                        <td className={`px-3 py-2 text-right text-xs font-medium ${v2.total >= 0 ? 'text-green-700' : 'text-red-600'}`}>{v2.total.toFixed(2)} €</td>
+                      </tr>
+                    )
+                  })}
+                </>
               )
             })}
             {rows.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400 text-sm">Aucune donnée</td></tr>}
@@ -705,23 +783,61 @@ export default function Finances() {
     const getVals = (c) => isMarine
       ? { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurTTC, total: c.netAdminPrevi }
       : { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurPartAgente, total: c.gainsAgentePrevi }
+
     return (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>{thL('Année')}{thR('Frais consul. TTC')}{thR('Commission TTC')}{thR('Honoraire TTC')}{thR('Somme royalties')}{thR('Apporteur')}{thR('Total')}</tr>
+            <tr>
+              {thL('Année / Chantier')}
+              {thR('Frais consul. TTC')}
+              {thR('Commission TTC')}
+              {thR('Honoraire TTC')}
+              {thR('Somme royalties')}
+              {thR('Apporteur')}
+              {thR('Total')}
+            </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.map(([annee, c]) => {
               const v = getVals(c)
+              const dossiersAnnee = listeDossiers.filter(d => {
+                if (!d.date_signature_contrat) return false
+                return String(new Date(d.date_signature_contrat).getFullYear()) === String(annee)
+              })
               return (
-                <tr key={annee} className="hover:bg-gray-50">
-                  <td className="px-3 py-3 font-bold text-gray-800">{annee}</td>
-                  {tdR(fmt(v.frais))}{tdR(fmt(v.commission))}{tdR(fmt(v.honoraire))}
-                  <td className="px-3 py-3 text-right text-red-400">- {(v.royalties || 0).toFixed(2)} €</td>
-                  <td className="px-3 py-3 text-right text-orange-500">{v.apporteur > 0 ? `- ${v.apporteur.toFixed(2)} €` : '—'}</td>
-                  {tdTotal(v.total)}
-                </tr>
+                <>
+                  {/* Ligne année */}
+                  <tr key={annee} className="bg-blue-50">
+                    <td className="px-3 py-2 font-bold text-blue-900">{annee}</td>
+                    {tdR(fmt(v.frais))}
+                    {tdR(fmt(v.commission))}
+                    {tdR(fmt(v.honoraire))}
+                    <td className="px-3 py-2 text-right text-red-400">- {(v.royalties || 0).toFixed(2)} €</td>
+                    <td className="px-3 py-2 text-right text-orange-500">{v.apporteur > 0 ? `- ${v.apporteur.toFixed(2)} €` : '—'}</td>
+                    {tdTotal(v.total)}
+                  </tr>
+                  {/* Lignes chantiers */}
+                  {dossiersAnnee.map(d => {
+                    const c2 = calculer(d)
+                    const v2 = getVals(c2)
+                    return (
+                      <tr key={d.id} className="hover:bg-gray-50 border-t border-gray-100">
+                        <td className="px-3 py-2 pl-8">
+                          <span className="text-xs text-gray-400 mr-2">↳</span>
+                          <span className="font-medium text-blue-800 text-xs">{d.reference}</span>
+                          <span className="text-xs text-gray-400 ml-2">{d.client?.prenom} {d.client?.nom}</span>
+                        </td>
+                        {tdR(<span className="text-xs">{fmt(v2.frais)}</span>)}
+                        {tdR(<span className="text-xs">{fmt(v2.commission)}</span>)}
+                        {tdR(<span className="text-xs">{fmt(v2.honoraire)}</span>)}
+                        <td className="px-3 py-2 text-right text-red-400 text-xs">{v2.royalties > 0 ? `- ${v2.royalties.toFixed(2)} €` : '—'}</td>
+                        <td className="px-3 py-2 text-right text-orange-500 text-xs">{v2.apporteur > 0 ? `- ${v2.apporteur.toFixed(2)} €` : '—'}</td>
+                        <td className={`px-3 py-2 text-right text-xs font-medium ${v2.total >= 0 ? 'text-green-700' : 'text-red-600'}`}>{v2.total.toFixed(2)} €</td>
+                      </tr>
+                    )
+                  })}
+                </>
               )
             })}
             {rows.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400 text-sm">Aucune donnée</td></tr>}
@@ -818,6 +934,7 @@ export default function Finances() {
         <div className="flex justify-between text-sm"><span className="text-gray-600">Commissions artisans (net)</span><span className="font-medium text-green-700">+ {totalCommissionsCTP.toFixed(2)} €</span></div>
         <div className="flex justify-between text-sm"><span className="text-gray-600">Honoraires client</span><span className="font-medium text-green-700">+ {totalHonorairesCTP.toFixed(2)} €</span></div>
         <div className="flex justify-between text-sm"><span className="text-gray-600">Frais de consultation</span><span className="font-medium text-green-700">+ {totalFraisCTP.toFixed(2)} €</span></div>
+
         <div className="flex justify-between text-sm"><span className="text-gray-600">Redevances agentes reçues</span><span className="font-medium text-green-700">+ {totalRedevancesReglees.toFixed(2)} €</span></div>
         <div className="flex justify-between text-sm border-t border-green-200 pt-2 font-bold"><span>Total</span><span className="text-green-700">+ {encCTP.toFixed(2)} €</span></div>
       </div>
@@ -1157,15 +1274,15 @@ export default function Finances() {
       </div>
       <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
         <p className="font-medium text-red-800 mb-3">📤 Mes décaissements</p>
-        <div className="flex justify-between text-sm"><span className="text-gray-600">Redevance CTP</span><span className="font-medium text-red-500">- {mesRedevancesReglees.toFixed(2)} €</span></div>
         <div className="flex justify-between text-sm"><span className="text-gray-600">Part apporteur à rembourser</span><span className="font-medium text-red-500">- {mesApporteurDu.toFixed(2)} €</span></div>
-        <div className="flex justify-between text-sm border-t border-red-200 pt-2 font-bold"><span>Total</span><span className="text-red-500">- {(mesRedevancesReglees + mesApporteurDu).toFixed(2)} €</span></div>
+        <div className="flex justify-between text-sm border-t border-red-200 pt-2 font-bold"><span>Total</span><span className="text-red-500">- {mesApporteurDu.toFixed(2)} €</span></div>
       </div>
-      <div className={`col-span-2 border rounded-xl p-4 ${monNet >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'}`}>
+      <div className="col-span-2 bg-blue-50 border border-blue-200 rounded-xl p-4">
         <div className="flex justify-between items-center">
-          <span className="font-bold text-blue-900">Mon net</span>
-          <span className={`font-bold text-2xl ${monNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>{monNet.toFixed(2)} €</span>
+          <span className="font-bold text-blue-900">Gains nets prévisionnels (hors redevances)</span>
+          <span className="font-bold text-2xl text-green-700">{(mesDossiersGainsPrevi - mesApporteurDu).toFixed(2)} €</span>
         </div>
+        <p className="text-xs text-gray-400 mt-1">Les redevances sont visibles dans les onglets "Par mois" et "Par année"</p>
       </div>
     </div>
   )
@@ -1175,7 +1292,7 @@ export default function Finances() {
       <div className="p-4 border-b border-gray-100"><p className="font-medium text-gray-800">Détail par chantier — Ma part</p></div>
       <table className="w-full text-sm">
         <thead className="bg-gray-50 border-b border-gray-200">
-          <tr>{thL('Chantier')}{thR('Frais consul. (ma part)')}{thR('Commissions (ma part)')}{thR('Honoraires (ma part)')}{thR('Apporteur')}{thR('Ma part')}</tr>
+          <tr>{thL('Chantier')}{thR('Frais consul.')}{thR('Commissions')}{thR('Honoraires')}{thR('Apporteur')}{thR('Ma part')}</tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {mesDossiers.map(d => {
@@ -1216,7 +1333,7 @@ export default function Finances() {
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>{thL('Mois')}{thR('Frais consul. (ma part)')}{thR('Commissions (ma part)')}{thR('Honoraires (ma part)')}{thR('Apporteur')}{thR('Redevance CTP')}{thR('Total')}</tr>
+            <tr>{thL('Mois')}{thR('Frais consul. ')}{thR('Commissions ')}{thR('Honoraires ')}{thR('Apporteur')}{thR('Redevance CTP')}{thR('Total')}</tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {cles.map(key => {
@@ -1248,7 +1365,7 @@ export default function Finances() {
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>{thL('Année')}{thR('Frais consul. (ma part)')}{thR('Commissions (ma part)')}{thR('Honoraires (ma part)')}{thR('Apporteur')}{thR('Redevance CTP')}{thR('Total')}</tr>
+            <tr>{thL('Année')}{thR('Frais consul. ')}{thR('Commissions ')}{thR('Honoraires ')}{thR('Apporteur')}{thR('Redevance CTP')}{thR('Total')}</tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {annees.map(annee => {
@@ -1295,7 +1412,7 @@ export default function Finances() {
 
         if (getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle' && c.partAgenteCourtage > 0) {
           items.push({
-            label: 'Honoraires courtage (ma part)',
+            label: 'Honoraires courtage ',
             montant: c.partAgenteCourtage,
             type: 'honoraire',
           })
@@ -1303,7 +1420,7 @@ export default function Finances() {
 
         if (d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle' && c.partAgenteAMO > 0) {
           items.push({
-            label: 'Honoraires AMO solde (ma part)',
+            label: 'Honoraires AMO solde ',
             montant: c.partAgenteAMO,
             type: 'honoraire',
           })
@@ -1356,6 +1473,108 @@ export default function Finances() {
     </div>
   )
 
+  const renderFacturationMoisSuivi = () => {
+    const rows = agrégerMois(mesDossiers)
+    if (rows.length === 0) return <p className="text-center text-gray-400 text-sm py-8">Aucune donnée</p>
+    return (
+      <div className="space-y-4">
+        {succes && <p className="text-green-600 text-sm bg-green-50 border border-green-200 rounded-lg px-4 py-2">{succes}</p>}
+        {erreur && <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-2">{erreur}</p>}
+        {rows.map(([key, c]) => {
+          const [anneeStr, moisStr] = key.split('-')
+          const annee = parseInt(anneeStr)
+          const mois = parseInt(moisStr)
+          const label = `${MOIS[mois]} ${annee}`
+          const totalAFacturer = round2(c.fraisPartAgente + (c.partAgente - c.apporteurPartAgente) + c.partAgenteHonoraires)
+          const facture = getFactureAgenteMois(mois, annee)
+          const statut = facture?.statut || 'a_facturer'
+          const cleUpload = `${annee}-${mois}`
+          const items = []
+          if (c.fraisPartAgente > 0) items.push({ label: 'Frais de consultation ', montant: c.fraisPartAgente, color: 'text-purple-700' })
+          if ((c.partAgente - c.apporteurPartAgente) > 0) items.push({ label: 'Commissions artisans ', montant: c.partAgente - c.apporteurPartAgente, color: 'text-blue-700' })
+          if (c.partAgenteHonoraires > 0) items.push({ label: 'Honoraires ', montant: c.partAgenteHonoraires, color: 'text-green-700' })
+          return (
+            <div key={key} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-100">
+                <span className="font-semibold text-gray-800">{label}</span>
+                <span className="font-bold text-blue-700">{totalAFacturer.toFixed(2)} €</span>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="space-y-1">
+                  {items.map((item, i) => (
+                    <div key={i} className="flex justify-between text-sm">
+                      <span className="text-gray-600">{item.label}</span>
+                      <span className={`font-medium ${item.color}`}>{item.montant.toFixed(2)} €</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center gap-3 pt-2 border-t border-gray-100 flex-wrap">
+                  <select value={statut}
+                    onChange={e => upsertFactureAgenteMois(mois, annee, totalAFacturer, { statut: e.target.value })}
+                    className={`border rounded px-2 py-1 text-xs focus:outline-none ${
+                      statut === 'paye' ? 'border-green-300 bg-green-50 text-green-700' :
+                      statut === 'facture' ? 'border-blue-300 bg-blue-50 text-blue-700' :
+                      'border-gray-200 text-gray-600'
+                    }`}>
+                    <option value="a_facturer">📋 À facturer</option>
+                    <option value="facture">📤 Facturé</option>
+                    <option value="paye">✅ Payé</option>
+                  </select>
+                  {facture?.facture_path ? (
+                    <div className="flex items-center gap-2">
+                      <button onClick={async () => {
+                        const { data } = await supabase.storage.from('documents').createSignedUrl(facture.facture_path, 3600)
+                        if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+                      }} className="text-xs text-blue-600 hover:underline">📄 Voir facture</button>
+                      <label className="text-xs text-gray-400 cursor-pointer hover:text-blue-600">
+                        Remplacer
+                        <input type="file" accept=".pdf" className="hidden"
+                          onChange={e => e.target.files[0] && uploadFactureAgentePdf(mois, annee, totalAFacturer, e.target.files[0])} />
+                      </label>
+                    </div>
+                  ) : (
+                    <label className={`text-xs cursor-pointer px-2 py-1 rounded border transition-all ${
+                      uploadingFactureAgente === cleUpload ? 'text-gray-400 border-gray-200' : 'text-blue-600 border-blue-200 hover:bg-blue-50'
+                    }`}>
+                      {uploadingFactureAgente === cleUpload ? 'Upload...' : '+ Uploader ma facture'}
+                      <input type="file" accept=".pdf" className="hidden"
+                        disabled={uploadingFactureAgente === cleUpload}
+                        onChange={e => e.target.files[0] && uploadFactureAgentePdf(mois, annee, totalAFacturer, e.target.files[0])} />
+                    </label>
+                  )}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-1 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-600">Total à facturer</span>
+            <span className="font-medium">{rows.reduce((s, [, c]) => s + c.fraisPartAgente + (c.partAgente - c.apporteurPartAgente) + c.partAgenteHonoraires, 0).toFixed(2)} €</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-green-600">Dont payé</span>
+            <span className="font-medium text-green-700">
+              {rows.filter(([key]) => {
+                const [a, m] = key.split('-').map(Number)
+                return getFactureAgenteMois(m, a)?.statut === 'paye'
+              }).reduce((s, [, c]) => s + c.fraisPartAgente + (c.partAgente - c.apporteurPartAgente) + c.partAgenteHonoraires, 0).toFixed(2)} €
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-amber-600">Dont facturé (en attente paiement)</span>
+            <span className="font-medium text-amber-700">
+              {rows.filter(([key]) => {
+                const [a, m] = key.split('-').map(Number)
+                return getFactureAgenteMois(m, a)?.statut === 'facture'
+              }).reduce((s, [, c]) => s + c.fraisPartAgente + (c.partAgente - c.apporteurPartAgente) + c.partAgenteHonoraires, 0).toFixed(2)} €
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const renderFacturationMoiTableau = (rows, colLabel) => (
     <div className="space-y-4">
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -1389,10 +1608,34 @@ export default function Finances() {
           </tfoot>
         </table>
       </div>
-      <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-sm">
-        <p className="font-medium text-purple-800 mb-2">💳 À payer à {nomFranchisee}</p>
-        <div className="flex justify-between"><span className="text-gray-600">Redevances + apporteurs</span><span className="font-bold text-purple-700">{(mesRedevancesReglees + mesApporteurDu).toFixed(2)} €</span></div>
-      </div>
+      {(() => {
+        const now = new Date()
+        const moisDu = now.getMonth() === 0 ? 12 : now.getMonth()
+        const anneeDu = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()
+        const redevDuMois = mesRedevances.find(r => r.mois === moisDu && r.annee === anneeDu)
+        const redevMontant = (!redevDuMois || redevDuMois.statut !== 'regle') ? 540 : 0
+        return (
+          <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-sm">
+            <p className="font-medium text-purple-800 mb-2">💳 À payer à {nomFranchisee}</p>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Redevance {MOIS[moisDu]} {anneeDu}</span>
+              <span className={`font-medium ${redevMontant > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                {redevMontant > 0 ? `${redevMontant.toFixed(2)} €` : '✅ Réglée'}
+              </span>
+            </div>
+            {mesApporteurDu > 0 && (
+              <div className="flex justify-between mt-1">
+                <span className="text-gray-600">Apporteur</span>
+                <span className="font-medium text-orange-600">- {mesApporteurDu.toFixed(2)} €</span>
+              </div>
+            )}
+            <div className="flex justify-between font-bold border-t border-purple-200 pt-2 mt-2">
+              <span className="text-purple-800">Total</span>
+              <span className="text-purple-700">{(redevMontant + mesApporteurDu).toFixed(2)} €</span>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 
@@ -1752,7 +1995,7 @@ export default function Finances() {
           <div className="space-y-4">
             {renderSousOnglets()}
             {sousOnglet === 'chantier' && renderFacturationMoi()}
-            {sousOnglet === 'mois' && renderFacturationMoiTableau(agrégerMois(mesDossiers), 'Mois')}
+            {sousOnglet === 'mois' && renderFacturationMoisSuivi()}
             {sousOnglet === 'annee' && renderFacturationMoiTableau(agrégerAnnee(mesDossiers), 'Année')}
           </div>
         )}
