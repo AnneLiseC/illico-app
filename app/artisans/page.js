@@ -1,3 +1,4 @@
+// /artisans/page.js : 
 'use client'
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
@@ -8,6 +9,10 @@ export default function Artisans() {
   const [loading, setLoading] = useState(true)
   const [recherche, setRecherche] = useState('')
   const [filtreMetier, setFiltreMetier] = useState('tous')
+  const [modeSelection, setModeSelection] = useState(false)
+  const [selectionnes, setSelectionnes] = useState([])
+  const [supprimant, setSupprimant] = useState(false)
+
   const router = useRouter()
 
   useEffect(() => {
@@ -34,6 +39,37 @@ export default function Artisans() {
     return matchRecherche && matchMetier
   })
 
+  const supprimerSelectionnes = async () => {
+    if (!selectionnes.length) return
+    if (!confirm(`Supprimer ${selectionnes.length} artisan(s) ? Cette action est irréversible.`)) return
+    setSupprimant(true)
+    
+    const erreurs = []
+    for (const artisanId of selectionnes) {
+      const artisan = artisans.find(a => a.id === artisanId)
+      // Supprimer les fichiers Storage
+      const fichiers = [artisan?.kbis_url, artisan?.decennale_url, artisan?.qualification_url].filter(Boolean)
+      if (fichiers.length > 0) await supabase.storage.from('documents').remove(fichiers)
+      // Supprimer les fiches techniques
+      await supabase.from('fiches_techniques').delete().eq('artisan_id', artisanId)
+      // Supprimer l'artisan
+     const { error } = await supabase.from('artisans').delete().eq('id', artisanId)
+    console.log('Suppression artisan', artisanId, error)
+    if (error) erreurs.push(`${artisan?.entreprise} (${error.message})`)
+    }
+
+    // Recharger depuis Supabase (source de vérité)
+    const { data } = await supabase.from('artisans').select('*').order('entreprise')
+    setArtisans(data || [])
+    setSelectionnes([])
+    setModeSelection(false)
+    setSupprimant(false)
+
+    if (erreurs.length > 0) {
+      alert(`Impossible de supprimer : ${erreurs.join(', ')}\nCes artisans ont probablement des devis liés.`)
+    }
+  }
+  
   // Alertes décennale expirante dans moins de 30 jours
   const aujourdhui = new Date()
   const alertesDecennale = artisans.filter(a => {
@@ -59,12 +95,32 @@ export default function Artisans() {
           </button>
           <h1 className="text-lg font-bold text-blue-900">Artisans</h1>
         </div>
-        <button
-          onClick={() => router.push('/artisans/nouveau')}
-          className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900"
-        >
-          + Nouvel artisan
-        </button>
+        <div className="flex items-center gap-2">
+          {modeSelection ? (
+            <>
+              <span className="text-sm text-gray-500">{selectionnes.length} sélectionné(s)</span>
+              <button onClick={supprimerSelectionnes} disabled={supprimant || !selectionnes.length}
+                className="border border-red-200 text-red-600 px-4 py-2 rounded-lg text-sm hover:bg-red-50 disabled:opacity-50">
+                {supprimant ? 'Suppression...' : '🗑 Supprimer'}
+              </button>
+              <button onClick={() => { setModeSelection(false); setSelectionnes([]) }}
+                className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
+                Annuler
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setModeSelection(true)}
+                className="border border-red-200 text-red-600 px-4 py-2 rounded-lg text-sm hover:bg-red-50">
+                🗑 Supprimer
+              </button>
+              <button onClick={() => router.push('/artisans/nouveau')}
+                className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900">
+                + Nouvel artisan
+              </button>
+            </>
+          )}
+        </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
@@ -118,6 +174,7 @@ export default function Artisans() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  {modeSelection && <th className="px-4 py-3 w-10"></th>}
                   <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Entreprise</th>
                   <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Métier</th>
                   <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Localisation</th>
@@ -134,10 +191,26 @@ export default function Artisans() {
                   const decennaleExpiree = diff !== null && diff < 0
 
                   return (
-                    <tr key={a.id} className="hover:bg-gray-50">
+                    <tr key={a.id}
+                      className={`hover:bg-gray-50 cursor-pointer ${modeSelection && selectionnes.includes(a.id) ? 'bg-red-50' : ''}`}
+                      onClick={() => {
+                        if (modeSelection) {
+                          setSelectionnes(prev => prev.includes(a.id) ? prev.filter(id => id !== a.id) : [...prev, a.id])
+                        } else {
+                          router.push(`/artisans/${a.id}`)
+                        }
+                      }}>
+                      {modeSelection && (
+                        <td className="px-4 py-4">
+                          <input type="checkbox" checked={selectionnes.includes(a.id)} readOnly
+                            className="w-4 h-4 accent-red-600" />
+                        </td>
+                      )}
                       <td className="px-6 py-4">
                         <p className="font-medium text-gray-800 text-sm">{a.entreprise}</p>
-                        {a.nom && <p className="text-xs text-gray-400">{a.prenom} {a.nom}</p>}
+                        {a.nom && <p className="text-xs text-gray-400">
+                          {a.prenom ? a.prenom.charAt(0).toUpperCase() + a.prenom.slice(1).toLowerCase() : ''} {a.nom}
+                        </p>}
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full">
@@ -152,28 +225,22 @@ export default function Artisans() {
                       </td>
                       <td className="px-6 py-4">
                         {decennaleExpiree ? (
-                          <span className="text-xs font-medium text-red-600">
-                            ❌ Expirée
-                          </span>
+                          <span className="text-xs font-medium text-red-600">❌ Expirée</span>
                         ) : decennaleUrgent ? (
-                          <span className="text-xs font-medium text-amber-600">
-                            ⚠️ {decennaleExp.toLocaleDateString('fr-FR')}
-                          </span>
+                          <span className="text-xs font-medium text-amber-600">⚠️ {decennaleExp.toLocaleDateString('fr-FR')}</span>
                         ) : decennaleExp ? (
-                          <span className="text-xs text-green-600">
-                            ✓ {decennaleExp.toLocaleDateString('fr-FR')}
-                          </span>
+                          <span className="text-xs text-green-600">✓ {decennaleExp.toLocaleDateString('fr-FR')}</span>
                         ) : (
                           <span className="text-xs text-gray-300">—</span>
                         )}
                       </td>
                       <td className="px-6 py-4">
-                        <button
-                          onClick={() => router.push(`/artisans/${a.id}`)}
-                          className="text-blue-600 text-sm hover:underline"
-                        >
-                          Voir →
-                        </button>
+                        {!modeSelection && (
+                          <button onClick={e => { e.stopPropagation(); router.push(`/artisans/${a.id}`) }}
+                            className="text-blue-600 text-sm hover:underline">
+                            Voir →
+                          </button>
+                        )}
                       </td>
                     </tr>
                   )

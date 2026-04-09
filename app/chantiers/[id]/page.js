@@ -119,6 +119,7 @@ export default function FicheChantier({ params }) {
   const [photos, setPhotos] = useState([])
   const [categorie, setCategorie] = useState('avant')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [photosAffichees, setPhotosAffichees] = useState(3)
   const [uploadingDoc, setUploadingDoc] = useState(null) // devisId en cours d'upload
   const [comptesRendus, setComptesRendus] = useState([])
   const [messages, setMessages] = useState([])
@@ -427,20 +428,22 @@ export default function FicheChantier({ params }) {
   setDocuments(data || [])
   }
 
-  const uploadDocumentChantier = async (fichier) => {
-    if (!fichier) return
+  const uploadDocumentChantier = async (fichiers) => {
+    if (!fichiers?.length) return
     setUploadingDocChantier(true)
-    const ext = fichier.name.split('.').pop()
-    const chemin = `chantiers/${id}/documents/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-    const { error } = await supabase.storage.from('documents').upload(chemin, fichier)
-    if (!error) {
-      await supabase.from('chantier_documents').insert({
-        dossier_id: id, nom: fichier.name, path: chemin,
-        type_mime: fichier.type, taille: fichier.size, dans_restitution: false,
-      })
-      await chargerDocuments()
-      setSucces('Document ajouté ✓')
-    } else { setErreur('Erreur upload : ' + error.message) }
+    for (const fichier of fichiers) {
+      const ext = fichier.name.split('.').pop()
+      const chemin = `chantiers/${id}/documents/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+      const { error } = await supabase.storage.from('documents').upload(chemin, fichier)
+      if (!error) {
+        await supabase.from('chantier_documents').insert({
+          dossier_id: id, nom: fichier.name, path: chemin,
+          type_mime: fichier.type, taille: fichier.size, dans_restitution: false,
+        })
+      }
+    }
+    await chargerDocuments()
+    setSucces('Document(s) ajouté(s) ✓')
     setUploadingDocChantier(false)
   }
 
@@ -1892,7 +1895,7 @@ ${s.contenu}`).join('')
           <h2 className="font-semibold text-gray-800">Photos du chantier</h2>
           <div className="flex gap-2 flex-wrap">
             {['avant', 'pendant', 'apres', 'maquette'].map(cat => (
-              <button key={cat} onClick={() => setCategorie(cat)}
+              <button key={cat} onClick={() => {setCategorie(cat); setPhotosAffichees(3)}}
                 className={`text-xs px-3 py-1.5 rounded-full border transition-all ${categorie === cat ? 'bg-blue-800 text-white border-blue-800' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
                 {cat === 'avant' ? 'Avant' : cat === 'pendant' ? 'Pendant' : cat === 'apres' ? 'Après' : 'Maquette'}
                 {photos.filter(p => p.categorie === cat).length > 0 && <span className="ml-1">({photos.filter(p => p.categorie === cat).length})</span>}
@@ -1908,19 +1911,27 @@ ${s.contenu}`).join('')
           {photos.filter(p => p.categorie === categorie).length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-6">Aucune photo dans cette catégorie</p>
           ) : (
-            <div className="grid grid-cols-3 gap-3">
-              {photos.filter(p => p.categorie === categorie).map((photo, index) => (
-                <div key={photo.id} className="relative group rounded-lg border border-gray-100 cursor-pointer bg-gray-100" onClick={() => setPhotoOuverte(index)}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photo.url_signee} alt="" onError={e => e.target.style.border = '2px solid red'}
-                    style={{ width: '100%', height: '128px', objectFit: 'cover', display: 'block', borderRadius: '8px' }} />
-                  <div className="absolute inset-0 flex items-end justify-end p-1 opacity-0 group-hover:opacity-100">
-                    <button onClick={e => { e.stopPropagation(); supprimerPhoto(photo.id, photo.url) }}
-                      className="bg-red-500 text-white text-xs px-2 py-1 rounded">Supprimer</button>
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                {photos.filter(p => p.categorie === categorie).slice(0, photosAffichees).map((photo, index) => (
+                  <div key={photo.id} className="relative group rounded-lg border border-gray-100 cursor-pointer bg-gray-100" onClick={() => setPhotoOuverte(index)}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={photo.url_signee} alt="" onError={e => e.target.style.border = '2px solid red'}
+                      style={{ width: '100%', height: '128px', objectFit: 'cover', display: 'block', borderRadius: '8px' }} />
+                    <div className="absolute inset-0 flex items-end justify-end p-1 opacity-0 group-hover:opacity-100">
+                      <button onClick={e => { e.stopPropagation(); supprimerPhoto(photo.id, photo.url) }}
+                        className="bg-red-500 text-white text-xs px-2 py-1 rounded">Supprimer</button>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              {photos.filter(p => p.categorie === categorie).length > photosAffichees && (
+                <button onClick={() => setPhotosAffichees(n => n + 9)}
+                  className="w-full text-sm text-blue-600 border border-blue-200 rounded-lg py-2 hover:bg-blue-50 mt-2">
+                  Voir plus ({photos.filter(p => p.categorie === categorie).length - photosAffichees} restantes)
+                </button>
+              )}
+            </>
           )}
           {photoOuverte !== null && (
             <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center" onClick={() => setPhotoOuverte(null)}>
@@ -1947,7 +1958,7 @@ ${s.contenu}`).join('')
             <label className={`cursor-pointer text-sm px-3 py-1.5 rounded-lg border transition-all ${uploadingDocChantier ? 'text-gray-400 border-gray-200' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}`}>
               {uploadingDocChantier ? 'Upload...' : '+ Ajouter un document'}
               <input type="file" className="hidden" disabled={uploadingDocChantier}
-                onChange={e => e.target.files[0] && uploadDocumentChantier(e.target.files[0])} />
+                onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files))} />
             </label>
           </div>
           {documents.length === 0 ? (
