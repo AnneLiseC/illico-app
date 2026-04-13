@@ -631,7 +631,7 @@ export default function Finances() {
             d.contrat_signe && d.date_signature_contrat && d.frais_statut !== 'regle' && alertes48h(d.date_signature_contrat),
             ...c.devisAcceptes.map(dv =>
               dv.date_signature && alertes7j(dv.date_signature) &&
-              getSuivi(d, 'acompte_artisan', dv.artisan_id)?.statut_client !== 'regle'
+              getSuivi(d, 'acompte_artisan', dv.artisan_id || dv.artisan?.id)?.statut_client !== 'regle'
             ),
             d.date_fin_chantier && d.typologie === 'amo' &&
               alertes48h(d.date_fin_chantier) &&
@@ -758,7 +758,7 @@ export default function Finances() {
                     <div className="space-y-2">
                       <p className="text-xs font-medium text-gray-500 uppercase">Acomptes & Factures par artisan</p>
                       {c.devisActifs.map(dv => {
-                        const suiviAcompte = getSuivi(d, 'acompte_artisan', dv.artisan_id)
+                        const suiviAcompte = getSuivi(d, 'acompte_artisan', dv.artisan_id || dv.artisan?.id)
                         const estSigne = dv.statut === 'accepte'
                         const montantAcompteCalc = dv.acompte_pourcentage === -1
                           ? (dv.acompte_montant_fixe || 0)
@@ -830,7 +830,7 @@ export default function Finances() {
                                         )}
                                         <select
                                           value={suiviAcompte?.statut_client || 'en_attente'}
-                                          onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id, 'statut_client', e.target.value)}
+                                          onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id || dv.artisan?.id, 'statut_client', e.target.value)}
                                           className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
                                         >
                                           <option value="en_attente">Client : En attente</option>
@@ -840,13 +840,13 @@ export default function Finances() {
                                         {suiviAcompte?.statut_client === 'regle' && (
                                           <input type="date"
                                             value={suiviAcompte?.date_paiement || ''}
-                                            onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id, 'date_paiement', e.target.value)}
+                                            onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id || dv.artisan?.id, 'date_paiement', e.target.value)}
                                             className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white" />
                                         )}
                                         {!dv.artisan?.sans_royalties && (
                                           <select
                                             value={suiviAcompte?.statut_illico || 'en_attente'}
-                                            onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id, 'statut_illico', e.target.value)}
+                                            onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id || dv.artisan?.id, 'statut_illico', e.target.value)}
                                             className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
                                           >
                                             <option value="en_attente">illiCO France : En attente</option>
@@ -856,7 +856,7 @@ export default function Finances() {
                                         {isMarine && (
                                           <select
                                             value={suiviAcompte?.statut_ctp || 'en_attente'}
-                                            onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id, 'statut_ctp', e.target.value)}
+                                            onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id || dv.artisan?.id, 'statut_ctp', e.target.value)}
                                             className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
                                           >
                                             <option value="en_attente">CTP : En attente commission</option>
@@ -868,7 +868,7 @@ export default function Finances() {
 
                                     {/* Facture finale AMO */}
                                     {d.typologie === 'amo' && (() => {
-                                      const suiviFact = getSuivi(d, 'facture_finale', dv.artisan_id)
+                                      const suiviFact = getSuivi(d, 'facture_finale', dv.artisan_id || dv.artisan?.id)
                                       return (
                                         <div className="space-y-1 border-t border-green-200 pt-1">
                                           <div className="flex justify-between">
@@ -881,7 +881,7 @@ export default function Finances() {
                                             )}
                                             <select
                                               value={suiviFact?.statut_client || 'en_attente'}
-                                              onChange={e => majSuivi(d.id, 'facture_finale', dv.artisan_id, 'statut_client', e.target.value)}
+                                              onChange={e => majSuivi(d.id, 'facture_finale', dv.artisan_id || dv.artisan?.id, 'statut_client', e.target.value)}
                                               className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
                                             >
                                               <option value="en_attente">Client : En attente</option>
@@ -891,7 +891,7 @@ export default function Finances() {
                                             {suiviFact?.statut_client === 'regle' && (
                                               <input type="date"
                                                 value={suiviFact?.date_paiement || ''}
-                                                onChange={e => majSuivi(d.id, 'facture_finale', dv.artisan_id, 'date_paiement', e.target.value)}
+                                                onChange={e => majSuivi(d.id, 'facture_finale', dv.artisan_id || dv.artisan?.id, 'date_paiement', e.target.value)}
                                                 className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white" />
                                             )}
                                           </div>

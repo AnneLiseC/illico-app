@@ -316,9 +316,14 @@ export function calculateApporteurFinance(dossier) {
   let baseHT = 0
   let lines = []
 
+  // Exclure les devis signés à commission 0% de la base apporteur
+  const devisAvecCommission = signedDevis.filter(
+    (devis) => toNumber(devis.commission_pourcentage) > 0
+  )
+
   if (mode === 'total_chantier_ht') {
     baseHT = round2(
-      signedDevis.reduce((sum, devis) => sum + toNumber(devis.montant_ht), 0)
+      devisAvecCommission.reduce((sum, devis) => sum + toNumber(devis.montant_ht), 0)
     )
 
     const totalTTC = round2(baseHT * tauxApporteur * TVA)
@@ -335,8 +340,8 @@ export function calculateApporteurFinance(dossier) {
         admin: split.admin,
       },
     ]
-  } else {
-    lines = signedDevis.map((devis) => {
+   } else {
+    lines = devisAvecCommission.map((devis) => {
       const devisHT = round2(toNumber(devis.montant_ht))
       const totalTTC = round2(devisHT * tauxApporteur * TVA)
       const split = splitAmount(totalTTC, partAgente)
