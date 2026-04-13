@@ -126,7 +126,7 @@ export default function FicheChantier({ params }) {
   const [messages, setMessages] = useState([])
   const [factures, setFactures] = useState([])
   const [ajouterFacture, setAjouterFacture] = useState(null) // devisId en cours
-  const [nouvelleFacture, setNouvelleFacture] = useState({ montant_ttc: '', date_paiement: '', statut: 'en_attente' })
+  const [nouvelleFacture, setNouvelleFacture] = useState({ montant_ttc: '', date_paiement: '', statut: 'en_attente', fichier: null })
   const [uploadingFacturePdf, setUploadingFacturePdf] = useState(null)
 
   // CR avec IA
@@ -436,15 +436,31 @@ export default function FicheChantier({ params }) {
 
   const ajouterFactureArtisan = async (devisId, artisanId) => {
     if (!nouvelleFacture.montant_ttc) return
-    await supabase.from('factures_artisans').insert({
+    const { data: factureInseree } = await supabase.from('factures_artisans').insert({
       devis_id: devisId, dossier_id: id, artisan_id: artisanId,
       montant_ttc: parseFloat(nouvelleFacture.montant_ttc),
       date_paiement: nouvelleFacture.date_paiement || null,
       statut: nouvelleFacture.statut,
-    })
+    }).select().single()
+
+    if (factureInseree) {
+$      // E4 — upload PDF si fourni à la création
+      if (nouvelleFacture.fichier) {
+        const ext = nouvelleFacture.fichier.name.split('.').pop()
+        const chemin = `chantiers/${id}/factures/${factureInseree.id}.${ext}`
+        const { error: uploadErr } = await supabase.storage.from('documents').upload(chemin, nouvelleFacture.fichier)
+        if (!uploadErr) await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureInseree.id)
+      }
+      // E5 — synchro suivi_financier si payé à la création
+      if (nouvelleFacture.statut === 'paye') {
+        await majSuiviAvecArtisan('facture_finale', artisanId, 'statut_client', 'regle')
+        if (nouvelleFacture.date_paiement) await majSuiviAvecArtisan('facture_finale', artisanId, 'date_paiement', nouvelleFacture.date_paiement)
+      }
+    }
+
     await chargerFactures()
     setAjouterFacture(null)
-    setNouvelleFacture({ montant_ttc: '', date_paiement: '', statut: 'en_attente' })
+    setNouvelleFacture({ montant_ttc: '', date_paiement: '', statut: 'en_attente', fichier: null })
     setSucces('Facture ajoutée ✓')
   }
 
@@ -459,6 +475,12 @@ export default function FicheChantier({ params }) {
     const newStatut = statut === 'paye' ? 'en_attente' : 'paye'
     await supabase.from('factures_artisans').update({ statut: newStatut }).eq('id', factureId)
     setFactures(prev => prev.map(f => f.id === factureId ? { ...f, statut: newStatut } : f))
+    // E5 — synchro suivi_financier
+    const facture = factures.find(f => f.id === factureId)
+    if (facture?.artisan_id) {
+      const statutSuivi = newStatut === 'paye' ? 'regle' : 'en_attente'
+      await majSuiviAvecArtisan('facture_finale', facture.artisan_id, 'statut_client', statutSuivi)
+    }
   }
 
   const uploadFacturePdf = async (factureId, fichier) => {
@@ -792,6 +814,19 @@ ${s.contenu}`).join('')
   const suiviAcompteAMO = suiviFinancier.find(s => s.type_echeance === 'acompte_amo')
   const suiviSoldeAMO = suiviFinancier.find(s => s.type_echeance === 'solde_amo')
 
+  const majSuiviAvecArtisan = async (type, artisanId, champ, valeur) => {
+    const { data: existing } = await supabase
+      .from('suivi_financier').select('id')
+      .eq('dossier_id', id).eq('type_echeance', type).eq('artisan_id', artisanId)
+      .maybeSingle()
+    if (existing) {
+      await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
+    } else {
+      await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: type, artisan_id: artisanId, [champ]: valeur })
+    }
+    const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(data || [])
+  }
   const majSuiviChantier = async (type, montant, champ, valeur) => {
     const upsertOne = async (t, m) => {
       // Interroger la BDD directement (pas le state) pour éviter les problèmes de double appel
@@ -1301,6 +1336,23 @@ ${s.contenu}`).join('')
                           <span className="font-medium text-green-700">{new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
                         </div>
                       )}
+                      {d.statut === 'accepte' && (() => {
+                        const suiviAcompte = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && (s.artisan_id === d.artisan_id || s.artisan_id === d.artisan?.id))
+                        const acomptePaye = suiviAcompte?.statut_client === 'regle'
+                        return (
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-400">Acompte client</span>
+                            <button onClick={async () => {
+                              const artId = d.artisan_id || d.artisan?.id
+                              const newStatut = acomptePaye ? 'en_attente' : 'regle'
+                              await majSuiviAvecArtisan('acompte_artisan', artId, 'statut_client', newStatut)
+                            }}
+                              className={`text-xs px-2 py-0.5 rounded-full font-medium ${acomptePaye ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {acomptePaye ? '✅ Payé' : '⏳ En attente'}
+                            </button>
+                          </div>
+                        )
+                      })()}
                     </div>
 
                     {devisEnEdition === d.id && (
@@ -1432,6 +1484,11 @@ ${s.contenu}`).join('')
                               <option value="en_attente">⏳ En attente</option>
                               <option value="paye">✅ Payé</option>
                             </select>
+                            <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-600 border border-gray-300 rounded px-2 py-1 hover:bg-gray-50 w-fit">
+                              {nouvelleFacture.fichier ? `✓ ${nouvelleFacture.fichier.name}` : '+ PDF facture (optionnel)'}
+                              <input type="file" accept=".pdf" className="hidden"
+                                onChange={e => setNouvelleFacture(f => ({ ...f, fichier: e.target.files[0] || null }))} />
+                            </label>
                             <div className="flex gap-2">
                               <button onClick={() => setAjouterFacture(null)} className="flex-1 border border-gray-300 text-gray-600 py-1 rounded text-xs hover:bg-gray-50">Annuler</button>
                               <button onClick={() => ajouterFactureArtisan(d.id, d.artisan_id)}
