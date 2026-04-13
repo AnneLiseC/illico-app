@@ -316,14 +316,15 @@ export default function Finances() {
     const existing = getSuivi(dossier, type, artisanId)
 
     if (existing) {
-      await supabase
-        .from('suivi_financier')
-        .update({ [champ]: valeur })
-        .eq('id', existing.id)
+      await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
     } else {
-      await supabase
-        .from('suivi_financier')
-        .insert({ dossier_id: dossierId, type_echeance: type, artisan_id: artisanId || null, [champ]: valeur })
+      await supabase.from('suivi_financier').insert({ dossier_id: dossierId, type_echeance: type, artisan_id: artisanId || null, [champ]: valeur })
+    }
+
+    // E5 — synchro inverse : facture_finale statut_client → factures_artisans.statut
+    if (type === 'facture_finale' && champ === 'statut_client' && artisanId) {
+      const statutFacture = valeur === 'regle' ? 'paye' : 'en_attente'
+      await supabase.from('factures_artisans').update({ statut: statutFacture }).eq('dossier_id', dossierId).eq('artisan_id', artisanId)
     }
 
     await chargerTout()

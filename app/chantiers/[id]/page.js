@@ -43,6 +43,7 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
     montant_ht: devis.montant_ht || '',
     montant_ttc: devis.montant_ttc || '',
     commission_pourcentage: devis.commission_pourcentage ? (devis.commission_pourcentage * 100).toFixed(1) : '',
+    sans_commission: devis.commission_pourcentage === 0,
     part_agente: isMarine ? '0' : (devis.part_agente || '0.5'),
     date_reception: devis.date_reception || '',
     date_limite: devis.date_limite || '',
@@ -65,9 +66,18 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Commission (%)</label>
-          <input type="number" step="0.1" min="0" max="100" value={form.commission_pourcentage} placeholder="ex: 15"
+          <input type="number" step="0.1" min="0" max="100"
+            value={form.sans_commission ? '0' : form.commission_pourcentage}
+            placeholder="ex: 15"
+            disabled={form.sans_commission}
             onChange={e => set('commission_pourcentage', e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400" />
+          <label className="flex items-center gap-2 mt-1 cursor-pointer">
+            <input type="checkbox" checked={form.sans_commission}
+              onChange={e => set('sans_commission', e.target.checked)}
+              className="w-3.5 h-3.5 accent-blue-700" />
+            <span className="text-xs text-gray-500">Sans commission ni honoraires</span>
+          </label>
         </div>
         {!isMarine && (
           <div>
@@ -161,8 +171,7 @@ export default function FicheChantier({ params }) {
   const [fichesPanelOuvert, setFichesPanelOuvert] = useState(null)
   const [documents, setDocuments] = useState([])
   const [uploadingDocChantier, setUploadingDocChantier] = useState(false)
-  const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', part_agente: '0.5', date_reception: '', date_limite: '', fichier: null })
-  const [suiviFinancier, setSuiviFinancier] = useState([])
+  const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, part_agente: '0.5', date_reception: '', date_limite: '', fichier: null })  const [suiviFinancier, setSuiviFinancier] = useState([])
   const router = useRouter()
 
   useEffect(() => {
@@ -526,7 +535,7 @@ $      // E4 — upload PDF si fourni à la création
       dossier_id: id, artisan_id: nouveauDevis.artisan_id,
       montant_ht: nouveauDevis.montant_ht ? parseFloat(nouveauDevis.montant_ht) : null,
       montant_ttc: nouveauDevis.montant_ttc ? parseFloat(nouveauDevis.montant_ttc) : null,
-      commission_pourcentage: nouveauDevis.commission_pourcentage ? parseFloat(nouveauDevis.commission_pourcentage) / 100 : null,
+      commission_pourcentage: nouveauDevis.sans_commission ? 0 : (nouveauDevis.commission_pourcentage ? parseFloat(nouveauDevis.commission_pourcentage) / 100 : null),
       part_agente: partAgente, date_reception: nouveauDevis.date_reception || null, date_limite: nouveauDevis.date_limite || null,
       statut: (nouveauDevis.date_reception || nouveauDevis.fichier) ? 'recu' : 'en_attente',    }).select()
     if (!error && nouveauDevis.fichier && devisInsere?.[0]) {
@@ -538,7 +547,7 @@ $      // E4 — upload PDF si fourni à la création
     if (!error) {
       await chargerDevis()
       setAjouterDevis(false)
-      setNouveauDevis({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', part_agente: '0.5', date_reception: '', date_limite: '', fichier: null })
+      setNouveauDevis({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, part_agente: '0.5', date_reception: '', date_limite: '', fichier: null })
       setSucces('Devis ajouté ✓')
     } else { setErreur('Erreur : ' + error.message) }
     setSavingDevis(false)
@@ -549,7 +558,7 @@ $      // E4 — upload PDF si fourni à la création
     await supabase.from('devis_artisans').update({
       montant_ht: updates.montant_ht ? parseFloat(updates.montant_ht) : null,
       montant_ttc: updates.montant_ttc ? parseFloat(updates.montant_ttc) : null,
-      commission_pourcentage: updates.commission_pourcentage ? parseFloat(updates.commission_pourcentage) / 100 : null,
+      commission_pourcentage: updates.sans_commission ? 0 : (updates.commission_pourcentage ? parseFloat(updates.commission_pourcentage) / 100 : null),
       part_agente: partAgente, date_reception: updates.date_reception || null, date_limite: updates.date_limite || null,
     }).eq('id', devisId)
     await chargerDevis()
@@ -1254,9 +1263,18 @@ ${s.contenu}`).join('')
               <div className={`grid gap-3 ${estChantierMarine ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Commission (%)</label>
-                  <input type="number" step="0.1" min="0" max="100" value={nouveauDevis.commission_pourcentage} placeholder="ex: 15"
+                  <input type="number" step="0.1" min="0" max="100"
+                    value={nouveauDevis.sans_commission ? '0' : nouveauDevis.commission_pourcentage}
+                    placeholder="ex: 15"
+                    disabled={nouveauDevis.sans_commission}
                     onChange={e => setND('commission_pourcentage', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400" />
+                  <label className="flex items-center gap-2 mt-1 cursor-pointer">
+                    <input type="checkbox" checked={nouveauDevis.sans_commission}
+                      onChange={e => setND('sans_commission', e.target.checked)}
+                      className="w-3.5 h-3.5 accent-blue-700" />
+                    <span className="text-xs text-gray-500">Sans commission ni honoraires</span>
+                  </label>
                 </div>
                 {!estChantierMarine && (
                   <div>
