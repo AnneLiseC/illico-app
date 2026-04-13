@@ -312,8 +312,17 @@ export default function Finances() {
 
   const majSuivi = async (dossierId, type, artisanId, champ, valeur) => {
     setSaving(true)
-    const dossier  = dossiers.find(d => d.id === dossierId)
-    const existing = getSuivi(dossier, type, artisanId)
+
+    // Requête directe BDD — évite tout problème de state stale
+    let query = supabase
+      .from('suivi_financier')
+      .select('id')
+      .eq('dossier_id', dossierId)
+      .eq('type_echeance', type)
+
+    query = artisanId ? query.eq('artisan_id', artisanId) : query.is('artisan_id', null)
+
+    const { data: existing } = await query.maybeSingle()
 
     if (existing) {
       await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
@@ -321,7 +330,7 @@ export default function Finances() {
       await supabase.from('suivi_financier').insert({ dossier_id: dossierId, type_echeance: type, artisan_id: artisanId || null, [champ]: valeur })
     }
 
-    // E5 — synchro inverse : facture_finale statut_client → factures_artisans.statut
+    // E5 — synchro inverse : facture_finale → factures_artisans
     if (type === 'facture_finale' && champ === 'statut_client' && artisanId) {
       const statutFacture = valeur === 'regle' ? 'paye' : 'en_attente'
       await supabase.from('factures_artisans').update({ statut: statutFacture }).eq('dossier_id', dossierId).eq('artisan_id', artisanId)

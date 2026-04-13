@@ -79,16 +79,6 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
             <span className="text-xs text-gray-500">Sans commission ni honoraires</span>
           </label>
         </div>
-        {!isMarine && (
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Répartition</label>
-            <select value={form.part_agente} onChange={e => set('part_agente', e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="0.5">50 / 50</option>
-              <option value="0.6">60 / 40</option>
-            </select>
-          </div>
-        )}
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -171,7 +161,8 @@ export default function FicheChantier({ params }) {
   const [fichesPanelOuvert, setFichesPanelOuvert] = useState(null)
   const [documents, setDocuments] = useState([])
   const [uploadingDocChantier, setUploadingDocChantier] = useState(false)
-  const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, part_agente: '0.5', date_reception: '', date_limite: '', fichier: null })  const [suiviFinancier, setSuiviFinancier] = useState([])
+  const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, part_agente: '0.5', date_reception: '', date_limite: '', fichier: null })  
+  const [suiviFinancier, setSuiviFinancier] = useState([])
   const router = useRouter()
 
   useEffect(() => {
@@ -206,8 +197,9 @@ export default function FicheChantier({ params }) {
       const { data: intData } = await supabase.from('interventions_artisans')
         .select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
       setInterventionsDossier(intData || [])
-      const { data: suiviData } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
-
+      const { data: suiviData } = await supabase.from('suivi_financier')
+        .select('*').eq('dossier_id', id)
+      setSuiviFinancier(suiviData || [])
       // Comptes-rendus et messages espace client
       const { data: docsData } = await supabase
         .from('chantier_documents').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
@@ -1082,11 +1074,9 @@ ${s.contenu}`).join('')
               {!estChantierMarine && (
                 <div className="border-t border-gray-100 pt-4 flex items-center justify-between">
                   <p className="text-sm font-medium text-gray-700">Répartition commission</p>
-                  <select value={dossier.part_agente ?? 0.5} onChange={e => set('part_agente', parseFloat(e.target.value))}
-                    className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value={0.5}>50 / 50</option>
-                    <option value={0.6}>60 / 40</option>
-                  </select>
+                  <span className="text-sm font-medium text-gray-800">
+                    {(dossier.part_agente ?? 0.5) === 0.6 ? '60 / 40' : '50 / 50'}
+                  </span>
                 </div>
               )}
               <div className="border-t border-gray-100 pt-4 flex items-center justify-between">
@@ -1161,6 +1151,16 @@ ${s.contenu}`).join('')
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
+              {!estChantierMarine && (
+                <div className="border-t border-gray-100 pt-4 flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-700">Répartition commission</p>
+                  <select value={dossier.part_agente ?? 0.5} onChange={e => set('part_agente', parseFloat(e.target.value))}
+                    className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value={0.5}>50 / 50</option>
+                    <option value={0.6}>60 / 40</option>
+                  </select>
+                </div>
+              )}
               <div className="border-t border-gray-100 pt-4">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-gray-700">Contrat de prestation</p>
@@ -1276,16 +1276,6 @@ ${s.contenu}`).join('')
                     <span className="text-xs text-gray-500">Sans commission ni honoraires</span>
                   </label>
                 </div>
-                {!estChantierMarine && (
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Répartition</label>
-                    <select value={nouveauDevis.part_agente} onChange={e => setND('part_agente', e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      <option value="0.5">50 / 50</option>
-                      <option value="0.6">60 / 40</option>
-                    </select>
-                  </div>
-                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
