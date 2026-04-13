@@ -17,6 +17,7 @@ export default function NouvelArtisan() {
     code_postal: '',
     ville: '',
     decennale_expiration: '',
+    sans_royalties: false,
   })
   const [fichiers, setFichiers] = useState({
     kbis: null,
@@ -57,6 +58,7 @@ export default function NouvelArtisan() {
         code_postal: form.code_postal.trim() || null,
         ville: form.ville.trim() || null,
         decennale_expiration: form.decennale_expiration || null,
+        sans_royalties: form.sans_royalties,
       })
       .select()
       .single()
@@ -171,6 +173,11 @@ export default function NouvelArtisan() {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
           </div>
+          <label className="flex items-center gap-3 cursor-pointer select-none pt-1">
+            <input type="checkbox" checked={form.sans_royalties} onChange={e => set('sans_royalties', e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+            <span className="text-sm text-gray-700">Sans royalties illiCO <span className="text-gray-400">(architectes, BET…)</span></span>
+          </label>
         </div>
 
         {/* Documents administratifs */}

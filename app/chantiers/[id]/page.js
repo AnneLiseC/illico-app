@@ -382,7 +382,7 @@ export default function FicheChantier({ params }) {
   }
 
   const chargerDevis = async () => {
-    const { data } = await supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier, sans_royalties)').eq('dossier_id', id).order('created_at')
+    const { data } = await supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier, sans_royalties)').eq('dossier_id', id).order('created_at', { ascending: false })
     setDevis(data || [])
   }
 
@@ -1726,7 +1726,7 @@ ${s.contenu}`).join('')
             <h2 className="font-semibold text-gray-800">Documents ({documents.length})</h2>
             <label className={`cursor-pointer text-sm px-3 py-1.5 rounded-lg border transition-all ${uploadingDocChantier ? 'text-gray-400 border-gray-200' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}`}>
               {uploadingDocChantier ? 'Upload...' : '+ Ajouter un document'}
-              <input type="file" className="hidden" disabled={uploadingDocChantier}
+              <input type="file" className="hidden" multiple disabled={uploadingDocChantier}
                 onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files))} />
             </label>
           </div>
