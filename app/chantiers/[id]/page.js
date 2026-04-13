@@ -1234,7 +1234,10 @@ ${s.contenu}`).join('')
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">Devis artisans ({devis.length})</h2>
-            <button onClick={() => setAjouterDevis(true)} className="text-sm bg-blue-800 text-white px-3 py-1.5 rounded-lg hover:bg-blue-900">+ Ajouter</button>
+            <button onClick={() => {
+              setAjouterDevis(true)
+              setNouveauDevis(nd => ({ ...nd, part_agente: String(dossier.part_agente ?? 0.5) }))
+            }} className="...">+ Ajouter</button>
           </div>
 
           {ajouterDevis && (

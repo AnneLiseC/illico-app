@@ -313,7 +313,6 @@ export default function Finances() {
   const majSuivi = async (dossierId, type, artisanId, champ, valeur) => {
     setSaving(true)
 
-    // Requête directe BDD — évite tout problème de state stale
     let query = supabase
       .from('suivi_financier')
       .select('id')
@@ -330,7 +329,7 @@ export default function Finances() {
       await supabase.from('suivi_financier').insert({ dossier_id: dossierId, type_echeance: type, artisan_id: artisanId || null, [champ]: valeur })
     }
 
-    // E5 — synchro inverse : facture_finale → factures_artisans
+    // Synchro inverse : facture_finale → factures_artisans
     if (type === 'facture_finale' && champ === 'statut_client' && artisanId) {
       const statutFacture = valeur === 'regle' ? 'paye' : 'en_attente'
       await supabase.from('factures_artisans').update({ statut: statutFacture }).eq('dossier_id', dossierId).eq('artisan_id', artisanId)
