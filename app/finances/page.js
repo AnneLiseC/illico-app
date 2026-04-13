@@ -270,7 +270,7 @@ export default function Finances() {
     const devisSignesList = finance.commissions.devis.filter(item => item.signed)
     const comHTReel       = round2(devisSignesList.reduce((s, d) => s + d.comHT, 0))
     const comTTCReel      = round2(devisSignesList.reduce((s, d) => s + d.comTTC, 0))
-    const royaltiesReel   = round2(devisSignesList.reduce((s, d) => s + d.royaltiesCom, 0))
+    const royaltiesReel   = round2(devisSignesList.reduce((s, d) => s + (d.comHT - d.netCom), 0))
     const netReel         = round2(devisSignesList.reduce((s, d) => s + d.netCom, 0))
     const partAgenteReel  = round2(devisSignesList.reduce((s, d) => s + d.gainsBruts.agente, 0))
     const partAdminReel   = round2(devisSignesList.reduce((s, d) => s + d.gainsBruts.admin, 0))
