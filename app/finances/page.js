@@ -38,9 +38,8 @@ const normalizeApporteurMode = (mode) => {
 }
 
 const normalizeDossierForFinance = (d) => {
-  // Dériver part_agente depuis le premier devis actif (même split pour tout le dossier)
-  const devisActifs = (d.devis_artisans || []).filter(dv => dv.statut !== 'refuse')
-  const partAgente  = devisActifs[0]?.part_agente ?? (d.referente?.role === 'admin' ? 0 : 0.5)
+  
+  const partAgente = d.part_agente ?? (d.referente?.role === 'admin' ? 0 : 0.5)
 
   return {
     ...d,

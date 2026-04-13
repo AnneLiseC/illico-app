@@ -131,6 +131,9 @@ export default function FicheChantier({ params }) {
 
   // CR avec IA
   const [crModal, setCrModal] = useState(false)
+  const [crManuelModal, setCrManuelModal] = useState(false)
+  const [crManuelForm, setCrManuelForm] = useState({ type_visite: '', date_visite: '', contenu: '', fichier: null })
+  const [crManuelSaving, setCrManuelSaving] = useState(false)
   const [crEtape, setCrEtape] = useState(1) // 1=config, 2=notes, 3=relecture
   const [crForm, setCrForm] = useState({ type_visite: '', date_visite: '', intervenants: '' })
   const [crNotes, setCrNotes] = useState('')
@@ -509,6 +512,7 @@ $      // E4 — upload PDF si fourni à la création
       date_signature_contrat: dossier.date_signature_contrat, date_demarrage_chantier: dossier.date_demarrage_chantier,
       date_fin_chantier: dossier.date_fin_chantier, taux_courtage: dossier.taux_courtage, honoraires_amo_taux: dossier.honoraires_amo_taux,
       resume_projet: dossier.resume_projet || null,
+      part_agente: estChantierMarine ? 0 : (dossier.part_agente ?? 0.5),
     }).eq('id', id)
     if (error) { setErreur('Erreur : ' + error.message) } else { setSucces('Modifications enregistrées ✓'); setMode('lecture') }
     setSaving(false)
@@ -618,6 +622,31 @@ $      // E4 — upload PDF si fourni à la création
     else setErreur('Impossible d\'ouvrir le document')
   }
 
+  const sauvegarderCRManuel = async (publier = false) => {
+    if (!crManuelForm.contenu.trim()) return
+    setCrManuelSaving(true)
+    const { data: crInsere } = await supabase.from('comptes_rendus').insert({
+      dossier_id: id,
+      type_visite: crManuelForm.type_visite || null,
+      date_visite: crManuelForm.date_visite || null,
+      contenu_final: crManuelForm.contenu,
+      valide: publier,
+    }).select().single()
+
+    if (crInsere && crManuelForm.fichier) {
+      const ext = crManuelForm.fichier.name.split('.').pop()
+      const chemin = `chantiers/${id}/cr/${crInsere.id}.${ext}`
+      const { error: uploadErr } = await supabase.storage.from('documents').upload(chemin, crManuelForm.fichier)
+      if (!uploadErr) await supabase.from('comptes_rendus').update({ pdf_path: chemin }).eq('id', crInsere.id)
+    }
+
+    const { data } = await supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
+    setComptesRendus(data || [])
+    setCrManuelModal(false)
+    setCrManuelForm({ type_visite: '', date_visite: '', contenu: '', fichier: null })
+    setCrManuelSaving(false)
+    setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
+  }
   // ── GÉNÉRER CR AVEC IA ──
   const genererCRAvecIA = async () => {
     if (!crForm.type_visite) return
@@ -1039,6 +1068,16 @@ ${s.contenu}`).join('')
                 <div className="border-t border-gray-100 pt-3">
                   <p className="text-xs text-gray-400 mb-1">Résumé du projet</p>
                   <p className="text-sm text-gray-700 leading-relaxed">{dossier.resume_projet}</p>
+                </div>
+              )}
+              {!estChantierMarine && (
+                <div className="border-t border-gray-100 pt-4 flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-700">Répartition commission</p>
+                  <select value={dossier.part_agente ?? 0.5} onChange={e => set('part_agente', parseFloat(e.target.value))}
+                    className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value={0.5}>50 / 50</option>
+                    <option value={0.6}>60 / 40</option>
+                  </select>
                 </div>
               )}
               <div className="border-t border-gray-100 pt-4 flex items-center justify-between">
@@ -2032,10 +2071,16 @@ ${s.contenu}`).join('')
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">📝 Comptes-rendus ({comptesRendus.length})</h2>
-            <button onClick={() => { setCrModal(true); setCrEtape(1) }}
-              className="text-sm bg-blue-800 text-white px-3 py-1.5 rounded-lg hover:bg-blue-900 flex items-center gap-1.5">
-              ✨ Nouveau CR avec IA
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => setCrManuelModal(true)}
+                className="text-sm border border-blue-300 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50">
+                + CR manuel
+              </button>
+              <button onClick={() => { setCrModal(true); setCrEtape(1) }}
+                className="text-sm bg-blue-800 text-white px-3 py-1.5 rounded-lg hover:bg-blue-900 flex items-center gap-1.5">
+                ✨ Nouveau CR avec IA
+              </button>
+            </div>
           </div>
 
           {comptesRendus.length === 0 ? (
@@ -2077,6 +2122,66 @@ ${s.contenu}`).join('')
           )}
         </div>
 
+        {/* ── MODAL CR SANS IA ── */}
+        {crManuelModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl w-full max-w-xl space-y-4 p-6" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-gray-800">📝 Nouveau CR sans IA</p>
+                <button onClick={() => setCrManuelModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Type de visite</label>
+                  <select value={crManuelForm.type_visite} onChange={e => setCrManuelForm(f => ({ ...f, type_visite: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">— Sélectionner —</option>
+                    <option value="r1">R1 — Visite technique</option>
+                    <option value="r2">R2 — Visite artisans</option>
+                    <option value="r3">R3 — Présentation devis</option>
+                    <option value="suivi">Suivi de chantier</option>
+                    <option value="reception">Réception</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Date de visite</label>
+                  <input type="date" value={crManuelForm.date_visite} onChange={e => setCrManuelForm(f => ({ ...f, date_visite: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Contenu du CR *</label>
+                <textarea value={crManuelForm.contenu} onChange={e => setCrManuelForm(f => ({ ...f, contenu: e.target.value }))}
+                  rows={10} placeholder="Rédigez ou collez le contenu du compte-rendu..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Document PDF (optionnel)</label>
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-600 border border-gray-300 rounded px-3 py-2 hover:bg-gray-50 w-fit">
+                  {crManuelForm.fichier ? `✓ ${crManuelForm.fichier.name}` : '+ Joindre un PDF'}
+                  <input type="file" accept=".pdf" className="hidden"
+                    onChange={e => setCrManuelForm(f => ({ ...f, fichier: e.target.files[0] || null }))} />
+                </label>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setCrManuelModal(false)} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
+                <button onClick={() => sauvegarderCRManuel(false)} disabled={crManuelSaving || !crManuelForm.contenu.trim()}
+                  className="flex-1 border border-blue-300 text-blue-700 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
+                  {crManuelSaving ? 'Enregistrement...' : 'Sauvegarder brouillon'}
+                </button>
+                <button onClick={() => sauvegarderCRManuel(true)} disabled={crManuelSaving || !crManuelForm.contenu.trim()}
+                  className="flex-1 bg-blue-800 text-white py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
+                  {crManuelSaving ? '...' : 'Publier au client'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        
         {/* ── MODAL CR AVEC IA ── */}
         {crModal && (
           <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4"
