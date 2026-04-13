@@ -619,12 +619,12 @@ export default function Finances() {
 
   const renderAccordeon = (listeDossiers, showBadge = false) => {
     const showParts = showBadge || !isMarine
-    const tousSignes = c.devisActifs.length > 0 && c.devisActifs.every(dv => dv.statut === 'accepte')
 
     return (
       <div className="space-y-2">
         {listeDossiers.map(d => {
           const c      = calculer(d)
+          const tousSignes = c.devisActifs.length > 0 && c.devisActifs.every(dv => dv.statut === 'accepte')
           const isOpen = dossierOuvert === d.id
 
           const nbAlertes = [
@@ -826,7 +826,7 @@ export default function Finances() {
                                       </div>
                                       <div className="flex items-center gap-2 flex-wrap">
                                         {dv.date_signature && alertes7j(dv.date_signature) && suiviAcompte?.statut_client !== 'regle' && (
-                                          <span className="text-red-500">⚠️ Retard 1 semaine</span>
+                                          <span className="text-red-500">⚠️ Retard</span>
                                         )}
                                         <select
                                           value={suiviAcompte?.statut_client || 'en_attente'}
@@ -834,7 +834,7 @@ export default function Finances() {
                                           className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
                                         >
                                           <option value="en_attente">Client : En attente</option>
-                                          <option value="envoye">Client : Récapitulatif envoyé</option>
+                                          <option value="envoye">Client : Demande envoyé</option>
                                           <option value="regle">Client : ✅ Payé</option>
                                         </select>
                                         {suiviAcompte?.statut_client === 'regle' && (
@@ -877,7 +877,7 @@ export default function Finances() {
                                           </div>
                                           <div className="flex items-center gap-2 flex-wrap">
                                             {d.date_fin_chantier && alertes48h(d.date_fin_chantier) && suiviFact?.statut_client !== 'regle' && (
-                                              <span className="text-red-500">⚠️ Retard 48h</span>
+                                              <span className="text-red-500">⚠️ Retard</span>
                                             )}
                                             <select
                                               value={suiviFact?.statut_client || 'en_attente'}
@@ -886,7 +886,7 @@ export default function Finances() {
                                             >
                                               <option value="en_attente">Client : En attente</option>
                                               <option value="envoye">Client : Facture reçue</option>
-                                              <option value="regle">Client : ✅ Payé artisan</option>
+                                              <option value="regle">Client : ✅ Payé </option>
                                             </select>
                                             {suiviFact?.statut_client === 'regle' && (
                                               <input type="date"
@@ -1009,7 +1009,7 @@ export default function Finances() {
                   {/* Total commissions artisans */}
                   {c.devisAcceptes.length > 0 && (
                     <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
-                      <p className="text-xs font-medium text-gray-600 uppercase mb-2">Total commissions artisans</p>
+                      <p className="text-xs font-medium text-gray-600 uppercase mb-2">Commissions artisans</p>
                       <div className={`grid gap-3 text-xs ${tousSignes ? 'grid-cols-1' : 'grid-cols-2'}`}>
                         {!tousSignes && (
                           <div className="bg-white rounded p-2 space-y-1">
