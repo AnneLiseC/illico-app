@@ -326,7 +326,7 @@ export function calculateApporteurFinance(dossier) {
       devisAvecCommission.reduce((sum, devis) => sum + toNumber(devis.montant_ht), 0)
     )
 
-    const totalTTC = round2(baseHT * tauxApporteur * TVA)
+    const totalTTC = round2(baseHT * tauxApporteur)
     const split = splitAmount(totalTTC, partAgente)
 
     lines = [
@@ -343,8 +343,8 @@ export function calculateApporteurFinance(dossier) {
    } else {
     lines = devisAvecCommission.map((devis) => {
       const devisHT = round2(toNumber(devis.montant_ht))
-      const totalTTC = round2(devisHT * tauxApporteur * TVA)
-      const split = splitAmount(totalTTC, partAgente)
+      const montantHT = round2(devisHT * tauxApporteur)
+      const split = splitAmount(montantHT, partAgente)
 
       return {
         type: 'par_devis',
@@ -352,7 +352,7 @@ export function calculateApporteurFinance(dossier) {
         label: devis?.artisan?.entreprise || devis?.reference || 'Devis',
         baseHT: devisHT,
         tauxApporteur,
-        totalTTC,
+        totalTTC: montantHT,  // on garde le nom totalTTC pour compatibilité mais c'est du HT
         agente: split.agente,
         admin: split.admin,
       }

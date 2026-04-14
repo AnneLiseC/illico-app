@@ -321,7 +321,8 @@ export default function Finances() {
 
     query = artisanId ? query.eq('artisan_id', artisanId) : query.is('artisan_id', null)
 
-    const { data: existing } = await query.maybeSingle()
+    const { data: existing, error: selectError } = await query.maybeSingle()
+    console.log('majSuivi debug:', { type, artisanId, existing, selectError })
 
     if (existing) {
       await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
@@ -633,6 +634,26 @@ export default function Finances() {
         {listeDossiers.map(d => {
           const c      = calculer(d)
           const tousSignes = c.devisActifs.length > 0 && c.devisActifs.every(dv => dv.statut === 'accepte')
+          const toutRegle = (() => {
+            // Frais
+            if (d.frais_consultation > 0 && d.frais_statut !== 'regle') return false
+            // Acomptes + factures artisans
+            for (const dv of c.devisAcceptes) {
+              const artId = dv.artisan_id || dv.artisan?.id
+              const acompte = getSuivi(d, 'acompte_artisan', artId)
+              if (acompte?.statut_client !== 'regle') return false
+              if (d.typologie === 'amo') {
+                const fact = getSuivi(d, 'facture_finale', artId)
+                if (fact?.statut_client !== 'regle') return false
+              }
+            }
+            // Honoraires
+            if (['courtage', 'amo'].includes(d.typologie)) {
+              if (getSuivi(d, 'honoraires_courtage')?.statut_client !== 'regle') return false
+              if (d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client !== 'regle') return false
+            }
+            return true
+          })()
           const isOpen = dossierOuvert === d.id
 
           const nbAlertes = [
@@ -823,7 +844,7 @@ export default function Finances() {
                                 ) : (
                                   <>
                                     {/* Acompte */}
-                                    <div className="space-y-1">
+                                    {montantAcompteCalc > 0 && <div className="space-y-1">
                                       <div className="flex justify-between">
                                         <span className="text-gray-500 font-medium">Acompte</span>
                                         <span className="font-bold text-gray-800">
@@ -872,7 +893,7 @@ export default function Finances() {
                                           </select>
                                         )}
                                       </div>
-                                    </div>
+                                    </div>}
 
                                     {/* Facture finale AMO */}
                                     {d.typologie === 'amo' && (() => {
@@ -906,6 +927,62 @@ export default function Finances() {
                                         </div>
                                       )
                                     })()}
+                                    {/* Apporteur par devis */}
+                                    {c.finance?.apporteur?.enabled && c.finance?.apporteur?.mode === 'par_devis' && (() => {
+                                      const ligne = c.finance.apporteur.lines?.find(l => l.devisId === dv.id)
+                                      if (!ligne || ligne.totalTTC === 0) return null
+                                      const suiviApporteur = getSuivi(d, 'apporteur_agente', dv.artisan_id || dv.artisan?.id)
+                                      return (
+                                        <div className="space-y-2 border-t border-green-200 pt-1">
+                                          <div className="flex justify-between">
+                                            <span className="text-orange-500 font-medium">Apporteur</span>
+                                            <span className="font-bold text-orange-600">— {ligne.totalTTC.toFixed(2)} € HT</span>
+                                          </div>
+                                          {!c.estChantierMarine && (
+                                            <div className="space-y-1">
+                                              <div className="flex justify-between text-orange-400">
+                                                <span>Part agente</span>
+                                                <span>— {ligne.agente.toFixed(2)} €</span>
+                                              </div>
+                                              <select
+                                                value={suiviApporteur?.statut_ctp || 'en_attente'}
+                                                onChange={e => majSuivi(d.id, 'apporteur_agente', dv.artisan_id || dv.artisan?.id, 'statut_ctp', e.target.value)}
+                                                className="border border-orange-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white w-full">
+                                                <option value="en_attente">Agente → CTP : En attente</option>
+                                                <option value="rembourse">Agente → CTP : ✅ Remboursé</option>
+                                              </select>
+                                              {suiviApporteur?.statut_ctp === 'rembourse' && (
+                                                <input type="date"
+                                                  value={suiviApporteur?.date_paiement || ''}
+                                                  onChange={e => majSuivi(d.id, 'apporteur_agente', dv.artisan_id || dv.artisan?.id, 'date_paiement', e.target.value)}
+                                                  className="border border-orange-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white w-full" />
+                                              )}
+                                            </div>
+                                          )}
+                                          {isMarine && (
+                                            <div className="space-y-1">
+                                              <div className="flex justify-between text-orange-400">
+                                                <span>Part {nomFranchisee}</span>
+                                                <span>— {ligne.admin.toFixed(2)} €</span>
+                                              </div>
+                                              <select
+                                                value={suiviApporteur?.statut_client || 'en_attente'}
+                                                onChange={e => majSuivi(d.id, 'apporteur_agente', dv.artisan_id || dv.artisan?.id, 'statut_client', e.target.value)}
+                                                className="border border-orange-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white w-full">
+                                                <option value="en_attente">CTP : En attente</option>
+                                                <option value="retire">CTP : ✅ Retiré</option>
+                                              </select>
+                                              {suiviApporteur?.statut_client === 'retire' && (
+                                                <input type="date"
+                                                  value={suiviApporteur?.date_paiement || ''}
+                                                  onChange={e => majSuivi(d.id, 'apporteur_agente', dv.artisan_id || dv.artisan?.id, 'date_paiement', e.target.value)}
+                                                  className="border border-orange-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white w-full" />
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    })()}
                                   </>
                                 )}
                               </div>
@@ -928,12 +1005,16 @@ export default function Finances() {
                               <div className="flex justify-between"><span className="font-medium text-gray-600">Courtage ({c.tauxCourtagePct}%)</span><span>{c.honorairesCourtage.toFixed(2)} €</span></div>
                               <div className="flex justify-between"><span className="text-red-400">Royalties (5%)</span><span className="text-red-400">- {c.royaltiesCourtage.toFixed(2)} €</span></div>
                               <div className="flex justify-between border-t border-gray-200 pt-1"><span className="text-gray-400">Net</span><span className="font-medium">{c.honorairesCourtageNet.toFixed(2)} €</span></div>
+                              <div className="flex justify-between border-t border-gray-200 pt-1"><span className="text-gray-400">Net</span><span className="font-medium">{c.honorairesCourtageNet.toFixed(2)} €</span></div>
+                              {!c.estChantierMarine && <div className="flex justify-between"><span className="text-blue-500">Part agente</span><span className="text-blue-700">{c.partAgenteCourtage.toFixed(2)} €</span></div>}
                             </div>
                             {d.typologie === 'amo' && (
                               <div className="bg-blue-50 rounded p-2 space-y-1">
                                 <div className="flex justify-between"><span className="font-medium text-blue-700">AMO ({c.tauxAmoPct}%)</span><span>{c.honorairesAMOSolde.toFixed(2)} €</span></div>
                                 <div className="flex justify-between"><span className="text-red-400">Royalties (5%)</span><span className="text-red-400">- {c.royaltiesAMO.toFixed(2)} €</span></div>
                                 <div className="flex justify-between border-t border-blue-200 pt-1"><span className="text-blue-500">Net</span><span className="font-medium text-blue-700">{c.honorairesAMONet.toFixed(2)} €</span></div>
+                                <div className="flex justify-between border-t border-blue-200 pt-1"><span className="text-blue-500">Net</span><span className="font-medium text-blue-700">{c.honorairesAMONet.toFixed(2)} €</span></div>
+                                {!c.estChantierMarine && <div className="flex justify-between"><span className="text-blue-400">Part agente</span><span className="text-blue-700">{c.partAgenteAMO.toFixed(2)} €</span></div>}
                               </div>
                             )}
                           </div>
@@ -949,6 +1030,7 @@ export default function Finances() {
                                   <div className="flex justify-between"><span className="font-medium text-gray-600">Courtage ({c.tauxCourtagePct}%)</span><span>{c.honorairesCourtage.toFixed(2)} €</span></div>
                                   <div className="flex justify-between"><span className="text-red-400">Royalties (5%)</span><span className="text-red-400">- {c.royaltiesCourtage.toFixed(2)} €</span></div>
                                   <div className="flex justify-between border-t border-gray-200 pt-1"><span className="text-gray-400">Net</span><span className="font-medium">{c.honorairesCourtageNet.toFixed(2)} €</span></div>
+                                  {!c.estChantierMarine && <div className="flex justify-between"><span className="text-blue-500">Part agente</span><span className="text-blue-700">{c.partAgenteCourtage.toFixed(2)} €</span></div>}                                  
                                   <select value={getSuivi(d, 'honoraires_courtage')?.statut_client || 'en_attente'}
                                     onChange={e => majSuivi(d.id, 'honoraires_courtage', null, 'statut_client', e.target.value)}
                                     className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none w-full bg-white">
@@ -967,6 +1049,7 @@ export default function Finances() {
                                     <div className="flex justify-between"><span className="font-medium text-blue-700">AMO ({c.tauxAmoPct}%)</span><span>{c.honorairesAMOSolde.toFixed(2)} €</span></div>
                                     <div className="flex justify-between"><span className="text-red-400">Royalties (5%)</span><span className="text-red-400">- {c.royaltiesAMO.toFixed(2)} €</span></div>
                                     <div className="flex justify-between border-t border-blue-200 pt-1"><span className="text-blue-500">Net</span><span className="font-medium text-blue-700">{c.honorairesAMONet.toFixed(2)} €</span></div>
+                                    {!c.estChantierMarine && <div className="flex justify-between"><span className="text-blue-400">Part agente</span><span className="text-blue-700">{c.partAgenteAMO.toFixed(2)} €</span></div>}
                                     <select value={getSuivi(d, 'solde_amo')?.statut_client || 'en_attente'}
                                       onChange={e => majSuivi(d.id, 'solde_amo', null, 'statut_client', e.target.value)}
                                       className="border border-blue-200 rounded px-2 py-0.5 text-xs focus:outline-none w-full bg-white">
@@ -999,16 +1082,6 @@ export default function Finances() {
                         <span className="text-orange-600">Total : {c.apporteurTTC.toFixed(2)} € TTC</span>
                         {!c.estChantierMarine && (
                           <span className="text-blue-600">Part agente : {c.apporteurPartAgente.toFixed(2)} €</span>
-                        )}
-                        {!c.estChantierMarine && (
-                          <select
-                            value={getSuivi(d, 'apporteur_agente')?.statut_ctp || 'en_attente'}
-                            onChange={e => majSuivi(d.id, 'apporteur_agente', null, 'statut_ctp', e.target.value)}
-                            className="border border-orange-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
-                          >
-                            <option value="en_attente">Agente → CTP : En attente</option>
-                            <option value="rembourse">Agente → CTP : ✅ Remboursé</option>
-                          </select>
                         )}
                       </div>
                     </div>
@@ -1044,17 +1117,17 @@ export default function Finances() {
                   {/* Total gain chantier */}
                   <div className="border-2 border-gray-300 rounded-lg p-3 bg-white">
                     <p className="text-xs font-bold text-gray-700 uppercase mb-2">Total gain chantier</p>
-                    <div className={`grid gap-3 text-xs ${tousSignes ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                    <div className={`grid gap-3 text-xs ${toutRegle ? 'grid-cols-1' : 'grid-cols-2'}`}>
 
                       {/* Prévisionnel */}
-                      {!tousSignes && (
+                      {!toutRegle && (
                         <div className="bg-gray-50 rounded p-2 space-y-1">
                           <p className="font-medium text-gray-500 mb-1">Prévisionnel</p>
                           {c.fraisTTC > 0 && <div className="flex justify-between"><span className="text-gray-400">Frais consul. TTC</span><span>+ {c.fraisTTC.toFixed(2)} €</span></div>}
                           {c.honorairesTotalTTC > 0 && <div className="flex justify-between"><span className="text-gray-400">Honoraires TTC</span><span>+ {c.honorairesTotalTTC.toFixed(2)} €</span></div>}
                           <div className="flex justify-between"><span className="text-gray-400">Commissions nettes</span><span>+ {c.net.toFixed(2)} €</span></div>
                           <div className="flex justify-between"><span className="text-red-400">Somme royalties</span><span className="text-red-400">— {c.sommeRoyalties.toFixed(2)} €</span></div>
-                          {c.apporteurTTC > 0 && <div className="flex justify-between"><span className="text-orange-500">Apporteur</span><span className="text-orange-500">— {c.apporteurTTC.toFixed(2)} €</span></div>}
+                          {c.apporteurTTC > 0 && !c.estChantierMarine && <div className="flex justify-between"><span className="text-orange-500">Apporteur (part agente)</span><span className="text-orange-500">— {c.apporteurPartAgente.toFixed(2)} €</span></div>}
                           <div className="border-t border-gray-200 pt-1 space-y-0.5">
                             {showParts && !c.estChantierMarine && (
                               <div className="flex justify-between font-bold">
@@ -1080,27 +1153,70 @@ export default function Finances() {
                       <div className="bg-green-50 rounded p-2 space-y-1">
                         <p className="font-medium text-green-700 mb-1">Réel (encaissé)</p>
                         {(() => {
-                          const fraisReel       = d.frais_statut === 'regle' ? c.fraisTTC : 0
+                          
+                          const fraisReel = d.frais_statut === 'regle' ? c.fraisTTC : 0
+                          const fraisRoyaltiesReel = d.frais_statut === 'regle' ? c.fraisRoyalties : 0
+
                           const honCourtageReel = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle' ? c.honorairesCourtage : 0
-                          const honAMOReel      = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle' ? c.honorairesAMOSolde : 0
-                          const honReel         = honCourtageReel + honAMOReel
-                          const royaltiesReelTotal = round2(
-                            (d.frais_statut === 'regle' ? c.fraisRoyalties : 0) +
+                          const honAMOReel = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle' ? c.honorairesAMOSolde : 0
+                          const honReel = honCourtageReel + honAMOReel
+                          const royaltiesHonReel = round2(
                             (getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle' ? c.royaltiesCourtage : 0) +
-                            (d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle' ? c.royaltiesAMO : 0) +
-                            c.royaltiesReel
+                            (d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle' ? c.royaltiesAMO : 0)
                           )
+
+                          // Commissions : uniquement les devis dont l'acompte OU la facture est réglé
+                          const partAgenteRate = c.finance.settings.partAgente
+                          let comReelEncaisse = 0
+                          let royaltiesComReel = 0
+                          let partAgenteComReel = 0
+
+                          for (const dv of c.devisAcceptes) {
+                            const artId = dv.artisan_id || dv.artisan?.id
+                            const dvFinance = c.finance.commissions.devis.find(x => x.id === dv.id)
+                            if (!dvFinance) continue
+
+                            const suiviAcompte = getSuivi(d, 'acompte_artisan', artId)
+                            const acompteDebloque = suiviAcompte?.statut_illico === 'recu' || suiviAcompte?.statut_ctp === 'recu'
+
+                            if (acompteDebloque) {
+                              comReelEncaisse = round2(comReelEncaisse + dvFinance.netCom)
+                              royaltiesComReel = round2(royaltiesComReel + (dvFinance.comHT - dvFinance.netCom))
+                              partAgenteComReel = round2(partAgenteComReel + dvFinance.gainsBruts.agente)
+                            }
+                          }
+
+                          const royaltiesReelTotal = round2(fraisRoyaltiesReel + royaltiesHonReel + royaltiesComReel)
+
+                          const apporteurRembourse = (!c.estChantierMarine && c.finance?.apporteur?.enabled)
+                            ? round2(c.finance.apporteur.lines?.reduce((sum, ligne) => {
+                                const devisOriginal = c.devisAcceptes.find(dv => dv.id === ligne.devisId)
+                                const artId = devisOriginal?.artisan_id || devisOriginal?.artisan?.id
+                                const suivi = getSuivi(d, 'apporteur_agente', artId)
+                                return suivi?.statut_ctp === 'rembourse' ? sum + ligne.agente : sum
+                              }, 0) || 0)
+                            : 0
+
+                          const gainAgenteReel = round2(
+                            (d.frais_statut === 'regle' ? c.fraisPartAgente : 0) +
+                            (getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle' ? c.partAgenteCourtage : 0) +
+                            (d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle' ? c.partAgenteAMO : 0) +
+                            partAgenteComReel - apporteurRembourse
+                          )
+
+                          const gainAdminReel = round2(fraisReel + honReel + comReelEncaisse - royaltiesReelTotal - gainAgenteReel)
+
                           return (<>
                             {fraisReel > 0 && <div className="flex justify-between"><span className="text-gray-400">Frais consul. TTC</span><span>+ {fraisReel.toFixed(2)} €</span></div>}
                             {honReel > 0 && <div className="flex justify-between"><span className="text-gray-400">Honoraires TTC</span><span>+ {honReel.toFixed(2)} €</span></div>}
-                            <div className="flex justify-between"><span className="text-gray-400">Commissions nettes</span><span>+ {c.netReel.toFixed(2)} €</span></div>
-                            <div className="flex justify-between"><span className="text-red-400">Somme royalties</span><span className="text-red-400">— {royaltiesReelTotal.toFixed(2)} €</span></div>
-                            {c.apporteurTTC > 0 && <div className="flex justify-between"><span className="text-orange-500">Apporteur</span><span className="text-orange-500">— {c.apporteurTTC.toFixed(2)} €</span></div>}
+                            {comReelEncaisse > 0 && <div className="flex justify-between"><span className="text-gray-400">Commissions nettes</span><span>+ {comReelEncaisse.toFixed(2)} €</span></div>}
+                            {royaltiesReelTotal > 0 && <div className="flex justify-between"><span className="text-red-400">Somme royalties</span><span className="text-red-400">— {royaltiesReelTotal.toFixed(2)} €</span></div>}
+                            {apporteurRembourse > 0 && <div className="flex justify-between"><span className="text-orange-500">Apporteur remboursé</span><span className="text-orange-500">— {apporteurRembourse.toFixed(2)} €</span></div>}
                             <div className="border-t border-green-200 pt-1">
                               {showParts && !c.estChantierMarine && (
                                 <div className="flex justify-between font-bold">
                                   <span className="text-blue-600">{nomReferente(d)}</span>
-                                  <span className="text-blue-700">{c.gainsAgenteReels.toFixed(2)} €</span>
+                                  <span className="text-blue-700">{gainAgenteReel.toFixed(2)} €</span>
                                 </div>
                               )}
                               {(showParts || isMarine) && (
@@ -1109,7 +1225,7 @@ export default function Finances() {
                                     {c.estChantierMarine ? 'Net' : nomFranchisee}
                                   </span>
                                   <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>
-                                    {(fraisReel + honCourtageReel + honAMOReel + c.netReel - royaltiesReelTotal - c.apporteurTTC - c.gainsAgenteReels).toFixed(2)} €
+                                    {gainAdminReel.toFixed(2)} €
                                   </span>
                                 </div>
                               )}
