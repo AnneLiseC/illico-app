@@ -1,60 +1,97 @@
-// /finances/page.js
+// app/finances/page.js
 'use client'
-
+import React from 'react'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
-import { calculateDossierFinance } from '../lib/finance'
+import {
+  calculateDossierFinance,
+  getPartAgente,
+  getActiveDevis,
+  getSignedDevis,
+} from '../lib/finance'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MOIS = [
-  '', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
-]
-
-const MOIS_LABELS = [
-  'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
-]
+const MOIS = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+const MOIS_LABELS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILITAIRES PURS
 // ─────────────────────────────────────────────────────────────────────────────
 
 const round2 = (n) => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100
+const fmt    = (n) => (Number(n) || 0).toFixed(2) + ' €'
+const fmtPct = (n) => (Number(n) || 0).toFixed(1) + ' %'
 
-const splitAmount = (amount, partAgente) => {
-  const agente = round2((amount || 0) * (partAgente || 0))
-  const admin  = round2((amount || 0) - agente)
-  return { agente, admin }
-}
+const normalizeDossier = (d) => ({
+  ...d,
+  part_agente: d.part_agente ?? (d.referente?.role === 'admin' ? 0 : 0.5),
+  taux_amo: d?.taux_amo ?? d?.honoraires_amo_taux,
+  client: d?.client ? {
+    ...d.client,
+    apporteur_mode: d.client?.apporteur_base  === 'total_chantier'
+      ? 'total_chantier_ht' : 'par_devis',
+  } : null,
+})
 
-const normalizeApporteurMode = (mode) => {
-  if (mode === 'total_chantier') return 'total_chantier_ht'
-  return mode || 'par_devis'
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPOSANT CHECKBOX + DATE
+// ─────────────────────────────────────────────────────────────────────────────
 
-const normalizeDossierForFinance = (d) => {
-  
-  const partAgente = d.part_agente ?? (d.referente?.role === 'admin' ? 0 : 0.5)
-
-  return {
-    ...d,
-    part_agente: partAgente,
-    taux_amo: d?.taux_amo ?? d?.honoraires_amo_taux,
-    client: d?.client
-      ? {
-          ...d.client,
-          apporteur_mode: normalizeApporteurMode(
-            d.client?.apporteur_mode || d.client?.apporteur_base
-          ),
-        }
-      : null,
+function CheckItem({ label, checked, date, onChange, onDateChange, alert, disabled = false, colorClass = '' }) {
+  const handleCheck = (isChecked) => {
+    onChange(isChecked)
+    if (isChecked && !date) {
+      onDateChange(new Date().toISOString().split('T')[0])
+    }
   }
+
+  return (
+    <div className={`flex items-center gap-2 flex-wrap py-1 ${disabled ? 'opacity-40' : ''}`}>
+      <label className="flex items-center gap-2 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={!!checked}
+          disabled={disabled}
+          onChange={e => !disabled && handleCheck(e.target.checked)}
+          className="w-4 h-4 rounded accent-blue-700"
+        />
+        <span className={`text-xs font-medium ${colorClass || (checked ? 'text-green-700' : 'text-gray-600')}`}>
+          {label}
+        </span>
+      </label>
+      {alert && !checked && (
+        <span className="text-xs text-red-500 font-medium">{alert}</span>
+      )}
+      {checked && (
+        <input
+          type="date"
+          value={date || ''}
+          onChange={e => onDateChange(e.target.value)}
+          className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none focus:border-blue-400"
+        />
+      )}
+    </div>
+  )
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS TABLEAU
+// ─────────────────────────────────────────────────────────────────────────────
+
+const thL = (label) => <th key={label} className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</th>
+const thR = (label) => <th key={label} className="text-right px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</th>
+const tdR = (val, cls = 'text-gray-700') => <td className={`px-3 py-2 text-right text-sm ${cls}`}>{val}</td>
+const tdTotal = (val) => (
+  <td className={`px-3 py-2 text-right text-sm font-bold ${(val || 0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+    {fmt(val)}
+  </td>
+)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPOSANT PRINCIPAL
@@ -69,11 +106,9 @@ export default function Finances() {
   const [saving, setSaving]                         = useState(false)
   const [erreur, setErreur]                         = useState('')
   const [succes, setSucces]                         = useState('')
-
   const [onglet, setOnglet]                         = useState('mes_chantiers')
   const [sousOnglet, setSousOnglet]                 = useState('chantier')
   const [dossierOuvert, setDossierOuvert]           = useState(null)
-
   const [dossiers, setDossiers]                     = useState([])
   const [redevances, setRedevances]                 = useState([])
   const [agentes, setAgentes]                       = useState([])
@@ -81,45 +116,20 @@ export default function Finances() {
   const [nomFranchisee, setNomFranchisee]           = useState('CTP')
   const [facturesAgente, setFacturesAgente]         = useState([])
   const [uploadingFactureAgente, setUploadingFactureAgente] = useState(null)
-
   const [redevModal, setRedevModal]   = useState(false)
   const [savingRedev, setSavingRedev] = useState(false)
   const [redevForm, setRedevForm]     = useState({
-    agente_id: '',
-    annee: new Date().getFullYear(),
-    mois: new Date().getMonth() + 1,
-    montant_ttc: 540,
-    statut: 'en_attente',
-    date_paiement: '',
-    note: '',
+    agente_id: '', annee: new Date().getFullYear(), mois: new Date().getMonth() + 1,
+    montant_ttc: 540, statut: 'en_attente', date_paiement: '', note: '',
   })
 
   const router = useRouter()
 
-  // ── INIT ───────────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-
-      const { data: profData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-
-      setProfile(profData)
-      await chargerTout()
-      setLoading(false)
-    }
-    init()
-  }, [router])
-
-  // ── CHARGEMENT DES DONNÉES ─────────────────────────────────────────────────
+    // ── CHARGEMENT ─────────────────────────────────────────────────────────────
 
   const chargerTout = async () => {
-    const { data: dossiersData } = await supabase
+    console.log('chargerTout start')
+    const { data: dossiersData, error: dossiersError } = await supabase
       .from('dossiers')
       .select(`
         *,
@@ -129,38 +139,42 @@ export default function Finances() {
         suivi_financier(*)
       `)
       .order('created_at', { ascending: false })
+    console.log('dossiers:', dossiersData?.length, 'error:', dossiersError)
     setDossiers(dossiersData || [])
 
     const { data: redevancesData } = await supabase
-      .from('redevances')
-      .select('*')
-      .order('annee', { ascending: false })
-      .order('mois',  { ascending: false })
+      .from('redevances').select('*')
+      .order('annee', { ascending: false }).order('mois', { ascending: false })
     setRedevances(redevancesData || [])
 
     const { data: facturesAgenteData } = await supabase
-      .from('factures_agente')
-      .select('*')
-      .order('annee', { ascending: false })
-      .order('mois',  { ascending: false })
+      .from('factures_agente').select('*')
+      .order('annee', { ascending: false }).order('mois', { ascending: false })
     setFacturesAgente(facturesAgenteData || [])
 
     const { data: agentesData } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('role', 'agente')
-      .order('prenom')
+      .from('profiles').select('*').eq('role', 'agente').order('prenom')
     setAgentes(agentesData || [])
     setAgenteSelectionnee(prev => prev || agentesData?.[0]?.id || null)
 
-    // Charger le nom de la franchisée (admin) pour les labels dynamiques
     const { data: adminData } = await supabase
-      .from('profiles')
-      .select('prenom, nom')
-      .eq('role', 'admin')
-      .single()
+      .from('profiles').select('prenom, nom').eq('role', 'admin').single()
     if (adminData) setNomFranchisee(`${adminData.prenom} ${adminData.nom}`)
   }
+
+  // ── INIT ───────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/login'); return }
+      const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+      setProfile(profData)
+      await chargerTout()
+      setLoading(false)
+    }
+    init()
+  }, [router])
 
   // ── HELPERS PROFIL ─────────────────────────────────────────────────────────
 
@@ -168,138 +182,185 @@ export default function Finances() {
   const nomReferente = (d) => d.referente ? `${d.referente.prenom} ${d.referente.nom}` : 'Agente'
 
   // ── CALCUL FINANCIER ───────────────────────────────────────────────────────
+  // calculer() : extrait les valeurs depuis lib/finance.js — zéro calcul inline
+  // calculerReel() : applique les déclencheurs suivi_financier — une seule source de vérité
 
   const calculer = (d) => {
-    const normalized = normalizeDossierForFinance(d)
-    const finance    = calculateDossierFinance(normalized)
+    const normalized = normalizeDossier(d)
+    const f          = calculateDossierFinance(normalized)
+    const partAgente = f.settings.partAgente
 
     const estChantierMarine = d.referente?.role === 'admin'
     const devisActifs       = (d.devis_artisans || []).filter(dv => dv.statut !== 'refuse')
     const devisAcceptes     = devisActifs.filter(dv => dv.statut === 'accepte')
-    const devisParId        = new Map((d.devis_artisans || []).map(dv => [dv.id, dv]))
-    const apporteurParDevis = new Map((finance.apporteur?.lines || []).map(line => [line.devisId, line]))
-    const partAgenteRate    = finance.settings.partAgente
 
-    // Commissions
-    const comHT    = round2(finance.commissions.comHT)
-    const comTTC   = round2(finance.commissions.comTTC)
-    const net      = round2(finance.commissions.netCom)
-    const partAgente = round2(finance.commissions.gainsBruts.agente)
-    const partAdmin  = round2(finance.commissions.gainsBruts.admin)
-
-    // Frais
-    const fraisHT        = round2(finance.frais.fraisHT)
-    const fraisTTC       = round2(finance.frais.fraisTTC)
-    const fraisRoyalties = round2(finance.frais.royaltiesFrais)
-    const fraisNet       = round2(finance.frais.netFrais)
-    const fraisPartAgente = round2(finance.frais.gainsBruts.agente)
-    const fraisPartAdmin  = round2(finance.frais.gainsBruts.admin)
-
-    // Honoraires
-    const honorairesCourtage   = round2(finance.honoraires.courtage.ttc)
-    const honorairesAMOSolde   = round2(finance.honoraires.amo.soldeTTC)
-    const honorairesTotalTTC   = round2(finance.honoraires.totalTTC)
-    const royaltiesCourtage    = round2(finance.honoraires.courtage.royalties)
-    const royaltiesAMO         = round2(finance.honoraires.amo.royaltiesSolde)
-    const honorairesCourtageNet = round2(finance.honoraires.courtage.net)
-    const honorairesAMONet      = round2(finance.honoraires.amo.soldeTTC - finance.honoraires.amo.royaltiesSolde)
-    const honorairesTotalNet    = round2(honorairesCourtageNet + honorairesAMONet)
-    const partAgenteHonoraires  = round2(finance.honoraires.gainsBruts.agente)
-    const partAdminHonoraires   = round2(finance.honoraires.gainsBruts.admin)
-    const partAgenteCourtage    = round2(splitAmount(honorairesCourtageNet, partAgenteRate).agente)
-    const partAgenteAMO         = round2(splitAmount(honorairesAMONet, partAgenteRate).agente)
-
-    // Royalties globales
-    // IMPORTANT : royaltiesCom n'entre pas dans la somme des royalties CTP
-    const royaltiesType2Previ = round2(
-      finance.commissions.devis.reduce((s, d) => s + (d.comHT - d.netCom), 0)
-    )
-    const sommeRoyalties = round2(fraisRoyalties + royaltiesCourtage + royaltiesAMO + royaltiesType2Previ)
-
-    // Apporteur
-    const apporteurTTC        = round2(finance.apporteur.totalTTC)
-    const apporteurPartAgente = round2(finance.apporteur.parts.agente)
-    const apporteurPartAdmin  = round2(finance.apporteur.parts.admin)
-
-    // Encaissement réel CTP
-    const totalEncaissement = finance.agence.netAvantApporteur
-
-    // Commissions signées
-    const commissionsSignees = finance.commissions.devis
-      .filter(item => item.signed)
-      .map(item => {
-        const original      = devisParId.get(item.id)
-        const apporteurLine = finance.apporteur.mode === 'par_devis'
-          ? apporteurParDevis.get(item.id)
-          : null
-        const apporteurAgente = round2(apporteurLine?.agente || 0)
-        return {
-          ...item,
-          artisan_id:     original?.artisan_id,
-          artisan:        original?.artisan,
-          date_signature: original?.date_signature,
-          apporteurAgente,
-          netAgente: round2(item.gainsBruts.agente - apporteurAgente),
-        }
-      })
-
-    // Gains agente réels
-    let gainsAgenteReels = 0
-    if (!estChantierMarine) {
-      gainsAgenteReels += commissionsSignees.reduce((s, item) => s + item.netAgente, 0)
-
-      if (finance.apporteur.mode === 'total_chantier_ht' && apporteurPartAgente > 0) {
-        gainsAgenteReels -= apporteurPartAgente
-      }
-      if (d.frais_statut === 'regle') {
-        gainsAgenteReels += fraisPartAgente
-      }
-      if (getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle') {
-        gainsAgenteReels += partAgenteCourtage
-      }
-      if (d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle') {
-        gainsAgenteReels += partAgenteAMO
-      }
-    }
-
-    const royaltiesCom = round2(commissionsSignees.reduce((s, item) => s + item.royaltiesCom, 0))
-    gainsAgenteReels   = round2(gainsAgenteReels)
-
-    // Totaux réels (devis signés uniquement)
-    const devisSignesList = finance.commissions.devis.filter(item => item.signed)
-    const comHTReel       = round2(devisSignesList.reduce((s, d) => s + d.comHT, 0))
-    const comTTCReel      = round2(devisSignesList.reduce((s, d) => s + d.comTTC, 0))
-    const royaltiesReel   = round2(devisSignesList.reduce((s, d) => s + (d.comHT - d.netCom), 0))
-    const netReel         = round2(devisSignesList.reduce((s, d) => s + d.netCom, 0))
-    const partAgenteReel  = round2(devisSignesList.reduce((s, d) => s + d.gainsBruts.agente, 0))
-    const partAdminReel   = round2(devisSignesList.reduce((s, d) => s + d.gainsBruts.admin, 0))
+    // Map devisId → données finance
+    const devisFinanceMap = new Map(f.commissions.devis.map(dv => [dv.id, dv]))
+    // Map devisId → ligne apporteur
+    const apporteurMap    = new Map((f.apporteur.lines || []).map(l => [l.devisId, l]))
 
     return {
-      finance,
+      // Référence brute
+      finance: f,
       estChantierMarine,
       devisActifs,
       devisAcceptes,
-      commissionsSignees,
-      devisSignesList,
-      tauxCourtagePct: round2(finance.settings.tauxCourtage * 100),
-      tauxAmoPct:      round2(finance.settings.tauxAmo * 100),
-      // Commissions
-      comHT, comTTC, royalties: royaltiesCom, net, partAgente, partAdmin,
-      comHTReel, comTTCReel, royaltiesReel, netReel, partAgenteReel, partAdminReel,
+      devisFinanceMap,
+      apporteurMap,
+      partAgenteRate: partAgente,
+
+      // Taux affichage
+      tauxCourtagePct: round2(f.settings.tauxCourtage * 100),
+      tauxAmoPct:      round2(f.settings.tauxAmo * 100),
+
       // Frais
-      fraisHT, fraisTTC, fraisRoyalties, fraisNet, fraisPartAgente, fraisPartAdmin,
-      // Honoraires
-      honorairesCourtage, honorairesAMOSolde, honorairesTotalTTC,
-      royaltiesCourtage, royaltiesAMO, sommeRoyalties, royaltiesType2Previ,
-      honorairesCourtageNet, honorairesAMONet, honorairesTotalNet,
-      partAgenteHonoraires, partAdminHonoraires, partAgenteCourtage, partAgenteAMO,
-      // Apporteur
-      apporteurTTC, apporteurPartAgente, apporteurPartAdmin,
-      // Totaux
-      totalEncaissement,
-      gainsAgentePrevi: round2(finance.gains.nets.agente),
-      netAdminPrevi:    round2(finance.gains.nets.admin),
-      gainsAgenteReels,
+      fraisHT:       round2(f.frais.fraisHT),
+      fraisTTC:      round2(f.frais.fraisTTC),
+      fraisRoyalties: round2(f.frais.royalties),
+      fraisNet:      round2(f.frais.net),
+      fraisAgente:   round2(f.frais.parts.agente),
+      fraisAdmin:    round2(f.frais.parts.admin),
+
+      // Commissions (tous devis actifs)
+      comHT:          round2(f.commissions.comHT),
+      comTTC:         round2(f.commissions.comTTC),
+      royaltiesCom:   round2(f.commissions.royaltiesType2),
+      netCom:         round2(f.commissions.netCom),
+      comAgente:      round2(f.commissions.parts.agente),
+      comAdmin:       round2(f.commissions.parts.admin),
+
+      // Commissions signées uniquement
+      comHTSigne:     round2(f.commissions.devis.filter(dv => dv.signed).reduce((s, dv) => s + dv.comHT, 0)),
+      comTTCSigne:    round2(f.commissions.devis.filter(dv => dv.signed).reduce((s, dv) => s + dv.comTTC, 0)),
+      royaltiesComSigne: round2(f.commissions.devis.filter(dv => dv.signed).reduce((s, dv) => s + dv.royaltiesType2, 0)),
+      netComSigne:    round2(f.commissions.devis.filter(dv => dv.signed).reduce((s, dv) => s + dv.netCom, 0)),
+      comAgenteSigne: round2(f.commissions.devis.filter(dv => dv.signed).reduce((s, dv) => s + dv.parts.agente, 0)),
+      comAdminSigne:  round2(f.commissions.devis.filter(dv => dv.signed).reduce((s, dv) => s + dv.parts.admin, 0)),
+
+      // Honoraires courtage
+      courtTTC:       round2(f.honoraires.courtage.ttc),
+      courtHT:        round2(f.honoraires.courtage.ht),
+      courtRoyalties: round2(f.honoraires.courtage.royalties),
+      courtNet:       round2(f.honoraires.courtage.net),
+      courtAgente:    round2(f.honoraires.courtage.parts.agente),
+      courtAdmin:     round2(f.honoraires.courtage.parts.admin),
+
+      // Honoraires AMO solde
+      amoTTC:         round2(f.honoraires.soldeAmo.ttc),
+      amoHT:          round2(f.honoraires.soldeAmo.ht),
+      amoRoyalties:   round2(f.honoraires.soldeAmo.royalties),
+      amoNet:         round2(f.honoraires.soldeAmo.net),
+      amoAgente:      round2(f.honoraires.soldeAmo.parts.agente),
+      amoAdmin:       round2(f.honoraires.soldeAmo.parts.admin),
+
+      // Honoraires total
+      honTotalTTC:    round2(f.honoraires.totalTTC),
+      honTotalNet:    round2(f.honoraires.totalNet),
+      honAgente:      round2(f.honoraires.parts.agente),
+      honAdmin:       round2(f.honoraires.parts.admin),
+
+      // Apporteur client
+      apporteurTotalHT: round2(f.apporteur.totalHT),
+      apporteurAgente:  round2(f.apporteur.parts.agente),
+      apporteurAdmin:   round2(f.apporteur.parts.admin),
+
+      // Royalties globales
+      royaltiesTotal: round2(f.royalties.total),
+      sommeRoyalties: round2(f.royalties.total),
+
+      // Gains prévisionnels nets
+      gainsAgentePrevi: round2(f.gains.nets.agente),
+      gainsAdminPrevi:  round2(f.gains.nets.admin),
+    }
+  }
+
+  const calculerReel = (d) => {
+    const c = calculer(d)
+
+    if (c.estChantierMarine) return {
+      ...c,
+      fraisReel: 0, honReel: 0, comReelNet: 0,
+      royaltiesReelTotal: 0, apporteurRembourse: 0,
+      gainAgenteReel: 0, gainAdminReel: 0,
+      gainsAgenteReels: 0,
+    }
+
+    // Frais — HT net si réglé
+    const fraisRegle         = d.frais_statut === 'regle'
+    const fraisReel          = fraisRegle ? c.fraisNet : 0
+    const fraisRoyaltiesReel = fraisRegle ? c.fraisRoyalties : 0
+    const fraisAgenteReel    = fraisRegle ? c.fraisAgente : 0
+
+    // Honoraires — HT net si réglé
+    const courtageRegle    = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
+    const amoRegle         = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
+    const honCourtageReel  = courtageRegle ? c.courtNet : 0
+    const honAMOReel       = amoRegle      ? c.amoNet   : 0
+    const honReel          = round2(honCourtageReel + honAMOReel)
+    const royaltiesHonReel = round2(
+      (courtageRegle ? c.courtRoyalties : 0) +
+      (amoRegle      ? c.amoRoyalties   : 0)
+    )
+    const honAgenteReel    = round2(
+      (courtageRegle ? c.courtAgente : 0) +
+      (amoRegle      ? c.amoAgente   : 0)
+    )
+
+    // Commissions — HT net si acompte illiCO débloqué (hors apporteurs artisans)
+    let comReelNet        = 0
+    let royaltiesComReel  = 0
+    let comAgenteReel     = 0
+
+    for (const dv of c.devisAcceptes) {
+      if (dv.artisan?.sans_royalties) continue // apporteurs artisans : déclenchés dès signé
+      const artId      = dv.artisan_id || dv.artisan?.id
+      const dvF        = c.devisFinanceMap.get(dv.id)
+      if (!dvF) continue
+      const suivi      = getSuivi(d, 'acompte_artisan', artId)
+      const debloque   = suivi?.statut_illico === 'recu'
+      if (debloque) {
+        comReelNet       = round2(comReelNet       + dvF.netCom)
+        royaltiesComReel = round2(royaltiesComReel + dvF.royaltiesType2)
+        comAgenteReel    = round2(comAgenteReel    + dvF.parts.agente)
+      }
+    }
+
+    // Commissions apporteurs artisans — déclenchées dès devis signé
+    let comApporteursReel     = 0
+    let comApporteursAgente   = 0
+    for (const dv of c.devisAcceptes) {
+      if (!dv.artisan?.sans_royalties) continue
+      const dvF = c.devisFinanceMap.get(dv.id)
+      if (!dvF || !dvF.signed) continue
+      comApporteursReel   = round2(comApporteursReel   + dvF.netCom)
+      comApporteursAgente = round2(comApporteursAgente + dvF.parts.agente)
+    }
+
+    // Apporteur client remboursé
+    const apporteurRembourse = round2(
+      (c.finance?.apporteur?.lines || []).reduce((sum, ligne) => {
+        const devisOriginal = c.devisAcceptes.find(dv => dv.id === ligne.devisId)
+        const artId = devisOriginal?.artisan_id || devisOriginal?.artisan?.id
+        const suivi = getSuivi(d, 'apporteur_agente', artId)
+        return suivi?.statut_ctp === 'rembourse' ? sum + ligne.agente : sum
+      }, 0)
+    )
+
+    const royaltiesReelTotal = round2(fraisRoyaltiesReel + royaltiesHonReel + royaltiesComReel)
+    const gainAgenteReel     = round2(fraisAgenteReel + honAgenteReel + comAgenteReel + comApporteursAgente - apporteurRembourse)
+    const gainAdminReel      = round2(fraisReel + honReel + comReelNet + comApporteursReel - royaltiesReelTotal - gainAgenteReel)
+
+    return {
+      ...c,
+      fraisReel,
+      honReel,
+      comReelNet,
+      comApporteursReel,
+      royaltiesReelTotal,
+      apporteurRembourse,
+      gainAgenteReel,
+      gainAdminReel,
+      gainsAgenteReels: gainAgenteReel,
     }
   }
 
@@ -312,38 +373,41 @@ export default function Finances() {
 
   const majSuivi = async (dossierId, type, artisanId, champ, valeur) => {
     setSaving(true)
-
-    let query = supabase
-      .from('suivi_financier')
-      .select('id')
-      .eq('dossier_id', dossierId)
-      .eq('type_echeance', type)
-
+    let query = supabase.from('suivi_financier').select('id')
+      .eq('dossier_id', dossierId).eq('type_echeance', type)
     query = artisanId ? query.eq('artisan_id', artisanId) : query.is('artisan_id', null)
-
-    const { data: existing, error: selectError } = await query.maybeSingle()
-    console.log('majSuivi debug:', { type, artisanId, existing, selectError })
+    const { data: existing } = await query.maybeSingle()
 
     if (existing) {
       await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
     } else {
-      await supabase.from('suivi_financier').insert({ dossier_id: dossierId, type_echeance: type, artisan_id: artisanId || null, [champ]: valeur })
+      await supabase.from('suivi_financier').insert({
+        dossier_id: dossierId, type_echeance: type,
+        artisan_id: artisanId || null, [champ]: valeur,
+      })
     }
-
-    // Synchro inverse : facture_finale → factures_artisans
     if (type === 'facture_finale' && champ === 'statut_client' && artisanId) {
       const statutFacture = valeur === 'regle' ? 'paye' : 'en_attente'
-      await supabase.from('factures_artisans').update({ statut: statutFacture }).eq('dossier_id', dossierId).eq('artisan_id', artisanId)
+      await supabase.from('factures_artisans').update({ statut: statutFacture })
+        .eq('dossier_id', dossierId).eq('artisan_id', artisanId)
     }
-
     await chargerTout()
     setSaving(false)
   }
 
+  const toggleSuivi = async (d, type, artisanId, checked, dateChamp = 'date_paiement', statutChamp = 'statut_client', statutVal = 'regle') => {
+    const valeur = checked ? statutVal : 'en_attente'
+    await majSuivi(d.id, type, artisanId, statutChamp, valeur)
+  }
+
+  const setDateSuivi = async (d, type, artisanId, date, dateChamp = 'date_paiement') => {
+    await majSuivi(d.id, type, artisanId, dateChamp, date)
+  }
+
   // ── ALERTES ────────────────────────────────────────────────────────────────
 
-  const alertes48h = (date) => date && new Date() > new Date(new Date(date).getTime() + 48 * 3600000)
-  const alertes7j  = (date) => date && new Date() > new Date(new Date(date).getTime() + 7 * 24 * 3600000)
+  const alerte48h = (date) => date && new Date() > new Date(new Date(date).getTime() + 48 * 3600000)
+  const alerte7j  = (date) => date && new Date() > new Date(new Date(date).getTime() + 7 * 24 * 3600000)
 
   // ── FACTURES AGENTE ────────────────────────────────────────────────────────
 
@@ -352,27 +416,21 @@ export default function Finances() {
 
   const upsertFactureAgenteMois = async (mois, annee, montant, updates) => {
     const existing = getFactureAgenteMois(mois, annee)
-
     if (existing) {
       await supabase.from('factures_agente').update(updates).eq('id', existing.id)
     } else {
       await supabase.from('factures_agente').insert({ agente_id: profile?.id, mois, annee, montant, ...updates })
     }
-
-    const { data } = await supabase
-      .from('factures_agente')
-      .select('*')
-      .order('annee', { ascending: false })
-      .order('mois',  { ascending: false })
+    const { data } = await supabase.from('factures_agente').select('*')
+      .order('annee', { ascending: false }).order('mois', { ascending: false })
     setFacturesAgente(data || [])
   }
 
   const uploadFactureAgentePdf = async (mois, annee, montant, fichier) => {
     setUploadingFactureAgente(`${annee}-${mois}`)
-    const ext   = fichier.name.split('.').pop()
+    const ext    = fichier.name.split('.').pop()
     const chemin = `factures_agente/${profile?.id}/${annee}-${String(mois).padStart(2, '0')}.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
-
     if (!error) {
       await upsertFactureAgenteMois(mois, annee, montant, { facture_path: chemin, statut: 'facture' })
       setSucces('Facture uploadée ✓')
@@ -382,7 +440,7 @@ export default function Finances() {
     setUploadingFactureAgente(null)
   }
 
-  // ── REDEVANCES CRUD ────────────────────────────────────────────────────────
+  // ── REDEVANCES ─────────────────────────────────────────────────────────────
 
   const sauvegarderRedevance = async () => {
     setSavingRedev(true)
@@ -393,37 +451,21 @@ export default function Finances() {
       montant_ttc:   parseFloat(redevForm.montant_ttc) || 540,
       statut:        redevForm.statut,
       date_paiement: redevForm.statut === 'regle'
-        ? (redevForm.date_paiement || new Date().toISOString().split('T')[0])
-        : null,
+        ? (redevForm.date_paiement || new Date().toISOString().split('T')[0]) : null,
       note: redevForm.note || null,
     }
-
-    await supabase.from('redevances').upsert(payload, {
-      onConflict: 'agente_id,annee,mois',
-      ignoreDuplicates: false,
-    })
-
-    const { data } = await supabase
-      .from('redevances')
-      .select('*')
-      .order('annee', { ascending: false })
-      .order('mois',  { ascending: false })
+    await supabase.from('redevances').upsert(payload, { onConflict: 'agente_id,annee,mois', ignoreDuplicates: false })
+    const { data } = await supabase.from('redevances').select('*')
+      .order('annee', { ascending: false }).order('mois', { ascending: false })
     setRedevances(data || [])
-
     setRedevModal(false)
-    setRedevForm({
-      agente_id: '', annee: new Date().getFullYear(), mois: new Date().getMonth() + 1,
-      montant_ttc: 540, statut: 'en_attente', date_paiement: '', note: '',
-    })
+    setRedevForm({ agente_id: '', annee: new Date().getFullYear(), mois: new Date().getMonth() + 1, montant_ttc: 540, statut: 'en_attente', date_paiement: '', note: '' })
     setSavingRedev(false)
   }
 
   const toggleRedevStatut = async (id, currentStatut) => {
     const newStatut = currentStatut === 'regle' ? 'en_attente' : 'regle'
-    const updates   = { statut: newStatut }
-    if (newStatut === 'regle') updates.date_paiement = new Date().toISOString().split('T')[0]
-    else updates.date_paiement = null
-
+    const updates   = { statut: newStatut, date_paiement: newStatut === 'regle' ? new Date().toISOString().split('T')[0] : null }
     await supabase.from('redevances').update(updates).eq('id', id)
     setRedevances(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r))
   }
@@ -437,164 +479,101 @@ export default function Finances() {
   const genererMoisAttendus = (agenteId, annee) => {
     const now     = new Date()
     const moisMax = annee < now.getFullYear() ? 12 : now.getMonth() + 1
-    const moisAttendus = []
-
-    for (let m = 1; m <= moisMax; m++) {
-      const existante = redevances.find(r =>
-        (r.agente_id === agenteId || (!r.agente_id && !agenteId)) &&
-        r.annee === annee && r.mois === m
-      )
-      const lastDay = new Date(annee, m, 0)
-      lastDay.setDate(lastDay.getDate() - 1)
-      const enRetard = (!existante || existante.statut !== 'regle') &&
-        new Date(annee, m - 1, lastDay.getDate()) < now
-
-      moisAttendus.push({ mois: m, redev: existante, enRetard, lastDay })
-    }
-    return moisAttendus
+    return Array.from({ length: moisMax }, (_, i) => {
+      const m     = i + 1
+      const redev = redevances.find(r => r.agente_id === agenteId && r.annee === annee && r.mois === m)
+      const enRetard = (!redev || redev.statut !== 'regle') && new Date(annee, m, 0) < now
+      return { mois: m, redev, enRetard }
+    })
   }
 
-  // ── DÉRIVATIONS DE LISTES ──────────────────────────────────────────────────
+  // ── LISTES DÉRIVÉES ────────────────────────────────────────────────────────
 
   const dossiersAgentes = dossiers.filter(d => d.referente?.role === 'agente')
-  const dossiersMarine  = dossiers.filter(d => d.referente?.role === 'admin')
-
-  // Mes dossiers : admin = franchisée, agente = ses propres dossiers
-  const mesDossiers = isMarine
-    ? dossiersMarine
+  const mesDossiers     = isMarine
+    ? dossiers.filter(d => d.referente?.role === 'admin')
     : dossiers.filter(d => d.referente?.id === profile?.id)
-
-  // Dossiers de l'agente sélectionnée (onglet admin "agentes")
-  const dossiersAgente = agenteSelectionnee
+  const dossiersAgente   = agenteSelectionnee
     ? dossiers.filter(d => d.referente?.id === agenteSelectionnee)
     : dossiersAgentes
-
-  const agenteActuelle = agentes.find(a => a.id === agenteSelectionnee)
-  const nomAgente      = agenteActuelle ? `${agenteActuelle.prenom} ${agenteActuelle.nom}` : 'Agente'
-
-  // Redevances filtrées par agente
+  const agenteActuelle   = agentes.find(a => a.id === agenteSelectionnee)
+  const nomAgente        = agenteActuelle ? `${agenteActuelle.prenom} ${agenteActuelle.nom}` : 'Agente'
   const redevancesAgente = agenteSelectionnee
-    ? redevances.filter(r => r.agente_id === agenteSelectionnee || !r.agente_id)
+    ? redevances.filter(r => r.agente_id === agenteSelectionnee)
     : redevances
-  const mesRedevances = profile?.id
-    ? redevances.filter(r => r.agente_id === profile.id || !r.agente_id)
-    : redevances
+  const mesRedevances    = profile?.id ? redevances.filter(r => r.agente_id === profile.id) : redevances
 
-  // ── TOTAUX GLOBAUX CTP ─────────────────────────────────────────────────────
+  // ── TOTAUX GLOBAUX ─────────────────────────────────────────────────────────
 
-  const totalRedevancesReglees  = redevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
-  const totalGainsAgentesReels  = dossiersAgentes.reduce((s, d) => s + calculer(d).gainsAgenteReels, 0)
-  const totalGainsAgentesPrevi  = dossiersAgentes.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
-  const totalApporteurAgenteDu  = dossiersAgentes.reduce((s, d) => s + calculer(d).apporteurPartAgente, 0)
+  const totalRedevancesReglees = redevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
+  const totalGainsAgentesReels = dossiersAgentes.reduce((s, d) => s + calculerReel(d).gainsAgenteReels, 0)
+  const totalApporteurAgenteDu = dossiersAgentes.reduce((s, d) => s + calculer(d).apporteurAgente, 0)
+  const mesDossiersGainsPrevi  = mesDossiers.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
+  const mesDossiersGainsReels  = mesDossiers.reduce((s, d) => s + calculerReel(d).gainsAgenteReels, 0)
+  const mesApporteurDu         = mesDossiers.reduce((s, d) => s + calculer(d).apporteurAgente, 0)
+  const mesRedevancesReglees   = mesRedevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
+  const monNet                 = mesDossiersGainsReels - mesRedevancesReglees - mesApporteurDu
 
-  const totalCommissionsCTP = dossiers.reduce((s, d) => { const c = calculer(d); return s + c.comTTC - c.royalties }, 0)
-  const totalHonorairesCTP  = dossiers.reduce((s, d) => s + calculer(d).honorairesTotalTTC, 0)
-  const totalFraisCTP       = dossiers.filter(d => d.frais_statut === 'regle').reduce((s, d) => s + calculer(d).fraisNet, 0)
-  const totalApporteurTTC   = dossiers.reduce((s, d) => s + calculer(d).apporteurTTC, 0)
-
-  const encCTP = totalCommissionsCTP + totalHonorairesCTP + totalFraisCTP + totalRedevancesReglees
-  const decCTP = totalGainsAgentesReels + totalApporteurTTC
-  const netCTP = encCTP - decCTP
-
-  const totalAdminDoitAgentes   = totalGainsAgentesReels
-  const totalAgentesDoiventAdmin = totalRedevancesReglees + totalApporteurAgenteDu
-
-  // ── TOTAUX AGENTE SÉLECTIONNÉE ─────────────────────────────────────────────
-
-  const gainsAgenteReels       = dossiersAgente.reduce((s, d) => s + calculer(d).gainsAgenteReels, 0)
-  const gainsAgentePrevi       = dossiersAgente.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
-  const apporteurAgenteDu      = dossiersAgente.reduce((s, d) => s + calculer(d).apporteurPartAgente, 0)
-  const redevancesAgenteReglees = redevancesAgente.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
-  const netAgenteSelectionnee   = gainsAgenteReels - redevancesAgenteReglees - apporteurAgenteDu
-
-  // ── TOTAUX AGENTE CONNECTÉE ────────────────────────────────────────────────
-
-  const mesDossiersGainsBruts = mesDossiers.reduce((s, d) => {
+  const totalNetCTP = dossiers.reduce((s, d) => {
     const c = calculer(d)
-    return s + c.partAgente + c.partAgenteHonoraires + c.fraisPartAgente
+    return s + c.gainsAdminPrevi
   }, 0)
-  const mesDossiersGainsReels = mesDossiers.reduce((s, d) => s + calculer(d).gainsAgenteReels, 0)
-  const mesDossiersGainsPrevi = mesDossiers.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
-  const mesApporteurDu        = mesDossiers.reduce((s, d) => s + calculer(d).apporteurPartAgente, 0)
-  const mesRedevancesReglees  = mesRedevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
-  const monNet                = mesDossiersGainsReels - mesRedevancesReglees - mesApporteurDu
 
   // ── AGRÉGATION PAR PÉRIODE ─────────────────────────────────────────────────
 
   const getKeyMois = (d) => {
     if (!d.date_signature_contrat) return null
     const dt = new Date(d.date_signature_contrat)
-    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '00')}`
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
   }
 
   const emptyAgg = () => ({
-    comHT: 0, comTTC: 0, royalties: 0, net: 0, partAgente: 0, partAdmin: 0,
-    apporteurTTC: 0, apporteurPartAgente: 0, apporteurPartAdmin: 0,
-    fraisNet: 0, fraisTTC: 0, fraisPartAgente: 0, fraisPartAdmin: 0, fraisRoyalties: 0,
-    gainsAgenteReels: 0, gainsAgentePrevi: 0, netAdminPrevi: 0,
-    honorairesTotalTTC: 0, honorairesTotalNet: 0,
-    royaltiesCourtage: 0, royaltiesAMO: 0, sommeRoyalties: 0,
-    partAgenteHonoraires: 0, partAdminHonoraires: 0, totalEncaissement: 0,
+    fraisNet: 0, fraisTTC: 0, fraisAgente: 0,
+    comHTSigne: 0, comTTCSigne: 0, royaltiesComSigne: 0, netComSigne: 0, comAgenteSigne: 0,
+    courtHT: 0, courtNet: 0, courtAgente: 0,
+    amoHT: 0, amoNet: 0, amoAgente: 0,
+    honTotalTTC: 0, honTotalNet: 0, honAgente: 0,
+    apporteurTotalHT: 0, apporteurAgente: 0,
+    royaltiesTotal: 0, sommeRoyalties: 0,
+    gainsAgentePrevi: 0, gainsAdminPrevi: 0,
+    gainsAgenteReels: 0, gainAdminReel: 0,
+    fraisReel: 0, honReel: 0, comReelNet: 0, comApporteursReel: 0,
+    royaltiesReelTotal: 0, apporteurRembourse: 0,
   })
 
-  const agrégerMois = (listeDossiers) => {
+  const agrégerMois = (listeDossiers, useReel = false) => {
     const map = {}
     listeDossiers.forEach(d => {
       const key = getKeyMois(d)
       if (!key) return
       if (!map[key]) map[key] = emptyAgg()
-      const c = calculer(d)
+      const c = useReel ? calculerReel(d) : calculer(d)
       Object.keys(map[key]).forEach(k => { if (c[k] !== undefined) map[key][k] += c[k] })
     })
     return Object.entries(map).sort((a, b) => b[0].localeCompare(a[0]))
   }
 
-  const agrégerAnnee = (listeDossiers) => {
+  const agrégerAnnee = (listeDossiers, useReel = false) => {
     const map = {}
     listeDossiers.forEach(d => {
       if (!d.date_signature_contrat) return
       const annee = new Date(d.date_signature_contrat).getFullYear()
       if (!map[annee]) map[annee] = emptyAgg()
-      const c = calculer(d)
+      const c = useReel ? calculerReel(d) : calculer(d)
       Object.keys(map[annee]).forEach(k => { if (c[k] !== undefined) map[annee][k] += c[k] })
     })
     return Object.entries(map).sort((a, b) => b[0] - a[0])
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // HELPERS DE RENDU (cellules & formatage)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  const fmt   = (n) => (n || 0).toFixed(2) + ' €'
-  const thR   = (label) => <th className="text-right px-3 py-3 text-xs font-medium text-gray-500 uppercase">{label}</th>
-  const thL   = (label) => <th className="text-left px-3 py-3 text-xs font-medium text-gray-500 uppercase">{label}</th>
-  const tdR   = (val, color = 'text-gray-600') => <td className={`px-3 py-3 text-right ${color}`}>{val}</td>
-  const tdTotal = (val) => (
-    <td className={`px-3 py-3 text-right font-bold ${(val || 0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-      {(val || 0).toFixed(2)} €
-    </td>
-  )
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // SOUS-ONGLETS & SÉLECTEUR AGENTE
+  // COMPOSANTS DE RENDU
   // ─────────────────────────────────────────────────────────────────────────────
 
   const renderSousOnglets = () => (
     <div className="flex gap-2">
-      {[
-        { key: 'chantier', label: 'Par chantier' },
-        { key: 'mois',     label: 'Par mois'     },
-        { key: 'annee',    label: 'Par année'     },
-      ].map(({ key, label }) => (
-        <button
-          key={key}
-          onClick={() => setSousOnglet(key)}
-          className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${
-            sousOnglet === key
-              ? 'bg-blue-800 text-white border-blue-800'
-              : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-          }`}
-        >
+      {[{ key: 'chantier', label: 'Par chantier' }, { key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
+        <button key={key} onClick={() => setSousOnglet(key)}
+          className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}>
           {label}
         </button>
       ))}
@@ -606,15 +585,8 @@ export default function Finances() {
       <span className="text-sm text-gray-500">Agente :</span>
       <div className="flex gap-2 flex-wrap">
         {agentes.map(a => (
-          <button
-            key={a.id}
-            onClick={() => setAgenteSelectionnee(a.id)}
-            className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${
-              agenteSelectionnee === a.id
-                ? 'bg-blue-800 text-white border-blue-800'
-                : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-            }`}
-          >
+          <button key={a.id} onClick={() => setAgenteSelectionnee(a.id)}
+            className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${agenteSelectionnee === a.id ? 'bg-blue-800 text-white border-blue-800' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}>
             {a.prenom} {a.nom}
           </button>
         ))}
@@ -623,1463 +595,439 @@ export default function Finances() {
   )
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // ACCORDÉON (vue par chantier)
+  // ACCORDÉON
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const renderAccordeon = (listeDossiers, showBadge = false) => {
-    const showParts = showBadge || !isMarine
+  const renderAccordeon = (listeDossiers, showBadge = false) => (
+    <div className="space-y-2">
+      {listeDossiers.map(d => {
+        const c      = calculer(d)
+        const r      = calculerReel(d)
+        const isOpen = dossierOuvert === d.id
 
-    return (
-      <div className="space-y-2">
-        {listeDossiers.map(d => {
-          const c      = calculer(d)
-          const tousSignes = c.devisActifs.length > 0 && c.devisActifs.every(dv => dv.statut === 'accepte')
-          const toutRegle = (() => {
-            // Frais
-            if (d.frais_consultation > 0 && d.frais_statut !== 'regle') return false
-            // Acomptes + factures artisans
-            for (const dv of c.devisAcceptes) {
-              const artId = dv.artisan_id || dv.artisan?.id
-              const acompte = getSuivi(d, 'acompte_artisan', artId)
-              if (acompte?.statut_client !== 'regle') return false
-              if (d.typologie === 'amo') {
-                const fact = getSuivi(d, 'facture_finale', artId)
-                if (fact?.statut_client !== 'regle') return false
-              }
-            }
-            // Honoraires
-            if (['courtage', 'amo'].includes(d.typologie)) {
-              if (getSuivi(d, 'honoraires_courtage')?.statut_client !== 'regle') return false
-              if (d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client !== 'regle') return false
-            }
-            return true
-          })()
-          const isOpen = dossierOuvert === d.id
+        const nbAlertes = [
+          d.contrat_signe && d.frais_statut !== 'regle' && alerte48h(d.date_signature_contrat),
+          ...c.devisAcceptes.map(dv => {
+            const artId = dv.artisan_id || dv.artisan?.id
+            return dv.date_signature && alerte7j(dv.date_signature) &&
+              getSuivi(d, 'acompte_artisan', artId)?.statut_client !== 'regle'
+          }),
+          d.date_fin_chantier && d.typologie === 'amo' &&
+            alerte48h(d.date_fin_chantier) &&
+            getSuivi(d, 'solde_amo')?.statut_client !== 'regle',
+        ].filter(Boolean).length
 
-          const nbAlertes = [
-            d.contrat_signe && d.date_signature_contrat && d.frais_statut !== 'regle' && alertes48h(d.date_signature_contrat),
-            ...c.devisAcceptes.map(dv =>
-              dv.date_signature && alertes7j(dv.date_signature) &&
-              getSuivi(d, 'acompte_artisan', dv.artisan_id || dv.artisan?.id)?.statut_client !== 'regle'
-            ),
-            d.date_fin_chantier && d.typologie === 'amo' &&
-              alertes48h(d.date_fin_chantier) &&
-              getSuivi(d, 'solde_amo')?.statut_client !== 'regle',
-          ].filter(Boolean).length
-
-          const headerRight = showBadge
-            ? null
-            : (isMarine ? c.totalEncaissement : c.gainsAgentePrevi)
-
-          return (
-            <div key={d.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              {/* En-tête accordéon */}
-              <div
-                className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
-                onClick={() => setDossierOuvert(isOpen ? null : d.id)}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-bold text-blue-900">{d.reference}</span>
-                  <span className="text-sm text-gray-500">{d.client?.prenom} {d.client?.nom}</span>
-                  <span className="text-xs text-gray-400">{d.typologie}</span>
-                  {showBadge && (
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      c.estChantierMarine ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-                    }`}>
-                      {c.estChantierMarine ? nomFranchisee : nomReferente(d)}
-                    </span>
-                  )}
-                  {nbAlertes > 0 && (
-                    <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">
-                      ⚠️ {nbAlertes}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-4">
-                  {showBadge ? (
-                    <>
-                      {!c.estChantierMarine && (
-                        <span className="text-sm text-blue-700 font-medium">
-                          {nomReferente(d)} : {c.gainsAgenteReels.toFixed(2)} €
-                        </span>
-                      )}
-                      <span className="text-sm text-purple-700 font-medium">
-                        CTP : {c.netAdminPrevi.toFixed(2)} €
-                      </span>
-                    </>
-                  ) : (
-                    headerRight !== null && (
-                      <span className="text-sm text-gray-700 font-medium">
-                        {isMarine ? 'Encaissement : ' : 'Net : '}{headerRight.toFixed(2)} €
-                      </span>
-                    )
-                  )}
-                  <span className="text-gray-400">{isOpen ? '▲' : '▼'}</span>
-                </div>
-              </div>
-
-              {/* Contenu accordéon */}
-              {isOpen && (
-                <div className="border-t border-gray-100 p-4 space-y-4">
-                  {/* Statut contrat & dates */}
-                  <div className="flex items-center gap-3 text-sm flex-wrap">
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                      d.contrat_signe ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
-                    }`}>
-                      Contrat {d.contrat_signe
-                        ? `✅ ${d.date_signature_contrat ? new Date(d.date_signature_contrat).toLocaleDateString('fr-FR') : ''}`
-                        : '❌ non signé'
-                      }
-                    </span>
-                    {d.date_demarrage_chantier && (
-                      <span className="text-xs text-gray-400">
-                        Démarrage : {new Date(d.date_demarrage_chantier).toLocaleDateString('fr-FR')}
-                      </span>
-                    )}
-                    {d.date_fin_chantier && (
-                      <span className="text-xs text-gray-400">
-                        Fin : {new Date(d.date_fin_chantier).toLocaleDateString('fr-FR')}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Frais de consultation */}
-                  {d.frais_consultation > 0 && (
-                    <div className="border border-gray-100 rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs font-medium text-gray-600 uppercase">Frais de consultation</p>
-                        {alertes48h(d.date_signature_contrat) && d.frais_statut !== 'regle' && (
-                          <span className="text-xs text-red-500">⚠️ Retard 48h</span>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs bg-gray-50 rounded p-2 mb-2">
-                        <div className="flex justify-between"><span className="text-gray-400">TTC</span><span>{c.fraisTTC.toFixed(2)} €</span></div>
-                        <div className="flex justify-between"><span className="text-gray-400">HT</span><span>{c.fraisHT.toFixed(2)} €</span></div>
-                        <div className="flex justify-between"><span className="text-gray-400">Royalties</span><span className="text-red-400">- {c.fraisRoyalties.toFixed(2)} €</span></div>
-                        <div className="flex justify-between"><span className="text-gray-400">Net</span><span className="font-medium">{c.fraisNet.toFixed(2)} €</span></div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                            d.frais_statut === 'regle'    ? 'bg-green-100 text-green-700' :
-                            d.frais_statut === 'factures' ? 'bg-amber-100 text-amber-700' :
-                            'bg-gray-100 text-gray-500'
-                          }`}>
-                            {d.frais_statut === 'regle'
-                              ? (d.frais_deduits ? '🔄 Déduit du total client' : '✅ Réglé')
-                              : d.frais_statut === 'factures' ? '⏳ Facturé' : 'Offerts'
-                            }
-                          </span>
-                          {d.frais_statut === 'regle' && (
-                            <input
-                              type="date"
-                              value={getSuivi(d, 'frais_consultation')?.date_paiement || ''}
-                              onChange={e => majSuivi(d.id, 'frais_consultation', null, 'date_paiement', e.target.value)}
-                              className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none"
-                              placeholder="Date de règlement"
-                            />
-                          )}
-                        </div>
-                    </div>
-                  )}
-
-                  {/* Acomptes & Factures par artisan */}
-                  {c.devisActifs.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-gray-500 uppercase">Acomptes & Factures par artisan</p>
-                      {c.devisActifs.map(dv => {
-                        const suiviAcompte = getSuivi(d, 'acompte_artisan', dv.artisan_id || dv.artisan?.id)
-                        const estSigne = dv.statut === 'accepte'
-                        const montantAcompteCalc = dv.acompte_pourcentage === -1
-                          ? (dv.acompte_montant_fixe || 0)
-                          : (dv.montant_ttc || 0) * ((dv.acompte_pourcentage || 30) / 100)
-                        const montantSolde = (dv.montant_ttc || 0) - montantAcompteCalc
-
-                        return (
-                          <div key={dv.id} className="border border-gray-100 rounded-lg p-3 space-y-2">
-                            {/* En-tête artisan */}
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium text-gray-800">🔨 {dv.artisan?.entreprise}</p>
-                              <span className="text-xs text-gray-400">
-                                {dv.montant_ht?.toFixed(2)} € HT / {dv.montant_ttc?.toFixed(2)} € TTC
-                              </span>
-                              {estSigne && dv.date_signature && (
-                                <span className="text-xs text-green-600">
-                                  Signé le {new Date(dv.date_signature).toLocaleDateString('fr-FR')}
-                                </span>
-                              )}
-                              {!estSigne && (
-                                <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Non signé</span>
-                              )}
-                            </div>
-
-                            {/* Grille prévi / réel */}
-                            <div className={`grid gap-2 text-xs ${tousSignes ? 'grid-cols-1' : 'grid-cols-2'}`}>
-
-                              {/* Prévisionnel */}
-                              {!tousSignes && (
-                                <div className="bg-gray-50 rounded p-2 space-y-1">
-                                  <p className="font-medium text-gray-500 mb-1">Prévisionnel</p>
-                                  <div className="flex justify-between">
-                                    <span className="text-gray-400">Acompte</span>
-                                    <span className="font-medium">
-                                      {dv.acompte_pourcentage === -1
-                                        ? `${(dv.acompte_montant_fixe || 0).toFixed(2)} € TTC`
-                                        : `${montantAcompteCalc.toFixed(2)} € TTC (${dv.acompte_pourcentage || 30}%)`}
-                                    </span>
-                                  </div>
-                                  {d.typologie === 'amo' && (
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-400">Facture finale</span>
-                                      <span className="font-medium">{montantSolde.toFixed(2)} € TTC</span>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Réel — contrôles uniquement si signé */}
-                              <div className={`rounded p-2 space-y-2 ${estSigne ? 'bg-green-50' : 'bg-gray-100'}`}>
-                                <p className="font-medium text-green-700 mb-1">{tousSignes ? 'Suivi' : 'Réel (signé)'}</p>
-                                {!estSigne ? (
-                                  <p className="text-gray-400 italic">Devis non signé</p>
-                                ) : (
-                                  <>
-                                    {/* Acompte */}
-                                    {montantAcompteCalc > 0 && <div className="space-y-1">
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-500 font-medium">Acompte</span>
-                                        <span className="font-bold text-gray-800">
-                                          {dv.acompte_pourcentage === -1
-                                            ? `${(dv.acompte_montant_fixe || 0).toFixed(2)} € TTC`
-                                            : `${montantAcompteCalc.toFixed(2)} € TTC (${dv.acompte_pourcentage || 30}%)`}
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        {dv.date_signature && alertes7j(dv.date_signature) && suiviAcompte?.statut_client !== 'regle' && (
-                                          <span className="text-red-500">⚠️ Retard</span>
-                                        )}
-                                        <select
-                                          value={suiviAcompte?.statut_client || 'en_attente'}
-                                          onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id || dv.artisan?.id, 'statut_client', e.target.value)}
-                                          className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
-                                        >
-                                          <option value="en_attente">Client : En attente</option>
-                                          <option value="envoye">Client : Demande envoyé</option>
-                                          <option value="regle">Client : ✅ Payé</option>
-                                        </select>
-                                        {suiviAcompte?.statut_client === 'regle' && (
-                                          <input type="date"
-                                            value={suiviAcompte?.date_paiement || ''}
-                                            onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id || dv.artisan?.id, 'date_paiement', e.target.value)}
-                                            className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white" />
-                                        )}
-                                        {!dv.artisan?.sans_royalties && (
-                                          <select
-                                            value={suiviAcompte?.statut_illico || 'en_attente'}
-                                            onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id || dv.artisan?.id, 'statut_illico', e.target.value)}
-                                            className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
-                                          >
-                                            <option value="en_attente">illiCO France : En attente</option>
-                                            <option value="recu">illiCO France : ✅ Acompte débloqué</option>
-                                          </select>
-                                        )}
-                                        {isMarine && (
-                                          <select
-                                            value={suiviAcompte?.statut_ctp || 'en_attente'}
-                                            onChange={e => majSuivi(d.id, 'acompte_artisan', dv.artisan_id || dv.artisan?.id, 'statut_ctp', e.target.value)}
-                                            className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
-                                          >
-                                            <option value="en_attente">CTP : En attente commission</option>
-                                            <option value="recu">CTP : ✅ Commission reçue</option>
-                                          </select>
-                                        )}
-                                      </div>
-                                    </div>}
-
-                                    {/* Facture finale AMO */}
-                                    {d.typologie === 'amo' && (() => {
-                                      const suiviFact = getSuivi(d, 'facture_finale', dv.artisan_id || dv.artisan?.id)
-                                      return (
-                                        <div className="space-y-1 border-t border-green-200 pt-1">
-                                          <div className="flex justify-between">
-                                            <span className="text-gray-500 font-medium">Facture finale</span>
-                                            <span className="font-bold text-gray-800">{montantSolde.toFixed(2)} € TTC</span>
-                                          </div>
-                                          <div className="flex items-center gap-2 flex-wrap">
-                                            {d.date_fin_chantier && alertes48h(d.date_fin_chantier) && suiviFact?.statut_client !== 'regle' && (
-                                              <span className="text-red-500">⚠️ Retard</span>
-                                            )}
-                                            <select
-                                              value={suiviFact?.statut_client || 'en_attente'}
-                                              onChange={e => majSuivi(d.id, 'facture_finale', dv.artisan_id || dv.artisan?.id, 'statut_client', e.target.value)}
-                                              className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
-                                            >
-                                              <option value="en_attente">Client : En attente</option>
-                                              <option value="envoye">Client : Facture reçue</option>
-                                              <option value="regle">Client : ✅ Payé </option>
-                                            </select>
-                                            {suiviFact?.statut_client === 'regle' && (
-                                              <input type="date"
-                                                value={suiviFact?.date_paiement || ''}
-                                                onChange={e => majSuivi(d.id, 'facture_finale', dv.artisan_id || dv.artisan?.id, 'date_paiement', e.target.value)}
-                                                className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white" />
-                                            )}
-                                          </div>
-                                        </div>
-                                      )
-                                    })()}
-                                    {/* Apporteur par devis */}
-                                    {c.finance?.apporteur?.enabled && c.finance?.apporteur?.mode === 'par_devis' && (() => {
-                                      const ligne = c.finance.apporteur.lines?.find(l => l.devisId === dv.id)
-                                      if (!ligne || ligne.totalTTC === 0) return null
-                                      const suiviApporteur = getSuivi(d, 'apporteur_agente', dv.artisan_id || dv.artisan?.id)
-                                      return (
-                                        <div className="space-y-2 border-t border-green-200 pt-1">
-                                          <div className="flex justify-between">
-                                            <span className="text-orange-500 font-medium">Apporteur</span>
-                                            <span className="font-bold text-orange-600">— {ligne.totalTTC.toFixed(2)} € HT</span>
-                                          </div>
-                                          {!c.estChantierMarine && (
-                                            <div className="space-y-1">
-                                              <div className="flex justify-between text-orange-400">
-                                                <span>Part agente</span>
-                                                <span>— {ligne.agente.toFixed(2)} €</span>
-                                              </div>
-                                              <select
-                                                value={suiviApporteur?.statut_ctp || 'en_attente'}
-                                                onChange={e => majSuivi(d.id, 'apporteur_agente', dv.artisan_id || dv.artisan?.id, 'statut_ctp', e.target.value)}
-                                                className="border border-orange-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white w-full">
-                                                <option value="en_attente">Agente → CTP : En attente</option>
-                                                <option value="rembourse">Agente → CTP : ✅ Remboursé</option>
-                                              </select>
-                                              {suiviApporteur?.statut_ctp === 'rembourse' && (
-                                                <input type="date"
-                                                  value={suiviApporteur?.date_paiement || ''}
-                                                  onChange={e => majSuivi(d.id, 'apporteur_agente', dv.artisan_id || dv.artisan?.id, 'date_paiement', e.target.value)}
-                                                  className="border border-orange-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white w-full" />
-                                              )}
-                                            </div>
-                                          )}
-                                          {isMarine && (
-                                            <div className="space-y-1">
-                                              <div className="flex justify-between text-orange-400">
-                                                <span>Part {nomFranchisee}</span>
-                                                <span>— {ligne.admin.toFixed(2)} €</span>
-                                              </div>
-                                              <select
-                                                value={suiviApporteur?.statut_client || 'en_attente'}
-                                                onChange={e => majSuivi(d.id, 'apporteur_agente', dv.artisan_id || dv.artisan?.id, 'statut_client', e.target.value)}
-                                                className="border border-orange-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white w-full">
-                                                <option value="en_attente">CTP : En attente</option>
-                                                <option value="retire">CTP : ✅ Retiré</option>
-                                              </select>
-                                              {suiviApporteur?.statut_client === 'retire' && (
-                                                <input type="date"
-                                                  value={suiviApporteur?.date_paiement || ''}
-                                                  onChange={e => majSuivi(d.id, 'apporteur_agente', dv.artisan_id || dv.artisan?.id, 'date_paiement', e.target.value)}
-                                                  className="border border-orange-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white w-full" />
-                                              )}
-                                            </div>
-                                          )}
-                                        </div>
-                                      )
-                                    })()}
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  {/* Honoraires client */}
-                  {['courtage', 'amo'].includes(d.typologie) && c.honorairesTotalTTC > 0 && (
-                    <div className="border border-gray-100 rounded-lg p-3 space-y-2">
-                      <p className="text-xs font-medium text-gray-600 uppercase mb-1">Honoraires client</p>
-                      <div className={`grid gap-3 text-xs ${tousSignes ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                        {!tousSignes && (
-                          <div className="space-y-2">
-                            <p className="font-medium text-gray-500 text-xs mb-1">Prévisionnel</p>
-                            <div className="bg-gray-50 rounded p-2 space-y-1">
-                              <div className="flex justify-between"><span className="font-medium text-gray-600">Courtage ({c.tauxCourtagePct}%)</span><span>{c.honorairesCourtage.toFixed(2)} €</span></div>
-                              <div className="flex justify-between"><span className="text-red-400">Royalties (5%)</span><span className="text-red-400">- {c.royaltiesCourtage.toFixed(2)} €</span></div>
-                              <div className="flex justify-between border-t border-gray-200 pt-1"><span className="text-gray-400">Net</span><span className="font-medium">{c.honorairesCourtageNet.toFixed(2)} €</span></div>
-                              <div className="flex justify-between border-t border-gray-200 pt-1"><span className="text-gray-400">Net</span><span className="font-medium">{c.honorairesCourtageNet.toFixed(2)} €</span></div>
-                              {!c.estChantierMarine && <div className="flex justify-between"><span className="text-blue-500">Part agente</span><span className="text-blue-700">{c.partAgenteCourtage.toFixed(2)} €</span></div>}
-                            </div>
-                            {d.typologie === 'amo' && (
-                              <div className="bg-blue-50 rounded p-2 space-y-1">
-                                <div className="flex justify-between"><span className="font-medium text-blue-700">AMO ({c.tauxAmoPct}%)</span><span>{c.honorairesAMOSolde.toFixed(2)} €</span></div>
-                                <div className="flex justify-between"><span className="text-red-400">Royalties (5%)</span><span className="text-red-400">- {c.royaltiesAMO.toFixed(2)} €</span></div>
-                                <div className="flex justify-between border-t border-blue-200 pt-1"><span className="text-blue-500">Net</span><span className="font-medium text-blue-700">{c.honorairesAMONet.toFixed(2)} €</span></div>
-                                <div className="flex justify-between border-t border-blue-200 pt-1"><span className="text-blue-500">Net</span><span className="font-medium text-blue-700">{c.honorairesAMONet.toFixed(2)} €</span></div>
-                                {!c.estChantierMarine && <div className="flex justify-between"><span className="text-blue-400">Part agente</span><span className="text-blue-700">{c.partAgenteAMO.toFixed(2)} €</span></div>}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        <div className="space-y-2">
-                          <p className="font-medium text-green-700 text-xs mb-1">{tousSignes ? 'Réel' : 'Réel (encaissé)'}</p>
-                          {(() => {
-                            const courtageRegle = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
-                            const amoRegle = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
-                            return (
-                              <>
-                                <div className={`rounded p-2 space-y-1 ${courtageRegle ? 'bg-green-50' : 'bg-gray-50'}`}>
-                                  <div className="flex justify-between"><span className="font-medium text-gray-600">Courtage ({c.tauxCourtagePct}%)</span><span>{c.honorairesCourtage.toFixed(2)} €</span></div>
-                                  <div className="flex justify-between"><span className="text-red-400">Royalties (5%)</span><span className="text-red-400">- {c.royaltiesCourtage.toFixed(2)} €</span></div>
-                                  <div className="flex justify-between border-t border-gray-200 pt-1"><span className="text-gray-400">Net</span><span className="font-medium">{c.honorairesCourtageNet.toFixed(2)} €</span></div>
-                                  {!c.estChantierMarine && <div className="flex justify-between"><span className="text-blue-500">Part agente</span><span className="text-blue-700">{c.partAgenteCourtage.toFixed(2)} €</span></div>}                                  
-                                  <select value={getSuivi(d, 'honoraires_courtage')?.statut_client || 'en_attente'}
-                                    onChange={e => majSuivi(d.id, 'honoraires_courtage', null, 'statut_client', e.target.value)}
-                                    className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none w-full bg-white">
-                                    <option value="en_attente">Client : En attente</option>
-                                    <option value="envoye">Client : Facturé</option>
-                                    <option value="regle">Client : ✅ Réglé</option>
-                                  </select>
-                                  {getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle' && (
-                                    <input type="date" value={getSuivi(d, 'honoraires_courtage')?.date_paiement || ''}
-                                      onChange={e => majSuivi(d.id, 'honoraires_courtage', null, 'date_paiement', e.target.value)}
-                                      className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none w-full" />
-                                  )}
-                                </div>
-                                {d.typologie === 'amo' && (
-                                  <div className={`rounded p-2 space-y-1 ${amoRegle ? 'bg-green-50' : 'bg-blue-50'}`}>
-                                    <div className="flex justify-between"><span className="font-medium text-blue-700">AMO ({c.tauxAmoPct}%)</span><span>{c.honorairesAMOSolde.toFixed(2)} €</span></div>
-                                    <div className="flex justify-between"><span className="text-red-400">Royalties (5%)</span><span className="text-red-400">- {c.royaltiesAMO.toFixed(2)} €</span></div>
-                                    <div className="flex justify-between border-t border-blue-200 pt-1"><span className="text-blue-500">Net</span><span className="font-medium text-blue-700">{c.honorairesAMONet.toFixed(2)} €</span></div>
-                                    {!c.estChantierMarine && <div className="flex justify-between"><span className="text-blue-400">Part agente</span><span className="text-blue-700">{c.partAgenteAMO.toFixed(2)} €</span></div>}
-                                    <select value={getSuivi(d, 'solde_amo')?.statut_client || 'en_attente'}
-                                      onChange={e => majSuivi(d.id, 'solde_amo', null, 'statut_client', e.target.value)}
-                                      className="border border-blue-200 rounded px-2 py-0.5 text-xs focus:outline-none w-full bg-white">
-                                      <option value="en_attente">Client : En attente</option>
-                                      <option value="envoye">Client : Facturé</option>
-                                      <option value="regle">Client : ✅ Réglé</option>
-                                    </select>
-                                    {getSuivi(d, 'solde_amo')?.statut_client === 'regle' && (
-                                      <input type="date" value={getSuivi(d, 'solde_amo')?.date_paiement || ''}
-                                        onChange={e => majSuivi(d.id, 'solde_amo', null, 'date_paiement', e.target.value)}
-                                        className="border border-blue-200 rounded px-2 py-0.5 text-xs focus:outline-none w-full" />
-                                    )}
-                                  </div>
-                                )}
-                              </>
-                            )
-                          })()}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Apporteur */}
-                  {d.client?.apporteur_affaires && c.apporteurTTC > 0 && (
-                    <div className="border border-orange-100 rounded-lg p-3 bg-orange-50">
-                      <p className="text-xs font-medium text-orange-700 uppercase mb-2">
-                        Apporteur — {d.client.apporteur_nom} ({d.client.apporteur_pourcentage}%)
-                      </p>
-                      <div className="flex items-center gap-4 text-xs flex-wrap">
-                        <span className="text-orange-600">Total : {c.apporteurTTC.toFixed(2)} € TTC</span>
-                        {!c.estChantierMarine && (
-                          <span className="text-blue-600">Part agente : {c.apporteurPartAgente.toFixed(2)} €</span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Total commissions artisans */}
-                  {c.devisAcceptes.length > 0 && (
-                    <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
-                      <p className="text-xs font-medium text-gray-600 uppercase mb-2">Commissions artisans</p>
-                      <div className={`grid gap-3 text-xs ${tousSignes ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                        {!tousSignes && (
-                          <div className="bg-white rounded p-2 space-y-1">
-                            <p className="font-medium text-gray-500 mb-1">Prévisionnel</p>
-                            <div className="flex justify-between"><span className="text-gray-400">COM HT</span><span>{c.comHT.toFixed(2)} €</span></div>
-                            <div className="flex justify-between"><span className="text-gray-400">COM TTC</span><span>{c.comTTC.toFixed(2)} €</span></div>
-                            <div className="flex justify-between"><span className="text-red-400">Royalties</span><span className="text-red-400">- {c.royalties.toFixed(2)} €</span></div>
-                            <div className="flex justify-between border-t border-gray-100 pt-1"><span className="text-gray-400">Net</span><span className="font-medium">{c.net.toFixed(2)} €</span></div>
-                            {!c.estChantierMarine && <div className="flex justify-between"><span className="text-blue-500">Part {nomReferente(d)}</span><span className="text-blue-700">{c.partAgente.toFixed(2)} €</span></div>}
-                          </div>
-                        )}
-                        <div className="bg-green-50 rounded p-2 space-y-1">
-                          <p className="font-medium text-green-700 mb-1">{tousSignes ? 'Réel (tous signés)' : 'Réel (signés)'}</p>
-                          <div className="flex justify-between"><span className="text-gray-400">COM HT</span><span>{c.comHTReel.toFixed(2)} €</span></div>
-                          <div className="flex justify-between"><span className="text-gray-400">COM TTC</span><span>{c.comTTCReel.toFixed(2)} €</span></div>
-                          <div className="flex justify-between"><span className="text-red-400">Royalties</span><span className="text-red-400">- {c.royaltiesReel.toFixed(2)} €</span></div>
-                          <div className="flex justify-between border-t border-gray-100 pt-1"><span className="text-gray-400">Net</span><span className="font-medium">{c.netReel.toFixed(2)} €</span></div>
-                          {!c.estChantierMarine && <div className="flex justify-between"><span className="text-blue-500">Part {nomReferente(d)}</span><span className="text-blue-700">{c.partAgenteReel.toFixed(2)} €</span></div>}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Total gain chantier */}
-                  <div className="border-2 border-gray-300 rounded-lg p-3 bg-white">
-                    <p className="text-xs font-bold text-gray-700 uppercase mb-2">Total gain chantier</p>
-                    <div className={`grid gap-3 text-xs ${toutRegle ? 'grid-cols-1' : 'grid-cols-2'}`}>
-
-                      {/* Prévisionnel */}
-                      {!toutRegle && (
-                        <div className="bg-gray-50 rounded p-2 space-y-1">
-                          <p className="font-medium text-gray-500 mb-1">Prévisionnel</p>
-                          {c.fraisTTC > 0 && <div className="flex justify-between"><span className="text-gray-400">Frais consul. TTC</span><span>+ {c.fraisTTC.toFixed(2)} €</span></div>}
-                          {c.honorairesTotalTTC > 0 && <div className="flex justify-between"><span className="text-gray-400">Honoraires TTC</span><span>+ {c.honorairesTotalTTC.toFixed(2)} €</span></div>}
-                          <div className="flex justify-between"><span className="text-gray-400">Commissions nettes</span><span>+ {c.net.toFixed(2)} €</span></div>
-                          <div className="flex justify-between"><span className="text-red-400">Somme royalties</span><span className="text-red-400">— {c.sommeRoyalties.toFixed(2)} €</span></div>
-                          {c.apporteurTTC > 0 && !c.estChantierMarine && <div className="flex justify-between"><span className="text-orange-500">Apporteur (part agente)</span><span className="text-orange-500">— {c.apporteurPartAgente.toFixed(2)} €</span></div>}
-                          <div className="border-t border-gray-200 pt-1 space-y-0.5">
-                            {showParts && !c.estChantierMarine && (
-                              <div className="flex justify-between font-bold">
-                                <span className="text-blue-600">{nomReferente(d)}</span>
-                                <span className="text-blue-700">{c.gainsAgentePrevi.toFixed(2)} €</span>
-                              </div>
-                            )}
-                            {(showParts || isMarine) && (
-                              <div className="flex justify-between font-bold">
-                                <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-600'}>
-                                  {c.estChantierMarine ? 'Net' : nomFranchisee}
-                                </span>
-                                <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>
-                                  {c.netAdminPrevi.toFixed(2)} €
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Réel (encaissé) */}
-                      <div className="bg-green-50 rounded p-2 space-y-1">
-                        <p className="font-medium text-green-700 mb-1">Réel (encaissé)</p>
-                        {(() => {
-                          
-                          const fraisReel = d.frais_statut === 'regle' ? c.fraisTTC : 0
-                          const fraisRoyaltiesReel = d.frais_statut === 'regle' ? c.fraisRoyalties : 0
-
-                          const honCourtageReel = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle' ? c.honorairesCourtage : 0
-                          const honAMOReel = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle' ? c.honorairesAMOSolde : 0
-                          const honReel = honCourtageReel + honAMOReel
-                          const royaltiesHonReel = round2(
-                            (getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle' ? c.royaltiesCourtage : 0) +
-                            (d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle' ? c.royaltiesAMO : 0)
-                          )
-
-                          // Commissions : uniquement les devis dont l'acompte OU la facture est réglé
-                          const partAgenteRate = c.finance.settings.partAgente
-                          let comReelEncaisse = 0
-                          let royaltiesComReel = 0
-                          let partAgenteComReel = 0
-
-                          for (const dv of c.devisAcceptes) {
-                            const artId = dv.artisan_id || dv.artisan?.id
-                            const dvFinance = c.finance.commissions.devis.find(x => x.id === dv.id)
-                            if (!dvFinance) continue
-
-                            const suiviAcompte = getSuivi(d, 'acompte_artisan', artId)
-                            const acompteDebloque = suiviAcompte?.statut_illico === 'recu' || suiviAcompte?.statut_ctp === 'recu'
-
-                            if (acompteDebloque) {
-                              comReelEncaisse = round2(comReelEncaisse + dvFinance.netCom)
-                              royaltiesComReel = round2(royaltiesComReel + (dvFinance.comHT - dvFinance.netCom))
-                              partAgenteComReel = round2(partAgenteComReel + dvFinance.gainsBruts.agente)
-                            }
-                          }
-
-                          const royaltiesReelTotal = round2(fraisRoyaltiesReel + royaltiesHonReel + royaltiesComReel)
-
-                          const apporteurRembourse = (!c.estChantierMarine && c.finance?.apporteur?.enabled)
-                            ? round2(c.finance.apporteur.lines?.reduce((sum, ligne) => {
-                                const devisOriginal = c.devisAcceptes.find(dv => dv.id === ligne.devisId)
-                                const artId = devisOriginal?.artisan_id || devisOriginal?.artisan?.id
-                                const suivi = getSuivi(d, 'apporteur_agente', artId)
-                                return suivi?.statut_ctp === 'rembourse' ? sum + ligne.agente : sum
-                              }, 0) || 0)
-                            : 0
-
-                          const gainAgenteReel = round2(
-                            (d.frais_statut === 'regle' ? c.fraisPartAgente : 0) +
-                            (getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle' ? c.partAgenteCourtage : 0) +
-                            (d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle' ? c.partAgenteAMO : 0) +
-                            partAgenteComReel - apporteurRembourse
-                          )
-
-                          const gainAdminReel = round2(fraisReel + honReel + comReelEncaisse - royaltiesReelTotal - gainAgenteReel)
-
-                          return (<>
-                            {fraisReel > 0 && <div className="flex justify-between"><span className="text-gray-400">Frais consul. TTC</span><span>+ {fraisReel.toFixed(2)} €</span></div>}
-                            {honReel > 0 && <div className="flex justify-between"><span className="text-gray-400">Honoraires TTC</span><span>+ {honReel.toFixed(2)} €</span></div>}
-                            {comReelEncaisse > 0 && <div className="flex justify-between"><span className="text-gray-400">Commissions nettes</span><span>+ {comReelEncaisse.toFixed(2)} €</span></div>}
-                            {royaltiesReelTotal > 0 && <div className="flex justify-between"><span className="text-red-400">Somme royalties</span><span className="text-red-400">— {royaltiesReelTotal.toFixed(2)} €</span></div>}
-                            {apporteurRembourse > 0 && <div className="flex justify-between"><span className="text-orange-500">Apporteur remboursé</span><span className="text-orange-500">— {apporteurRembourse.toFixed(2)} €</span></div>}
-                            <div className="border-t border-green-200 pt-1">
-                              {showParts && !c.estChantierMarine && (
-                                <div className="flex justify-between font-bold">
-                                  <span className="text-blue-600">{nomReferente(d)}</span>
-                                  <span className="text-blue-700">{gainAgenteReel.toFixed(2)} €</span>
-                                </div>
-                              )}
-                              {(showParts || isMarine) && (
-                                <div className="flex justify-between font-bold">
-                                  <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-600'}>
-                                    {c.estChantierMarine ? 'Net' : nomFranchisee}
-                                  </span>
-                                  <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>
-                                    {gainAdminReel.toFixed(2)} €
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          </>)
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => router.push(`/chantiers/${d.id}`)}
-                    className="text-xs text-blue-600 hover:underline"
-                  >
-                    → Voir la fiche chantier
-                  </button>
-                </div>
-              )}
-            </div>
-          )
-        })}
-        {listeDossiers.length === 0 && (
-          <p className="text-center text-gray-400 text-sm py-8">Aucun chantier</p>
-        )}
-      </div>
-    )
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // TABLEAUX MES CHANTIERS (par mois / par année)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  const getMesVals = (c) => isMarine
-    ? { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurTTC, total: c.netAdminPrevi }
-    : { frais: c.fraisTTC, commission: c.comTTC, honoraire: c.honorairesTotalTTC, royalties: c.sommeRoyalties, apporteur: c.apporteurPartAgente, total: c.gainsAgentePrevi }
-
-  const renderMesChantiersMois = (listeDossiers) => {
-    const rows = agrégerMois(listeDossiers)
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {thL('Mois / Chantier')}
-              {thR('Frais consul. TTC')}
-              {thR('Commission TTC')}
-              {thR('Honoraire TTC')}
-              {thR('Somme royalties')}
-              {thR('Apporteur')}
-              {thR('Total')}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {rows.map(([key, c]) => {
-              const [annee, mois]    = key.split('-')
-              const v                = getMesVals(c)
-              const dossiersduMois   = listeDossiers.filter(d => getKeyMois(d) === key)
-              return (
-                <>
-                  {/* Ligne mois */}
-                  <tr key={key} className="bg-blue-50">
-                    <td className="px-3 py-2 font-bold text-blue-900">{MOIS[parseInt(mois)]} {annee}</td>
-                    {tdR(fmt(v.frais))}
-                    {tdR(fmt(v.commission))}
-                    {tdR(fmt(v.honoraire))}
-                    <td className="px-3 py-2 text-right text-red-400">- {(v.royalties || 0).toFixed(2)} €</td>
-                    <td className="px-3 py-2 text-right text-orange-500">{v.apporteur > 0 ? `- ${v.apporteur.toFixed(2)} €` : '—'}</td>
-                    {tdTotal(v.total)}
-                  </tr>
-                  {/* Lignes chantiers */}
-                  {dossiersduMois.map(d => {
-                    const c2 = calculer(d)
-                    const v2 = getMesVals(c2)
-                    return (
-                      <tr key={d.id} className="hover:bg-gray-50 border-t border-gray-100">
-                        <td className="px-3 py-2 pl-8">
-                          <span className="text-xs text-gray-400 mr-2">↳</span>
-                          <span className="font-medium text-blue-800 text-xs">{d.reference}</span>
-                          <span className="text-xs text-gray-400 ml-2">{d.client?.prenom} {d.client?.nom}</span>
-                        </td>
-                        {tdR(<span className="text-xs">{fmt(v2.frais)}</span>)}
-                        {tdR(<span className="text-xs">{fmt(v2.commission)}</span>)}
-                        {tdR(<span className="text-xs">{fmt(v2.honoraire)}</span>)}
-                        <td className="px-3 py-2 text-right text-red-400 text-xs">{v2.royalties > 0 ? `- ${v2.royalties.toFixed(2)} €` : '—'}</td>
-                        <td className="px-3 py-2 text-right text-orange-500 text-xs">{v2.apporteur > 0 ? `- ${v2.apporteur.toFixed(2)} €` : '—'}</td>
-                        <td className={`px-3 py-2 text-right text-xs font-medium ${v2.total >= 0 ? 'text-green-700' : 'text-red-600'}`}>{v2.total.toFixed(2)} €</td>
-                      </tr>
-                    )
-                  })}
-                </>
-              )
-            })}
-            {rows.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400 text-sm">Aucune donnée</td></tr>
-            )}
-          </tbody>
-          <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-bold">
-            <tr>
-              <td className="px-3 py-3">Total</td>
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.fraisTTC, 0)))}
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.comTTC, 0)))}
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.honorairesTotalTTC, 0)))}
-              <td className="px-3 py-3 text-right text-red-400">- {rows.reduce((s, [, c]) => s + c.sommeRoyalties, 0).toFixed(2)} €</td>
-              <td className="px-3 py-3 text-right text-orange-500">- {rows.reduce((s, [, c]) => s + (isMarine ? c.apporteurTTC : c.apporteurPartAgente), 0).toFixed(2)} €</td>
-              {tdTotal(rows.reduce((s, [, c]) => s + (isMarine ? c.netAdminPrevi : c.gainsAgentePrevi), 0))}
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    )
-  }
-
-  const renderMesChantiersAnnee = (listeDossiers) => {
-    const rows = agrégerAnnee(listeDossiers)
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {thL('Année / Chantier')}
-              {thR('Frais consul. TTC')}
-              {thR('Commission TTC')}
-              {thR('Honoraire TTC')}
-              {thR('Somme royalties')}
-              {thR('Apporteur')}
-              {thR('Total')}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {rows.map(([annee, c]) => {
-              const v = getMesVals(c)
-              const dossiersAnnee = listeDossiers.filter(d => {
-                if (!d.date_signature_contrat) return false
-                return String(new Date(d.date_signature_contrat).getFullYear()) === String(annee)
-              })
-              return (
-                <>
-                  {/* Ligne année */}
-                  <tr key={annee} className="bg-blue-50">
-                    <td className="px-3 py-2 font-bold text-blue-900">{annee}</td>
-                    {tdR(fmt(v.frais))}
-                    {tdR(fmt(v.commission))}
-                    {tdR(fmt(v.honoraire))}
-                    <td className="px-3 py-2 text-right text-red-400">- {(v.royalties || 0).toFixed(2)} €</td>
-                    <td className="px-3 py-2 text-right text-orange-500">{v.apporteur > 0 ? `- ${v.apporteur.toFixed(2)} €` : '—'}</td>
-                    {tdTotal(v.total)}
-                  </tr>
-                  {/* Lignes chantiers */}
-                  {dossiersAnnee.map(d => {
-                    const c2 = calculer(d)
-                    const v2 = getMesVals(c2)
-                    return (
-                      <tr key={d.id} className="hover:bg-gray-50 border-t border-gray-100">
-                        <td className="px-3 py-2 pl-8">
-                          <span className="text-xs text-gray-400 mr-2">↳</span>
-                          <span className="font-medium text-blue-800 text-xs">{d.reference}</span>
-                          <span className="text-xs text-gray-400 ml-2">{d.client?.prenom} {d.client?.nom}</span>
-                        </td>
-                        {tdR(<span className="text-xs">{fmt(v2.frais)}</span>)}
-                        {tdR(<span className="text-xs">{fmt(v2.commission)}</span>)}
-                        {tdR(<span className="text-xs">{fmt(v2.honoraire)}</span>)}
-                        <td className="px-3 py-2 text-right text-red-400 text-xs">{v2.royalties > 0 ? `- ${v2.royalties.toFixed(2)} €` : '—'}</td>
-                        <td className="px-3 py-2 text-right text-orange-500 text-xs">{v2.apporteur > 0 ? `- ${v2.apporteur.toFixed(2)} €` : '—'}</td>
-                        <td className={`px-3 py-2 text-right text-xs font-medium ${v2.total >= 0 ? 'text-green-700' : 'text-red-600'}`}>{v2.total.toFixed(2)} €</td>
-                      </tr>
-                    )
-                  })}
-                </>
-              )
-            })}
-            {rows.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400 text-sm">Aucune donnée</td></tr>
-            )}
-          </tbody>
-          <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-bold">
-            <tr>
-              <td className="px-3 py-3">Total</td>
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.fraisTTC, 0)))}
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.comTTC, 0)))}
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.honorairesTotalTTC, 0)))}
-              <td className="px-3 py-3 text-right text-red-400">- {rows.reduce((s, [, c]) => s + c.sommeRoyalties, 0).toFixed(2)} €</td>
-              <td className="px-3 py-3 text-right text-orange-500">- {rows.reduce((s, [, c]) => s + (isMarine ? c.apporteurTTC : c.apporteurPartAgente), 0).toFixed(2)} €</td>
-              {tdTotal(rows.reduce((s, [, c]) => s + (isMarine ? c.netAdminPrevi : c.gainsAgentePrevi), 0))}
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    )
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // TABLEAUX TOUS LES CHANTIERS (admin)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  const renderTousMois = () => {
-    const rows = agrégerMois(dossiers)
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {thL('Mois')}
-              {thR('Frais consul. TTC')}
-              {thR('Commission TTC')}
-              {thR('Honoraire TTC')}
-              {thR('Somme royalties')}
-              {thR('Apporteur')}
-              {thR('Part agentes')}
-              {thR(nomFranchisee)}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {rows.map(([key, c]) => {
-              const [annee, mois] = key.split('-')
-              return (
-                <tr key={key} className="hover:bg-gray-50">
-                  <td className="px-3 py-3 font-medium">{MOIS[parseInt(mois)]} {annee}</td>
-                  {tdR(fmt(c.fraisTTC))}
-                  {tdR(fmt(c.comTTC))}
-                  {tdR(fmt(c.honorairesTotalTTC))}
-                  <td className="px-3 py-3 text-right text-red-400">- {c.sommeRoyalties.toFixed(2)} €</td>
-                  <td className="px-3 py-3 text-right text-orange-500">{c.apporteurTTC > 0 ? `- ${c.apporteurTTC.toFixed(2)} €` : '—'}</td>
-                  <td className="px-3 py-3 text-right text-blue-600">{fmt(c.gainsAgentePrevi)}</td>
-                  <td className="px-3 py-3 text-right text-purple-600">{fmt(c.netAdminPrevi)}</td>
-                </tr>
-              )
-            })}
-            {rows.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400 text-sm">Aucune donnée</td></tr>
-            )}
-          </tbody>
-          <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-bold">
-            <tr>
-              <td className="px-3 py-3">Total</td>
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.fraisTTC, 0)))}
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.comTTC, 0)))}
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.honorairesTotalTTC, 0)))}
-              <td className="px-3 py-3 text-right text-red-400">- {rows.reduce((s, [, c]) => s + c.sommeRoyalties, 0).toFixed(2)} €</td>
-              <td className="px-3 py-3 text-right text-orange-500">- {rows.reduce((s, [, c]) => s + c.apporteurTTC, 0).toFixed(2)} €</td>
-              <td className="px-3 py-3 text-right text-blue-600">{fmt(rows.reduce((s, [, c]) => s + c.gainsAgentePrevi, 0))}</td>
-              <td className="px-3 py-3 text-right text-purple-600">{fmt(rows.reduce((s, [, c]) => s + c.netAdminPrevi, 0))}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    )
-  }
-
-  const renderTousAnnee = () => {
-    const rows = agrégerAnnee(dossiers)
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {thL('Année')}
-              {thR('Frais consul. TTC')}
-              {thR('Commission TTC')}
-              {thR('Honoraire TTC')}
-              {thR('Somme royalties')}
-              {thR('Apporteur')}
-              {thR('Part agentes')}
-              {thR(nomFranchisee)}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {rows.map(([annee, c]) => (
-              <tr key={annee} className="hover:bg-gray-50">
-                <td className="px-3 py-3 font-bold text-gray-800">{annee}</td>
-                {tdR(fmt(c.fraisTTC))}
-                {tdR(fmt(c.comTTC))}
-                {tdR(fmt(c.honorairesTotalTTC))}
-                <td className="px-3 py-3 text-right text-red-400">- {c.sommeRoyalties.toFixed(2)} €</td>
-                <td className="px-3 py-3 text-right text-orange-500">{c.apporteurTTC > 0 ? `- ${c.apporteurTTC.toFixed(2)} €` : '—'}</td>
-                <td className="px-3 py-3 text-right text-blue-600">{fmt(c.gainsAgentePrevi)}</td>
-                <td className="px-3 py-3 text-right text-purple-600">{fmt(c.netAdminPrevi)}</td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400 text-sm">Aucune donnée</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    )
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // RÉCAP & DÉTAIL CTP (admin)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  const renderRecapCTP = () => (
-    <div className="grid grid-cols-2 gap-4">
-      <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
-        <p className="font-medium text-green-800 mb-3">📥 Encaissements CTP</p>
-        <div className="flex justify-between text-sm"><span className="text-gray-600">Commissions artisans (net)</span><span className="font-medium text-green-700">+ {totalCommissionsCTP.toFixed(2)} €</span></div>
-        <div className="flex justify-between text-sm"><span className="text-gray-600">Honoraires client</span><span className="font-medium text-green-700">+ {totalHonorairesCTP.toFixed(2)} €</span></div>
-        <div className="flex justify-between text-sm"><span className="text-gray-600">Frais de consultation</span><span className="font-medium text-green-700">+ {totalFraisCTP.toFixed(2)} €</span></div>
-        <div className="flex justify-between text-sm"><span className="text-gray-600">Redevances agentes reçues</span><span className="font-medium text-green-700">+ {totalRedevancesReglees.toFixed(2)} €</span></div>
-        <div className="flex justify-between text-sm border-t border-green-200 pt-2 font-bold">
-          <span>Total</span>
-          <span className="text-green-700">+ {encCTP.toFixed(2)} €</span>
-        </div>
-      </div>
-
-      <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
-        <p className="font-medium text-red-800 mb-3">📤 Décaissements CTP</p>
-        <div className="flex justify-between text-sm"><span className="text-gray-600">Part agentes (à verser)</span><span className="font-medium text-red-500">- {totalGainsAgentesReels.toFixed(2)} €</span></div>
-        <div className="flex justify-between text-sm"><span className="text-gray-600">Apporteur d'affaires</span><span className="font-medium text-red-500">- {totalApporteurTTC.toFixed(2)} €</span></div>
-        <div className="flex justify-between text-sm border-t border-red-200 pt-2 font-bold">
-          <span>Total</span>
-          <span className="text-red-500">- {decCTP.toFixed(2)} €</span>
-        </div>
-      </div>
-
-      <div className={`col-span-2 border rounded-xl p-4 ${netCTP >= 0 ? 'bg-purple-50 border-purple-200' : 'bg-red-50 border-red-200'}`}>
-        <div className="flex justify-between items-center">
-          <span className="font-bold text-purple-900">Net CTP</span>
-          <span className={`font-bold text-2xl ${netCTP >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-            {netCTP.toFixed(2)} €
-          </span>
-        </div>
-      </div>
-    </div>
-  )
-
-  const renderDetailCTP = () => (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <div className="p-4 border-b border-gray-100">
-        <p className="font-medium text-gray-800">Détail par chantier</p>
-      </div>
-      <table className="w-full text-sm">
-        <thead className="bg-gray-50 border-b border-gray-200">
-          <tr>
-            {thL('Chantier')}
-            {thL('Référente')}
-            {thR('Frais consul. TTC')}
-            {thR('Commission TTC')}
-            {thR('Honoraire TTC')}
-            {thR('Somme royalties')}
-            {thR('Apporteur')}
-            {thR('Part agente')}
-            {thR(nomFranchisee)}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {dossiers.map(d => {
-            const c = calculer(d)
-            if (c.comTTC === 0 && c.fraisTTC === 0 && c.honorairesTotalTTC === 0) return null
-            return (
-              <tr key={d.id} className="hover:bg-gray-50">
-                <td className="px-3 py-3">
-                  <p className="font-medium text-blue-900">{d.reference}</p>
-                  <p className="text-xs text-gray-400">{d.client?.prenom} {d.client?.nom}</p>
-                </td>
-                <td className="px-3 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                    c.estChantierMarine ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-                  }`}>
+        return (
+          <div key={d.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            {/* En-tête */}
+            <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
+              onClick={() => setDossierOuvert(isOpen ? null : d.id)}>
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-sm font-bold text-blue-900">{d.reference}</span>
+                <span className="text-sm text-gray-500">{d.client?.prenom} {d.client?.nom}</span>
+                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{d.typologie}</span>
+                {showBadge && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${c.estChantierMarine ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                     {c.estChantierMarine ? nomFranchisee : nomReferente(d)}
                   </span>
-                </td>
-                {tdR(fmt(c.fraisTTC))}
-                {tdR(fmt(c.comTTC))}
-                {tdR(fmt(c.honorairesTotalTTC))}
-                <td className="px-3 py-3 text-right text-red-400">- {c.sommeRoyalties.toFixed(2)} €</td>
-                <td className="px-3 py-3 text-right text-orange-500">{c.apporteurTTC > 0 ? `- ${c.apporteurTTC.toFixed(2)} €` : '—'}</td>
-                <td className="px-3 py-3 text-right text-blue-500">{c.gainsAgentePrevi > 0 ? fmt(c.gainsAgentePrevi) : '—'}</td>
-                {tdTotal(c.netAdminPrevi)}
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
-
-  const renderCTPMois = () => {
-    const rowsDossiers = agrégerMois(dossiers)
-    const toutes_cles  = new Set([
-      ...rowsDossiers.map(([k]) => k),
-      ...redevances.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`),
-    ])
-    const cles = Array.from(toutes_cles).sort((a, b) => b.localeCompare(a))
-
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {thL('Mois')}
-              {thR('Frais consul. TTC')}
-              {thR('Commission TTC')}
-              {thR('Honoraire TTC')}
-              {thR('Redevance')}
-              {thR('Somme royalties')}
-              {thR('Apporteur')}
-              {thR('Total')}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {cles.map(key => {
-              const [annee, mois] = key.split('-')
-              const c = rowsDossiers.find(([k]) => k === key)?.[1] || {}
-              const redevMontant = redevances
-                .filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois))
-                .reduce((s, r) => s + (r.montant_ttc || 540), 0)
-              const total = (c.fraisTTC || 0) + (c.comTTC || 0) + (c.honorairesTotalTTC || 0) + redevMontant
-                - (c.sommeRoyalties || 0) - (c.gainsAgenteReels || 0) - (c.apporteurTTC || 0)
-              return (
-                <tr key={key} className="hover:bg-gray-50">
-                  <td className="px-3 py-3 font-medium">{MOIS[parseInt(mois)]} {annee}</td>
-                  {tdR(fmt(c.fraisTTC))}
-                  {tdR(fmt(c.comTTC))}
-                  {tdR(fmt(c.honorairesTotalTTC))}
-                  <td className="px-3 py-3 text-right text-green-600">{redevMontant > 0 ? `+ ${redevMontant.toFixed(2)} €` : '—'}</td>
-                  <td className="px-3 py-3 text-right text-red-400">- {(c.sommeRoyalties || 0).toFixed(2)} €</td>
-                  <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurTTC || 0) > 0 ? `- ${c.apporteurTTC.toFixed(2)} €` : '—'}</td>
-                  {tdTotal(total)}
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    )
-  }
-
-  const renderCTPAnnee = () => {
-    const rowsDossiers  = agrégerAnnee(dossiers)
-    const toutes_annees = new Set([
-      ...rowsDossiers.map(([k]) => k),
-      ...redevances.filter(r => r.statut === 'regle').map(r => String(r.annee)),
-    ])
-    const annees = Array.from(toutes_annees).sort((a, b) => b - a)
-
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {thL('Année')}
-              {thR('Frais consul. TTC')}
-              {thR('Commission TTC')}
-              {thR('Honoraire TTC')}
-              {thR('Redevance')}
-              {thR('Somme royalties')}
-              {thR('Apporteur')}
-              {thR('Total')}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {annees.map(annee => {
-              const c = rowsDossiers.find(([k]) => k === annee)?.[1] || {}
-              const redevAnnee = redevances
-                .filter(r => r.statut === 'regle' && r.annee === parseInt(annee))
-                .reduce((s, r) => s + (r.montant_ttc || 540), 0)
-              const total = (c.fraisTTC || 0) + (c.comTTC || 0) + (c.honorairesTotalTTC || 0) + redevAnnee
-                - (c.sommeRoyalties || 0) - (c.gainsAgenteReels || 0) - (c.apporteurTTC || 0)
-              return (
-                <tr key={annee} className="hover:bg-gray-50">
-                  <td className="px-3 py-3 font-bold text-gray-800">{annee}</td>
-                  {tdR(fmt(c.fraisTTC))}
-                  {tdR(fmt(c.comTTC))}
-                  {tdR(fmt(c.honorairesTotalTTC))}
-                  <td className="px-3 py-3 text-right text-green-600">{redevAnnee > 0 ? `+ ${redevAnnee.toFixed(2)} €` : '—'}</td>
-                  <td className="px-3 py-3 text-right text-red-400">- {(c.sommeRoyalties || 0).toFixed(2)} €</td>
-                  <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurTTC || 0) > 0 ? `- ${c.apporteurTTC.toFixed(2)} €` : '—'}</td>
-                  {tdTotal(total)}
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    )
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // ONGLET AGENTES (vue franchisée)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  const renderRecapAgente = (listeDossiers, listeRedevances, agente) => {
-    const nom         = agente ? `${agente.prenom} ${agente.nom}` : 'Agente'
-    const gainsReels  = listeDossiers.reduce((s, d) => s + calculer(d).gainsAgenteReels, 0)
-    const gainsPrevi  = listeDossiers.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
-    const apporteurDu = listeDossiers.reduce((s, d) => s + calculer(d).apporteurPartAgente, 0)
-    const redevReglees = listeRedevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
-    const net = gainsReels - redevReglees - apporteurDu
-
-    return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
-            <p className="font-medium text-green-800 mb-3">📥 Gains {nom}</p>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Gains réels</span><span className="font-medium text-green-700">+ {gainsReels.toFixed(2)} €</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Gains prévisionnels</span><span className="font-medium text-gray-500">({gainsPrevi.toFixed(2)} €)</span></div>
-          </div>
-
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
-            <p className="font-medium text-red-800 mb-3">📤 Décaissements {nom}</p>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Redevances CTP</span><span className="font-medium text-red-500">- {redevReglees.toFixed(2)} €</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Part apporteur à rembourser</span><span className="font-medium text-red-500">- {apporteurDu.toFixed(2)} €</span></div>
-            <div className="flex justify-between text-sm border-t border-red-200 pt-2 font-bold">
-              <span>Total</span>
-              <span className="text-red-500">- {(redevReglees + apporteurDu).toFixed(2)} €</span>
-            </div>
-          </div>
-
-          <div className={`col-span-2 border rounded-xl p-4 ${net >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'}`}>
-            <div className="flex justify-between items-center">
-              <span className="font-bold text-blue-900">Net {nom}</span>
-              <span className={`font-bold text-2xl ${net >= 0 ? 'text-green-700' : 'text-red-600'}`}>{net.toFixed(2)} €</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Ce que la franchisée doit verser */}
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
-          <p className="font-semibold text-blue-800">💸 Ce que {nomFranchisee} (CTP) doit verser à {nom}</p>
-          <p className="text-xs text-gray-500">Part agente sur les commissions et frais de ses chantiers</p>
-          {listeDossiers.map(d => {
-            const c = calculer(d)
-            if (c.gainsAgenteReels === 0) return null
-            return (
-              <div key={d.id} className="flex items-center justify-between py-1 border-b border-blue-100 last:border-0">
-                <div>
-                  <p className="text-sm font-medium text-blue-900">{d.reference}</p>
-                  <p className="text-xs text-gray-400">{d.client?.prenom} {d.client?.nom}</p>
-                </div>
-                <span className="text-sm font-medium text-blue-700">+ {c.gainsAgenteReels.toFixed(2)} €</span>
+                )}
+                {nbAlertes > 0 && (
+                  <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">⚠️ {nbAlertes}</span>
+                )}
               </div>
-            )
-          })}
-          <div className="flex justify-between font-bold border-t border-blue-200 pt-2">
-            <span className="text-blue-800">Total à verser à {nom}</span>
-            <span className="text-blue-700 text-lg">{gainsReels.toFixed(2)} €</span>
-          </div>
-        </div>
+              <div className="flex items-center gap-4">
+                {showBadge ? (
+                  <>
+                    {!c.estChantierMarine && <span className="text-sm text-blue-700 font-medium">{nomReferente(d)} : {fmt(c.gainsAgentePrevi)}</span>}
+                    <span className="text-sm text-purple-700 font-medium">CTP : {fmt(c.gainsAdminPrevi)}</span>
+                  </>
+                ) : (
+                  <span className="text-sm text-gray-700 font-medium">
+                    {isMarine ? `CTP : ${fmt(c.gainsAdminPrevi)}` : `Net : ${fmt(c.gainsAgentePrevi)}`}
+                  </span>
+                )}
+                <span className="text-gray-400 text-xs">{isOpen ? '▲' : '▼'}</span>
+              </div>
+            </div>
 
-        {/* Ce que l'agente doit verser */}
-        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 space-y-3">
-          <p className="font-semibold text-purple-800">💸 Ce que {nom} doit verser à {nomFranchisee} (CTP)</p>
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-gray-600">Redevances mensuelles</p>
-            {(() => {
-              const now      = new Date()
-              const moisDu   = now.getMonth() === 0 ? 12 : now.getMonth()
-              const anneeDu  = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()
-              const redevDuMois = listeRedevances.find(r => r.mois === moisDu && r.annee === anneeDu)
+            {/* Contenu */}
+            {isOpen && (
+              <div className="border-t border-gray-100 p-4 space-y-4">
 
-              if (!redevDuMois || redevDuMois.statut === 'regle') {
-                return <p className="text-xs text-green-600">✅ Redevance du mois réglée</p>
-              }
-              return [(
-                <div key={redevDuMois.id} className="flex items-center justify-between py-1 border-b border-purple-100">
-                  <p className="text-sm text-gray-700">{MOIS[redevDuMois.mois]} {redevDuMois.annee}</p>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{(redevDuMois.montant_ttc || 540).toFixed(2)} €</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">⏳ À payer</span>
-                  </div>
+                {/* Infos contrat */}
+                <div className="flex items-center gap-3 flex-wrap text-xs">
+                  <span className={`px-2 py-1 rounded-full font-medium ${d.contrat_signe ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                    Contrat {d.contrat_signe ? `✅ ${d.date_signature_contrat ? new Date(d.date_signature_contrat).toLocaleDateString('fr-FR') : ''}` : '❌ non signé'}
+                  </span>
+                  {d.date_demarrage_chantier && <span className="text-gray-400">Démarrage : {new Date(d.date_demarrage_chantier).toLocaleDateString('fr-FR')}</span>}
+                  {d.date_fin_chantier && <span className="text-gray-400">Fin : {new Date(d.date_fin_chantier).toLocaleDateString('fr-FR')}</span>}
+                  <span className="text-gray-400">Répartition : {Math.round(c.partAgenteRate * 100)} / {Math.round((1 - c.partAgenteRate) * 100)}</span>
                 </div>
-              )]
-            })()}
 
-            {listeDossiers.filter(d => calculer(d).apporteurPartAgente > 0).length > 0 && (
-              <>
-                <p className="text-xs font-medium text-gray-600 pt-2">Remboursements apporteur</p>
-                {listeDossiers.filter(d => calculer(d).apporteurPartAgente > 0).map(d => {
-                  const c      = calculer(d)
-                  const suivi  = getSuivi(d, 'apporteur_agente')
-                  return (
-                    <div key={d.id} className="flex items-center justify-between py-1 border-b border-purple-100">
-                      <p className="text-sm text-gray-700">{d.reference} — {d.client?.apporteur_nom}</p>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-orange-600">{c.apporteurPartAgente.toFixed(2)} €</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          suivi?.statut_ctp === 'rembourse' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                        }`}>
-                          {suivi?.statut_ctp === 'rembourse' ? '✅ Remboursé' : '⏳ À rembourser'}
-                        </span>
+                {/* Frais de consultation */}
+                {d.frais_consultation > 0 && (
+                  <div className="border border-gray-100 rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-gray-600 uppercase">Frais de consultation</p>
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <span>{fmt(c.fraisHT)} HT</span>
+                        <span className="text-red-400">- {fmt(c.fraisRoyalties)} royalties</span>
+                        <span className="font-medium text-gray-700">= {fmt(c.fraisNet)} net</span>
+                        {!c.estChantierMarine && c.partAgenteRate < 1 && <span className="text-blue-600">agente : {fmt(c.fraisAgente)}</span>}
                       </div>
                     </div>
-                  )
-                })}
-              </>
+                    <CheckItem
+                      label="Réglé"
+                      checked={d.frais_statut === 'regle'}
+                      date={getSuivi(d, 'frais_consultation')?.date_paiement}
+                      onChange={checked => majSuivi(d.id, 'frais_consultation', null, 'statut_client', checked ? 'regle' : 'en_attente')}
+                      onDateChange={date => majSuivi(d.id, 'frais_consultation', null, 'date_paiement', date)}
+                      alert={alerte48h(d.date_signature_contrat) && d.frais_statut !== 'regle' ? '⚠️ Retard 48h' : null}
+                    />
+                  </div>
+                )}
+
+                {/* Artisans */}
+                {c.devisActifs.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-gray-500 uppercase">Acomptes & Factures par artisan</p>
+                    {c.devisActifs.map(dv => {
+                      const artId        = dv.artisan_id || dv.artisan?.id
+                      const dvF          = c.devisFinanceMap.get(dv.id)
+                      const estSigne     = dv.statut === 'accepte'
+                      const estApporteur = dv.artisan?.sans_royalties
+                      const suiviAcompte = getSuivi(d, 'acompte_artisan', artId)
+                      const suiviFact    = getSuivi(d, 'facture_finale', artId)
+                      const suiviApp     = getSuivi(d, 'apporteur_agente', artId)
+                      const appLigne     = c.apporteurMap.get(dv.id)
+
+                      const acompteCalc = dv.acompte_pourcentage === -1
+                        ? (dv.acompte_montant_fixe || 0)
+                        : (dv.montant_ttc || 0) * ((dv.acompte_pourcentage || 30) / 100)
+                      const soldeCalc = (dv.montant_ttc || 0) - acompteCalc
+
+                      return (
+                        <div key={dv.id} className="border border-gray-100 rounded-lg p-3 space-y-2">
+                          {/* En-tête artisan */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium text-gray-800">🔨 {dv.artisan?.entreprise}</span>
+                            {estApporteur && <span className="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">Apporteur d'affaires</span>}
+                            <span className="text-xs text-gray-400">{(dv.montant_ht || 0).toFixed(2)} € HT / {(dv.montant_ttc || 0).toFixed(2)} € TTC</span>
+                            {dv.commission_pourcentage > 0 && dvF && (
+                              <span className="text-xs text-gray-500">
+                                Com. {dv.commission_pourcentage}% → {fmt(dvF.comHT)} HT → net {fmt(dvF.netCom)}
+                                {!c.estChantierMarine && <span className="text-blue-600"> (agente : {fmt(dvF.parts.agente)})</span>}
+                              </span>
+                            )}
+                            {estSigne
+                              ? <span className="text-xs text-green-600">Signé le {dv.date_signature ? new Date(dv.date_signature).toLocaleDateString('fr-FR') : '—'}</span>
+                              : <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Non signé</span>
+                            }
+                          </div>
+
+                          {/* Contrôles — uniquement si signé */}
+                          {estSigne && (
+                            <div className="pl-2 space-y-1 border-l-2 border-gray-100">
+                              {/* Acompte client */}
+                              {acompteCalc > 0 && (
+                                <CheckItem
+                                  label={`Acompte client payé — ${acompteCalc.toFixed(2)} € TTC`}
+                                  checked={suiviAcompte?.statut_client === 'regle'}
+                                  date={suiviAcompte?.date_paiement}
+                                  onChange={checked => majSuivi(d.id, 'acompte_artisan', artId, 'statut_client', checked ? 'regle' : 'en_attente')}
+                                  onDateChange={date => majSuivi(d.id, 'acompte_artisan', artId, 'date_paiement', date)}
+                                  alert={alerte7j(dv.date_signature) && suiviAcompte?.statut_client !== 'regle' ? '⚠️ Retard 7j' : null}
+                                />
+                              )}
+                              {/* illiCO débloqué — seulement si pas apporteur artisan */}
+                              {!estApporteur && (
+                                <CheckItem
+                                  label="illiCO France — acompte débloqué"
+                                  checked={suiviAcompte?.statut_illico === 'recu'}
+                                  date={suiviAcompte?.date_paiement}
+                                  onChange={checked => majSuivi(d.id, 'acompte_artisan', artId, 'statut_illico', checked ? 'recu' : 'en_attente')}
+                                  onDateChange={date => majSuivi(d.id, 'acompte_artisan', artId, 'date_paiement', date)}
+                                  colorClass="text-indigo-600"
+                                />
+                              )}
+                              {/* Facture finale AMO */}
+                              {d.typologie === 'amo' && (
+                                <CheckItem
+                                  label={`Facture finale client payée — ${soldeCalc.toFixed(2)} € TTC`}
+                                  checked={suiviFact?.statut_client === 'regle'}
+                                  date={suiviFact?.date_paiement}
+                                  onChange={checked => majSuivi(d.id, 'facture_finale', artId, 'statut_client', checked ? 'regle' : 'en_attente')}
+                                  onDateChange={date => majSuivi(d.id, 'facture_finale', artId, 'date_paiement', date)}
+                                  alert={alerte48h(d.date_fin_chantier) && suiviFact?.statut_client !== 'regle' ? '⚠️ Retard 48h' : null}
+                                />
+                              )}
+                              {/* Apporteur client par devis */}
+                              {c.finance?.apporteur?.enabled && appLigne && appLigne.totalHT > 0 && (
+                                <div className="pt-1 space-y-1 border-t border-gray-100">
+                                  <p className="text-xs text-orange-600 font-medium">
+                                    Apporteur {d.client?.apporteur_nom} — {fmt(appLigne.totalHT)} HT
+                                    {!c.estChantierMarine && ` (agente : ${fmt(appLigne.agente)})`}
+                                  </p>
+                                  {/* Remboursement agente → CTP : visible si chantier agente, peu importe la vue */}
+                                  {!c.estChantierMarine && (
+                                    <CheckItem
+                                      label={`Agente → CTP remboursé — ${fmt(appLigne.agente)}`}
+                                      checked={suiviApp?.statut_ctp === 'rembourse'}
+                                      date={suiviApp?.date_paiement}
+                                      onChange={checked => majSuivi(d.id, 'apporteur_agente', artId, 'statut_ctp', checked ? 'rembourse' : 'en_attente')}
+                                      onDateChange={date => majSuivi(d.id, 'apporteur_agente', artId, 'date_paiement', date)}
+                                      colorClass="text-orange-600"
+                                    />
+                                  )}
+                                  {/* CTP retiré : visible uniquement sur chantier Marine, vue admin */}
+                                  {c.estChantierMarine && isMarine && (
+                                    <CheckItem
+                                      label={`CTP retiré — ${fmt(appLigne.admin)}`}
+                                      checked={suiviApp?.statut_client === 'retire'}
+                                      date={suiviApp?.date_paiement}
+                                      onChange={checked => majSuivi(d.id, 'apporteur_agente', artId, 'statut_client', checked ? 'retire' : 'en_attente')}
+                                      onDateChange={date => majSuivi(d.id, 'apporteur_agente', artId, 'date_paiement', date)}
+                                      colorClass="text-purple-600"
+                                    />
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Honoraires */}
+                {['courtage', 'amo'].includes(d.typologie) && c.honTotalTTC > 0 && (
+                  <div className="border border-gray-100 rounded-lg p-3 space-y-2">
+                    <p className="text-xs font-semibold text-gray-600 uppercase">Honoraires client</p>
+                    <div className="space-y-3">
+                      {/* Courtage */}
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
+                          <span className="font-medium text-gray-700">Courtage ({c.tauxCourtagePct}%)</span>
+                          <span>{fmt(c.courtHT)} HT</span>
+                          <span className="text-red-400">- {fmt(c.courtRoyalties)} royalties</span>
+                          <span className="font-medium">= {fmt(c.courtNet)} net</span>
+                          {!c.estChantierMarine && <span className="text-blue-600">agente : {fmt(c.courtAgente)}</span>}
+                        </div>
+                        <CheckItem
+                          label="Client réglé"
+                          checked={getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'}
+                          date={getSuivi(d, 'honoraires_courtage')?.date_paiement}
+                          onChange={checked => majSuivi(d.id, 'honoraires_courtage', null, 'statut_client', checked ? 'regle' : 'en_attente')}
+                          onDateChange={date => majSuivi(d.id, 'honoraires_courtage', null, 'date_paiement', date)}
+                        />
+                      </div>
+                      {/* AMO solde */}
+                      {d.typologie === 'amo' && (
+                        <div className="space-y-1 border-t border-gray-100 pt-2">
+                          <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
+                            <span className="font-medium text-blue-700">AMO solde ({c.tauxAmoPct}%)</span>
+                            <span>{fmt(c.amoHT)} HT</span>
+                            <span className="text-red-400">- {fmt(c.amoRoyalties)} royalties</span>
+                            <span className="font-medium">= {fmt(c.amoNet)} net</span>
+                            {!c.estChantierMarine && <span className="text-blue-600">agente : {fmt(c.amoAgente)}</span>}
+                          </div>
+                          <CheckItem
+                            label="Client réglé"
+                            checked={getSuivi(d, 'solde_amo')?.statut_client === 'regle'}
+                            date={getSuivi(d, 'solde_amo')?.date_paiement}
+                            onChange={checked => majSuivi(d.id, 'solde_amo', null, 'statut_client', checked ? 'regle' : 'en_attente')}
+                            onDateChange={date => majSuivi(d.id, 'solde_amo', null, 'date_paiement', date)}
+                            alert={alerte48h(d.date_fin_chantier) && getSuivi(d, 'solde_amo')?.statut_client !== 'regle' ? '⚠️ Retard 48h' : null}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Apporteur client global (résumé) */}
+                {d.client?.apporteur_affaires && c.apporteurTotalHT > 0 && (
+                  <div className="border border-orange-100 rounded-lg p-3 bg-orange-50">
+                    <p className="text-xs font-medium text-orange-700">
+                      Apporteur {d.client.apporteur_nom} ({d.client.apporteur_pourcentage}%) — total {fmt(c.apporteurTotalHT)} HT
+                      {!c.estChantierMarine && ` · part agente : ${fmt(c.apporteurAgente)}`}
+                    </p>
+                  </div>
+                )}
+
+                {/* Total gain chantier */}
+                <div className="border-2 border-gray-200 rounded-lg p-3 bg-gray-50">
+                  <p className="text-xs font-bold text-gray-700 uppercase mb-3">Total gain chantier</p>
+                  <div className="grid grid-cols-2 gap-4 text-xs">
+                    {/* Prévisionnel */}
+                    <div className="space-y-1">
+                      <p className="font-semibold text-gray-500 mb-2">Prévisionnel (HT net)</p>
+                      {c.fraisNet > 0 && <div className="flex justify-between"><span className="text-gray-500">Frais consul.</span><span>+ {fmt(c.fraisNet)}</span></div>}
+                      {c.honTotalNet > 0 && <div className="flex justify-between"><span className="text-gray-500">Honoraires</span><span>+ {fmt(c.honTotalNet)}</span></div>}
+                      {c.netComSigne > 0 && <div className="flex justify-between"><span className="text-gray-500">Commissions</span><span>+ {fmt(c.netComSigne)}</span></div>}
+                      {c.royaltiesTotal > 0 && <div className="flex justify-between"><span className="text-red-400">Royalties</span><span className="text-red-400">— {fmt(c.royaltiesTotal)}</span></div>}
+                      {c.apporteurTotalHT > 0 && !c.estChantierMarine && <div className="flex justify-between"><span className="text-orange-500">Apporteur (agente)</span><span className="text-orange-500">— {fmt(c.apporteurAgente)}</span></div>}
+                      <div className="border-t border-gray-200 pt-1 mt-1 space-y-0.5">
+                        {!c.estChantierMarine && <div className="flex justify-between font-bold"><span className="text-blue-700">{nomReferente(d)}</span><span className="text-blue-700">{fmt(c.gainsAgentePrevi)}</span></div>}
+                        <div className="flex justify-between font-bold">
+                          <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>{c.estChantierMarine ? 'Net' : nomFranchisee}</span>
+                          <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>{fmt(c.gainsAdminPrevi)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Réel */}
+                    <div className="space-y-1">
+                      <p className="font-semibold text-green-700 mb-2">Réel encaissé (HT net)</p>
+                      {r.fraisReel > 0 && <div className="flex justify-between"><span className="text-gray-500">Frais consul.</span><span>+ {fmt(r.fraisReel)}</span></div>}
+                      {r.honReel > 0 && <div className="flex justify-between"><span className="text-gray-500">Honoraires</span><span>+ {fmt(r.honReel)}</span></div>}
+                      {r.comReelNet > 0 && <div className="flex justify-between"><span className="text-gray-500">Commissions</span><span>+ {fmt(r.comReelNet)}</span></div>}
+                      {r.comApporteursReel > 0 && <div className="flex justify-between"><span className="text-gray-500">Com. apporteurs</span><span>+ {fmt(r.comApporteursReel)}</span></div>}
+                      {r.royaltiesReelTotal > 0 && <div className="flex justify-between"><span className="text-red-400">Royalties</span><span className="text-red-400">— {fmt(r.royaltiesReelTotal)}</span></div>}
+                      {r.apporteurRembourse > 0 && <div className="flex justify-between"><span className="text-orange-500">Apporteur remboursé</span><span className="text-orange-500">— {fmt(r.apporteurRembourse)}</span></div>}
+                      <div className="border-t border-green-200 pt-1 mt-1 space-y-0.5">
+                        {!c.estChantierMarine && <div className="flex justify-between font-bold"><span className="text-blue-700">{nomReferente(d)}</span><span className="text-blue-700">{fmt(r.gainAgenteReel)}</span></div>}
+                        <div className="flex justify-between font-bold">
+                          <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>{c.estChantierMarine ? 'Net' : nomFranchisee}</span>
+                          <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>{fmt(r.gainAdminReel)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <button onClick={() => router.push(`/chantiers/${d.id}`)} className="text-xs text-blue-600 hover:underline">
+                  → Voir la fiche chantier
+                </button>
+              </div>
             )}
           </div>
-          <div className="flex justify-between font-bold border-t border-purple-200 pt-2">
-            <span className="text-purple-800">Total {nom} doit à {nomFranchisee}</span>
-            <span className="text-purple-700 text-lg">{(redevReglees + apporteurDu).toFixed(2)} €</span>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  const renderDetailAgenteAdmin = (listeDossiers, nom) => {
-    const gainsReels  = listeDossiers.reduce((s, d) => s + calculer(d).gainsAgenteReels, 0)
-    const apporteurDu = listeDossiers.reduce((s, d) => s + calculer(d).apporteurPartAgente, 0)
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-gray-100">
-          <p className="font-medium text-gray-800">Détail par chantier — {nom}</p>
-        </div>
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {thL('Chantier')}
-              {thR('Gain')}
-              {thR('Apporteur')}
-              {thR('Réel')}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {listeDossiers.map(d => {
-              const c = calculer(d)
-              if (c.gainsAgentePrevi === 0 && c.gainsAgenteReels === 0) return null
-              return (
-                <tr key={d.id} className="hover:bg-gray-50">
-                  <td className="px-3 py-3">
-                    <p className="font-medium text-blue-900">{d.reference}</p>
-                    <p className="text-xs text-gray-400">{d.client?.prenom} {d.client?.nom}</p>
-                  </td>
-                  <td className="px-3 py-3 text-right text-green-600">+ {c.gainsAgenteReels.toFixed(2)} €</td>
-                  <td className="px-3 py-3 text-right text-orange-500">{c.apporteurPartAgente > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
-                  {tdTotal(c.gainsAgenteReels - c.apporteurPartAgente)}
-                </tr>
-              )
-            })}
-          </tbody>
-          <tfoot className="bg-gray-50 border-t border-gray-200">
-            <tr>
-              <td className="px-3 py-3 font-medium">Total</td>
-              <td className="px-3 py-3 text-right text-green-600">+ {fmt(gainsReels)}</td>
-              <td className="px-3 py-3 text-right text-orange-500">- {fmt(apporteurDu)}</td>
-              <td className="px-3 py-3 text-right font-bold text-blue-700">{fmt(gainsReels - apporteurDu)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    )
-  }
-
-  const renderAgenteMois = (listeDossiers, listeRedevances) => {
-    const rowsDossiers = agrégerMois(listeDossiers)
-    const toutes_cles  = new Set([
-      ...rowsDossiers.map(([k]) => k),
-      ...listeRedevances.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`),
-    ])
-    const cles = Array.from(toutes_cles).sort((a, b) => b.localeCompare(a))
-
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {thL('Mois')}
-              {thR('Gain')}
-              {thR('Redevance CTP')}
-              {thR('Apporteur')}
-              {thR('Total')}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {cles.map(key => {
-              const [annee, mois] = key.split('-')
-              const c = rowsDossiers.find(([k]) => k === key)?.[1] || { gainsAgenteReels: 0, apporteurPartAgente: 0 }
-              const redevMontant = listeRedevances
-                .filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois))
-                .reduce((s, r) => s + (r.montant_ttc || 540), 0)
-              const reel = (c.gainsAgenteReels || 0) - redevMontant - (c.apporteurPartAgente || 0)
-              return (
-                <tr key={key} className="hover:bg-gray-50">
-                  <td className="px-3 py-3 font-medium">{MOIS[parseInt(mois)]} {annee}</td>
-                  <td className="px-3 py-3 text-right text-green-600">+ {(c.gainsAgenteReels || 0).toFixed(2)} €</td>
-                  <td className="px-3 py-3 text-right text-red-400">{redevMontant > 0 ? `- ${redevMontant.toFixed(2)} €` : '—'}</td>
-                  <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurPartAgente || 0) > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
-                  {tdTotal(reel)}
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    )
-  }
-
-  const renderAgenteAnnee = (listeDossiers, listeRedevances) => {
-    const rowsDossiers  = agrégerAnnee(listeDossiers)
-    const toutes_annees = new Set([
-      ...rowsDossiers.map(([k]) => k),
-      ...listeRedevances.filter(r => r.statut === 'regle').map(r => String(r.annee)),
-    ])
-    const annees = Array.from(toutes_annees).sort((a, b) => b - a)
-
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {thL('Année')}
-              {thR('Gain')}
-              {thR('Redevances CTP')}
-              {thR('Apporteur')}
-              {thR('Total')}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {annees.map(annee => {
-              const c = rowsDossiers.find(([k]) => k === annee)?.[1] || { gainsAgenteReels: 0, apporteurPartAgente: 0 }
-              const redevAnnee = listeRedevances
-                .filter(r => r.statut === 'regle' && r.annee === parseInt(annee))
-                .reduce((s, r) => s + (r.montant_ttc || 540), 0)
-              const reel = (c.gainsAgenteReels || 0) - redevAnnee - (c.apporteurPartAgente || 0)
-              return (
-                <tr key={annee} className="hover:bg-gray-50">
-                  <td className="px-3 py-3 font-bold text-gray-800">{annee}</td>
-                  <td className="px-3 py-3 text-right text-green-600">+ {(c.gainsAgenteReels || 0).toFixed(2)} €</td>
-                  <td className="px-3 py-3 text-right text-red-400">- {redevAnnee.toFixed(2)} €</td>
-                  <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurPartAgente || 0) > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
-                  {tdTotal(reel)}
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    )
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // VUE AGENTE (ses propres données)
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  const renderRecapMoi = () => (
-    <div className="grid grid-cols-2 gap-4">
-      <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
-        <p className="font-medium text-green-800 mb-3">📥 Mes encaissements</p>
-        <div className="flex justify-between text-sm"><span className="text-gray-600">Part honoraires (courtage/AMO)</span><span className="font-medium text-green-700">+ {mesDossiers.reduce((s, d) => s + calculer(d).partAgenteHonoraires, 0).toFixed(2)} €</span></div>
-        <div className="flex justify-between text-sm"><span className="text-gray-600">Part commissions artisans</span><span className="font-medium text-green-700">+ {mesDossiers.reduce((s, d) => s + calculer(d).partAgente, 0).toFixed(2)} €</span></div>
-        <div className="flex justify-between text-sm"><span className="text-gray-600">Part frais de consultation</span><span className="font-medium text-green-700">+ {mesDossiers.reduce((s, d) => s + calculer(d).fraisPartAgente, 0).toFixed(2)} €</span></div>
-        <div className="flex justify-between text-sm border-t border-green-200 pt-2 font-bold">
-          <span>Total brut prévisionnel</span>
-          <span className="text-green-700">+ {mesDossiersGainsBruts.toFixed(2)} €</span>
-        </div>
-      </div>
-
-      <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
-        <p className="font-medium text-red-800 mb-3">📤 Mes décaissements</p>
-        <div className="flex justify-between text-sm"><span className="text-gray-600">Part apporteur à rembourser</span><span className="font-medium text-red-500">- {mesApporteurDu.toFixed(2)} €</span></div>
-        <div className="flex justify-between text-sm border-t border-red-200 pt-2 font-bold">
-          <span>Total</span>
-          <span className="text-red-500">- {mesApporteurDu.toFixed(2)} €</span>
-        </div>
-      </div>
-
-      <div className="col-span-2 bg-blue-50 border border-blue-200 rounded-xl p-4">
-        <div className="flex justify-between items-center">
-          <span className="font-bold text-blue-900">Gains nets prévisionnels (hors redevances)</span>
-          <span className="font-bold text-2xl text-green-700">{(mesDossiersGainsPrevi - mesApporteurDu).toFixed(2)} €</span>
-        </div>
-        <p className="text-xs text-gray-400 mt-1">Les redevances sont visibles dans les onglets "Par mois" et "Par année"</p>
-      </div>
+        )
+      })}
+      {listeDossiers.length === 0 && <p className="text-center text-gray-400 text-sm py-8">Aucun chantier</p>}
     </div>
   )
 
-  const renderDetailFinancierMoi = () => (
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TABLEAUX PAR PÉRIODE
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const renderTableauPeriode = (rows, colLabel, colonnes, getMontant) => (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <div className="p-4 border-b border-gray-100">
-        <p className="font-medium text-gray-800">Détail par chantier — Ma part</p>
-      </div>
       <table className="w-full text-sm">
         <thead className="bg-gray-50 border-b border-gray-200">
-          <tr>
-            {thL('Chantier')}
-            {thR('Frais consul.')}
-            {thR('Commissions')}
-            {thR('Honoraires')}
-            {thR('Apporteur')}
-            {thR('Ma part')}
-          </tr>
+          <tr>{thL(colLabel)}{colonnes.map(c => thR(c.label))}</tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {mesDossiers.map(d => {
-            const c = calculer(d)
-            if (c.gainsAgentePrevi === 0 && c.gainsAgenteReels === 0) return null
+          {rows.map(([key, agg]) => {
+            const label = (() => {
+              if (!key.includes('-')) return key
+              const [a, m] = key.split('-')
+              return `${MOIS[parseInt(m)]} ${a}`
+            })()
             return (
-              <tr key={d.id} className="hover:bg-gray-50">
-                <td className="px-3 py-3">
-                  <p className="font-medium text-blue-900">{d.reference}</p>
-                  <p className="text-xs text-gray-400">{d.client?.prenom} {d.client?.nom}</p>
-                </td>
-                {tdR(fmt(c.fraisPartAgente))}
-                {tdR(fmt(c.partAgente))}
-                {tdR(fmt(c.partAgenteHonoraires))}
-                <td className="px-3 py-3 text-right text-orange-500">{c.apporteurPartAgente > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
-                {tdTotal(c.gainsAgentePrevi)}
+              <tr key={key} className="hover:bg-gray-50">
+                <td className="px-3 py-2 font-medium text-gray-800">{label}</td>
+                {colonnes.map(col => {
+                  const val = getMontant(agg, col.key)
+                  if (col.type === 'neg') return <td key={col.key} className="px-3 py-2 text-right text-red-400 text-sm">{val > 0 ? `— ${fmt(val)}` : '—'}</td>
+                  if (col.type === 'total') return <td key={col.key} className={`px-3 py-2 text-right text-sm font-bold ${(val || 0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(val)}</td>
+                  return <td key={col.key} className="px-3 py-2 text-right text-sm text-gray-700">{fmt(val)}</td>
+                })}
               </tr>
             )
           })}
+          {rows.length === 0 && <tr><td colSpan={colonnes.length + 1} className="px-3 py-8 text-center text-gray-400">Aucune donnée</td></tr>}
         </tbody>
-        <tfoot className="bg-gray-50 border-t border-gray-200">
+        <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-bold">
           <tr>
-            <td className="px-3 py-3 font-medium">Total</td>
-            {tdR(fmt(mesDossiers.reduce((s, d) => s + calculer(d).fraisPartAgente, 0)))}
-            {tdR(fmt(mesDossiers.reduce((s, d) => s + calculer(d).partAgente, 0)))}
-            {tdR(fmt(mesDossiers.reduce((s, d) => s + calculer(d).partAgenteHonoraires, 0)))}
-            <td className="px-3 py-3 text-right text-orange-500">- {fmt(mesApporteurDu)}</td>
-            {tdTotal(mesDossiersGainsPrevi)}
+            <td className="px-3 py-2">Total</td>
+            {colonnes.map(col => {
+              const total = rows.reduce((s, [, agg]) => s + (getMontant(agg, col.key) || 0), 0)
+              if (col.type === 'neg') return <td key={col.key} className="px-3 py-2 text-right text-red-400 text-sm font-bold">— {fmt(total)}</td>
+              if (col.type === 'total') return <td key={col.key} className={`px-3 py-2 text-right text-sm font-bold ${total >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(total)}</td>
+              return <td key={col.key} className="px-3 py-2 text-right text-sm">{fmt(total)}</td>
+            })}
           </tr>
         </tfoot>
       </table>
     </div>
   )
 
-  const renderSuiviFinancierMoiMois = () => {
-    const rows = agrégerMois(mesDossiers)
-    const toutes_cles = new Set([
+  // ── MES CHANTIERS par période ───────────────────────────────────────────────
+
+  const renderMesPeriode = (listeDossiers, colLabel, rows) => {
+    const colonnesMarine  = [
+      { label: 'Frais TTC',     key: 'fraisTTC',         type: 'normal' },
+      { label: 'Com. TTC',      key: 'comHTSigne',        type: 'normal' },
+      { label: 'Hon. TTC',      key: 'honTotalTTC',       type: 'normal' },
+      { label: 'Royalties',     key: 'royaltiesTotal',    type: 'neg'    },
+      { label: 'Apporteur',     key: 'apporteurTotalHT',  type: 'neg'    },
+      { label: nomFranchisee,   key: 'gainsAdminPrevi',   type: 'total'  },
+    ]
+    const colonnesAgente  = [
+      { label: 'Frais',         key: 'fraisNet',          type: 'normal' },
+      { label: 'Com. net',      key: 'comReelNet',        type: 'normal' },
+      { label: 'Hon. net',      key: 'honReel',           type: 'normal' },
+      { label: 'Royalties',     key: 'royaltiesReelTotal',type: 'neg'    },
+      { label: 'Apporteur',     key: 'apporteurRembourse',type: 'neg'    },
+      { label: 'Mes gains',     key: 'gainsAgenteReels',  type: 'total'  },
+    ]
+    return renderTableauPeriode(rows, colLabel, isMarine ? colonnesMarine : colonnesAgente, (agg, key) => agg[key] || 0)
+  }
+
+  // ── TOUS LES CHANTIERS par période (admin) ─────────────────────────────────
+
+  const renderTousPeriode = (rows, colLabel) => {
+    const colonnes = [
+      { label: 'Frais TTC',   key: 'fraisTTC',       type: 'normal' },
+      { label: 'Com. TTC',    key: 'comHTSigne',      type: 'normal' },
+      { label: 'Hon. TTC',    key: 'honTotalTTC',     type: 'normal' },
+      { label: 'Royalties',   key: 'royaltiesTotal',  type: 'neg'    },
+      { label: 'Apporteur',   key: 'apporteurTotalHT',type: 'neg'    },
+      { label: 'Part agentes',key: 'gainsAgentePrevi',type: 'normal' },
+      { label: nomFranchisee, key: 'gainsAdminPrevi', type: 'total'  },
+    ]
+    return renderTableauPeriode(rows, colLabel, colonnes, (agg, key) => agg[key] || 0)
+  }
+
+  // ── SUIVI CTP par période ──────────────────────────────────────────────────
+
+  const renderCTPPeriode = (rows, colLabel, isAnnee = false) => {
+    const redevKey = (key) => {
+      if (isAnnee) return redevances.filter(r => r.statut === 'regle' && String(r.annee) === String(key)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
+      const [annee, mois] = key.split('-')
+      return redevances.filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
+    }
+    const allKeys = new Set([
       ...rows.map(([k]) => k),
-      ...mesRedevances.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`),
+      ...redevances.filter(r => r.statut === 'regle').map(r =>
+        isAnnee ? String(r.annee) : `${r.annee}-${String(r.mois).padStart(2, '0')}`
+      ),
     ])
-    const cles = Array.from(toutes_cles).sort((a, b) => b.localeCompare(a))
+    const cles = Array.from(allKeys).sort((a, b) => b.localeCompare(a))
 
     return (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {thL('Mois')}
-              {thR('Frais consul.')}
-              {thR('Commissions')}
-              {thR('Honoraires')}
-              {thR('Apporteur')}
-              {thR('Redevance CTP')}
-              {thR('Total')}
-            </tr>
+            <tr>{thL(colLabel)}{thR('Frais')}{thR('Com.')}{thR('Hon.')}{thR('Redevance')}{thR('Royalties')}{thR('Apporteur')}{thR('Total CTP')}</tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {cles.map(key => {
-              const [annee, mois] = key.split('-')
-              const c = rows.find(([k]) => k === key)?.[1] || {}
-              const redevMontant = mesRedevances
-                .filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois))
-                .reduce((s, r) => s + (r.montant_ttc || 540), 0)
-              const total = (c.gainsAgentePrevi || 0) - redevMontant
+              const agg   = rows.find(([k]) => k === key)?.[1] || {}
+              const redev = redevKey(key)
+              const label = isAnnee ? key : (() => { const [a, m] = key.split('-'); return `${MOIS[parseInt(m)]} ${a}` })()
+              const total = (agg.fraisNet || 0) + (agg.honTotalNet || 0) + (agg.netComSigne || 0) + redev - (agg.royaltiesTotal || 0) - (agg.gainsAgenteReels || 0) - (agg.apporteurTotalHT || 0)
               return (
                 <tr key={key} className="hover:bg-gray-50">
-                  <td className="px-3 py-3 font-medium">{MOIS[parseInt(mois)]} {annee}</td>
-                  {tdR(fmt(c.fraisPartAgente))}
-                  {tdR(fmt(c.partAgente))}
-                  {tdR(fmt(c.partAgenteHonoraires))}
-                  <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurPartAgente || 0) > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
-                  <td className="px-3 py-3 text-right text-red-400">{redevMontant > 0 ? `- ${redevMontant.toFixed(2)} €` : '—'}</td>
+                  <td className="px-3 py-2 font-medium">{label}</td>
+                  {tdR(fmt(agg.fraisNet))}
+                  {tdR(fmt(agg.netComSigne))}
+                  {tdR(fmt(agg.honTotalNet))}
+                  <td className="px-3 py-2 text-right text-green-600">{redev > 0 ? `+ ${fmt(redev)}` : '—'}</td>
+                  <td className="px-3 py-2 text-right text-red-400">— {fmt(agg.royaltiesTotal)}</td>
+                  <td className="px-3 py-2 text-right text-orange-500">{(agg.apporteurTotalHT || 0) > 0 ? `— ${fmt(agg.apporteurTotalHT)}` : '—'}</td>
                   {tdTotal(total)}
                 </tr>
               )
@@ -2090,229 +1038,228 @@ export default function Finances() {
     )
   }
 
-  const renderSuiviFinancierMoiAnnee = () => {
-    const rows = agrégerAnnee(mesDossiers)
-    const toutes_annees = new Set([
-      ...rows.map(([k]) => k),
-      ...mesRedevances.filter(r => r.statut === 'regle').map(r => String(r.annee)),
-    ])
-    const annees = Array.from(toutes_annees).sort((a, b) => b - a)
+  // ── RÉCAP CTP ──────────────────────────────────────────────────────────────
+
+  const renderRecapCTP = () => {
+    const totalComNet  = dossiers.reduce((s, d) => s + calculer(d).netComSigne, 0)
+    const totalHonNet  = dossiers.reduce((s, d) => s + calculer(d).honTotalNet, 0)
+    const totalFraisNet = dossiers.filter(d => d.frais_statut === 'regle').reduce((s, d) => s + calculer(d).fraisNet, 0)
+    const totalApporteur = dossiers.reduce((s, d) => s + calculer(d).apporteurTotalHT, 0)
+    const encCTP = totalComNet + totalHonNet + totalFraisNet + totalRedevancesReglees
+    const decCTP = totalGainsAgentesReels + totalApporteur
+    const netCTP = encCTP - decCTP
 
     return (
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {thL('Année')}
-              {thR('Frais consul.')}
-              {thR('Commissions')}
-              {thR('Honoraires')}
-              {thR('Apporteur')}
-              {thR('Redevance CTP')}
-              {thR('Total')}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {annees.map(annee => {
-              const c = rows.find(([k]) => k === annee)?.[1] || {}
-              const redevAnnee = mesRedevances
-                .filter(r => r.statut === 'regle' && r.annee === parseInt(annee))
-                .reduce((s, r) => s + (r.montant_ttc || 540), 0)
-              const total = (c.gainsAgentePrevi || 0) - redevAnnee
-              return (
-                <tr key={annee} className="hover:bg-gray-50">
-                  <td className="px-3 py-3 font-bold text-gray-800">{annee}</td>
-                  {tdR(fmt(c.fraisPartAgente))}
-                  {tdR(fmt(c.partAgente))}
-                  {tdR(fmt(c.partAgenteHonoraires))}
-                  <td className="px-3 py-3 text-right text-orange-500">{(c.apporteurPartAgente || 0) > 0 ? `- ${c.apporteurPartAgente.toFixed(2)} €` : '—'}</td>
-                  <td className="px-3 py-3 text-right text-red-400">- {redevAnnee.toFixed(2)} €</td>
-                  {tdTotal(total)}
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
+            <p className="font-medium text-green-800 mb-2">📥 Encaissements CTP</p>
+            <div className="flex justify-between text-sm"><span className="text-gray-600">Commissions net HT</span><span className="text-green-700">+ {fmt(totalComNet)}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-gray-600">Honoraires net HT</span><span className="text-green-700">+ {fmt(totalHonNet)}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-gray-600">Frais consultation net HT</span><span className="text-green-700">+ {fmt(totalFraisNet)}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-gray-600">Redevances agentes</span><span className="text-green-700">+ {fmt(totalRedevancesReglees)}</span></div>
+            <div className="flex justify-between text-sm border-t border-green-200 pt-2 font-bold"><span>Total</span><span className="text-green-700">+ {fmt(encCTP)}</span></div>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
+            <p className="font-medium text-red-800 mb-2">📤 Décaissements CTP</p>
+            <div className="flex justify-between text-sm"><span className="text-gray-600">Part agentes</span><span className="text-red-500">— {fmt(totalGainsAgentesReels)}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-gray-600">Apporteur client</span><span className="text-red-500">— {fmt(totalApporteur)}</span></div>
+            <div className="flex justify-between text-sm border-t border-red-200 pt-2 font-bold"><span>Total</span><span className="text-red-500">— {fmt(decCTP)}</span></div>
+          </div>
+        </div>
+        <div className={`border rounded-xl p-4 ${netCTP >= 0 ? 'bg-purple-50 border-purple-200' : 'bg-red-50 border-red-200'}`}>
+          <div className="flex justify-between items-center">
+            <span className="font-bold text-purple-900">Net CTP</span>
+            <span className={`font-bold text-2xl ${netCTP >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(netCTP)}</span>
+          </div>
+        </div>
       </div>
     )
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // FACTURATION (vue agente)
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ── RÉCAP AGENTE (vue admin) ────────────────────────────────────────────────
+
+  const renderRecapAgente = (listeDossiers, listeRedevances, agente) => {
+    const nom          = agente ? `${agente.prenom} ${agente.nom}` : 'Agente'
+    const gainsReels   = listeDossiers.reduce((s, d) => s + calculerReel(d).gainsAgenteReels, 0)
+    const gainsPrevi   = listeDossiers.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
+    const apporteurDu  = listeDossiers.reduce((s, d) => s + calculer(d).apporteurAgente, 0)
+    const redevReglees = listeRedevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
+    const net          = gainsReels - redevReglees - apporteurDu
+
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
+            <p className="font-medium text-green-800 mb-2">📥 Gains {nom}</p>
+            <div className="flex justify-between text-sm"><span className="text-gray-600">Gains réels</span><span className="text-green-700">+ {fmt(gainsReels)}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-gray-600">Gains prévisionnels</span><span className="text-gray-400">({fmt(gainsPrevi)})</span></div>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
+            <p className="font-medium text-red-800 mb-2">📤 Décaissements {nom}</p>
+            <div className="flex justify-between text-sm"><span className="text-gray-600">Redevances CTP</span><span className="text-red-500">— {fmt(redevReglees)}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-gray-600">Apporteur à rembourser</span><span className="text-red-500">— {fmt(apporteurDu)}</span></div>
+            <div className="flex justify-between text-sm border-t border-red-200 pt-2 font-bold"><span>Total</span><span className="text-red-500">— {fmt(redevReglees + apporteurDu)}</span></div>
+          </div>
+        </div>
+        <div className={`border rounded-xl p-4 ${net >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'}`}>
+          <div className="flex justify-between items-center">
+            <span className="font-bold text-blue-900">Net {nom}</span>
+            <span className={`font-bold text-2xl ${net >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(net)}</span>
+          </div>
+        </div>
+        {/* Ce que CTP doit à l'agente */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+          <p className="font-semibold text-blue-800">💸 {nomFranchisee} doit verser à {nom}</p>
+          {listeDossiers.map(d => {
+            const reel = calculerReel(d).gainsAgenteReels
+            if (reel === 0) return null
+            return (
+              <div key={d.id} className="flex justify-between text-sm border-b border-blue-100 pb-1 last:border-0">
+                <span className="text-blue-900">{d.reference} — {d.client?.prenom} {d.client?.nom}</span>
+                <span className="text-blue-700 font-medium">+ {fmt(reel)}</span>
+              </div>
+            )
+          })}
+          <div className="flex justify-between font-bold border-t border-blue-200 pt-2">
+            <span className="text-blue-800">Total</span>
+            <span className="text-blue-700">{fmt(gainsReels)}</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── RÉCAP MOI (vue agente) ─────────────────────────────────────────────────
+
+  const renderRecapMoi = () => (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
+          <p className="font-medium text-green-800 mb-2">📥 Mes gains prévisionnels</p>
+          <div className="flex justify-between text-sm"><span className="text-gray-600">Frais consultation</span><span className="text-green-700">+ {fmt(mesDossiers.reduce((s, d) => s + calculer(d).fraisAgente, 0))}</span></div>
+          <div className="flex justify-between text-sm"><span className="text-gray-600">Commissions</span><span className="text-green-700">+ {fmt(mesDossiers.reduce((s, d) => s + calculer(d).comAgenteSigne, 0))}</span></div>
+          <div className="flex justify-between text-sm"><span className="text-gray-600">Honoraires</span><span className="text-green-700">+ {fmt(mesDossiers.reduce((s, d) => s + calculer(d).honAgente, 0))}</span></div>
+          <div className="flex justify-between text-sm border-t border-green-200 pt-2 font-bold"><span>Total brut</span><span className="text-green-700">+ {fmt(mesDossiersGainsPrevi + mesApporteurDu)}</span></div>
+        </div>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
+          <p className="font-medium text-red-800 mb-2">📤 Mes décaissements</p>
+          <div className="flex justify-between text-sm"><span className="text-gray-600">Apporteur à rembourser</span><span className="text-red-500">— {fmt(mesApporteurDu)}</span></div>
+        </div>
+      </div>
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <div className="flex justify-between items-center">
+          <span className="font-bold text-blue-900">Gains nets prévisionnels</span>
+          <span className="font-bold text-2xl text-green-700">{fmt(mesDossiersGainsPrevi)}</span>
+        </div>
+        <p className="text-xs text-gray-400 mt-1">Hors redevances — voir onglets "Par mois" et "Par année"</p>
+      </div>
+    </div>
+  )
+
+  // ── FACTURATION MOI ────────────────────────────────────────────────────────
 
   const renderFacturationMoi = () => (
     <div className="space-y-4">
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-        <p className="text-sm font-medium text-blue-800 mb-1">📋 Ce que tu dois facturer à {nomFranchisee} (CTP)</p>
-        <p className="text-xs text-gray-500">Frais de consultation réglés + commissions sur devis signés + honoraires réglés</p>
+        <p className="text-sm font-medium text-blue-800">📋 Ce que tu dois facturer à {nomFranchisee}</p>
+        <p className="text-xs text-gray-500 mt-1">Frais réglés + commissions signées + honoraires réglés</p>
       </div>
-
       {mesDossiers.map(d => {
-        const c     = calculer(d)
+        const c = calculer(d)
         const items = []
-
-        if (d.frais_statut === 'regle' && c.fraisPartAgente > 0) {
-          items.push({ label: 'Frais de consultation', montant: c.fraisPartAgente, type: 'frais' })
-        }
-        c.commissionsSignees.forEach(item => {
-          if (item.netAgente > 0) {
-            items.push({
-              label:  `Commission ${item.artisan?.entreprise || 'Artisan'}`,
-              montant: item.netAgente,
-              type:   'commission',
-              date:    item.date_signature,
-            })
-          }
+        if (d.frais_statut === 'regle' && c.fraisAgente > 0)
+          items.push({ label: 'Frais de consultation', montant: c.fraisAgente, color: 'text-purple-700' })
+        c.finance.commissions.devis.filter(dv => dv.signed && dv.parts.agente > 0).forEach(dv => {
+          const original = (d.devis_artisans || []).find(x => x.id === dv.id)
+          const apporteurLigne = c.apporteurMap.get(dv.id)
+          const netAgente = round2(dv.parts.agente - (apporteurLigne?.agente || 0))
+          if (netAgente > 0) items.push({
+            label: `Commission ${original?.artisan?.entreprise || 'Artisan'} (${Math.round(dv.commissionPct * 100)}%)`,
+            montant: netAgente, color: 'text-blue-700',
+            date: original?.date_signature,
+          })
         })
-        if (getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle' && c.partAgenteCourtage > 0) {
-          items.push({ label: 'Honoraires courtage', montant: c.partAgenteCourtage, type: 'honoraire' })
-        }
-        if (d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle' && c.partAgenteAMO > 0) {
-          items.push({ label: 'Honoraires AMO solde', montant: c.partAgenteAMO, type: 'honoraire' })
-        }
+        if (getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle' && c.courtAgente > 0)
+          items.push({ label: `Honoraires courtage (${c.tauxCourtagePct}%)`, montant: c.courtAgente, color: 'text-green-700' })
+        if (d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle' && c.amoAgente > 0)
+          items.push({ label: `Honoraires AMO solde (${c.tauxAmoPct}%)`, montant: c.amoAgente, color: 'text-green-700' })
         if (items.length === 0) return null
-
         return (
-          <div key={d.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-            <div className="flex items-center gap-2">
+          <div key={d.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
+            <div className="flex gap-2 items-center">
               <p className="font-medium text-blue-900">{d.reference}</p>
               <p className="text-sm text-gray-500">{d.client?.prenom} {d.client?.nom}</p>
             </div>
-            <div className="space-y-1">
-              {items.map((item, i) => (
-                <div key={i} className="flex items-center justify-between py-1 border-b border-gray-100 last:border-0">
-                  <div>
-                    <p className="text-sm text-gray-700">{item.label}</p>
-                    {item.date && <p className="text-xs text-gray-400">Signé le {new Date(item.date).toLocaleDateString('fr-FR')}</p>}
-                  </div>
-                  <span className={`text-sm font-medium ${
-                    item.type === 'frais'     ? 'text-purple-700' :
-                    item.type === 'honoraire' ? 'text-green-700'  :
-                    'text-blue-700'
-                  }`}>
-                    {item.montant.toFixed(2)} €
-                  </span>
+            {items.map((item, i) => (
+              <div key={i} className="flex justify-between text-sm border-b border-gray-100 pb-1 last:border-0">
+                <div>
+                  <p className="text-gray-700">{item.label}</p>
+                  {item.date && <p className="text-xs text-gray-400">Signé le {new Date(item.date).toLocaleDateString('fr-FR')}</p>}
                 </div>
-              ))}
-            </div>
-            <div className="flex justify-between text-sm font-bold border-t border-gray-200 pt-2">
-              <span>Total à facturer</span>
-              <span className="text-blue-700">{items.reduce((s, i) => s + i.montant, 0).toFixed(2)} €</span>
+                <span className={`font-medium ${item.color}`}>{fmt(item.montant)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between font-bold border-t border-gray-200 pt-2 text-sm">
+              <span>Total</span>
+              <span className="text-blue-700">{fmt(items.reduce((s, i) => s + i.montant, 0))}</span>
             </div>
           </div>
         )
       })}
-
-      {(() => {
-        const now      = new Date()
-        const moisDu   = now.getMonth() === 0 ? 12 : now.getMonth()
-        const anneeDu  = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()
-        const redevDuMois = mesRedevances.find(r => r.mois === moisDu && r.annee === anneeDu)
-
-        if (!redevDuMois || redevDuMois.statut === 'regle') {
-          return (
-            <div className="flex justify-between text-sm text-green-600">
-              <span>Redevance {MOIS[moisDu]} {anneeDu}</span>
-              <span className="font-medium">✅ Réglée</span>
-            </div>
-          )
-        }
-        return (
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Redevance {MOIS[moisDu]} {anneeDu} — à payer</span>
-            <span className="font-medium text-amber-600">{(redevDuMois.montant_ttc || 540).toFixed(2)} €</span>
-          </div>
-        )
-      })()}
     </div>
   )
 
   const renderFacturationMoisSuivi = () => {
     const rows = agrégerMois(mesDossiers)
     if (rows.length === 0) return <p className="text-center text-gray-400 text-sm py-8">Aucune donnée</p>
-
     return (
       <div className="space-y-4">
         {succes && <p className="text-green-600 text-sm bg-green-50 border border-green-200 rounded-lg px-4 py-2">{succes}</p>}
         {erreur && <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-2">{erreur}</p>}
-
-        {rows.map(([key, c]) => {
+        {rows.map(([key, agg]) => {
           const [anneeStr, moisStr] = key.split('-')
-          const annee          = parseInt(anneeStr)
-          const mois           = parseInt(moisStr)
-          const label          = `${MOIS[mois]} ${annee}`
-          const totalAFacturer = round2(c.fraisPartAgente + (c.partAgente - c.apporteurPartAgente) + c.partAgenteHonoraires)
-          const facture        = getFactureAgenteMois(mois, annee)
-          const statut         = facture?.statut || 'a_facturer'
-          const cleUpload      = `${annee}-${mois}`
-
-          const items = []
-          if (c.fraisPartAgente > 0)                         items.push({ label: 'Frais de consultation', montant: c.fraisPartAgente, color: 'text-purple-700' })
-          if ((c.partAgente - c.apporteurPartAgente) > 0)    items.push({ label: 'Commissions artisans',  montant: c.partAgente - c.apporteurPartAgente, color: 'text-blue-700' })
-          if (c.partAgenteHonoraires > 0)                    items.push({ label: 'Honoraires',             montant: c.partAgenteHonoraires, color: 'text-green-700' })
-
+          const annee   = parseInt(anneeStr)
+          const mois    = parseInt(moisStr)
+          const label   = `${MOIS[mois]} ${annee}`
+          const total   = round2(agg.fraisAgente + agg.comAgenteSigne + agg.honAgente - agg.apporteurAgente)
+          const facture = getFactureAgenteMois(mois, annee)
+          const statut  = facture?.statut || 'a_facturer'
           return (
             <div key={key} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-100">
+              <div className="flex justify-between px-4 py-3 bg-gray-50 border-b border-gray-100">
                 <span className="font-semibold text-gray-800">{label}</span>
-                <span className="font-bold text-blue-700">{totalAFacturer.toFixed(2)} €</span>
+                <span className="font-bold text-blue-700">{fmt(total)}</span>
               </div>
               <div className="p-4 space-y-3">
-                <div className="space-y-1">
-                  {items.map((item, i) => (
-                    <div key={i} className="flex justify-between text-sm">
-                      <span className="text-gray-600">{item.label}</span>
-                      <span className={`font-medium ${item.color}`}>{item.montant.toFixed(2)} €</span>
-                    </div>
-                  ))}
+                <div className="space-y-1 text-sm">
+                  {agg.fraisAgente > 0 && <div className="flex justify-between"><span className="text-gray-600">Frais consultation</span><span className="text-purple-700">{fmt(agg.fraisAgente)}</span></div>}
+                  {(agg.comAgenteSigne - agg.apporteurAgente) > 0 && <div className="flex justify-between"><span className="text-gray-600">Commissions</span><span className="text-blue-700">{fmt(agg.comAgenteSigne - agg.apporteurAgente)}</span></div>}
+                  {agg.honAgente > 0 && <div className="flex justify-between"><span className="text-gray-600">Honoraires</span><span className="text-green-700">{fmt(agg.honAgente)}</span></div>}
                 </div>
                 <div className="flex items-center gap-3 pt-2 border-t border-gray-100 flex-wrap">
-                  <select
-                    value={statut}
-                    onChange={e => upsertFactureAgenteMois(mois, annee, totalAFacturer, { statut: e.target.value })}
-                    className={`border rounded px-2 py-1 text-xs focus:outline-none ${
-                      statut === 'paye'    ? 'border-green-300 bg-green-50 text-green-700' :
-                      statut === 'facture' ? 'border-blue-300  bg-blue-50  text-blue-700'  :
-                      'border-gray-200 text-gray-600'
-                    }`}
-                  >
+                  <select value={statut}
+                    onChange={e => upsertFactureAgenteMois(mois, annee, total, { statut: e.target.value })}
+                    className={`border rounded px-2 py-1 text-xs focus:outline-none ${statut === 'paye' ? 'border-green-300 bg-green-50 text-green-700' : statut === 'facture' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600'}`}>
                     <option value="a_facturer">📋 À facturer</option>
                     <option value="facture">📤 Facturé</option>
                     <option value="paye">✅ Payé</option>
                   </select>
-
                   {facture?.facture_path ? (
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={async () => {
-                          const { data } = await supabase.storage.from('documents').createSignedUrl(facture.facture_path, 3600)
-                          if (data?.signedUrl) window.open(data.signedUrl, '_blank')
-                        }}
-                        className="text-xs text-blue-600 hover:underline"
-                      >
-                        📄 Voir facture
-                      </button>
+                      <button onClick={async () => {
+                        const { data } = await supabase.storage.from('documents').createSignedUrl(facture.facture_path, 3600)
+                        if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+                      }} className="text-xs text-blue-600 hover:underline">📄 Voir facture</button>
                       <label className="text-xs text-gray-400 cursor-pointer hover:text-blue-600">
                         Remplacer
-                        <input
-                          type="file" accept=".pdf" className="hidden"
-                          onChange={e => e.target.files[0] && uploadFactureAgentePdf(mois, annee, totalAFacturer, e.target.files[0])}
-                        />
+                        <input type="file" accept=".pdf" className="hidden" onChange={e => e.target.files[0] && uploadFactureAgentePdf(mois, annee, total, e.target.files[0])} />
                       </label>
                     </div>
                   ) : (
-                    <label className={`text-xs cursor-pointer px-2 py-1 rounded border transition-all ${
-                      uploadingFactureAgente === cleUpload
-                        ? 'text-gray-400 border-gray-200'
-                        : 'text-blue-600 border-blue-200 hover:bg-blue-50'
-                    }`}>
-                      {uploadingFactureAgente === cleUpload ? 'Upload...' : '+ Uploader ma facture'}
-                      <input
-                        type="file" accept=".pdf" className="hidden"
-                        disabled={uploadingFactureAgente === cleUpload}
-                        onChange={e => e.target.files[0] && uploadFactureAgentePdf(mois, annee, totalAFacturer, e.target.files[0])}
-                      />
+                    <label className={`text-xs cursor-pointer px-2 py-1 rounded border transition-all ${uploadingFactureAgente === `${annee}-${mois}` ? 'text-gray-400 border-gray-200' : 'text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
+                      {uploadingFactureAgente === `${annee}-${mois}` ? 'Upload...' : '+ Uploader ma facture'}
+                      <input type="file" accept=".pdf" className="hidden" disabled={uploadingFactureAgente === `${annee}-${mois}`} onChange={e => e.target.files[0] && uploadFactureAgentePdf(mois, annee, total, e.target.files[0])} />
                     </label>
                   )}
                 </div>
@@ -2320,184 +1267,91 @@ export default function Finances() {
             </div>
           )
         })}
-
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-1 text-sm">
-          <div className="flex justify-between">
-            <span className="text-gray-600">Total à facturer</span>
-            <span className="font-medium">
-              {rows.reduce((s, [, c]) => s + c.fraisPartAgente + (c.partAgente - c.apporteurPartAgente) + c.partAgenteHonoraires, 0).toFixed(2)} €
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-green-600">Dont payé</span>
-            <span className="font-medium text-green-700">
-              {rows
-                .filter(([key]) => {
-                  const [a, m] = key.split('-').map(Number)
-                  return getFactureAgenteMois(m, a)?.statut === 'paye'
-                })
-                .reduce((s, [, c]) => s + c.fraisPartAgente + (c.partAgente - c.apporteurPartAgente) + c.partAgenteHonoraires, 0)
-                .toFixed(2)} €
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-amber-600">Dont facturé (en attente paiement)</span>
-            <span className="font-medium text-amber-700">
-              {rows
-                .filter(([key]) => {
-                  const [a, m] = key.split('-').map(Number)
-                  return getFactureAgenteMois(m, a)?.statut === 'facture'
-                })
-                .reduce((s, [, c]) => s + c.fraisPartAgente + (c.partAgente - c.apporteurPartAgente) + c.partAgenteHonoraires, 0)
-                .toFixed(2)} €
-            </span>
-          </div>
-        </div>
       </div>
     )
   }
 
-  const renderFacturationMoiTableau = (rows, colLabel) => (
-    <div className="space-y-4">
+  // ── AGENTE PAR PÉRIODE ─────────────────────────────────────────────────────
+
+  const renderAgentePeriode = (rows, colLabel, listeRedevances, isAnnee = false) => {
+    const redevKey = (key) => {
+      if (isAnnee) return listeRedevances.filter(r => r.statut === 'regle' && String(r.annee) === String(key)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
+      const [annee, mois] = key.split('-')
+      return listeRedevances.filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
+    }
+    const allKeys = new Set([
+      ...rows.map(([k]) => k),
+      ...listeRedevances.filter(r => r.statut === 'regle').map(r =>
+        isAnnee ? String(r.annee) : `${r.annee}-${String(r.mois).padStart(2, '0')}`
+      ),
+    ])
+    const cles = Array.from(allKeys).sort((a, b) => b.localeCompare(a))
+    return (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="p-3 border-b border-gray-100">
-          <p className="text-xs font-medium text-gray-600 uppercase">À facturer à {nomFranchisee}</p>
-        </div>
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {thL(colLabel)}
-              {thR('Frais consul.')}
-              {thR('Commissions')}
-              {thR('Honoraires')}
-              {thR('Total à facturer')}
-            </tr>
+            <tr>{thL(colLabel)}{thR('Gains')}{thR('Redevance CTP')}{thR('Apporteur')}{thR('Total')}</tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {rows.map(([key, c]) => {
-              const isAnnee = !key.includes('-')
-              const label   = isAnnee ? key : (() => { const [a, m] = key.split('-'); return `${MOIS[parseInt(m)]} ${a}` })()
-              const total   = c.fraisPartAgente + (c.partAgente - c.apporteurPartAgente) + c.partAgenteHonoraires
+            {cles.map(key => {
+              const agg   = rows.find(([k]) => k === key)?.[1] || {}
+              const redev = redevKey(key)
+              const label = isAnnee ? key : (() => { const [a, m] = key.split('-'); return `${MOIS[parseInt(m)]} ${a}` })()
+              const total = (agg.gainsAgenteReels || 0) - redev - (agg.apporteurAgente || 0)
               return (
                 <tr key={key} className="hover:bg-gray-50">
-                  <td className={`px-3 py-3 ${isAnnee ? 'font-bold' : 'font-medium'}`}>{label}</td>
-                  {tdR(fmt(c.fraisPartAgente))}
-                  {tdR(fmt(c.partAgente - c.apporteurPartAgente))}
-                  {tdR(fmt(c.partAgenteHonoraires))}
+                  <td className="px-3 py-2 font-medium">{label}</td>
+                  <td className="px-3 py-2 text-right text-green-600">+ {fmt(agg.gainsAgenteReels)}</td>
+                  <td className="px-3 py-2 text-right text-red-400">{redev > 0 ? `— ${fmt(redev)}` : '—'}</td>
+                  <td className="px-3 py-2 text-right text-orange-500">{(agg.apporteurAgente || 0) > 0 ? `— ${fmt(agg.apporteurAgente)}` : '—'}</td>
                   {tdTotal(total)}
                 </tr>
               )
             })}
-            {rows.length === 0 && (
-              <tr><td colSpan={5} className="px-3 py-8 text-center text-gray-400 text-sm">Aucune donnée</td></tr>
-            )}
           </tbody>
-          <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-bold">
-            <tr>
-              <td className="px-3 py-3">Total</td>
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.fraisPartAgente, 0)))}
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.partAgente - c.apporteurPartAgente, 0)))}
-              {tdR(fmt(rows.reduce((s, [, c]) => s + c.partAgenteHonoraires, 0)))}
-              {tdTotal(rows.reduce((s, [, c]) => s + c.fraisPartAgente + (c.partAgente - c.apporteurPartAgente) + c.partAgenteHonoraires, 0))}
-            </tr>
-          </tfoot>
         </table>
       </div>
+    )
+  }
 
-      {(() => {
-        const now      = new Date()
-        const moisDu   = now.getMonth() === 0 ? 12 : now.getMonth()
-        const anneeDu  = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear()
-        const redevDuMois = mesRedevances.find(r => r.mois === moisDu && r.annee === anneeDu)
-        const redevMontant = (!redevDuMois || redevDuMois.statut !== 'regle') ? 540 : 0
-        return (
-          <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-sm">
-            <p className="font-medium text-purple-800 mb-2">💳 À payer à {nomFranchisee}</p>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Redevance {MOIS[moisDu]} {anneeDu}</span>
-              <span className={`font-medium ${redevMontant > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                {redevMontant > 0 ? `${redevMontant.toFixed(2)} €` : '✅ Réglée'}
-              </span>
-            </div>
-            {mesApporteurDu > 0 && (
-              <div className="flex justify-between mt-1">
-                <span className="text-gray-600">Apporteur</span>
-                <span className="font-medium text-orange-600">- {mesApporteurDu.toFixed(2)} €</span>
-              </div>
-            )}
-            <div className="flex justify-between font-bold border-t border-purple-200 pt-2 mt-2">
-              <span className="text-purple-800">Total</span>
-              <span className="text-purple-700">{(redevMontant + mesApporteurDu).toFixed(2)} €</span>
-            </div>
-          </div>
-        )
-      })()}
-    </div>
-  )
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // REDEVANCES
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ── REDEVANCES ─────────────────────────────────────────────────────────────
 
   const renderRedevances = () => {
-    const anneeFiltre      = new Date().getFullYear()
-    const agentesAffichees = isMarine ? agentes : agentes.filter(a => a.id === profile?.id)
-    const redevAnnee       = redevances.filter(r => r.annee === anneeFiltre)
-    const totalAttendu     = agentesAffichees.length * (new Date().getMonth() + 1) * 540
-    const totalRegle       = redevAnnee.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
-    const totalEnAttente   = totalAttendu - totalRegle
-
+    const anneeFiltre    = new Date().getFullYear()
+    const agentesAff     = isMarine ? agentes : agentes.filter(a => a.id === profile?.id)
+    const redevAnnee     = redevances.filter(r => r.annee === anneeFiltre)
+    const totalAttendu   = agentesAff.length * (new Date().getMonth() + 1) * 540
+    const totalRegle     = redevAnnee.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
+    const totalEnAttente = totalAttendu - totalRegle
     return (
       <div className="space-y-5">
-        {/* Résumé */}
         <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: 'Total attendu',  val: totalAttendu,   color: 'text-gray-700' },
-            { label: 'Total réglé',    val: totalRegle,     color: 'text-green-700' },
-            { label: 'Reste à payer',  val: totalEnAttente, color: totalEnAttente > 0 ? 'text-amber-600' : 'text-green-600' },
-          ].map(({ label, val, color }) => (
+          {[{ label: 'Total attendu', val: totalAttendu, color: 'text-gray-700' }, { label: 'Total réglé', val: totalRegle, color: 'text-green-700' }, { label: 'Reste à payer', val: totalEnAttente, color: totalEnAttente > 0 ? 'text-amber-600' : 'text-green-600' }].map(({ label, val, color }) => (
             <div key={label} className="bg-white border border-gray-200 rounded-xl p-4">
               <p className="text-xs text-gray-400 mb-1">{label} {anneeFiltre}</p>
-              <p className={`text-xl font-bold ${color}`}>{val.toFixed(2)} €</p>
+              <p className={`text-xl font-bold ${color}`}>{fmt(val)}</p>
             </div>
           ))}
         </div>
-
-        {/* Bouton ajouter */}
-        <div className="flex justify-end">
-          <button
-            onClick={() => setRedevModal(true)}
-            className="bg-blue-800 text-white text-sm px-4 py-2 rounded-lg hover:bg-blue-900"
-          >
-            + Ajouter un paiement
-          </button>
-        </div>
-
-        {/* Tableau par agente */}
-        {agentesAffichees.map(agente => {
+        {isMarine && (
+          <div className="flex justify-end">
+            <button onClick={() => setRedevModal(true)} className="bg-blue-800 text-white text-sm px-4 py-2 rounded-lg hover:bg-blue-900">+ Ajouter</button>
+          </div>
+        )}
+        {agentesAff.map(agente => {
           const moisAttendus = genererMoisAttendus(agente.id, anneeFiltre)
-          const regle        = moisAttendus.filter(m => m.redev?.statut === 'regle').length
-          const enRetard     = moisAttendus.filter(m => m.enRetard).length
-          const totalAnnuel  = redevances
-            .filter(r => r.agente_id === agente.id && r.statut === 'regle')
-            .reduce((s, r) => s + (r.montant_ttc || 540), 0)
-
+          const regle    = moisAttendus.filter(m => m.redev?.statut === 'regle').length
+          const enRetard = moisAttendus.filter(m => m.enRetard).length
+          const totalAnnuel = redevances.filter(r => r.agente_id === agente.id && r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
           return (
             <div key={agente.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50">
                 <div>
                   <p className="font-semibold text-gray-800">{agente.prenom} {agente.nom}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {regle}/{moisAttendus.length} mois réglés · Total annuel réglé : {totalAnnuel.toFixed(2)} €
-                  </p>
+                  <p className="text-xs text-gray-400">{regle}/{moisAttendus.length} mois réglés · Total annuel : {fmt(totalAnnuel)}</p>
                 </div>
-                {enRetard > 0 && (
-                  <span className="bg-red-100 text-red-700 text-xs px-2.5 py-1 rounded-full font-medium">
-                    ⚠️ {enRetard} retard{enRetard > 1 ? 's' : ''}
-                  </span>
-                )}
+                {enRetard > 0 && <span className="bg-red-100 text-red-700 text-xs px-2.5 py-1 rounded-full font-medium">⚠️ {enRetard} retard{enRetard > 1 ? 's' : ''}</span>}
               </div>
-
               <div className="divide-y divide-gray-50">
                 {moisAttendus.map(({ mois, redev, enRetard: retard }) => (
                   <div key={mois} className={`flex items-center justify-between px-5 py-3 ${retard ? 'bg-red-50' : ''}`}>
@@ -2509,23 +1363,13 @@ export default function Finances() {
                     <div className="flex items-center gap-3">
                       {redev ? (
                         <>
-                          <span className="text-sm text-gray-600">{(redev.montant_ttc || 540).toFixed(2)} € TTC</span>
-                          {redev.date_paiement && (
-                            <span className="text-xs text-gray-400">{new Date(redev.date_paiement).toLocaleDateString('fr-FR')}</span>
-                          )}
-                          <button
-                            onClick={() => toggleRedevStatut(redev.id, redev.statut)}
-                            className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all ${
-                              redev.statut === 'regle'
-                                ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                            }`}
-                          >
+                          <span className="text-sm text-gray-600">{fmt(redev.montant_ttc || 540)}</span>
+                          {redev.date_paiement && <span className="text-xs text-gray-400">{new Date(redev.date_paiement).toLocaleDateString('fr-FR')}</span>}
+                          <button onClick={() => toggleRedevStatut(redev.id, redev.statut)}
+                            className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all ${redev.statut === 'regle' ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}>
                             {redev.statut === 'regle' ? '✅ Réglé' : '⏳ En attente'}
                           </button>
-                          {isMarine && (
-                            <button onClick={() => supprimerRedevance(redev.id)} className="text-gray-300 hover:text-red-400 text-xs">✕</button>
-                          )}
+                          {isMarine && <button onClick={() => supprimerRedevance(redev.id)} className="text-gray-300 hover:text-red-400 text-xs">✕</button>}
                         </>
                       ) : (
                         <span className="text-xs text-gray-300 italic">Non saisie</span>
@@ -2537,102 +1381,65 @@ export default function Finances() {
             </div>
           )
         })}
-
-        {/* Modal ajout redevance */}
         {redevModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
               <h2 className="font-semibold text-gray-800">Ajouter un paiement de redevance</h2>
-
               {isMarine && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Agente</label>
-                  <select
-                    value={redevForm.agente_id}
-                    onChange={e => setRedevForm(f => ({ ...f, agente_id: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
+                  <select value={redevForm.agente_id} onChange={e => setRedevForm(f => ({ ...f, agente_id: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="">— Choisir —</option>
                     {agentes.map(a => <option key={a.id} value={a.id}>{a.prenom} {a.nom}</option>)}
                   </select>
                 </div>
               )}
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Mois</label>
-                  <select
-                    value={redevForm.mois}
-                    onChange={e => setRedevForm(f => ({ ...f, mois: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
+                  <select value={redevForm.mois} onChange={e => setRedevForm(f => ({ ...f, mois: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     {MOIS_LABELS.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Année</label>
-                  <input
-                    type="number" value={redevForm.annee}
-                    onChange={e => setRedevForm(f => ({ ...f, annee: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <input type="number" value={redevForm.annee} onChange={e => setRedevForm(f => ({ ...f, annee: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Montant TTC (€)</label>
-                  <input
-                    type="number" step="0.01" value={redevForm.montant_ttc}
-                    onChange={e => setRedevForm(f => ({ ...f, montant_ttc: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <input type="number" step="0.01" value={redevForm.montant_ttc} onChange={e => setRedevForm(f => ({ ...f, montant_ttc: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
-                  <select
-                    value={redevForm.statut}
-                    onChange={e => setRedevForm(f => ({ ...f, statut: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
+                  <select value={redevForm.statut} onChange={e => setRedevForm(f => ({ ...f, statut: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="en_attente">⏳ En attente</option>
                     <option value="regle">✅ Réglé</option>
                   </select>
                 </div>
               </div>
-
               {redevForm.statut === 'regle' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date de paiement</label>
-                  <input
-                    type="date" value={redevForm.date_paiement}
-                    onChange={e => setRedevForm(f => ({ ...f, date_paiement: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <input type="date" value={redevForm.date_paiement} onChange={e => setRedevForm(f => ({ ...f, date_paiement: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               )}
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Note (optionnel)</label>
-                <input
-                  type="text" value={redevForm.note} placeholder="ex: virement reçu le..."
-                  onChange={e => setRedevForm(f => ({ ...f, note: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="text" value={redevForm.note} onChange={e => setRedevForm(f => ({ ...f, note: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
-
               <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setRedevModal(false)}
-                  className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-50"
-                >
-                  Annuler
-                </button>
-                <button
-                  onClick={sauvegarderRedevance}
-                  disabled={savingRedev}
-                  className="flex-1 bg-blue-800 text-white py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50"
-                >
+                <button onClick={() => setRedevModal(false)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
+                <button onClick={sauvegarderRedevance} disabled={savingRedev}
+                  className="flex-1 bg-blue-800 text-white py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
                   {savingRedev ? 'Enregistrement...' : 'Enregistrer'}
                 </button>
               </div>
@@ -2644,24 +1451,22 @@ export default function Finances() {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // CONFIGURATION DES ONGLETS
+  // ONGLETS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const ongletsAdmin = [
-    { key: 'mes_chantiers',  label: 'Mes chantiers'     },
-    { key: 'tous_chantiers', label: 'Tous les chantiers' },
-    { key: 'ctp',            label: 'Suivi financier'    },
-    { key: 'agentes',        label: 'Agentes'            },
-    { key: 'redevances',     label: '💳 Redevances'      },
+  const ongletsAdmin  = [
+    { key: 'mes_chantiers',  label: 'Mes chantiers'      },
+    { key: 'tous_chantiers', label: 'Tous les chantiers'  },
+    { key: 'ctp',            label: 'Suivi financier CTP' },
+    { key: 'agentes',        label: 'Agentes'             },
+    { key: 'redevances',     label: '💳 Redevances'       },
   ]
-
   const ongletsAgente = [
-    { key: 'mes_chantiers', label: 'Mes chantiers'        },
-    { key: 'financier',     label: 'Mon suivi financier'  },
-    { key: 'facturation',   label: 'Facturation'          },
-    { key: 'redevances',    label: '💳 Redevances'        },
+    { key: 'mes_chantiers', label: 'Mes chantiers'       },
+    { key: 'financier',     label: 'Mon suivi financier' },
+    { key: 'facturation',   label: 'Facturation'         },
+    { key: 'redevances',    label: '💳 Redevances'       },
   ]
-
   const ongletsList = isMarine ? ongletsAdmin : ongletsAgente
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -2676,12 +1481,10 @@ export default function Finances() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-gray-600 text-sm">← Retour</button>
-          <h1 className="text-lg font-bold text-blue-900">Finances</h1>
-        </div>
+      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3">
+        <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-gray-600 text-sm">← Retour</button>
+        <h1 className="text-lg font-bold text-blue-900">Finances</h1>
+        {saving && <span className="text-xs text-gray-400 ml-auto">Enregistrement...</span>}
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
@@ -2691,18 +1494,16 @@ export default function Finances() {
           {isMarine ? (
             <>
               <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Net CTP</p>
-                <p className={`text-xl font-bold ${netCTP >= 0 ? 'text-green-700' : 'text-red-600'}`}>{netCTP.toFixed(2)} €</p>
+                <p className="text-xs text-gray-400 mb-1">Net CTP (prévisionnel)</p>
+                <p className="text-xl font-bold text-purple-700">{fmt(totalNetCTP)}</p>
               </div>
               <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Net agentes</p>
-                <p className={`text-xl font-bold ${(totalGainsAgentesReels - totalRedevancesReglees - totalApporteurAgenteDu) >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
-                  {(totalGainsAgentesReels - totalRedevancesReglees - totalApporteurAgenteDu).toFixed(2)} €
-                </p>
+                <p className="text-xs text-gray-400 mb-1">Gains agentes (réel)</p>
+                <p className="text-xl font-bold text-blue-700">{fmt(totalGainsAgentesReels)}</p>
               </div>
               <div className="bg-white border border-gray-200 rounded-xl p-4">
                 <p className="text-xs text-gray-400 mb-1">Redevances reçues</p>
-                <p className="text-xl font-bold text-purple-700">{totalRedevancesReglees.toFixed(2)} €</p>
+                <p className="text-xl font-bold text-green-700">{fmt(totalRedevancesReglees)}</p>
               </div>
               <div className="bg-white border border-gray-200 rounded-xl p-4">
                 <p className="text-xs text-gray-400 mb-1">Chantiers</p>
@@ -2713,32 +1514,25 @@ export default function Finances() {
             <>
               <div className="bg-white border border-gray-200 rounded-xl p-4">
                 <p className="text-xs text-gray-400 mb-1">Gains prévisionnels</p>
-                <p className="text-xl font-bold text-gray-600">{mesDossiersGainsPrevi.toFixed(2)} €</p>
+                <p className="text-xl font-bold text-gray-500">{fmt(mesDossiersGainsPrevi)}</p>
               </div>
               <div className="bg-white border border-gray-200 rounded-xl p-4">
                 <p className="text-xs text-gray-400 mb-1">Gains réels</p>
-                <p className="text-xl font-bold text-blue-700">{mesDossiersGainsReels.toFixed(2)} €</p>
+                <p className="text-xl font-bold text-blue-700">{fmt(mesDossiersGainsReels)}</p>
               </div>
               <div className="bg-white border border-gray-200 rounded-xl p-4">
                 <p className="text-xs text-gray-400 mb-1">Mon net</p>
-                <p className={`text-xl font-bold ${monNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>{monNet.toFixed(2)} €</p>
+                <p className={`text-xl font-bold ${monNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(monNet)}</p>
               </div>
             </>
           )}
         </div>
 
         {/* Onglets */}
-        <div className="flex gap-2 border-b border-gray-200">
+        <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
           {ongletsList.map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => { setOnglet(key); setSousOnglet('chantier') }}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-all ${
-                onglet === key
-                  ? 'border-blue-800 text-blue-800'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
+            <button key={key} onClick={() => { setOnglet(key); setSousOnglet('chantier') }}
+              className={`px-4 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-all ${onglet === key ? 'border-blue-800 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
               {label}
             </button>
           ))}
@@ -2749,8 +1543,8 @@ export default function Finances() {
           <div className="space-y-4">
             {renderSousOnglets()}
             {sousOnglet === 'chantier' && renderAccordeon(mesDossiers, false)}
-            {sousOnglet === 'mois'     && renderMesChantiersMois(mesDossiers)}
-            {sousOnglet === 'annee'    && renderMesChantiersAnnee(mesDossiers)}
+            {sousOnglet === 'mois'     && renderMesPeriode(mesDossiers, 'Mois / Chantier', agrégerMois(mesDossiers, true))}
+            {sousOnglet === 'annee'    && renderMesPeriode(mesDossiers, 'Année / Chantier', agrégerAnnee(mesDossiers, true))}
           </div>
         )}
 
@@ -2759,8 +1553,8 @@ export default function Finances() {
           <div className="space-y-4">
             {renderSousOnglets()}
             {sousOnglet === 'chantier' && renderAccordeon(dossiers, true)}
-            {sousOnglet === 'mois'     && renderTousMois()}
-            {sousOnglet === 'annee'    && renderTousAnnee()}
+            {sousOnglet === 'mois'     && renderTousPeriode(agrégerMois(dossiers), 'Mois')}
+            {sousOnglet === 'annee'    && renderTousPeriode(agrégerAnnee(dossiers), 'Année')}
           </div>
         )}
 
@@ -2768,9 +1562,9 @@ export default function Finances() {
         {onglet === 'ctp' && isMarine && (
           <div className="space-y-4">
             {renderSousOnglets()}
-            {sousOnglet === 'chantier' && <div className="space-y-4">{renderRecapCTP()}{renderDetailCTP()}</div>}
-            {sousOnglet === 'mois'     && renderCTPMois()}
-            {sousOnglet === 'annee'    && renderCTPAnnee()}
+            {sousOnglet === 'chantier' && renderRecapCTP()}
+            {sousOnglet === 'mois'     && renderCTPPeriode(agrégerMois(dossiers, true), 'Mois', false)}
+            {sousOnglet === 'annee'    && renderCTPPeriode(agrégerAnnee(dossiers, true), 'Année', true)}
           </div>
         )}
 
@@ -2779,14 +1573,9 @@ export default function Finances() {
           <div className="space-y-4">
             {renderSélecteurAgente()}
             {renderSousOnglets()}
-            {sousOnglet === 'chantier' && (
-              <div className="space-y-4">
-                {renderRecapAgente(dossiersAgente, redevancesAgente, agenteActuelle)}
-                {renderDetailAgenteAdmin(dossiersAgente, nomAgente)}
-              </div>
-            )}
-            {sousOnglet === 'mois'  && renderAgenteMois(dossiersAgente, redevancesAgente)}
-            {sousOnglet === 'annee' && renderAgenteAnnee(dossiersAgente, redevancesAgente)}
+            {sousOnglet === 'chantier' && renderRecapAgente(dossiersAgente, redevancesAgente, agenteActuelle)}
+            {sousOnglet === 'mois'     && renderAgentePeriode(agrégerMois(dossiersAgente, true), 'Mois', redevancesAgente, false)}
+            {sousOnglet === 'annee'    && renderAgentePeriode(agrégerAnnee(dossiersAgente, true), 'Année', redevancesAgente, true)}
           </div>
         )}
 
@@ -2794,9 +1583,9 @@ export default function Finances() {
         {onglet === 'financier' && !isMarine && (
           <div className="space-y-4">
             {renderSousOnglets()}
-            {sousOnglet === 'chantier' && <div className="space-y-4">{renderRecapMoi()}{renderDetailFinancierMoi()}</div>}
-            {sousOnglet === 'mois'     && renderSuiviFinancierMoiMois()}
-            {sousOnglet === 'annee'    && renderSuiviFinancierMoiAnnee()}
+            {sousOnglet === 'chantier' && renderRecapMoi()}
+            {sousOnglet === 'mois'     && renderAgentePeriode(agrégerMois(mesDossiers, true), 'Mois', mesRedevances, false)}
+            {sousOnglet === 'annee'    && renderAgentePeriode(agrégerAnnee(mesDossiers, true), 'Année', mesRedevances, true)}
           </div>
         )}
 
@@ -2806,7 +1595,7 @@ export default function Finances() {
             {renderSousOnglets()}
             {sousOnglet === 'chantier' && renderFacturationMoi()}
             {sousOnglet === 'mois'     && renderFacturationMoisSuivi()}
-            {sousOnglet === 'annee'    && renderFacturationMoiTableau(agrégerAnnee(mesDossiers), 'Année')}
+            {sousOnglet === 'annee'    && renderMesPeriode(mesDossiers, 'Année', agrégerAnnee(mesDossiers))}
           </div>
         )}
 

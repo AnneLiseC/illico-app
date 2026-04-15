@@ -248,7 +248,7 @@ export default function FicheArtisan({ params }) {
               {artisan.sans_royalties && (
                 <div className="col-span-2">
                   <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-medium">
-                    ⚠️ Sans royalties illiCO
+                    ⚠️ Apporteur d'affaires
                   </span>
                 </div>
               )}
@@ -305,7 +305,7 @@ export default function FicheArtisan({ params }) {
                     <input type="checkbox" checked={artisan.sans_royalties || false}
                       onChange={e => set('sans_royalties', e.target.checked)}
                       className="w-4 h-4 accent-orange-500" />
-                    <span className="text-sm text-gray-700">Sans royalties illiCO</span>
+                    <span className="text-sm text-gray-700">Apporteur d'affaires</span>
                   </label>
                   <span className="text-xs text-gray-400">(bureau d'études, architecte d'intérieur...)</span>
                 </div>
