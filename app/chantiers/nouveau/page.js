@@ -18,7 +18,9 @@ function NouveauChantierForm() {
     frais_consultation: '',
     frais_statut: 'offerts',
     date_limite_devis: '',
+    part_agente: null,
   })
+
 
   useEffect(() => {
     const init = async () => {
@@ -31,6 +33,8 @@ function NouveauChantierForm() {
         .eq('id', user.id)
         .single()
       setProfile(profData)
+
+      setForm(f => ({ ...f, part_agente: profData?.part_agente_defaut ?? 0.5 }))
 
       if (clientId) {
         const { data: clientData } = await supabase
@@ -78,6 +82,8 @@ function NouveauChantierForm() {
       frais_consultation: form.frais_consultation ? parseFloat(form.frais_consultation) : null,
       frais_statut: form.frais_statut,
       date_limite_devis: form.date_limite_devis || null,
+      part_agente: form.part_agente ?? profile?.part_agente_defaut ?? 0.5,
+      frais_part_agente: profile?.frais_part_agente_defaut ?? null,
     }).select()
 
     if (error) {
@@ -198,6 +204,29 @@ function NouveauChantierForm() {
               </div>
             )}
           </div>
+
+          {/* Répartition commission */}
+          {profile?.parts_agente_disponibles?.length > 1 ? (
+            <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-3">
+              <h2 className="font-semibold text-gray-800">Répartition commission</h2>
+              <div className="flex gap-2">
+                {profile.parts_agente_disponibles.map(pct => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => set('part_agente', pct)}
+                    className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-all ${
+                      form.part_agente === pct
+                        ? 'bg-blue-800 text-white border-blue-800'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    {Math.round(pct * 100)} / {Math.round((1 - pct) * 100)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {/* Date limite devis */}
           <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">

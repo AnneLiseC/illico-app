@@ -514,6 +514,7 @@ $      // E4 — upload PDF si fourni à la création
       date_fin_chantier: dossier.date_fin_chantier, taux_courtage: dossier.taux_courtage, honoraires_amo_taux: dossier.honoraires_amo_taux,
       resume_projet: dossier.resume_projet || null,
       part_agente: estChantierMarine ? 0 : (dossier.part_agente ?? 0.5),
+      frais_part_agente: dossier.frais_part_agente ?? null,
     }).eq('id', id)
     if (error) { setErreur('Erreur : ' + error.message) } else { setSucces('Modifications enregistrées ✓'); setMode('lecture') }
     setSaving(false)
@@ -1075,7 +1076,7 @@ ${s.contenu}`).join('')
                 <div className="border-t border-gray-100 pt-4 flex items-center justify-between">
                   <p className="text-sm font-medium text-gray-700">Répartition commission</p>
                   <span className="text-sm font-medium text-gray-800">
-                    {(dossier.part_agente ?? 0.5) === 0.6 ? '60 / 40' : '50 / 50'}
+                    {`${Math.round((dossier.part_agente ?? 0.5) * 100)} / ${Math.round((1 - (dossier.part_agente ?? 0.5)) * 100)}`}
                   </span>
                 </div>
               )}
@@ -1152,13 +1153,29 @@ ${s.contenu}`).join('')
                 </div>
               </div>
               {!estChantierMarine && (
-                <div className="border-t border-gray-100 pt-4 flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-700">Répartition commission</p>
-                  <select value={dossier.part_agente ?? 0.5} onChange={e => set('part_agente', parseFloat(e.target.value))}
-                    className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value={0.5}>50 / 50</option>
-                    <option value={0.6}>60 / 40</option>
-                  </select>
+                <div className="border-t border-gray-100 pt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Répartition commission (agente / CTP)</label>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <input
+                        type="number" min="0" max="100"
+                        value={Math.round((dossier.part_agente ?? 0.5) * 100)}
+                        onChange={e => set('part_agente', parseInt(e.target.value) / 100)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-center"
+                      />
+                      <p className="text-xs text-center text-gray-400 mt-1">Agente %</p>
+                    </div>
+                    <span className="text-gray-400 font-medium text-lg">/</span>
+                    <div className="flex-1">
+                      <input
+                        type="number"
+                        value={100 - Math.round((dossier.part_agente ?? 0.5) * 100)}
+                        disabled
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-center text-gray-500"
+                      />
+                      <p className="text-xs text-center text-gray-400 mt-1">CTP %</p>
+                    </div>
+                  </div>
                 </div>
               )}
               <div className="border-t border-gray-100 pt-4">

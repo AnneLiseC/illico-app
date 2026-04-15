@@ -11,6 +11,8 @@ const NAV_LINKS = [
   { href: '/planning', label: 'Planning', emoji: '📅' },
   { href: '/finances', label: 'Finances', emoji: '💰' },
   { href: '/statistiques', label: 'Stats', emoji: '📊' },
+  { href: '/parametres',   label: 'Paramètres',emoji: '⚙️', adminOnly: true },
+
 ]
 
 export default function NavBar() {
@@ -52,7 +54,7 @@ export default function NavBar() {
 
           {/* Nav desktop */}
           <div className="hidden md:flex items-center gap-1">
-            {NAV_LINKS.map(({ href, label, emoji }) => (
+            {NAV_LINKS.filter(l => !l.adminOnly || profile?.role === 'admin').map(({ href, label, emoji }) => (
               <button key={href} onClick={() => router.push(href)}
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                   isActive(href)
@@ -91,7 +93,7 @@ export default function NavBar() {
       {/* Menu mobile déroulant */}
       {menuOuvert && (
         <div style={{ backgroundColor: '#004a78' }} className="md:hidden border-t border-blue-700 px-4 pb-4 pt-2 space-y-1">
-          {NAV_LINKS.map(({ href, label, emoji }) => (
+          {NAV_LINKS.filter(l => !l.adminOnly || profile?.role === 'admin').map(({ href, label, emoji }) => (
             <button key={href} onClick={() => { router.push(href); setMenuOuvert(false) }}
               className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                 isActive(href)

@@ -31,10 +31,11 @@ const fmtPct = (n) => (Number(n) || 0).toFixed(1) + ' %'
 const normalizeDossier = (d) => ({
   ...d,
   part_agente: d.part_agente ?? (d.referente?.role === 'admin' ? 0 : 0.5),
+  frais_part_agente: d.frais_part_agente ?? null,
   taux_amo: d?.taux_amo ?? d?.honoraires_amo_taux,
   client: d?.client ? {
     ...d.client,
-    apporteur_mode: d.client?.apporteur_base  === 'total_chantier'
+    apporteur_mode: d.client?.apporteur_base === 'total_chantier'
       ? 'total_chantier_ht' : 'par_devis',
   } : null,
 })
@@ -133,7 +134,7 @@ export default function Finances() {
       .from('dossiers')
       .select(`
         *,
-        referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role),
+        referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
         client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
         devis_artisans(*, artisan:artisans(id, entreprise, sans_royalties)),
         suivi_financier(*)

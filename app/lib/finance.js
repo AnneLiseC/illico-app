@@ -91,12 +91,12 @@ function getSignedTotals(dossier) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function calculateFraisFinance(dossier) {
-  const partAgente = getPartAgente(dossier)
-  const fraisTTC   = round2(toNumber(dossier?.frais_consultation))
-  const fraisHT    = round2(fraisTTC / TVA)
-  const royalties  = round2(fraisHT * ROYALTIES_RATE)
-  const net        = dossier?.frais_deduits ? 0 : round2(fraisHT - royalties)
-  const parts      = split(net, partAgente)
+  const fraisPartAgente = dossier?.frais_part_agente != null ? normalizePercent(dossier.frais_part_agente) : dossier?.referente?.frais_part_agente_defaut != null ? normalizePercent(dossier.referente.frais_part_agente_defaut): getPartAgente(dossier)
+  const fraisTTC  = round2(toNumber(dossier?.frais_consultation))
+  const fraisHT   = round2(fraisTTC / TVA)
+  const royalties = round2(fraisHT * ROYALTIES_RATE)
+  const net       = dossier?.frais_deduits ? 0 : round2(fraisHT - royalties)
+  const parts     = split(net, fraisPartAgente)
 
   return {
     fraisTTC,
