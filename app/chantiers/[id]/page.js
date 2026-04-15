@@ -4,6 +4,7 @@
 import { useState, useEffect, use } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
+
 function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
   const [fiches, setFiches] = useState([])
   const [loading, setLoading] = useState(true)
@@ -1176,6 +1177,27 @@ ${s.contenu}`).join('')
                       <p className="text-xs text-center text-gray-400 mt-1">CTP %</p>
                     </div>
                   </div>
+                  {profile?.parts_agente_disponibles?.length > 1 && (
+                    <div className="flex gap-2 mt-2">
+                      {profile.parts_agente_disponibles.map(pct => {
+                        const pctFloat = parseFloat(pct)
+                        return (
+                          <button
+                            key={pct}
+                            type="button"
+                            onClick={() => set('part_agente', pctFloat)}
+                            className={`text-xs px-3 py-1 rounded-full border transition-all ${
+                              Math.round((dossier.part_agente ?? 0.5) * 100) === Math.round(pctFloat * 100)
+                                ? 'bg-blue-800 text-white border-blue-800'
+                                : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                            }`}
+                          >
+                            {Math.round(pctFloat * 100)} / {Math.round((1 - pctFloat) * 100)}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
               <div className="border-t border-gray-100 pt-4">
@@ -1394,7 +1416,7 @@ ${s.contenu}`).join('')
                       {!estChantierMarine && (
                         <div className="flex justify-between">
                           <span className="text-xs text-gray-400">Répartition</span>
-                          <span className="font-medium">{d.part_agente === 0.6 ? '60/40' : '50/50'}</span>
+                          <span className="font-medium">{`${Math.round((d.part_agente ?? 0.5) * 100)} / ${Math.round((1 - (d.part_agente ?? 0.5)) * 100)}`}</span>
                         </div>
                       )}
                       {d.date_signature && (

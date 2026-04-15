@@ -34,7 +34,7 @@ function NouveauChantierForm() {
         .single()
       setProfile(profData)
 
-      setForm(f => ({ ...f, part_agente: profData?.part_agente_defaut ?? 0.5 }))
+      setForm(f => ({ ...f, part_agente: parseFloat(profData?.part_agente_defaut) ?? 0.5 }))
 
       if (clientId) {
         const { data: clientData } = await supabase
@@ -210,20 +210,23 @@ function NouveauChantierForm() {
             <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-3">
               <h2 className="font-semibold text-gray-800">Répartition commission</h2>
               <div className="flex gap-2">
-                {profile.parts_agente_disponibles.map(pct => (
-                  <button
-                    key={pct}
-                    type="button"
-                    onClick={() => set('part_agente', pct)}
-                    className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-all ${
-                      form.part_agente === pct
-                        ? 'bg-blue-800 text-white border-blue-800'
-                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                    }`}
-                  >
-                    {Math.round(pct * 100)} / {Math.round((1 - pct) * 100)}
-                  </button>
-                ))}
+                {profile.parts_agente_disponibles.map(pct => {
+                  const pctFloat = parseFloat(pct)
+                  return (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => set('part_agente', pctFloat)}
+                      className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-all ${
+                        form.part_agente === pctFloat
+                          ? 'bg-blue-800 text-white border-blue-800'
+                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      {Math.round(pctFloat * 100)} / {Math.round((1 - pctFloat) * 100)}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           ) : null}

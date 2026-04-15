@@ -45,6 +45,7 @@ export async function POST(request) {
         role: 'agente',
         part_agente_defaut: part_agente_defaut || 0.5,
         frais_part_agente_defaut: frais_part_agente_defaut || 0.5,
+        parts_agente_disponibles: parts_agente_disponibles || null,
       })
 
     if (profileError) {
@@ -62,7 +63,7 @@ export async function POST(request) {
 export async function PATCH(request) {
   try {
     const body = await request.json()
-    const { id, prenom, nom, telephone, part_agente_defaut, frais_part_agente_defaut, kbis_url } = body
+    const { id, prenom, nom, telephone, part_agente_defaut, frais_part_agente_defaut, kbis_url, parts_agente_disponibles } = body
 
     if (!id) {
       return NextResponse.json({ error: 'ID requis' }, { status: 400 })
@@ -74,6 +75,7 @@ export async function PATCH(request) {
     if (telephone !== undefined)                updates.telephone = telephone
     if (part_agente_defaut !== undefined)       updates.part_agente_defaut = part_agente_defaut
     if (frais_part_agente_defaut !== undefined) updates.frais_part_agente_defaut = frais_part_agente_defaut
+    if (parts_agente_disponibles !== undefined) updates.parts_agente_disponibles = parts_agente_disponibles
     if (kbis_url !== undefined)                 updates.kbis_url = kbis_url
 
     const { error } = await supabaseAdmin.from('profiles').update(updates).eq('id', id)

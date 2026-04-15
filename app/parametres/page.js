@@ -18,7 +18,7 @@ export default function Parametres() {
 
   const emptyForm = {
     prenom: '', nom: '', email: '', telephone: '',
-    part_agente_defaut: 60,
+    parts_agente_disponibles: '60',
     frais_part_agente_defaut: 100,
   }
   const [form, setForm] = useState(emptyForm)
@@ -59,8 +59,11 @@ export default function Parametres() {
       nom: agente.nom || '',
       email: agente.email || '',
       telephone: agente.telephone || '',
-      part_agente_defaut: Math.round((agente.part_agente_defaut || 0.5) * 100),
       frais_part_agente_defaut: Math.round((agente.frais_part_agente_defaut || 0.5) * 100),
+      parts_agente_disponibles: agente.parts_agente_disponibles?.length > 0
+        ? agente.parts_agente_disponibles.map(p => Math.round(p * 100)).join(', ')
+        : String(Math.round((agente.part_agente_defaut || 0.5) * 100)),
+
     })
     setAgenteEditee(agente)
     setModal('modifier')
@@ -72,6 +75,11 @@ export default function Parametres() {
     setSaving(true)
     setErreur('')
     try {
+      const partsArray = form.parts_agente_disponibles
+        .split(',')
+        .map(v => parseInt(v.trim()) / 100)
+        .filter(v => !isNaN(v) && v > 0 && v <= 1)
+      const partDefaut = partsArray[0] ?? 0.5
       const res = await fetch('/api/create-agente', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -80,7 +88,8 @@ export default function Parametres() {
           nom: form.nom,
           email: form.email,
           telephone: form.telephone || null,
-          part_agente_defaut: form.part_agente_defaut / 100,
+          part_agente_defaut: partDefaut,
+          parts_agente_disponibles: partsArray,
           frais_part_agente_defaut: form.frais_part_agente_defaut / 100,
         }),
       })
@@ -102,6 +111,11 @@ export default function Parametres() {
     setSaving(true)
     setErreur('')
     try {
+      const partsArray = form.parts_agente_disponibles
+        .split(',')
+        .map(v => parseInt(v.trim()) / 100)
+        .filter(v => !isNaN(v) && v > 0 && v <= 1)
+      const partDefaut = partsArray[0] ?? 0.5
       const res = await fetch('/api/create-agente', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -110,7 +124,8 @@ export default function Parametres() {
           prenom: form.prenom,
           nom: form.nom,
           telephone: form.telephone || null,
-          part_agente_defaut: form.part_agente_defaut / 100,
+          part_agente_defaut: partDefaut,
+          parts_agente_disponibles: partsArray,
           frais_part_agente_defaut: form.frais_part_agente_defaut / 100,
         }),
       })
@@ -227,8 +242,15 @@ export default function Parametres() {
                   {/* Paramètres financiers */}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-xs text-gray-400 mb-1">Répartition commission (agente / CTP)</p>
-                      <p className="font-semibold text-gray-800">{fmtPct(agente.part_agente_defaut)}</p>
+                      <p className="text-xs text-gray-400 mb-1">Répartitions commission disponibles</p>
+                      <p className="font-semibold text-gray-800">
+                        {agente.parts_agente_disponibles?.length > 0
+                          ? agente.parts_agente_disponibles
+                              .map(p => `${Math.round(p * 100)} / ${Math.round((1 - p) * 100)}`)
+                              .join(' · ')
+                          : fmtPct(agente.part_agente_defaut)
+                        }
+                      </p>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-3">
                       <p className="text-xs text-gray-400 mb-1">Répartition frais consultation (agente / CTP)</p>
@@ -332,28 +354,20 @@ export default function Parametres() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Répartition commission — agente / CTP
+           <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Répartitions commission disponibles — agente %
               </label>
-              <div className="flex items-center gap-3">
-                <div className="flex-1">
-                  <input
-                    type="number" min="0" max="100" value={form.part_agente_defaut}
-                    onChange={e => setForm(f => ({ ...f, part_agente_defaut: parseInt(e.target.value) || 0 }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-center"
-                  />
-                  <p className="text-xs text-center text-gray-400 mt-1">Agente %</p>
-                </div>
-                <span className="text-gray-400 font-medium">/</span>
-                <div className="flex-1">
-                  <input
-                    type="number" value={100 - form.part_agente_defaut} disabled
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-center text-gray-500"
-                  />
-                  <p className="text-xs text-center text-gray-400 mt-1">CTP %</p>
-                </div>
-              </div>
+              <input
+                type="text"
+                value={form.parts_agente_disponibles}
+                onChange={e => setForm(f => ({ ...f, parts_agente_disponibles: e.target.value }))}
+                placeholder="ex: 60 ou 50, 60"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Une valeur = pas de choix. Plusieurs séparées par virgule = l'agente choisit à la création du chantier.
+              </p>
             </div>
 
             <div>
