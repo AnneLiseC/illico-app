@@ -191,8 +191,14 @@ export function calculateHonorairesFinance(dossier) {
   // ── Courtage ──────────────────────────────────────────────────────────────
   let courtage = { ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
   if (isCourtage || isAmo) {
-    const ttc      = round2(totalDevisTTCSignes * tauxCourtage)
-    const ht       = round2(totalDevisHTSignes * tauxCourtage)
+    // Si frais remboursés et déduits, on les soustrait de la base HT
+    const fraisHT = (dossier?.frais_statut === 'rembourse' && dossier?.frais_deduits)
+      ? round2((toNumber(dossier?.frais_consultation) || 0) / TVA)
+      : 0
+    const baseHT  = round2(totalDevisHTSignes - fraisHT)
+    const baseTTC = round2(totalDevisTTCSignes - (fraisHT * TVA))
+    const ttc      = round2(baseTTC * tauxCourtage)
+    const ht       = round2(baseHT * tauxCourtage)
     const royalties = round2(ht * ROYALTIES_RATE)
     const net      = round2(ht - royalties)
     const parts    = split(net, partAgente)

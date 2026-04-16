@@ -449,7 +449,7 @@ export default function FicheChantier({ params }) {
     }).select().single()
 
     if (factureInseree) {
-$      // E4 — upload PDF si fourni à la création
+      // E4 — upload PDF si fourni à la création
       if (nouvelleFacture.fichier) {
         const ext = nouvelleFacture.fichier.name.split('.').pop()
         const chemin = `chantiers/${id}/factures/${factureInseree.id}.${ext}`
@@ -524,17 +524,40 @@ $      // E4 — upload PDF si fourni à la création
     if (error) {
       setErreur('Erreur : ' + error.message)
     } else {
-      // Mettre à jour la répartition sur tous les devis non refusés
       await supabase.from('devis_artisans')
         .update({ part_agente: newPartAgente })
         .eq('dossier_id', id)
         .neq('statut', 'refuse')
-
       await chargerDevis()
+
+      // Si frais réglés, créer/màj la ligne suivi_financier
+      if (dossier.frais_statut === 'regle') {
+        const { data: existingSuivi } = await supabase
+          .from('suivi_financier')
+          .select('id')
+          .eq('dossier_id', id)
+          .eq('type_echeance', 'frais_consultation')
+          .is('artisan_id', null)
+          .maybeSingle()
+        const today = new Date().toISOString().split('T')[0]
+        if (existingSuivi) {
+          await supabase.from('suivi_financier')
+            .update({ statut_client: 'regle', date_paiement: today })
+            .eq('id', existingSuivi.id)
+        } else {
+          await supabase.from('suivi_financier').insert({
+            dossier_id: id,
+            type_echeance: 'frais_consultation',
+            artisan_id: null,
+            statut_client: 'regle',
+            date_paiement: today,
+          })
+        }
+      }
+
       setSucces('Modifications enregistrées ✓')
       setMode('lecture')
     }
-
     setSaving(false)
   }
 
@@ -853,12 +876,18 @@ ${s.contenu}`).join('')
 
   const devisSignes = devis.filter(d => d.statut === 'accepte' && d.date_signature && d.montant_ttc)
   const totalDevisTTCSignes = devisSignes.reduce((s, d) => s + (d.montant_ttc || 0), 0)
+  const fraisHT = (dossier?.frais_deduits && dossier?.frais_consultation)
+    ? (dossier.frais_consultation / 1.2)
+    : 0
+  const totalDevisHTSignes = devisSignes.reduce((s, d) => s + (d.montant_ht || 0), 0)
+  const baseCourtageHT = totalDevisHTSignes - fraisHT
+  const baseCourtageHTTC = totalDevisTTCSignes - (fraisHT * 1.2)
   const tauxCourtage = (dossier?.taux_courtage ?? 0.06)
   const tauxCourtagePct = (tauxCourtage * 100).toFixed(1)
   const tauxAmo = ((dossier?.honoraires_amo_taux ?? 9) / 100)
   const tauxAmoPct = (tauxAmo * 100).toFixed(1)
-  const honorairesCourtage = totalDevisTTCSignes * tauxCourtage
-  const honorairesAMO = totalDevisTTCSignes * (tauxCourtage + tauxAmo)  
+  const honorairesCourtage = baseCourtageHTTC * tauxCourtage
+  const honorairesAMO = baseCourtageHTTC * (tauxCourtage + tauxAmo)
   const suiviCourtage = suiviFinancier.find(s => s.type_echeance === 'honoraires_courtage')
   const suiviAcompteAMO = suiviFinancier.find(s => s.type_echeance === 'acompte_amo')
   const suiviSoldeAMO = suiviFinancier.find(s => s.type_echeance === 'solde_amo')
@@ -1252,14 +1281,42 @@ ${s.contenu}`).join('')
           </div>
           {mode === 'lecture' ? (
             <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
-              <div className="flex justify-between">
-                <span className="text-xs text-gray-400">Montant TTC</span>
-                <span className="font-medium">{(dossier.frais_consultation || 0).toFixed(2)} €</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-xs text-gray-400">Montant HT</span>
-                <span className="font-medium">{((dossier.frais_consultation || 0) / 1.2).toFixed(2)} €</span>
-              </div>
+              {dossier.frais_statut !== 'offerts' && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-xs text-gray-400">Montant TTC</span>
+                    <span className="font-medium">{(dossier.frais_consultation || 0).toFixed(2)} €</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-xs text-gray-400">Montant HT</span>
+                    <span className="font-medium">{((dossier.frais_consultation || 0) / 1.2).toFixed(2)} €</span>
+                  </div>
+                  <div className="flex items-center gap-2 border-t border-gray-200 pt-2 mt-1">
+                    <input
+                      type="checkbox"
+                      checked={dossier.frais_deduits || false}
+                      onChange={async (e) => {
+                        const val = e.target.checked
+                        await supabase.from('dossiers').update({ frais_deduits: val }).eq('id', id)
+                        setDossier(d => ({ ...d, frais_deduits: val }))
+                        setSucces('Frais mis à jour ✓')
+                      }}
+                      className="w-4 h-4 accent-blue-700"
+                    />
+                    <span className={`text-xs font-medium ${dossier.frais_deduits ? 'text-purple-600' : 'text-gray-500'}`}>
+                      Remboursés — déduit du courtage
+                    </span>
+                    {dossier.frais_deduits && (
+                      <span className="text-xs text-purple-500 ml-auto">
+                        — {((dossier.frais_consultation || 0) / 1.2).toFixed(2)} € HT
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
+              {dossier.frais_statut === 'offerts' && (
+                <p className="text-xs text-gray-400">Offerts — 0 €</p>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -1671,24 +1728,44 @@ ${s.contenu}`).join('')
                 </div>
               </div>
 
-              {/* Honoraires */}
+              {/* Honoraires + Total chantier */}
               {['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCSignes > 0 && (
                 <div className="space-y-1 border-t border-gray-200 pt-2">
-                  <p className="text-xs text-gray-400 font-medium">Honoraires client (sur {totalDevisTTCSignes.toFixed(2)} € TTC signés)</p>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Honoraires courtage ({tauxCourtagePct}%)</span>
-                    <span className="font-medium text-gray-800">{honorairesCourtage.toFixed(2)} €</span>
-                  </div>
+                  <p className="text-xs text-gray-400 font-medium">
+                    Honoraires client (sur {baseCourtageHTTC.toFixed(2)} € TTC signés
+                    {fraisHT > 0 && <span className="text-purple-500"> — frais déduits</span>})
+                  </p>
+
+                  {dossier.typologie === 'courtage' && (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Honoraires courtage ({tauxCourtagePct}%)</span>
+                        <span className="font-medium text-gray-800">{honorairesCourtage.toFixed(2)} €</span>
+                      </div>
+                      <div className="flex justify-between text-sm border-t border-gray-200 pt-1 mt-1">
+                        <span className="font-bold text-gray-700">Total chantier</span>
+                        <span className="font-bold text-blue-800">{(totalDevisTTCSignes + honorairesCourtage).toFixed(2)} €</span>
+                      </div>
+                    </>
+                  )}
 
                   {dossier.typologie === 'amo' && (
                     <>
                       <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Solde courtage ({tauxCourtagePct}%)</span>
+                        <span className="font-medium text-gray-800">{honorairesCourtage.toFixed(2)} €</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
                         <span className="text-gray-500">Solde AMO ({dossier.honoraires_amo_taux || 9}%)</span>
                         <span className="font-medium text-gray-800">{(honorairesAMO - honorairesCourtage).toFixed(2)} €</span>
                       </div>
-                      <div className="flex justify-between text-sm border-t border-gray-200 pt-1">
-                        <span className="font-medium text-gray-700">Total honoraires AMO</span>
-                        <span className="font-bold text-gray-800">{honorairesAMO.toFixed(2)} €</span>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Total honoraires ({(Number(tauxCourtagePct) + Number(tauxAmoPct)).toFixed(1)}%)</span>
+                        <span className="font-medium text-gray-800">{honorairesAMO.toFixed(2)} €</span>
+                      </div>
+                      <div className="flex justify-between text-sm border-t border-gray-200 pt-1 mt-1">
+                        <span className="font-bold text-gray-700">Total chantier</span>
+                        <span className="font-bold text-blue-800">{(totalDevisTTCSignes + honorairesAMO).toFixed(2)} €</span>
                       </div>
                     </>
                   )}
