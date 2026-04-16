@@ -188,7 +188,7 @@ export default function Finances() {
 
   const calculer = (d) => {
     const normalized = normalizeDossier(d)
-    const f          = calculateDossierFinance(normalized)
+    const f= calculateDossierFinance(normalized)
     const partAgente = f.settings.partAgente
 
     const estChantierMarine = d.referente?.role === 'admin'
@@ -278,12 +278,27 @@ export default function Finances() {
   const calculerReel = (d) => {
     const c = calculer(d)
 
-    if (c.estChantierMarine) return {
-      ...c,
-      fraisReel: 0, honReel: 0, comReelNet: 0,
-      royaltiesReelTotal: 0, apporteurRembourse: 0,
-      gainAgenteReel: 0, gainAdminReel: 0,
-      gainsAgenteReels: 0,
+    if (c.estChantierMarine) {
+      const fraisReel = d.frais_statut === 'regle' ? c.fraisNet : 0
+      const courtageRegle = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
+      const amoRegle = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
+      const honReel = round2((courtageRegle ? c.courtNet : 0) + (amoRegle ? c.amoNet : 0))
+      let comReelNet = 0
+      for (const dv of c.devisAcceptes) {
+        if (dv.artisan?.sans_royalties) continue
+        const artId = dv.artisan_id || dv.artisan?.id
+        const dvF = c.devisFinanceMap.get(dv.id)
+        if (!dvF) continue
+        const suivi = getSuivi(d, 'acompte_artisan', artId)
+        if (suivi?.statut_illico === 'recu') comReelNet = round2(comReelNet + dvF.netCom)
+      }
+      const comApporteursReel = round2(
+        c.finance.commissions.devis
+          .filter(dv => dv.isApporteur && dv.signed)
+          .reduce((s, dv) => s + dv.netCom, 0)
+      )
+      const gainAdminReel = round2(fraisReel + honReel + comReelNet + comApporteursReel)
+      return { ...c, fraisReel, honReel, comReelNet, comApporteursReel, royaltiesReelTotal: 0, apporteurRembourse: 0, gainAgenteReel: 0, gainAdminReel, gainsAgenteReels: 0 }
     }
 
     // Frais — HT net si réglé
@@ -348,8 +363,8 @@ export default function Finances() {
     )
 
     const royaltiesReelTotal = round2(fraisRoyaltiesReel + royaltiesHonReel + royaltiesComReel)
-    const gainAgenteReel     = round2(fraisAgenteReel + honAgenteReel + comAgenteReel + comApporteursAgente - apporteurRembourse)
-    const gainAdminReel      = round2(fraisReel + honReel + comReelNet + comApporteursReel - royaltiesReelTotal - gainAgenteReel)
+    const gainAgenteReel = round2(fraisAgenteReel + honAgenteReel + comAgenteReel + comApporteursAgente - apporteurRembourse)
+    const gainAdminReel = round2(fraisReel + honReel + comReelNet + comApporteursReel - gainAgenteReel)
 
     return {
       ...c,
@@ -867,6 +882,16 @@ export default function Finances() {
                       {c.fraisNet > 0 && <div className="flex justify-between"><span className="text-gray-500">Frais consul.</span><span>+ {fmt(c.fraisNet)}</span></div>}
                       {c.honTotalNet > 0 && <div className="flex justify-between"><span className="text-gray-500">Honoraires</span><span>+ {fmt(c.honTotalNet)}</span></div>}
                       {c.netComSigne > 0 && <div className="flex justify-between"><span className="text-gray-500">Commissions</span><span>+ {fmt(c.netComSigne)}</span></div>}
+                      {(() => {
+                        const comApporteursPrevi = round2(
+                          c.finance.commissions.devis
+                            .filter(dv => dv.isApporteur && dv.signed)
+                            .reduce((s, dv) => s + dv.netCom, 0)
+                        )
+                        return comApporteursPrevi > 0
+                          ? <div className="flex justify-between"><span className="text-gray-500">Com. apporteurs</span><span>+ {fmt(comApporteursPrevi)}</span></div>
+                          : null
+                      })()}
                       {c.royaltiesTotal > 0 && <div className="flex justify-between"><span className="text-red-400">Royalties</span><span className="text-red-400">— {fmt(c.royaltiesTotal)}</span></div>}
                       {c.apporteurTotalHT > 0 && !c.estChantierMarine && <div className="flex justify-between"><span className="text-orange-500">Apporteur (agente)</span><span className="text-orange-500">— {fmt(c.apporteurAgente)}</span></div>}
                       <div className="border-t border-gray-200 pt-1 mt-1 space-y-0.5">

@@ -506,18 +506,35 @@ $      // E4 — upload PDF si fourni à la création
     setSaving(true)
     setErreur('')
     setSucces('')
+
+    const newPartAgente = estChantierMarine ? 0 : (dossier.part_agente ?? 0.5)
+
     const { error } = await supabase.from('dossiers').update({
       typologie: dossier.typologie, statut: dossier.statut,
-      frais_consultation: dossier.frais_consultation, frais_statut: dossier.frais_statut, 
+      frais_consultation: dossier.frais_consultation, frais_statut: dossier.frais_statut,
       frais_deduits: dossier.frais_deduits || false,
       date_limite_devis: dossier.date_limite_devis, contrat_signe: dossier.contrat_signe,
       date_signature_contrat: dossier.date_signature_contrat, date_demarrage_chantier: dossier.date_demarrage_chantier,
       date_fin_chantier: dossier.date_fin_chantier, taux_courtage: dossier.taux_courtage, honoraires_amo_taux: dossier.honoraires_amo_taux,
       resume_projet: dossier.resume_projet || null,
-      part_agente: estChantierMarine ? 0 : (dossier.part_agente ?? 0.5),
+      part_agente: newPartAgente,
       frais_part_agente: dossier.frais_part_agente ?? null,
     }).eq('id', id)
-    if (error) { setErreur('Erreur : ' + error.message) } else { setSucces('Modifications enregistrées ✓'); setMode('lecture') }
+
+    if (error) {
+      setErreur('Erreur : ' + error.message)
+    } else {
+      // Mettre à jour la répartition sur tous les devis non refusés
+      await supabase.from('devis_artisans')
+        .update({ part_agente: newPartAgente })
+        .eq('dossier_id', id)
+        .neq('statut', 'refuse')
+
+      await chargerDevis()
+      setSucces('Modifications enregistrées ✓')
+      setMode('lecture')
+    }
+
     setSaving(false)
   }
 
@@ -1073,7 +1090,7 @@ ${s.contenu}`).join('')
                   <p className="text-sm text-gray-700 leading-relaxed">{dossier.resume_projet}</p>
                 </div>
               )}
-              {!estChantierMarine && (
+              {!estChantierMarine && profile?.parts_agente_disponibles?.length > 1 && (
                 <div className="border-t border-gray-100 pt-4 flex items-center justify-between">
                   <p className="text-sm font-medium text-gray-700">Répartition commission</p>
                   <span className="text-sm font-medium text-gray-800">
@@ -1153,7 +1170,7 @@ ${s.contenu}`).join('')
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
-              {!estChantierMarine && (
+              {!estChantierMarine && profile?.parts_agente_disponibles?.length > 1 && (
                 <div className="border-t border-gray-100 pt-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">Répartition commission (agente / CTP)</label>
                   <div className="flex items-center gap-3">
