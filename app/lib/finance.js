@@ -72,6 +72,16 @@ export function getSignedDevis(dossier) {
   )
 }
 
+function getActiveTotals(dossier) {
+  const active = getActiveDevis(dossier)
+  const totalHT  = round2(active.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
+  const totalTTC = round2(active.reduce((s, dv) => {
+    if (dv.montant_ttc !== undefined && dv.montant_ttc !== null) return s + toNumber(dv.montant_ttc)
+    return s + toNumber(dv.montant_ht) * TVA
+  }, 0))
+  return { active, totalHT, totalTTC }
+}
+
 function getSignedTotals(dossier) {
   const signed = getSignedDevis(dossier)
   const totalHT  = round2(signed.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
@@ -87,6 +97,7 @@ function getSignedTotals(dossier) {
 // Royalties = fraisHT × 5%
 // netFrais = fraisHT - royalties
 // Part agente/admin selon répartition commission du dossier
+// (pour Anne-Lise : part_agente = 1.0 donc 1ion du dossier
 // (pour Anne-Lise : part_agente = 1.0 donc 100% pour elle)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -97,12 +108,16 @@ export function calculateFraisFinance(dossier) {
   const royalties = round2(fraisHT * ROYALTIES_RATE)
   const net       = dossier?.frais_deduits ? 0 : round2(fraisHT - royalties)
   const parts     = split(net, fraisPartAgente)
+  const netPrevi = dossier?.frais_statut === 'offerts' ? 0 : round2(fraisHT - royalties)
+  const agentePrevi = dossier?.frais_statut === 'offerts' ? 0 : split(round2(fraisHT - royalties), fraisPartAgente).agente
 
   return {
     fraisTTC,
     fraisHT,
     royalties,
     net,
+    netPrevi,
+    agentePrevi,
     parts: { agente: parts.agente, admin: parts.admin },
   }
 }
@@ -151,20 +166,38 @@ export function calculateCommissionsFinance(dossier) {
   const active = getActiveDevis(dossier)
   const devis  = active.map(dv => calculateDevisFinance(dv, dossier))
 
-  const comHT          = round2(devis.reduce((s, d) => s + d.comHT, 0))
-  const comTTC         = round2(devis.reduce((s, d) => s + d.comTTC, 0))
+  // Tous les devis actifs
+  const comHTTous      = round2(devis.reduce((s, d) => s + d.comHT, 0))
+  const comTTCTous     = round2(devis.reduce((s, d) => s + d.comTTC, 0))
   const royaltiesType2 = round2(devis.reduce((s, d) => s + d.royaltiesType2, 0))
-  const netCom         = round2(devis.reduce((s, d) => s + d.netCom, 0))
-  const partsAgente    = round2(devis.reduce((s, d) => s + d.parts.agente, 0))
-  const partsAdmin     = round2(devis.reduce((s, d) => s + d.parts.admin, 0))
+  const netComTous     = round2(devis.reduce((s, d) => s + d.netCom, 0))
+  const comAgenteTous  = round2(devis.reduce((s, d) => s + d.parts.agente, 0))
+  const comAdminTous   = round2(devis.reduce((s, d) => s + d.parts.admin, 0))
+
+  // Devis signés uniquement
+  const signés = devis.filter(d => d.signed)
+  const comHTSigne      = round2(signés.reduce((s, d) => s + d.comHT, 0))
+  const netComSigne     = round2(signés.reduce((s, d) => s + d.netCom, 0))
+  const comAgenteSigne  = round2(signés.reduce((s, d) => s + d.parts.agente, 0))
+  const comAdminSigne   = round2(signés.reduce((s, d) => s + d.parts.admin, 0))
 
   return {
     devis,
-    comHT,
-    comTTC,
+    // Tous actifs
+    comHT: comHTTous,
+    comTTC: comTTCTous,
     royaltiesType2,
-    netCom,
-    parts: { agente: partsAgente, admin: partsAdmin },
+    netCom: netComTous,
+    comHTTous,
+    netComTous,
+    comAgenteTous,
+    comAdminTous,
+    parts: { agente: comAgenteTous, admin: comAdminTous },
+    // Signés uniquement
+    comHTSigne,
+    netComSigne,
+    comAgenteSigne,
+    comAdminSigne,
   }
 }
 
@@ -256,6 +289,48 @@ export function calculateHonorairesFinance(dossier) {
   }
 }
 
+export function calculateHonorairesPrevi(dossier) {
+  const typologie  = dossier?.typologie || ''
+  const partAgente = getPartAgente(dossier)
+  const tauxCourtage = getTauxCourtage(dossier)
+  const tauxAmo    = getTauxAmo(dossier)
+  const { totalHT, totalTTC } = getActiveTotals(dossier)
+  const isCourtage = typologie === 'courtage'
+  const isAmo      = typologie === 'amo'
+
+  let courtage = { ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
+  if (isCourtage || isAmo) {
+    const fraisHT = (dossier?.frais_statut === 'rembourse' && dossier?.frais_deduits)
+      ? round2(toNumber(dossier?.frais_consultation) / TVA) : 0
+    const baseHT  = round2(totalHT - fraisHT)
+    const baseTTC = round2(totalTTC - (fraisHT * TVA))
+    const ht       = round2(baseHT * tauxCourtage)
+    const ttc      = round2(baseTTC * tauxCourtage)
+    const royalties = round2(ht * ROYALTIES_RATE)
+    const net      = round2(ht - royalties)
+    const parts    = split(net, partAgente)
+    courtage = { ttc, ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
+  }
+
+  let soldeAmo = { ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
+  if (isAmo) {
+    const ht       = round2(totalHT * tauxAmo)
+    const ttc      = round2(totalTTC * tauxAmo)
+    const royalties = round2(ht * ROYALTIES_RATE)
+    const net      = round2(ht - royalties)
+    const parts    = split(net, partAgente)
+    soldeAmo = { ttc, ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
+  }
+
+  const totalNet  = round2(courtage.net + soldeAmo.net)
+  const totalParts = {
+    agente: round2(courtage.parts.agente + soldeAmo.parts.agente),
+    admin:  round2(courtage.parts.admin  + soldeAmo.parts.admin),
+  }
+
+  return { courtage, soldeAmo, totalHT: totalHT, totalNet, parts: totalParts }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // APPORTEUR CLIENT (sur fiche client)
 // montantHT × tauxApporteur par devis signé avec commission > 0
@@ -327,6 +402,7 @@ export function calculateDossierFinance(dossier) {
   const frais       = calculateFraisFinance(dossier)
   const commissions = calculateCommissionsFinance(dossier)
   const honoraires  = calculateHonorairesFinance(dossier)
+  const honorairesPrevi = calculateHonorairesPrevi(dossier)
   const apporteur   = calculateApporteurFinance(dossier)
 
   // ── Royalties supportées par CTP ──────────────────────────────────────────
@@ -363,6 +439,7 @@ export function calculateDossierFinance(dossier) {
     frais,
     commissions,
     honoraires,
+    honorairesPrevi,
     apporteur,
 
     // Royalties

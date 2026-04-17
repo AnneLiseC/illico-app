@@ -272,9 +272,45 @@ export default function Finances() {
       // Gains prévisionnels nets
       gainsAgentePrevi: round2(f.gains.nets.agente),
       gainsAdminPrevi:  round2(f.gains.nets.admin),
+
+      // Prévisionnel frais
+      fraisNetPrevi:    round2(f.frais.netPrevi),
+      fraisAgentePrevi: round2(f.frais.agentePrevi),
+
+      // Prévisionnel commissions tous devis
+      netComTous:       round2(f.commissions.netComTous),
+      comAgenteTous:    round2(f.commissions.comAgenteTous),
+
+      // Prévisionnel commissions apporteurs
+      comApporteursPrevi: round2(
+        f.commissions.devis.filter(dv => dv.isApporteur)
+          .reduce((s, dv) => s + dv.netCom, 0)
+      ),
+      comApporteursAgentePrevi: round2(
+        f.commissions.devis.filter(dv => dv.isApporteur)
+          .reduce((s, dv) => s + dv.parts.agente, 0)
+      ),
+
+      // Prévisionnel honoraires (tous devis actifs)
+      honPreviNet:    round2(f.honorairesPrevi.totalNet),
+      honPreviAgente: round2(f.honorairesPrevi.parts.agente),
+      honPreviAdmin:  round2(f.honorairesPrevi.parts.admin),
+
+      // Gains prévisionnels complets
+      gainsAgentePreviTotal: round2(
+        f.frais.agentePrevi +
+        f.commissions.comAgenteTous +
+        f.honorairesPrevi.parts.agente -
+        f.apporteur.parts.agente
+      ),
+      gainsAdminPreviTotal: round2(
+        f.frais.netPrevi +
+        f.commissions.netComTous +
+        f.honorairesPrevi.totalNet -
+        (f.frais.agentePrevi + f.commissions.comAgenteTous + f.honorairesPrevi.parts.agente - f.apporteur.parts.agente)
+      ),
     }
   }
-
   const calculerReel = (d) => {
     const c = calculer(d)
 
@@ -379,8 +415,11 @@ export default function Finances() {
       ...c,
       fraisReel,
       honReel,
+      honAgenteReel,      
       comReelNet,
+      comAgenteReel,      
       comApporteursReel,
+      comApporteursAgente, 
       royaltiesReelTotal,
       apporteurRembourse,
       gainAgenteReel,
@@ -1125,14 +1164,34 @@ export default function Finances() {
   }
   // ── SUIVI CTP par période ──────────────────────────────────────────────────
 
-  const renderCTPPeriode = (rows, colLabel, isAnnee = false) => {
+  const renderCTPPeriode = (rowsReel, colLabel, isAnnee = false) => {
+    // Agrégation prévisionnel par date_signature_contrat
+    const mapPrevi = {}
+    dossiers.forEach(d => {
+      const key = getKeyFromDate(d.date_signature_contrat, isAnnee)
+      if (!key) return
+      if (!mapPrevi[key]) mapPrevi[key] = {
+        frais: 0, com: 0, comApport: 0, hon: 0,
+        partAgentes: 0, apporteur: 0, redev: 0,
+      }
+      const c = calculer(d)
+      mapPrevi[key].frais      = round2(mapPrevi[key].frais      + c.fraisNetPrevi)
+      mapPrevi[key].com        = round2(mapPrevi[key].com        + c.netComTous)
+      mapPrevi[key].comApport  = round2(mapPrevi[key].comApport  + c.comApporteursPrevi)
+      mapPrevi[key].hon        = round2(mapPrevi[key].hon        + c.honPreviNet)
+      mapPrevi[key].partAgentes = round2(mapPrevi[key].partAgentes + c.gainsAgentePreviTotal)
+      mapPrevi[key].apporteur  = round2(mapPrevi[key].apporteur  + c.apporteurTotalHT)
+    })
+
     const redevKey = (key) => {
       if (isAnnee) return redevances.filter(r => r.statut === 'regle' && String(r.annee) === String(key)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
       const [annee, mois] = key.split('-')
       return redevances.filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
     }
+
     const allKeys = new Set([
-      ...rows.map(([k]) => k),
+      ...rowsReel.map(([k]) => k),
+      ...Object.keys(mapPrevi),
       ...redevances.filter(r => r.statut === 'regle').map(r =>
         isAnnee ? String(r.annee) : `${r.annee}-${String(r.mois).padStart(2, '0')}`
       ),
@@ -1143,31 +1202,46 @@ export default function Finances() {
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>{thL(colLabel)}{thR('Frais')}{thR('Com.')}{thR('Hon.')}{thR('Redevance')}{thR('Com. apport.')}{thR('Part agentes')}{thR('Total CTP')}</tr>
+            <tr>
+              {thL(colLabel)}
+              <th colSpan={6} className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase border-l border-gray-200">Prévisionnel</th>
+              <th colSpan={6} className="px-3 py-2 text-center text-xs font-medium text-green-600 uppercase border-l border-gray-200">Réel</th>
+            </tr>
+            <tr className="border-t border-gray-100">
+              {thL('')}
+              {['Frais', 'Com.', 'Hon.', 'Redev.', 'Com.app.', 'Total P'].map(l => <th key={l} className="text-right px-2 py-1 text-xs text-gray-400">{l}</th>)}
+              {['Frais', 'Com.', 'Hon.', 'Redev.', 'Com.app.', 'Total R'].map(l => <th key={l} className="text-right px-2 py-1 text-xs text-green-500">{l}</th>)}
+            </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {cles.map(key => {
-              const agg   = rows.find(([k]) => k === key)?.[1] || {}
+              const label = (() => {
+                if (!key.includes('-')) return key
+                const [a, m] = key.split('-')
+                return `${MOIS[parseInt(m)]} ${a}`
+              })()
+              const p = mapPrevi[key] || {}
+              const reelAgg = rowsReel.find(([k]) => k === key)?.[1] || {}
               const redev = redevKey(key)
-              const label = isAnnee ? key : (() => { const [a, m] = key.split('-'); return `${MOIS[parseInt(m)]} ${a}` })()
-              const total = round2(
-                (agg.fraisNet || 0) + 
-                (agg.honReel || 0) + 
-                (agg.comReelNet || 0) + 
-                (agg.comApporteursReel || 0) + 
-                redev - 
-                (agg.gainsAgenteReels || 0)
-              )
+
+              const previTotal = round2((p.frais||0) + (p.com||0) + (p.hon||0) + redev + (p.comApport||0) - (p.partAgentes||0) - (p.apporteur||0))
+              const reelTotal  = round2((reelAgg.fraisNet||0) + (reelAgg.comReelNet||0) + (reelAgg.honReel||0) + redev + (reelAgg.comApporteursReel||0) - (reelAgg.gainsAgenteReels||0))
+
               return (
                 <tr key={key} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 font-medium">{label}</td>
-                  {tdR(fmt(agg.fraisNet))}
-                  {tdR(fmt(agg.comReelNet))}
-                  {tdR(fmt(agg.honReel))}
-                  <td className="px-3 py-2 text-right text-green-600">{redev > 0 ? `+ ${fmt(redev)}` : '—'}</td>
-                  <td className="px-3 py-2 text-right text-orange-500">{(agg.comApporteursReel || 0) > 0 ? `+ ${fmt(agg.comApporteursReel)}` : '—'}</td>
-                  <td className="px-3 py-2 text-right text-red-400">— {fmt(agg.gainsAgenteReels || 0)}</td>
-                  {tdTotal(total)}
+                  <td className="px-3 py-2 font-medium text-gray-800">{label}</td>
+                  <td className="px-2 py-2 text-right text-xs text-gray-600">{fmt(p.frais||0)}</td>
+                  <td className="px-2 py-2 text-right text-xs text-gray-600">{fmt(p.com||0)}</td>
+                  <td className="px-2 py-2 text-right text-xs text-gray-600">{fmt(p.hon||0)}</td>
+                  <td className="px-2 py-2 text-right text-xs text-green-600">{redev > 0 ? fmt(redev) : '—'}</td>
+                  <td className="px-2 py-2 text-right text-xs text-gray-600">{(p.comApport||0) > 0 ? fmt(p.comApport) : '—'}</td>
+                  <td className={`px-2 py-2 text-right text-xs font-bold border-r border-gray-100 ${previTotal >= 0 ? 'text-gray-800' : 'text-red-600'}`}>{fmt(previTotal)}</td>
+                  <td className="px-2 py-2 text-right text-xs text-blue-600">{fmt(reelAgg.fraisNet||0)}</td>
+                  <td className="px-2 py-2 text-right text-xs text-blue-600">{fmt(reelAgg.comReelNet||0)}</td>
+                  <td className="px-2 py-2 text-right text-xs text-blue-600">{fmt(reelAgg.honReel||0)}</td>
+                  <td className="px-2 py-2 text-right text-xs text-green-600">{redev > 0 ? fmt(redev) : '—'}</td>
+                  <td className="px-2 py-2 text-right text-xs text-blue-600">{(reelAgg.comApporteursReel||0) > 0 ? fmt(reelAgg.comApporteursReel) : '—'}</td>
+                  <td className={`px-2 py-2 text-right text-xs font-bold ${reelTotal >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(reelTotal)}</td>
                 </tr>
               )
             })}
@@ -1180,76 +1254,149 @@ export default function Finances() {
   // ── RÉCAP CTP ──────────────────────────────────────────────────────────────
 
   const renderRecapCTP = () => {
-    const totalComNet = dossiers.reduce((s, d) => s + calculerReel(d).comReelNet, 0)
-    const totalHonNet = dossiers.reduce((s, d) => s + calculerReel(d).honReel, 0)
-    const totalFraisNet = dossiers.reduce((s, d) => s + calculerReel(d).fraisReel, 0)
-    const totalComApporteurs = dossiers.reduce((s, d) => s + calculerReel(d).comApporteursReel, 0)
-    const totalApporteurRetire = dossiers.reduce((s, d) => {
-      const r = calculerReel(d)
-      return s + r.apporteurRembourse
-    }, 0)
-    const encCTP = totalComNet + totalHonNet + totalFraisNet + totalComApporteurs + totalRedevancesReglees
-    const decCTP = totalGainsAgentesReels + totalApporteurRetire
-    const netCTP = encCTP - decCTP
+    // Prévisionnel
+    const previFrais     = dossiers.reduce((s, d) => s + calculer(d).fraisNetPrevi, 0)
+    const previCom       = dossiers.reduce((s, d) => s + calculer(d).netComTous, 0)
+    const previComApport = dossiers.reduce((s, d) => s + calculer(d).comApporteursPrevi, 0)
+    const previHon       = dossiers.reduce((s, d) => s + calculer(d).honPreviNet, 0)
+    const previPartAgentes = dossiers.reduce((s, d) => s + calculer(d).gainsAgentePreviTotal, 0)
+    const previApporteur = dossiers.reduce((s, d) => s + calculer(d).apporteurTotalHT, 0)
+    const previEncTotal  = round2(previFrais + previCom + previComApport + previHon)
+    const previDecTotal  = round2(previPartAgentes + previApporteur)
+    const previNet       = round2(previEncTotal - previDecTotal)
+
+    // Réel
+    const reelFrais      = dossiers.reduce((s, d) => s + calculerReel(d).fraisReel, 0)
+    const reelCom        = dossiers.reduce((s, d) => s + calculerReel(d).comReelNet, 0)
+    const reelComApport  = dossiers.reduce((s, d) => s + calculerReel(d).comApporteursReel, 0)
+    const reelHon        = dossiers.reduce((s, d) => s + calculerReel(d).honReel, 0)
+    const reelPartAgentes = dossiers.reduce((s, d) => s + calculerReel(d).gainsAgenteReels, 0)
+    const reelApporteur  = dossiers.reduce((s, d) => s + calculerReel(d).apporteurRembourse, 0)
+    const reelEncTotal   = round2(reelFrais + reelCom + reelComApport + reelHon)
+    const reelDecTotal   = round2(reelPartAgentes + reelApporteur)
+    const reelNet        = round2(reelEncTotal - reelDecTotal)
+
+    const Row = ({ label, preви, reel, type = 'enc' }) => (
+      <div className={`flex justify-between text-sm py-1 ${type === 'total' ? 'border-t font-bold pt-2 mt-1' : ''}`}>
+        <span className="text-gray-600">{label}</span>
+        <div className="flex gap-8">
+          <span className={type === 'total' ? 'text-gray-800 w-28 text-right' : 'text-gray-500 w-28 text-right'}>{fmt(preви)}</span>
+          <span className={type === 'total' ? 'text-green-700 w-28 text-right' : 'text-blue-600 w-28 text-right'}>{fmt(reel)}</span>
+        </div>
+      </div>
+    )
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
-            <p className="font-medium text-green-800 mb-2">📥 Encaissements CTP</p>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Commissions net HT</span><span className="text-green-700">+ {fmt(totalComNet)}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Com. apporteurs</span><span className="text-green-700">+ {fmt(totalComApporteurs)}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Honoraires net HT</span><span className="text-green-700">+ {fmt(totalHonNet)}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Frais consultation net HT</span><span className="text-green-700">+ {fmt(totalFraisNet)}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Redevances agentes</span><span className="text-green-700">+ {fmt(totalRedevancesReglees)}</span></div>            <div className="flex justify-between text-sm border-t border-green-200 pt-2 font-bold"><span>Total</span><span className="text-green-700">+ {fmt(encCTP)}</span></div>
-          </div>
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
-            <p className="font-medium text-red-800 mb-2">📤 Décaissements CTP</p>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Part agentes</span><span className="text-red-500">— {fmt(totalGainsAgentesReels)}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Apporteur client</span><span className="text-red-500">— {fmt(totalApporteurRetire)}</span></div>            <div className="flex justify-between text-sm border-t border-red-200 pt-2 font-bold"><span>Total</span><span className="text-red-500">— {fmt(decCTP)}</span></div>
-          </div>
+        {/* Header colonnes */}
+        <div className="flex justify-end gap-8 text-xs font-medium text-gray-500 uppercase px-0 pr-0">
+          <span className="w-28 text-right">Prévisionnel</span>
+          <span className="w-28 text-right">Réel</span>
         </div>
-        <div className={`border rounded-xl p-4 ${netCTP >= 0 ? 'bg-purple-50 border-purple-200' : 'bg-red-50 border-red-200'}`}>
+
+        {/* Encaissements */}
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-1">
+          <p className="font-medium text-green-800 mb-2">📥 Encaissements CTP</p>
+          <Row label="Frais consultation" preви={previFrais} reel={reelFrais} />
+          <Row label="Commissions" preви={previCom} reel={reelCom} />
+          <Row label="Com. apporteurs" preви={previComApport} reel={reelComApport} />
+          <Row label="Honoraires" preви={previHon} reel={reelHon} />
+          <Row label="Total encaissements" preви={previEncTotal} reel={reelEncTotal} type="total" />
+        </div>
+
+        {/* Décaissements */}
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-1">
+          <p className="font-medium text-red-800 mb-2">📤 Décaissements CTP</p>
+          <Row label="Part agentes" preви={previPartAgentes} reel={reelPartAgentes} />
+          <Row label="Apporteur client" preви={previApporteur} reel={reelApporteur} />
+          <Row label="Total décaissements" preви={previDecTotal} reel={reelDecTotal} type="total" />
+        </div>
+
+        {/* Net CTP */}
+        <div className={`border rounded-xl p-4 ${reelNet >= 0 ? 'bg-purple-50 border-purple-200' : 'bg-red-50 border-red-200'}`}>
           <div className="flex justify-between items-center">
             <span className="font-bold text-purple-900">Net CTP</span>
-            <span className={`font-bold text-2xl ${netCTP >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(netCTP)}</span>
+            <div className="flex gap-8">
+              <span className="text-gray-500 w-28 text-right font-medium">{fmt(previNet)}</span>
+              <span className={`font-bold w-28 text-right ${reelNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(reelNet)}</span>
+            </div>
           </div>
         </div>
+
+        {/* Accordéon dossiers */}
+        {renderAccordeon(dossiers, true)}
       </div>
     )
   }
 
   // ── RÉCAP AGENTE (vue admin) ────────────────────────────────────────────────
 
-  const renderRecapAgente = (listeDossiers, listeRedevances, agente) => {
-    const nom          = agente ? `${agente.prenom} ${agente.nom}` : 'Agente'
-    const gainsReels   = listeDossiers.reduce((s, d) => s + calculerReel(d).gainsAgenteReels, 0)
-    const gainsPrevi   = listeDossiers.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
-    const apporteurDu  = listeDossiers.reduce((s, d) => s + calculer(d).apporteurAgente, 0)
-    const redevReglees = listeRedevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
-    const net          = gainsReels - redevReglees - apporteurDu
+  const renderRecapAgente = (listeDossiers, agente) => {
+    const nom = agente ? `${agente.prenom} ${agente.nom}` : 'Agente'
+
+    // Prévisionnel
+    const previFrais     = listeDossiers.reduce((s, d) => s + calculer(d).fraisAgentePrevi, 0)
+    const previCom       = listeDossiers.reduce((s, d) => s + calculer(d).comAgenteTous, 0)
+    const previComApport = listeDossiers.reduce((s, d) => s + calculer(d).comApporteursAgentePrevi, 0)
+    const previHon       = listeDossiers.reduce((s, d) => s + calculer(d).honPreviAgente, 0)
+    const previApporteur = listeDossiers.reduce((s, d) => s + calculer(d).apporteurAgente, 0)
+    const previGainsTotal = round2(previFrais + previCom + previComApport + previHon)
+    const previNet       = round2(previGainsTotal - previApporteur)
+
+    // Réel
+    const reelFrais      = listeDossiers.reduce((s, d) => s + calculerReel(d).gainAgenteReel, 0)
+    const reelCom        = listeDossiers.reduce((s, d) => s + calculerReel(d).comAgenteReel, 0)
+    const reelComApport  = listeDossiers.reduce((s, d) => s + calculerReel(d).comApporteursAgente, 0)
+    const reelHon        = listeDossiers.reduce((s, d) => s + calculerReel(d).honAgenteReel, 0)
+    const reelApporteur  = listeDossiers.reduce((s, d) => s + calculerReel(d).apporteurRembourse, 0)
+    const reelGainsTotal = listeDossiers.reduce((s, d) => s + calculerReel(d).gainsAgenteReels, 0)
+    const reelNet        = round2(reelGainsTotal - reelApporteur)
+
+    const Row = ({ label, previ, reel, type = 'normal' }) => (
+      <div className={`flex justify-between text-sm py-1 ${type === 'total' ? 'border-t font-bold pt-2 mt-1' : ''}`}>
+        <span className="text-gray-600">{label}</span>
+        <div className="flex gap-8">
+          <span className="text-gray-500 w-28 text-right">{fmt(previ)}</span>
+          <span className="text-blue-600 w-28 text-right">{fmt(reel)}</span>
+        </div>
+      </div>
+    )
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
-            <p className="font-medium text-green-800 mb-2">📥 Gains {nom}</p>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Gains réels</span><span className="text-green-700">+ {fmt(gainsReels)}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Gains prévisionnels</span><span className="text-gray-400">({fmt(gainsPrevi)})</span></div>
-          </div>
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
-            <p className="font-medium text-red-800 mb-2">📤 Décaissements {nom}</p>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Redevances CTP</span><span className="text-red-500">— {fmt(redevReglees)}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">Apporteur à rembourser</span><span className="text-red-500">— {fmt(apporteurDu)}</span></div>
-            <div className="flex justify-between text-sm border-t border-red-200 pt-2 font-bold"><span>Total</span><span className="text-red-500">— {fmt(redevReglees + apporteurDu)}</span></div>
-          </div>
+        {/* Header colonnes */}
+        <div className="flex justify-end gap-8 text-xs font-medium text-gray-500 uppercase">
+          <span className="w-28 text-right">Prévisionnel</span>
+          <span className="w-28 text-right">Réel</span>
         </div>
-        <div className={`border rounded-xl p-4 ${net >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'}`}>
+
+        {/* Gains */}
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-1">
+          <p className="font-medium text-green-800 mb-2">📥 Gains {nom}</p>
+          <Row label="Frais consultation" previ={previFrais} reel={reelFrais} />
+          <Row label="Commissions" previ={previCom} reel={reelCom} />
+          <Row label="Com. apporteurs" previ={previComApport} reel={reelComApport} />
+          <Row label="Honoraires" previ={previHon} reel={reelHon} />
+          <Row label="Total gains" previ={previGainsTotal} reel={reelGainsTotal} type="total" />
+        </div>
+
+        {/* Décaissements */}
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-1">
+          <p className="font-medium text-red-800 mb-2">📤 Décaissements {nom}</p>
+          <Row label="Apporteur à rembourser" previ={previApporteur} reel={reelApporteur} />
+        </div>
+
+        {/* Net */}
+        <div className={`border rounded-xl p-4 ${reelNet >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'}`}>
           <div className="flex justify-between items-center">
             <span className="font-bold text-blue-900">Net {nom}</span>
-            <span className={`font-bold text-2xl ${net >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(net)}</span>
+            <div className="flex gap-8">
+              <span className="text-gray-500 w-28 text-right font-medium">{fmt(previNet)}</span>
+              <span className={`font-bold w-28 text-right ${reelNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(reelNet)}</span>
+            </div>
           </div>
         </div>
+
         {/* Ce que CTP doit à l'agente */}
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
           <p className="font-semibold text-blue-800">💸 {nomFranchisee} doit verser à {nom}</p>
@@ -1265,39 +1412,77 @@ export default function Finances() {
           })}
           <div className="flex justify-between font-bold border-t border-blue-200 pt-2">
             <span className="text-blue-800">Total</span>
-            <span className="text-blue-700">{fmt(gainsReels)}</span>
+            <span className="text-blue-700">{fmt(reelGainsTotal)}</span>
           </div>
         </div>
+
+        {/* Accordéon dossiers */}
+        {renderAccordeon(listeDossiers, false)}
       </div>
     )
   }
 
   // ── RÉCAP MOI (vue agente) ─────────────────────────────────────────────────
 
-  const renderRecapMoi = () => (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
-          <p className="font-medium text-green-800 mb-2">📥 Mes gains prévisionnels</p>
-          <div className="flex justify-between text-sm"><span className="text-gray-600">Frais consultation</span><span className="text-green-700">+ {fmt(mesDossiers.reduce((s, d) => s + calculer(d).fraisAgente, 0))}</span></div>
-          <div className="flex justify-between text-sm"><span className="text-gray-600">Commissions</span><span className="text-green-700">+ {fmt(mesDossiers.reduce((s, d) => s + calculer(d).comAgenteSigne, 0))}</span></div>
-          <div className="flex justify-between text-sm"><span className="text-gray-600">Honoraires</span><span className="text-green-700">+ {fmt(mesDossiers.reduce((s, d) => s + calculer(d).honAgente, 0))}</span></div>
-          <div className="flex justify-between text-sm border-t border-green-200 pt-2 font-bold"><span>Total brut</span><span className="text-green-700">+ {fmt(mesDossiersGainsPrevi + mesApporteurDu)}</span></div>
+  const renderRecapMoi = () => {
+    const previFrais     = mesDossiers.reduce((s, d) => s + calculer(d).fraisAgentePrevi, 0)
+    const previCom       = mesDossiers.reduce((s, d) => s + calculer(d).comAgenteTous, 0)
+    const previComApport = mesDossiers.reduce((s, d) => s + calculer(d).comApporteursAgentePrevi, 0)
+    const previHon       = mesDossiers.reduce((s, d) => s + calculer(d).honPreviAgente, 0)
+    const previApporteur = mesDossiers.reduce((s, d) => s + calculer(d).apporteurAgente, 0)
+    const previGainsTotal = round2(previFrais + previCom + previComApport + previHon)
+    const previNet       = round2(previGainsTotal - previApporteur)
+
+    const reelGainsTotal = mesDossiers.reduce((s, d) => s + calculerReel(d).gainsAgenteReels, 0)
+    const reelApporteur  = mesDossiers.reduce((s, d) => s + calculerReel(d).apporteurRembourse, 0)
+    const reelNet        = round2(reelGainsTotal - reelApporteur)
+
+    const Row = ({ label, previ, reel, type = 'normal' }) => (
+      <div className={`flex justify-between text-sm py-1 ${type === 'total' ? 'border-t font-bold pt-2 mt-1' : ''}`}>
+        <span className="text-gray-600">{label}</span>
+        <div className="flex gap-8">
+          <span className="text-gray-500 w-28 text-right">{fmt(previ)}</span>
+          <span className="text-blue-600 w-28 text-right">{fmt(reel)}</span>
         </div>
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
+      </div>
+    )
+
+    return (
+      <div className="space-y-4">
+        <div className="flex justify-end gap-8 text-xs font-medium text-gray-500 uppercase">
+          <span className="w-28 text-right">Prévisionnel</span>
+          <span className="w-28 text-right">Réel</span>
+        </div>
+
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-1">
+          <p className="font-medium text-green-800 mb-2">📥 Mes gains</p>
+          <Row label="Frais consultation" previ={previFrais} reel={mesDossiers.reduce((s, d) => s + calculerReel(d).gainAgenteReel, 0)} />
+          <Row label="Commissions" previ={previCom} reel={mesDossiers.reduce((s, d) => s + calculerReel(d).comAgenteReel, 0)} />
+          <Row label="Com. apporteurs" previ={previComApport} reel={mesDossiers.reduce((s, d) => s + calculerReel(d).comApporteursAgente, 0)} />
+          <Row label="Honoraires" previ={previHon} reel={mesDossiers.reduce((s, d) => s + calculerReel(d).honAgenteReel, 0)} />
+          <Row label="Total gains" previ={previGainsTotal} reel={reelGainsTotal} type="total" />
+        </div>
+
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-1">
           <p className="font-medium text-red-800 mb-2">📤 Mes décaissements</p>
-          <div className="flex justify-between text-sm"><span className="text-gray-600">Apporteur à rembourser</span><span className="text-red-500">— {fmt(mesApporteurDu)}</span></div>
+          <Row label="Apporteur à rembourser" previ={previApporteur} reel={reelApporteur} />
         </div>
-      </div>
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-        <div className="flex justify-between items-center">
-          <span className="font-bold text-blue-900">Gains nets prévisionnels</span>
-          <span className="font-bold text-2xl text-green-700">{fmt(mesDossiersGainsPrevi)}</span>
+
+        <div className={`border rounded-xl p-4 ${reelNet >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'}`}>
+          <div className="flex justify-between items-center">
+            <span className="font-bold text-blue-900">Mon net</span>
+            <div className="flex gap-8">
+              <span className="text-gray-500 w-28 text-right font-medium">{fmt(previNet)}</span>
+              <span className={`font-bold w-28 text-right ${reelNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(reelNet)}</span>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mt-1">Hors redevances — voir onglets "Par mois" et "Par année"</p>
         </div>
-        <p className="text-xs text-gray-400 mt-1">Hors redevances — voir onglets "Par mois" et "Par année"</p>
+
+        {renderAccordeon(mesDossiers, false)}
       </div>
-    </div>
-  )
+    )
+  }
 
   // ── FACTURATION MOI ────────────────────────────────────────────────────────
 
@@ -1415,38 +1600,81 @@ export default function Finances() {
 
   // ── AGENTE PAR PÉRIODE ─────────────────────────────────────────────────────
 
-  const renderAgentePeriode = (rows, colLabel, listeRedevances, isAnnee = false) => {
+  const renderAgentePeriode = (rowsReel, colLabel, listeRedevances, isAnnee = false, listeDossiersPrev = null) => {
+    const mapPrevi = {}
+    const listeDossiers = listeDossiersPrev ?? (agenteSelectionnee
+      ? dossiers.filter(d => d.referente?.id === agenteSelectionnee)
+      : dossiersAgentes)
+
+    listeDossiers.forEach(d => {
+      const key = getKeyFromDate(d.date_signature_contrat, isAnnee)
+      if (!key) return
+      if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, comApport: 0, hon: 0, apporteur: 0 }
+      const c = calculer(d)
+      mapPrevi[key].frais     = round2(mapPrevi[key].frais     + c.fraisAgentePrevi)
+      mapPrevi[key].com       = round2(mapPrevi[key].com       + c.comAgenteTous)
+      mapPrevi[key].comApport = round2(mapPrevi[key].comApport + c.comApporteursAgentePrevi)
+      mapPrevi[key].hon       = round2(mapPrevi[key].hon       + c.honPreviAgente)
+      mapPrevi[key].apporteur = round2(mapPrevi[key].apporteur + c.apporteurAgente)
+    })
+
     const redevKey = (key) => {
       if (isAnnee) return listeRedevances.filter(r => r.statut === 'regle' && String(r.annee) === String(key)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
       const [annee, mois] = key.split('-')
       return listeRedevances.filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
     }
+
     const allKeys = new Set([
-      ...rows.map(([k]) => k),
+      ...rowsReel.map(([k]) => k),
+      ...Object.keys(mapPrevi),
       ...listeRedevances.filter(r => r.statut === 'regle').map(r =>
         isAnnee ? String(r.annee) : `${r.annee}-${String(r.mois).padStart(2, '0')}`
       ),
     ])
     const cles = Array.from(allKeys).sort((a, b) => b.localeCompare(a))
+
     return (
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>{thL(colLabel)}{thR('Gains')}{thR('Redevance CTP')}{thR('Apporteur')}{thR('Total')}</tr>
+            <tr>
+              {thL(colLabel)}
+              <th colSpan={5} className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase border-l border-gray-200">Prévisionnel</th>
+              <th colSpan={5} className="px-3 py-2 text-center text-xs font-medium text-green-600 uppercase border-l border-gray-200">Réel</th>
+            </tr>
+            <tr className="border-t border-gray-100">
+              {thL('')}
+              {['Frais', 'Com.', 'Hon.', 'Com.app.', 'Total P'].map(l => <th key={`p-${l}`} className="text-right px-2 py-1 text-xs text-gray-400">{l}</th>)}
+              {['Frais', 'Com.', 'Hon.', 'Com.app.', 'Total R'].map(l => <th key={`r-${l}`} className="text-right px-2 py-1 text-xs text-green-500">{l}</th>)}
+            </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {cles.map(key => {
-              const agg   = rows.find(([k]) => k === key)?.[1] || {}
+              const label = (() => {
+                if (!key.includes('-')) return key
+                const [a, m] = key.split('-')
+                return `${MOIS[parseInt(m)]} ${a}`
+              })()
+              const p = mapPrevi[key] || {}
+              const reelAgg = rowsReel.find(([k]) => k === key)?.[1] || {}
               const redev = redevKey(key)
-              const label = isAnnee ? key : (() => { const [a, m] = key.split('-'); return `${MOIS[parseInt(m)]} ${a}` })()
-              const total = (agg.gainsAgenteReels || 0) - redev - (agg.apporteurAgente || 0)
+
+              const previTotal = round2((p.frais||0) + (p.com||0) + (p.hon||0) + (p.comApport||0) - (p.apporteur||0) - redev)
+              const reelTotal  = round2((reelAgg.gainsAgenteReels||0) - redev)
+
               return (
                 <tr key={key} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 font-medium">{label}</td>
-                  <td className="px-3 py-2 text-right text-green-600">+ {fmt(agg.gainsAgenteReels)}</td>
-                  <td className="px-3 py-2 text-right text-red-400">{redev > 0 ? `— ${fmt(redev)}` : '—'}</td>
-                  <td className="px-3 py-2 text-right text-orange-500">{(agg.apporteurAgente || 0) > 0 ? `— ${fmt(agg.apporteurAgente)}` : '—'}</td>
-                  {tdTotal(total)}
+                  <td className="px-3 py-2 font-medium text-gray-800">{label}</td>
+                  <td className="px-2 py-2 text-right text-xs text-gray-600">{fmt(p.frais||0)}</td>
+                  <td className="px-2 py-2 text-right text-xs text-gray-600">{fmt(p.com||0)}</td>
+                  <td className="px-2 py-2 text-right text-xs text-gray-600">{fmt(p.hon||0)}</td>
+                  <td className="px-2 py-2 text-right text-xs text-gray-600">{(p.comApport||0) > 0 ? fmt(p.comApport) : '—'}</td>
+                  <td className={`px-2 py-2 text-right text-xs font-bold border-r border-gray-100 ${previTotal >= 0 ? 'text-gray-800' : 'text-red-600'}`}>{fmt(previTotal)}</td>
+                  <td className="px-2 py-2 text-right text-xs text-blue-600">{fmt(reelAgg.fraisAgenteNet||0)}</td>
+                  <td className="px-2 py-2 text-right text-xs text-blue-600">{fmt(reelAgg.comAgenteNet||0)}</td>
+                  <td className="px-2 py-2 text-right text-xs text-blue-600">{fmt(reelAgg.honAgenteNet||0)}</td>
+                  <td className="px-2 py-2 text-right text-xs text-blue-600">{(reelAgg.comApporteursAgenteNet||0) > 0 ? fmt(reelAgg.comApporteursAgenteNet) : '—'}</td>
+                  <td className={`px-2 py-2 text-right text-xs font-bold ${reelTotal >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(reelTotal)}</td>
                 </tr>
               )
             })}
@@ -1705,9 +1933,8 @@ export default function Finances() {
           <div className="space-y-4">
             {renderSousOnglets()}
             {sousOnglet === 'chantier' && renderRecapCTP()}
-            {sousOnglet === 'mois'     && renderCTPPeriode(agrégerParPaiement(dossiers, true), 'Mois', false)}
-            {sousOnglet === 'annee'    && renderCTPPeriode(agrégerParPaiement(dossiers, true), 'Année', true)}
-          </div>
+            {sousOnglet === 'mois'  && renderCTPPeriode(agrégerParPaiement(dossiers, false), 'Mois', false)}
+            {sousOnglet === 'annee' && renderCTPPeriode(agrégerParPaiement(dossiers, true), 'Année', true)}          </div>
         )}
 
         {/* ── AGENTES (admin) ── */}
@@ -1715,10 +1942,9 @@ export default function Finances() {
           <div className="space-y-4">
             {renderSélecteurAgente()}
             {renderSousOnglets()}
-            {sousOnglet === 'chantier' && renderRecapAgente(dossiersAgente, redevancesAgente, agenteActuelle)}
-            {sousOnglet === 'mois'     && renderAgentePeriode(agrégerParPaiement(dossiersAgente, true), 'Mois', redevancesAgente, false)}
-            {sousOnglet === 'annee'    && renderAgentePeriode(agrégerParPaiement(dossiersAgente, true), 'Année', redevancesAgente, true)}
-          </div>
+            {sousOnglet === 'chantier' && renderRecapAgente(dossiersAgente, agenteActuelle)}
+            {sousOnglet === 'mois'  && renderAgentePeriode(agrégerParPaiement(dossiersAgente, false), 'Mois', redevancesAgente, false)}
+            {sousOnglet === 'annee' && renderAgentePeriode(agrégerParPaiement(dossiersAgente, true), 'Année', redevancesAgente, true)}          </div>
         )}
 
         {/* ── MON SUIVI FINANCIER (agente) ── */}
@@ -1726,9 +1952,8 @@ export default function Finances() {
           <div className="space-y-4">
             {renderSousOnglets()}
             {sousOnglet === 'chantier' && renderRecapMoi()}
-            {sousOnglet === 'mois'     && renderAgentePeriode(agrégerParPaiement(mesDossiers, true), 'Mois', mesRedevances, false)}
-            {sousOnglet === 'annee'    && renderAgentePeriode(agrégerParPaiement(mesDossiers, true), 'Année', mesRedevances, true)}
-          </div>
+            {sousOnglet === 'mois'  && renderAgentePeriode(agrégerParPaiement(mesDossiers, false), 'Mois', mesRedevances, false, mesDossiers)}
+            {sousOnglet === 'annee' && renderAgentePeriode(agrégerParPaiement(mesDossiers, true), 'Année', mesRedevances, true, mesDossiers)}          </div>
         )}
 
         {/* ── FACTURATION (agente) ── */}
