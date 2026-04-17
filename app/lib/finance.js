@@ -73,7 +73,7 @@ export function getSignedDevis(dossier) {
 }
 
 function getSignedTotals(dossier) {
-  const signed = getSignedDevis(dossier)
+  const signed = getSignedDevis(dossier).filter(dv => toNumber(dv.commission_pourcentage) > 0)
   const totalHT  = round2(signed.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
   const totalTTC = round2(signed.reduce((s, dv) => {
     if (dv.montant_ttc !== undefined && dv.montant_ttc !== null) return s + toNumber(dv.montant_ttc)

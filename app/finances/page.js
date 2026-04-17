@@ -257,6 +257,7 @@ export default function Finances() {
   const calculer = (d) => {
     const normalized = normalizeDossier(d)
     const f = calculateDossierFinance(normalized)
+
     const partAgente = f.settings.partAgente
 
     const estChantierMarine = d.referente?.role === 'admin'
@@ -342,12 +343,12 @@ export default function Finances() {
       gainsAdminPrevi:  round2(f.gains.netsPrevi.admin),
 
       // Prévisionnel frais
-      fraisNetPrevi:    round2(f.frais.netPrevi),
-      fraisAgentePrevi: round2(f.frais.agentePrevi),
+      fraisNetPrevi:    d.frais_statut !== 'offerts' ? round2(f.frais.net) : 0,
+      fraisAgentePrevi: d.frais_statut !== 'offerts' ? round2(f.frais.parts.agente) : 0,
 
       // Prévisionnel commissions tous devis
-      netComTous:       round2(f.commissions.netComTous),
-      comAgenteTous:    round2(f.commissions.comAgenteTous),
+      netComTous: round2(f.commissions.netCom),
+      comAgenteTous: round2(f.commissions.parts.agente),
 
       // Prévisionnel commissions apporteurs
       comApporteursPrevi: round2(
@@ -366,16 +367,19 @@ export default function Finances() {
 
       // Gains prévisionnels complets
       gainsAgentePreviTotal: round2(
-        f.frais.agentePrevi +
-        f.commissions.comAgenteTous +
+        (f.frais.net > 0 && d.frais_statut !== 'offerts' ? f.frais.parts.agente : 0) +
+        f.commissions.parts.agente +
         f.honorairesPrevi.parts.agente -
         f.apporteur.parts.agente
       ),
       gainsAdminPreviTotal: round2(
-        f.frais.netPrevi +
-        f.commissions.netComTous +
+        (f.frais.net > 0 && d.frais_statut !== 'offerts' ? f.frais.net : 0) +
+        f.commissions.netCom +
         f.honorairesPrevi.totalNet -
-        (f.frais.agentePrevi + f.commissions.comAgenteTous + f.honorairesPrevi.parts.agente - f.apporteur.parts.agente)
+        ((f.frais.net > 0 && d.frais_statut !== 'offerts' ? f.frais.parts.agente : 0) +
+        f.commissions.parts.agente +
+        f.honorairesPrevi.parts.agente -
+        f.apporteur.parts.agente)
       ),
     }
   }
@@ -626,23 +630,7 @@ export default function Finances() {
     : redevances
   const mesRedevances    = profile?.id ? redevances.filter(r => r.agente_id === profile.id) : redevances
 
-  // ── TOTAUX GLOBAUX ─────────────────────────────────────────────────────────
-
-  const totalRedevancesReglees = redevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
-  const totalGainsAgentesReels = dossiersAgentes.reduce((s, d) => s + calculerReel(d).gainsAgenteReels, 0)
-  const totalApporteurAgenteDu = dossiersAgentes.reduce((s, d) => s + calculer(d).apporteurAgente, 0)
-  const mesDossiersGainsPrevi  = mesDossiers.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
-  const mesDossiersGainsReels  = mesDossiers.reduce((s, d) => s + calculerReel(d).gainsAgenteReels, 0)
-  const mesApporteurDu         = mesDossiers.reduce((s, d) => s + calculer(d).apporteurAgente, 0)
-  const mesRedevancesReglees   = mesRedevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
-  const monNet                 = mesDossiersGainsReels - mesRedevancesReglees - mesApporteurDu
-
-  const totalNetCTP = dossiers.reduce((s, d) => {
-    const c = calculer(d)
-    return s + c.gainsAdminPrevi
-  }, 0)
-
-  // ── AGRÉGATION PAR PÉRIODE ─────────────────────────────────────────────────
+// ── AGRÉGATION PAR PÉRIODE ─────────────────────────────────────────────────
 
   const getKeyFromDate = (dateStr, isAnnee = false) => {
     if (!dateStr) return null
@@ -660,6 +648,7 @@ export default function Finances() {
     gainsAgenteReels: 0, gainAdminReel: 0,
     comAgenteNet: 0, comApporteursAgenteNet: 0,
     fraisAgenteNet: 0, honAgenteNet: 0,
+    apporteurRembourseNet: 0,
     dossierIds: new Set(),
   })
 
@@ -727,6 +716,21 @@ export default function Finances() {
         const key = getKeyFromDate(dv.date_signature, isAnnee)
         addToKey(key, 'comApporteursNet', dvF.netCom, d.id)
       }
+
+            // Apporteur client remboursé par ligne
+      for (const sf of suivi.filter(s =>
+        s.type_echeance === 'apporteur_agente' &&
+        s.statut_ctp === 'rembourse' &&
+        s.date_paiement
+      )) {
+        const key = getKeyFromDate(sf.date_paiement, isAnnee)
+        const finance = c.finance?.apporteur?.lines || []
+        const ligne = finance.find(l => {
+          const dv = (d.devis_artisans || []).find(dv => dv.id === l.devisId)
+          return (dv?.artisan_id || dv?.artisan?.id) === sf.artisan_id
+        })
+        if (ligne) addToKey(key, 'apporteurRembourseNet', ligne.agente, d.id)
+      }
     })
 
     // Calculer gains agente/admin par bucket
@@ -735,14 +739,49 @@ export default function Finances() {
       agg.comReelNet = agg.comNet
       agg.comApporteursReel = agg.comApporteursNet
       agg.gainsAgenteReels = round2(agg.fraisAgenteNet + agg.honAgenteNet + agg.comAgenteNet + agg.comApporteursAgenteNet)
-      agg.gainAdminReel = round2(agg.fraisNet + agg.honReel + agg.comReelNet + agg.comApporteursReel - agg.gainsAgenteReels)
-    })
+      agg.gainAdminReel = round2(agg.fraisNet + agg.honReel + agg.comReelNet + agg.comApporteursReel - agg.gainsAgenteReels - agg.apporteurRembourseNet)    })
 
     return Object.entries(map)
       .map(([key, agg]) => [key, { ...agg, dossierIds: Array.from(agg.dossierIds) }])
       .sort((a, b) => b[0].localeCompare(a[0]))
   }
 
+
+  // ── TOTAUX GLOBAUX ─────────────────────────────────────────────────────────
+
+  const anneeEnCours = new Date().getFullYear()
+  const rowsReelAnneeEnCours = agrégerParPaiement(dossiers, false)
+  const chantiersAnneeEnCours = dossiers.filter(d => {
+    const date = d.date_fin_chantier || d.date_demarrage_chantier || d.date_signature_contrat || d.created_at
+    return date && new Date(date).getFullYear() === anneeEnCours
+  }).length
+
+  const totalRedevancesReglees = redevances
+    .filter(r => r.statut === 'regle' && r.annee === anneeEnCours)
+    .reduce((s, r) => s + (r.montant_ttc || 540), 0)
+
+  const totalGainsAgentesReels = (() => {
+    const keysAnnee = rowsReelAnneeEnCours
+      .filter(([k]) => k.startsWith(String(anneeEnCours)))
+      .map(([, agg]) => agg)
+    return round2(keysAnnee.reduce((s, agg) => s + (agg.gainsAgenteReels || 0), 0))
+  })()
+
+  const totalNetCTP = (() => {
+    const keysAnnee = rowsReelAnneeEnCours.filter(([k]) => k.startsWith(String(anneeEnCours)))
+    const reelProduits = keysAnnee.reduce((s, [, agg]) => s + round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0)), 0)
+    const reelRedev = redevances.filter(r => r.statut === 'regle' && r.annee === anneeEnCours).reduce((s, r) => s + (r.montant_ttc || 540), 0)
+    const reelCharges = keysAnnee.reduce((s, [, agg]) => s + (agg.gainsAgenteReels || 0), 0)
+    return round2(reelProduits + reelRedev - reelCharges)
+  })()  
+
+  const mesDossiersGainsPrevi  = mesDossiers.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
+  const mesDossiersGainsReels  = mesDossiers.reduce((s, d) => s + calculerReel(d).gainsAgenteReels, 0)
+  const mesApporteurDu         = mesDossiers.reduce((s, d) => s + calculer(d).apporteurAgente, 0)
+  const mesRedevancesReglees   = mesRedevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
+  const monNet                 = mesDossiersGainsReels - mesRedevancesReglees - mesApporteurDu
+
+  
   // ─────────────────────────────────────────────────────────────────────────────
   // COMPOSANTS DE RENDU
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1074,8 +1113,13 @@ export default function Finances() {
                           ? <div className="flex justify-between"><span className="text-gray-500">Com. apporteurs</span><span>+ {fmt(comApporteursPrevi)}</span></div>
                           : null
                       })()}
-                      {c.apporteurTotalHT > 0 && !c.estChantierMarine && <div className="flex justify-between"><span className="text-orange-500">Apporteur (agente)</span><span className="text-orange-500">— {fmt(c.apporteurAgente)}</span></div>}
-                      <div className="border-t border-gray-200 pt-1 mt-1 space-y-0.5">
+                        {c.apporteurTotalHT > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-orange-500">Apporteur client</span>
+                            <span className="text-orange-500">— {fmt(c.estChantierMarine ? c.apporteurAdmin : c.apporteurAgente)}</span>
+                          </div>
+                        )}                      
+                        <div className="border-t border-gray-200 pt-1 mt-1 space-y-0.5">
                         {!c.estChantierMarine && <div className="flex justify-between font-bold"><span className="text-blue-700">{nomReferente(d)}</span><span className="text-blue-700">{fmt(c.gainsAgentePrevi)}</span></div>}
                         <div className="flex justify-between font-bold">
                           <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>{c.estChantierMarine ? 'Net' : nomFranchisee}</span>
@@ -1091,7 +1135,12 @@ export default function Finances() {
                       {r.honReel > 0 && <div className="flex justify-between"><span className="text-gray-500">Honoraires</span><span>+ {fmt(r.honReel)}</span></div>}
                       {r.comReelNet > 0 && <div className="flex justify-between"><span className="text-gray-500">Commissions</span><span>+ {fmt(r.comReelNet)}</span></div>}
                       {r.comApporteursReel > 0 && <div className="flex justify-between"><span className="text-gray-500">Com. apporteurs</span><span>+ {fmt(r.comApporteursReel)}</span></div>}
-                      {r.apporteurRembourse > 0 && <div className="flex justify-between"><span className="text-orange-500">Apporteur remboursé</span><span className="text-orange-500">— {fmt(r.apporteurRembourse)}</span></div>}
+                      {c.apporteurTotalHT > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-orange-500">Apporteur remboursé</span>
+                          <span className="text-orange-500">— {fmt(r.apporteurRembourse)}</span>
+                        </div>
+                      )}
                       <div className="border-t border-green-200 pt-1 mt-1 space-y-0.5">
                         {!c.estChantierMarine && <div className="flex justify-between font-bold"><span className="text-blue-700">{nomReferente(d)}</span><span className="text-blue-700">{fmt(r.gainAgenteReel)}</span></div>}
                         <div className="flex justify-between font-bold">
@@ -1193,6 +1242,7 @@ export default function Finances() {
       { label: 'Com. apport.', key: 'comApporteursNet',   type: 'normal' },
       { label: 'Hon. court.',  key: 'courtNet',           type: 'normal' },
       { label: 'Hon. AMO',     key: 'amoNet',             type: 'normal' },
+      { label: 'Apporteur',    key: 'apporteurRembourseNet', type: 'neg' },
       { label: nomFranchisee,  key: 'gainAdminReel',      type: 'total'  },
     ]
     const colonnesAgente = [
@@ -1200,6 +1250,7 @@ export default function Finances() {
       { label: 'Com. net',     key: 'comNet',             type: 'normal' },
       { label: 'Com. apport.', key: 'comApporteursNet',   type: 'normal' },
       { label: 'Hon. net',     key: 'honReel',            type: 'normal' },
+      { label: 'Apporteur',    key: 'apporteurRembourseNet', type: 'neg' },
       { label: 'Mes gains',    key: 'gainsAgenteReels',   type: 'total'  },
     ]
     const colonnes = isMarine ? colonnesMarine : colonnesAgente
@@ -1220,6 +1271,7 @@ export default function Finances() {
       { label: 'Com. net',     key: 'comNet',             type: 'normal' },
       { label: 'Com. apport.', key: 'comApporteursNet',   type: 'normal' },
       { label: 'Hon. net',     key: 'honReel',            type: 'normal' },
+      { label: 'Apporteur',    key: 'apporteurRembourseNet', type: 'neg' },
       { label: nomFranchisee,  key: 'gainAdminReel',      type: 'total'  },
     ]
     const getDossierMontant = (d, key, periodKey) => {
@@ -1286,7 +1338,7 @@ export default function Finances() {
   const renderSuiviCTPChart = (rowsReel, isAnnee = false) => {
     const mapPrevi = {}
     dossiers.forEach(d => {
-      const key = getKeyFromDate(d.date_signature_contrat, isAnnee)
+      const key = getKeyFromDate(d.date_signature_contrat || d.created_at, isAnnee)
       if (!key) return
       if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, comApport: 0, hon: 0, partAgentes: 0, apporteur: 0 }
       const c = calculer(d)
@@ -1350,7 +1402,7 @@ export default function Finances() {
     // Agrégation prévi par mois pour l'année
     const mapPrevi = {}
     dossiers.forEach(d => {
-      const key = getKeyFromDate(d.date_signature_contrat, false)
+      const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
       if (!key || !key.startsWith(String(anneeSelectionnee))) return
       if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, comApport: 0, hon: 0, partAgentes: 0, apporteur: 0, royalties: 0 }
       const c = calculer(d)
@@ -1378,7 +1430,18 @@ export default function Finances() {
       totP.hon         = round2(totP.hon         + (p.hon||0))
       totP.redev       = round2(totP.redev       + redev)
       totP.partAgentes = round2(totP.partAgentes + (p.partAgentes||0))
-      totP.apporteur   = round2(totP.apporteur   + (p.apporteur||0))
+      totP.apporteur = round2(dossiers.reduce((s, d) => {
+        const c = calculer(d)
+        if (!c.apporteurTotalHT || !c.finance?.apporteur?.lines?.length) return s
+        return s + round2(c.finance.apporteur.lines.reduce((sum, ligne) => {
+          const devisOriginal = (d.devis_artisans || []).find(dv => dv.id === ligne.devisId)
+          if (!devisOriginal?.date_signature) return sum
+          const datePrev = new Date(devisOriginal.date_signature)
+          datePrev.setDate(datePrev.getDate() + 45)
+          if (datePrev.getFullYear() === anneeSelectionnee) return round2(sum + ligne.agente)
+          return sum
+        }, 0))
+      }, 0))
       totP.royalties   = round2(totP.royalties   + (p.royalties||0))
       totR.frais       = round2(totR.frais       + (r.fraisNet||0))
       totR.com         = round2(totR.com         + (r.comReelNet||0))
@@ -1386,13 +1449,67 @@ export default function Finances() {
       totR.hon         = round2(totR.hon         + (r.honReel||0))
       totR.redev       = round2(totR.redev       + redev)
       totR.partAgentes = round2(totR.partAgentes + (r.gainsAgenteReels||0))
+      // Royalties réelles
+      totR.royalties   = round2(totR.royalties   + round2((r.comReelNet||0) * (0.05 / (1 - 0.05))))
+      
+      // Apporteurs remboursés réels
+      const apporteurReel = dossiers.reduce((s, d) => {
+        const lignes = (d.suivi_financier || []).filter(sf =>
+          sf.type_echeance === 'apporteur_agente' &&
+          sf.statut_ctp === 'rembourse' &&
+          sf.date_paiement &&
+          getKeyFromDate(sf.date_paiement, false) === cle
+        )
+        if (lignes.length === 0) return s
+        // Montant réel par ligne de suivi — pas le total dossier
+        const c = calculerReel(d)
+        const finance = c.finance?.apporteur?.lines || []
+        return s + round2(finance.reduce((sum, ligne) => {
+          const devisOriginal = (d.devis_artisans || []).find(dv => dv.id === ligne.devisId)
+          const artId = devisOriginal?.artisan_id || devisOriginal?.artisan?.id
+          const sf = (d.suivi_financier || []).find(s =>
+            s.type_echeance === 'apporteur_agente' &&
+            s.artisan_id === artId &&
+            s.statut_ctp === 'rembourse' &&
+            s.date_paiement &&
+            getKeyFromDate(s.date_paiement, false) === cle
+          )
+          return sf ? sum + ligne.agente : sum
+        }, 0))
+      }, 0)
+
+      totR.apporteur = round2(totR.apporteur + apporteurReel)
+    })
+
+    console.log('=== CR ANNEE', anneeSelectionnee, '===')
+    console.log('PRÉVI:', JSON.parse(JSON.stringify(totP)))
+    console.log('RÉEL:', JSON.parse(JSON.stringify(totR)))
+    clesMois.forEach(cle => {
+      const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}
+      console.log(cle, {
+        fraisNet: r.fraisNet,
+        comReelNet: r.comReelNet,
+        honReel: r.honReel,
+        comApporteursReel: r.comApporteursReel,
+        gainsAgenteReels: r.gainsAgenteReels,
+        royaltiesCalc: round2((r.comReelNet||0) * (0.05 / 0.95)),
+        apporteurReel: dossiers.reduce((s, d) => {
+          const aMatch = (d.suivi_financier || []).some(sf =>
+            sf.type_echeance === 'apporteur_agente' &&
+            sf.statut_ctp === 'rembourse' &&
+            sf.date_paiement &&
+            getKeyFromDate(sf.date_paiement, false) === cle
+          )
+          return aMatch ? s + calculerReel(d).apporteurRembourse : s
+        }, 0)
+      })
     })
 
     const previProduits = round2(totP.frais + totP.com + totP.comApport + totP.hon + totP.redev)
     const previCharges  = round2(totP.partAgentes + totP.apporteur + totP.royalties)
     const previNet      = round2(previProduits - previCharges)
     const reelProduits  = round2(totR.frais + totR.com + totR.comApport + totR.hon + totR.redev)
-    const reelCharges   = round2(totR.partAgentes)
+    const reelCharges = round2(totR.partAgentes + totR.royalties + totR.apporteur)
     const reelNet       = round2(reelProduits - reelCharges)
 
     const ecart = (p, r) => {
@@ -1477,9 +1594,9 @@ export default function Finances() {
                 <td colSpan={4} className="px-5 py-1.5 text-xs font-medium text-gray-400 uppercase tracking-wide">Charges</td>
               </tr>
               {[
-                { label: '(−) Royalties illiCO',      p: totP.royalties,   r: 0 },
+                { label: '(−) Royalties illiCO',      p: totP.royalties,   r: totR.royalties },
                 { label: '(−) Part agentes',          p: totP.partAgentes, r: totR.partAgentes },
-                { label: '(−) Apporteurs remboursés', p: totP.apporteur,   r: 0 },
+                { label: '(−) Apporteurs remboursés', p: totP.apporteur,   r: totR.apporteur },
               ].map(({ label, p, r }) => (
                 <tr key={label} className="hover:bg-gray-50">
                   <td className="px-5 py-2.5 text-gray-500 text-xs">{label}</td>
@@ -1525,7 +1642,7 @@ export default function Finances() {
     const crPourCle = (cle) => {
       const mapPrevi = {}
       dossiers.forEach(d => {
-        const key = getKeyFromDate(d.date_signature_contrat, false)
+        const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
         if (!key) return
         if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, comApport: 0, hon: 0, partAgentes: 0, apporteur: 0, royalties: 0 }
         const c = calculer(d)
@@ -1547,8 +1664,12 @@ export default function Finances() {
       const previCharges  = round2((p.partAgentes||0) + (p.apporteur||0) + (p.royalties||0))
       const previNet      = round2(previProduits - previCharges)
       const reelProduits  = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + redevMois)
-      const reelCharges   = round2((r.gainsAgenteReels||0) + (r.gainAdminReel ? 0 : 0))
-      const reelNet       = round2(reelProduits - reelCharges)
+      const reelCharges = round2(
+        (r.gainsAgenteReels||0) +
+        round2((r.comReelNet||0) / (1 - 0.05) * 0.05)
+      )
+      const reelNet = round2(reelProduits - reelCharges)
+      
 
       const ecart = (pv, rv) => {
         const e = round2(rv - pv)
@@ -1563,7 +1684,7 @@ export default function Finances() {
         { label: '(+) Redevances agentes', p: redevMois,  r: redevMois },
       ]
       const lignesCharges = [
-        { label: '(−) Royalties illiCO',      p: p.royalties||0,   r: 0 },
+        { label: '(−) Royalties illiCO',      p: p.royalties||0,   r: round2((r.comReelNet||0) / (1 - 0.05) * 0.05) },
         { label: '(−) Part agentes',          p: p.partAgentes||0, r: r.gainsAgenteReels||0 },
         { label: '(−) Apporteurs remboursés', p: p.apporteur||0,   r: 0 },
       ]
@@ -2004,7 +2125,7 @@ export default function Finances() {
       : dossiersAgentes)
 
     listeDossiers.forEach(d => {
-      const key = getKeyFromDate(d.date_signature_contrat, isAnnee)
+      const key = getKeyFromDate(d.date_signature_contrat || d.created_at, isAnnee)
       if (!key) return
       if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, comApport: 0, hon: 0, apporteur: 0 }
       const c = calculer(d)
@@ -2274,7 +2395,7 @@ export default function Finances() {
               </div>
               <div className="bg-white border border-gray-200 rounded-xl p-4">
                 <p className="text-xs text-gray-400 mb-1">Chantiers</p>
-                <p className="text-xl font-bold text-gray-800">{dossiers.length}</p>
+                <p className="text-xl font-bold text-gray-800">{chantiersAnneeEnCours}</p>
               </div>
             </>
           ) : (
