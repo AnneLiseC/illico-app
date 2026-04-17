@@ -270,8 +270,8 @@ export default function Finances() {
       sommeRoyalties: round2(f.royalties.total),
 
       // Gains prévisionnels nets
-      gainsAgentePrevi: round2(f.gains.nets.agente),
-      gainsAdminPrevi:  round2(f.gains.nets.admin),
+      gainsAgentePrevi: round2(f.gains.netsPrevi.agente),
+      gainsAdminPrevi:  round2(f.gains.netsPrevi.admin),
 
       // Prévisionnel frais
       fraisNetPrevi:    round2(f.frais.netPrevi),
