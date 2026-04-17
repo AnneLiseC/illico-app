@@ -649,6 +649,7 @@ export default function Finances() {
     comAgenteNet: 0, comApporteursAgenteNet: 0,
     fraisAgenteNet: 0, honAgenteNet: 0,
     apporteurRembourseNet: 0,
+    partAgentesNet: 0,
     dossierIds: new Set(),
   })
 
@@ -739,7 +740,9 @@ export default function Finances() {
       agg.comReelNet = agg.comNet
       agg.comApporteursReel = agg.comApporteursNet
       agg.gainsAgenteReels = round2(agg.fraisAgenteNet + agg.honAgenteNet + agg.comAgenteNet + agg.comApporteursAgenteNet)
-      agg.gainAdminReel = round2(agg.fraisNet + agg.honReel + agg.comReelNet + agg.comApporteursReel - agg.gainsAgenteReels - agg.apporteurRembourseNet)    })
+      agg.partAgentesNet = agg.gainsAgenteReels
+      agg.gainAdminReel = round2(agg.fraisNet + agg.honReel + agg.comReelNet + agg.comApporteursReel - agg.gainsAgenteReels - agg.apporteurRembourseNet)
+    })
 
     return Object.entries(map)
       .map(([key, agg]) => [key, { ...agg, dossierIds: Array.from(agg.dossierIds) }])
@@ -1267,12 +1270,13 @@ export default function Finances() {
 
   const renderTousPeriode = (listeDossiers, rows, colLabel) => {
     const colonnes = [
-      { label: 'Frais net',    key: 'fraisNet',          type: 'normal' },
-      { label: 'Com. net',     key: 'comNet',             type: 'normal' },
-      { label: 'Com. apport.', key: 'comApporteursNet',   type: 'normal' },
-      { label: 'Hon. net',     key: 'honReel',            type: 'normal' },
-      { label: 'Apporteur',    key: 'apporteurRembourseNet', type: 'neg' },
-      { label: nomFranchisee,  key: 'gainAdminReel',      type: 'total'  },
+      { label: 'Frais net',      key: 'fraisNet',              type: 'normal' },
+      { label: 'Com. net',       key: 'comNet',                type: 'normal' },
+      { label: 'Com. apport.',   key: 'comApporteursNet',      type: 'normal' },
+      { label: 'Hon. net',       key: 'honReel',               type: 'normal' },
+      { label: 'Part agentes',   key: 'partAgentesNet',        type: 'neg'    },
+      { label: 'Apporteur',      key: 'apporteurRembourseNet', type: 'neg'    },
+      { label: 'Résultat CTP',   key: 'gainAdminReel',         type: 'total'  },
     ]
     const getDossierMontant = (d, key, periodKey) => {
       const agg = agrégerParPaiement([d], periodKey?.includes('-') ? false : true)
@@ -1385,6 +1389,437 @@ export default function Finances() {
 
     return <SuiviCTPChart labels={labels} produitsData={produitsData} chargesData={chargesData} netData={netData} chartId={chartId} />
   }
+  // ── SUIVI FINANCIER (Agence et CTP) ──────────────────────────────────────
+
+  // mode = 'agence' ou 'ctp'
+  // Agence = tous les encaissements bruts
+  // CTP = Agence − part agentes + redevances
+  const renderSuiviFinancier = (mode) => {
+    const isCTP = mode === 'ctp'
+    const rowsReel = agrégerParPaiement(dossiers, false)
+    const objectifCle = 'agence'
+    const objectifMensuel = round2(getObjectif(objectifCle) / 12)
+
+    // Calcul réel net selon mode
+    const getReelNet = (r, redev) => {
+      const brut = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + redev)
+      if (isCTP) return round2(brut - (r.gainsAgenteReels||0) - (r.apporteurRembourseNet||0))
+      return brut
+    }
+
+    // Compte de résultat pour une clé de période donnée
+    const crPourCle = (cle) => {
+      const mapPrevi = {}
+      dossiers.forEach(d => {
+        const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
+        if (!key) return
+        if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, comApport: 0, hon: 0, partAgentes: 0, apporteur: 0, royalties: 0 }
+        const c = calculer(d)
+        mapPrevi[key].frais       = round2(mapPrevi[key].frais       + c.fraisNetPrevi)
+        mapPrevi[key].com         = round2(mapPrevi[key].com         + c.netComTous)
+        mapPrevi[key].comApport   = round2(mapPrevi[key].comApport   + c.comApporteursPrevi)
+        mapPrevi[key].hon         = round2(mapPrevi[key].hon         + c.honPreviNet)
+        mapPrevi[key].partAgentes = round2(mapPrevi[key].partAgentes + c.gainsAgentePreviTotal)
+        mapPrevi[key].apporteur   = round2(mapPrevi[key].apporteur   + c.apporteurTotalHT)
+        mapPrevi[key].royalties   = round2(mapPrevi[key].royalties   + c.royaltiesTotal)
+      })
+      const [annee, mois] = cle.split('-')
+      const redevMois = redevances.filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
+      const p = mapPrevi[cle] || {}
+      const r = rowsReel.find(([k]) => k === cle)?.[1] || {}
+
+      const previProduits = round2((p.frais||0) + (p.com||0) + (p.hon||0) + (p.comApport||0) + (isCTP ? redevMois : 0))
+      const previCharges  = isCTP ? round2((p.partAgentes||0) + (p.apporteur||0) + (p.royalties||0)) : 0
+      const previNet      = round2(previProduits - previCharges)
+      const reelProduits  = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redevMois : 0))
+      const reelCharges   = isCTP ? round2((r.gainsAgenteReels||0) + round2((r.comReelNet||0) * (0.05 / 0.95)) + (r.apporteurRembourseNet||0)) : 0
+      const reelNet       = round2(reelProduits - reelCharges)
+
+      const ecart = (pv, rv) => {
+        const e = round2(rv - pv)
+        return <span className={`text-xs font-medium ${e >= 0 ? 'text-green-600' : 'text-red-500'}`}>{e >= 0 ? '+' : ''}{fmt(e)}</span>
+      }
+
+      const lignesProduits = [
+        { label: '(+) Frais consultation', p: p.frais||0, r: r.fraisNet||0 },
+        { label: '(+) Commissions',        p: p.com||0,   r: r.comReelNet||0 },
+        { label: '(+) Honoraires',         p: p.hon||0,   r: r.honReel||0 },
+        { label: '(+) Com. apporteurs',    p: p.comApport||0, r: r.comApporteursReel||0 },
+        ...(isCTP ? [{ label: '(+) Redevances agentes', p: redevMois, r: redevMois }] : []),
+      ]
+      const lignesCharges = isCTP ? [
+        { label: '(−) Royalties illiCO',      p: p.royalties||0,   r: round2((r.comReelNet||0) * (0.05 / 0.95)) },
+        { label: '(−) Part agentes',          p: p.partAgentes||0, r: r.gainsAgenteReels||0 },
+        { label: '(−) Apporteurs remboursés', p: p.apporteur||0,   r: r.apporteurRembourseNet||0 },
+      ] : []
+
+      return (
+        <div className="mt-3 border-t border-gray-100 pt-3">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="text-left px-2 py-1 text-gray-400 uppercase w-1/2">Ligne</th>
+                <th className="text-right px-2 py-1 text-gray-400 uppercase">Prévi</th>
+                <th className="text-right px-2 py-1 text-gray-400 uppercase">Réel</th>
+                <th className="text-right px-2 py-1 text-gray-400 uppercase">Écart</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              <tr className="bg-gray-50"><td colSpan={4} className="px-2 py-1 text-xs font-medium text-gray-400 uppercase">Gains</td></tr>
+              {lignesProduits.map(({ label, p: pv, r: rv }) => (
+                <tr key={label}>
+                  <td className="px-2 py-1.5 text-gray-500">{label}</td>
+                  <td className="px-2 py-1.5 text-right text-gray-500">{fmt(pv)}</td>
+                  <td className="px-2 py-1.5 text-right text-green-700 font-medium">{fmt(rv)}</td>
+                  <td className="px-2 py-1.5 text-right">{ecart(pv, rv)}</td>
+                </tr>
+              ))}
+              <tr className="bg-gray-50 border-t border-gray-200">
+                <td className="px-2 py-1.5 font-medium text-gray-700">= Total gains</td>
+                <td className="px-2 py-1.5 text-right font-medium text-gray-700">{fmt(previProduits)}</td>
+                <td className="px-2 py-1.5 text-right font-medium text-green-700">{fmt(reelProduits)}</td>
+                <td className="px-2 py-1.5 text-right">{ecart(previProduits, reelProduits)}</td>
+              </tr>
+              {isCTP && <>
+                <tr className="bg-gray-50"><td colSpan={4} className="px-2 py-1 text-xs font-medium text-gray-400 uppercase">Charges</td></tr>
+                {lignesCharges.map(({ label, p: pv, r: rv }) => (
+                  <tr key={label}>
+                    <td className="px-2 py-1.5 text-gray-500">{label}</td>
+                    <td className="px-2 py-1.5 text-right text-gray-500">{fmt(pv)}</td>
+                    <td className="px-2 py-1.5 text-right text-red-500 font-medium">{fmt(rv)}</td>
+                    <td className="px-2 py-1.5 text-right">{ecart(pv, rv)}</td>
+                  </tr>
+                ))}
+                <tr className="bg-gray-50 border-t border-gray-200">
+                  <td className="px-2 py-1.5 font-medium text-gray-700">= Total charges</td>
+                  <td className="px-2 py-1.5 text-right font-medium text-gray-700">{fmt(previCharges)}</td>
+                  <td className="px-2 py-1.5 text-right font-medium text-red-500">{fmt(reelCharges)}</td>
+                  <td className="px-2 py-1.5 text-right">{ecart(previCharges, reelCharges)}</td>
+                </tr>
+              </>}
+              <tr className="bg-blue-50 border-t-2 border-blue-100">
+                <td className="px-2 py-2 font-bold text-blue-800">= {isCTP ? 'Résultat net CTP' : 'Total encaissé agence'}</td>
+                <td className="px-2 py-2 text-right font-bold text-gray-600">{fmt(previNet)}</td>
+                <td className={`px-2 py-2 text-right font-bold ${reelNet >= 0 ? 'text-blue-800' : 'text-red-600'}`}>{fmt(reelNet)}</td>
+                <td className="px-2 py-2 text-right">{ecart(previNet, reelNet)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+
+    const allKeys = new Set([
+      ...rowsReel.map(([k]) => k),
+      ...redevances.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`),
+    ])
+    const cles = Array.from(allKeys).sort((a, b) => b.localeCompare(a))
+
+    // Graphique
+    const chartLabels = cles.map(cle => { const [a, m] = cle.split('-'); return `${MOIS[parseInt(m)].slice(0,3)}. ${a}` })
+    const chartProduits = cles.map(cle => {
+      const [a, m] = cle.split('-')
+      const r = rowsReel.find(([k]) => k === cle)?.[1] || {}
+      const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === parseInt(a) && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ttc||540), 0)
+      return round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0))
+    })
+    const chartCharges = cles.map(cle => {
+      const r = rowsReel.find(([k]) => k === cle)?.[1] || {}
+      return isCTP ? -round2((r.gainsAgenteReels||0) + (r.apporteurRembourseNet||0)) : 0
+    })
+    const chartNet = cles.map((_, i) => round2(chartProduits[i] + chartCharges[i]))
+
+    // Sous-onglets Par mois / Par année
+    const [sfSousOnglet, setSfSousOnglet] = useState('mois')
+
+    // Compte de résultat annuel
+    const renderAnnuel = () => {
+      const annees = []
+      for (let a = new Date().getFullYear(); a >= 2023; a--) annees.push(a)
+      const rowsReelAnnee = agrégerParPaiement(dossiers, false)
+      const clesMois = Array.from(new Set([
+        ...rowsReelAnnee.map(([k]) => k),
+        ...redevances.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`),
+      ])).filter(k => k.startsWith(String(anneeSelectionnee))).sort()
+
+      const mapPrevi = {}
+      dossiers.forEach(d => {
+        const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
+        if (!key || !key.startsWith(String(anneeSelectionnee))) return
+        if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, comApport: 0, hon: 0, partAgentes: 0, apporteur: 0, royalties: 0 }
+        const c = calculer(d)
+        mapPrevi[key].frais       = round2(mapPrevi[key].frais       + c.fraisNetPrevi)
+        mapPrevi[key].com         = round2(mapPrevi[key].com         + c.netComTous)
+        mapPrevi[key].comApport   = round2(mapPrevi[key].comApport   + c.comApporteursPrevi)
+        mapPrevi[key].hon         = round2(mapPrevi[key].hon         + c.honPreviNet)
+        mapPrevi[key].partAgentes = round2(mapPrevi[key].partAgentes + c.gainsAgentePreviTotal)
+        mapPrevi[key].royalties   = round2(mapPrevi[key].royalties   + c.royaltiesTotal)
+      })
+
+      const totP = { frais: 0, com: 0, comApport: 0, hon: 0, redev: 0, partAgentes: 0, apporteur: 0, royalties: 0 }
+      const totR = { frais: 0, com: 0, comApport: 0, hon: 0, redev: 0, partAgentes: 0, royalties: 0, apporteur: 0 }
+
+      clesMois.forEach(cle => {
+        const [, m] = cle.split('-')
+        const redev = redevances.filter(r => r.statut === 'regle' && r.annee === anneeSelectionnee && r.mois === parseInt(m)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
+        const p = mapPrevi[cle] || {}
+        const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}
+        totP.frais       = round2(totP.frais       + (p.frais||0))
+        totP.com         = round2(totP.com         + (p.com||0))
+        totP.comApport   = round2(totP.comApport   + (p.comApport||0))
+        totP.hon         = round2(totP.hon         + (p.hon||0))
+        totP.redev       = round2(totP.redev       + redev)
+        totP.partAgentes = round2(totP.partAgentes + (p.partAgentes||0))
+        totP.royalties   = round2(totP.royalties   + (p.royalties||0))
+        totP.apporteur   = round2(dossiers.reduce((s, d) => {
+          const c = calculer(d)
+          if (!c.apporteurTotalHT || !c.finance?.apporteur?.lines?.length) return s
+          return s + round2(c.finance.apporteur.lines.reduce((sum, ligne) => {
+            const dv = (d.devis_artisans || []).find(dv => dv.id === ligne.devisId)
+            if (!dv?.date_signature) return sum
+            const datePrev = new Date(dv.date_signature)
+            datePrev.setDate(datePrev.getDate() + 45)
+            if (datePrev.getFullYear() === anneeSelectionnee) return round2(sum + ligne.agente)
+            return sum
+          }, 0))
+        }, 0))
+        totR.frais       = round2(totR.frais       + (r.fraisNet||0))
+        totR.com         = round2(totR.com         + (r.comReelNet||0))
+        totR.comApport   = round2(totR.comApport   + (r.comApporteursReel||0))
+        totR.hon         = round2(totR.hon         + (r.honReel||0))
+        totR.redev       = round2(totR.redev       + redev)
+        totR.partAgentes = round2(totR.partAgentes + (r.gainsAgenteReels||0))
+        totR.royalties   = round2(totR.royalties   + round2((r.comReelNet||0) * (0.05 / 0.95)))
+        const apporteurReel = dossiers.reduce((s, d) => {
+          const lignes = (d.suivi_financier || []).filter(sf =>
+            sf.type_echeance === 'apporteur_agente' && sf.statut_ctp === 'rembourse' &&
+            sf.date_paiement && getKeyFromDate(sf.date_paiement, false) === cle
+          )
+          if (lignes.length === 0) return s
+          const c = calculerReel(d)
+          return s + round2((c.finance?.apporteur?.lines || []).reduce((sum, ligne) => {
+            const dv = (d.devis_artisans || []).find(dv => dv.id === ligne.devisId)
+            const artId = dv?.artisan_id || dv?.artisan?.id
+            const sf = (d.suivi_financier || []).find(s =>
+              s.type_echeance === 'apporteur_agente' && s.artisan_id === artId &&
+              s.statut_ctp === 'rembourse' && s.date_paiement &&
+              getKeyFromDate(s.date_paiement, false) === cle
+            )
+            return sf ? sum + ligne.agente : sum
+          }, 0))
+        }, 0)
+        totR.apporteur = round2(totR.apporteur + apporteurReel)
+      })
+
+      const previProduits = round2(totP.frais + totP.com + totP.comApport + totP.hon + (isCTP ? totP.redev : 0))
+      const previCharges  = isCTP ? round2(totP.partAgentes + totP.apporteur + totP.royalties) : 0
+      const previNet      = round2(previProduits - previCharges)
+      const reelProduits  = round2(totR.frais + totR.com + totR.comApport + totR.hon + (isCTP ? totR.redev : 0))
+      const reelCharges   = isCTP ? round2(totR.partAgentes + totR.royalties + totR.apporteur) : 0
+      const reelNet       = round2(reelProduits - reelCharges)
+
+      const ecart = (p, r) => {
+        const e = round2(r - p)
+        return <span className={`text-xs font-medium ${e >= 0 ? 'text-green-600' : 'text-red-500'}`}>{e >= 0 ? '+' : ''}{fmt(e)}</span>
+      }
+
+      const chartLabelsAnnee = clesMois.map(cle => { const [, m] = cle.split('-'); return MOIS[parseInt(m)].slice(0, 3) })
+      const chartProduitsAnnee = clesMois.map(cle => {
+        const [, m] = cle.split('-')
+        const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}
+        const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === anneeSelectionnee && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ttc||540), 0)
+        return round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0))
+      })
+      const chartChargesAnnee = clesMois.map(cle => {
+        const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}
+        return isCTP ? -round2((r.gainsAgenteReels||0) + (r.apporteurRembourseNet||0)) : 0
+      })
+      const chartNetAnnee = clesMois.map((_, i) => round2(chartProduitsAnnee[i] + chartChargesAnnee[i]))
+
+      return (
+        <div className="space-y-5">
+          <ObjectifBar
+            label={isCTP ? 'Objectif CA CTP (résultat net)' : 'Objectif CA agence (encaissements bruts)'}
+            reel={reelNet}
+            objectifMontant={getObjectif('agence')}
+            cible="agence"
+            canEdit={isMarine}
+            onSave={sauvegarderObjectif}
+          />
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
+              <span className="text-sm font-medium text-gray-700">Compte de résultat {isCTP ? 'CTP' : 'Agence'}</span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">réel encaissé</span>
+                <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(parseInt(e.target.value))}
+                  className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400">
+                  {annees.map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left px-5 py-2 text-xs font-medium text-gray-400 uppercase w-1/2">Ligne</th>
+                  <th className="text-right px-4 py-2 text-xs font-medium text-gray-400 uppercase">Prévisionnel</th>
+                  <th className="text-right px-4 py-2 text-xs font-medium text-gray-400 uppercase">Réel</th>
+                  <th className="text-right px-5 py-2 text-xs font-medium text-gray-400 uppercase">Écart</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                <tr className="bg-gray-50"><td colSpan={4} className="px-5 py-1.5 text-xs font-medium text-gray-400 uppercase">Gains</td></tr>
+                {[
+                  { label: '(+) Frais consultation', p: totP.frais,     r: totR.frais },
+                  { label: '(+) Commissions',        p: totP.com,       r: totR.com },
+                  { label: '(+) Honoraires',         p: totP.hon,       r: totR.hon },
+                  { label: '(+) Com. apporteurs',    p: totP.comApport, r: totR.comApport },
+                  ...(isCTP ? [{ label: '(+) Redevances agentes', p: totP.redev, r: totR.redev }] : []),
+                ].map(({ label, p, r }) => (
+                  <tr key={label} className="hover:bg-gray-50">
+                    <td className="px-5 py-2.5 text-gray-500 text-xs">{label}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-500 text-xs">{fmt(p)}</td>
+                    <td className="px-4 py-2.5 text-right text-green-700 text-xs font-medium">{fmt(r)}</td>
+                    <td className="px-5 py-2.5 text-right">{ecart(p, r)}</td>
+                  </tr>
+                ))}
+                <tr className="bg-gray-50 border-t border-gray-200">
+                  <td className="px-5 py-2.5 font-medium text-gray-700 text-xs">= Total gains</td>
+                  <td className="px-4 py-2.5 text-right font-medium text-gray-700 text-xs">{fmt(previProduits)}</td>
+                  <td className="px-4 py-2.5 text-right font-medium text-green-700 text-xs">{fmt(reelProduits)}</td>
+                  <td className="px-5 py-2.5 text-right">{ecart(previProduits, reelProduits)}</td>
+                </tr>
+                {isCTP && <>
+                  <tr className="bg-gray-50"><td colSpan={4} className="px-5 py-1.5 text-xs font-medium text-gray-400 uppercase">Charges</td></tr>
+                  {[
+                    { label: '(−) Royalties illiCO',      p: totP.royalties,   r: totR.royalties },
+                    { label: '(−) Part agentes',          p: totP.partAgentes, r: totR.partAgentes },
+                    { label: '(−) Apporteurs remboursés', p: totP.apporteur,   r: totR.apporteur },
+                  ].map(({ label, p, r }) => (
+                    <tr key={label} className="hover:bg-gray-50">
+                      <td className="px-5 py-2.5 text-gray-500 text-xs">{label}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-500 text-xs">{fmt(p)}</td>
+                      <td className="px-4 py-2.5 text-right text-red-500 text-xs font-medium">{fmt(r)}</td>
+                      <td className="px-5 py-2.5 text-right">{ecart(p, r)}</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-gray-50 border-t border-gray-200">
+                    <td className="px-5 py-2.5 font-medium text-gray-700 text-xs">= Total charges</td>
+                    <td className="px-4 py-2.5 text-right font-medium text-gray-700 text-xs">{fmt(previCharges)}</td>
+                    <td className="px-4 py-2.5 text-right font-medium text-red-500 text-xs">{fmt(reelCharges)}</td>
+                    <td className="px-5 py-2.5 text-right">{ecart(previCharges, reelCharges)}</td>
+                  </tr>
+                </>}
+                <tr className="bg-blue-50 border-t-2 border-blue-100">
+                  <td className="px-5 py-3 font-bold text-blue-800 text-sm">= {isCTP ? `Résultat net CTP ${anneeSelectionnee}` : `Encaissements bruts agence ${anneeSelectionnee}`}</td>
+                  <td className="px-4 py-3 text-right font-bold text-gray-600 text-sm">{fmt(previNet)}</td>
+                  <td className={`px-4 py-3 text-right font-bold text-sm ${reelNet >= 0 ? 'text-blue-800' : 'text-red-600'}`}>{fmt(reelNet)}</td>
+                  <td className="px-5 py-3 text-right">{ecart(previNet, reelNet)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <SuiviCTPChart
+            labels={chartLabelsAnnee}
+            produitsData={chartProduitsAnnee}
+            chargesData={chartChargesAnnee}
+            netData={chartNetAnnee}
+            chartId={`chart_${mode}_annee_${anneeSelectionnee}`}
+          />
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-5">
+        <div className="flex gap-2">
+          {[{ key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
+            <button key={key} onClick={() => setSfSousOnglet(key)}
+              className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sfSousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white text-gray-600 hover:border-gray-300'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {sfSousOnglet === 'mois' && (
+          <div className="space-y-5">
+            <ObjectifBar
+              label={isCTP ? `Objectif mensuel CTP (${fmt(objectifMensuel)}/mois)` : `Objectif mensuel agence (${fmt(objectifMensuel)}/mois)`}
+              reel={(() => {
+                const moisCourant = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+                const r = rowsReel.find(([k]) => k === moisCourant)?.[1] || {}
+                const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === new Date().getFullYear() && rv.mois === new Date().getMonth() + 1).reduce((s, rv) => s + (rv.montant_ttc||540), 0)
+                return getReelNet(r, redev)
+              })()}
+              objectifMontant={objectifMensuel}
+              cible="agence"
+              canEdit={isMarine}
+              onSave={sauvegarderObjectif}
+            />
+            <SuiviCTPChart
+              labels={chartLabels}
+              produitsData={chartProduits}
+              chargesData={chartCharges}
+              netData={chartNet}
+              chartId={`chart_${mode}_mois`}
+            />
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left px-4 py-2 text-xs font-medium text-gray-400 uppercase">Mois</th>
+                    <th className="text-right px-3 py-2 text-xs font-medium text-gray-400 uppercase">Réel encaissé</th>
+                    <th className="text-right px-3 py-2 text-xs font-medium text-gray-400 uppercase">Objectif mois</th>
+                    <th className="text-right px-4 py-2 text-xs font-medium text-gray-400 uppercase">vs Objectif</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {cles.map((cle, i) => {
+                    const [a, m] = cle.split('-')
+                    const label = `${MOIS[parseInt(m)].slice(0, 3)}. ${a}`
+                    const r = rowsReel.find(([k]) => k === cle)?.[1] || {}
+                    const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === parseInt(a) && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ttc||540), 0)
+                    const reelNet = getReelNet(r, redev)
+                    const ecartObj = round2(reelNet - objectifMensuel)
+                    const isOpen = moisOuvert === `${mode}_${cle}`
+                    const bg = i % 2 === 0 ? '' : 'bg-gray-50'
+                    return (
+                      <React.Fragment key={cle}>
+                        <tr className={`cursor-pointer hover:bg-blue-50 ${bg}`} onClick={() => setMoisOuvert(isOpen ? null : `${mode}_${cle}`)}>
+                          <td className="px-4 py-2.5 font-medium text-gray-700 flex items-center gap-2">
+                            <span>{label}</span>
+                            <span className="text-gray-300 text-xs">{isOpen ? '▲' : '▼'}</span>
+                          </td>
+                          <td className={`px-3 py-2.5 text-right font-medium ${reelNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(reelNet)}</td>
+                          <td className="px-3 py-2.5 text-right text-gray-400">{fmt(objectifMensuel)}</td>
+                          <td className={`px-4 py-2.5 text-right font-medium ${ecartObj >= 0 ? 'text-green-600' : 'text-red-500'}`}>{ecartObj >= 0 ? '+' : ''}{fmt(ecartObj)}</td>
+                        </tr>
+                        {isOpen && (
+                          <tr className={bg}>
+                            <td colSpan={4} className="px-4 pb-3">{crPourCle(cle)}</td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    )
+                  })}
+                  <tr className="bg-gray-50 border-t-2 border-gray-300 font-bold text-xs">
+                    <td className="px-4 py-2.5 text-gray-700">Total</td>
+                    <td className={`px-3 py-2.5 text-right ${cles.reduce((s, cle) => { const [a,m]=cle.split('-'); const r=rowsReel.find(([k])=>k===cle)?.[1]||{}; const redev=redevances.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ttc||540),0); return s+getReelNet(r,redev) },0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                      {fmt(cles.reduce((s, cle) => { const [a,m]=cle.split('-'); const r=rowsReel.find(([k])=>k===cle)?.[1]||{}; const redev=redevances.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ttc||540),0); return s+getReelNet(r,redev) },0))}
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-gray-400">{fmt(objectifMensuel * cles.length)}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-500">—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {sfSousOnglet === 'annee' && renderAnnuel()}
+      </div>
+    )
+  }
+
   // ── SUIVI CTP par période ──────────────────────────────────────────────────
 
   const renderCTPAnnee = () => {
@@ -1479,30 +1914,6 @@ export default function Finances() {
       }, 0)
 
       totR.apporteur = round2(totR.apporteur + apporteurReel)
-    })
-
-    console.log('=== CR ANNEE', anneeSelectionnee, '===')
-    console.log('PRÉVI:', JSON.parse(JSON.stringify(totP)))
-    console.log('RÉEL:', JSON.parse(JSON.stringify(totR)))
-    clesMois.forEach(cle => {
-      const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}
-      console.log(cle, {
-        fraisNet: r.fraisNet,
-        comReelNet: r.comReelNet,
-        honReel: r.honReel,
-        comApporteursReel: r.comApporteursReel,
-        gainsAgenteReels: r.gainsAgenteReels,
-        royaltiesCalc: round2((r.comReelNet||0) * (0.05 / 0.95)),
-        apporteurReel: dossiers.reduce((s, d) => {
-          const aMatch = (d.suivi_financier || []).some(sf =>
-            sf.type_echeance === 'apporteur_agente' &&
-            sf.statut_ctp === 'rembourse' &&
-            sf.date_paiement &&
-            getKeyFromDate(sf.date_paiement, false) === cle
-          )
-          return aMatch ? s + calculerReel(d).apporteurRembourse : s
-        }, 0)
-      })
     })
 
     const previProduits = round2(totP.frais + totP.com + totP.comApport + totP.hon + totP.redev)
@@ -1993,7 +2404,7 @@ export default function Finances() {
           objectifMontant={getObjectif('agente', profile?.id)}
           cible="agente"
           agenteId={profile?.id}
-          canEdit={false}
+          canEdit={true}
           onSave={sauvegarderObjectif}
         />
 
@@ -2055,58 +2466,262 @@ export default function Finances() {
     </div>
   )
 
+  // ── SUIVI FINANCIER AGENTE ─────────────────────────────────────────────────
+
+  const renderSuiviAgenteFinancier = () => {
+    const rowsReel = agrégerParPaiement(mesDossiers, false)
+    const objectifMensuel = round2(getObjectif('agente', profile?.id) / 12)
+    const objectifAgence  = getObjectif('agence')
+
+    const getReelNetAgente = (agg, redev) =>
+      round2((agg.gainsAgenteReels||0) - redev)
+
+    const allKeys = new Set([
+      ...rowsReel.map(([k]) => k),
+      ...mesRedevances.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`),
+    ])
+    const cles = Array.from(allKeys).sort((a, b) => b.localeCompare(a))
+
+    const [sfSousOnglet, setSfSousOnglet] = useState('mois')
+
+    const chartLabels = cles.map(cle => { const [a, m] = cle.split('-'); return `${MOIS[parseInt(m)].slice(0,3)}. ${a}` })
+    const chartProduits = cles.map(cle => {
+      const agg = rowsReel.find(([k]) => k === cle)?.[1] || {}
+      return round2((agg.fraisAgenteNet||0) + (agg.comAgenteNet||0) + (agg.honAgenteNet||0) + (agg.comApporteursAgenteNet||0))
+    })
+    const chartCharges = cles.map(cle => {
+      const [a, m] = cle.split('-')
+      const redev = mesRedevances.filter(r => r.statut === 'regle' && r.annee === parseInt(a) && r.mois === parseInt(m)).reduce((s, r) => s + (r.montant_ttc||540), 0)
+      const agg = rowsReel.find(([k]) => k === cle)?.[1] || {}
+      return -round2(redev + (agg.apporteurRembourseNet||0))
+    })
+    const chartNet = cles.map((_, i) => round2(chartProduits[i] + chartCharges[i]))
+
+    return (
+      <div className="space-y-5">
+        <div className="flex gap-2">
+          {[{ key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
+            <button key={key} onClick={() => setSfSousOnglet(key)}
+              className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sfSousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white text-gray-600 hover:border-gray-300'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {sfSousOnglet === 'mois' && (
+          <div className="space-y-5">
+            <ObjectifBar
+              label={`Mon objectif mensuel (${fmt(objectifMensuel)}/mois)`}
+              reel={(() => {
+                const moisCourant = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+                const agg = rowsReel.find(([k]) => k === moisCourant)?.[1] || {}
+                const redev = mesRedevances.filter(rv => rv.statut === 'regle' && rv.annee === new Date().getFullYear() && rv.mois === new Date().getMonth() + 1).reduce((s, rv) => s + (rv.montant_ttc||540), 0)
+                return getReelNetAgente(agg, redev)
+              })()}
+              objectifMontant={objectifMensuel}
+              cible="agente"
+              agenteId={profile?.id}
+              canEdit={true}
+              onSave={sauvegarderObjectif}
+            />
+            {objectifAgence > 0 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">
+                Objectif CA agence : <span className="font-bold">{fmt(objectifAgence)}</span>
+              </div>
+            )}
+            <SuiviCTPChart
+              labels={chartLabels}
+              produitsData={chartProduits}
+              chargesData={chartCharges}
+              netData={chartNet}
+              chartId="chart_agente_mois"
+            />
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left px-4 py-2 text-xs font-medium text-gray-400 uppercase">Mois</th>
+                    <th className="text-right px-3 py-2 text-xs font-medium text-gray-400 uppercase">Réel net</th>
+                    <th className="text-right px-3 py-2 text-xs font-medium text-gray-400 uppercase">Objectif mois</th>
+                    <th className="text-right px-4 py-2 text-xs font-medium text-gray-400 uppercase">vs Objectif</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {cles.map((cle, i) => {
+                    const [a, m] = cle.split('-')
+                    const label = `${MOIS[parseInt(m)].slice(0,3)}. ${a}`
+                    const agg = rowsReel.find(([k]) => k === cle)?.[1] || {}
+                    const redev = mesRedevances.filter(rv => rv.statut === 'regle' && rv.annee === parseInt(a) && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ttc||540), 0)
+                    const reelNet = getReelNetAgente(agg, redev)
+                    const ecartObj = round2(reelNet - objectifMensuel)
+                    const bg = i % 2 === 0 ? '' : 'bg-gray-50'
+                    return (
+                      <tr key={cle} className={`${bg} hover:bg-blue-50`}>
+                        <td className="px-4 py-2.5 font-medium text-gray-700">{label}</td>
+                        <td className={`px-3 py-2.5 text-right font-medium ${reelNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(reelNet)}</td>
+                        <td className="px-3 py-2.5 text-right text-gray-400">{fmt(objectifMensuel)}</td>
+                        <td className={`px-4 py-2.5 text-right font-medium ${ecartObj >= 0 ? 'text-green-600' : 'text-red-500'}`}>{ecartObj >= 0 ? '+' : ''}{fmt(ecartObj)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {sfSousOnglet === 'annee' && (
+          <div className="space-y-5">
+            <ObjectifBar
+              label="Mon objectif CA annuel"
+              reel={round2(cles.reduce((s, cle) => {
+                const [a, m] = cle.split('-')
+                const agg = rowsReel.find(([k]) => k === cle)?.[1] || {}
+                const redev = mesRedevances.filter(rv => rv.statut === 'regle' && rv.annee === parseInt(a) && rv.mois === parseInt(m)).reduce((sv, rv) => sv + (rv.montant_ttc||540), 0)
+                return s + getReelNetAgente(agg, redev)
+              }, 0))}
+              objectifMontant={getObjectif('agente', profile?.id)}
+              cible="agente"
+              agenteId={profile?.id}
+              canEdit={true}
+              onSave={sauvegarderObjectif}
+            />
+            {objectifAgence > 0 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">
+                Objectif CA agence : <span className="font-bold">{fmt(objectifAgence)}</span>
+              </div>
+            )}
+            {renderAgentePeriode(agrégerParPaiement(mesDossiers, true), 'Année', mesRedevances, true, mesDossiers)}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── FACTURATION MENSUELLE AGENTE ───────────────────────────────────────────
+
   const renderFacturationMoisSuivi = () => {
-    const rows = agrégerParPaiement(mesDossiers)
-    if (rows.length === 0) return <p className="text-center text-gray-400 text-sm py-8">Aucune donnée</p>
+    const rowsReel = agrégerParPaiement(mesDossiers, false)
+    if (rowsReel.length === 0) return <p className="text-center text-gray-400 text-sm py-8">Aucune donnée</p>
+
+    const getFactureAgenteMoisType = (mois, annee, type) =>
+      facturesAgente.find(f => f.mois === mois && f.annee === annee && f.agente_id === profile?.id && f.type_facture === type)
+
+    const upsertFactureMoisType = async (mois, annee, montant, type, updates) => {
+      const existing = getFactureAgenteMoisType(mois, annee, type)
+      if (existing) {
+        await supabase.from('factures_agente').update(updates).eq('id', existing.id)
+      } else {
+        await supabase.from('factures_agente').insert({ agente_id: profile?.id, mois, annee, montant, type_facture: type, ...updates })
+      }
+      const { data } = await supabase.from('factures_agente').select('*')
+        .order('annee', { ascending: false }).order('mois', { ascending: false })
+      setFacturesAgente(data || [])
+    }
+
+    const uploadFacturePdfType = async (mois, annee, montant, type, fichier) => {
+      setUploadingFactureAgente(`${annee}-${mois}-${type}`)
+      const ext = fichier.name.split('.').pop()
+      const chemin = `factures_agente/${profile?.id}/${annee}-${String(mois).padStart(2,'0')}-${type}.${ext}`
+      const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+      if (!error) {
+        await upsertFactureMoisType(mois, annee, montant, type, { facture_path: chemin, statut: 'facture' })
+        setSucces('Facture uploadée ✓')
+      } else {
+        setErreur('Erreur upload : ' + error.message)
+      }
+      setUploadingFactureAgente(null)
+    }
+
+    const StatutSelect = ({ mois, annee, montant, type }) => {
+      const facture = getFactureAgenteMoisType(mois, annee, type)
+      const statut  = facture?.statut || 'a_facturer'
+      const uploadKey = `${annee}-${mois}-${type}`
+      return (
+        <div className="flex items-center gap-3 flex-wrap">
+          <select value={statut}
+            onChange={e => upsertFactureMoisType(mois, annee, montant, type, { statut: e.target.value })}
+            className={`border rounded px-2 py-1 text-xs focus:outline-none ${statut === 'paye' ? 'border-green-300 bg-green-50 text-green-700' : statut === 'facture' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600'}`}>
+            <option value="a_facturer">📋 À facturer</option>
+            <option value="facture">📤 Facturé</option>
+            <option value="paye">✅ Payé</option>
+          </select>
+          {facture?.facture_path ? (
+            <div className="flex items-center gap-2">
+              <button onClick={async () => {
+                const { data } = await supabase.storage.from('documents').createSignedUrl(facture.facture_path, 3600)
+                if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+              }} className="text-xs text-blue-600 hover:underline">📄 Voir facture</button>
+              <label className="text-xs text-gray-400 cursor-pointer hover:text-blue-600">
+                Remplacer
+                <input type="file" accept=".pdf" className="hidden" onChange={e => e.target.files[0] && uploadFacturePdfType(mois, annee, montant, type, e.target.files[0])} />
+              </label>
+            </div>
+          ) : (
+            <label className={`text-xs cursor-pointer px-2 py-1 rounded border transition-all ${uploadingFactureAgente === uploadKey ? 'text-gray-400 border-gray-200' : 'text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
+              {uploadingFactureAgente === uploadKey ? 'Upload...' : '+ Uploader PDF'}
+              <input type="file" accept=".pdf" className="hidden" disabled={uploadingFactureAgente === uploadKey} onChange={e => e.target.files[0] && uploadFacturePdfType(mois, annee, montant, type, e.target.files[0])} />
+            </label>
+          )}
+        </div>
+      )
+    }
+
     return (
       <div className="space-y-4">
         {succes && <p className="text-green-600 text-sm bg-green-50 border border-green-200 rounded-lg px-4 py-2">{succes}</p>}
         {erreur && <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-2">{erreur}</p>}
-        {rows.map(([key, agg]) => {
+        {rowsReel.map(([key, agg]) => {
           const [anneeStr, moisStr] = key.split('-')
-          const annee   = parseInt(anneeStr)
-          const mois    = parseInt(moisStr)
-          const label   = `${MOIS[mois]} ${annee}`
-          const total   = round2(agg.fraisAgente + agg.comAgenteSigne + agg.honAgente - agg.apporteurAgente)
-          const facture = getFactureAgenteMois(mois, annee)
-          const statut  = facture?.statut || 'a_facturer'
+          const annee = parseInt(anneeStr)
+          const mois  = parseInt(moisStr)
+          const label = `${MOIS[mois]} ${annee}`
+
+          // Facture 1 : gains agente → CTP
+          const montantF1 = round2((agg.fraisAgenteNet||0) + (agg.comAgenteNet||0) + (agg.honAgenteNet||0) + (agg.comApporteursAgenteNet||0))
+
+          // Facture 2 : CTP → agente (redevances + apporteurs)
+          const redevMois = mesRedevances.filter(r => r.statut === 'regle' && r.annee === annee && r.mois === mois).reduce((s, r) => s + (r.montant_ttc||540), 0)
+          const apporteurMois = round2(agg.apporteurRembourseNet||0)
+          const montantF2 = round2(redevMois + apporteurMois)
+
+          const netMois = round2(montantF1 - montantF2)
+
           return (
             <div key={key} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="flex justify-between px-4 py-3 bg-gray-50 border-b border-gray-100">
                 <span className="font-semibold text-gray-800">{label}</span>
-                <span className="font-bold text-blue-700">{fmt(total)}</span>
+                <span className={`font-bold text-sm ${netMois >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                  Net : {netMois >= 0 ? '+' : ''}{fmt(netMois)}
+                </span>
               </div>
-              <div className="p-4 space-y-3">
-                <div className="space-y-1 text-sm">
-                  {agg.fraisAgente > 0 && <div className="flex justify-between"><span className="text-gray-600">Frais consultation</span><span className="text-purple-700">{fmt(agg.fraisAgente)}</span></div>}
-                  {(agg.comAgenteSigne - agg.apporteurAgente) > 0 && <div className="flex justify-between"><span className="text-gray-600">Commissions</span><span className="text-blue-700">{fmt(agg.comAgenteSigne - agg.apporteurAgente)}</span></div>}
-                  {agg.honAgente > 0 && <div className="flex justify-between"><span className="text-gray-600">Honoraires</span><span className="text-green-700">{fmt(agg.honAgente)}</span></div>}
+              <div className="p-4 space-y-4">
+                {/* Facture 1 */}
+                <div className="border border-blue-100 rounded-lg p-3 space-y-2 bg-blue-50">
+                  <div className="flex justify-between items-center">
+                    <p className="text-xs font-semibold text-blue-800">📤 Facture 1 — Moi → {nomFranchisee}</p>
+                    <span className="text-sm font-bold text-blue-700">{fmt(montantF1)}</span>
+                  </div>
+                  <div className="space-y-1 text-xs">
+                    {(agg.fraisAgenteNet||0) > 0 && <div className="flex justify-between text-blue-700"><span>Frais consultation</span><span>{fmt(agg.fraisAgenteNet)}</span></div>}
+                    {(agg.comAgenteNet||0) > 0 && <div className="flex justify-between text-blue-700"><span>Commissions</span><span>{fmt(agg.comAgenteNet)}</span></div>}
+                    {(agg.honAgenteNet||0) > 0 && <div className="flex justify-between text-blue-700"><span>Honoraires</span><span>{fmt(agg.honAgenteNet)}</span></div>}
+                    {(agg.comApporteursAgenteNet||0) > 0 && <div className="flex justify-between text-blue-700"><span>Com. apporteurs artisans</span><span>{fmt(agg.comApporteursAgenteNet)}</span></div>}
+                  </div>
+                  <StatutSelect mois={mois} annee={annee} montant={montantF1} type="agente_vers_ctp" />
                 </div>
-                <div className="flex items-center gap-3 pt-2 border-t border-gray-100 flex-wrap">
-                  <select value={statut}
-                    onChange={e => upsertFactureAgenteMois(mois, annee, total, { statut: e.target.value })}
-                    className={`border rounded px-2 py-1 text-xs focus:outline-none ${statut === 'paye' ? 'border-green-300 bg-green-50 text-green-700' : statut === 'facture' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600'}`}>
-                    <option value="a_facturer">📋 À facturer</option>
-                    <option value="facture">📤 Facturé</option>
-                    <option value="paye">✅ Payé</option>
-                  </select>
-                  {facture?.facture_path ? (
-                    <div className="flex items-center gap-2">
-                      <button onClick={async () => {
-                        const { data } = await supabase.storage.from('documents').createSignedUrl(facture.facture_path, 3600)
-                        if (data?.signedUrl) window.open(data.signedUrl, '_blank')
-                      }} className="text-xs text-blue-600 hover:underline">📄 Voir facture</button>
-                      <label className="text-xs text-gray-400 cursor-pointer hover:text-blue-600">
-                        Remplacer
-                        <input type="file" accept=".pdf" className="hidden" onChange={e => e.target.files[0] && uploadFactureAgentePdf(mois, annee, total, e.target.files[0])} />
-                      </label>
-                    </div>
-                  ) : (
-                    <label className={`text-xs cursor-pointer px-2 py-1 rounded border transition-all ${uploadingFactureAgente === `${annee}-${mois}` ? 'text-gray-400 border-gray-200' : 'text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
-                      {uploadingFactureAgente === `${annee}-${mois}` ? 'Upload...' : '+ Uploader ma facture'}
-                      <input type="file" accept=".pdf" className="hidden" disabled={uploadingFactureAgente === `${annee}-${mois}`} onChange={e => e.target.files[0] && uploadFactureAgentePdf(mois, annee, total, e.target.files[0])} />
-                    </label>
-                  )}
+
+                {/* Facture 2 */}
+                <div className="border border-red-100 rounded-lg p-3 space-y-2 bg-red-50">
+                  <div className="flex justify-between items-center">
+                    <p className="text-xs font-semibold text-red-800">📥 Facture 2 — {nomFranchisee} → Moi</p>
+                    <span className="text-sm font-bold text-red-700">{fmt(montantF2)}</span>
+                  </div>
+                  <div className="space-y-1 text-xs">
+                    {redevMois > 0 && <div className="flex justify-between text-red-700"><span>Redevance mensuelle</span><span>{fmt(redevMois)}</span></div>}
+                    {apporteurMois > 0 && <div className="flex justify-between text-red-700"><span>Apporteur client remboursé</span><span>{fmt(apporteurMois)}</span></div>}
+                  </div>
+                  <StatutSelect mois={mois} annee={annee} montant={montantF2} type="ctp_vers_agente" />
                 </div>
               </div>
             </div>
@@ -2343,11 +2958,11 @@ export default function Finances() {
   // ─────────────────────────────────────────────────────────────────────────────
 
   const ongletsAdmin  = [
-    { key: 'mes_chantiers',  label: 'Mes chantiers'      },
-    { key: 'tous_chantiers', label: 'Tous les chantiers'  },
-    { key: 'ctp',            label: 'Suivi financier CTP' },
-    { key: 'agentes',        label: 'Agentes'             },
-    { key: 'redevances',     label: '💳 Redevances'       },
+    { key: 'mes_chantiers',    label: 'Mes chantiers'       },
+    { key: 'tous_chantiers',   label: 'Tous les chantiers'  },
+    { key: 'suivi_financier',  label: 'Suivi financier'     },
+    { key: 'agentes',          label: 'Agentes'             },
+    { key: 'redevances',       label: '💳 Redevances'       },
   ]
   const ongletsAgente = [
     { key: 'mes_chantiers', label: 'Mes chantiers'       },
@@ -2421,7 +3036,7 @@ export default function Finances() {
           {ongletsList.map(({ key, label }) => (
             <button key={key} onClick={() => { 
               setOnglet(key)
-              setSousOnglet(key === 'ctp' ? 'mois' : 'chantier')
+              setSousOnglet(key === 'suivi_financier' ? 'agence' : key === 'agentes' ? 'mois' : key === 'facturation' ? 'mois' : 'chantier')
             }}
               className={`px-4 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-all ${onglet === key ? 'border-blue-800 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
               {label}
@@ -2449,18 +3064,21 @@ export default function Finances() {
           </div>
         )}
 
-        {/* ── SUIVI FINANCIER CTP (admin) ── */}
-        {onglet === 'ctp' && isMarine && (
+        {/* ── SUIVI FINANCIER (admin) ── */}
+        {onglet === 'suivi_financier' && isMarine && (
           <div className="space-y-5">
             <div className="flex gap-2">
-              {[{ key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
+              {[
+                { key: 'agence', label: 'Agence' },
+                { key: 'ctp',    label: 'CTP'    },
+              ].map(({ key, label }) => (
                 <button key={key} onClick={() => setSousOnglet(key)}
                   className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white text-gray-600 hover:border-gray-300'}`}>
                   {label}
                 </button>
               ))}
             </div>
-            {sousOnglet === 'mois' ? renderRecapCTP() : renderCTPAnnee()}
+            {(sousOnglet === 'agence' || sousOnglet === 'ctp') && renderSuiviFinancier(sousOnglet)}
           </div>
         )}
 
@@ -2468,28 +3086,39 @@ export default function Finances() {
         {onglet === 'agentes' && isMarine && (
           <div className="space-y-4">
             {renderSélecteurAgente()}
-            {renderSousOnglets()}
-            {sousOnglet === 'chantier' && renderRecapAgente(dossiersAgente, agenteActuelle)}
+            <div className="flex gap-2">
+              {[{ key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
+                <button key={key} onClick={() => setSousOnglet(key)}
+                  className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
             {sousOnglet === 'mois'  && renderAgentePeriode(agrégerParPaiement(dossiersAgente, false), 'Mois', redevancesAgente, false)}
-            {sousOnglet === 'annee' && renderAgentePeriode(agrégerParPaiement(dossiersAgente, true), 'Année', redevancesAgente, true)}          </div>
+            {sousOnglet === 'annee' && renderAgentePeriode(agrégerParPaiement(dossiersAgente, true), 'Année', redevancesAgente, true)}
+          </div>
         )}
 
         {/* ── MON SUIVI FINANCIER (agente) ── */}
         {onglet === 'financier' && !isMarine && (
           <div className="space-y-4">
-            {renderSousOnglets()}
-            {sousOnglet === 'chantier' && renderRecapMoi()}
-            {sousOnglet === 'mois'  && renderAgentePeriode(agrégerParPaiement(mesDossiers, false), 'Mois', mesRedevances, false, mesDossiers)}
-            {sousOnglet === 'annee' && renderAgentePeriode(agrégerParPaiement(mesDossiers, true), 'Année', mesRedevances, true, mesDossiers)}          </div>
+            {renderSuiviAgenteFinancier()}
+          </div>
         )}
 
         {/* ── FACTURATION (agente) ── */}
         {onglet === 'facturation' && !isMarine && (
           <div className="space-y-4">
-            {renderSousOnglets()}
-            {sousOnglet === 'chantier' && renderFacturationMoi()}
-            {sousOnglet === 'mois'     && renderFacturationMoisSuivi()}
-            {sousOnglet === 'annee'    && renderMesPeriode(mesDossiers, 'Année', agrégerParPaiement(mesDossiers))}
+            <div className="flex gap-2">
+              {[{ key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
+                <button key={key} onClick={() => setSousOnglet(key)}
+                  className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {sousOnglet === 'mois'  && renderFacturationMoisSuivi()}
+            {sousOnglet === 'annee' && renderMesPeriode(mesDossiers, 'Année', agrégerParPaiement(mesDossiers, true))}
           </div>
         )}
 
