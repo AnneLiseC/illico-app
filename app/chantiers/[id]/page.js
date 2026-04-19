@@ -854,7 +854,7 @@ ${s.contenu}`).join('')
     setSendingMsg(false)
   }
 
-  const typologieLabel = (t) => ({ courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' })[t] || t
+  const typologieLabel = (t) => ({ courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' })[t] || t
 
   const statutConfig = {
     en_cours: { label: 'En cours', color: 'bg-green-100 text-green-700' },
@@ -1179,6 +1179,7 @@ ${s.contenu}`).join('')
                     <option value="courtage">Courtage</option>
                     <option value="amo">AMO</option>
                     <option value="estimo">Estimo</option>
+                    <option value="merad">MERAD</option>
                     <option value="audit_energetique">Audit énergétique</option>
                     <option value="studio_jardin">Studio de jardin</option>
                   </select>

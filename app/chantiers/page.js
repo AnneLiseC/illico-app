@@ -53,6 +53,7 @@ export default function Chantiers() {
     courtage: 'Courtage',
     amo: 'AMO',
     estimo: 'Estimo',
+    merad: 'MERAD',
     audit_energetique: 'Audit énergétique',
     studio_jardin: 'Studio de jardin',
   })[t] || t
@@ -164,6 +165,7 @@ export default function Chantiers() {
             <option value="courtage">Courtage</option>
             <option value="amo">AMO</option>
             <option value="estimo">Estimo</option>
+            <option value="merad">MERAD</option>
             <option value="audit_energetique">Audit énergétique</option>
             <option value="studio_jardin">Studio de jardin</option>
           </select>

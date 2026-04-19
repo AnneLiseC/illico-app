@@ -56,6 +56,7 @@ function NouveauChantierForm() {
       courtage: 'CT',
       amo: 'AM',
       estimo: 'ES',
+      merad: 'MR',
       audit_energetique: 'AU',
       studio_jardin: 'SJ',
     }
@@ -137,6 +138,7 @@ function NouveauChantierForm() {
                 { value: 'courtage', label: 'Courtage', desc: 'Mise en relation avec artisans, commission 6%' },
                 { value: 'amo', label: 'AMO', desc: 'Assistance à maîtrise d\'ouvrage, commission 15%' },
                 { value: 'estimo', label: 'Estimo', desc: 'Estimation de travaux' },
+                { value: 'merad', label: 'MERAD', desc: 'Mise en relation avec artisans' },
                 { value: 'audit_energetique', label: 'Audit énergétique', desc: 'Audit de performance énergétique' },
                 { value: 'studio_jardin', label: 'Studio de jardin', desc: 'Aménagement studio de jardin' },
               ].map(({ value, label, desc }) => (

@@ -104,6 +104,7 @@ export default function FicheClient({ params }) {
       'courtage': 'Courtage',
       'amo': 'AMO',
       'estimo': 'Estimo',
+      'merad': 'MERAD',
       'audit_energetique': 'Audit énergétique',
       'studio_jardin': 'Studio de jardin',
     }

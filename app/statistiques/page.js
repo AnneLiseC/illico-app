@@ -9,8 +9,8 @@ const fmt = (n) => { const num = Math.round(n || 0); return num.toString().repla
 const fmtPct = (n, dec = 1) => `${(n || 0).toFixed(dec)}%`
 const fmtDays = (n) => `${Math.round(n || 0)}\u00a0j`
 const MOIS_SHORT = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc']
-const TYPO_LABELS = { courtage: 'Courtage', amo: 'AMO', consultation: 'Consultation', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio jardin' }
-const TYPO_COLORS = { courtage: '#2563EB', amo: '#7C3AED', consultation: '#059669', estimo: '#D97706', audit_energetique: '#DB2777', studio_jardin: '#0891B2' }
+const TYPO_LABELS = { courtage: 'Courtage', amo: 'AMO', consultation: 'Consultation', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio jardin' }
+const TYPO_COLORS = { courtage: '#2563EB', amo: '#7C3AED', consultation: '#059669', estimo: '#D97706', merad: '#34df16', audit_energetique: '#DB2777', studio_jardin: '#0891B2' }
 const USER_PALETTE = [
   { dot: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE' },
   { dot: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE' },
