@@ -39,8 +39,10 @@ export default function FicheClient({ params }) {
         .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role)')
         .eq('id', id)
         .single()
-      setClient(clientData)
-
+        const sameAddress = !clientData?.adresse_chantier ||
+        clientData.adresse_chantier === clientData.adresse
+      setClient({ ...clientData, adresse_chantier_identique: sameAddress })
+      
       const { data: dossiersData } = await supabase
         .from('dossiers')
         .select('*, rendez_vous(id, type_rdv, date_heure, duree_minutes)')
@@ -60,6 +62,10 @@ export default function FicheClient({ params }) {
     setErreur('')
     setSucces('')
 
+    const adresseChantier = client.adresse_chantier_identique
+      ? client.adresse || null
+      : client.adresse_chantier || null
+
     const { error } = await supabase
       .from('clients')
       .update({
@@ -71,6 +77,7 @@ export default function FicheClient({ params }) {
         email: client.email || null,
         telephone: client.telephone || null,
         adresse: client.adresse || null,
+        adresse_chantier: adresseChantier,
         type_client: client.type_client,
         referente: client.referente?.id || client.referente || null,
         apporteur_affaires: client.apporteur_affaires,
@@ -188,6 +195,8 @@ export default function FicheClient({ params }) {
                 ['Email', client.email || '—'],
                 ['Téléphone', client.telephone || '—'],
                 ['Adresse', client.adresse || '—'],
+                ['Adresse client', client.adresse || '—'],
+                ['Adresse chantier', client.adresse_chantier || client.adresse || '—'],
                 ['Type', client.type_client === 'professionnel' ? 'Professionnel' : 'Particulier'],
                 ['Référente', client.referente ? `${client.referente.prenom} ${client.referente.nom}` : '—'],
               ].map(([label, valeur]) => (
@@ -256,9 +265,32 @@ export default function FicheClient({ params }) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Adresse</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Adresse Client</label>
                 <input type="text" value={client.adresse || ''} onChange={e => set('adresse', e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">Adresse chantier</label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={client.adresse_chantier_identique ?? true}
+                      onChange={e => set('adresse_chantier_identique', e.target.checked)}
+                      className="w-4 h-4 accent-blue-700"
+                    />
+                    <span className="text-xs text-gray-500">Identique à l'adresse client</span>
+                  </label>
+                </div>
+                {!(client.adresse_chantier_identique ?? true) && (
+                  <input type="text" value={client.adresse_chantier || ''} onChange={e => set('adresse_chantier', e.target.value)}
+                    placeholder="Adresse du chantier"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                )}
+                {(client.adresse_chantier_identique ?? true) && (
+                  <p className="text-xs text-gray-400 py-2">= {client.adresse || 'Adresse client non renseignée'}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

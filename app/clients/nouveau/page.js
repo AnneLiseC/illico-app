@@ -19,6 +19,8 @@ export default function NouveauClient() {
     email: '',
     telephone: '',
     adresse: '',
+    adresse_chantier: '',
+    adresse_chantier_identique: true,
     type_client: 'particulier',
     referente: '',
     apporteur_affaires: false,
@@ -62,6 +64,10 @@ export default function NouveauClient() {
     setLoading(true)
     setErreur('')
 
+    const adresseChantier = form.adresse_chantier_identique
+      ? form.adresse || null
+      : form.adresse_chantier || null
+
     const { data, error } = await supabase.from('clients').insert({
       civilite: form.civilite,
       nom: form.nom,
@@ -71,6 +77,7 @@ export default function NouveauClient() {
       email: form.email || null,
       telephone: form.telephone || null,
       adresse: form.adresse || null,
+      adresse_chantier: adresseChantier,
       type_client: form.type_client,
       referente: form.referente || null,
       apporteur_affaires: form.apporteur_affaires,
@@ -199,7 +206,7 @@ export default function NouveauClient() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Adresse</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Adresse Client</label>
               <input
                 type="text"
                 value={form.adresse}
@@ -207,6 +214,32 @@ export default function NouveauClient() {
                 placeholder="13500 Martigues"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700">Adresse chantier</label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.adresse_chantier_identique}
+                    onChange={e => set('adresse_chantier_identique', e.target.checked)}
+                    className="w-4 h-4 accent-blue-700"
+                  />
+                  <span className="text-xs text-gray-500">Identique à l'adresse client</span>
+                </label>
+              </div>
+              {!form.adresse_chantier_identique && (
+                <input
+                  type="text"
+                  value={form.adresse_chantier}
+                  onChange={e => set('adresse_chantier', e.target.value)}
+                  placeholder="Adresse du chantier"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              )}
+              {form.adresse_chantier_identique && (
+                <p className="text-xs text-gray-400 py-2">= {form.adresse || 'Adresse client non renseignée'}</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">

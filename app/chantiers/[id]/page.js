@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
   const [fiches, setFiches] = useState([])
   const [loading, setLoading] = useState(true)
+ 
   useEffect(() => {
     const charger = async () => {
       const { data } = await supabase.from('fiches_techniques').select('*').eq('artisan_id', artisanId).order('nom')
@@ -16,6 +17,12 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
     }
     charger()
   }, [artisanId])
+
+  const ouvrirFiche = async (chemin) => {
+    const { data } = await supabase.storage.from('documents').createSignedUrl(chemin, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
   if (loading) return <p className="text-xs text-gray-400 mt-2">Chargement...</p>
   if (fiches.length === 0) return (
     <p className="text-xs text-gray-400 mt-2">
@@ -24,15 +31,24 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
     </p>
   )
   return (
-    <div className="mt-2 space-y-1 bg-gray-50 rounded-lg p-3">
+    <div className="mt-2 space-y-1.5 bg-gray-50 rounded-lg p-3">
       {fiches.map(fiche => {
         const cochee = fichesCochees.some(f => f.fiche_technique_id === fiche.id)
         return (
-          <label key={fiche.id} className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={cochee} onChange={() => onToggle(fiche.id, artisanId)} className="w-4 h-4 accent-blue-700" />
-            <span className="text-xs text-gray-700">{fiche.nom}</span>
-            {fiche.description && <span className="text-xs text-gray-400">— {fiche.description}</span>}
-          </label>
+          <div key={fiche.id} className="flex items-center gap-2">
+            <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+              <input type="checkbox" checked={cochee} onChange={() => onToggle(fiche.id, artisanId)} className="w-4 h-4 accent-blue-700 flex-shrink-0" />
+              <span className="text-xs text-gray-700 truncate">{fiche.nom}</span>
+              {fiche.description && <span className="text-xs text-gray-400 truncate">— {fiche.description}</span>}
+            </label>
+            {fiche.url && (
+              <button
+                onClick={() => ouvrirFiche(fiche.url)}
+                className="flex-shrink-0 text-xs text-blue-600 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-50">
+                📄 PDF
+              </button>
+            )}
+          </div>
         )
       })}
     </div>
@@ -875,6 +891,9 @@ ${s.contenu}`).join('')
 
   const devisSignes = devis.filter(d => d.statut === 'accepte' && d.date_signature && d.montant_ttc)
   const totalDevisTTCSignes = devisSignes.reduce((s, d) => s + (d.montant_ttc || 0), 0)
+  const devisRecus = devis.filter(d => d.statut === 'recu' && d.montant_ttc)
+  const totalDevisTTCRecus = devisRecus.reduce((s, d) => s + (d.montant_ttc || 0), 0)
+  const totalDevisHTRecus = devisRecus.reduce((s, d) => s + (d.montant_ht || 0), 0)
   const fraisHT = (dossier?.frais_deduits && dossier?.frais_consultation)
     ? (dossier.frais_consultation / 1.2)
     : 0
@@ -1493,7 +1512,7 @@ ${s.contenu}`).join('')
                           <span className="font-medium">{`${Math.round((d.part_agente ?? 0.5) * 100)} / ${Math.round((1 - (d.part_agente ?? 0.5)) * 100)}`}</span>
                         </div>
                       )}
-                      {d.date_signature && (
+                      {d.date_signature && d.statut === 'accepte' && (
                         <div className="flex justify-between">
                           <span className="text-xs text-green-500">Signé le</span>
                           <span className="font-medium text-green-700">{new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
@@ -1716,15 +1735,37 @@ ${s.contenu}`).join('')
               )}
 
               {/* Devis */}
+              {/* Devis reçus */}
+              {devisRecus.length > 0 && (
+                <div className="space-y-1 border-t border-gray-200 pt-2">
+                  <p className="text-xs text-blue-500 font-medium">Devis reçus (non signés) — {devisRecus.length}</p>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Total HT</span>
+                    <span className="font-medium text-blue-700">{totalDevisHTRecus.toFixed(2)} €</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Total TTC</span>
+                    <span className="font-medium text-blue-700">{totalDevisTTCRecus.toFixed(2)} €</span>
+                  </div>
+                  {['courtage', 'amo'].includes(dossier?.typologie) && (
+                    <div className="flex justify-between text-sm border-t border-blue-100 pt-1 mt-1">
+                      <span className="text-gray-400">Honoraires estimés ({tauxCourtagePct}%)</span>
+                      <span className="font-medium text-blue-600">{(totalDevisTTCRecus * tauxCourtage).toFixed(2)} €</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Devis signés */}
               <div className="space-y-1 border-t border-gray-200 pt-2">
-                <p className="text-xs text-gray-400 font-medium">Devis artisans signés</p>
+                <p className="text-xs text-gray-400 font-medium">Devis artisans signés — {devisSignes.length}</p>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Total HT</span>
-                  <span className="font-medium text-gray-800">{devis.filter(d => d.statut !== 'refuse').reduce((s, d) => s + (d.montant_ht || 0), 0).toFixed(2)} €</span>
+                   <span className="font-medium text-gray-800">{totalDevisHTSignes.toFixed(2)} €</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Total TTC</span>
-                  <span className="font-medium text-gray-800">{devis.filter(d => d.statut !== 'refuse').reduce((s, d) => s + (d.montant_ttc || 0), 0).toFixed(2)} €</span>
+                  <span className="font-medium text-gray-800">{totalDevisTTCSignes.toFixed(2)} €</span>
                 </div>
               </div>
 
@@ -2380,9 +2421,9 @@ ${s.contenu}`).join('')
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Intervenants présents</label>
-                        {crForm.type_visite === 'r2' && devis.filter(d => d.statut === 'accepte').length > 0 ? (
+                        {devis.filter(d => ['recu', 'accepte'].includes(d.statut)).length > 0 ? (
                           <div className="space-y-1 border border-gray-200 rounded-lg p-2">
-                            {devis.filter(d => d.statut === 'accepte').map(d => {
+                             {devis.filter(d => ['recu', 'accepte'].includes(d.statut)).map(d => {
                               const selected = (crForm.intervenants || '').split(',').map(s => s.trim()).filter(Boolean).includes(d.artisan?.entreprise)
                               return (
                                 <label key={d.id} className="flex items-center gap-2 cursor-pointer px-2 py-1 rounded hover:bg-gray-50">
@@ -2397,6 +2438,9 @@ ${s.contenu}`).join('')
                                     className="accent-blue-700" />
                                   <span className="text-sm text-gray-700">{d.artisan?.entreprise}</span>
                                   <span className="text-xs text-gray-400">{d.artisan?.metier}</span>
+                                  <span className={`text-xs px-1.5 py-0.5 rounded-full ml-auto ${d.statut === 'accepte' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
+                                      {d.statut === 'accepte' ? 'Signé' : 'Reçu'}
+                                    </span>
                                 </label>
                               )
                             })}

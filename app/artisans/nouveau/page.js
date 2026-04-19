@@ -18,6 +18,9 @@ export default function NouvelArtisan() {
     ville: '',
     decennale_expiration: '',
     sans_royalties: false,
+    rib_iban: '',
+    rib_bic: '',
+    rib_titulaire: '',
   })
   const [fichiers, setFichiers] = useState({
     kbis: null,
@@ -59,6 +62,9 @@ export default function NouvelArtisan() {
         ville: form.ville.trim() || null,
         decennale_expiration: form.decennale_expiration || null,
         sans_royalties: form.sans_royalties,
+        rib_iban: form.rib_iban.trim() || null,
+        rib_bic: form.rib_bic.trim() || null,
+        rib_titulaire: form.rib_titulaire.trim() || null,
       })
       .select()
       .single()
@@ -178,6 +184,31 @@ export default function NouvelArtisan() {
               className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
             <span className="text-sm text-gray-700">Sans royalties illiCO <span className="text-gray-400">(architectes, BET…)</span></span>
           </label>
+        </div>
+
+        {/* RIB */}
+        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+          <h2 className="font-semibold text-gray-800">RIB / Coordonnées bancaires</h2>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Titulaire du compte</label>
+            <input type="text" value={form.rib_titulaire} onChange={e => set('rib_titulaire', e.target.value)}
+              placeholder="Nom de l'entreprise ou du titulaire"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">IBAN</label>
+              <input type="text" value={form.rib_iban} onChange={e => set('rib_iban', e.target.value.toUpperCase())}
+                placeholder="FR76 XXXX XXXX XXXX"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">BIC / SWIFT</label>
+              <input type="text" value={form.rib_bic} onChange={e => set('rib_bic', e.target.value.toUpperCase())}
+                placeholder="BNPAFRPP"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
         </div>
 
         {/* Documents administratifs */}
