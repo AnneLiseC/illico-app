@@ -10,7 +10,7 @@ const supabaseAdmin = createClient(
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { prenom, nom, email, telephone, part_agente_defaut, frais_part_agente_defaut } = body
+    const { prenom, nom, email, telephone, redevance_debut, part_agente_defaut, frais_part_agente_defaut } = body
 
     // Validation
     if (!prenom || !nom || !email) {
@@ -63,7 +63,7 @@ export async function POST(request) {
 export async function PATCH(request) {
   try {
     const body = await request.json()
-    const { id, prenom, nom, telephone, part_agente_defaut, frais_part_agente_defaut, kbis_url, parts_agente_disponibles } = body
+    const { id, prenom, nom, telephone, redevance_debut, part_agente_defaut, frais_part_agente_defaut, kbis_url, parts_agente_disponibles } = body
 
     if (!id) {
       return NextResponse.json({ error: 'ID requis' }, { status: 400 })
@@ -73,6 +73,7 @@ export async function PATCH(request) {
     if (prenom !== undefined)                   updates.prenom = prenom
     if (nom !== undefined)                      updates.nom = nom
     if (telephone !== undefined)                updates.telephone = telephone
+    if (redevance_debut !== undefined)          updates.redevance_debut = redevance_debut  
     if (part_agente_defaut !== undefined)       updates.part_agente_defaut = part_agente_defaut
     if (frais_part_agente_defaut !== undefined) updates.frais_part_agente_defaut = frais_part_agente_defaut
     if (parts_agente_disponibles !== undefined) updates.parts_agente_disponibles = parts_agente_disponibles

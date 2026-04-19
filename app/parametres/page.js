@@ -20,6 +20,7 @@ export default function Parametres() {
     prenom: '', nom: '', email: '', telephone: '',
     parts_agente_disponibles: '60',
     frais_part_agente_defaut: 100,
+    redevance_debut: '',
   }
   const [form, setForm] = useState(emptyForm)
 
@@ -63,7 +64,7 @@ export default function Parametres() {
       parts_agente_disponibles: agente.parts_agente_disponibles?.length > 0
         ? agente.parts_agente_disponibles.map(p => Math.round(p * 100)).join(', ')
         : String(Math.round((agente.part_agente_defaut || 0.5) * 100)),
-
+      redevance_debut: agente.redevance_debut || '',
     })
     setAgenteEditee(agente)
     setModal('modifier')
@@ -127,6 +128,7 @@ export default function Parametres() {
           part_agente_defaut: partDefaut,
           parts_agente_disponibles: partsArray,
           frais_part_agente_defaut: form.frais_part_agente_defaut / 100,
+          redevance_debut: form.redevance_debut || null,
         }),
       })
       const data = await res.json()
@@ -238,6 +240,15 @@ export default function Parametres() {
                       Modifier
                     </button>
                   </div>
+
+                  {agente.redevance_debut && (
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs text-gray-400 mb-1">Redevances depuis</p>
+                      <p className="font-semibold text-gray-800">
+                        {new Date(agente.redevance_debut).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
+                      </p>
+                    </div>
+                  )}
 
                   {/* Paramètres financiers */}
                   <div className="grid grid-cols-2 gap-3">
@@ -352,6 +363,21 @@ export default function Parametres() {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="06 00 00 00 00"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Début des redevances
+              </label>
+              <input
+                type="date"
+                value={form.redevance_debut}
+                onChange={e => setForm(f => ({ ...f, redevance_debut: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Date à partir de laquelle la redevance mensuelle de 540 € est due.
+              </p>
             </div>
 
            <div>
