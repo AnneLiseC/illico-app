@@ -538,13 +538,9 @@ export default function Finances() {
   const alerte7j  = (date) => date && new Date() > new Date(new Date(date).getTime() + 7 * 24 * 3600000)
 
   // ── FACTURES AGENTE ────────────────────────────────────────────────────────
-
-  const getFactureAgenteMois = (mois, annee) =>
-    facturesAgente.find(f => f.mois === mois && f.annee === annee && f.agente_id === profile?.id)
-
   const upsertFactureMoisType = async (mois, annee, montant, type, updates) => {
-    const existing = getFactureAgenteMoisType(mois, annee, type)
     const agenteId = agenteSelectionnee || profile?.id
+    const existing = facturesAgente.find(f => f.mois === mois && f.annee === annee && f.agente_id === agenteId && f.type_facture === type)
 
     if (existing) {
       await supabase.from('factures_agente').update(updates).eq('id', existing.id)
@@ -1585,7 +1581,7 @@ export default function Finances() {
           const statutBadge = (f) => {
             const s = f?.statut || 'a_facturer'
             return <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${s === 'paye' ? 'text-green-700 bg-green-50 border-green-300' : s === 'facture' ? 'text-blue-700 bg-blue-50 border-blue-300' : 'text-gray-500 bg-gray-50 border-gray-200'}`}>
-              {s === 'paye' ? '✅ Payé' : s === 'facture' ? '📤 Facturé' : '📋 À facturer'}
+              {s === 'paye' ? '✅ Payé' :  '📋 À facturer'}
             </span>
           }
 
@@ -1597,12 +1593,10 @@ export default function Finances() {
               </div>
               <div className="p-4 space-y-3">
                 {/* Facture 1 — émettrice */}
-                <div className="border border-green-100 rounded-lg p-3 space-y-2 bg-green-50">
+                <div className="border border-gray-100 rounded-lg p-3 space-y-2">
                   <div className="flex justify-between items-start">
                     <div>
-                      <p className="text-xs font-semibold text-green-800">📤 {nomFranchisee} doit verser à Moi</p>
-                      <p className="text-xs text-green-600 mt-0.5">Facture 1 — Moi → {nomFranchisee}</p>
-                    </div>
+                      <p className="text-xs font-semibold text-green-800">{nomAgente} doit facturer à {nomFranchisee}</p>                    </div>
                     <span className="text-sm font-bold text-green-700">{fmt(montantF1)}</span>
                   </div>
                   <div className="space-y-1 text-xs text-green-700">
@@ -1617,7 +1611,7 @@ export default function Finances() {
                       onChange={e => upsertFactureMoisType(mois, annee, montantF1, 'agente_vers_ctp', { statut: e.target.value })}
                       className={`border rounded px-2 py-1 text-xs focus:outline-none ${f1?.statut === 'paye' ? 'border-green-300 bg-white text-green-700' : f1?.statut === 'facture' ? 'border-blue-300 bg-white text-blue-700' : 'border-gray-200 text-gray-600 bg-white'}`}>
                       <option value="a_facturer">📋 À facturer</option>
-                      <option value="facture">📤 Facturé</option>
+                      
                       <option value="paye">✅ Payé</option>
                     </select>
                     {f1?.facture_path ? (
@@ -1635,11 +1629,10 @@ export default function Finances() {
                 </div>
                 {/* Facture 2 — réceptrice */}
                 {montantF2 > 0 && (
-                  <div className="border border-red-100 rounded-lg p-3 space-y-2 bg-red-50">
+                  <div className="border border-gray-100 rounded-lg p-3 space-y-2">
                     <div className="flex justify-between items-start">
                       <div>
-                        <p className="text-xs font-semibold text-red-800">📥 Moi dois verser à {nomFranchisee}</p>
-                        <p className="text-xs text-red-600 mt-0.5">Facture 2 — {nomFranchisee} → Moi</p>
+                        <p className="text-xs font-semibold text-red-800">{nomFranchisee} doit facturer à {nomAgente}</p>
                       </div>
                       <span className="text-sm font-bold text-red-700">{fmt(montantF2)}</span>
                     </div>
@@ -1702,7 +1695,7 @@ export default function Finances() {
     const statutBadge = (f) => {
       const s = f?.statut || 'a_facturer'
       return <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${s === 'paye' ? 'text-green-700 bg-green-50 border-green-300' : s === 'facture' ? 'text-blue-700 bg-blue-50 border-blue-300' : 'text-gray-500 bg-gray-50 border-gray-200'}`}>
-        {s === 'paye' ? '✅ Payé' : s === 'facture' ? '📤 Facturé' : '📋 À facturer'}
+        {s === 'paye' ? '✅ Payé' :  '📋 À facturer'}
       </span>
     }
 
@@ -1720,11 +1713,17 @@ export default function Finances() {
               <p className="text-lg font-bold text-red-600">{fmt(totalF2)}</p>
               <p className="text-xs text-gray-400 mt-0.5">Payé : {fmt(totalPayeF2)} · Restant : {fmt(round2(totalF2 - totalPayeF2))}</p>
             </div>
-          </div>
-          <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(parseInt(e.target.value))}
-            className="ml-4 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400">
-            {annees.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
+            <div className={`border rounded-xl p-3 ${round2(totalF1-totalF2) >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
+              <p className="text-xs text-gray-500 mb-1">Net indicatif</p>
+              <p className={`text-lg font-bold ${round2(totalF1-totalF2) >= 0 ? 'text-blue-700' : 'text-amber-600'}`}>
+                  {round2(totalF1-totalF2) >= 0 ? '+' : ''}{fmt(round2(totalF1-totalF2))}
+              </p>
+            </div>
+            <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(parseInt(e.target.value))}
+              className="ml-4 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400">
+              {annees.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>                   
         </div>
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <table className="w-full text-xs">
@@ -2119,79 +2118,106 @@ export default function Finances() {
 
     // Totaux annuels si vue année
     if (isAnnee) {
-      const totalGains = round2(rowsReel.reduce((s, [, agg]) => s + (agg.gainsAgenteReels||0), 0))
-      const totalRedev = redevancesAgente.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc||540), 0)
-      const totalApporteur = round2(rowsReel.reduce((s, [, agg]) => s + (agg.apporteurRembourseNet||0), 0))
-      const totalDuParAgente = round2(totalRedev + totalApporteur)
-      const net = round2(totalGains - totalDuParAgente)
+      const annees = []
+      for (let a = new Date().getFullYear(); a >= 2023; a--) annees.push(a)
+
+      const clesMois = Array.from(new Set(rowsReel.map(([k]) => k)))
+        .filter(k => k.startsWith(String(anneeSelectionnee))).sort()
+
+      let totalF1 = 0, totalF2 = 0, totalPayeF1 = 0, totalPayeF2 = 0
+
+      const lignes = clesMois.map(cle => {
+        const [, mStr] = cle.split('-')
+        const mois = parseInt(mStr)
+        const agg = rowsReel.find(([k]) => k === cle)?.[1] || {}
+        const gains = round2(agg.gainsAgenteReels||0)
+        const debutRedev = agenteActuelle?.redevance_debut ? new Date(agenteActuelle.redevance_debut) : null
+        const moisConcerne = new Date(anneeSelectionnee, mois - 1, 1)
+        const redev = debutRedev && moisConcerne >= debutRedev ? 540 : 0
+        const apporteur = round2(agg.apporteurRembourseNet||0)
+        const duParAgente = round2(redev + apporteur)
+        const f1 = facturesAgente.find(f => f.mois === mois && f.annee === anneeSelectionnee && f.agente_id === agenteSelectionnee && f.type_facture === 'agente_vers_ctp')
+        const f2 = facturesAgente.find(f => f.mois === mois && f.annee === anneeSelectionnee && f.agente_id === agenteSelectionnee && f.type_facture === 'ctp_vers_agente')
+        totalF1 += gains; totalF2 += duParAgente
+        if (f1?.statut === 'paye') totalPayeF1 += gains
+        if (f2?.statut === 'paye') totalPayeF2 += duParAgente
+        return { mois, gains, duParAgente, f1, f2 }
+      })
+
+      const statutBadge = (f) => {
+        const s = f?.statut || 'a_facturer'
+        return <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${s === 'paye' ? 'text-green-700 bg-green-50 border-green-300' : 'text-gray-500 bg-gray-50 border-gray-200'}`}>
+          {s === 'paye' ? '✅ Payé' : '📋 À facturer'}
+        </span>
+      }
 
       return (
         <div className="space-y-4">
-          {/* Récap annuel */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-              <p className="text-xs text-gray-500 mb-1">📥 {nomFranchisee} doit verser</p>
-              <p className="text-xl font-bold text-green-700">{fmt(totalGains)}</p>
-            </div>
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-              <p className="text-xs text-gray-500 mb-1">📤 {nomAgente} doit verser</p>
-              <p className="text-xl font-bold text-red-600">{fmt(totalDuParAgente)}</p>
-              <p className="text-xs text-gray-400 mt-1">Redevances {fmt(totalRedev)} + Apporteurs {fmt(totalApporteur)}</p>
-            </div>
-            <div className={`border rounded-xl p-4 ${net >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
-              <p className="text-xs text-gray-500 mb-1">Net indicatif</p>
-              <p className={`text-xl font-bold ${net >= 0 ? 'text-blue-700' : 'text-amber-600'}`}>
-                {net >= 0 ? '+' : ''}{fmt(net)}
-              </p>
+          <div className="flex items-center justify-between">
+            <div className="grid grid-cols-2 gap-3 flex-1">
+              <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+                <p className="text-xs text-gray-500 mb-1">📥 {nomFranchisee} doit verser (F2)</p>
+                <p className="text-lg font-bold text-green-700">{fmt(totalF2)}</p>
+                <p className="text-xs text-gray-400 mt-0.5">Reçu : {fmt(totalPayeF2)} · En attente : {fmt(round2(totalF2 - totalPayeF2))}</p>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                <p className="text-xs text-gray-500 mb-1">📤 {nomAgente} doit verser (F1)</p>
+                <p className="text-lg font-bold text-red-600">{fmt(totalF1)}</p>
+                <p className="text-xs text-gray-400 mt-0.5">Payé : {fmt(totalPayeF1)} · Restant : {fmt(round2(totalF1 - totalPayeF1))}</p>
+              </div>
+               <div className={`border rounded-xl p-3 ${round2(totalF2-totalF1) >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
+                <p className="text-xs text-gray-500 mb-1">Net indicatif</p>
+                <p className={`text-lg font-bold ${round2(totalF2-totalF1) >= 0 ? 'text-blue-700' : 'text-amber-600'}`}>
+                  {round2(totalF2-totalF1) >= 0 ? '+' : ''}{fmt(round2(totalF2-totalF1))}
+                </p>
+              </div>
+              <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(parseInt(e.target.value))}
+                className="ml-4 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400">
+                {annees.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
             </div>
           </div>
 
-          {/* Tableau mois par mois */}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
+            <table className="w-full text-xs">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  {thL('Période')}
-                  {thR('Gains agente')}
-                  {thR('Redevances')}
-                  {thR('Apporteurs')}
+                  {thL('Mois')}
+                  {thR('F2 (Marine facture)')}
+                  {thR('Statut F2')}
+                  {thR('F1 (Agente facture)')}
+                  {thR('Statut F1')}
                   {thR('Net')}
-                  {thR('Facture 1')}
-                  {thR('Facture 2')}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {rowsReel.map(([key, agg]) => {
-                  const parts = key.split('-')
-                  const annee = parseInt(parts[0])
-                  const mois  = parts[1] ? parseInt(parts[1]) : null
-                  const label = mois ? `${MOIS[mois]} ${annee}` : String(annee)
-                  const gains = round2(agg.gainsAgenteReels||0)
-                  const redev = redevancesAgente.filter(r => r.statut === 'regle' && r.annee === annee && (!mois || r.mois === mois)).reduce((s, r) => s + (r.montant_ttc||540), 0)
-                  const apporteur = round2(agg.apporteurRembourseNet||0)
-                  const duParAgente = round2(redev + apporteur)
-                  const netMois = round2(gains - duParAgente)
-                  const f1 = mois ? facturesAgente.find(f => f.mois === mois && f.annee === annee && f.agente_id === agenteSelectionnee && f.type_facture === 'agente_vers_ctp') : null
-                  const f2 = mois ? facturesAgente.find(f => f.mois === mois && f.annee === annee && f.agente_id === agenteSelectionnee && f.type_facture === 'ctp_vers_agente') : null
-                  const statutBadge = (f) => {
-                    const s = f?.statut || 'a_facturer'
-                    return <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${s === 'paye' ? 'text-green-700 bg-green-50 border-green-300' : s === 'facture' ? 'text-blue-700 bg-blue-50 border-blue-300' : 'text-gray-500 bg-gray-50 border-gray-200'}`}>
-                      {s === 'paye' ? '✅ Payé' : s === 'facture' ? '📤 Facturé' : '📋 À facturer'}
-                    </span>
-                  }
+                {lignes.map(({ mois, gains, duParAgente, f1, f2 }) => {
+                  const net = round2(duParAgente - gains)
                   return (
-                    <tr key={key} className="hover:bg-gray-50">
-                      <td className="px-3 py-2.5 font-medium text-gray-800">{label}</td>
-                      <td className="px-3 py-2.5 text-right text-green-700 font-medium">{fmt(gains)}</td>
-                      <td className="px-3 py-2.5 text-right text-gray-500">{redev > 0 ? fmt(redev) : '—'}</td>
-                      <td className="px-3 py-2.5 text-right text-gray-500">{apporteur > 0 ? `— ${fmt(apporteur)}` : '—'}</td>
-                      <td className={`px-3 py-2.5 text-right font-bold ${netMois >= 0 ? 'text-blue-700' : 'text-amber-600'}`}>{netMois >= 0 ? '+' : ''}{fmt(netMois)}</td>
-                      <td className="px-3 py-2.5 text-right">{statutBadge(f1)}</td>
-                      <td className="px-3 py-2.5 text-right">{statutBadge(f2)}</td>
+                    <tr key={mois} className="hover:bg-gray-50">
+                      <td className="px-3 py-2.5 font-medium text-gray-800">{MOIS[mois]} {anneeSelectionnee}</td>
+                      <td className="px-3 py-2.5 text-right text-green-700 font-medium">{duParAgente > 0 ? fmt(duParAgente) : '—'}</td>
+                      <td className="px-3 py-2.5 text-right">{duParAgente > 0 ? statutBadge(f2) : '—'}</td>
+                      <td className="px-3 py-2.5 text-right text-red-600">{gains > 0 ? fmt(gains) : '—'}</td>
+                      <td className="px-3 py-2.5 text-right">{gains > 0 ? statutBadge(f1) : '—'}</td>
+                      <td className={`px-3 py-2.5 text-right font-bold ${net >= 0 ? 'text-blue-700' : 'text-amber-600'}`}>{net >= 0 ? '+' : ''}{fmt(net)}</td>
                     </tr>
                   )
                 })}
+                {lignes.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">Aucune donnée pour {anneeSelectionnee}</td></tr>}
               </tbody>
+              {lignes.length > 0 && (
+                <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-bold">
+                  <tr>
+                    <td className="px-3 py-2 text-gray-700">Total</td>
+                    <td className="px-3 py-2 text-right text-green-700">{fmt(totalF2)}</td>
+                    <td className="px-3 py-2 text-right text-xs text-gray-400">{fmt(totalPayeF2)} payé</td>
+                    <td className="px-3 py-2 text-right text-red-600">{fmt(totalF1)}</td>
+                    <td className="px-3 py-2 text-right text-xs text-gray-400">{fmt(totalPayeF1)} payé</td>
+                    <td className={`px-3 py-2 text-right ${round2(totalF2-totalF1) >= 0 ? 'text-blue-700' : 'text-amber-600'}`}>{round2(totalF2-totalF1) >= 0 ? '+' : ''}{fmt(round2(totalF2-totalF1))}</td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>
@@ -2212,14 +2238,27 @@ export default function Finances() {
           const redev = debutRedev && moisConcerne >= debutRedev ? 540 : 0
           const apporteur = round2(agg.apporteurRembourseNet||0)
           const duParAgente = round2(redev + apporteur)
-          const net = round2(gains - duParAgente)
+          const net = round2(duParAgente - gains)
           const f1 = facturesAgente.find(f => f.mois === mois && f.annee === annee && f.agente_id === agenteSelectionnee && f.type_facture === 'agente_vers_ctp')
           const f2 = facturesAgente.find(f => f.mois === mois && f.annee === annee && f.agente_id === agenteSelectionnee && f.type_facture === 'ctp_vers_agente')
+          const uploadKey2 = `${annee}-${mois}-ctp_vers_agente`
+
+          const uploadF2Pdf = async (fichier) => {
+            setUploadingFactureAgente(uploadKey2)
+            const ext = fichier.name.split('.').pop()
+            const chemin = `factures_agente/${agenteSelectionnee}/${annee}-${String(mois).padStart(2,'0')}-ctp_vers_agente.${ext}`
+            const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+            if (!error) {
+              await upsertFactureMoisType(mois, annee, duParAgente, 'ctp_vers_agente', { facture_path: chemin, statut: 'facture' })
+              setSucces('Facture F2 uploadée ✓')
+            } else { setErreur('Erreur upload : ' + error.message) }
+            setUploadingFactureAgente(null)
+          }
 
           const statutBadge = (f) => {
             const s = f?.statut || 'a_facturer'
             return <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${s === 'paye' ? 'text-green-700 bg-green-50 border-green-300' : s === 'facture' ? 'text-blue-700 bg-blue-50 border-blue-300' : 'text-gray-500 bg-gray-50 border-gray-200'}`}>
-              {s === 'paye' ? '✅ Payé' : s === 'facture' ? '📤 Facturé' : '📋 À facturer'}
+              {s === 'paye' ? '✅ Payé' :  '📋 À facturer'}
             </span>
           }
 
@@ -2232,38 +2271,69 @@ export default function Finances() {
                 </span>
               </div>
               <div className="p-4 space-y-3">
-                {/* Ce que Marine doit */}
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-xs font-semibold text-green-700">📥 {nomFranchisee} doit verser à {nomAgente}</p>
-                    <div className="text-xs text-gray-500 mt-1 space-y-0.5">
-                      {(agg.fraisAgenteNet||0) > 0 && <div className="flex gap-4"><span>Frais</span><span>{fmt(agg.fraisAgenteNet)}</span></div>}
-                      {(agg.comAgenteNet||0) > 0 && <div className="flex gap-4"><span>Commissions</span><span>{fmt(agg.comAgenteNet)}</span></div>}
-                      {(agg.honAgenteNet||0) > 0 && <div className="flex gap-4"><span>Honoraires</span><span>{fmt(agg.honAgenteNet)}</span></div>}
-                    </div>
+          {/* F2 en premier — Marine émet, vert */}
+          {duParAgente > 0 && (
+            <div className="border border-gray-100 rounded-lg p-3 space-y-2">
+              <div className="flex justify-between items-start">
+                <p className="text-xs font-semibold text-green-800">{nomFranchisee} doit facturer à {nomAgente}</p>
+                <span className="text-sm font-bold text-green-700">{fmt(duParAgente)}</span>
+              </div>
+              <div className="text-xs text-green-700 space-y-1">
+                {redev > 0 && <div className="flex justify-between"><span>Redevance mensuelle</span><span>{fmt(redev)}</span></div>}
+                {apporteur > 0 && <div className="flex justify-between"><span>Apporteur remboursé</span><span>{fmt(apporteur)}</span></div>}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-green-100">
+                <select value={f2?.statut || 'a_facturer'}
+                  onChange={e => upsertFactureMoisType(mois, annee, duParAgente, 'ctp_vers_agente', { statut: e.target.value })}
+                  className={`border rounded px-2 py-1 text-xs focus:outline-none ${f2?.statut === 'paye' ? 'border-green-300 bg-white text-green-700' : 'border-gray-200 text-gray-600 bg-white'}`}>
+                  <option value="a_facturer">📋 À facturer</option>
+                  <option value="paye">✅ Payé</option>
+                </select>
+                {f2?.facture_path ? (
+                  <div className="flex items-center gap-2">
+                    <button onClick={async () => { const { data } = await supabase.storage.from('documents').createSignedUrl(f2.facture_path, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }}
+                      className="text-xs text-blue-600 hover:underline">📄 Voir</button>
+                    <label className="text-xs text-gray-400 cursor-pointer hover:text-blue-600">
+                      Remplacer
+                      <input type="file" accept=".pdf" className="hidden" onChange={e => e.target.files[0] && uploadF2Pdf(e.target.files[0])} />
+                    </label>
                   </div>
-                  <div className="text-right space-y-1">
-                    <p className="text-lg font-bold text-green-700">{fmt(gains)}</p>
-                    {statutBadge(f1)}
-                  </div>
-                </div>
-                {/* Ce que l'agente doit */}
-                {duParAgente > 0 && (
-                  <div className="flex justify-between items-center border-t border-gray-100 pt-3">
-                    <div>
-                      <p className="text-xs font-semibold text-red-600">📤 {nomAgente} doit verser à {nomFranchisee}</p>
-                      <div className="text-xs text-gray-500 mt-1 space-y-0.5">
-                        {redev > 0 && <div className="flex gap-4"><span>Redevance</span><span>{fmt(redev)}</span></div>}
-                        {apporteur > 0 && <div className="flex gap-4"><span>Apporteur</span><span>{fmt(apporteur)}</span></div>}
-                      </div>
-                    </div>
-                    <div className="text-right space-y-1">
-                      <p className="text-lg font-bold text-red-600">{fmt(duParAgente)}</p>
-                      {statutBadge(f2)}
-                    </div>
-                  </div>
+                ) : (
+                  <label className={`text-xs cursor-pointer px-2 py-1 rounded border transition-all ${uploadingFactureAgente === uploadKey2 ? 'text-gray-400 border-gray-200' : 'text-blue-600 border-blue-200 bg-white hover:bg-blue-50'}`}>
+                    {uploadingFactureAgente === uploadKey2 ? 'Upload...' : '+ Uploader PDF'}
+                    <input type="file" accept=".pdf" className="hidden" disabled={uploadingFactureAgente === uploadKey2} onChange={e => e.target.files[0] && uploadF2Pdf(e.target.files[0])} />
+                  </label>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* F1 en second — agente émet, rouge */}
+          <div className="border border-gray-100 rounded-lg p-3 space-y-2">
+            <div className="flex justify-between items-start">
+              <p className="text-xs font-semibold text-red-800">{nomAgente} doit facturer à {nomFranchisee}</p>
+              <span className="text-sm font-bold text-red-700">{fmt(gains)}</span>
+            </div>
+            <div className="text-xs text-red-700 space-y-1">
+              {(agg.fraisAgenteNet||0) > 0 && <div className="flex justify-between"><span>Frais</span><span>{fmt(agg.fraisAgenteNet)}</span></div>}
+              {(agg.comAgenteNet||0) > 0 && <div className="flex justify-between"><span>Commissions</span><span>{fmt(agg.comAgenteNet)}</span></div>}
+              {(agg.honAgenteNet||0) > 0 && <div className="flex justify-between"><span>Honoraires</span><span>{fmt(agg.honAgenteNet)}</span></div>}
+            </div>
+            <div className="flex items-center gap-3 pt-1 border-t border-red-100 flex-wrap">
+              {statutBadge(f1)}
+              {f1?.facture_path && (
+                <button onClick={async () => { const { data } = await supabase.storage.from('documents').createSignedUrl(f1.facture_path, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }}
+                  className="text-xs text-blue-600 hover:underline">📄 Voir facture</button>
+              )}
+              <label className="flex items-center gap-1.5 cursor-pointer ml-auto">
+                <input type="checkbox" checked={f1?.statut === 'paye'}
+                  onChange={e => upsertFactureMoisType(mois, annee, gains, 'agente_vers_ctp', { statut: e.target.checked ? 'paye' : 'a_facturer' })}
+                  className="w-4 h-4 accent-red-600" />
+                <span className="text-xs text-red-700 font-medium">J'ai payé</span>
+              </label>
+            </div>
+          </div>
+        </div>
             </div>
           )
         })}
