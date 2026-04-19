@@ -57,13 +57,20 @@ const calculerStats = (d) => {
 function KPICard({ label, value, sub, delta, color, icon }) {
   const isPos = delta > 0; const isNeg = delta < 0; const hasD = delta !== null && delta !== undefined && !isNaN(delta)
   return (
-    <div className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
-      <div className="flex items-center justify-between mb-1"><span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{label}</span>{icon && <span className="text-base">{icon}</span>}</div>
-      <div className="flex items-end gap-2 mt-1">
-        <span className="text-2xl font-bold" style={{ color: color || '#111827' }}>{value}</span>
-        {hasD && <span className={`text-xs font-semibold mb-0.5 ${isPos ? 'text-emerald-600' : isNeg ? 'text-red-500' : 'text-gray-400'}`}>{isPos ? '▲' : isNeg ? '▼' : '='} {Math.abs(delta).toFixed(1)}%</span>}
+    <div className="bg-white border border-gray-100 rounded-xl px-6 py-8 pb-8 shadow-sm">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{label}</span>
+        {icon && <span className="text-lg">{icon}</span>}
       </div>
-      {sub && <span className="text-xs text-gray-400 mt-0.5 block">{sub}</span>}
+      <div className="flex items-end gap-2 mt-2">
+        <span className="text-2xl font-bold" style={{ color: color || '#111827' }}>{value}</span>
+        {hasD && (
+          <span className={`text-xs font-semibold mb-0.5 ${isPos ? 'text-emerald-600' : isNeg ? 'text-red-500' : 'text-gray-400'}`}>
+            {isPos ? '▲' : isNeg ? '▼' : '='} {Math.abs(delta).toFixed(1)}%
+          </span>
+        )}
+      </div>
+      {sub && <span className="text-xs text-gray-400 mt-2 block">{sub}</span>}
     </div>
   )
 }
@@ -73,12 +80,16 @@ function ST({ children, sub }) {
 }
 
 function useChart(ref, type, data, options) {
+  const dataStr = JSON.stringify(data)
   useEffect(() => {
     if (typeof Chart === 'undefined' || !ref.current) return
-    if (ref.current._c) ref.current._c.destroy()
-    ref.current._c = new Chart(ref.current, { type, data, options })
-    return () => { if (ref.current?._c) { ref.current._c.destroy(); ref.current._c = null } }
-  }, [JSON.stringify(data)])
+    const canvas = ref.current
+    if (canvas._c) canvas._c.destroy()
+    canvas._c = new Chart(canvas, { type, data, options })
+    return () => {
+      if (canvas._c) { canvas._c.destroy(); canvas._c = null }
+    }
+  }, [dataStr]) // eslint-disable-line react-hooks/exhaustive-deps
   return <div style={{ height: options._height || 220 }}><canvas ref={ref} /></div>
 }
 
@@ -237,25 +248,25 @@ export default function Statistiques() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 space-y-10">
 
         {onglet === 'overview' && (
           <div className="space-y-8">
             <div><ST sub={`${annee} vs ${annee - 1} — variation en %`}>Indicateurs clés de performance</ST>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <KPICard label="Chantiers ouverts" value={mN.nb} sub={`${mN.avecDevis} avec devis signé`} delta={delta(mN.nb, mN1.nb)} icon="📁" />
-                <KPICard label="Volume travaux HT" value={fmt(mN.travaux)} sub={`N-1 : ${fmt(mN1.travaux)}`} delta={delta(mN.travaux, mN1.travaux)} color="#1D4ED8" icon="🏗" />
-                <KPICard label="Net agence" value={fmt(mN.netTotal)} sub={`Royalties : ${fmt(mN.royalties)}`} delta={delta(mN.netTotal, mN1.netTotal)} color="#7C3AED" icon="💰" />
-                <KPICard label="Taux de transformation" value={fmtPct(mN.tauxTransfo)} sub={`N-1 : ${fmtPct(mN1.tauxTransfo)}`} delta={delta(mN.tauxTransfo, mN1.tauxTransfo)} color="#059669" icon="🎯" />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
+                <KPICard label="Chantiers ouverts" value={mN.nb} sub={`${mN.avecDevis} avec devis signé`} delta={delta(mN.nb, mN1.nb)} />
+                <KPICard label="Volume travaux HT" value={fmt(mN.travaux)} sub={`N-1 : ${fmt(mN1.travaux)}`} delta={delta(mN.travaux, mN1.travaux)} color="#1D4ED8"/>
+                <KPICard label="Net agence" value={fmt(mN.netTotal)} sub={`Royalties : ${fmt(mN.royalties)}`} delta={delta(mN.netTotal, mN1.netTotal)} color="#7C3AED"/>
+                <KPICard label="Taux de transformation" value={fmtPct(mN.tauxTransfo)} sub={`N-1 : ${fmtPct(mN1.tauxTransfo)}`} delta={delta(mN.tauxTransfo, mN1.tauxTransfo)} color="#059669"  />
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <KPICard label="Pipeline actif" value={fmt(mN.pipeline)} sub={`${mN.parStatut.en_cours} dossier(s) en cours`} icon="📊" color="#0891B2" />
-              <KPICard label="Panier moyen" value={fmt(mN.panierMoyen)} sub={`N-1 : ${fmt(mN1.panierMoyen)}`} delta={delta(mN.panierMoyen, mN1.panierMoyen)} icon="🧮" />
-              <KPICard label="Durée moy. chantier" value={mN.dureeMoyenne !== null ? fmtDays(mN.dureeMoyenne) : '—'} sub="démarrage → fin" icon="📅" />
-              <KPICard label="Délai moy. encaissement" value={mN.delaiMoyen !== null ? fmtDays(mN.delaiMoyen) : '—'} sub="signature → paiement" icon="⏱" />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
+              <KPICard label="Panier actif" value={fmt(mN.pipeline)} sub={`${mN.parStatut.en_cours} dossier(s) en cours`} color="#0891B2" />
+              <KPICard label="Panier moyen" value={fmt(mN.panierMoyen)} sub={`N-1 : ${fmt(mN1.panierMoyen)}`} delta={delta(mN.panierMoyen, mN1.panierMoyen)} />
+              <KPICard label="Durée moy. chantier" value={mN.dureeMoyenne !== null ? fmtDays(mN.dureeMoyenne) : '—'} sub="démarrage → fin" />
+              <KPICard label="Délai moy. encaissement" value={mN.delaiMoyen !== null ? fmtDays(mN.delaiMoyen) : '—'} sub="signature → paiement" />
             </div>
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-2 gap-8 mb-6">
               <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
                 <ST>Statuts des dossiers</ST>
                 <div className="space-y-4">
@@ -289,11 +300,11 @@ export default function Statistiques() {
                 )}
               </div>
             </div>
-            <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+            <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-6">
               <ST sub={`Comparaison mensuelle ${annee} vs ${annee - 1}`}>CA net mensuel</ST>
               <BarChart labels={MOIS_SHORT} datasets={[{ label: String(annee), data: caParMoisN, backgroundColor: '#2563EB', borderRadius: 4 }, { label: String(annee - 1), data: caParMoisN1, backgroundColor: '#BFDBFE', borderRadius: 4 }]} />
             </div>
-            <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+            <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-6">
               <ST sub="CA net cumulé sur l'exercice">Progression cumulative</ST>
               <LineChart labels={MOIS_SHORT} datasets={[{ label: String(annee), data: cumulatif(caParMoisN), borderColor: '#2563EB', backgroundColor: 'rgba(37,99,235,0.08)', tension: 0.4, fill: true, pointRadius: 4, pointBackgroundColor: '#2563EB' }, { label: String(annee - 1), data: cumulatif(caParMoisN1), borderColor: '#CBD5E1', backgroundColor: 'transparent', tension: 0.4, borderDash: [5, 4], pointRadius: 3 }]} />
             </div>
@@ -301,16 +312,16 @@ export default function Statistiques() {
         )}
 
         {onglet === 'commercial' && (
-          <div className="space-y-8">
+          <div className="space-y-8 mb-6">
             <div><ST sub="Pipeline, transformation, volume signé">Performance commerciale</ST>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <KPICard label="Taux de transformation" value={fmtPct(mN.tauxTransfo)} sub={`N-1 : ${fmtPct(mN1.tauxTransfo)}`} delta={delta(mN.tauxTransfo, mN1.tauxTransfo)} color="#059669" icon="🎯" />
-                <KPICard label="Dossiers signés" value={mN.avecDevis} sub={`sur ${mN.nb} ouverts`} delta={delta(mN.avecDevis, mN1.avecDevis)} icon="✅" />
-                <KPICard label="Volume travaux HT" value={fmt(mN.travaux)} delta={delta(mN.travaux, mN1.travaux)} color="#1D4ED8" icon="🏗" />
-                <KPICard label="Panier moyen" value={fmt(mN.panierMoyen)} delta={delta(mN.panierMoyen, mN1.panierMoyen)} icon="🧮" />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <KPICard label="Taux de transformation" value={fmtPct(mN.tauxTransfo)} sub={`N-1 : ${fmtPct(mN1.tauxTransfo)}`} delta={delta(mN.tauxTransfo, mN1.tauxTransfo)} color="#059669" />
+                <KPICard label="Dossiers signés" value={mN.avecDevis} sub={`sur ${mN.nb} ouverts`} delta={delta(mN.avecDevis, mN1.avecDevis)} />
+                <KPICard label="Volume travaux HT" value={fmt(mN.travaux)} delta={delta(mN.travaux, mN1.travaux)} color="#1D4ED8"/>
+                <KPICard label="Panier moyen" value={fmt(mN.panierMoyen)} delta={delta(mN.panierMoyen, mN1.panierMoyen)} />
               </div>
             </div>
-            <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+            <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-6">
               <ST sub="Valeur des dossiers actifs avec devis non refusés">Pipeline actif — dossiers en cours</ST>
               <div className="grid grid-cols-3 gap-6">
                 <div className="space-y-3">
@@ -327,7 +338,7 @@ export default function Statistiques() {
                 </div>
               </div>
             </div>
-            <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+            <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-6">
               <ST sub="Volume et commissions par type de mission">Répartition par typologie</ST>
               {typologies.length === 0 ? <p className="text-xs text-gray-400 py-8 text-center">Aucune donnée</p> : (
                 <div className="space-y-4">
@@ -350,41 +361,21 @@ export default function Statistiques() {
                 </div>
               )}
             </div>
-            <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
-              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-                <div><p className="font-semibold text-gray-800 text-sm">Top clients — {annee}</p><p className="text-xs text-gray-400">{topClients.length} client(s)</p></div>
-                <span className="text-sm font-bold text-emerald-700">{fmt(topClients.reduce((s, c) => s + c.ca, 0))}</span>
-              </div>
-              <div className="divide-y divide-gray-50">
-                {topClients.map((c, i) => (
-                  <div key={c.id} className="flex items-center gap-4 px-6 py-3 hover:bg-gray-50">
-                    <span className="text-sm font-bold text-gray-200 w-5 text-center">{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800">{c.prenom} {c.nom}</p>
-                      <div className="flex gap-1 mt-0.5 flex-wrap">{c.typologies.map(t => (<span key={t} className="text-xs px-1.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: (TYPO_COLORS[t] || '#6B7280') + '20', color: TYPO_COLORS[t] || '#6B7280' }}>{TYPO_LABELS[t] || t}</span>))}</div>
-                    </div>
-                    <div className="w-32 hidden md:block"><PBar value={c.ca} max={topClients[0]?.ca || 1} color="#059669" height={5} /></div>
-                    <div className="text-right min-w-[100px]"><p className="text-sm font-bold text-emerald-700">{fmt(c.ca)}</p><p className="text-xs text-gray-400">{c.nb} dossier{c.nb > 1 ? 's' : ''}</p></div>
-                  </div>
-                ))}
-                {topClients.length === 0 && <p className="text-center text-gray-400 text-sm py-10">Aucune donnée</p>}
-              </div>
-            </div>
           </div>
         )}
 
         {onglet === 'financier' && (
           <div className="space-y-8">
             <div><ST sub={`Marges, royalties, répartition — ${annee} vs ${annee - 1}`}>Performance financière</ST>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <KPICard label="Net agence total" value={fmt(mN.netTotal)} delta={delta(mN.netTotal, mN1.netTotal)} color="#7C3AED" icon="💰" />
-                <KPICard label="Commissions HT" value={fmt(mN.comHT)} delta={delta(mN.comHT, mN1.comHT)} icon="📈" />
-                <KPICard label="Honoraires net" value={fmt(mN.honNet)} delta={delta(mN.honNet, mN1.honNet)} icon="🏷️" />
-                <KPICard label="Royalties versées" value={fmt(mN.royalties)} color="#DC2626" icon="🔴" />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <KPICard label="Net agence total" value={fmt(mN.netTotal)} delta={delta(mN.netTotal, mN1.netTotal)} color="#7C3AED" />
+                <KPICard label="Commissions HT" value={fmt(mN.comHT)} delta={delta(mN.comHT, mN1.comHT)} />
+                <KPICard label="Honoraires net" value={fmt(mN.honNet)} delta={delta(mN.honNet, mN1.honNet)} />
+                <KPICard label="Royalties versées" value={fmt(mN.royalties)} color="#DC2626"/>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-6">
-              <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+              <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-6">
                 <ST>Répartition des gains {annee}</ST>
                 <div className="space-y-4 mt-2">
                   {[{ label: 'Commissions HT', value: mN.comHT, color: '#2563EB' }, { label: 'Honoraires net', value: mN.honNet, color: '#7C3AED' }, { label: 'Frais consultation', value: mN.fraisNet, color: '#059669' }].map(({ label, value, color }) => {
@@ -393,7 +384,7 @@ export default function Statistiques() {
                   })}
                 </div>
               </div>
-              <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+              <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-6">
                 <ST>Compte de résultat comparé</ST>
                 <table className="w-full text-xs mt-2">
                   <thead><tr className="border-b border-gray-100"><th className="text-left py-2 text-gray-400 uppercase">Ligne</th><th className="text-right py-2 text-gray-400 uppercase">{annee}</th><th className="text-right py-2 text-gray-400 uppercase">{annee - 1}</th><th className="text-right py-2 text-gray-400 uppercase">Évol.</th></tr></thead>
@@ -410,11 +401,11 @@ export default function Statistiques() {
                 </table>
               </div>
             </div>
-            <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+            <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-6">
               <ST sub={`${annee} vs ${annee - 1}`}>CA net mensuel</ST>
               <BarChart labels={MOIS_SHORT} datasets={[{ label: String(annee), data: caParMoisN, backgroundColor: '#7C3AED', borderRadius: 4 }, { label: String(annee - 1), data: caParMoisN1, backgroundColor: '#DDD6FE', borderRadius: 4 }]} />
             </div>
-            <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+            <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-6">
               <ST sub="Progression cumulée sur l'exercice">CA net cumulatif</ST>
               <LineChart labels={MOIS_SHORT} datasets={[{ label: String(annee), data: cumulatif(caParMoisN), borderColor: '#7C3AED', backgroundColor: 'rgba(124,58,237,0.07)', tension: 0.4, fill: true, pointRadius: 4, pointBackgroundColor: '#7C3AED' }, { label: String(annee - 1), data: cumulatif(caParMoisN1), borderColor: '#CBD5E1', backgroundColor: 'transparent', tension: 0.4, borderDash: [5, 4], pointRadius: 3 }]} />
             </div>
@@ -424,14 +415,14 @@ export default function Statistiques() {
         {onglet === 'operationnel' && (
           <div className="space-y-8">
             <div><ST sub="Durées, délais, fiabilité">Performance opérationnelle</ST>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <KPICard label="Durée moy. chantier" value={mN.dureeMoyenne !== null ? fmtDays(mN.dureeMoyenne) : '—'} sub="démarrage → fin" icon="📅" />
-                <KPICard label="Délai moy. encaissement" value={mN.delaiMoyen !== null ? fmtDays(mN.delaiMoyen) : '—'} sub="signature → paiement" icon="⏱" />
-                <KPICard label="Chantiers terminés" value={mN.parStatut.termine} sub={`sur ${mN.nb} total`} color="#059669" icon="✅" />
-                <KPICard label="Taux complétion" value={mN.nb > 0 ? fmtPct((mN.parStatut.termine / mN.nb) * 100) : '—'} icon="📊" color="#0891B2" />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <KPICard label="Durée moy. chantier" value={mN.dureeMoyenne !== null ? fmtDays(mN.dureeMoyenne) : '—'} sub="démarrage → fin" />
+                <KPICard label="Délai moy. encaissement" value={mN.delaiMoyen !== null ? fmtDays(mN.delaiMoyen) : '—'} sub="signature → paiement" />
+                <KPICard label="Chantiers terminés" value={mN.parStatut.termine} sub={`sur ${mN.nb} total`} color="#059669" />
+                <KPICard label="Taux complétion" value={mN.nb > 0 ? fmtPct((mN.parStatut.termine / mN.nb) * 100) : '—'} color="#0891B2" />
               </div>
             </div>
-            <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+            <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-6">
               <ST sub="Délai moyen entre signature contrat et paiements réglés">Délais d'encaissement par dossier</ST>
               {dN.filter(d => d._s.delaiEncaissementJours !== null).length === 0 ? (
                 <p className="text-xs text-gray-400 py-8 text-center">Aucune donnée de paiement disponible</p>
@@ -445,7 +436,7 @@ export default function Statistiques() {
                 </div>
               )}
             </div>
-            <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
+            <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm mb-6">
               <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
                 <div><p className="font-semibold text-gray-800 text-sm">Classement artisans — {annee}</p><p className="text-xs text-gray-400">{topArtisans.length} artisans · volume confié HT</p></div>
                 <span className="text-sm font-bold text-blue-700">{fmt(topArtisans.reduce((s, a) => s + a.volumeHT, 0))}</span>
@@ -477,7 +468,7 @@ export default function Statistiques() {
             <ST sub={`Performance individuelle — exercice ${annee} vs ${annee - 1}`}>Équipe</ST>
             <div className={`grid gap-5 ${statsAgentes.length <= 2 ? 'grid-cols-2' : 'grid-cols-2 md:grid-cols-3'}`}>
               {statsAgentes.map(({ agente, color, m, mP }) => (
-                <div key={agente.id} className="bg-white border rounded-xl p-6 shadow-sm space-y-4" style={{ borderColor: color.border }}>
+                <div key={agente.id} className="bg-white border rounded-xl p-6 shadow-sm space-y-4 mb-6" style={{ borderColor: color.border }}>
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color.dot }} />
                     <span className="font-semibold text-gray-800">{agente.prenom} {agente.nom}</span>
@@ -501,7 +492,7 @@ export default function Statistiques() {
               ))}
             </div>
             {statsAgentes.length > 1 && (
-              <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+              <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-6">
                 <ST sub="CA net mensuel par membre de l'équipe">CA mensuel comparé</ST>
                 <BarChart labels={MOIS_SHORT} datasets={statsAgentes.map(({ agente, color, caParMoisA }) => ({ label: `${agente.prenom} ${agente.nom}`, data: caParMoisA, backgroundColor: color.dot, borderRadius: 4 }))} />
                 <div className="flex gap-4 mt-3 flex-wrap">{statsAgentes.map(({ agente, color }) => (<div key={agente.id} className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded" style={{ backgroundColor: color.dot }} /><span className="text-xs text-gray-500">{agente.prenom} {agente.nom}</span></div>))}</div>
