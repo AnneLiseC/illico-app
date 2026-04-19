@@ -394,7 +394,6 @@ export default function FicheChantier({ params }) {
   const set = (champ, valeur) => setDossier(d => ({ ...d, [champ]: valeur }))
   const setND = (champ, valeur) => setNouveauDevis(d => ({ ...d, [champ]: valeur }))
 
-  const isMarine = profile?.role === 'admin'
   const estChantierMarine = dossier?.referente?.role === 'admin'
 
 
