@@ -2,7 +2,7 @@
 // Génération PDF : récapitulatif financier client + CR
 
 import React from 'react'
-import { buildDossierRestitution, buildDossierR3 } from './restitution.js'
+import { buildDossierRestitution, buildDossierR3, buildSuiviPaiementsSection } from './restitution.js'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
 })
 
 // ── RÉCAPITULATIF FINANCIER CLIENT ──
-function RecapitulatifPDF({ dossier, devis, suiviFinancier }) {
+function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures }) {
   const client = dossier.client
   const nomClient = client
     ? `${client.civilite || ''} ${client.prenom || ''} ${client.nom || ''}`.trim()
@@ -107,18 +107,6 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier }) {
   const isCourtage = ['courtage', 'amo'].includes(dossier.typologie)
   const dateAuj = new Date().toLocaleDateString('fr-FR')
 
-  const acomptesArtisans = devisAcceptes.map((d) => {
-    const montantTTC = toNumber(d.montant_ttc)
-    const acompte = d.acompte_pourcentage === -1
-      ? toNumber(d.acompte_montant_fixe)
-      : montantTTC * (toNumber(d.acompte_pourcentage || 30) / 100)
-    const suiviAcompte = (suiviFinancier || []).find(
-      (s) => s.type_echeance === 'acompte_artisan' && s.artisan_id === d.artisan_id
-    )
-    return { id: d.id, artisan: d.artisan?.entreprise || '—', montant: acompte, statut: suiviAcompte?.statut_client || 'en_attente' }
-  })
-  const totalAcomptes = acomptesArtisans.reduce((sum, a) => sum + toNumber(a.montant), 0)
-
   return (
     <Document>
       <Page size="A4" style={styles.page}>
@@ -142,51 +130,60 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier }) {
           {client?.adresse ? (<View style={{ marginTop: 4 }}><Text style={styles.infoLabel}>Adresse</Text><Text style={styles.cell}>{client.adresse}</Text></View>) : null}
         </View>
 
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: BLEU_CLAIR, paddingBottom: 4, marginBottom: 8 }}>
-          <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: BLEU }}>Frais de consultation</Text>
-          <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold', color: '#000' }}>{dossier.frais_statut === 'offerts' ? 'Offerts' : dossier.frais_deduits ? 'Déduits du total' : fmt(fraisTTC)}</Text>
-        </View>
-
-        {devisAcceptes.length > 0 ? (
+        {(devisAcceptes.length > 0 || (fraisTTC > 0 && dossier.frais_statut !== 'offerts' && !dossier.frais_deduits)) ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Devis artisans signés</Text>
             <View style={styles.table}>
               <View style={styles.tableHeader}>
-                <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Entreprises</Text>
+                <Text style={[styles.tableHeaderCell, { width: 18 }]}> </Text>
+                <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Intervenant</Text>
+                <Text style={[styles.tableHeaderCell, { flex: 4 }]}>Description</Text>
                 <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>Montant HT</Text>
                 <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>Montant TTC</Text>
               </View>
-              {devisAcceptes.map((d, idx) => (
-                <View key={d.id} style={idx % 2 === 0 ? styles.tableRow : styles.tableRowAlt}>
-                  <Text style={[styles.cell, { flex: 3 }]}>{d.artisan?.entreprise || '—'}</Text>
-                  <Text style={[styles.cellRight, { flex: 2 }]}>{fmt(d.montant_ht)}</Text>
-                  <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(d.montant_ttc)}</Text>
+              {fraisTTC > 0 && dossier.frais_statut !== 'offerts' && !dossier.frais_deduits ? (
+                <View style={styles.tableRow}>
+                  <Text style={[styles.cell, { width: 18, color: GRIS_TEXTE }]}>0</Text>
+                  <Text style={[styles.cell, { flex: 3 }]}>illiCO travaux</Text>
+                  <Text style={[styles.cell, { flex: 4 }]}>Frais de consultation</Text>
+                  <Text style={[styles.cellRight, { flex: 2 }]}>{fmt(fraisTTC / 1.2)}</Text>
+                  <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(fraisTTC)}</Text>
                 </View>
-              ))}
-              <View style={styles.tableRowTotal}>
-                <Text style={[styles.cellBold, { flex: 3 }]}>TOTAL</Text>
-                <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(totalDevisHTSignes)}</Text>
-                <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(totalDevisTTCSignes)}</Text>
+              ) : null}
+              {devisAcceptes.map((d, idx) => {
+                const n = idx + 1
+                const rowStyle = n % 2 === 0 ? styles.tableRow : styles.tableRowAlt
+                return (
+                  <View key={d.id} style={rowStyle}>
+                    <Text style={[styles.cell, { width: 18, color: GRIS_TEXTE }]}>{String(n)}</Text>
+                    <Text style={[styles.cell, { flex: 3 }]}>{d.artisan?.entreprise || '—'}</Text>
+                    <Text style={[styles.cell, { flex: 4, color: GRIS_TEXTE }]}>{d.notes || '—'}</Text>
+                    <Text style={[styles.cellRight, { flex: 2 }]}>{fmt(d.montant_ht)}</Text>
+                    <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(d.montant_ttc)}</Text>
+                  </View>
+                )
+              })}
+              <View style={{ flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 4, backgroundColor: '#ddeef8' }}>
+                <Text style={[styles.cellBold, { width: 18 }]}> </Text>
+                <Text style={[styles.cellBold, { flex: 9 }]}>Total HT</Text>
+                <Text style={[styles.cellRightBold, { flex: 2, color: BLEU }]}>
+                  {fmt(totalDevisHTSignes + (fraisTTC > 0 && dossier.frais_statut !== 'offerts' && !dossier.frais_deduits ? fraisTTC / 1.2 : 0))}
+                </Text>
+                <Text style={{ flex: 2 }}> </Text>
+              </View>
+              <View style={{ flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 4, backgroundColor: BLEU }}>
+                <Text style={[styles.cellBold, { width: 18, color: 'white' }]}> </Text>
+                <Text style={[styles.cellBold, { flex: 9, color: 'white' }]}>Total TTC</Text>
+                <Text style={{ flex: 2 }}> </Text>
+                <Text style={[styles.cellRightBold, { flex: 2, color: 'white' }]}>
+                  {fmt(totalDevisTTCSignes + (fraisTTC > 0 && dossier.frais_statut !== 'offerts' && !dossier.frais_deduits ? fraisTTC : 0))}
+                </Text>
               </View>
             </View>
           </View>
         ) : null}
 
-        {acomptesArtisans.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Acomptes artisans</Text>
-            {acomptesArtisans.map((a) => (
-              <View key={a.id} style={styles.infoRow}>
-                <Text style={styles.infoRowLabel}>{a.artisan}</Text>
-                <View style={{ alignItems: 'flex-end' }}><Text style={styles.infoRowValue}>{fmt(a.montant)}</Text></View>
-              </View>
-            ))}
-            <View style={[styles.infoRow, { backgroundColor: BLEU_CLAIR, borderRadius: 4, paddingHorizontal: 8, marginTop: 4 }]}>
-              <Text style={styles.cellBold}>Total acomptes artisans</Text>
-              <Text style={styles.cellRightBold}>{fmt(totalAcomptes)}</Text>
-            </View>
-          </View>
-        ) : null}
+        {buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier })}
 
         {isCourtage && totalDevisTTCSignes > 0 ? (
           <View style={styles.section}>
@@ -226,8 +223,8 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier }) {
   )
 }
 
-function buildRecapitulatifDocument({ dossier, devis, suiviFinancier }) {
-  return React.createElement(RecapitulatifPDF, { dossier, devis, suiviFinancier })
+function buildRecapitulatifDocument({ dossier, devis, suiviFinancier, factures }) {
+  return React.createElement(RecapitulatifPDF, { dossier, devis, suiviFinancier, factures })
 }
 
 // ── COMPTE-RENDU PDF ──
@@ -392,7 +389,10 @@ export async function POST(request) {
       const { data: suiviFinancier, error: suiviError } = await supabaseAdmin
         .from('suivi_financier').select('*').eq('dossier_id', dossierId)
       if (suiviError) return NextResponse.json({ error: suiviError.message }, { status: 500 })
-      const doc = buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: suiviFinancier || [] })
+      const { data: factures, error: facturesError } = await supabaseAdmin
+        .from('factures_artisans').select('*').eq('dossier_id', dossierId).order('date_paiement')
+      if (facturesError) return NextResponse.json({ error: facturesError.message }, { status: 500 })
+      const doc = buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], factures: factures || [] })
       pdfBuffer = await renderToBuffer(doc)
 
     } else if (type === 'dossier_restitution') {
@@ -419,6 +419,13 @@ export async function POST(request) {
         .from('chantier_documents').select('*')
         .eq('dossier_id', dossierId).eq('dans_restitution', true).order('created_at')
 
+      const { data: factures } = await supabaseAdmin
+        .from('factures_artisans').select('*')
+        .eq('dossier_id', dossierId).order('date_paiement')
+
+      const { data: suiviFinancier } = await supabaseAdmin
+        .from('suivi_financier').select('*').eq('dossier_id', dossierId)
+
       const photosWithBase64 = await Promise.all((photos || []).map(async (photo) => {
         try {
           const { data: fileData } = await supabaseAdmin.storage.from('photos').download(photo.url)
@@ -439,6 +446,8 @@ export async function POST(request) {
         interventions: interventions || [],
         fichesTech: fichesTech || [],
         docsRestitution: docsRestitution || [],
+        factures: factures || [],
+        suiviFinancier: suiviFinancier || [],
         logo: getLogoBase64(),
         supabaseAdmin,
       })

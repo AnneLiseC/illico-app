@@ -194,7 +194,6 @@ export default function FicheClient({ params }) {
                 ['Prénom / Nom', nomComplet.replace(`${client.civilite} `, '')],
                 ['Email', client.email || '—'],
                 ['Téléphone', client.telephone || '—'],
-                ['Adresse', client.adresse || '—'],
                 ['Adresse client', client.adresse || '—'],
                 ['Adresse chantier', client.adresse_chantier || client.adresse || '—'],
                 ['Type', client.type_client === 'professionnel' ? 'Professionnel' : 'Particulier'],
@@ -296,7 +295,7 @@ export default function FicheClient({ params }) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                  <select value={client.type_client} onChange={e => set('type_client', e.target.value)}
+                  <select value={client.type_client ||''} onChange={e => set('type_client', e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="particulier">Particulier</option>
                     <option value="professionnel">Professionnel</option>

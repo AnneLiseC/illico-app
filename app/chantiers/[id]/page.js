@@ -143,7 +143,14 @@ export default function FicheChantier({ params }) {
   const [messages, setMessages] = useState([])
   const [factures, setFactures] = useState([])
   const [ajouterFacture, setAjouterFacture] = useState(null) // devisId en cours
-  const [nouvelleFacture, setNouvelleFacture] = useState({ montant_ttc: '', date_paiement: '', statut: 'en_attente', fichier: null })
+  const [nouvelleFacture, setNouvelleFacture] = useState({
+    montant_ttc: '',
+    date_paiement: '',
+    statut: 'en_attente',
+    fichier: null,
+    libelle: 'Facture acompte',
+    libelle_autre: ''
+  })
   const [uploadingFacturePdf, setUploadingFacturePdf] = useState(null)
 
   // CR avec IA
@@ -456,11 +463,18 @@ export default function FicheChantier({ params }) {
 
   const ajouterFactureArtisan = async (devisId, artisanId) => {
     if (!nouvelleFacture.montant_ttc) return
+    const libelleFinal = nouvelleFacture.libelle === 'Autre'
+      ? (nouvelleFacture.libelle_autre || 'Facture').trim()
+      : nouvelleFacture.libelle
+
     const { data: factureInseree } = await supabase.from('factures_artisans').insert({
-      devis_id: devisId, dossier_id: id, artisan_id: artisanId,
+      dossier_id: id,
+      devis_id: devisId,
+      artisan_id: artisanId,
       montant_ttc: parseFloat(nouvelleFacture.montant_ttc),
       date_paiement: nouvelleFacture.date_paiement || null,
       statut: nouvelleFacture.statut,
+      libelle: libelleFinal
     }).select().single()
 
     if (factureInseree) {
@@ -480,7 +494,14 @@ export default function FicheChantier({ params }) {
 
     await chargerFactures()
     setAjouterFacture(null)
-    setNouvelleFacture({ montant_ttc: '', date_paiement: '', statut: 'en_attente', fichier: null })
+    setNouvelleFacture({
+      montant_ttc: '',
+      date_paiement: '',
+      statut: 'en_attente',
+      fichier: null,
+      libelle: 'Facture acompte',
+      libelle_autre: ''
+    })
     setSucces('Facture ajoutée ✓')
   }
 
@@ -1613,7 +1634,7 @@ ${s.contenu}`).join('')
                       <div className="pt-2 border-t border-gray-100 space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-xs text-gray-500 font-medium">🧾 Factures artisan</span>
-                          <button onClick={() => { setAjouterFacture(d.id); setNouvelleFacture({ montant_ttc: '', date_paiement: '', statut: 'en_attente' }) }}
+                          <button onClick={() => { setAjouterFacture(d.id); setNouvelleFacture({ montant_ttc: '', date_paiement: '', statut: 'en_attente', fichier: null, libelle: 'Facture acompte', libelle_autre: '' }) }}
                             className="text-xs text-green-600 border border-green-200 px-2 py-0.5 rounded hover:bg-green-50">
                             + Ajouter
                           </button>
@@ -1621,7 +1642,9 @@ ${s.contenu}`).join('')
                         {factures.filter(f => f.devis_id === d.id).map(f => (
                           <div key={f.id} className="bg-gray-50 rounded-lg p-2 space-y-1">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs font-medium text-gray-700">{(f.montant_ttc || 0).toFixed(2)} € TTC</span>
+                              <span className="text-xs font-medium text-gray-700">
+                                {f.libelle || 'Facture'} — {(f.montant_ttc || 0).toFixed(2)} € TTC
+                              </span>
                               <div className="flex items-center gap-2">
                                 {f.date_paiement && <span className="text-xs text-gray-400">{new Date(f.date_paiement).toLocaleDateString('fr-FR')}</span>}
                                 <button onClick={() => toggleStatutFacture(f.id, f.statut)}
@@ -1659,6 +1682,23 @@ ${s.contenu}`).join('')
                                   onChange={e => setNouvelleFacture(f => ({ ...f, date_paiement: e.target.value }))}
                                   className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500" />
                               </div>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Libellé</label>
+                              <select value={nouvelleFacture.libelle}
+                                onChange={e => setNouvelleFacture(f => ({ ...f, libelle: e.target.value, libelle_autre: '' }))}
+                                className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500">
+                                <option value="Facture acompte">Facture acompte</option>
+                                <option value="Facture de situation">Facture de situation</option>
+                                <option value="Facture solde">Facture solde</option>
+                                <option value="Autre">Autre (saisie libre)</option>
+                              </select>
+                              {nouvelleFacture.libelle === 'Autre' && (
+                                <input type="text" placeholder="Préciser le libellé"
+                                  value={nouvelleFacture.libelle_autre}
+                                  onChange={e => setNouvelleFacture(f => ({ ...f, libelle_autre: e.target.value }))}
+                                  className="w-full border border-gray-300 rounded px-2 py-1 text-xs mt-1 focus:outline-none focus:ring-1 focus:ring-green-500" />
+                              )}
                             </div>
                             <select value={nouvelleFacture.statut}
                               onChange={e => setNouvelleFacture(f => ({ ...f, statut: e.target.value }))}

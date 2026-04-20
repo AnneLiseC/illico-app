@@ -81,6 +81,15 @@ const CS = StyleSheet.create({
   coverName:   { fontSize: 11, color: BLEU, textAlign: 'center', marginBottom: 3 },
   coverText:   { fontSize: 10, color: '#374151', textAlign: 'center', marginBottom: 2 },
   coverSlogan: { fontSize: 10, color: BLEU2, textAlign: 'center', fontFamily: 'Helvetica-Oblique', marginTop: 8 },
+  // Suivi paiements
+  paiementBloc:        { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 3, padding: 8, marginBottom: 6 },
+  paiementHeader:      { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  paiementHeaderTitle: { fontSize: 9, fontFamily: 'Helvetica-Bold' },
+  paiementHeaderMontant:{ fontSize: 8, color: GRIS },
+  paiementLigne:       { flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: '#e5e7eb', paddingVertical: 3 },
+  paiementCol:         { fontSize: 8 },
+  paiementEmpty:       { fontSize: 8, color: '#9ca3af', fontStyle: 'italic', textAlign: 'center', paddingVertical: 5 },
+  paiementTotal:       { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#9ca3af', paddingTop: 5, marginTop: 3 },
 })
 
 function Hdr({ title, sub, logo }) {
@@ -97,6 +106,139 @@ function Ftr({ ref: r }) {
     React.createElement(Text, { style: CS.footerTxt }, `illiCO travaux Martigues — ${r}`),
     React.createElement(Text, { style: CS.footerSlogan }, 'Quand vous pensez travaux, pensez illiCO !'),
     React.createElement(Text, { style: CS.footerTxt, render: ({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}` }),
+  )
+}
+
+// ── Construit la section "Suivi des paiements" pour les PDFs financiers ──
+// Option A anti-doublon : les factures_artisans sont la source de vérité comptable.
+// L'acompte suivi_financier n'est affiché QUE si aucune facture n'existe pour le devis.
+export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier, dossier }) {
+  const fraisTTC = toNum(dossier.frais_consultation)
+  const suiviFrais = (suiviFinancier || []).find(s => s.type_echeance === 'frais_consultation' && s.statut_client === 'regle')
+
+  const blocs = []
+
+  // ── Bloc frais de consultation ──
+  if (fraisTTC > 0 && dossier.frais_statut !== 'offerts' && !dossier.frais_deduits) {
+    const datePaiement = suiviFrais?.date_paiement ? new Date(suiviFrais.date_paiement).toLocaleDateString('fr-FR') : null
+    const paye = !!suiviFrais
+    blocs.push(
+      React.createElement(View, { key: 'frais', style: CS.paiementBloc },
+        React.createElement(View, { style: CS.paiementHeader },
+          React.createElement(Text, { style: CS.paiementHeaderTitle }, 'illiCO travaux — Frais de consultation'),
+          React.createElement(Text, { style: CS.paiementHeaderMontant }, `${fmt(fraisTTC)} TTC`),
+        ),
+        React.createElement(View, { style: CS.paiementLigne },
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 2.5, color: GRIS }] }, 'Frais de consultation'),
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, datePaiement || '—'),
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, fmt(fraisTTC)),
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: paye ? '#16a34a' : '#d97706', fontFamily: 'Helvetica-Bold' }] },
+            paye ? 'Payé' : 'En attente'),
+        ),
+      )
+    )
+  }
+
+  // ── Un bloc par devis ──
+  for (const d of devisList) {
+    const ttc = toNum(d.montant_ttc)
+    const facturesDevis = (factures || [])
+      .filter(f => f.devis_id === d.id)
+      .sort((a, b) => {
+        const da = a.date_paiement ? new Date(a.date_paiement).getTime() : 0
+        const db = b.date_paiement ? new Date(b.date_paiement).getTime() : 0
+        return da - db
+      })
+
+    // Construction des lignes de paiement
+    const lignes = []
+    let totalPaye = 0
+
+    if (facturesDevis.length > 0) {
+      // Option A : les factures sont la source de vérité, on ignore l'acompte suivi_financier
+      for (const f of facturesDevis) {
+        const mt = toNum(f.montant_ttc)
+        const date = f.date_paiement ? new Date(f.date_paiement).toLocaleDateString('fr-FR') : '—'
+        const paye = f.statut === 'paye'
+        if (paye) totalPaye += mt
+        lignes.push({
+          libelle: f.libelle || 'Facture',
+          date,
+          montant: mt,
+          paye,
+        })
+      }
+    } else {
+      // Pas de factures : on tombe sur suivi_financier pour l'acompte
+      const suiviAcompte = (suiviFinancier || []).find(s =>
+        s.type_echeance === 'acompte_artisan' &&
+        s.artisan_id === d.artisan_id &&
+        s.statut_client === 'regle'
+      )
+      if (suiviAcompte) {
+        const acompteMontant = d.acompte_pourcentage === -1
+          ? toNum(d.acompte_montant_fixe)
+          : ttc * (toNum(d.acompte_pourcentage || 30) / 100)
+        const date = suiviAcompte.date_paiement ? new Date(suiviAcompte.date_paiement).toLocaleDateString('fr-FR') : '—'
+        totalPaye += acompteMontant
+        lignes.push({
+          libelle: 'Acompte',
+          date,
+          montant: acompteMontant,
+          paye: true,
+        })
+      }
+    }
+
+    const reste = ttc - totalPaye
+
+    const children = [
+      React.createElement(View, { key: 'head', style: CS.paiementHeader },
+        React.createElement(Text, { style: CS.paiementHeaderTitle }, d.artisan?.entreprise || '—'),
+        React.createElement(Text, { style: CS.paiementHeaderMontant }, `${fmt(ttc)} TTC`),
+      ),
+    ]
+
+    if (lignes.length === 0) {
+      children.push(
+        React.createElement(Text, { key: 'empty', style: CS.paiementEmpty }, 'Aucun paiement enregistré')
+      )
+    } else {
+      lignes.forEach((l, i) => {
+        children.push(
+          React.createElement(View, { key: `l${i}`, style: CS.paiementLigne },
+            React.createElement(Text, { style: [CS.paiementCol, { flex: 2.5, color: GRIS }] }, l.libelle),
+            React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, l.date),
+            React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, fmt(l.montant)),
+            React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: l.paye ? '#16a34a' : '#d97706', fontFamily: 'Helvetica-Bold' }] },
+              l.paye ? 'Payé' : 'En attente'),
+          )
+        )
+      })
+    }
+
+    // Ligne total
+    const resteColor = reste > 0 ? '#d97706' : reste < 0 ? '#dc2626' : '#00578e'
+    const resteLabel = reste < 0 ? `Trop-perçu : ${fmt(Math.abs(reste))}` : `Reste : ${fmt(reste)}`
+    children.push(
+      React.createElement(View, { key: 'total', style: CS.paiementTotal },
+        React.createElement(Text, { style: [CS.paiementCol, { flex: 2.5, fontFamily: 'Helvetica-Bold' }] }, 'Total payé'),
+        React.createElement(Text, { style: [CS.paiementCol, { flex: 1 }] }, ''),
+        React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', fontFamily: 'Helvetica-Bold' }] }, fmt(totalPaye)),
+        React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: resteColor, fontFamily: 'Helvetica-Bold' }] }, resteLabel),
+      )
+    )
+
+    blocs.push(
+      React.createElement(View, { key: d.id, style: CS.paiementBloc, wrap: false }, ...children)
+    )
+  }
+
+  if (blocs.length === 0) return null
+
+  return React.createElement(View, { style: { marginTop: 14 } },
+    React.createElement(Text, { style: CS.sectionH }, 'Suivi des paiements'),
+    ...blocs,
   )
 }
 
@@ -144,7 +286,7 @@ async function makeCoverPage({ nomRef, telRef }) {
 }
 
 // ── Génère les pages de contenu ──
-async function buildContentPDF({ dossier, devis, photos, interventions, logo }) {
+async function buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo }) {
   const client = dossier.client
   const ref = dossier.referente
   const nomClient = client
@@ -239,19 +381,8 @@ async function buildContentPDF({ dossier, devis, photos, interventions, logo }) 
         React.createElement(Text, { style: { flex: 2 } }, ''),
         React.createElement(Text, { style: [CS.tdRWB, { flex: 2 }] }, fmt(totalTTC + fraisTTC)),
       ),
-      // Acomptes
-      devisAcceptes.length > 0 && React.createElement(View, { style: { marginTop: 14 } },
-        React.createElement(Text, { style: CS.sectionH }, 'Acomptes entreprises'),
-        ...devisAcceptes.map(d => {
-          const ttc = toNum(d.montant_ttc)
-          const acompte = d.acompte_pourcentage === -1 ? toNum(d.acompte_montant_fixe) : ttc * (toNum(d.acompte_pourcentage || 30) / 100)
-          const pct = d.acompte_pourcentage === -1 ? '' : ` (${d.acompte_pourcentage || 30}%)`
-          return React.createElement(View, { key: d.id, style: CS.sumRow },
-            React.createElement(Text, { style: CS.sumLabel }, `${d.artisan?.entreprise || '—'}${pct}`),
-            React.createElement(Text, { style: CS.sumValue }, fmt(acompte)),
-          )
-        }),
-      ),
+      // Suivi des paiements (remplace l'ancienne section "Acomptes entreprises")
+      buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier }),
       // Honoraires
       isC && totalTTC > 0 && React.createElement(View, { style: { marginTop: 10 } },
         React.createElement(Text, { style: CS.sectionH }, 'Honoraires illiCO travaux'),
@@ -306,12 +437,14 @@ async function buildContentPDF({ dossier, devis, photos, interventions, logo }) 
       pages.push(
         React.createElement(Page, { key: `maq-${i}`, size: 'A4', style: CS.page },
           React.createElement(Hdr, { title: 'Illustrations & vues 3D', sub: `${dossier.reference} — ${nomClient}`, logo }),
-          React.createElement(View, { style: { flexDirection: 'column', gap: 16, flex: 1 } },
+          React.createElement(View, { style: { flexDirection: 'column', flex: 1, justifyContent: 'space-between', paddingBottom: 40 } },
             ...chunk.filter(p => p.base64).map(ph =>
-              React.createElement(PdfImage, { key: ph.id, src: ph.base64, style: CS.photoImg })
+              React.createElement(View, { key: ph.id, style: { flex: 1, marginVertical: 4 } },
+                React.createElement(PdfImage, { src: ph.base64, style: { width: '100%', height: '100%', objectFit: 'contain' } }),
+              )
             ),
           ),
-          React.createElement(Text, { style: { fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', marginTop: 12, lineHeight: 1.4 } },
+          React.createElement(Text, { style: { position: 'absolute', bottom: 40, left: 38, right: 38, fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', lineHeight: 1.4 } },
             "Les illustrations graphiques reproduites sont des illustrations commerciales qui ne peuvent servir de base à la réalisation du chantier.",
           ),
           React.createElement(Ftr, { ref: dossier.reference }),
@@ -335,7 +468,7 @@ async function downloadPDF(supabaseAdmin, bucket, path) {
 }
 
 // ── Merge principal ──
-export async function buildDossierRestitution({ dossier, devis, photos, interventions, fichesTech, docsRestitution, logo, supabaseAdmin }) {
+export async function buildDossierRestitution({ dossier, devis, photos, interventions, fichesTech, docsRestitution, factures, suiviFinancier, logo, supabaseAdmin }) {
   const isAMO = dossier.typologie === 'amo'
   const devisAcceptes = (devis || []).filter(d => d.statut === 'accepte')
   const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
@@ -352,7 +485,7 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
   ])
 
   // Générer les pages de contenu
-  const contentBuffer = await buildContentPDF({ dossier, devis, photos, interventions, logo })
+  const contentBuffer = await buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo })
   const contentPdf = await PDFDocument.load(contentBuffer)
 
   // PDF final
@@ -474,22 +607,180 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
 }
 
 // ── DOSSIER R3 (présentation devis avant signature) ──
-export async function buildDossierR3({ dossier, devis, supabaseAdmin }) {
-  const devisRecus = (devis || []).filter(d => d.statut === 'recu')
+// Génère la page récap du R3 : tableau devis reçus + acomptes + honoraires + TOTAL PROJET
+// Simulation "si tu signes tout"
+async function buildR3ContentPDF({ dossier, devisR3, logo }) {
+  const client = dossier.client
+  const ref = dossier.referente
+  const nomClient = client
+    ? [client.civilite, client.prenom, client.nom, client.prenom2 ? `& ${client.prenom2} ${client.nom2}` : null].filter(Boolean).join(' ')
+    : '—'
+  const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
+  const nomRef = getNomRef(ref)
+  const dateAuj = new Date().toLocaleDateString('fr-FR')
+
+  const totalHT  = devisR3.reduce((s, d) => s + toNum(d.montant_ht), 0)
+  const totalTTC = devisR3.reduce((s, d) => s + toNum(d.montant_ttc), 0)
+  const fraisTTC = toNum(dossier.frais_consultation)
+  const fraisHT  = fraisTTC / 1.2
+  const tauxC = toNum(dossier.taux_courtage || 0.06)
+  const tauxA = toNum(dossier.honoraires_amo_taux ?? 9) / 100
+  const honC  = totalTTC * tauxC
+  const honAMO= totalTTC * (tauxC + tauxA)
+  const isAMO = dossier.typologie === 'amo'
+  const isC   = ['courtage', 'amo'].includes(dossier.typologie)
+
+  let rowNum = 0
+  const showFrais = fraisTTC > 0 && dossier.frais_statut !== 'offerts'
+
+  const pages = [
+    // ── Descriptif du projet ──
+    React.createElement(Page, { key: 'desc', size: 'A4', style: CS.page },
+      React.createElement(Hdr, { title: 'Descriptif du projet', sub: `${dossier.reference} — ${nomClient}`, logo }),
+      React.createElement(View, null,
+        ...[
+          ['Référence',          dossier.reference || '—'],
+          ['Client',             nomClient],
+          client?.adresse ? ['Adresse', client.adresse] : null,
+          ['Prestation',         TYPO[dossier.typologie] || dossier.typologie],
+          ['Référente',          nomRef],
+          ['Document établi le', dateAuj],
+        ].filter(Boolean).map(([l, v]) =>
+          React.createElement(View, { key: l, style: CS.infoRow },
+            React.createElement(Text, { style: CS.infoLabel }, l),
+            React.createElement(Text, { style: CS.infoValue }, v),
+          )
+        ),
+      ),
+      dossier.resume_projet && React.createElement(View, null,
+        React.createElement(Text, { style: CS.sectionH }, 'Résumé du projet'),
+        React.createElement(Text, { style: { fontSize: 8.5, lineHeight: 1.6, color: '#374151' } }, dossier.resume_projet),
+      ),
+      React.createElement(Text, { style: { fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', marginTop: 16, lineHeight: 1.4 } },
+        "Ce document présente l'ensemble des devis reçus et signés pour votre projet. Les devis signés sont déjà engagés ; les devis à valider constituent une simulation sous réserve de signature.",
+      ),
+      React.createElement(Ftr, { ref: dossier.reference }),
+    ),
+    // ── Récapitulatif financier (simulation) ──
+    React.createElement(Page, { key: 'recap', size: 'A4', style: CS.page },
+      React.createElement(Hdr, { title: 'Récapitulatif financier', sub: `${dossier.reference} — ${nomClient}`, logo }),
+      React.createElement(Text, { style: { fontSize: 8, color: '#f37f2b', fontFamily: 'Helvetica-Oblique', marginBottom: 8 } },
+        "Vue globale — devis signés (engagés) et devis à valider (simulation). Les montants définitifs dépendent de la signature des devis en attente.",
+      ),
+      React.createElement(View, { style: CS.tableHdr },
+        React.createElement(Text, { style: [CS.th, { width: 18 }] }, ' '),
+        React.createElement(Text, { style: [CS.th, { flex: 3 }] }, 'Intervenant'),
+        React.createElement(Text, { style: [CS.th, { flex: 3 }] }, 'Description'),
+        React.createElement(Text, { style: [CS.th, { flex: 1.3, textAlign: 'center' }] }, 'Statut'),
+        React.createElement(Text, { style: [CS.th, { flex: 2, textAlign: 'right' }] }, 'Montant HT'),
+        React.createElement(Text, { style: [CS.th, { flex: 2, textAlign: 'right' }] }, 'Montant TTC'),
+      ),
+      showFrais && React.createElement(View, { style: CS.tr },
+        React.createElement(Text, { style: [CS.td, { width: 18, color: GRIS }] }, '0'),
+        React.createElement(Text, { style: [CS.td, { flex: 3 }] }, 'illiCO travaux'),
+        React.createElement(Text, { style: [CS.td, { flex: 3 }] }, 'Frais de consultation'),
+        React.createElement(Text, { style: [CS.td, { flex: 1.3, textAlign: 'center', color: GRIS }] }, '—'),
+        React.createElement(Text, { style: [CS.tdR, { flex: 2 }] }, fmt(fraisHT)),
+        React.createElement(Text, { style: [CS.tdRB, { flex: 2 }] }, fmt(fraisTTC)),
+      ),
+      ...devisR3.map(d => {
+        const n = ++rowNum
+        const estSigne = d.statut === 'accepte'
+        return React.createElement(View, { key: d.id, style: n % 2 === 0 ? CS.tr : CS.trAlt },
+          React.createElement(Text, { style: [CS.td, { width: 18, color: GRIS }] }, String(n)),
+          React.createElement(Text, { style: [CS.td, { flex: 3 }] }, d.artisan?.entreprise || '—'),
+          React.createElement(Text, { style: [CS.td, { flex: 3, color: GRIS }] }, d.notes || '—'),
+          React.createElement(Text, { style: [CS.td, { flex: 1.3, textAlign: 'center', color: estSigne ? '#16a34a' : '#d97706', fontFamily: 'Helvetica-Bold' }] },
+            estSigne ? 'Signé' : 'À valider'),
+          React.createElement(Text, { style: [CS.tdR, { flex: 2 }] }, fmt(d.montant_ht)),
+          React.createElement(Text, { style: [CS.tdRB, { flex: 2 }] }, fmt(d.montant_ttc)),
+        )
+      }),
+      React.createElement(View, { style: CS.trSub },
+        React.createElement(Text, { style: [CS.tdB, { width: 18 }] }, ' '),
+        React.createElement(Text, { style: [CS.tdB, { flex: 7.3 }] }, 'Total HT'),
+        React.createElement(Text, { style: [CS.tdRB, { flex: 2, color: BLEU }] }, fmt(totalHT + (showFrais ? fraisHT : 0))),
+        React.createElement(Text, { style: { flex: 2 } }, ''),
+      ),
+      React.createElement(View, { style: CS.trTotal },
+        React.createElement(Text, { style: [CS.tdW, { width: 18 }] }, ' '),
+        React.createElement(Text, { style: [CS.tdWB, { flex: 7.3 }] }, 'Total TTC'),
+        React.createElement(Text, { style: { flex: 2 } }, ''),
+        React.createElement(Text, { style: [CS.tdRWB, { flex: 2 }] }, fmt(totalTTC + (showFrais ? fraisTTC : 0))),
+      ),
+      // Acomptes (simulation)
+      devisR3.length > 0 && React.createElement(View, { style: { marginTop: 14 } },
+        React.createElement(Text, { style: CS.sectionH }, 'Acomptes entreprises (à la signature)'),
+        ...devisR3.map(d => {
+          const ttc = toNum(d.montant_ttc)
+          const acompte = d.acompte_pourcentage === -1 ? toNum(d.acompte_montant_fixe) : ttc * (toNum(d.acompte_pourcentage || 30) / 100)
+          const pct = d.acompte_pourcentage === -1 ? '' : ` (${d.acompte_pourcentage || 30}%)`
+          return React.createElement(View, { key: d.id, style: CS.sumRow },
+            React.createElement(Text, { style: CS.sumLabel }, `${d.artisan?.entreprise || '—'}${pct}`),
+            React.createElement(Text, { style: CS.sumValue }, fmt(acompte)),
+          )
+        }),
+        React.createElement(View, { style: CS.trSub },
+          React.createElement(Text, { style: [CS.tdB, { flex: 1 }] }, 'Total acomptes artisans'),
+          React.createElement(Text, { style: [CS.tdRB, { color: BLEU }] }, fmt(
+            devisR3.reduce((sum, d) => {
+              const ttc = toNum(d.montant_ttc)
+              const acompte = d.acompte_pourcentage === -1 ? toNum(d.acompte_montant_fixe) : ttc * (toNum(d.acompte_pourcentage || 30) / 100)
+              return sum + acompte
+            }, 0)
+          )),
+        ),
+      ),
+      // Honoraires
+      isC && totalTTC > 0 && React.createElement(View, { style: { marginTop: 10 } },
+        React.createElement(Text, { style: CS.sectionH }, 'Honoraires illiCO travaux'),
+        React.createElement(View, { style: CS.sumRow },
+          React.createElement(Text, { style: CS.sumLabel }, `Honoraires courtage (${(tauxC * 100).toFixed(1)}%)`),
+          React.createElement(Text, { style: CS.sumValue }, fmt(honC)),
+        ),
+        isAMO && React.createElement(View, { style: CS.sumOrange },
+          React.createElement(Text, { style: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#f37f2b', flex: 1 } }, `Honoraires AMO (${((tauxC + tauxA) * 100).toFixed(1)}%)`),
+          React.createElement(Text, { style: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#f37f2b' } }, fmt(honAMO)),
+        ),
+        React.createElement(View, { style: CS.totalBlock },
+          React.createElement(Text, { style: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' } }, 'TOTAL PROJET (simulation)'),
+          React.createElement(Text, { style: { color: BLANC, fontSize: 13, fontFamily: 'Helvetica-Bold' } }, fmt(totalTTC + (showFrais ? fraisTTC : 0) + (isAMO ? honAMO : honC))),
+        ),
+      ),
+      React.createElement(Ftr, { ref: dossier.reference }),
+    ),
+  ]
+
+  return renderToBuffer(React.createElement(Document, null, ...pages))
+}
+
+export async function buildDossierR3({ dossier, devis, supabaseAdmin, logo }) {
+  // Le R3 présente les devis reçus ET signés (pour vue globale, ex: architecte signée avant artisans)
+  const devisR3 = (devis || []).filter(d => d.statut === 'recu' || d.statut === 'accepte')
 
   const loadSep = async (b64) => PDFDocument.load(Buffer.from(b64, 'base64'))
-  const [sepDevis, sepKbis] = await Promise.all([
+  const [sepDescriptif, sepRecap, sepDevis, sepKbis] = await Promise.all([
+    loadSep(SEP_DESCRIPTIF),
+    loadSep(SEP_RECAP),
     loadSep(SEP_DEVIS),
     loadSep(SEP_KBIS),
   ])
 
+  // Générer les pages de contenu (descriptif + récap)
+  const contentBuffer = await buildR3ContentPDF({ dossier, devisR3, logo })
+  const contentPdf = await PDFDocument.load(contentBuffer)
+
   const final = await PDFDocument.create()
+  let cIdx = 0
 
   const addSep = async (sepPdf) => {
     const [p] = await final.copyPages(sepPdf, [0])
     final.addPage(p)
   }
-
+  const addContent = async () => {
+    const [p] = await final.copyPages(contentPdf, [cIdx++])
+    final.addPage(p)
+  }
   const addExternalPDF = async (buf) => {
     if (!buf) return
     try {
@@ -511,9 +802,17 @@ export async function buildDossierR3({ dossier, devis, supabaseAdmin }) {
   const [coverPage] = await final.copyPages(coverPdf, [0])
   final.addPage(coverPage)
 
+  // Descriptif du projet
+  await addSep(sepDescriptif)
+  await addContent()
+
+  // Récapitulatif financier (simulation)
+  await addSep(sepRecap)
+  await addContent()
+
   // Devis reçus
   await addSep(sepDevis)
-  for (const d of devisRecus) {
+  for (const d of devisR3) {
     if (d.devis_pdf_path) {
       const buf = await downloadPDF(supabaseAdmin, 'documents', d.devis_pdf_path)
       await addExternalPDF(buf)
@@ -522,7 +821,7 @@ export async function buildDossierR3({ dossier, devis, supabaseAdmin }) {
 
   // Kbis + décennales
   await addSep(sepKbis)
-  for (const d of devisRecus) {
+  for (const d of devisR3) {
     const art = d.artisan || {}
     if (art.kbis_url) {
       const buf = await downloadPDF(supabaseAdmin, 'documents', art.kbis_url)
