@@ -185,6 +185,7 @@ export default function FicheChantier({ params }) {
   const [fichesPanelOuvert, setFichesPanelOuvert] = useState(null)
   const [documents, setDocuments] = useState([])
   const [uploadingDocChantier, setUploadingDocChantier] = useState(false)
+  const [uploadingContrat, setUploadingContrat] = useState(false)
   const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, part_agente: '0.5', date_reception: '', date_limite: '', fichier: null })  
   const [suiviFinancier, setSuiviFinancier] = useState([])
   const router = useRouter()
@@ -421,8 +422,36 @@ export default function FicheChantier({ params }) {
 
 
   const chargerDocuments = async () => {
-  const { data } = await supabase.from('chantier_documents').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
-  setDocuments(data || [])
+    const { data } = await supabase.from('chantier_documents').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
+    setDocuments(data || [])
+  }
+
+  const uploadContrat = async (fichier) => {
+    if (!fichier) return
+    setUploadingContrat(true)
+    setErreur('')
+    const ext = fichier.name.split('.').pop()
+    const chemin = `chantiers/${id}/contrat/contrat.${ext}`
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+    if (error) { setErreur('Erreur upload : ' + error.message); setUploadingContrat(false); return }
+    await supabase.from('dossiers').update({ contrat_url: chemin }).eq('id', id)
+    setDossier(d => ({ ...d, contrat_url: chemin }))
+    setSucces('Contrat ajouté ✓')
+    setUploadingContrat(false)
+  }
+
+  const ouvrirContrat = async () => {
+    if (!dossier?.contrat_url) return
+    const { data } = await supabase.storage.from('documents').createSignedUrl(dossier.contrat_url, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  const supprimerContrat = async () => {
+    if (!confirm('Supprimer le document du contrat ?')) return
+    if (dossier?.contrat_url) await supabase.storage.from('documents').remove([dossier.contrat_url])
+    await supabase.from('dossiers').update({ contrat_url: null }).eq('id', id)
+    setDossier(d => ({ ...d, contrat_url: null }))
+    setSucces('Document supprimé ✓')
   }
 
   const uploadDocumentChantier = async (fichiers) => {
@@ -1181,36 +1210,89 @@ ${s.contenu}`).join('')
                   </span>
                 </div>
               )}
-              <div className="border-t border-gray-100 pt-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Contrat de prestation</p>
-                  {dossier.contrat_signe && dossier.date_signature_contrat && (
-                    <p className="text-xs text-gray-400">Signé le {new Date(dossier.date_signature_contrat).toLocaleDateString('fr-FR')}</p>
-                  )}
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={dossier.contrat_signe || false}
-                    onChange={async (e) => {
-                      const signe = e.target.checked
-                      let dateSignature = dossier.date_signature_contrat
-                      if (signe && !dateSignature) {
-                        const today = new Date().toISOString().slice(0, 10)
-                        const [annee, mois, jour] = today.split('-')
-                        const saisi = prompt('Date de signature du contrat (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
-                        if (saisi) {
-                          const [j, m, a] = saisi.split('/')
-                          dateSignature = `${a}-${m.padStart(2,'0')}-${j.padStart(2,'0')}`
+              <div className="border-t border-gray-100 pt-4 space-y-3">
+                {/* Ligne titre + statut signé */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Contrat de prestation</p>
+                    {dossier.contrat_signe && dossier.date_signature_contrat && (
+                      <p className="text-xs text-gray-400">Signé le {new Date(dossier.date_signature_contrat).toLocaleDateString('fr-FR')}</p>
+                    )}
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={dossier.contrat_signe || false}
+                      onChange={async (e) => {
+                        const signe = e.target.checked
+                        let dateSignature = dossier.date_signature_contrat
+                        if (signe && !dateSignature) {
+                          const today = new Date().toISOString().slice(0, 10)
+                          const [annee, mois, jour] = today.split('-')
+                          const saisi = prompt('Date de signature du contrat (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
+                          if (saisi) {
+                            const [j, m, a] = saisi.split('/')
+                            dateSignature = `${a}-${m.padStart(2,'0')}-${j.padStart(2,'0')}`
+                          }
                         }
-                      }
-                      await supabase.from('dossiers').update({ contrat_signe: signe, date_signature_contrat: signe ? dateSignature : null }).eq('id', id)
-                      setDossier(d => ({ ...d, contrat_signe: signe, date_signature_contrat: signe ? dateSignature : null }))
-                      setSucces('Contrat mis à jour ✓')
-                    }}
-                    className="w-4 h-4 accent-blue-700" />
-                  <span className={`text-sm font-medium ${dossier.contrat_signe ? 'text-green-600' : 'text-gray-500'}`}>
-                    {dossier.contrat_signe ? 'Signé' : 'Non signé'}
-                  </span>
-                </label>
+                        await supabase.from('dossiers').update({ contrat_signe: signe, date_signature_contrat: signe ? dateSignature : null }).eq('id', id)
+                        setDossier(d => ({ ...d, contrat_signe: signe, date_signature_contrat: signe ? dateSignature : null }))
+                        setSucces('Contrat mis à jour ✓')
+                      }}
+                      className="w-4 h-4 accent-blue-700" />
+                    <span className={`text-sm font-medium ${dossier.contrat_signe ? 'text-green-600' : 'text-gray-500'}`}>
+                      {dossier.contrat_signe ? 'Signé' : 'Non signé'}
+                    </span>
+                  </label>
+                </div>
+
+                {/* Document contrat */}
+                {dossier.contrat_url ? (
+                  <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                    <span className="text-base">📄</span>
+                    <span className="text-xs text-gray-600 flex-1 truncate">
+                      {dossier.contrat_url.split('/').pop()}
+                    </span>
+                    <button onClick={ouvrirContrat}
+                      className="text-xs text-blue-600 hover:underline flex-shrink-0">
+                      Voir
+                    </button>
+                    <button onClick={supprimerContrat}
+                      className="text-xs text-red-400 hover:text-red-600 flex-shrink-0 ml-1">
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    {uploadingContrat ? (
+                      <span className="text-xs text-gray-400">Envoi en cours...</span>
+                    ) : (
+                      <>
+                        {/* Desktop : bouton fichier classique */}
+                        <label className="hidden sm:flex items-center gap-1.5 cursor-pointer border border-dashed border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors">
+                          <span>📎</span>
+                          <span>Ajouter le contrat</span>
+                          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.heic" className="hidden"
+                            onChange={e => e.target.files[0] && uploadContrat(e.target.files[0])} />
+                        </label>
+
+                        {/* Mobile : bouton scanner (caméra) */}
+                        <label className="sm:hidden flex items-center gap-1.5 cursor-pointer bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700 hover:bg-blue-100 active:bg-blue-200 transition-colors">
+                          <span>📷</span>
+                          <span>Scanner</span>
+                          <input type="file" accept="image/*" capture="environment" className="hidden"
+                            onChange={e => e.target.files[0] && uploadContrat(e.target.files[0])} />
+                        </label>
+
+                        {/* Mobile : bouton fichier */}
+                        <label className="sm:hidden flex items-center gap-1.5 cursor-pointer border border-dashed border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors">
+                          <span>📁</span>
+                          <span>Fichier</span>
+                          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.heic" className="hidden"
+                            onChange={e => e.target.files[0] && uploadContrat(e.target.files[0])} />
+                        </label>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </>
           ) : (
