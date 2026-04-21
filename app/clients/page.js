@@ -80,7 +80,7 @@ export default function Clients() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-gray-600 text-sm">
             ← Retour
@@ -89,12 +89,12 @@ export default function Clients() {
         </div>
         <button
           onClick={() => router.push('/clients/nouveau')}
-          className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900">
-          + Nouveau client
+          className="bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-blue-900">
+          + <span className="hidden sm:inline">Nouveau </span>client
         </button>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
 
         {/* Onglets Marine uniquement — dynamiques */}
         {isMarine && (
@@ -135,67 +135,107 @@ export default function Clients() {
               </button>
             </div>
           ) : (
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Client</th>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Contact</th>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Type</th>
-                  {afficherReferente && (
-                    <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Référente</th>
-                  )}
-                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Apporteur</th>
-                  <th className="px-6 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+            <>
+              {/* Vue carte — mobile uniquement */}
+              <div className="divide-y divide-gray-100 sm:hidden">
                 {clientsFiltres.map(client => (
-                  <tr key={client.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <p className="font-medium text-gray-800">
-                        {client.civilite} {client.prenom} {client.nom}
-                        {client.prenom2 && ` & ${client.prenom2} ${client.nom2}`}
-                      </p>
-                      <p className="text-xs text-gray-400">{client.adresse}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm text-gray-600">{client.email}</p>
-                      <p className="text-sm text-gray-400">{client.telephone}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                        client.type_client === 'professionnel'
-                          ? 'bg-purple-100 text-purple-700'
-                          : 'bg-blue-100 text-blue-700'
-                      }`}>
-                        {client.type_client === 'professionnel' ? 'Pro' : 'Particulier'}
-                      </span>
-                    </td>
-                    {afficherReferente && (
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        {client.referente ? `${client.referente.prenom} ${client.referente.nom}` : '—'}
-                      </td>
-                    )}
-                    <td className="px-6 py-4">
-                      {client.apporteur_affaires ? (
-                        <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 font-medium">
-                          Oui — {client.apporteur_pourcentage}%
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-400">Non</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <button
-                        onClick={() => router.push(`/clients/${client.id}`)}
-                        className="text-blue-600 text-sm hover:underline">
-                        Voir →
-                      </button>
-                    </td>
-                  </tr>
+                  <button key={client.id} onClick={() => router.push(`/clients/${client.id}`)}
+                    className="w-full text-left px-4 py-4 hover:bg-gray-50 active:bg-gray-100">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-800 text-sm truncate">
+                          {client.civilite} {client.prenom} {client.nom}
+                          {client.prenom2 && ` & ${client.prenom2} ${client.nom2}`}
+                        </p>
+                        {client.adresse && <p className="text-xs text-gray-400 mt-0.5 truncate">{client.adresse}</p>}
+                        <div className="flex items-center gap-2 mt-2 flex-wrap">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            client.type_client === 'professionnel' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {client.type_client === 'professionnel' ? 'Pro' : 'Particulier'}
+                          </span>
+                          {client.apporteur_affaires && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
+                              Apporteur {client.apporteur_pourcentage}%
+                            </span>
+                          )}
+                          {afficherReferente && client.referente && (
+                            <span className="text-xs text-gray-500">{client.referente.prenom} {client.referente.nom}</span>
+                          )}
+                        </div>
+                        {client.telephone && <p className="text-xs text-gray-500 mt-1">{client.telephone}</p>}
+                      </div>
+                      <span className="text-blue-600 text-sm flex-shrink-0">→</span>
+                    </div>
+                  </button>
                 ))}
-              </tbody>
-            </table>
+              </div>
+
+              {/* Vue tableau — desktop */}
+              <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Client</th>
+                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Contact</th>
+                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Type</th>
+                      {afficherReferente && (
+                        <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Référente</th>
+                      )}
+                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Apporteur</th>
+                      <th className="px-6 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {clientsFiltres.map(client => (
+                      <tr key={client.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4">
+                          <p className="font-medium text-gray-800">
+                            {client.civilite} {client.prenom} {client.nom}
+                            {client.prenom2 && ` & ${client.prenom2} ${client.nom2}`}
+                          </p>
+                          <p className="text-xs text-gray-400">{client.adresse}</p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <p className="text-sm text-gray-600">{client.email}</p>
+                          <p className="text-sm text-gray-400">{client.telephone}</p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                            client.type_client === 'professionnel'
+                              ? 'bg-purple-100 text-purple-700'
+                              : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {client.type_client === 'professionnel' ? 'Pro' : 'Particulier'}
+                          </span>
+                        </td>
+                        {afficherReferente && (
+                          <td className="px-6 py-4 text-sm text-gray-600">
+                            {client.referente ? `${client.referente.prenom} ${client.referente.nom}` : '—'}
+                          </td>
+                        )}
+                        <td className="px-6 py-4">
+                          {client.apporteur_affaires ? (
+                            <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 font-medium">
+                              Oui — {client.apporteur_pourcentage}%
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">Non</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <button
+                            onClick={() => router.push(`/clients/${client.id}`)}
+                            className="text-blue-600 text-sm hover:underline">
+                            Voir →
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       </main>

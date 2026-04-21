@@ -229,44 +229,46 @@ export default function Statistiques() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-4 flex-wrap">
-          <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-gray-600 text-sm">← Retour</button>
-          <h1 className="text-base font-bold text-gray-900">Statistiques</h1>
-          <div className="flex gap-1 flex-wrap">
-            {onglets.map(({ key, label }) => (
-              <button key={key} onClick={() => setOnglet(key)} className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${onglet === key ? 'bg-blue-800 text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>{label}</button>
-            ))}
+      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 sticky top-0 z-10">
+        <div className="flex items-center justify-between gap-2 mb-2 sm:mb-0 sm:flex-nowrap">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+            <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-gray-600 text-sm flex-shrink-0">← Retour</button>
+            <h1 className="text-base font-bold text-gray-900 hidden sm:block">Statistiques</h1>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className="text-xs text-gray-400 hidden sm:block">Exercice</span>
+            <select value={annee} onChange={e => setAnnee(parseInt(e.target.value))} className="border border-gray-200 rounded-lg px-2 sm:px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+              {anneesDispos.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <span className="text-xs text-gray-300 hidden sm:block">vs {annee - 1}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-xs text-gray-400">Exercice</span>
-          <select value={annee} onChange={e => setAnnee(parseInt(e.target.value))} className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-            {anneesDispos.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
-          <span className="text-xs text-gray-300">vs {annee - 1}</span>
+        <div className="flex gap-1 overflow-x-auto scrollbar-none pb-1 sm:pb-0 sm:flex-wrap sm:mt-2">
+          {onglets.map(({ key, label }) => (
+            <button key={key} onClick={() => setOnglet(key)} className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all whitespace-nowrap flex-shrink-0 ${onglet === key ? 'bg-blue-800 text-white' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>{label}</button>
+          ))}
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-10">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-10">
 
         {onglet === 'overview' && (
           <div className="space-y-8">
             <div><ST sub={`${annee} vs ${annee - 1} — variation en %`}>Indicateurs clés de performance</ST>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-4 sm:mb-6">
                 <KPICard label="Chantiers ouverts" value={mN.nb} sub={`${mN.avecDevis} avec devis signé`} delta={delta(mN.nb, mN1.nb)} />
                 <KPICard label="Volume travaux HT" value={fmt(mN.travaux)} sub={`N-1 : ${fmt(mN1.travaux)}`} delta={delta(mN.travaux, mN1.travaux)} color="#1D4ED8"/>
                 <KPICard label="Net agence" value={fmt(mN.netTotal)} sub={`Royalties : ${fmt(mN.royalties)}`} delta={delta(mN.netTotal, mN1.netTotal)} color="#7C3AED"/>
                 <KPICard label="Taux de transformation" value={fmtPct(mN.tauxTransfo)} sub={`N-1 : ${fmtPct(mN1.tauxTransfo)}`} delta={delta(mN.tauxTransfo, mN1.tauxTransfo)} color="#059669"  />
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-4 sm:mb-6">
               <KPICard label="Panier actif" value={fmt(mN.pipeline)} sub={`${mN.parStatut.en_cours} dossier(s) en cours`} color="#0891B2" />
               <KPICard label="Panier moyen" value={fmt(mN.panierMoyen)} sub={`N-1 : ${fmt(mN1.panierMoyen)}`} delta={delta(mN.panierMoyen, mN1.panierMoyen)} />
               <KPICard label="Durée moy. chantier" value={mN.dureeMoyenne !== null ? fmtDays(mN.dureeMoyenne) : '—'} sub="démarrage → fin" />
               <KPICard label="Délai moy. encaissement" value={mN.delaiMoyen !== null ? fmtDays(mN.delaiMoyen) : '—'} sub="signature → paiement" />
             </div>
-            <div className="grid grid-cols-2 gap-8 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8 mb-4 sm:mb-6">
               <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
                 <ST>Statuts des dossiers</ST>
                 <div className="space-y-4">

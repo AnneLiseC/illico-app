@@ -88,7 +88,7 @@ export default function Artisans() {
   return (
     <div className="min-h-screen bg-gray-50">
 
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-gray-600 text-sm">
             ← Retour
@@ -98,32 +98,32 @@ export default function Artisans() {
         <div className="flex items-center gap-2">
           {modeSelection ? (
             <>
-              <span className="text-sm text-gray-500">{selectionnes.length} sélectionné(s)</span>
+              <span className="text-sm text-gray-500 hidden sm:inline">{selectionnes.length} sélectionné(s)</span>
               <button onClick={supprimerSelectionnes} disabled={supprimant || !selectionnes.length}
-                className="border border-red-200 text-red-600 px-4 py-2 rounded-lg text-sm hover:bg-red-50 disabled:opacity-50">
-                {supprimant ? 'Suppression...' : '🗑 Supprimer'}
+                className="border border-red-200 text-red-600 px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-red-50 disabled:opacity-50">
+                {supprimant ? '...' : '🗑'}
               </button>
               <button onClick={() => { setModeSelection(false); setSelectionnes([]) }}
-                className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
+                className="border border-gray-300 text-gray-600 px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
                 Annuler
               </button>
             </>
           ) : (
             <>
               <button onClick={() => setModeSelection(true)}
-                className="border border-red-200 text-red-600 px-4 py-2 rounded-lg text-sm hover:bg-red-50">
-                🗑 Supprimer
+                className="border border-red-200 text-red-600 px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-red-50">
+                🗑
               </button>
               <button onClick={() => router.push('/artisans/nouveau')}
-                className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900">
-                + Nouvel artisan
+                className="bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-blue-900">
+                + <span className="hidden sm:inline">Nouvel </span>artisan
               </button>
             </>
           )}
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
 
         {/* Alertes décennale */}
         {alertesDecennale.length > 0 && (
@@ -171,82 +171,116 @@ export default function Artisans() {
               <p>Aucun artisan trouvé</p>
             </div>
           ) : (
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  {modeSelection && <th className="px-4 py-3 w-10"></th>}
-                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Entreprise</th>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Métier</th>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Localisation</th>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Téléphone</th>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Décennale</th>
-                  <th className="px-6 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+            <>
+              {/* Vue carte — mobile uniquement */}
+              <div className="divide-y divide-gray-100 sm:hidden">
                 {artisansFiltres.map(a => {
                   const decennaleExp = a.decennale_expiration ? new Date(a.decennale_expiration) : null
                   const diff = decennaleExp ? (decennaleExp - aujourdhui) / (1000 * 60 * 60 * 24) : null
                   const decennaleUrgent = diff !== null && diff <= 30
                   const decennaleExpiree = diff !== null && diff < 0
-
                   return (
-                    <tr key={a.id}
-                      className={`hover:bg-gray-50 cursor-pointer ${modeSelection && selectionnes.includes(a.id) ? 'bg-red-50' : ''}`}
+                    <button key={a.id}
+                      className={`w-full text-left px-4 py-4 hover:bg-gray-50 active:bg-gray-100 ${modeSelection && selectionnes.includes(a.id) ? 'bg-red-50' : ''}`}
                       onClick={() => {
-                        if (modeSelection) {
-                          setSelectionnes(prev => prev.includes(a.id) ? prev.filter(id => id !== a.id) : [...prev, a.id])
-                        } else {
-                          router.push(`/artisans/${a.id}`)
-                        }
+                        if (modeSelection) setSelectionnes(prev => prev.includes(a.id) ? prev.filter(id => id !== a.id) : [...prev, a.id])
+                        else router.push(`/artisans/${a.id}`)
                       }}>
-                      {modeSelection && (
-                        <td className="px-4 py-4">
-                          <input type="checkbox" checked={selectionnes.includes(a.id)} readOnly
-                            className="w-4 h-4 accent-red-600" />
-                        </td>
-                      )}
-                      <td className="px-6 py-4">
-                        <p className="font-medium text-gray-800 text-sm">{a.entreprise}</p>
-                        {a.nom && <p className="text-xs text-gray-400">
-                          {a.prenom ? a.prenom.charAt(0).toUpperCase() + a.prenom.slice(1).toLowerCase() : ''} {a.nom}
-                        </p>}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full">
-                          {a.metier || '—'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        {a.code_postal} {a.ville}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        {a.telephone || '—'}
-                      </td>
-                      <td className="px-6 py-4">
-                        {decennaleExpiree ? (
-                          <span className="text-xs font-medium text-red-600">❌ Expirée</span>
-                        ) : decennaleUrgent ? (
-                          <span className="text-xs font-medium text-amber-600">⚠️ {decennaleExp.toLocaleDateString('fr-FR')}</span>
-                        ) : decennaleExp ? (
-                          <span className="text-xs text-green-600">✓ {decennaleExp.toLocaleDateString('fr-FR')}</span>
-                        ) : (
-                          <span className="text-xs text-gray-300">—</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        {!modeSelection && (
-                          <button onClick={e => { e.stopPropagation(); router.push(`/artisans/${a.id}`) }}
-                            className="text-blue-600 text-sm hover:underline">
-                            Voir →
-                          </button>
-                        )}
-                      </td>
-                    </tr>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          {modeSelection && (
+                            <input type="checkbox" checked={selectionnes.includes(a.id)} readOnly className="mt-0.5 w-4 h-4 accent-red-600 flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-800 text-sm truncate">{a.entreprise}</p>
+                            {a.nom && <p className="text-xs text-gray-400">{a.prenom ? a.prenom.charAt(0).toUpperCase() + a.prenom.slice(1).toLowerCase() : ''} {a.nom}</p>}
+                            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                              <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{a.metier || '—'}</span>
+                              {decennaleExpiree ? (
+                                <span className="text-xs font-medium text-red-600">❌ Expirée</span>
+                              ) : decennaleUrgent ? (
+                                <span className="text-xs font-medium text-amber-600">⚠️ {decennaleExp.toLocaleDateString('fr-FR')}</span>
+                              ) : decennaleExp ? (
+                                <span className="text-xs text-green-600">✓ {decennaleExp.toLocaleDateString('fr-FR')}</span>
+                              ) : null}
+                            </div>
+                            {a.telephone && <p className="text-xs text-gray-500 mt-1">{a.telephone}</p>}
+                          </div>
+                        </div>
+                        {!modeSelection && <span className="text-blue-600 text-sm flex-shrink-0">→</span>}
+                      </div>
+                    </button>
                   )
                 })}
-              </tbody>
-            </table>
+              </div>
+
+              {/* Vue tableau — desktop */}
+              <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      {modeSelection && <th className="px-4 py-3 w-10"></th>}
+                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Entreprise</th>
+                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Métier</th>
+                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Localisation</th>
+                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Téléphone</th>
+                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Décennale</th>
+                      <th className="px-6 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {artisansFiltres.map(a => {
+                      const decennaleExp = a.decennale_expiration ? new Date(a.decennale_expiration) : null
+                      const diff = decennaleExp ? (decennaleExp - aujourdhui) / (1000 * 60 * 60 * 24) : null
+                      const decennaleUrgent = diff !== null && diff <= 30
+                      const decennaleExpiree = diff !== null && diff < 0
+                      return (
+                        <tr key={a.id}
+                          className={`hover:bg-gray-50 cursor-pointer ${modeSelection && selectionnes.includes(a.id) ? 'bg-red-50' : ''}`}
+                          onClick={() => {
+                            if (modeSelection) setSelectionnes(prev => prev.includes(a.id) ? prev.filter(id => id !== a.id) : [...prev, a.id])
+                            else router.push(`/artisans/${a.id}`)
+                          }}>
+                          {modeSelection && (
+                            <td className="px-4 py-4">
+                              <input type="checkbox" checked={selectionnes.includes(a.id)} readOnly className="w-4 h-4 accent-red-600" />
+                            </td>
+                          )}
+                          <td className="px-6 py-4">
+                            <p className="font-medium text-gray-800 text-sm">{a.entreprise}</p>
+                            {a.nom && <p className="text-xs text-gray-400">
+                              {a.prenom ? a.prenom.charAt(0).toUpperCase() + a.prenom.slice(1).toLowerCase() : ''} {a.nom}
+                            </p>}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full">{a.metier || '—'}</span>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600">{a.code_postal} {a.ville}</td>
+                          <td className="px-6 py-4 text-sm text-gray-600">{a.telephone || '—'}</td>
+                          <td className="px-6 py-4">
+                            {decennaleExpiree ? (
+                              <span className="text-xs font-medium text-red-600">❌ Expirée</span>
+                            ) : decennaleUrgent ? (
+                              <span className="text-xs font-medium text-amber-600">⚠️ {decennaleExp.toLocaleDateString('fr-FR')}</span>
+                            ) : decennaleExp ? (
+                              <span className="text-xs text-green-600">✓ {decennaleExp.toLocaleDateString('fr-FR')}</span>
+                            ) : (
+                              <span className="text-xs text-gray-300">—</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            {!modeSelection && (
+                              <button onClick={e => { e.stopPropagation(); router.push(`/artisans/${a.id}`) }}
+                                className="text-blue-600 text-sm hover:underline">Voir →</button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       </main>

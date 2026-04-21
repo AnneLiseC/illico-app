@@ -61,6 +61,7 @@ export default function Planning() {
   const [googleConnected, setGoogleConnected] = useState(false)
   const [syncing, setSyncing]                 = useState(false)
   const [syncMessage, setSyncMessage]         = useState('')
+  const [sidebarOuverte, setSidebarOuverte]   = useState(false)
 
   const [formRdv, setFormRdv] = useState({
     dossier_id: '', type_rdv: 'visite_technique_client',
@@ -313,36 +314,43 @@ export default function Planning() {
     <div className="min-h-screen" style={{ background: '#F1F5F9' }}>
 
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
-      <header style={{ background: COLORS.navy }} className="px-6 py-3 sticky top-0 z-40">
-        <div className="max-w-screen-2xl mx-auto space-y-2.5">
+      <header style={{ background: COLORS.navy }} className="px-4 sm:px-6 py-3 sticky top-0 z-40">
+        <div className="max-w-screen-2xl mx-auto space-y-2">
 
           {/* Ligne 1 : nav + boutons */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button onClick={() => router.push('/dashboard')} className="text-blue-300 hover:text-white text-sm transition-colors">← Retour</button>
-              <div className="h-4 w-px bg-blue-800" />
-              <h1 className="text-white font-bold tracking-tight">Planning</h1>
+            <div className="flex items-center gap-2 sm:gap-4">
+              {/* Bouton sidebar — mobile uniquement */}
+              <button onClick={() => setSidebarOuverte(o => !o)}
+                className="sm:hidden text-blue-300 hover:text-white p-1">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              <button onClick={() => router.push('/dashboard')} className="text-blue-300 hover:text-white text-sm transition-colors hidden sm:block">← Retour</button>
+              <div className="h-4 w-px bg-blue-800 hidden sm:block" />
+              <h1 className="text-white font-bold tracking-tight text-sm sm:text-base">Planning</h1>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               {googleConnected ? (
                 <button onClick={syncGoogle} disabled={syncing}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-emerald-500 text-emerald-300 hover:bg-emerald-900 transition-all disabled:opacity-50">
+                  className="hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-emerald-500 text-emerald-300 hover:bg-emerald-900 transition-all disabled:opacity-50">
                   <span className={`w-1.5 h-1.5 rounded-full bg-emerald-400 ${syncing ? 'animate-pulse' : ''}`} />
-                  {syncing ? 'Synchronisation…' : 'Google Calendar connecté'}
+                  {syncing ? 'Sync…' : 'Google Calendar'}
                 </button>
               ) : (
                 <a href={`/api/auth/google?userId=${profile?.id}`}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-blue-600 text-blue-300 hover:bg-blue-800 transition-all">
-                  📅 Connecter Google Calendar
+                  className="hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-blue-600 text-blue-300 hover:bg-blue-800 transition-all">
+                  📅 Google Calendar
                 </a>
               )}
-              <div className="h-4 w-px bg-blue-800" />
+              <div className="h-4 w-px bg-blue-800 hidden sm:block" />
               <button onClick={() => { setModalType('intervention'); setElementSelectionne(null); setModeEdition(false); setModalOuvert(true) }}
-                className="text-xs px-3 py-1.5 rounded-lg border border-blue-500 text-white hover:bg-blue-800 transition-all">
-                + Intervention
+                className="text-xs px-2.5 sm:px-3 py-1.5 rounded-lg border border-blue-500 text-white hover:bg-blue-800 transition-all">
+                + <span className="hidden sm:inline">Intervention</span><span className="sm:hidden">Int.</span>
               </button>
               <button onClick={() => { setModalType('rdv'); setElementSelectionne(null); setModeEdition(false); setModalOuvert(true) }}
-                className="text-xs px-4 py-1.5 rounded-lg font-semibold text-white transition-all shadow-sm"
+                className="text-xs px-3 sm:px-4 py-1.5 rounded-lg font-semibold text-white transition-all shadow-sm"
                 style={{ background: COLORS.blue }}>
                 + RDV
               </button>
@@ -350,7 +358,7 @@ export default function Planning() {
           </div>
 
           {/* Ligne 2 : filtres */}
-          <div className="flex items-center gap-2 flex-wrap pb-0.5">
+          <div className="flex items-center gap-2 pb-0.5 overflow-x-auto scrollbar-none">
 
             {/* Vue */}
             <div className="flex gap-0.5 rounded-lg p-0.5" style={{ background: 'rgba(255,255,255,0.08)' }}>
@@ -414,10 +422,23 @@ export default function Planning() {
       )}
 
       {/* ── LAYOUT ─────────────────────────────────────────────────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-4 py-4 flex gap-4">
+      <div className="max-w-screen-2xl mx-auto px-2 sm:px-4 py-4 flex gap-4 relative">
+
+        {/* Overlay mobile pour fermer la sidebar */}
+        {sidebarOuverte && (
+          <div className="fixed inset-0 z-30 bg-black/40 sm:hidden" onClick={() => setSidebarOuverte(false)} />
+        )}
 
         {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
-        <aside className="w-72 flex-shrink-0 space-y-3">
+        <aside className={`
+          fixed sm:relative top-0 left-0 h-full sm:h-auto z-40 sm:z-auto
+          w-72 flex-shrink-0 space-y-3
+          overflow-y-auto sm:overflow-visible
+          bg-slate-100 sm:bg-transparent
+          pt-4 px-3 sm:p-0
+          transition-transform duration-300 ease-in-out
+          ${sidebarOuverte ? 'translate-x-0' : '-translate-x-full sm:translate-x-0'}
+        `}>
 
           {/* Recherche */}
           <div className="relative">
@@ -508,7 +529,7 @@ export default function Planning() {
         </aside>
 
         {/* ── CALENDRIER ───────────────────────────────────────────────────── */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 w-full">
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <style>{`
               .fc { font-family: system-ui, -apple-system, sans-serif; }
@@ -540,10 +561,14 @@ export default function Planning() {
             `}</style>
             <FullCalendar
               plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}
-              initialView="timeGridWeek"
+              initialView={typeof window !== 'undefined' && window.innerWidth < 640 ? 'listWeek' : 'timeGridWeek'}
               locale={frLocale}
-              headerToolbar={{ left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,listWeek' }}
-              buttonText={{ today: "Aujourd'hui", month: 'Mois', week: 'Semaine', list: 'Liste' }}
+              headerToolbar={{
+                left: 'prev,next today',
+                center: 'title',
+                right: 'dayGridMonth,timeGridWeek,listWeek'
+              }}
+              buttonText={{ today: "Auj.", month: 'Mois', week: 'Sem.', list: 'Liste' }}
               events={tousEvenements}
               dateClick={handleDateClick}
               eventClick={handleEventClick}
@@ -553,7 +578,7 @@ export default function Planning() {
               slotDuration="00:30:00"
               allDayText="Journée"
               nowIndicator={true}
-              dayMaxEvents={5}
+              dayMaxEvents={3}
               eventTimeFormat={{ hour: '2-digit', minute: '2-digit', meridiem: false }}
             />
           </div>

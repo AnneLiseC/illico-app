@@ -1082,62 +1082,77 @@ ${s.contenu}`).join('')
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.push(`/clients/${client?.id}`)} className="text-gray-400 hover:text-gray-600 text-sm">← Retour</button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-blue-900">{dossier.reference}</h1>
-              <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.color}`}>{s.label}</span>
+      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <button onClick={() => router.push(`/clients/${client?.id}`)} className="text-gray-400 hover:text-gray-600 text-sm flex-shrink-0 mt-0.5">← Retour</button>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg font-bold text-blue-900">{dossier.reference}</h1>
+                <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.color}`}>{s.label}</span>
+              </div>
+              <p className="text-xs text-gray-400 truncate">{nomComplet} — {typologieLabel(dossier.typologie)}</p>
             </div>
-            <p className="text-xs text-gray-400">{nomComplet} — {typologieLabel(dossier.typologie)}</p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {mode === 'lecture' ? (
+              <>
+                {/* PDFs — cachés sur mobile */}
+                <div className="hidden sm:flex items-center gap-2">
+                  <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
+                    className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">
+                    {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Récap.'}
+                  </button>
+                  <button onClick={() => generatePDF('dossier_r3')} disabled={!!generatingPDF}
+                    className="border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
+                    {generatingPDF === 'dossier_r3' ? '⏳' : '📋 R3'}
+                  </button>
+                  <button onClick={() => generatePDF('dossier_restitution')} disabled={!!generatingPDF}
+                    className="border border-orange-300 text-orange-700 px-3 py-2 rounded-lg text-sm hover:bg-orange-50 disabled:opacity-50">
+                    {generatingPDF === 'dossier_restitution' ? '⏳' : '🎁 Restitution'}
+                  </button>
+                </div>
+                <button onClick={() => setMode('edition')} className="bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-blue-900">Modifier</button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => setMode('lecture')} className="border border-gray-300 text-gray-700 px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
+                <button onClick={handleSave} disabled={saving} className="bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
+                  {saving ? '...' : 'Enregistrer'}
+                </button>
+              </>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {mode === 'lecture' ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => generatePDF('recapitulatif')}
-                disabled={!!generatingPDF}
-                className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">
-                {generatingPDF === 'recapitulatif' ? '⏳ Génération...' : '📄 Récapitulatif'}
-              </button>
-               <button
-                onClick={() => generatePDF('dossier_r3')}
-                disabled={!!generatingPDF}
-                className="border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
-                {generatingPDF === 'dossier_r3' ? '⏳ Génération...' : '📋 Dossier R3'}
-              </button>
-              <button
-                onClick={() => generatePDF('dossier_restitution')}
-                disabled={!!generatingPDF}
-                className="border border-orange-300 text-orange-700 px-3 py-2 rounded-lg text-sm hover:bg-orange-50 disabled:opacity-50">
-                {generatingPDF === 'dossier_restitution' ? '⏳ Génération...' : '🎁 Dossier restitution'}
-              </button>
-
-              <button onClick={() => setMode('edition')} className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900">Modifier</button>
-            </div>
-          ) : (
-            <>
-              <button onClick={() => setMode('lecture')} className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
-              <button onClick={handleSave} disabled={saving} className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
-                {saving ? 'Enregistrement...' : 'Enregistrer'}
-              </button>
-            </>
-          )}
-        </div>
+        {/* PDF buttons — mobile uniquement */}
+        {mode === 'lecture' && (
+          <div className="flex gap-2 mt-3 sm:hidden overflow-x-auto scrollbar-none">
+            <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
+              className="border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-50 flex-shrink-0">
+              {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Récapitulatif'}
+            </button>
+            <button onClick={() => generatePDF('dossier_r3')} disabled={!!generatingPDF}
+              className="border border-blue-300 text-blue-700 px-3 py-1.5 rounded-lg text-xs hover:bg-blue-50 disabled:opacity-50 flex-shrink-0">
+              {generatingPDF === 'dossier_r3' ? '⏳' : '📋 Dossier R3'}
+            </button>
+            <button onClick={() => generatePDF('dossier_restitution')} disabled={!!generatingPDF}
+              className="border border-orange-300 text-orange-700 px-3 py-1.5 rounded-lg text-xs hover:bg-orange-50 disabled:opacity-50 flex-shrink-0">
+              {generatingPDF === 'dossier_restitution' ? '⏳' : '🎁 Restitution'}
+            </button>
+          </div>
+        )}
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
         {succes && <p className="text-green-600 text-sm bg-green-50 border border-green-200 rounded-lg px-4 py-2">{succes}</p>}
         {erreur && <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-2">{erreur}</p>}
 
         {/* Infos générales */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+        <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 space-y-4">
           <h2 className="font-semibold text-gray-800">Informations générales</h2>
           {mode === 'lecture' ? (
             <>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {[
                   ['Référence', dossier.reference],
                   ['Référente', dossier.referente ? `${dossier.referente.prenom} ${dossier.referente.nom}` : '—'],

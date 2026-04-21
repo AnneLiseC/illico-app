@@ -100,7 +100,7 @@ export default function Chantiers() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-gray-600 text-sm">
             ← Retour
@@ -109,7 +109,7 @@ export default function Chantiers() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
 
         {/* Onglets Marine uniquement — dynamiques */}
         {isMarine && (
@@ -172,7 +172,7 @@ export default function Chantiers() {
         </div>
 
         {/* Compteurs */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: 'En cours', count: compteurs.enCours },
             { label: 'En attente', count: compteurs.enAttente },
@@ -194,69 +194,105 @@ export default function Chantiers() {
               <p>Aucun chantier</p>
             </div>
           ) : (
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Référence</th>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Client</th>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Typologie</th>
-                  {afficherReferente && (
-                    <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Référente</th>
-                  )}
-                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Statut</th>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Limite devis</th>
-                  <th className="px-6 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+            <>
+              {/* Vue carte — mobile uniquement */}
+              <div className="divide-y divide-gray-100 sm:hidden">
                 {dossiersFiltres.map(d => {
                   const s = statutConfig[d.statut]
                   const limiteDevis = d.date_limite_devis ? new Date(d.date_limite_devis) : null
                   const diff = limiteDevis ? (limiteDevis - aujourdhui) / (1000 * 60 * 60 * 24) : null
                   const urgent = diff !== null && diff <= 7 && diff >= 0
                   return (
-                    <tr key={d.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        <p className="font-medium text-gray-800 text-sm">{d.reference}</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="text-sm text-gray-800">{nomClient(d.client)}</p>
-                        <p className="text-xs text-gray-400">{d.client?.adresse}</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-xs text-gray-600">{typologieLabel(d.typologie)}</span>
-                      </td>
-                      {afficherReferente && (
-                        <td className="px-6 py-4 text-sm text-gray-600">
-                          {d.referente ? `${d.referente.prenom} ${d.referente.nom}` : '—'}
-                        </td>
-                      )}
-                      <td className="px-6 py-4">
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.color}`}>
-                          {s.label}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        {limiteDevis ? (
-                          <span className={`text-xs font-medium ${urgent ? 'text-amber-600' : 'text-gray-500'}`}>
-                            {urgent ? '⚠️ ' : ''}{limiteDevis.toLocaleDateString('fr-FR')}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-gray-300">—</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        <button
-                          onClick={() => router.push(`/chantiers/${d.id}`)}
-                          className="text-blue-600 text-sm hover:underline">
-                          Voir →
-                        </button>
-                      </td>
-                    </tr>
+                    <button key={d.id} onClick={() => router.push(`/chantiers/${d.id}`)}
+                      className="w-full text-left px-4 py-4 hover:bg-gray-50 active:bg-gray-100">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium text-gray-800 text-sm">{d.reference}</p>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.color}`}>{s.label}</span>
+                          </div>
+                          <p className="text-sm text-gray-600 mt-0.5 truncate">{nomClient(d.client)}</p>
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            <span className="text-xs text-gray-500">{typologieLabel(d.typologie)}</span>
+                            {limiteDevis && (
+                              <span className={`text-xs font-medium ${urgent ? 'text-amber-600' : 'text-gray-400'}`}>
+                                {urgent ? '⚠️ ' : ''}Limite {limiteDevis.toLocaleDateString('fr-FR')}
+                              </span>
+                            )}
+                            {afficherReferente && d.referente && (
+                              <span className="text-xs text-gray-500">{d.referente.prenom} {d.referente.nom}</span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-blue-600 text-sm flex-shrink-0">→</span>
+                      </div>
+                    </button>
                   )
                 })}
-              </tbody>
-            </table>
+              </div>
+
+              {/* Vue tableau — desktop */}
+              <div className="hidden sm:block overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Référence</th>
+                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Client</th>
+                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Typologie</th>
+                      {afficherReferente && (
+                        <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Référente</th>
+                      )}
+                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Statut</th>
+                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Limite devis</th>
+                      <th className="px-6 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {dossiersFiltres.map(d => {
+                      const s = statutConfig[d.statut]
+                      const limiteDevis = d.date_limite_devis ? new Date(d.date_limite_devis) : null
+                      const diff = limiteDevis ? (limiteDevis - aujourdhui) / (1000 * 60 * 60 * 24) : null
+                      const urgent = diff !== null && diff <= 7 && diff >= 0
+                      return (
+                        <tr key={d.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4">
+                            <p className="font-medium text-gray-800 text-sm">{d.reference}</p>
+                          </td>
+                          <td className="px-6 py-4">
+                            <p className="text-sm text-gray-800">{nomClient(d.client)}</p>
+                            <p className="text-xs text-gray-400">{d.client?.adresse}</p>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-xs text-gray-600">{typologieLabel(d.typologie)}</span>
+                          </td>
+                          {afficherReferente && (
+                            <td className="px-6 py-4 text-sm text-gray-600">
+                              {d.referente ? `${d.referente.prenom} ${d.referente.nom}` : '—'}
+                            </td>
+                          )}
+                          <td className="px-6 py-4">
+                            <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.color}`}>{s.label}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            {limiteDevis ? (
+                              <span className={`text-xs font-medium ${urgent ? 'text-amber-600' : 'text-gray-500'}`}>
+                                {urgent ? '⚠️ ' : ''}{limiteDevis.toLocaleDateString('fr-FR')}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-300">—</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <button onClick={() => router.push(`/chantiers/${d.id}`)}
+                              className="text-blue-600 text-sm hover:underline">Voir →</button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       </main>
