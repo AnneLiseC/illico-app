@@ -14,6 +14,7 @@ function NouveauChantierForm() {
   const clientId = searchParams.get('client')
 
   const [form, setForm] = useState({
+    description: '',
     typologie: 'courtage',
     frais_consultation: '',
     frais_statut: 'offerts',
@@ -81,6 +82,7 @@ function NouveauChantierForm() {
       typologie: form.typologie,
       statut: 'en_cours',
       frais_consultation: form.frais_consultation ? parseFloat(form.frais_consultation) : null,
+      description: form.description || null,
       frais_statut: form.frais_statut,
       date_limite_devis: form.date_limite_devis || null,
       part_agente: form.part_agente ?? profile?.part_agente_defaut ?? 0.5,
@@ -128,6 +130,18 @@ function NouveauChantierForm() {
               </div>
             </div>
           )}
+
+          {/* Description */}
+          <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-3">
+            <h2 className="font-semibold text-gray-800">Description</h2>
+            <textarea
+              value={form.description}
+              onChange={e => set('description', e.target.value)}
+              rows={4}
+              placeholder="Décrivez les travaux envisagés, le contexte du projet..."
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+          </div>
 
           {/* Typologie */}
           <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
