@@ -286,7 +286,7 @@ async function makeCoverPage({ nomRef, telRef }) {
 }
 
 // ── Génère les pages de contenu ──
-async function buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo }) {
+async function buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo, crR1 }) {
   const client = dossier.client
   const ref = dossier.referente
   const nomClient = client
@@ -335,6 +335,16 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
       dossier.resume_projet && React.createElement(View, null,
         React.createElement(Text, { style: CS.sectionH }, 'Résumé du projet'),
         React.createElement(Text, { style: { fontSize: 8.5, lineHeight: 1.6, color: '#374151' } }, dossier.resume_projet),
+      ),
+      dossier.description && React.createElement(View, { style: { marginTop: 12 } },
+        React.createElement(Text, { style: CS.sectionH }, 'Description du projet'),
+        React.createElement(Text, { style: { fontSize: 8.5, lineHeight: 1.6, color: '#374151' } }, dossier.description),
+      ),
+      crR1?.contenu_final && React.createElement(View, { style: { marginTop: 12 } },
+        React.createElement(Text, { style: CS.sectionH }, 'Compte-rendu de première visite (R1)'),
+        React.createElement(Text, { style: { fontSize: 8.5, lineHeight: 1.6, color: '#374151' } },
+          crR1.contenu_final.replace(/^#{1,3}\s*/gm, '').replace(/\*\*/g, '').trim()
+        ),
       ),
       React.createElement(Ftr, { ref: dossier.reference }),
     )
@@ -484,8 +494,13 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
     loadSep(SEP_KBIS), loadSep(SEP_QUALIFICATION),
   ])
 
+  // Charger CR R1
+  const { data: crsData } = await supabaseAdmin.from('comptes_rendus')
+    .select('id, type_visite, contenu_final').eq('dossier_id', dossier.id).order('created_at')
+  const crR1 = crsData?.find(cr => cr.type_visite === 'r1') || null
+
   // Générer les pages de contenu
-  const contentBuffer = await buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo })
+  const contentBuffer = await buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo, crR1 })
   const contentPdf = await PDFDocument.load(contentBuffer)
 
   // PDF final
@@ -609,7 +624,7 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
 // ── DOSSIER R3 (présentation devis avant signature) ──
 // Génère la page récap du R3 : tableau devis reçus + acomptes + honoraires + TOTAL PROJET
 // Simulation "si tu signes tout"
-async function buildR3ContentPDF({ dossier, devisR3, logo }) {
+async function buildR3ContentPDF({ dossier, devisR3, logo, crR1 }) {
   const client = dossier.client
   const ref = dossier.referente
   const nomClient = client
@@ -655,6 +670,16 @@ async function buildR3ContentPDF({ dossier, devisR3, logo }) {
       dossier.resume_projet && React.createElement(View, null,
         React.createElement(Text, { style: CS.sectionH }, 'Résumé du projet'),
         React.createElement(Text, { style: { fontSize: 8.5, lineHeight: 1.6, color: '#374151' } }, dossier.resume_projet),
+      ),
+      dossier.description && React.createElement(View, { style: { marginTop: 12 } },
+        React.createElement(Text, { style: CS.sectionH }, 'Description du projet'),
+        React.createElement(Text, { style: { fontSize: 8.5, lineHeight: 1.6, color: '#374151' } }, dossier.description),
+      ),
+      crR1?.contenu_final && React.createElement(View, { style: { marginTop: 12 } },
+        React.createElement(Text, { style: CS.sectionH }, 'Compte-rendu de première visite (R1)'),
+        React.createElement(Text, { style: { fontSize: 8.5, lineHeight: 1.6, color: '#374151' } },
+          crR1.contenu_final.replace(/^#{1,3}\s*/gm, '').replace(/\*\*/g, '').trim()
+        ),
       ),
       React.createElement(Text, { style: { fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', marginTop: 16, lineHeight: 1.4 } },
         "Ce document présente l'ensemble des devis reçus et signés pour votre projet. Les devis signés sont déjà engagés ; les devis à valider constituent une simulation sous réserve de signature.",
@@ -766,8 +791,13 @@ export async function buildDossierR3({ dossier, devis, supabaseAdmin, logo }) {
     loadSep(SEP_KBIS),
   ])
 
+  // Charger CR R1
+  const { data: crsDataR3 } = await supabaseAdmin.from('comptes_rendus')
+    .select('id, type_visite, contenu_final').eq('dossier_id', dossier.id).order('created_at')
+  const crR1forR3 = crsDataR3?.find(cr => cr.type_visite === 'r1') || null
+
   // Générer les pages de contenu (descriptif + récap)
-  const contentBuffer = await buildR3ContentPDF({ dossier, devisR3, logo })
+  const contentBuffer = await buildR3ContentPDF({ dossier, devisR3, logo, crR1: crR1forR3 })
   const contentPdf = await PDFDocument.load(contentBuffer)
 
   const final = await PDFDocument.create()
