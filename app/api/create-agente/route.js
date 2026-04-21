@@ -10,7 +10,7 @@ const supabaseAdmin = createClient(
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { prenom, nom, email, telephone, redevance_debut, part_agente_defaut, frais_part_agente_defaut, parts_agente_disponibles } = body
+    const { prenom, nom, email, telephone, part_agente_defaut, frais_part_agente_defaut, parts_agente_disponibles } = body
 
     // Validation
     if (!prenom || !nom || !email) {
