@@ -10,7 +10,7 @@ const supabaseAdmin = createClient(
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { prenom, nom, email, telephone, redevance_debut, part_agente_defaut, frais_part_agente_defaut } = body
+    const { prenom, nom, email, telephone, redevance_debut, part_agente_defaut, frais_part_agente_defaut, parts_agente_disponibles } = body
 
     // Validation
     if (!prenom || !nom || !email) {
@@ -73,7 +73,7 @@ export async function PATCH(request) {
     if (prenom !== undefined)                   updates.prenom = prenom
     if (nom !== undefined)                      updates.nom = nom
     if (telephone !== undefined)                updates.telephone = telephone
-    if (redevance_debut !== undefined)          updates.redevance_debut = redevance_debut  
+    if (redevance_debut !== undefined)          updates.redevance_debut = redevance_debut
     if (part_agente_defaut !== undefined)       updates.part_agente_defaut = part_agente_defaut
     if (frais_part_agente_defaut !== undefined) updates.frais_part_agente_defaut = frais_part_agente_defaut
     if (parts_agente_disponibles !== undefined) updates.parts_agente_disponibles = parts_agente_disponibles
@@ -84,6 +84,36 @@ export async function PATCH(request) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
+
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+export async function DELETE(request) {
+  try {
+    const body = await request.json()
+    const { id } = body
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID requis' }, { status: 400 })
+    }
+
+    // Vérifier que c'est bien une agente (pas un admin)
+    const { data: profil } = await supabaseAdmin.from('profiles').select('role').eq('id', id).single()
+    if (!profil || profil.role !== 'agente') {
+      return NextResponse.json({ error: 'Profil introuvable ou non supprimable' }, { status: 400 })
+    }
+
+    // Supprimer l'utilisateur Supabase Auth (cascade vers le profil si FK configurée)
+    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id)
+    if (authError) {
+      return NextResponse.json({ error: authError.message }, { status: 400 })
+    }
+
+    // Supprimer le profil (sécurité si pas de cascade)
+    await supabaseAdmin.from('profiles').delete().eq('id', id)
 
     return NextResponse.json({ success: true })
   } catch (err) {

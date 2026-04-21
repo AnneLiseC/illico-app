@@ -11,9 +11,14 @@ export default function Parametres() {
   const [saving, setSaving]         = useState(false)
   const [erreur, setErreur]         = useState('')
   const [succes, setSucces]         = useState('')
-  const [modal, setModal]           = useState(false) // 'creer' | 'modifier' | false
+  const [modal, setModal]           = useState(false) // 'creer' | 'modifier' | 'supprimer' | false
   const [agenteEditee, setAgenteEditee] = useState(null)
+  const [agenteASupprimer, setAgenteASupprimer] = useState(null)
+  const [supprimant, setSupprimant] = useState(false)
   const [uploadingKbis, setUploadingKbis] = useState(null)
+  const [editingRib, setEditingRib] = useState(false)
+  const [savingRib, setSavingRib]   = useState(false)
+  const [ribForm, setRibForm]       = useState({ iban: '', bic: '', rib_titulaire: '', rib_banque: '' })
   const router = useRouter()
 
   const emptyForm = {
@@ -40,6 +45,12 @@ export default function Parametres() {
       const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       if (profData?.role !== 'admin') { router.push('/dashboard'); return }
       setProfile(profData)
+      setRibForm({
+        iban: profData.iban || '',
+        bic: profData.bic || '',
+        rib_titulaire: profData.rib_titulaire || '',
+        rib_banque: profData.rib_banque || '',
+      })
       await chargerAgentes()
       setLoading(false)
     }
@@ -70,6 +81,56 @@ export default function Parametres() {
     setModal('modifier')
     setErreur('')
     setSucces('')
+  }
+
+  const ouvrirSupprimer = (agente) => {
+    setAgenteASupprimer(agente)
+    setModal('supprimer')
+    setErreur('')
+  }
+
+  const supprimerAgente = async () => {
+    if (!agenteASupprimer) return
+    setSupprimant(true)
+    setErreur('')
+    try {
+      const res = await fetch('/api/create-agente', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: agenteASupprimer.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setErreur(data.error || 'Erreur lors de la suppression')
+      } else {
+        setSucces(`${agenteASupprimer.prenom} ${agenteASupprimer.nom} a été supprimée ✓`)
+        setModal(false)
+        setAgenteASupprimer(null)
+        await chargerAgentes()
+      }
+    } catch (err) {
+      setErreur(err.message)
+    }
+    setSupprimant(false)
+  }
+
+  const sauvegarderRib = async () => {
+    if (!profile) return
+    setSavingRib(true)
+    const { error } = await supabase.from('profiles').update({
+      iban: ribForm.iban || null,
+      bic: ribForm.bic || null,
+      rib_titulaire: ribForm.rib_titulaire || null,
+      rib_banque: ribForm.rib_banque || null,
+    }).eq('id', profile.id)
+    if (error) {
+      setErreur('Erreur sauvegarde RIB : ' + error.message)
+    } else {
+      setSucces('Coordonnées bancaires mises à jour ✓')
+      setEditingRib(false)
+      setProfile(p => ({ ...p, ...ribForm }))
+    }
+    setSavingRib(false)
   }
 
   const creerAgente = async () => {
@@ -233,12 +294,20 @@ export default function Parametres() {
                       <p className="text-sm text-gray-500">{agente.email}</p>
                       {agente.telephone && <p className="text-sm text-gray-400">{agente.telephone}</p>}
                     </div>
-                    <button
-                      onClick={() => ouvrirModifier(agente)}
-                      className="text-sm text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
-                    >
-                      Modifier
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => ouvrirModifier(agente)}
+                        className="text-sm text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+                      >
+                        Modifier
+                      </button>
+                      <button
+                        onClick={() => ouvrirSupprimer(agente)}
+                        className="text-sm text-red-500 hover:text-red-700 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                      >
+                        Supprimer
+                      </button>
+                    </div>
                   </div>
 
                   {agente.redevance_debut && (
@@ -308,10 +377,111 @@ export default function Parametres() {
             </div>
           )}
         </div>
+
+        {/* Section RIB */}
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+            <div>
+              <h2 className="font-semibold text-gray-800">Coordonnées bancaires</h2>
+              <p className="text-xs text-gray-400 mt-0.5">RIB utilisé pour les automations par email</p>
+            </div>
+            {!editingRib && (
+              <button
+                onClick={() => setEditingRib(true)}
+                className="text-sm text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+              >
+                Modifier
+              </button>
+            )}
+          </div>
+
+          <div className="px-6 py-5 space-y-4">
+            {editingRib ? (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Titulaire du compte</label>
+                    <input
+                      type="text" value={ribForm.rib_titulaire}
+                      onChange={e => setRibForm(f => ({ ...f, rib_titulaire: e.target.value }))}
+                      placeholder="Marine Dupont"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Banque</label>
+                    <input
+                      type="text" value={ribForm.rib_banque}
+                      onChange={e => setRibForm(f => ({ ...f, rib_banque: e.target.value }))}
+                      placeholder="Crédit Agricole"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">IBAN</label>
+                    <input
+                      type="text" value={ribForm.iban}
+                      onChange={e => setRibForm(f => ({ ...f, iban: e.target.value.toUpperCase().replace(/\s/g, '') }))}
+                      placeholder="FR76 0000 0000 0000 0000 0000 000"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">BIC / SWIFT</label>
+                    <input
+                      type="text" value={ribForm.bic}
+                      onChange={e => setRibForm(f => ({ ...f, bic: e.target.value.toUpperCase() }))}
+                      placeholder="AGRIFRPP"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => {
+                      setRibForm({ iban: profile?.iban || '', bic: profile?.bic || '', rib_titulaire: profile?.rib_titulaire || '', rib_banque: profile?.rib_banque || '' })
+                      setEditingRib(false)
+                    }}
+                    className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={sauvegarderRib}
+                    disabled={savingRib}
+                    className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50"
+                  >
+                    {savingRib ? 'Enregistrement...' : 'Enregistrer'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-gray-400 mb-0.5">Titulaire</p>
+                  <p className="text-sm font-medium text-gray-800">{profile?.rib_titulaire || <span className="text-gray-400 italic">Non renseigné</span>}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 mb-0.5">Banque</p>
+                  <p className="text-sm font-medium text-gray-800">{profile?.rib_banque || <span className="text-gray-400 italic">Non renseigné</span>}</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-xs text-gray-400 mb-0.5">IBAN</p>
+                  <p className="text-sm font-medium font-mono text-gray-800">{profile?.iban || <span className="text-gray-400 italic font-sans">Non renseigné</span>}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-400 mb-0.5">BIC / SWIFT</p>
+                  <p className="text-sm font-medium font-mono text-gray-800">{profile?.bic || <span className="text-gray-400 italic font-sans">Non renseigné</span>}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
       </main>
 
       {/* Modal créer / modifier */}
-      {modal && (
+      {(modal === 'creer' || modal === 'modifier') && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
             <h2 className="font-semibold text-gray-800">
@@ -436,6 +606,45 @@ export default function Parametres() {
                   ? 'Enregistrement...'
                   : modal === 'creer' ? 'Envoyer l\'invitation' : 'Enregistrer'
                 }
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal suppression agente */}
+      {modal === 'supprimer' && agenteASupprimer && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="text-red-600 text-lg">⚠</span>
+              </div>
+              <div>
+                <h2 className="font-semibold text-gray-800">Supprimer cette agente ?</h2>
+                <p className="text-sm text-gray-500 mt-0.5">{agenteASupprimer.prenom} {agenteASupprimer.nom}</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-600 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+              Cette action est <strong>irréversible</strong>. Le compte de connexion sera supprimé. Les chantiers et données associés seront conservés mais l'agente ne pourra plus se connecter.
+            </p>
+
+            {erreur && <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erreur}</p>}
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => { setModal(false); setAgenteASupprimer(null); setErreur('') }}
+                className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={supprimerAgente}
+                disabled={supprimant}
+                className="flex-1 bg-red-600 text-white py-2 rounded-lg text-sm hover:bg-red-700 disabled:opacity-50"
+              >
+                {supprimant ? 'Suppression...' : 'Supprimer définitivement'}
               </button>
             </div>
           </div>
