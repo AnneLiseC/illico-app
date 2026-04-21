@@ -376,7 +376,7 @@ export default function Statistiques() {
                 <KPICard label="Royalties versées" value={fmt(mN.royalties)} color="#DC2626"/>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm mb-6">
                 <ST>Répartition des gains {annee}</ST>
                 <div className="space-y-4 mt-2">

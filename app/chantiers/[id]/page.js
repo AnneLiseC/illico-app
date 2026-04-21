@@ -68,7 +68,7 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
   const set = (champ, val) => setForm(f => ({ ...f, [champ]: val }))
   return (
     <div className="border border-blue-100 bg-blue-50 rounded-lg p-3 space-y-3 mt-2">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Montant HT (€)</label>
           <input type="number" step="0.01" value={form.montant_ht} onChange={e => set('montant_ht', e.target.value)}
@@ -80,7 +80,7 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Commission (%)</label>
           <input type="number" step="0.1" min="0" max="100"
@@ -97,7 +97,7 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
           </label>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Date réception</label>
           <input type="date" value={form.date_reception} onChange={e => set('date_reception', e.target.value)}
@@ -1215,7 +1215,7 @@ ${s.contenu}`).join('')
             </>
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
                   <select value={dossier.statut} onChange={e => set('statut', e.target.value)}
@@ -1375,7 +1375,7 @@ ${s.contenu}`).join('')
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
                   <select value={dossier.frais_statut} onChange={e => set('frais_statut', e.target.value)}
@@ -1419,7 +1419,7 @@ ${s.contenu}`).join('')
                   {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}{a.metier ? ` (${a.metier})` : ''}</option>)}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Montant HT (€)</label>
                   <input type="number" step="0.01" min="0" value={nouveauDevis.montant_ht} onChange={e => setND('montant_ht', e.target.value)}
@@ -1448,7 +1448,7 @@ ${s.contenu}`).join('')
                   </label>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Date de réception</label>
                   <input type="date" value={nouveauDevis.date_reception} onChange={e => setND('date_reception', e.target.value)}
@@ -1684,7 +1684,7 @@ ${s.contenu}`).join('')
                         ))}
                         {ajouterFacture === d.id && (
                           <div className="border border-green-100 bg-green-50 rounded-lg p-3 space-y-2">
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                               <div>
                                 <label className="block text-xs font-medium text-gray-600 mb-1">Montant TTC (€) *</label>
                                 <input type="number" step="0.01" value={nouvelleFacture.montant_ttc}
@@ -2185,7 +2185,7 @@ ${s.contenu}`).join('')
                   <option value="presentation_devis">R3 — Présentation devis</option>
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date et heure *</label>
                   <input type="datetime-local" value={rdvEnEdition ? rdvEnEdition.date_heure?.slice(0, 16) : nouveauRdvDossier.date_heure}
@@ -2254,7 +2254,7 @@ ${s.contenu}`).join('')
                 </div>
               </div>
               {interventionEnEdition.type_intervention === 'periode' && (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Date de début</label>
                     <input type="date" value={interventionEnEdition.date_debut || ''} onChange={e => setInterventionEnEdition(i => ({ ...i, date_debut: e.target.value }))}
@@ -2371,7 +2371,7 @@ ${s.contenu}`).join('')
                 <button onClick={() => setCrManuelModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Type de visite</label>
                   <select value={crManuelForm.type_visite} onChange={e => setCrManuelForm(f => ({ ...f, type_visite: e.target.value }))}
@@ -2451,7 +2451,7 @@ ${s.contenu}`).join('')
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Type de visite *</label>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {[
                           { value: 'r1', label: 'R1 – Visite technique', emoji: '🔍' },
                           { value: 'r2', label: 'R2 – Visite artisans', emoji: '🔨' },
@@ -2467,7 +2467,7 @@ ${s.contenu}`).join('')
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Date de la visite</label>
                         <input type="date" value={crForm.date_visite}
@@ -2769,7 +2769,7 @@ ${s.contenu}`).join('')
             </div>
 
             {nouvIntervForm.type_intervention === 'periode' && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date de début *</label>
                   <input type="date" value={nouvIntervForm.date_debut}

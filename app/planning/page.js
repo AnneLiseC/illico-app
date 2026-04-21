@@ -62,6 +62,13 @@ export default function Planning() {
   const [syncing, setSyncing]                 = useState(false)
   const [syncMessage, setSyncMessage]         = useState('')
   const [sidebarOuverte, setSidebarOuverte]   = useState(false)
+  const [calendarView, setCalendarView]       = useState('timeGridWeek')
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 640) {
+      setCalendarView('listWeek')
+    }
+  }, [])
 
   const [formRdv, setFormRdv] = useState({
     dossier_id: '', type_rdv: 'visite_technique_client',
@@ -422,23 +429,10 @@ export default function Planning() {
       )}
 
       {/* ── LAYOUT ─────────────────────────────────────────────────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-2 sm:px-4 py-4 flex gap-4 relative">
-
-        {/* Overlay mobile pour fermer la sidebar */}
-        {sidebarOuverte && (
-          <div className="fixed inset-0 z-30 bg-black/40 sm:hidden" onClick={() => setSidebarOuverte(false)} />
-        )}
+      <div className="max-w-screen-2xl mx-auto px-2 sm:px-4 py-4 sm:flex gap-4">
 
         {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
-        <aside className={`
-          fixed sm:relative top-0 left-0 h-full sm:h-auto z-40 sm:z-auto
-          w-72 flex-shrink-0 space-y-3
-          overflow-y-auto sm:overflow-visible
-          bg-slate-100 sm:bg-transparent
-          pt-4 px-3 sm:p-0
-          transition-transform duration-300 ease-in-out
-          ${sidebarOuverte ? 'translate-x-0' : '-translate-x-full sm:translate-x-0'}
-        `}>
+        <aside className={`w-full sm:w-72 sm:flex-shrink-0 space-y-3 mb-4 sm:mb-0 ${sidebarOuverte ? 'block' : 'hidden'} sm:block`}>
 
           {/* Recherche */}
           <div className="relative">
@@ -561,7 +555,7 @@ export default function Planning() {
             `}</style>
             <FullCalendar
               plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}
-              initialView={typeof window !== 'undefined' && window.innerWidth < 640 ? 'listWeek' : 'timeGridWeek'}
+              initialView={calendarView}
               locale={frLocale}
               headerToolbar={{
                 left: 'prev,next today',
