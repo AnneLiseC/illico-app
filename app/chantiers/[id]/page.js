@@ -1401,7 +1401,6 @@ ${s.contenu}`).join('')
                   <label className="block text-sm font-medium text-gray-700 mb-1">Fin de chantier</label>
                   <input type="date" value={dossier.date_fin_chantier || ''} onChange={e => set('date_fin_chantier', e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
                 </div>
               </div>
               {!estChantierMarine && profile?.parts_agente_disponibles?.length > 1 && (
