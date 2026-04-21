@@ -48,6 +48,7 @@ function DocViewer({ url, nom, onClose }) {
       <div className="flex-1 overflow-hidden" onClick={e => e.stopPropagation()}>
         {estImage ? (
           <div className="w-full h-full flex items-center justify-center p-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={url} alt={nomFichier} className="max-w-full max-h-full object-contain rounded shadow-lg" />
           </div>
         ) : (
