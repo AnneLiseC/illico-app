@@ -5,10 +5,64 @@ import { useState, useEffect, use } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 
+// ─── Visionneuse de document (PDF / image) ────────────────────────────────────
+function DocViewer({ url, nom, onClose }) {
+  if (!url) return null
+  const nomFichier = nom || url.split('/').pop() || 'Document'
+  const estImage = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(nomFichier)
+
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col bg-black/95" onClick={onClose}>
+      {/* Barre haute */}
+      <div
+        className="flex items-center justify-between px-4 py-3 bg-gray-900 flex-shrink-0 gap-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <span className="text-white text-sm font-medium truncate">{nomFichier}</span>
+        <div className="flex items-center gap-4 flex-shrink-0">
+          <a
+            href={url}
+            download={nomFichier}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 text-sm text-blue-300 hover:text-white transition-colors"
+            onClick={e => e.stopPropagation()}
+          >
+            ⬇ Télécharger
+          </a>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+
+      {/* Corps */}
+      <div className="flex-1 overflow-hidden" onClick={e => e.stopPropagation()}>
+        {estImage ? (
+          <div className="w-full h-full flex items-center justify-center p-4">
+            <img src={url} alt={nomFichier} className="max-w-full max-h-full object-contain rounded shadow-lg" />
+          </div>
+        ) : (
+          <iframe
+            src={url}
+            className="w-full h-full border-0"
+            title={nomFichier}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Panel fiches techniques artisan ─────────────────────────────────────────
 function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
   const [fiches, setFiches] = useState([])
   const [loading, setLoading] = useState(true)
- 
+  const [viewer, setViewer] = useState(null) // { url, nom }
+
   useEffect(() => {
     const charger = async () => {
       const { data } = await supabase.from('fiches_techniques').select('*').eq('artisan_id', artisanId).order('nom')
@@ -18,9 +72,9 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
     charger()
   }, [artisanId])
 
-  const ouvrirFiche = async (chemin) => {
+  const ouvrirFiche = async (chemin, nom) => {
     const { data } = await supabase.storage.from('documents').createSignedUrl(chemin, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    if (data?.signedUrl) setViewer({ url: data.signedUrl, nom })
   }
 
   if (loading) return <p className="text-xs text-gray-400 mt-2">Chargement...</p>
@@ -31,27 +85,30 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
     </p>
   )
   return (
-    <div className="mt-2 space-y-1.5 bg-gray-50 rounded-lg p-3">
-      {fiches.map(fiche => {
-        const cochee = fichesCochees.some(f => f.fiche_technique_id === fiche.id)
-        return (
-          <div key={fiche.id} className="flex items-center gap-2">
-            <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
-              <input type="checkbox" checked={cochee} onChange={() => onToggle(fiche.id, artisanId)} className="w-4 h-4 accent-blue-700 flex-shrink-0" />
-              <span className="text-xs text-gray-700 truncate">{fiche.nom}</span>
-              {fiche.description && <span className="text-xs text-gray-400 truncate">— {fiche.description}</span>}
-            </label>
-            {fiche.url && (
-              <button
-                onClick={() => ouvrirFiche(fiche.url)}
-                className="flex-shrink-0 text-xs text-blue-600 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-50">
-                📄 PDF
-              </button>
-            )}
-          </div>
-        )
-      })}
-    </div>
+    <>
+      {viewer && <DocViewer url={viewer.url} nom={viewer.nom} onClose={() => setViewer(null)} />}
+      <div className="mt-2 space-y-1.5 bg-gray-50 rounded-lg p-3">
+        {fiches.map(fiche => {
+          const cochee = fichesCochees.some(f => f.fiche_technique_id === fiche.id)
+          return (
+            <div key={fiche.id} className="flex items-center gap-2">
+              <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                <input type="checkbox" checked={cochee} onChange={() => onToggle(fiche.id, artisanId)} className="w-4 h-4 accent-blue-700 flex-shrink-0" />
+                <span className="text-xs text-gray-700 truncate">{fiche.nom}</span>
+                {fiche.description && <span className="text-xs text-gray-400 truncate">— {fiche.description}</span>}
+              </label>
+              {fiche.url && (
+                <button
+                  onClick={() => ouvrirFiche(fiche.url, fiche.nom)}
+                  className="flex-shrink-0 text-xs text-blue-600 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-50">
+                  📄 Voir
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </>
   )
 }
 
@@ -186,6 +243,7 @@ export default function FicheChantier({ params }) {
   const [documents, setDocuments] = useState([])
   const [uploadingDocChantier, setUploadingDocChantier] = useState(false)
   const [uploadingContrat, setUploadingContrat] = useState(false)
+  const [docViewer, setDocViewer] = useState(null) // { url, nom }
   const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, part_agente: '0.5', date_reception: '', date_limite: '', fichier: null })  
   const [suiviFinancier, setSuiviFinancier] = useState([])
   const router = useRouter()
@@ -443,7 +501,7 @@ export default function FicheChantier({ params }) {
   const ouvrirContrat = async () => {
     if (!dossier?.contrat_url) return
     const { data } = await supabase.storage.from('documents').createSignedUrl(dossier.contrat_url, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    if (data?.signedUrl) setDocViewer({ url: data.signedUrl, nom: dossier.contrat_url.split('/').pop() })
   }
 
   const supprimerContrat = async () => {
@@ -724,9 +782,9 @@ export default function FicheChantier({ params }) {
   }
 
   // ── URL SIGNÉE DOCUMENT ──
-  const ouvrirDocument = async (path) => {
+  const ouvrirDocument = async (path, nom) => {
     const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    if (data?.signedUrl) setDocViewer({ url: data.signedUrl, nom: nom || path.split('/').pop() })
     else setErreur('Impossible d\'ouvrir le document')
   }
 
@@ -1676,7 +1734,7 @@ ${s.contenu}`).join('')
                         <div className="flex items-center gap-2">
                           {d.devis_pdf_path ? (
                             <>
-                              <button onClick={() => ouvrirDocument(d.devis_pdf_path)}
+                              <button onClick={() => ouvrirDocument(d.devis_pdf_path, `Devis ${d.artisan?.entreprise || ''}.pdf`)}
                                 className="text-xs text-blue-600 hover:underline">Voir PDF</button>
                               <button onClick={async () => {
                                 if (!confirm('Supprimer le PDF du devis ?')) return
@@ -1713,7 +1771,7 @@ ${s.contenu}`).join('')
                         <div className="flex items-center gap-2">
                           {d.devis_signe_path ? (
                             <>
-                              <button onClick={() => ouvrirDocument(d.devis_signe_path)}
+                              <button onClick={() => ouvrirDocument(d.devis_signe_path, `Devis signé ${d.artisan?.entreprise || ''}.pdf`)}
                                 className="text-xs text-blue-600 hover:underline">Voir PDF</button>
                               <button onClick={() => supprimerDevisSigne(d.id, d.devis_signe_path)}
                                 className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
@@ -1753,7 +1811,7 @@ ${s.contenu}`).join('')
                             </div>
                             <div className="flex items-center gap-2">
                               {f.pdf_path ? (
-                                <button onClick={() => ouvrirDocument(f.pdf_path)} className="text-xs text-blue-600 hover:underline">📄 Voir PDF</button>
+                                <button onClick={() => ouvrirDocument(f.pdf_path, `Facture ${f.libelle || ''}.pdf`)} className="text-xs text-blue-600 hover:underline">📄 Voir PDF</button>
                               ) : (
                                 <label className={`text-xs cursor-pointer px-2 py-0.5 rounded border ${uploadingFacturePdf === f.id ? 'text-gray-400 border-gray-200' : 'text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
                                   {uploadingFacturePdf === f.id ? 'Upload...' : '+ PDF'}
@@ -2159,7 +2217,7 @@ ${s.contenu}`).join('')
                       {doc.type_mime?.startsWith('image') ? '🖼' : doc.type_mime?.includes('pdf') ? '📄' : doc.type_mime?.includes('word') ? '📝' : '📎'}
                     </span>
                     <div className="min-w-0">
-                      <button onClick={() => ouvrirDocument(doc.path)}
+                      <button onClick={() => ouvrirDocument(doc.path, doc.nom)}
                         className="text-sm text-blue-600 hover:underline truncate block max-w-xs text-left">
                         {doc.nom}
                       </button>
@@ -2915,6 +2973,11 @@ ${s.contenu}`).join('')
       )}
 
       </main>
+
+      {/* Visionneuse de document */}
+      {docViewer && (
+        <DocViewer url={docViewer.url} nom={docViewer.nom} onClose={() => setDocViewer(null)} />
+      )}
     </div>
   )
 }
