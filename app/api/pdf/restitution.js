@@ -286,7 +286,7 @@ async function makeCoverPage({ nomRef, telRef }) {
 }
 
 // ── Génère les pages de contenu ──
-async function buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo }) {
+async function buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, log, resumeGenere }) {
   const client = dossier.client
   const ref = dossier.referente
   const nomClient = client
@@ -332,9 +332,9 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
           )
         ),
       ),
-      dossier.resume_projet && React.createElement(View, null,
+      resumeGenere && React.createElement(View, { style: { marginTop: 12 } },
         React.createElement(Text, { style: CS.sectionH }, 'Résumé du projet'),
-        React.createElement(Text, { style: { fontSize: 8.5, lineHeight: 1.6, color: '#374151' } }, dossier.resume_projet),
+        React.createElement(Text, { style: { fontSize: 8.5, lineHeight: 1.6, color: '#374151' } }, resumeGenere),
       ),
       React.createElement(Ftr, { ref: dossier.reference }),
     )
@@ -456,6 +456,49 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
   return renderToBuffer(React.createElement(Document, null, ...pages))
 }
 
+//── Génère un résumé IA du projet via l'API Anthropic ──
+async function generateResumeProjet({ crR1, description, devisNotes }) {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) return null
+
+  const parts = []
+  if (description) parts.push(`Description du projet : ${description}`)
+  if (crR1?.contenu_final) parts.push(`Compte-rendu de première visite (R1) :\n${crR1.contenu_final}`)
+  const notes = (devisNotes || []).filter(Boolean)
+  if (notes.length > 0) parts.push(`Descriptions des devis artisans :\n- ${notes.join('\n- ')}`)
+
+  if (parts.length === 0) return null
+
+  const prompt = `Tu es un assistant pour illiCO travaux, une société de courtage et assistance à maîtrise d'ouvrage dans le bâtiment.
+
+À partir des éléments ci-dessous, rédige un résumé professionnel et synthétique du projet de rénovation. Le résumé doit être clair, fluide, en français, sans bullet points, en 3 à 5 phrases maximum. Ne mentionne pas les artisans ni les montants. Parle du projet du point de vue du client.
+
+${parts.join('\n\n')}
+
+Résumé :`
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 500,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    })
+    if (!response.ok) return null
+    const data = await response.json()
+    return data.content?.[0]?.text?.trim() || null
+  } catch {
+    return null
+  }
+}
+
 // ── Télécharger un PDF depuis Supabase Storage ──
 async function downloadPDF(supabaseAdmin, bucket, path) {
   try {
@@ -484,8 +527,17 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
     loadSep(SEP_KBIS), loadSep(SEP_QUALIFICATION),
   ])
 
+  // Charger CR R1
+  const { data: crsData } = await supabaseAdmin.from('comptes_rendus')
+    .select('id, type_visite, contenu_final').eq('dossier_id', dossier.id).order('created_at')
+  const crR1 = crsData?.find(cr => cr.type_visite === 'r1') || null
+
+  // Générer le résumé IA
+  const devisNotes = (devis || []).map(d => d.notes).filter(Boolean)
+  const resumeGenere = await generateResumeProjet({ crR1, description: dossier.description, devisNotes })
+
   // Générer les pages de contenu
-  const contentBuffer = await buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo })
+  const contentBuffer = await buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo, resumeGenere })
   const contentPdf = await PDFDocument.load(contentBuffer)
 
   // PDF final
@@ -609,7 +661,7 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
 // ── DOSSIER R3 (présentation devis avant signature) ──
 // Génère la page récap du R3 : tableau devis reçus + acomptes + honoraires + TOTAL PROJET
 // Simulation "si tu signes tout"
-async function buildR3ContentPDF({ dossier, devisR3, logo }) {
+async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere  }) {
   const client = dossier.client
   const ref = dossier.referente
   const nomClient = client
@@ -652,9 +704,9 @@ async function buildR3ContentPDF({ dossier, devisR3, logo }) {
           )
         ),
       ),
-      dossier.resume_projet && React.createElement(View, null,
+      resumeGenere && React.createElement(View, { style: { marginTop: 12 } },
         React.createElement(Text, { style: CS.sectionH }, 'Résumé du projet'),
-        React.createElement(Text, { style: { fontSize: 8.5, lineHeight: 1.6, color: '#374151' } }, dossier.resume_projet),
+        React.createElement(Text, { style: { fontSize: 8.5, lineHeight: 1.6, color: '#374151' } }, resumeGenere),
       ),
       React.createElement(Text, { style: { fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', marginTop: 16, lineHeight: 1.4 } },
         "Ce document présente l'ensemble des devis reçus et signés pour votre projet. Les devis signés sont déjà engagés ; les devis à valider constituent une simulation sous réserve de signature.",
@@ -766,8 +818,17 @@ export async function buildDossierR3({ dossier, devis, supabaseAdmin, logo }) {
     loadSep(SEP_KBIS),
   ])
 
+  // Charger CR R1
+  const { data: crsDataR3 } = await supabaseAdmin.from('comptes_rendus')
+    .select('id, type_visite, contenu_final').eq('dossier_id', dossier.id).order('created_at')
+  const crR1forR3 = crsDataR3?.find(cr => cr.type_visite === 'r1') || null
+
+  // Générer le résumé IA
+  const devisNotesR3 = (devisR3 || []).map(d => d.notes).filter(Boolean)
+  const resumeGenereR3 = await generateResumeProjet({ crR1: crR1forR3, description: dossier.description, devisNotes: devisNotesR3 })
+
   // Générer les pages de contenu (descriptif + récap)
-  const contentBuffer = await buildR3ContentPDF({ dossier, devisR3, logo })
+  const contentBuffer = await buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere: resumeGenereR3 })
   const contentPdf = await PDFDocument.load(contentBuffer)
 
   const final = await PDFDocument.create()
