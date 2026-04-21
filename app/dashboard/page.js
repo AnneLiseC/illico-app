@@ -63,11 +63,11 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <main className="max-w-6xl mx-auto px-6 py-8">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <h2 className="text-xl font-semibold text-gray-800 mb-6">
           Bonjour {profile.prenom} 👋
         </h2>
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
           {[
             { label: 'Chantiers', emoji: '📁', href: '/chantiers', desc: 'Gérer les chantiers' },
             { label: 'Clients', emoji: '👤', href: '/clients', desc: 'Fiches clients' },
@@ -79,11 +79,11 @@ export default function Dashboard() {
             <button
               key={item.label}
               onClick={() => router.push(item.href)}
-              className="bg-white border border-gray-200 rounded-xl p-6 text-left hover:border-blue-300 hover:shadow-sm transition-all"
+              className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 text-left hover:border-blue-300 hover:shadow-sm transition-all active:scale-95"
             >
-              <div className="text-3xl mb-3">{item.emoji}</div>
-              <div className="font-semibold text-gray-800">{item.label}</div>
-              <div className="text-xs text-gray-400 mt-1">{item.desc}</div>
+              <div className="text-2xl sm:text-3xl mb-2 sm:mb-3">{item.emoji}</div>
+              <div className="font-semibold text-gray-800 text-sm sm:text-base">{item.label}</div>
+              <div className="text-xs text-gray-400 mt-1 hidden sm:block">{item.desc}</div>
             </button>
           ))}
         </div>

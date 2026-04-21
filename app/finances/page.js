@@ -2371,16 +2371,16 @@ export default function Finances() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3">
+      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center gap-3">
         <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-gray-600 text-sm">← Retour</button>
         <h1 className="text-lg font-bold text-blue-900">Finances</h1>
         {saving && <span className="text-xs text-gray-400 ml-auto">Enregistrement...</span>}
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
 
         {/* Cartes résumé */}
-        <div className={`grid gap-4 ${isMarine ? 'grid-cols-4' : 'grid-cols-3'}`}>
+        <div className={`grid gap-3 sm:gap-4 grid-cols-2 ${isMarine ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
           {isMarine ? (
             <>
               <div className="bg-white border border-gray-200 rounded-xl p-4">

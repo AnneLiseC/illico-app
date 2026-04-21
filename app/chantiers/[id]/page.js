@@ -5,10 +5,69 @@ import { useState, useEffect, use } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 
+// ─── Visionneuse de document (PDF / image) ────────────────────────────────────
+function DocViewer({ url, nom, onClose }) {
+  // Libère les blob URLs quand la visionneuse se ferme
+  useEffect(() => {
+    return () => { if (url?.startsWith('blob:')) URL.revokeObjectURL(url) }
+  }, [url])
+
+  if (!url) return null
+  const nomFichier = nom || url.split('/').pop() || 'Document'
+  const estImage = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(nomFichier)
+
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col bg-black/95" onClick={onClose}>
+      {/* Barre haute */}
+      <div
+        className="flex items-center justify-between px-4 py-3 bg-gray-900 flex-shrink-0 gap-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <span className="text-white text-sm font-medium truncate">{nomFichier}</span>
+        <div className="flex items-center gap-4 flex-shrink-0">
+          <a
+            href={url}
+            download={nomFichier}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 text-sm text-blue-300 hover:text-white transition-colors"
+            onClick={e => e.stopPropagation()}
+          >
+            ⬇ Télécharger
+          </a>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+
+      {/* Corps */}
+      <div className="flex-1 overflow-hidden" onClick={e => e.stopPropagation()}>
+        {estImage ? (
+          <div className="w-full h-full flex items-center justify-center p-4">
+            <img src={url} alt={nomFichier} className="max-w-full max-h-full object-contain rounded shadow-lg" />
+          </div>
+        ) : (
+          <iframe
+            src={url}
+            className="w-full h-full border-0"
+            title={nomFichier}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Panel fiches techniques artisan ─────────────────────────────────────────
 function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
   const [fiches, setFiches] = useState([])
   const [loading, setLoading] = useState(true)
- 
+  const [viewer, setViewer] = useState(null) // { url, nom }
+
   useEffect(() => {
     const charger = async () => {
       const { data } = await supabase.from('fiches_techniques').select('*').eq('artisan_id', artisanId).order('nom')
@@ -18,9 +77,9 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
     charger()
   }, [artisanId])
 
-  const ouvrirFiche = async (chemin) => {
+  const ouvrirFiche = async (chemin, nom) => {
     const { data } = await supabase.storage.from('documents').createSignedUrl(chemin, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    if (data?.signedUrl) setViewer({ url: data.signedUrl, nom })
   }
 
   if (loading) return <p className="text-xs text-gray-400 mt-2">Chargement...</p>
@@ -31,27 +90,30 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
     </p>
   )
   return (
-    <div className="mt-2 space-y-1.5 bg-gray-50 rounded-lg p-3">
-      {fiches.map(fiche => {
-        const cochee = fichesCochees.some(f => f.fiche_technique_id === fiche.id)
-        return (
-          <div key={fiche.id} className="flex items-center gap-2">
-            <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
-              <input type="checkbox" checked={cochee} onChange={() => onToggle(fiche.id, artisanId)} className="w-4 h-4 accent-blue-700 flex-shrink-0" />
-              <span className="text-xs text-gray-700 truncate">{fiche.nom}</span>
-              {fiche.description && <span className="text-xs text-gray-400 truncate">— {fiche.description}</span>}
-            </label>
-            {fiche.url && (
-              <button
-                onClick={() => ouvrirFiche(fiche.url)}
-                className="flex-shrink-0 text-xs text-blue-600 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-50">
-                📄 PDF
-              </button>
-            )}
-          </div>
-        )
-      })}
-    </div>
+    <>
+      {viewer && <DocViewer url={viewer.url} nom={viewer.nom} onClose={() => setViewer(null)} />}
+      <div className="mt-2 space-y-1.5 bg-gray-50 rounded-lg p-3">
+        {fiches.map(fiche => {
+          const cochee = fichesCochees.some(f => f.fiche_technique_id === fiche.id)
+          return (
+            <div key={fiche.id} className="flex items-center gap-2">
+              <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                <input type="checkbox" checked={cochee} onChange={() => onToggle(fiche.id, artisanId)} className="w-4 h-4 accent-blue-700 flex-shrink-0" />
+                <span className="text-xs text-gray-700 truncate">{fiche.nom}</span>
+                {fiche.description && <span className="text-xs text-gray-400 truncate">— {fiche.description}</span>}
+              </label>
+              {fiche.url && (
+                <button
+                  onClick={() => ouvrirFiche(fiche.url, fiche.nom)}
+                  className="flex-shrink-0 text-xs text-blue-600 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-50">
+                  📄 Voir
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </>
   )
 }
 
@@ -68,7 +130,7 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
   const set = (champ, val) => setForm(f => ({ ...f, [champ]: val }))
   return (
     <div className="border border-blue-100 bg-blue-50 rounded-lg p-3 space-y-3 mt-2">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Montant HT (€)</label>
           <input type="number" step="0.01" value={form.montant_ht} onChange={e => set('montant_ht', e.target.value)}
@@ -80,7 +142,7 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Commission (%)</label>
           <input type="number" step="0.1" min="0" max="100"
@@ -97,7 +159,7 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
           </label>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Date réception</label>
           <input type="date" value={form.date_reception} onChange={e => set('date_reception', e.target.value)}
@@ -185,6 +247,8 @@ export default function FicheChantier({ params }) {
   const [fichesPanelOuvert, setFichesPanelOuvert] = useState(null)
   const [documents, setDocuments] = useState([])
   const [uploadingDocChantier, setUploadingDocChantier] = useState(false)
+  const [uploadingContrat, setUploadingContrat] = useState(false)
+  const [docViewer, setDocViewer] = useState(null) // { url, nom }
   const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, part_agente: '0.5', date_reception: '', date_limite: '', fichier: null })  
   const [suiviFinancier, setSuiviFinancier] = useState([])
   const router = useRouter()
@@ -421,8 +485,36 @@ export default function FicheChantier({ params }) {
 
 
   const chargerDocuments = async () => {
-  const { data } = await supabase.from('chantier_documents').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
-  setDocuments(data || [])
+    const { data } = await supabase.from('chantier_documents').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
+    setDocuments(data || [])
+  }
+
+  const uploadContrat = async (fichier) => {
+    if (!fichier) return
+    setUploadingContrat(true)
+    setErreur('')
+    const ext = fichier.name.split('.').pop()
+    const chemin = `chantiers/${id}/contrat/contrat.${ext}`
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+    if (error) { setErreur('Erreur upload : ' + error.message); setUploadingContrat(false); return }
+    await supabase.from('dossiers').update({ contrat_url: chemin }).eq('id', id)
+    setDossier(d => ({ ...d, contrat_url: chemin }))
+    setSucces('Contrat ajouté ✓')
+    setUploadingContrat(false)
+  }
+
+  const ouvrirContrat = async () => {
+    if (!dossier?.contrat_url) return
+    const { data } = await supabase.storage.from('documents').createSignedUrl(dossier.contrat_url, 3600)
+    if (data?.signedUrl) setDocViewer({ url: data.signedUrl, nom: dossier.contrat_url.split('/').pop() })
+  }
+
+  const supprimerContrat = async () => {
+    if (!confirm('Supprimer le document du contrat ?')) return
+    if (dossier?.contrat_url) await supabase.storage.from('documents').remove([dossier.contrat_url])
+    await supabase.from('dossiers').update({ contrat_url: null }).eq('id', id)
+    setDossier(d => ({ ...d, contrat_url: null }))
+    setSucces('Document supprimé ✓')
   }
 
   const uploadDocumentChantier = async (fichiers) => {
@@ -695,9 +787,9 @@ export default function FicheChantier({ params }) {
   }
 
   // ── URL SIGNÉE DOCUMENT ──
-  const ouvrirDocument = async (path) => {
+  const ouvrirDocument = async (path, nom) => {
     const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    if (data?.signedUrl) setDocViewer({ url: data.signedUrl, nom: nom || path.split('/').pop() })
     else setErreur('Impossible d\'ouvrir le document')
   }
 
@@ -842,7 +934,6 @@ ${s.contenu}`).join('')
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
       const filename = type === 'recapitulatif'
         ? `Recapitulatif_${dossier.reference}.pdf`
         : type === 'dossier_restitution'
@@ -852,11 +943,7 @@ ${s.contenu}`).join('')
         : type === 'dossier_r3'
         ? `DossierR3_${dossier.reference}.pdf`
         : `Dossier_${dossier.reference}.pdf`
-      a.href = url
-      a.download = filename
-      a.click()
-      URL.revokeObjectURL(url)
-      setSucces('PDF généré ✓')
+      setDocViewer({ url, nom: filename })
     } catch (err) {
       setErreur('Erreur lors de la génération : ' + err.message)
     } finally {
@@ -1082,62 +1169,77 @@ ${s.contenu}`).join('')
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.push(`/clients/${client?.id}`)} className="text-gray-400 hover:text-gray-600 text-sm">← Retour</button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-blue-900">{dossier.reference}</h1>
-              <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.color}`}>{s.label}</span>
+      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <button onClick={() => router.push(`/clients/${client?.id}`)} className="text-gray-400 hover:text-gray-600 text-sm flex-shrink-0 mt-0.5">← Retour</button>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg font-bold text-blue-900">{dossier.reference}</h1>
+                <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.color}`}>{s.label}</span>
+              </div>
+              <p className="text-xs text-gray-400 truncate">{nomComplet} — {typologieLabel(dossier.typologie)}</p>
             </div>
-            <p className="text-xs text-gray-400">{nomComplet} — {typologieLabel(dossier.typologie)}</p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {mode === 'lecture' ? (
+              <>
+                {/* PDFs — cachés sur mobile */}
+                <div className="hidden sm:flex items-center gap-2">
+                  <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
+                    className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">
+                    {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Récap.'}
+                  </button>
+                  <button onClick={() => generatePDF('dossier_r3')} disabled={!!generatingPDF}
+                    className="border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
+                    {generatingPDF === 'dossier_r3' ? '⏳' : '📋 R3'}
+                  </button>
+                  <button onClick={() => generatePDF('dossier_restitution')} disabled={!!generatingPDF}
+                    className="border border-orange-300 text-orange-700 px-3 py-2 rounded-lg text-sm hover:bg-orange-50 disabled:opacity-50">
+                    {generatingPDF === 'dossier_restitution' ? '⏳' : '🎁 Restitution'}
+                  </button>
+                </div>
+                <button onClick={() => setMode('edition')} className="bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-blue-900">Modifier</button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => setMode('lecture')} className="border border-gray-300 text-gray-700 px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
+                <button onClick={handleSave} disabled={saving} className="bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
+                  {saving ? '...' : 'Enregistrer'}
+                </button>
+              </>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {mode === 'lecture' ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => generatePDF('recapitulatif')}
-                disabled={!!generatingPDF}
-                className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">
-                {generatingPDF === 'recapitulatif' ? '⏳ Génération...' : '📄 Récapitulatif'}
-              </button>
-               <button
-                onClick={() => generatePDF('dossier_r3')}
-                disabled={!!generatingPDF}
-                className="border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
-                {generatingPDF === 'dossier_r3' ? '⏳ Génération...' : '📋 Dossier R3'}
-              </button>
-              <button
-                onClick={() => generatePDF('dossier_restitution')}
-                disabled={!!generatingPDF}
-                className="border border-orange-300 text-orange-700 px-3 py-2 rounded-lg text-sm hover:bg-orange-50 disabled:opacity-50">
-                {generatingPDF === 'dossier_restitution' ? '⏳ Génération...' : '🎁 Dossier restitution'}
-              </button>
-
-              <button onClick={() => setMode('edition')} className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900">Modifier</button>
-            </div>
-          ) : (
-            <>
-              <button onClick={() => setMode('lecture')} className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
-              <button onClick={handleSave} disabled={saving} className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
-                {saving ? 'Enregistrement...' : 'Enregistrer'}
-              </button>
-            </>
-          )}
-        </div>
+        {/* PDF buttons — mobile uniquement */}
+        {mode === 'lecture' && (
+          <div className="flex gap-2 mt-3 sm:hidden overflow-x-auto scrollbar-none">
+            <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
+              className="border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-50 flex-shrink-0">
+              {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Récapitulatif'}
+            </button>
+            <button onClick={() => generatePDF('dossier_r3')} disabled={!!generatingPDF}
+              className="border border-blue-300 text-blue-700 px-3 py-1.5 rounded-lg text-xs hover:bg-blue-50 disabled:opacity-50 flex-shrink-0">
+              {generatingPDF === 'dossier_r3' ? '⏳' : '📋 Dossier R3'}
+            </button>
+            <button onClick={() => generatePDF('dossier_restitution')} disabled={!!generatingPDF}
+              className="border border-orange-300 text-orange-700 px-3 py-1.5 rounded-lg text-xs hover:bg-orange-50 disabled:opacity-50 flex-shrink-0">
+              {generatingPDF === 'dossier_restitution' ? '⏳' : '🎁 Restitution'}
+            </button>
+          </div>
+        )}
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
         {succes && <p className="text-green-600 text-sm bg-green-50 border border-green-200 rounded-lg px-4 py-2">{succes}</p>}
         {erreur && <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-2">{erreur}</p>}
 
         {/* Infos générales */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+        <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 space-y-4">
           <h2 className="font-semibold text-gray-800">Informations générales</h2>
           {mode === 'lecture' ? (
             <>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {[
                   ['Référence', dossier.reference],
                   ['Référente', dossier.referente ? `${dossier.referente.prenom} ${dossier.referente.nom}` : '—'],
@@ -1166,41 +1268,94 @@ ${s.contenu}`).join('')
                   </span>
                 </div>
               )}
-              <div className="border-t border-gray-100 pt-4 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Contrat de prestation</p>
-                  {dossier.contrat_signe && dossier.date_signature_contrat && (
-                    <p className="text-xs text-gray-400">Signé le {new Date(dossier.date_signature_contrat).toLocaleDateString('fr-FR')}</p>
-                  )}
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={dossier.contrat_signe || false}
-                    onChange={async (e) => {
-                      const signe = e.target.checked
-                      let dateSignature = dossier.date_signature_contrat
-                      if (signe && !dateSignature) {
-                        const today = new Date().toISOString().slice(0, 10)
-                        const [annee, mois, jour] = today.split('-')
-                        const saisi = prompt('Date de signature du contrat (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
-                        if (saisi) {
-                          const [j, m, a] = saisi.split('/')
-                          dateSignature = `${a}-${m.padStart(2,'0')}-${j.padStart(2,'0')}`
+              <div className="border-t border-gray-100 pt-4 space-y-3">
+                {/* Ligne titre + statut signé */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Contrat de prestation</p>
+                    {dossier.contrat_signe && dossier.date_signature_contrat && (
+                      <p className="text-xs text-gray-400">Signé le {new Date(dossier.date_signature_contrat).toLocaleDateString('fr-FR')}</p>
+                    )}
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={dossier.contrat_signe || false}
+                      onChange={async (e) => {
+                        const signe = e.target.checked
+                        let dateSignature = dossier.date_signature_contrat
+                        if (signe && !dateSignature) {
+                          const today = new Date().toISOString().slice(0, 10)
+                          const [annee, mois, jour] = today.split('-')
+                          const saisi = prompt('Date de signature du contrat (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
+                          if (saisi) {
+                            const [j, m, a] = saisi.split('/')
+                            dateSignature = `${a}-${m.padStart(2,'0')}-${j.padStart(2,'0')}`
+                          }
                         }
-                      }
-                      await supabase.from('dossiers').update({ contrat_signe: signe, date_signature_contrat: signe ? dateSignature : null }).eq('id', id)
-                      setDossier(d => ({ ...d, contrat_signe: signe, date_signature_contrat: signe ? dateSignature : null }))
-                      setSucces('Contrat mis à jour ✓')
-                    }}
-                    className="w-4 h-4 accent-blue-700" />
-                  <span className={`text-sm font-medium ${dossier.contrat_signe ? 'text-green-600' : 'text-gray-500'}`}>
-                    {dossier.contrat_signe ? 'Signé' : 'Non signé'}
-                  </span>
-                </label>
+                        await supabase.from('dossiers').update({ contrat_signe: signe, date_signature_contrat: signe ? dateSignature : null }).eq('id', id)
+                        setDossier(d => ({ ...d, contrat_signe: signe, date_signature_contrat: signe ? dateSignature : null }))
+                        setSucces('Contrat mis à jour ✓')
+                      }}
+                      className="w-4 h-4 accent-blue-700" />
+                    <span className={`text-sm font-medium ${dossier.contrat_signe ? 'text-green-600' : 'text-gray-500'}`}>
+                      {dossier.contrat_signe ? 'Signé' : 'Non signé'}
+                    </span>
+                  </label>
+                </div>
+
+                {/* Document contrat */}
+                {dossier.contrat_url ? (
+                  <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                    <span className="text-base">📄</span>
+                    <span className="text-xs text-gray-600 flex-1 truncate">
+                      {dossier.contrat_url.split('/').pop()}
+                    </span>
+                    <button onClick={ouvrirContrat}
+                      className="text-xs text-blue-600 hover:underline flex-shrink-0">
+                      Voir
+                    </button>
+                    <button onClick={supprimerContrat}
+                      className="text-xs text-red-400 hover:text-red-600 flex-shrink-0 ml-1">
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    {uploadingContrat ? (
+                      <span className="text-xs text-gray-400">Envoi en cours...</span>
+                    ) : (
+                      <>
+                        {/* Desktop : bouton fichier classique */}
+                        <label className="hidden sm:flex items-center gap-1.5 cursor-pointer border border-dashed border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors">
+                          <span>📎</span>
+                          <span>Ajouter le contrat</span>
+                          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.heic" className="hidden"
+                            onChange={e => e.target.files[0] && uploadContrat(e.target.files[0])} />
+                        </label>
+
+                        {/* Mobile : bouton scanner (caméra) */}
+                        <label className="sm:hidden flex items-center gap-1.5 cursor-pointer bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700 hover:bg-blue-100 active:bg-blue-200 transition-colors">
+                          <span>📷</span>
+                          <span>Scanner</span>
+                          <input type="file" accept="image/*" capture="environment" className="hidden"
+                            onChange={e => e.target.files[0] && uploadContrat(e.target.files[0])} />
+                        </label>
+
+                        {/* Mobile : bouton fichier */}
+                        <label className="sm:hidden flex items-center gap-1.5 cursor-pointer border border-dashed border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors">
+                          <span>📁</span>
+                          <span>Fichier</span>
+                          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.heic" className="hidden"
+                            onChange={e => e.target.files[0] && uploadContrat(e.target.files[0])} />
+                        </label>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </>
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
                   <select value={dossier.statut} onChange={e => set('statut', e.target.value)}
@@ -1360,7 +1515,7 @@ ${s.contenu}`).join('')
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
                   <select value={dossier.frais_statut} onChange={e => set('frais_statut', e.target.value)}
@@ -1404,7 +1559,7 @@ ${s.contenu}`).join('')
                   {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}{a.metier ? ` (${a.metier})` : ''}</option>)}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Montant HT (€)</label>
                   <input type="number" step="0.01" min="0" value={nouveauDevis.montant_ht} onChange={e => setND('montant_ht', e.target.value)}
@@ -1433,7 +1588,7 @@ ${s.contenu}`).join('')
                   </label>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Date de réception</label>
                   <input type="date" value={nouveauDevis.date_reception} onChange={e => setND('date_reception', e.target.value)}
@@ -1579,7 +1734,7 @@ ${s.contenu}`).join('')
                         <div className="flex items-center gap-2">
                           {d.devis_pdf_path ? (
                             <>
-                              <button onClick={() => ouvrirDocument(d.devis_pdf_path)}
+                              <button onClick={() => ouvrirDocument(d.devis_pdf_path, `Devis ${d.artisan?.entreprise || ''}.pdf`)}
                                 className="text-xs text-blue-600 hover:underline">Voir PDF</button>
                               <button onClick={async () => {
                                 if (!confirm('Supprimer le PDF du devis ?')) return
@@ -1616,7 +1771,7 @@ ${s.contenu}`).join('')
                         <div className="flex items-center gap-2">
                           {d.devis_signe_path ? (
                             <>
-                              <button onClick={() => ouvrirDocument(d.devis_signe_path)}
+                              <button onClick={() => ouvrirDocument(d.devis_signe_path, `Devis signé ${d.artisan?.entreprise || ''}.pdf`)}
                                 className="text-xs text-blue-600 hover:underline">Voir PDF</button>
                               <button onClick={() => supprimerDevisSigne(d.id, d.devis_signe_path)}
                                 className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
@@ -1656,7 +1811,7 @@ ${s.contenu}`).join('')
                             </div>
                             <div className="flex items-center gap-2">
                               {f.pdf_path ? (
-                                <button onClick={() => ouvrirDocument(f.pdf_path)} className="text-xs text-blue-600 hover:underline">📄 Voir PDF</button>
+                                <button onClick={() => ouvrirDocument(f.pdf_path, `Facture ${f.libelle || ''}.pdf`)} className="text-xs text-blue-600 hover:underline">📄 Voir PDF</button>
                               ) : (
                                 <label className={`text-xs cursor-pointer px-2 py-0.5 rounded border ${uploadingFacturePdf === f.id ? 'text-gray-400 border-gray-200' : 'text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
                                   {uploadingFacturePdf === f.id ? 'Upload...' : '+ PDF'}
@@ -1669,7 +1824,7 @@ ${s.contenu}`).join('')
                         ))}
                         {ajouterFacture === d.id && (
                           <div className="border border-green-100 bg-green-50 rounded-lg p-3 space-y-2">
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                               <div>
                                 <label className="block text-xs font-medium text-gray-600 mb-1">Montant TTC (€) *</label>
                                 <input type="number" step="0.01" value={nouvelleFacture.montant_ttc}
@@ -2062,7 +2217,7 @@ ${s.contenu}`).join('')
                       {doc.type_mime?.startsWith('image') ? '🖼' : doc.type_mime?.includes('pdf') ? '📄' : doc.type_mime?.includes('word') ? '📝' : '📎'}
                     </span>
                     <div className="min-w-0">
-                      <button onClick={() => ouvrirDocument(doc.path)}
+                      <button onClick={() => ouvrirDocument(doc.path, doc.nom)}
                         className="text-sm text-blue-600 hover:underline truncate block max-w-xs text-left">
                         {doc.nom}
                       </button>
@@ -2170,7 +2325,7 @@ ${s.contenu}`).join('')
                   <option value="presentation_devis">R3 — Présentation devis</option>
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date et heure *</label>
                   <input type="datetime-local" value={rdvEnEdition ? rdvEnEdition.date_heure?.slice(0, 16) : nouveauRdvDossier.date_heure}
@@ -2239,7 +2394,7 @@ ${s.contenu}`).join('')
                 </div>
               </div>
               {interventionEnEdition.type_intervention === 'periode' && (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Date de début</label>
                     <input type="date" value={interventionEnEdition.date_debut || ''} onChange={e => setInterventionEnEdition(i => ({ ...i, date_debut: e.target.value }))}
@@ -2356,7 +2511,7 @@ ${s.contenu}`).join('')
                 <button onClick={() => setCrManuelModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Type de visite</label>
                   <select value={crManuelForm.type_visite} onChange={e => setCrManuelForm(f => ({ ...f, type_visite: e.target.value }))}
@@ -2436,7 +2591,7 @@ ${s.contenu}`).join('')
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Type de visite *</label>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {[
                           { value: 'r1', label: 'R1 – Visite technique', emoji: '🔍' },
                           { value: 'r2', label: 'R2 – Visite artisans', emoji: '🔨' },
@@ -2452,7 +2607,7 @@ ${s.contenu}`).join('')
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Date de la visite</label>
                         <input type="date" value={crForm.date_visite}
@@ -2754,7 +2909,7 @@ ${s.contenu}`).join('')
             </div>
 
             {nouvIntervForm.type_intervention === 'periode' && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date de début *</label>
                   <input type="date" value={nouvIntervForm.date_debut}
@@ -2818,6 +2973,11 @@ ${s.contenu}`).join('')
       )}
 
       </main>
+
+      {/* Visionneuse de document */}
+      {docViewer && (
+        <DocViewer url={docViewer.url} nom={docViewer.nom} onClose={() => setDocViewer(null)} />
+      )}
     </div>
   )
 }
