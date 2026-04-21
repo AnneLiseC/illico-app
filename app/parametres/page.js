@@ -1,6 +1,6 @@
 // app/parametres/page.js
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -16,9 +16,7 @@ export default function Parametres() {
   const [agenteASupprimer, setAgenteASupprimer] = useState(null)
   const [supprimant, setSupprimant] = useState(false)
   const [uploadingKbis, setUploadingKbis] = useState(null)
-  const [editingRib, setEditingRib] = useState(false)
-  const [savingRib, setSavingRib]   = useState(false)
-  const [ribForm, setRibForm]       = useState({ iban: '', bic: '', rib_titulaire: '', rib_banque: '' })
+  const [uploadingRib, setUploadingRib]   = useState(false)
   const router = useRouter()
 
   const emptyForm = {
@@ -45,12 +43,6 @@ export default function Parametres() {
       const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       if (profData?.role !== 'admin') { router.push('/dashboard'); return }
       setProfile(profData)
-      setRibForm({
-        iban: profData.iban || '',
-        bic: profData.bic || '',
-        rib_titulaire: profData.rib_titulaire || '',
-        rib_banque: profData.rib_banque || '',
-      })
       await chargerAgentes()
       setLoading(false)
     }
@@ -114,23 +106,31 @@ export default function Parametres() {
     setSupprimant(false)
   }
 
-  const sauvegarderRib = async () => {
+  const uploadRib = async (fichier) => {
     if (!profile) return
-    setSavingRib(true)
-    const { error } = await supabase.from('profiles').update({
-      iban: ribForm.iban || null,
-      bic: ribForm.bic || null,
-      rib_titulaire: ribForm.rib_titulaire || null,
-      rib_banque: ribForm.rib_banque || null,
-    }).eq('id', profile.id)
+    setUploadingRib(true)
+    const chemin = `rib/${profile.id}.pdf`
+    const { error: uploadError } = await supabase.storage
+      .from('documents')
+      .upload(chemin, fichier, { upsert: true, contentType: 'application/pdf' })
+    if (uploadError) {
+      setErreur('Erreur upload RIB : ' + uploadError.message)
+      setUploadingRib(false)
+      return
+    }
+    const { error } = await supabase.from('profiles').update({ rib_url: chemin }).eq('id', profile.id)
     if (error) {
       setErreur('Erreur sauvegarde RIB : ' + error.message)
     } else {
-      setSucces('Coordonnées bancaires mises à jour ✓')
-      setEditingRib(false)
-      setProfile(p => ({ ...p, ...ribForm }))
+      setSucces('RIB uploadé ✓')
+      setProfile(p => ({ ...p, rib_url: chemin }))
     }
-    setSavingRib(false)
+    setUploadingRib(false)
+  }
+  const voirRib = async () => {
+    if (!profile?.rib_url) return
+    const { data } = await supabase.storage.from('documents').createSignedUrl(profile.rib_url, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
   const creerAgente = async () => {
@@ -380,100 +380,30 @@ export default function Parametres() {
 
         {/* Section RIB */}
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-            <div>
-              <h2 className="font-semibold text-gray-800">Coordonnées bancaires</h2>
-              <p className="text-xs text-gray-400 mt-0.5">RIB utilisé pour les automations par email</p>
-            </div>
-            {!editingRib && (
-              <button
-                onClick={() => setEditingRib(true)}
-                className="text-sm text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
-              >
-                Modifier
-              </button>
-            )}
+          <div className="px-6 py-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-800">RIB</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Document PDF utilisé pour les automations par email</p>
           </div>
 
-          <div className="px-6 py-5 space-y-4">
-            {editingRib ? (
+          <div className="px-6 py-4 flex items-center gap-4">
+            {profile?.rib_url ? (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Titulaire du compte</label>
-                    <input
-                      type="text" value={ribForm.rib_titulaire}
-                      onChange={e => setRibForm(f => ({ ...f, rib_titulaire: e.target.value }))}
-                      placeholder="Marine Dupont"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Banque</label>
-                    <input
-                      type="text" value={ribForm.rib_banque}
-                      onChange={e => setRibForm(f => ({ ...f, rib_banque: e.target.value }))}
-                      placeholder="Crédit Agricole"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">IBAN</label>
-                    <input
-                      type="text" value={ribForm.iban}
-                      onChange={e => setRibForm(f => ({ ...f, iban: e.target.value.toUpperCase().replace(/\s/g, '') }))}
-                      placeholder="FR76 0000 0000 0000 0000 0000 000"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">BIC / SWIFT</label>
-                    <input
-                      type="text" value={ribForm.bic}
-                      onChange={e => setRibForm(f => ({ ...f, bic: e.target.value.toUpperCase() }))}
-                      placeholder="AGRIFRPP"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-3 pt-1">
-                  <button
-                    onClick={() => {
-                      setRibForm({ iban: profile?.iban || '', bic: profile?.bic || '', rib_titulaire: profile?.rib_titulaire || '', rib_banque: profile?.rib_banque || '' })
-                      setEditingRib(false)
-                    }}
-                    className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    onClick={sauvegarderRib}
-                    disabled={savingRib}
-                    className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50"
-                  >
-                    {savingRib ? 'Enregistrement...' : 'Enregistrer'}
-                  </button>
-                </div>
+              <button
+                  onClick={voirRib}
+                  className="text-sm text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+                >
+                  📄 Voir le RIB
+                </button>
+                <label className={`text-sm cursor-pointer border px-3 py-1.5 rounded-lg transition-colors ${uploadingRib ? 'text-gray-400 border-gray-200' : 'text-gray-500 border-gray-200 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50'}`}>
+                  {uploadingRib ? 'Upload...' : 'Remplacer'}
+                  <input type="file" accept=".pdf" className="hidden" disabled={uploadingRib} onChange={e => e.target.files[0] && uploadRib(e.target.files[0])} />
+                </label>
               </>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-gray-400 mb-0.5">Titulaire</p>
-                  <p className="text-sm font-medium text-gray-800">{profile?.rib_titulaire || <span className="text-gray-400 italic">Non renseigné</span>}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 mb-0.5">Banque</p>
-                  <p className="text-sm font-medium text-gray-800">{profile?.rib_banque || <span className="text-gray-400 italic">Non renseigné</span>}</p>
-                </div>
-                <div className="sm:col-span-2">
-                  <p className="text-xs text-gray-400 mb-0.5">IBAN</p>
-                  <p className="text-sm font-medium font-mono text-gray-800">{profile?.iban || <span className="text-gray-400 italic font-sans">Non renseigné</span>}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 mb-0.5">BIC / SWIFT</p>
-                  <p className="text-sm font-medium font-mono text-gray-800">{profile?.bic || <span className="text-gray-400 italic font-sans">Non renseigné</span>}</p>
-                </div>
-              </div>
+              <label className={`text-sm cursor-pointer border px-3 py-1.5 rounded-lg transition-colors ${uploadingRib ? 'text-gray-400 border-gray-200' : 'text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
+                {uploadingRib ? 'Upload...' : '+ Uploader le RIB (PDF)'}
+                <input type="file" accept=".pdf" className="hidden" disabled={uploadingRib} onChange={e => e.target.files[0] && uploadRib(e.target.files[0])} />
+              </label>
             )}
           </div>
         </div>
