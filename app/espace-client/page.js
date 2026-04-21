@@ -191,7 +191,9 @@ export default function EspaceClient() {
   )
 
   // ── Données calculées ──
-  const etapeActuelle     = calcEtape(dossier)
+  // comptes_rendus chargés séparément → on les intègre dans le dossier pour calcStatut
+  const dossierComplet    = dossier ? { ...dossier, comptes_rendus: comptesRendus } : null
+  const etapeActuelle     = calcEtape(dossierComplet)
   const photosCatActuelle = photos.filter(p => p.categorie === categoriePhoto)
   const nbMsgNonLus       = messages.filter(m => m.auteur_role !== 'client' && !m.lu).length
   const devisAcceptes     = (dossier.devis_artisans || []).filter(d => d.statut === 'accepte')
@@ -266,8 +268,8 @@ export default function EspaceClient() {
                   <p className="text-xs text-gray-400 mb-1">Référence dossier</p>
                   <p className="font-bold text-blue-900 text-lg">{dossier.reference}</p>
                 </div>
-                <span className={`text-xs px-3 py-1 rounded-full font-medium ${STATUT_CONFIG[calcStatut(dossier)].color}`}>
-                  {STATUT_CONFIG[calcStatut(dossier)].label}
+                <span className={`text-xs px-3 py-1 rounded-full font-medium ${STATUT_CONFIG[calcStatut(dossierComplet)].color}`}>
+                  {STATUT_CONFIG[calcStatut(dossierComplet)].label}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm">

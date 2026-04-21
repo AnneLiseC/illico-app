@@ -1358,13 +1358,15 @@ ${s.contenu}`).join('')
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
-                  <select value={dossier.statut} onChange={e => set('statut', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="en_cours">En cours</option>
-                    <option value="en_attente">En attente</option>
-                    <option value="termine">Terminé</option>
-                    <option value="annule">Annulé</option>
-                  </select>
+                  <label className="flex items-center gap-2 cursor-pointer mt-2">
+                    <input
+                      type="checkbox"
+                      checked={dossier.statut === 'termine'}
+                      onChange={e => set('statut', e.target.checked ? 'termine' : 'en_cours')}
+                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">Marquer comme terminé</span>
+                  </label>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Typologie</label>
