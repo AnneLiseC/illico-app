@@ -3,34 +3,21 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { calcStatut, STATUT_CONFIG } from '../lib/dossiers'
 
 const ETAPES = [
-  { key: 'contact',  label: 'Prise de contact',  icon: '📞' },
-  { key: 'visite',   label: 'Visite technique',   icon: '🏠' },
-  { key: 'devis',    label: 'Devis artisans',      icon: '📋' },
-  { key: 'travaux',  label: 'Travaux en cours',    icon: '🔨' },
-  { key: 'reception',label: 'Réception chantier',  icon: '✅' },
+  { key: 'a_contacter',       label: 'À contacter',  icon: '📞' },
+  { key: 'a_relancer',        label: 'À relancer',    icon: '🔄' },
+  { key: 'devis_en_attente',  label: 'Devis',         icon: '📋' },
+  { key: 'en_cours_chantier', label: 'Travaux',       icon: '🔨' },
+  { key: 'termine',           label: 'Terminé',       icon: '✅' },
 ]
 
-// Étape calculée dynamiquement selon l'avancement réel du dossier
 function calcEtape(dossier) {
   if (!dossier) return 0
-  if (dossier.statut === 'termine') return 5 // tout coché
-
-  const arts = dossier.devis_artisans || []
-  const nonRefuse = arts.filter(d => d.statut !== 'refuse')
-  const hasAccepte = arts.some(d => d.statut === 'accepte')
-  // R2 faite = au moins un devis a changé de statut (reçu/accepté/refusé)
-  const r2Done = arts.some(d => ['recu', 'accepte', 'refuse'].includes(d.statut))
-  // Tous les devis reçus = aucun encore en attente parmi les non-refusés
-  const allRecus = nonRefuse.length > 0 && nonRefuse.every(d => ['recu', 'accepte'].includes(d.statut))
-  const demarre = dossier.date_demarrage_chantier && new Date(dossier.date_demarrage_chantier) <= new Date()
-
-  if (hasAccepte && demarre) return 4  // Réception active
-  if (allRecus)              return 3  // Travaux en cours active
-  if (r2Done)                return 2  // Devis artisans active
-  if (dossier.contrat_signe) return 1  // Visite technique active
-  return 0                             // Prise de contact active
+  const s = calcStatut(dossier)
+  const map = { a_contacter: 0, a_relancer: 1, devis_en_attente: 2, devis_a_modifier: 2, en_cours_chantier: 3, termine: 4 }
+  return map[s] ?? 0
 }
 
 const CAT_LABELS = {
@@ -204,7 +191,9 @@ export default function EspaceClient() {
   )
 
   // ── Données calculées ──
-  const etapeActuelle     = calcEtape(dossier)
+  // comptes_rendus chargés séparément → on les intègre dans le dossier pour calcStatut
+  const dossierComplet    = dossier ? { ...dossier, comptes_rendus: comptesRendus } : null
+  const etapeActuelle     = calcEtape(dossierComplet)
   const photosCatActuelle = photos.filter(p => p.categorie === categoriePhoto)
   const nbMsgNonLus       = messages.filter(m => m.auteur_role !== 'client' && !m.lu).length
   const devisAcceptes     = (dossier.devis_artisans || []).filter(d => d.statut === 'accepte')
@@ -279,13 +268,8 @@ export default function EspaceClient() {
                   <p className="text-xs text-gray-400 mb-1">Référence dossier</p>
                   <p className="font-bold text-blue-900 text-lg">{dossier.reference}</p>
                 </div>
-                <span className={`text-xs px-3 py-1 rounded-full font-medium ${
-                  dossier.statut === 'en_cours' ? 'bg-green-100 text-green-700' :
-                  dossier.statut === 'termine'  ? 'bg-gray-100 text-gray-600' :
-                  'bg-yellow-100 text-yellow-700'
-                }`}>
-                  {dossier.statut === 'en_cours' ? 'En cours' :
-                   dossier.statut === 'termine'  ? 'Terminé' : 'En attente'}
+                <span className={`text-xs px-3 py-1 rounded-full font-medium ${STATUT_CONFIG[calcStatut(dossierComplet)].color}`}>
+                  {STATUT_CONFIG[calcStatut(dossierComplet)].label}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm">

@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
-import { getDossiersByScope, getFilteredDossiers, getAlertesDevis, getCompteurs } from '../lib/dossiers'
+import { getDossiersByScope, getFilteredDossiers, getAlertesDevis, getCompteurs, calcStatut, STATUT_CONFIG } from '../lib/dossiers'
 
 export default function Chantiers() {
   const [dossiers, setDossiers] = useState([])
@@ -26,7 +26,7 @@ export default function Chantiers() {
 
       let query = supabase
         .from('dossiers')
-        .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role)')
+        .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut), comptes_rendus(id, type_visite)')
         .order('created_at', { ascending: false })
 
       // Agente → uniquement ses chantiers
@@ -57,13 +57,6 @@ export default function Chantiers() {
     audit_energetique: 'Audit énergétique',
     studio_jardin: 'Studio de jardin',
   })[t] || t
-
-  const statutConfig = {
-    en_cours: { label: 'En cours', color: 'bg-green-100 text-green-700' },
-    en_attente: { label: 'En attente', color: 'bg-yellow-100 text-yellow-700' },
-    termine: { label: 'Terminé', color: 'bg-gray-100 text-gray-600' },
-    annule: { label: 'Annulé', color: 'bg-red-100 text-red-600' },
-  }
 
   const nomClient = (c) => c
     ? `${c.civilite} ${c.prenom} ${c.nom}${c.prenom2 ? ` & ${c.prenom2} ${c.nom2}` : ''}`
@@ -154,10 +147,12 @@ export default function Chantiers() {
           <select value={filtreStatut} onChange={e => setFiltreStatut(e.target.value)}
             className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option value="tous">Tous les statuts</option>
-            <option value="en_cours">En cours</option>
-            <option value="en_attente">En attente</option>
+            <option value="a_contacter">À contacter</option>
+            <option value="a_relancer">À relancer</option>
+            <option value="devis_en_attente">Devis en attente</option>
+            <option value="devis_a_modifier">Devis à modifier</option>
+            <option value="en_cours_chantier">En cours de chantier</option>
             <option value="termine">Terminé</option>
-            <option value="annule">Annulé</option>
           </select>
           <select value={filtreTypo} onChange={e => setFiltreTypo(e.target.value)}
             className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -174,10 +169,10 @@ export default function Chantiers() {
         {/* Compteurs */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: 'En cours', count: compteurs.enCours },
-            { label: 'En attente', count: compteurs.enAttente },
+            { label: 'À traiter', count: compteurs.aTraiter },
+            { label: 'En devis', count: compteurs.enDevis },
+            { label: 'En chantier', count: compteurs.enChantier },
             { label: 'Terminés', count: compteurs.termines },
-            { label: 'Total', count: compteurs.total },
           ].map(({ label, count, color }) => (
             <div key={label} className="bg-white border border-gray-200 rounded-xl p-4 text-center">
               <p className={`text-2xl font-bold ${color}`}>{count}</p>
@@ -198,7 +193,7 @@ export default function Chantiers() {
               {/* Vue carte — mobile uniquement */}
               <div className="divide-y divide-gray-100 sm:hidden">
                 {dossiersFiltres.map(d => {
-                  const s = statutConfig[d.statut]
+                  const s = STATUT_CONFIG[calcStatut(d)]
                   const limiteDevis = d.date_limite_devis ? new Date(d.date_limite_devis) : null
                   const diff = limiteDevis ? (limiteDevis - aujourdhui) / (1000 * 60 * 60 * 24) : null
                   const urgent = diff !== null && diff <= 7 && diff >= 0
@@ -249,7 +244,7 @@ export default function Chantiers() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {dossiersFiltres.map(d => {
-                      const s = statutConfig[d.statut]
+                      const s = STATUT_CONFIG[calcStatut(d)]
                       const limiteDevis = d.date_limite_devis ? new Date(d.date_limite_devis) : null
                       const diff = limiteDevis ? (limiteDevis - aujourdhui) / (1000 * 60 * 60 * 24) : null
                       const urgent = diff !== null && diff <= 7 && diff >= 0

@@ -127,6 +127,7 @@ export default function Parametres() {
     }
     setUploadingRib(false)
   }
+
   const voirRib = async () => {
     if (!profile?.rib_url) return
     const { data } = await supabase.storage.from('documents').createSignedUrl(profile.rib_url, 3600)
@@ -384,11 +385,10 @@ export default function Parametres() {
             <h2 className="font-semibold text-gray-800">RIB</h2>
             <p className="text-xs text-gray-400 mt-0.5">Document PDF utilisé pour les automations par email</p>
           </div>
-
           <div className="px-6 py-4 flex items-center gap-4">
             {profile?.rib_url ? (
               <>
-              <button
+                <button
                   onClick={voirRib}
                   className="text-sm text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
                 >
