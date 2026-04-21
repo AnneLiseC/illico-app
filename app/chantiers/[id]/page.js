@@ -7,6 +7,11 @@ import { useRouter } from 'next/navigation'
 
 // ─── Visionneuse de document (PDF / image) ────────────────────────────────────
 function DocViewer({ url, nom, onClose }) {
+  // Libère les blob URLs quand la visionneuse se ferme
+  useEffect(() => {
+    return () => { if (url?.startsWith('blob:')) URL.revokeObjectURL(url) }
+  }, [url])
+
   if (!url) return null
   const nomFichier = nom || url.split('/').pop() || 'Document'
   const estImage = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(nomFichier)
@@ -929,7 +934,6 @@ ${s.contenu}`).join('')
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
       const filename = type === 'recapitulatif'
         ? `Recapitulatif_${dossier.reference}.pdf`
         : type === 'dossier_restitution'
@@ -939,11 +943,7 @@ ${s.contenu}`).join('')
         : type === 'dossier_r3'
         ? `DossierR3_${dossier.reference}.pdf`
         : `Dossier_${dossier.reference}.pdf`
-      a.href = url
-      a.download = filename
-      a.click()
-      URL.revokeObjectURL(url)
-      setSucces('PDF généré ✓')
+      setDocViewer({ url, nom: filename })
     } catch (err) {
       setErreur('Erreur lors de la génération : ' + err.message)
     } finally {
