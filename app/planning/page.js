@@ -513,7 +513,7 @@ export default function Planning() {
               { label: 'Interventions', value: interventions.length, color: COLORS.violet },
               { label: 'Chantiers actifs', value: dossiers.filter(d => d.date_demarrage_chantier && !d.date_fin_chantier).length, color: COLORS.mint},
               { label: 'À venir 30j', value: agendaItems.length, color: COLORS.amber },
-            ].map(({ label, value, color, icon }) => (
+            ].map(({ label, value, color }) => (
               <div key={label} className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm text-center">
                 <p className="text-xl font-bold leading-none" style={{ color }}>{value}</p>
                 <p className="text-xs text-slate-400 mt-1 leading-tight">{label}</p>
