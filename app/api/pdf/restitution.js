@@ -286,7 +286,7 @@ async function makeCoverPage({ nomRef, telRef }) {
 }
 
 // ── Génère les pages de contenu ──
-async function buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, log, resumeGenere }) {
+async function buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo, resumeGenere }) {
   const client = dossier.client
   const ref = dossier.referente
   const nomClient = client
@@ -456,7 +456,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
   return renderToBuffer(React.createElement(Document, null, ...pages))
 }
 
-//── Génère un résumé IA du projet via l'API Anthropic ──
+// ── Génère un résumé IA du projet via l'API Anthropic ──
 async function generateResumeProjet({ crR1, description, devisNotes }) {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return null
@@ -661,7 +661,7 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
 // ── DOSSIER R3 (présentation devis avant signature) ──
 // Génère la page récap du R3 : tableau devis reçus + acomptes + honoraires + TOTAL PROJET
 // Simulation "si tu signes tout"
-async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere  }) {
+async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
   const client = dossier.client
   const ref = dossier.referente
   const nomClient = client

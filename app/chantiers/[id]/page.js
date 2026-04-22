@@ -257,7 +257,7 @@ export default function FicheChantier({ params }) {
   const [uploadingDocChantier, setUploadingDocChantier] = useState(false)
   const [uploadingContrat, setUploadingContrat] = useState(false)
   const [docViewer, setDocViewer] = useState(null) // { url, nom }
-  const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, part_agente: '0.5', date_reception: '', date_limite: '', notes: '', fichier: null })  
+  const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, part_agente: '0.5', date_reception: '', date_limite: '', notes: '', fichier: null })
   const [suiviFinancier, setSuiviFinancier] = useState([])
   const router = useRouter()
 
@@ -731,7 +731,8 @@ export default function FicheChantier({ params }) {
       montant_ht: updates.montant_ht ? parseFloat(updates.montant_ht) : null,
       montant_ttc: updates.montant_ttc ? parseFloat(updates.montant_ttc) : null,
       commission_pourcentage: updates.sans_commission ? 0 : (updates.commission_pourcentage ? parseFloat(updates.commission_pourcentage) / 100 : null),
-      part_agente: partAgente, date_reception: updates.date_reception || null, date_limite: updates.date_limite || null, notes: updates.notes || null,
+      part_agente: partAgente, date_reception: updates.date_reception || null, date_limite: updates.date_limite || null,
+      notes: updates.notes || null,
     }).eq('id', devisId)
     await chargerDevis()
     setDevisEnEdition(null)
@@ -1375,6 +1376,7 @@ ${s.contenu}`).join('')
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Typologie</label>
                   <select value={dossier.typologie} onChange={e => set('typologie', e.target.value)}
@@ -1401,6 +1403,15 @@ ${s.contenu}`).join('')
                   <label className="block text-sm font-medium text-gray-700 mb-1">Fin de chantier</label>
                   <input type="date" value={dossier.date_fin_chantier || ''} onChange={e => set('date_fin_chantier', e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <label className="flex items-center gap-2 cursor-pointer mt-2">
+                    <input
+                      type="checkbox"
+                      checked={dossier.statut === 'termine'}
+                      onChange={e => set('statut', e.target.checked ? 'termine' : 'en_cours')}
+                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-500">Marquer comme terminé</span>
+                  </label>
                 </div>
               </div>
               {!estChantierMarine && profile?.parts_agente_disponibles?.length > 1 && (
@@ -1610,6 +1621,12 @@ ${s.contenu}`).join('')
                 </div>
               </div>
                <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                <textarea value={nouveauDevis.notes} onChange={e => setND('notes', e.target.value)} rows={2}
+                  placeholder="Description des travaux..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+              </div>
+              <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
                 <textarea value={nouveauDevis.notes} onChange={e => setND('notes', e.target.value)} rows={2}
                   placeholder="Description des travaux..."
