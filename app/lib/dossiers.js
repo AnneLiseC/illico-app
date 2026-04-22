@@ -7,11 +7,13 @@ export const STATUT_CONFIG = {
   devis_a_modifier:  { label: 'Devis à modifier',      color: 'bg-red-100 text-red-600' },
   en_cours_chantier: { label: 'En cours de chantier',  color: 'bg-green-100 text-green-700' },
   termine:           { label: 'Terminé',               color: 'bg-gray-100 text-gray-600' },
+  annule:            { label: 'Annulé',                color: 'bg-red-100 text-red-600' },
 }
 
 // Calcul du statut en fonction de l'avancement réel du dossier
 export function calcStatut(dossier) {
-  // Terminé = sélection manuelle
+  // Annulé / Terminé = sélection manuelle
+  if (dossier.statut === 'annule') return 'annule'
   if (dossier.statut === 'termine') return 'termine'
 
   // En cours de chantier = date démarrage renseignée
@@ -64,7 +66,7 @@ export function getFilteredDossiers(dossiers, recherche, filtreStatut, filtreTyp
 export function getAlertesDevis(dossiers, today = new Date()) {
   return dossiers.filter(d => {
     if (!d.date_limite_devis) return false
-    if (calcStatut(d) === 'termine') return false
+    if (calcStatut(d) === 'termine' || calcStatut(d) === 'annule') return false
     const limite = new Date(d.date_limite_devis)
     const diff = (limite - today) / (1000 * 60 * 60 * 24)
     return diff <= 7 && diff >= 0

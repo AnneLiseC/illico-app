@@ -127,7 +127,6 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
     part_agente: isMarine ? '0' : (devis.part_agente || '0.5'),
     date_reception: devis.date_reception || '',
     date_limite: devis.date_limite || '',
-    notes: devis.notes || '',
   })
   const set = (champ, val) => setForm(f => ({ ...f, [champ]: val }))
   return (
@@ -172,12 +171,6 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
           <input type="date" value={form.date_limite} onChange={e => set('date_limite', e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
-      </div>
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
-        <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2}
-          placeholder="Description des travaux..."
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
       </div>
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 border border-gray-300 text-gray-700 py-1.5 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
@@ -336,12 +329,12 @@ export default function FicheChantier({ params }) {
   const uploadPhotos = async (fichiers) => {
     if (!fichiers.length) return
     setUploadingPhoto(true)
-    for (const fichier of fichiers) {
+    await Promise.all(fichiers.map(async (fichier) => {
       const ext = fichier.name.split('.').pop()
       const chemin = `chantiers/${id}/${categorie}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error: uploadError } = await supabase.storage.from('photos').upload(chemin, fichier)
       if (!uploadError) await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id })
-    }
+    }))
     await chargerPhotos()
     setUploadingPhoto(false)
     setSucces('Photo(s) ajoutée(s) ✓')
@@ -707,7 +700,6 @@ export default function FicheChantier({ params }) {
       montant_ttc: nouveauDevis.montant_ttc ? parseFloat(nouveauDevis.montant_ttc) : null,
       commission_pourcentage: nouveauDevis.sans_commission ? 0 : (nouveauDevis.commission_pourcentage ? parseFloat(nouveauDevis.commission_pourcentage) / 100 : null),
       part_agente: partAgente, date_reception: nouveauDevis.date_reception || null, date_limite: nouveauDevis.date_limite || null,
-      notes: nouveauDevis.notes || null,
       statut: (nouveauDevis.date_reception || nouveauDevis.fichier) ? 'recu' : 'en_attente',
     }).select()
     if (!error && nouveauDevis.fichier && devisInsere?.[0]) {
@@ -732,7 +724,6 @@ export default function FicheChantier({ params }) {
       montant_ttc: updates.montant_ttc ? parseFloat(updates.montant_ttc) : null,
       commission_pourcentage: updates.sans_commission ? 0 : (updates.commission_pourcentage ? parseFloat(updates.commission_pourcentage) / 100 : null),
       part_agente: partAgente, date_reception: updates.date_reception || null, date_limite: updates.date_limite || null,
-      notes: updates.notes || null,
     }).eq('id', devisId)
     await chargerDevis()
     setDevisEnEdition(null)
@@ -1265,15 +1256,36 @@ ${s.contenu}`).join('')
                   </div>
                 ))}
               </div>
-                <label className="flex items-center gap-2 cursor-pointer mt-2">
+                <div className="flex flex-wrap items-center gap-4 mt-2">
+                <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={dossier.statut === 'termine'}
-                    onChange={e => set('statut', e.target.checked ? 'termine' : 'en_cours')}
+                    onChange={async e => {
+                      const newStatut = e.target.checked ? 'termine' : 'en_cours_chantier'
+                      await supabase.from('dossiers').update({ statut: newStatut }).eq('id', id)
+                      setDossier(d => ({ ...d, statut: newStatut }))
+                      setSucces(e.target.checked ? 'Chantier marqué comme terminé ✓' : 'Statut mis à jour ✓')
+                    }}
                     className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                   <span className="text-sm text-gray-700">Marquer comme terminé</span>
                 </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={dossier.statut === 'annule'}
+                    onChange={async e => {
+                      const newStatut = e.target.checked ? 'annule' : 'en_cours_chantier'
+                      await supabase.from('dossiers').update({ statut: newStatut }).eq('id', id)
+                      setDossier(d => ({ ...d, statut: newStatut }))
+                      setSucces(e.target.checked ? 'Chantier marqué comme annulé ✓' : 'Statut mis à jour ✓')
+                    }}
+                    className="w-4 h-4 rounded border-gray-300 text-red-500 focus:ring-red-400"
+                  />
+                  <span className="text-sm text-red-600">Chantier annulé</span>
+                </label>
+              </div>
               {dossier.resume_projet && (
                 <div className="border-t border-gray-100 pt-3">
                   <p className="text-xs text-gray-400 mb-1">Résumé du projet</p>
@@ -1620,12 +1632,6 @@ ${s.contenu}`).join('')
                 </div>
               </div>
                <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
-                <textarea value={nouveauDevis.notes} onChange={e => setND('notes', e.target.value)} rows={2}
-                  placeholder="Description des travaux..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-              </div>
-              <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
                 <textarea value={nouveauDevis.notes} onChange={e => setND('notes', e.target.value)} rows={2}
                   placeholder="Description des travaux..."
