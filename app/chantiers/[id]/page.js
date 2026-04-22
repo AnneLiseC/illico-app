@@ -1376,7 +1376,6 @@ ${s.contenu}`).join('')
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Typologie</label>
                   <select value={dossier.typologie} onChange={e => set('typologie', e.target.value)}
@@ -2896,7 +2895,8 @@ ${s.contenu}`).join('')
 
           </div>
         )}
-
+      
+      </main>
       {/* Modal Créer Intervention */}
       {modalCreerIntervOuvert && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
@@ -3003,9 +3003,7 @@ ${s.contenu}`).join('')
           </div>
         </div>
       )}
-
-      </main>
-
+      
       {/* Visionneuse de document */}
       {docViewer && (
         <DocViewer url={docViewer.url} nom={docViewer.nom} onClose={() => setDocViewer(null)} />
