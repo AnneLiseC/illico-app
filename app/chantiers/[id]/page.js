@@ -127,6 +127,7 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
     part_agente: isMarine ? '0' : (devis.part_agente || '0.5'),
     date_reception: devis.date_reception || '',
     date_limite: devis.date_limite || '',
+    notes: devis.notes || '',
   })
   const set = (champ, val) => setForm(f => ({ ...f, [champ]: val }))
   return (
@@ -171,6 +172,12 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
           <input type="date" value={form.date_limite} onChange={e => set('date_limite', e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+        <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2}
+          placeholder="Description des travaux..."
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
       </div>
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 border border-gray-300 text-gray-700 py-1.5 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
@@ -700,6 +707,7 @@ export default function FicheChantier({ params }) {
       montant_ttc: nouveauDevis.montant_ttc ? parseFloat(nouveauDevis.montant_ttc) : null,
       commission_pourcentage: nouveauDevis.sans_commission ? 0 : (nouveauDevis.commission_pourcentage ? parseFloat(nouveauDevis.commission_pourcentage) / 100 : null),
       part_agente: partAgente, date_reception: nouveauDevis.date_reception || null, date_limite: nouveauDevis.date_limite || null,
+      notes: nouveauDevis.notes || null,
       statut: (nouveauDevis.date_reception || nouveauDevis.fichier) ? 'recu' : 'en_attente',
     }).select()
     if (!error && nouveauDevis.fichier && devisInsere?.[0]) {
@@ -724,6 +732,7 @@ export default function FicheChantier({ params }) {
       montant_ttc: updates.montant_ttc ? parseFloat(updates.montant_ttc) : null,
       commission_pourcentage: updates.sans_commission ? 0 : (updates.commission_pourcentage ? parseFloat(updates.commission_pourcentage) / 100 : null),
       part_agente: partAgente, date_reception: updates.date_reception || null, date_limite: updates.date_limite || null,
+      notes: updates.notes || null,
     }).eq('id', devisId)
     await chargerDevis()
     setDevisEnEdition(null)
