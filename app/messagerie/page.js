@@ -31,7 +31,7 @@ export default function MessageriePage() {
 
       const { data: dossData } = await supabase
         .from('dossiers')
-        .select('id, reference, client:clients(civilite, prenom, nom, raison_sociale)')
+        .select('id, reference, client:clients(civilite, prenom, nom, prenom2, nom2)')
         .in('id', dossierIds)
         .order('reference', { ascending: true })
       if (!dossData) { setLoading(false); return }
@@ -103,7 +103,8 @@ export default function MessageriePage() {
   const nomClient = (d) => {
     const c = d.client
     if (!c) return d.reference
-    return c.raison_sociale || `${c.prenom || ''} ${c.nom || ''}`.trim() || d.reference
+    const nom2 = c.prenom2 ? ` & ${c.prenom2} ${c.nom2 || ''}` : ''
+    return `${c.prenom || ''} ${c.nom || ''}${nom2}`.trim() || d.reference
   }
 
   if (loading) return (
