@@ -132,7 +132,7 @@ export default function Planning() {
 
   // ── ÉVÉNEMENTS CALENDRIER ──────────────────────────────────────────────────
 
-  const evenementsRdv = rdvs
+  const evenementsRdv = useMemo(() => rdvs
     .filter(r => vue === 'tous' || (vue === 'moi' && r.dossier?.referente_id === profile?.id) || (vue === 'artisan' && r.artisan_id))
     .filter(r => !typeFiltre   || r.type_rdv === typeFiltre)
     .filter(r => !artisanFiltre || r.artisan_id === artisanFiltre)
@@ -150,9 +150,9 @@ export default function Planning() {
         backgroundColor: cfg.color, borderColor: cfg.color, textColor: '#fff',
         extendedProps: { type: 'rdv', data: r, cfg },
       }
-    })
+    }), [rdvs, vue, typeFiltre, artisanFiltre, agenteFiltre, profile?.id])
 
-  const evenementsInterventions = interventions
+  const evenementsInterventions = useMemo(() => interventions
     .filter(i => !artisanFiltre || i.artisan_id === artisanFiltre)
     .filter(i => !agenteFiltre  || i.dossier?.referente_id === agenteFiltre)
     .flatMap(i => {
@@ -168,18 +168,19 @@ export default function Planning() {
         const endD = new Date(d + 'T00:00:00'); endD.setDate(endD.getDate() + 1)
         return { id: 'int-' + i.id + '-' + idx, title: titre, start: d, end: endD.toISOString().slice(0, 10), backgroundColor: color + '28', borderColor: color, textColor: color, allDay: true, extendedProps: { type: 'intervention', data: i } }
       })
-    })
+    }), [interventions, artisanFiltre, agenteFiltre, couleurArtisan])
 
-  const evenementsDates = dossiers
+  const evenementsDates = useMemo(() => dossiers
     .filter(d => !agenteFiltre || d.referente_id === agenteFiltre)
     .flatMap(d => {
       const evts = []
       if (d.date_demarrage_chantier) evts.push({ id: 'start-' + d.id, title: `▶ ${d.reference}`, start: d.date_demarrage_chantier, allDay: true, backgroundColor: '#ECFDF5', borderColor: COLORS.mint, textColor: COLORS.mint, extendedProps: { type: 'date_cle', data: d } })
       if (d.date_fin_chantier) evts.push({ id: 'end-' + d.id, title: `■ ${d.reference}`, start: d.date_fin_chantier, allDay: true, backgroundColor: '#FFF7ED', borderColor: COLORS.amber, textColor: COLORS.gold, extendedProps: { type: 'date_cle', data: d } })
       return evts
-    })
+    }), [dossiers, agenteFiltre])
 
-  const tousEvenements = [...evenementsRdv, ...evenementsInterventions, ...evenementsDates]
+  const tousEvenements = useMemo(() => [...evenementsRdv, ...evenementsInterventions, ...evenementsDates],
+    [evenementsRdv, evenementsInterventions, evenementsDates])
 
   // ── AGENDA SIDEBAR ─────────────────────────────────────────────────────────
 
@@ -296,7 +297,8 @@ export default function Planning() {
       savedId = data?.id
     }
     pushToGoogle('rdv', savedId)
-    await chargerTout(); fermerModal(); setSaving(false)
+    fermerModal(); setSaving(false)
+    chargerTout()
   }
 
   const sauvegarderIntervention = async () => {
@@ -313,7 +315,8 @@ export default function Planning() {
       savedId = data?.id
     }
     pushToGoogle('intervention', savedId)
-    await chargerTout(); fermerModal(); setSaving(false)
+    fermerModal(); setSaving(false)
+    chargerTout()
   }
 
   const sauvegarderDateCle = async () => {
@@ -339,7 +342,8 @@ export default function Planning() {
     }
     if (elementSelectionne.type === 'rdv') await supabase.from('rendez_vous').delete().eq('id', elementSelectionne.data.id)
     else await supabase.from('interventions_artisans').delete().eq('id', elementSelectionne.data.id)
-    await chargerTout(); fermerModal()
+    fermerModal()
+    chargerTout()
   }
 
   const syncGoogle = async () => {
