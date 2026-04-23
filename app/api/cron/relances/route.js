@@ -90,7 +90,7 @@ export async function GET(req) {
       .select(`
         id, dossier_id, date_limite,
         artisans(email, entreprise, nom, prenom),
-        dossiers(reference, profiles:referente_id(email, prenom, nom, telephone, role))
+        dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role))
       `)
       .is('date_reception', null)
       .not('statut', 'in', '("accepte","refuse")')
@@ -153,7 +153,7 @@ export async function GET(req) {
         id, dossier_id, montant_ttc, artisan_id,
         artisans(id, entreprise, sans_royalties),
         dossiers(id, reference, referente_id,
-          profiles:referente_id(email, prenom, nom, telephone, role),
+          profiles!referente_id(email, prenom, nom, telephone, role),
           clients(email, nom, prenom, civilite, nom2, prenom2, adresse_chantier))
       `)
       .eq('type_echeance', 'acompte_artisan')
@@ -295,7 +295,7 @@ export async function GET(req) {
       .from('suivi_financier')
       .select(`
         id, dossier_id, montant_ttc, date_echeance,
-        dossiers(reference, profiles:referente_id(email, prenom, nom, telephone, role),
+        dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role),
           clients(email, nom, prenom, civilite, nom2))
       `)
       .eq('type_echeance', 'facture_finale')
@@ -333,7 +333,7 @@ export async function GET(req) {
       .from('rendez_vous')
       .select(`
         id, dossier_id, type_rdv, date_heure,
-        dossiers(reference, profiles:referente_id(email, prenom, nom, telephone, role),
+        dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role),
           clients(email, nom, prenom, civilite, nom2, adresse_chantier))
       `)
       .gte('date_heure', `${tomorrow}T00:00:00`)
@@ -399,7 +399,7 @@ export async function GET(req) {
       .from('comptes_rendus')
       .select(`
         id, dossier_id, type_visite, date_visite,
-        dossiers(reference, profiles:referente_id(email, prenom, nom, telephone, role),
+        dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role),
           clients(email, nom, prenom, civilite, nom2))
       `)
       .eq('valide', true)
