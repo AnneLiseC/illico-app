@@ -6,6 +6,7 @@ import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElemen
 Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, Tooltip, Legend, Filler)
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../lib/auth-context'
 import { calculateDossierFinance } from '../lib/finance'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -139,7 +140,6 @@ export default function Finances() {
 
   // ── STATE ──────────────────────────────────────────────────────────────────
 
-  const [profile, setProfile]                       = useState(null)
   const [loading, setLoading]                       = useState(true)
   const [saving, setSaving]                         = useState(false)
   const [erreur, setErreur]                         = useState('')
@@ -162,62 +162,49 @@ export default function Finances() {
   const [sfSousOngletAgente, setSfSousOngletAgente] = useState('mois')
 
   const router = useRouter()
+  const { user, profile, initialized } = useAuth()
 
   // ── CHARGEMENT ─────────────────────────────────────────────────────────────
 
   const chargerTout = async () => {
-    const { data: dossiersData, error: dossiersError } = await supabase
-      .from('dossiers')
-      .select(`
+    const [
+      { data: dossiersData },
+      { data: redevancesData },
+      { data: facturesAgenteData },
+      { data: agentesData },
+      { data: adminData },
+      { data: objectifsData },
+    ] = await Promise.all([
+      supabase.from('dossiers').select(`
         *,
         referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
         client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
         devis_artisans(*, artisan:artisans(id, entreprise, sans_royalties)),
         suivi_financier(*)
-      `)
-      .order('created_at', { ascending: false })
+      `).order('created_at', { ascending: false }),
+      supabase.from('redevances').select('*').order('annee', { ascending: false }).order('mois', { ascending: false }),
+      supabase.from('factures_agente').select('*').order('annee', { ascending: false }).order('mois', { ascending: false }),
+      supabase.from('profiles').select('*').eq('role', 'agente').order('prenom'),
+      supabase.from('profiles').select('prenom, nom').eq('role', 'admin').single(),
+      supabase.from('objectifs_ca').select('*').eq('annee', new Date().getFullYear()),
+    ])
     setDossiers(dossiersData || [])
-
-    const { data: redevancesData } = await supabase
-      .from('redevances').select('*')
-      .order('annee', { ascending: false }).order('mois', { ascending: false })
     setRedevances(redevancesData || [])
-
-    const { data: facturesAgenteData } = await supabase
-      .from('factures_agente').select('*')
-      .order('annee', { ascending: false }).order('mois', { ascending: false })
     setFacturesAgente(facturesAgenteData || [])
-
-    const { data: agentesData } = await supabase
-      .from('profiles').select('*').eq('role', 'agente').order('prenom')
     setAgentes(agentesData || [])
     setAgenteSelectionnee(prev => prev || agentesData?.[0]?.id || null)
-
-    const { data: adminData } = await supabase
-      .from('profiles').select('prenom, nom').eq('role', 'admin').single()
     if (adminData) setNomFranchisee(`${adminData.prenom} ${adminData.nom}`)
-
-    const { data: objectifsData } = await supabase
-      .from('objectifs_ca')
-      .select('*')
-      .eq('annee', new Date().getFullYear())
     setObjectifs(objectifsData || [])
-
   }
 
   // ── INIT ───────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-      const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      setProfile(profData)
-      await chargerTout()
-      setLoading(false)
-    }
-    init()
-  }, [router])
+    if (!initialized) return
+    if (!user) { router.push('/login'); return }
+    if (!profile) return
+    chargerTout().then(() => setLoading(false))
+  }, [initialized, user?.id, profile?.id, router])
 
   // ── HELPERS PROFIL ─────────────────────────────────────────────────────────
 

@@ -1,9 +1,10 @@
 'use client'
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, DoughnutController, BarController, LineController, Tooltip, Legend, Filler } from 'chart.js'
 Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, DoughnutController, BarController, LineController, Tooltip, Legend, Filler)
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../lib/auth-context'
 import { calculateDossierFinance } from '../lib/finance'
 
 const round2 = (n) => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100
@@ -136,36 +137,49 @@ function PBar({ value, max, color = '#2563EB', height = 6 }) {
 }
 
 export default function Statistiques() {
-  const [profile, setProfile] = useState(null)
   const [dossiers, setDossiers] = useState([])
   const [agentes, setAgentes] = useState([])
   const [loading, setLoading] = useState(true)
   const [onglet, setOnglet] = useState('overview')
   const [annee, setAnnee] = useState(new Date().getFullYear())
   const router = useRouter()
+  const { user, profile, initialized } = useAuth()
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-      const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      setProfile(profData)
-      const { data: dossiersData } = await supabase.from('dossiers').select(`*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), client:clients(id, prenom, nom, civilite), devis_artisans(*, artisan:artisans(id, entreprise, metier, sans_royalties)), suivi_financier(*)`).order('created_at', { ascending: false })
+    if (!initialized) return
+    if (!user) { router.push('/login'); return }
+    if (!profile) return
+    Promise.all([
+      supabase.from('dossiers').select(`*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), client:clients(id, prenom, nom, civilite), devis_artisans(*, artisan:artisans(id, entreprise, metier, sans_royalties)), suivi_financier(*)`).order('created_at', { ascending: false }),
+      supabase.from('profiles').select('*').in('role', ['admin', 'agente']).order('prenom'),
+    ]).then(([{ data: dossiersData }, { data: agentesData }]) => {
       setDossiers(dossiersData || [])
-      const { data: agentesData } = await supabase.from('profiles').select('*').in('role', ['admin', 'agente']).order('prenom')
       setAgentes(agentesData || [])
       setLoading(false)
-    }
-    init()
-  }, [router])
+    })
+  }, [initialized, user?.id, profile?.id, router])
 
   const isMarine = profile?.role === 'admin'
-  const dossiersVisibles = isMarine ? dossiers : dossiers.filter(d => d.referente?.id === profile?.id)
-  const anneesDispos = [...new Set(dossiersVisibles.map(d => { const dt = d.date_signature_contrat || d.created_at; return dt ? new Date(dt).getFullYear() : null }).filter(Boolean))].sort((a, b) => b - a)
-  const filterAnnee = (list, a) => list.filter(d => { const dt = d.date_signature_contrat || d.created_at; return dt && new Date(dt).getFullYear() === a })
-  const enrichir = (list) => list.map(d => ({ ...d, _s: calculerStats(d) }))
-  const dN = enrichir(filterAnnee(dossiersVisibles, annee))
-  const dN1 = enrichir(filterAnnee(dossiersVisibles, annee - 1))
+
+  const dossiersVisibles = useMemo(() =>
+    isMarine ? dossiers : dossiers.filter(d => d.referente?.id === profile?.id)
+  , [dossiers, isMarine, profile?.id])
+
+  const anneesDispos = useMemo(() =>
+    [...new Set(dossiersVisibles.map(d => { const dt = d.date_signature_contrat || d.created_at; return dt ? new Date(dt).getFullYear() : null }).filter(Boolean))].sort((a, b) => b - a)
+  , [dossiersVisibles])
+
+  const dN = useMemo(() =>
+    dossiersVisibles
+      .filter(d => { const dt = d.date_signature_contrat || d.created_at; return dt && new Date(dt).getFullYear() === annee })
+      .map(d => ({ ...d, _s: calculerStats(d) }))
+  , [dossiersVisibles, annee])
+
+  const dN1 = useMemo(() =>
+    dossiersVisibles
+      .filter(d => { const dt = d.date_signature_contrat || d.created_at; return dt && new Date(dt).getFullYear() === annee - 1 })
+      .map(d => ({ ...d, _s: calculerStats(d) }))
+  , [dossiersVisibles, annee])
 
   const metriques = (list) => {
     const nb = list.length
@@ -189,23 +203,24 @@ export default function Statistiques() {
     return { nb, avecDevis, tauxTransfo, pipeline, travaux, comHT, honNet, fraisNet, royalties, netTotal, gainAgente, gainAdmin, panierMoyen, dureeMoyenne, delaiMoyen, parStatut }
   }
 
-  const mN = metriques(dN); const mN1 = metriques(dN1)
+  const mN = useMemo(() => metriques(dN), [dN])
+  const mN1 = useMemo(() => metriques(dN1), [dN1])
   const delta = (a, b) => (!b || b === 0) ? null : round2(((a - b) / b) * 100)
-  const caParMois = (list) => { const arr = Array(12).fill(0); list.forEach(d => { const dt = d.date_signature_contrat || d.created_at; if (dt) arr[new Date(dt).getMonth()] += d._s.netTotal }); return arr }
-  const caParMoisN = caParMois(dN); const caParMoisN1 = caParMois(dN1)
+  const caParMoisN = useMemo(() => { const arr = Array(12).fill(0); dN.forEach(d => { const dt = d.date_signature_contrat || d.created_at; if (dt) arr[new Date(dt).getMonth()] += d._s.netTotal }); return arr }, [dN])
+  const caParMoisN1 = useMemo(() => { const arr = Array(12).fill(0); dN1.forEach(d => { const dt = d.date_signature_contrat || d.created_at; if (dt) arr[new Date(dt).getMonth()] += d._s.netTotal }); return arr }, [dN1])
   const cumulatif = (arr) => arr.reduce((acc, v, i) => { acc.push((acc[i-1] || 0) + v); return acc }, [])
 
-  const typologies = (() => {
+  const typologies = useMemo(() => {
     const map = {}
     dN.forEach(d => { const t = d.typologie || 'autre'; if (!map[t]) map[t] = { label: TYPO_LABELS[t] || t, color: TYPO_COLORS[t] || '#6B7280', nb: 0, ca: 0, com: 0, hon: 0 }; map[t].nb++; map[t].ca += d._s.montantTravauxHT; map[t].com += d._s.comHT; map[t].hon += d._s.honNet })
     return Object.entries(map).sort((a, b) => b[1].nb - a[1].nb)
-  })()
+  }, [dN])
 
-  const topArtisans = (() => {
+  const topArtisans = useMemo(() => {
     const map = {}
     dN.forEach(d => { (d.devis_artisans || []).filter(dv => dv.statut !== 'refuse').forEach(dv => { const id = dv.artisan?.id; if (!id) return; if (!map[id]) map[id] = { id, entreprise: dv.artisan?.entreprise || '—', metier: dv.artisan?.metier || '—', volumeHT: 0, comHT: 0, nb: 0, signes: 0, chantiers: new Set() }; map[id].volumeHT += Number(dv.montant_ht) || 0; map[id].comHT += (Number(dv.montant_ht) || 0) * (Number(dv.commission_pourcentage) || 0); map[id].nb++; if (dv.statut === 'accepte' || dv.date_signature) map[id].signes++; map[id].chantiers.add(d.id) }) })
     return Object.values(map).map(a => ({ ...a, nbChantiers: a.chantiers.size, tauxSign: a.nb > 0 ? (a.signes / a.nb) * 100 : 0 })).sort((a, b) => b.volumeHT - a.volumeHT).slice(0, 15)
-  })()
+  }, [dN])
 
   const topClients = (() => {
     const map = {}

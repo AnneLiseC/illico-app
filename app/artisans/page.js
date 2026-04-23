@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../lib/auth-context'
 
 export default function Artisans() {
   const [artisans, setArtisans] = useState([])
@@ -14,21 +15,14 @@ export default function Artisans() {
   const [supprimant, setSupprimant] = useState(false)
 
   const router = useRouter()
+  const { user, initialized } = useAuth()
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-
-      const { data } = await supabase
-        .from('artisans')
-        .select('*')
-        .order('entreprise')
-      setArtisans(data || [])
-      setLoading(false)
-    }
-    init()
-  }, [router])
+    if (!initialized) return
+    if (!user) { router.push('/login'); return }
+    supabase.from('artisans').select('*').order('entreprise')
+      .then(({ data }) => { setArtisans(data || []); setLoading(false) })
+  }, [initialized, user?.id, router])
 
   const metiers = ['tous', ...new Set(artisans.map(a => a.metier).filter(Boolean).sort())]
 
