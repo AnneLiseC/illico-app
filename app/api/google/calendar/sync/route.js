@@ -59,7 +59,7 @@ function interventionToGoogleEvents(intervention) {
   const artisan = intervention.artisan?.entreprise || 'Artisan'
   const client = intervention.dossier?.client
   const nomClient = client ? `${client.prenom} ${client.nom}`.trim() : ''
-  const summary = `🔨 ${artisan}${nomClient ? ' | ' + nomClient : ''}`
+  const summary = ` ${artisan}${nomClient ? ' | ' + nomClient : ''}`
   const baseDesc = [
     intervention.dossier?.reference ? `Chantier : ${intervention.dossier.reference}` : '',
     intervention.notes ? `Notes : ${intervention.notes}` : '',
@@ -92,6 +92,27 @@ async function tryUpdate(calendar, googleEventId, eventBody) {
     if (err.code === 404 || err.code === 410) return 'not_found'
     throw err
   }
+  return (intervention.jours_specifiques || []).map((jour, idx) => ({
+    summary,
+    description: [...baseDesc, `[illico-int:${intervention.id}:${idx}]`].join('\n'),
+    start: { date: jour },
+    end: { date: jour },
+  }))
+}
+ 
+// Crée ou met à jour un événement Google ; re-crée si 404/410 (supprimé côté Google)
+async function upsertEvent(calendar, googleEventId, eventBody) {
+  if (googleEventId) {
+    try {
+      await calendar.events.update({ calendarId: CALENDAR_ID, eventId: googleEventId, requestBody: eventBody })
+      return { action: 'updated', id: googleEventId }
+    } catch (err) {
+      if (err.code !== 404 && err.code !== 410) throw err
+      // L'événement a été supprimé côté Google → on le re-crée
+    }
+  }
+  const res = await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: eventBody })
+  return { action: 'inserted', id: res.data.id }
 }
 
 export async function POST(request) {
@@ -144,6 +165,8 @@ export async function POST(request) {
           const res = await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: rdvToGoogleEvent(rdv) })
           await supabaseAdmin.from('rendez_vous').update({ google_event_id: res.data.id }).eq('id', rdv.id)
           results.pushed++
+          } else {
+          results.updated++
         }
       } catch (err) {
         results.errors.push(`RDV ${rdv.id}: ${err.message}`)
@@ -176,6 +199,8 @@ export async function POST(request) {
             await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: events[i] })
           }
           results.pushed++
+        } else {
+          results.updated++
         }
       } catch (err) {
         results.errors.push(`Intervention ${intervention.id}: ${err.message}`)
@@ -191,7 +216,7 @@ export async function POST(request) {
       if (dossier.date_demarrage_chantier) {
         try {
           const eventStart = {
-            summary: `🏗 Démarrage${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
+            summary: ` Démarrage${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
             description: `[illico-start:${dossier.id}]`,
             start: { date: dossier.date_demarrage_chantier },
             end: { date: dossier.date_demarrage_chantier },
@@ -212,6 +237,8 @@ export async function POST(request) {
             const res = await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: eventStart })
             await supabaseAdmin.from('dossiers').update({ google_start_event_id: res.data.id }).eq('id', dossier.id)
             results.pushed++
+          } else {
+            results.updated++
           }
         } catch (err) { results.errors.push(`Démarrage ${dossier.id}: ${err.message}`) }
       }
@@ -239,6 +266,8 @@ export async function POST(request) {
             const res = await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: eventEnd })
             await supabaseAdmin.from('dossiers').update({ google_end_event_id: res.data.id }).eq('id', dossier.id)
             results.pushed++
+          } else {
+            results.updated++
           }
         } catch (err) { results.errors.push(`Fin ${dossier.id}: ${err.message}`) }
       }
