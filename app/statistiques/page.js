@@ -1,5 +1,6 @@
 'use client'
 import React, { useState, useEffect, useRef } from 'react'
+import Chart from 'chart.js/auto'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { calculateDossierFinance } from '../lib/finance'
