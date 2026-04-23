@@ -20,13 +20,15 @@ async function getAccessToken() {
   return access_token
 }
 
-export async function sendEmail({ to, subject, html }) {
+// from : email de la référente (@illico-travaux.com) — fallback sur MS_SENDER_EMAIL
+export async function sendEmail({ to, subject, html, from }) {
   if (!to) throw new Error('Destinataire manquant')
 
+  const sender = from || process.env.MS_SENDER_EMAIL
   const token = await getAccessToken()
 
   const res = await fetch(
-    `https://graph.microsoft.com/v1.0/users/${process.env.MS_SENDER_EMAIL}/sendMail`,
+    `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(sender)}/sendMail`,
     {
       method: 'POST',
       headers: {
@@ -38,7 +40,7 @@ export async function sendEmail({ to, subject, html }) {
           subject,
           body: { contentType: 'HTML', content: html },
           toRecipients: [{ emailAddress: { address: to } }],
-          from: { emailAddress: { address: process.env.MS_SENDER_EMAIL } },
+          from: { emailAddress: { address: sender } },
         },
         saveToSentItems: true,
       }),
