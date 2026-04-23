@@ -6,6 +6,7 @@ import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElemen
 Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, Tooltip, Legend, Filler)
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../lib/auth-context'
 import { calculateDossierFinance } from '../lib/finance'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -139,7 +140,6 @@ export default function Finances() {
 
   // ── STATE ──────────────────────────────────────────────────────────────────
 
-  const [profile, setProfile]                       = useState(null)
   const [loading, setLoading]                       = useState(true)
   const [saving, setSaving]                         = useState(false)
   const [erreur, setErreur]                         = useState('')
@@ -162,6 +162,7 @@ export default function Finances() {
   const [sfSousOngletAgente, setSfSousOngletAgente] = useState('mois')
 
   const router = useRouter()
+  const { user, profile, initialized } = useAuth()
 
   // ── CHARGEMENT ─────────────────────────────────────────────────────────────
 
@@ -199,16 +200,11 @@ export default function Finances() {
   // ── INIT ───────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-      const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      setProfile(profData)
-      await chargerTout()
-      setLoading(false)
-    }
-    init()
-  }, [router])
+    if (!initialized) return
+    if (!user) { router.push('/login'); return }
+    if (!profile) return
+    chargerTout().then(() => setLoading(false))
+  }, [initialized, user?.id, profile?.id, router])
 
   // ── HELPERS PROFIL ─────────────────────────────────────────────────────────
 

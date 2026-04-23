@@ -2,43 +2,39 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../lib/auth-context'
 
 export default function Clients() {
   const [clients, setClients] = useState([])
-  const [profile, setProfile] = useState(null)
   const [agentes, setAgentes] = useState([])
   const [loading, setLoading] = useState(true)
   const [recherche, setRecherche] = useState('')
   const [onglet, setOnglet] = useState('moi')
   const router = useRouter()
+  const { user, profile, initialized } = useAuth()
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
+    if (!initialized) return
+    if (!user) { router.push('/login'); return }
+    if (!profile) return
 
-      const { data: prof } = await supabase
-        .from('profiles').select('*').eq('id', user.id).single()
-      setProfile(prof)
+    let query = supabase
+      .from('clients')
+      .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role)')
+      .order('created_at', { ascending: false })
+    if (profile.role === 'agente') query = query.eq('referente', profile.id)
 
-      let query = supabase
-        .from('clients')
-        .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role)')
-        .order('created_at', { ascending: false })
-      if (prof.role === 'agente') query = query.eq('referente', prof.id)
-
-      const [{ data }, { data: agentesData }] = await Promise.all([
-        query,
-        prof.role === 'admin'
-          ? supabase.from('profiles').select('id, prenom, nom').eq('role', 'agente').order('prenom')
-          : Promise.resolve({ data: [] }),
-      ])
+    Promise.all([
+      query,
+      profile.role === 'admin'
+        ? supabase.from('profiles').select('id, prenom, nom').eq('role', 'agente').order('prenom')
+        : Promise.resolve({ data: [] }),
+    ]).then(([{ data }, { data: agentesData }]) => {
       setClients(data || [])
       setAgentes(agentesData || [])
       setLoading(false)
-    }
-    init()
-  }, [router])
+    })
+  }, [initialized, user?.id, profile?.id, router])
 
   const isMarine = profile?.role === 'admin'
 

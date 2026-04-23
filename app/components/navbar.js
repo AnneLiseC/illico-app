@@ -1,8 +1,9 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import {supabase} from '../lib/supabase'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/auth-context'
 import Image from 'next/image'
 
 const NAV_LINKS = [
@@ -19,17 +20,7 @@ export default function NavBar() {
   const router = useRouter()
   const pathname = usePathname()
   const [menuOuvert, setMenuOuvert] = useState(false)
-  const [profile, setProfile] = useState(null)
-
-  useEffect(() => {
-    const charger = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data } = await supabase.from('profiles').select('prenom, nom, role').eq('id', user.id).single()
-      setProfile(data)
-    }
-    charger()
-  }, []) // Fetch une seule fois au montage, pas à chaque navigation
+  const { profile } = useAuth()
 
   // Masquer sur login, page d'accueil, espace-client
   const hidden = ['/', '/login', '/espace-client'].some(p => pathname === p || pathname?.startsWith('/espace-client'))

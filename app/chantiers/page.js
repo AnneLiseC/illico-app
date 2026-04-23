@@ -2,11 +2,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../lib/auth-context'
 import { getDossiersByScope, getFilteredDossiers, getAlertesDevis, getCompteurs, calcStatut, STATUT_CONFIG } from '../lib/dossiers'
 
 export default function Chantiers() {
   const [dossiers, setDossiers] = useState([])
-  const [profile, setProfile] = useState(null)
   const [agentes, setAgentes] = useState([])
   const [loading, setLoading] = useState(true)
   const [recherche, setRecherche] = useState('')
@@ -14,34 +14,30 @@ export default function Chantiers() {
   const [filtreTypo, setFiltreTypo] = useState('tous')
   const [onglet, setOnglet] = useState('moi')
   const router = useRouter()
+  const { user, profile, initialized } = useAuth()
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
+    if (!initialized) return
+    if (!user) { router.push('/login'); return }
+    if (!profile) return
 
-      const { data: profData } = await supabase
-        .from('profiles').select('*').eq('id', user.id).single()
-      setProfile(profData)
+    let query = supabase
+      .from('dossiers')
+      .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut), comptes_rendus(id, type_visite)')
+      .order('created_at', { ascending: false })
+    if (profile.role === 'agente') query = query.eq('referente_id', profile.id)
 
-      let query = supabase
-        .from('dossiers')
-        .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut), comptes_rendus(id, type_visite)')
-        .order('created_at', { ascending: false })
-      if (profData.role === 'agente') query = query.eq('referente_id', profData.id)
-
-      const [{ data }, { data: agentesData }] = await Promise.all([
-        query,
-        profData.role === 'admin'
-          ? supabase.from('profiles').select('id, prenom, nom').eq('role', 'agente').order('prenom')
-          : Promise.resolve({ data: [] }),
-      ])
+    Promise.all([
+      query,
+      profile.role === 'admin'
+        ? supabase.from('profiles').select('id, prenom, nom').eq('role', 'agente').order('prenom')
+        : Promise.resolve({ data: [] }),
+    ]).then(([{ data }, { data: agentesData }]) => {
       setDossiers(data || [])
       setAgentes(agentesData || [])
       setLoading(false)
-    }
-    init()
-  }, [router])
+    })
+  }, [initialized, user?.id, profile?.id, router])
 
   const typologieLabel = (t) => ({
     courtage: 'Courtage',

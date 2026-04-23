@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../lib/auth-context'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
@@ -38,7 +39,6 @@ const fmtDateLong = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { weekday
 export default function Planning() {
   const [rdvs, setRdvs]                   = useState([])
   const [interventions, setInterventions] = useState([])
-  const [profile, setProfile]             = useState(null)
   const [dossiers, setDossiers]           = useState([])
   const [artisans, setArtisans]           = useState([])
   const [agentes, setAgentes]             = useState([])
@@ -82,6 +82,7 @@ export default function Planning() {
   const [formDateCle, setFormDateCle] = useState({ date_demarrage_chantier: '', date_fin_chantier: '' })
 
   const router = useRouter()
+  const { user, profile, initialized } = useAuth()
 
   const chargerTout = async () => {
     const [rdvRes, intRes, dosRes, artRes, devRes, agRes] = await Promise.all([
@@ -101,14 +102,13 @@ export default function Planning() {
   }
 
   useEffect(() => {
+    if (!initialized) return
+    if (!user) { router.push('/login'); return }
+    if (!profile) return
     const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-      const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      setProfile(profData)
       await chargerTout()
       try {
-        const res = await fetch(`/api/google/calendar/sync?userId=${profData.id}`)
+        const res = await fetch(`/api/google/calendar/sync?userId=${profile.id}`)
         if (res.ok) { const d = await res.json(); setGoogleConnected(d.connected) }
       } catch { setGoogleConnected(false) }
       const params = new URLSearchParams(window.location.search)
@@ -123,7 +123,7 @@ export default function Planning() {
       setLoading(false)
     }
     init()
-  }, [router])
+  }, [initialized, user?.id, profile?.id, router])
 
   const couleurArtisan = useCallback((artisanId) => {
     const idx = artisans.findIndex(a => a.id === artisanId)

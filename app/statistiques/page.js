@@ -4,6 +4,7 @@ import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElemen
 Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, DoughnutController, BarController, LineController, Tooltip, Legend, Filler)
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../lib/auth-context'
 import { calculateDossierFinance } from '../lib/finance'
 
 const round2 = (n) => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100
@@ -136,30 +137,27 @@ function PBar({ value, max, color = '#2563EB', height = 6 }) {
 }
 
 export default function Statistiques() {
-  const [profile, setProfile] = useState(null)
   const [dossiers, setDossiers] = useState([])
   const [agentes, setAgentes] = useState([])
   const [loading, setLoading] = useState(true)
   const [onglet, setOnglet] = useState('overview')
   const [annee, setAnnee] = useState(new Date().getFullYear())
   const router = useRouter()
+  const { user, profile, initialized } = useAuth()
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-      const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      setProfile(profData)
-      const [{ data: dossiersData }, { data: agentesData }] = await Promise.all([
-        supabase.from('dossiers').select(`*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), client:clients(id, prenom, nom, civilite), devis_artisans(*, artisan:artisans(id, entreprise, metier, sans_royalties)), suivi_financier(*)`).order('created_at', { ascending: false }),
-        supabase.from('profiles').select('*').in('role', ['admin', 'agente']).order('prenom'),
-      ])
+    if (!initialized) return
+    if (!user) { router.push('/login'); return }
+    if (!profile) return
+    Promise.all([
+      supabase.from('dossiers').select(`*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), client:clients(id, prenom, nom, civilite), devis_artisans(*, artisan:artisans(id, entreprise, metier, sans_royalties)), suivi_financier(*)`).order('created_at', { ascending: false }),
+      supabase.from('profiles').select('*').in('role', ['admin', 'agente']).order('prenom'),
+    ]).then(([{ data: dossiersData }, { data: agentesData }]) => {
       setDossiers(dossiersData || [])
       setAgentes(agentesData || [])
       setLoading(false)
-    }
-    init()
-  }, [router])
+    })
+  }, [initialized, user?.id, profile?.id, router])
 
   const isMarine = profile?.role === 'admin'
 

@@ -2,41 +2,19 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../lib/auth-context'
 
 export default function Dashboard() {
-  const [profile, setProfile] = useState(null)
   const [erreur, setErreur] = useState('')
   const router = useRouter()
+  const { user, profile, initialized } = useAuth()
 
   useEffect(() => {
-    const getProfile = async () => {
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      
-      if (authError || !user) {
-        router.replace('/login')
-        return
-      }
-
-      const { data, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-
-      if (profileError) {
-        setErreur('Erreur profil : ' + profileError.message)
-        return
-      }
-
-      // Rediriger le client AVANT setProfile pour ne jamais afficher le dashboard
-      if (data.role === 'client') {
-        router.replace('/espace-client')
-        return
-      }
-      setProfile(data)
-    }
-    getProfile()
-  }, [router])
+    if (!initialized) return
+    if (!user) { router.replace('/login'); return }
+    if (!profile) return
+    if (profile.role === 'client') router.replace('/espace-client')
+  }, [initialized, user?.id, profile?.id, profile?.role, router])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
