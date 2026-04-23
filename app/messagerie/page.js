@@ -31,7 +31,7 @@ export default function MessageriePage() {
 
       const { data: dossData } = await supabase
         .from('dossiers')
-        .select('id, reference, client:clients(civilite, prenom, nom, prenom2, nom2)')
+        .select('id, reference, typologie, client:clients(civilite, prenom, nom, prenom2, nom2)')
         .in('id', dossierIds)
         .order('reference', { ascending: true })
       if (!dossData) { setLoading(false); return }
@@ -100,6 +100,11 @@ export default function MessageriePage() {
     setSending(false)
   }
 
+  const typologieLabel = (t) => ({
+    courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo',
+    merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin',
+  })[t] || t
+
   const nomClient = (d) => {
     const c = d.client
     if (!c) return d.reference
@@ -125,7 +130,7 @@ export default function MessageriePage() {
             {/* Liste des chantiers */}
             <div className="w-64 flex-shrink-0 bg-white border border-gray-200 rounded-xl overflow-y-auto">
               {dossiers.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-8 px-4">Aucun chantier AMO</p>
+                <p className="text-sm text-gray-400 text-center py-8 px-4">Aucun message</p>
               ) : (
                 <div className="divide-y divide-gray-100">
                   {dossiers.map(d => (
@@ -136,7 +141,10 @@ export default function MessageriePage() {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
-                          <p className={`text-sm font-medium truncate ${d.id === dossierId ? 'text-blue-800' : 'text-gray-800'}`}>{d.reference}</p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className={`text-sm font-medium truncate ${d.id === dossierId ? 'text-blue-800' : 'text-gray-800'}`}>{d.reference}</p>
+                            <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded flex-shrink-0">{typologieLabel(d.typologie)}</span>
+                          </div>
                           <p className="text-xs text-gray-500 truncate">{nomClient(d)}</p>
                         </div>
                         {d.nbNonLus > 0 && (
