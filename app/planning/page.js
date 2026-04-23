@@ -63,6 +63,7 @@ export default function Planning() {
   const [syncMessage, setSyncMessage]         = useState('')
   const [sidebarOuverte, setSidebarOuverte]   = useState(false)
   const [calendarView, setCalendarView]       = useState('timeGridWeek')
+  const [quickMenu, setQuickMenu]             = useState(null)
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 640) {
@@ -157,7 +158,7 @@ export default function Planning() {
     .flatMap(i => {
       const color = couleurArtisan(i.artisan_id)
       const client = `${i.dossier?.client?.prenom || ''} ${i.dossier?.client?.nom || ''}`.trim()
-      const titre = `🔨 ${i.artisan?.entreprise || ''} · ${client}`
+      const titre = ` ${i.artisan?.entreprise || ''} · ${client}`
       if (i.type_intervention === 'periode') {
         const endExclusive = (() => { const d = new Date(i.date_fin); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10) })()
         return [{ id: 'int-' + i.id, title: titre, start: i.date_debut, end: endExclusive, backgroundColor: color + '28', borderColor: color, textColor: color, allDay: true, extendedProps: { type: 'intervention', data: i } }]
@@ -227,9 +228,25 @@ export default function Planning() {
     if (modalType === 'intervention' && formIntervention.type_intervention === 'jours_specifiques') {
       const date = info.dateStr.slice(0, 10)
       setFormIntervention(f => ({ ...f, jours_specifiques: f.jours_specifiques.includes(date) ? f.jours_specifiques.filter(j => j !== date) : [...f.jours_specifiques, date] }))
+       return
+    }
+    // Mini-menu : choisir entre RDV et Intervention
+    const rect = info.jsEvent?.target?.getBoundingClientRect?.() || {}
+    const x = Math.min(info.jsEvent?.clientX ?? 200, window.innerWidth - 200)
+    const y = Math.min(info.jsEvent?.clientY ?? 200, window.innerHeight - 120)
+    setQuickMenu({ date: info.dateStr, x, y })
+  }
+ 
+  const ouvrirDepuisMenu = (type) => {
+    if (!quickMenu) return
+    const date = quickMenu.date.slice(0, 10)
+    setElementSelectionne(null); setModeEdition(false); setQuickMenu(null)
+    if (type === 'rdv') {
+      setFormRdv(f => ({ ...f, date_heure: date + 'T09:00' }))
+      setModalType('rdv'); setModalOuvert(true)
     } else {
-      setFormRdv(f => ({ ...f, date_heure: info.dateStr.slice(0, 10) + 'T09:00' }))
-      setElementSelectionne(null); setModeEdition(false); setModalType('rdv'); setModalOuvert(true)
+      setFormIntervention(f => ({ ...f, date_debut: date }))
+      setModalType('intervention'); setModalOuvert(true)
     }
   }
 
@@ -329,9 +346,15 @@ export default function Planning() {
     setSyncing(true); setSyncMessage('')
     try {
       const res = await fetch('/api/google/calendar/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: profile?.id }) })
-      if (!res.ok) throw new Error()
       const data = await res.json()
-      setSyncMessage(data.success ? `✅ ${data.message}` : `❌ ${data.error}`)
+      if (!res.ok) {
+        setSyncMessage(`❌ ${data.error || 'Erreur de synchronisation'}`)
+      } else if (data.hasErrors && !data.pushed && !data.updated && !data.pulled && !data.deleted) {
+        setSyncMessage(`❌ ${data.message}`)
+      } else {
+        setSyncMessage(`✅ ${data.message}`)
+        if (data.deleted > 0 || data.pulled > 0) await chargerTout()
+      }
     } catch { setSyncMessage('❌ Google Calendar non configuré') }
     setSyncing(false)
   }
@@ -796,8 +819,8 @@ export default function Planning() {
               {elementSelectionne?.type === 'date_cle' && (
                 <div className="space-y-4">
                   <p className="text-sm text-slate-500">{elementSelectionne.data.client?.prenom} {elementSelectionne.data.client?.nom}</p>
-                  <div><label className={labelCls}>🏗 Date de démarrage</label><input type="date" value={formDateCle.date_demarrage_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_demarrage_chantier: e.target.value }))} className={inputCls} /></div>
-                  <div><label className={labelCls}>🏁 Date de fin</label><input type="date" value={formDateCle.date_fin_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_fin_chantier: e.target.value }))} className={inputCls} /></div>
+                  <div><label className={labelCls}>🏗 Démarrage</label><input type="date" value={formDateCle.date_demarrage_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_demarrage_chantier: e.target.value }))} className={inputCls} /></div>
+                  <div><label className={labelCls}>🏁 Fin</label><input type="date" value={formDateCle.date_fin_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_fin_chantier: e.target.value }))} className={inputCls} /></div>
                   <div className="flex gap-2 pt-1">
                     <button onClick={fermerModal} className="flex-1 border border-slate-200 text-slate-700 py-2 rounded-xl text-sm font-medium hover:bg-slate-50">Annuler</button>
                     <button onClick={sauvegarderDateCle} disabled={saving} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: COLORS.blue }}>
@@ -809,6 +832,28 @@ export default function Planning() {
             </div>
           </div>
         </div>
+      )}
+      {/* ── QUICK MENU (clic sur une date) ─────────────────────────────────── */}
+      {quickMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setQuickMenu(null)} />
+          <div className="fixed z-50 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden"
+            style={{ top: quickMenu.y + 8, left: quickMenu.x, minWidth: 180 }}>
+            <p className="px-4 pt-3 pb-1.5 text-xs font-bold text-slate-400 uppercase tracking-widest">
+              {new Date(quickMenu.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}
+            </p>
+            <button onClick={() => ouvrirDepuisMenu('rdv')}
+              className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors">
+              <span className="w-5 h-5 rounded flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ background: COLORS.blue }}>R</span>
+              Rendez-vous
+            </button>
+            <button onClick={() => ouvrirDepuisMenu('intervention')}
+              className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-teal-50 hover:text-teal-700 flex items-center gap-2.5 transition-colors border-t border-slate-100">
+              <span className="w-5 h-5 rounded flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ background: COLORS.teal }}>I</span>
+              Intervention artisan
+            </button>
+          </div>
+        </>
       )}
     </div>
   )
