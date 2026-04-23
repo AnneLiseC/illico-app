@@ -2,7 +2,8 @@
 'use client'
 import React from 'react'
 import { useState, useEffect, useRef } from 'react'
-import Chart from 'chart.js/auto'
+import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, Tooltip, Legend, Filler } from 'chart.js'
+Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, Tooltip, Legend, Filler)
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { calculateDossierFinance } from '../lib/finance'
