@@ -2,7 +2,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
-import NavBar from '../components/navbar'
 
 export default function MessageriePage() {
   const router = useRouter()
@@ -101,24 +100,19 @@ export default function MessageriePage() {
   }
 
   if (loading) return (
-    <>
-      <NavBar />
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500 text-sm">Chargement...</p>
-      </div>
-    </>
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <p className="text-gray-500 text-sm">Chargement...</p>
+    </div>
   )
 
   const dossierActif = dossiers.find(d => d.id === dossierId)
 
   return (
-    <>
-      <NavBar />
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
-          <h1 className="text-xl font-bold text-gray-800 mb-4">Messagerie</h1>
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+        <h1 className="text-xl font-bold text-gray-800 mb-4">Messagerie</h1>
 
-          <div className="flex gap-4 h-[calc(100vh-160px)]">
+        <div className="flex gap-4 h-[calc(100vh-200px)]">
 
             {/* Liste des chantiers */}
             <div className="w-64 flex-shrink-0 bg-white border border-gray-200 rounded-xl overflow-y-auto">
@@ -217,9 +211,8 @@ export default function MessageriePage() {
                 </>
               )}
             </div>
-          </div>
         </div>
       </div>
-    </>
+    </div>
   )
 }
