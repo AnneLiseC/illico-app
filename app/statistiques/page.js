@@ -1,5 +1,7 @@
 'use client'
 import React, { useState, useEffect, useRef } from 'react'
+import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, DoughnutController, BarController, LineController, Tooltip, Legend, Filler } from 'chart.js'
+Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, DoughnutController, BarController, LineController, Tooltip, Legend, Filler)
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { calculateDossierFinance } from '../lib/finance'
