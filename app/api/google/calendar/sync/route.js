@@ -134,6 +134,14 @@ export async function POST(request) {
     try {
       await calendar.calendars.get({ calendarId: CALENDAR_ID })
     } catch (err) {
+      const isInvalidGrant = err.code === 401
+        || err.message?.includes('invalid_grant')
+        || err.message?.includes('Token has been expired')
+        || err.message?.includes('invalid_client')
+      if (isInvalidGrant) {
+        await supabaseAdmin.from('google_tokens').delete().eq('user_id', userId)
+        return NextResponse.json({ error: 'Session Google expirée, reconnectez Google Calendar', needsReconnect: true }, { status: 400 })
+      }
       const detail = err.code === 404 ? 'Calendrier introuvable (vérifiez GOOGLE_CALENDAR_ID)'
                    : err.code === 403 ? 'Accès refusé au calendrier (partagez-le avec votre compte Google)'
                    : `Erreur calendrier : ${err.message}`

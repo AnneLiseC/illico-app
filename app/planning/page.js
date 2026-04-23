@@ -349,6 +349,7 @@ export default function Planning() {
       const data = await res.json()
       if (!res.ok) {
         setSyncMessage(`❌ ${data.error || 'Erreur de synchronisation'}`)
+        if (data.needsReconnect) setGoogleConnected(false)
       } else if (data.hasErrors && !data.pushed && !data.updated && !data.pulled && !data.deleted) {
         setSyncMessage(`❌ ${data.message}`)
       } else {
