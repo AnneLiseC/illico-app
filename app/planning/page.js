@@ -346,9 +346,15 @@ export default function Planning() {
     setSyncing(true); setSyncMessage('')
     try {
       const res = await fetch('/api/google/calendar/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: profile?.id }) })
-      if (!res.ok) throw new Error()
       const data = await res.json()
-      setSyncMessage(data.success ? `✅ ${data.message}` : `❌ ${data.error}`)
+      if (!res.ok) {
+        setSyncMessage(`❌ ${data.error || 'Erreur de synchronisation'}`)
+      } else if (data.hasErrors && !data.pushed && !data.updated && !data.pulled && !data.deleted) {
+        setSyncMessage(`❌ ${data.message}`)
+      } else {
+        setSyncMessage(`✅ ${data.message}`)
+        if (data.deleted > 0 || data.pulled > 0) await chargerTout()
+      }
     } catch { setSyncMessage('❌ Google Calendar non configuré') }
     setSyncing(false)
   }

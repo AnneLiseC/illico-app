@@ -56,6 +56,11 @@ function rdvToGoogleEvent(rdv) {
 }
 
 function interventionToGoogleEvents(intervention) {
+  // Données manquantes → skip
+  if (!intervention.date_debut) return []
+  if (intervention.type_intervention === 'periode' && !intervention.date_fin) return []
+  if (intervention.type_intervention === 'jours_specifiques' && !intervention.jours_specifiques?.length) return []
+
   const artisan = intervention.artisan?.entreprise || 'Artisan'
   const client = intervention.dossier?.client
   const nomClient = client ? `${client.prenom} ${client.nom}`.trim() : ''
@@ -75,7 +80,7 @@ function interventionToGoogleEvents(intervention) {
       end: { date: endDate.toISOString().slice(0, 10) },
     }]
   }
-  return (intervention.jours_specifiques || []).map((jour, idx) => ({
+  return intervention.jours_specifiques.map((jour, idx) => ({
     summary,
     description: [...baseDesc, `[illico-int:${intervention.id}:${idx}]`].join('\n'),
     start: { date: jour },
@@ -118,6 +123,16 @@ export async function POST(request) {
 
     const calendar = google.calendar({ version: 'v3', auth })
     const results = { pushed: 0, updated: 0, pulled: 0, deleted: 0, errors: [] }
+
+    // Vérifier que le calendrier est accessible avant de commencer
+    try {
+      await calendar.calendars.get({ calendarId: CALENDAR_ID })
+    } catch (err) {
+      const detail = err.code === 404 ? 'Calendrier introuvable (vérifiez GOOGLE_CALENDAR_ID)'
+                   : err.code === 403 ? 'Accès refusé au calendrier (partagez-le avec votre compte Google)'
+                   : `Erreur calendrier : ${err.message}`
+      return NextResponse.json({ error: detail }, { status: 400 })
+    }
 
     // ── PUSH : App → Google ──────────────────────────────────────────────────
     // Si l'événement existe encore dans Google : mise à jour
@@ -371,16 +386,23 @@ export async function POST(request) {
     if (results.updated > 0) parts.push(`${results.updated} mis à jour`)
     if (results.pulled > 0) parts.push(`${results.pulled} importé(s) de Google`)
     if (results.deleted > 0) parts.push(`${results.deleted} supprimé(s) depuis Google`)
-    if (results.errors.length > 0) parts.push(`${results.errors.length} erreur(s)`)
+
+    // Dédupliquer les erreurs pour un message lisible
+    const uniqueErrors = [...new Set(results.errors.map(e => e.replace(/^[^:]+:\s*/, '')))]
+    const errMsg = uniqueErrors.length === 1
+      ? uniqueErrors[0]
+      : `${results.errors.length} erreurs — ${uniqueErrors.slice(0, 2).join(' / ')}${uniqueErrors.length > 2 ? '…' : ''}`
+    if (results.errors.length > 0) parts.push(errMsg)
 
     return NextResponse.json({
-      success: true,
+      success: results.errors.length === 0 || parts.some(p => !p.includes('erreur')),
       pushed: results.pushed,
       updated: results.updated,
       pulled: results.pulled,
       deleted: results.deleted,
       errors: results.errors,
       message: parts.length ? parts.join(', ') : 'Planning déjà à jour',
+      hasErrors: results.errors.length > 0,
     })
 
   } catch (err) {
