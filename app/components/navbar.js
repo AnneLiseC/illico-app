@@ -26,6 +26,7 @@ const NAV_LINKS = [
   { href: '/chantiers', label: 'Chantiers', emoji: '🏗' },
   { href: '/clients', label: 'Clients', emoji: '👤' },
   { href: '/artisans', label: 'Artisans', emoji: '🔨' },
+  { href: '/messagerie', label: 'Messagerie', emoji: '💬' },
   { href: '/planning', label: 'Planning', emoji: '📅' },
   { href: '/finances', label: 'Finances', emoji: '💰' },
   { href: '/statistiques', label: 'Stats', emoji: '📊' },

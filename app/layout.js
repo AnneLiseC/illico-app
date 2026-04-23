@@ -4,6 +4,8 @@ import { Analytics } from "@vercel/analytics/react"
 import "./globals.css"
 import NavBar from "./components/navbar"
 import { AuthProvider } from "./lib/auth-context"
+import { SpeedInsights } from "@vercel/speed-insights/next"
+import { Analytics } from "@vercel/analytics/react"
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] })
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] })
