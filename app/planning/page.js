@@ -158,7 +158,7 @@ export default function Planning() {
     .flatMap(i => {
       const color = couleurArtisan(i.artisan_id)
       const client = `${i.dossier?.client?.prenom || ''} ${i.dossier?.client?.nom || ''}`.trim()
-      const titre = `🔨 ${i.artisan?.entreprise || ''} · ${client}`
+      const titre = ` ${i.artisan?.entreprise || ''} · ${client}`
       if (i.type_intervention === 'periode') {
         const endExclusive = (() => { const d = new Date(i.date_fin); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10) })()
         return [{ id: 'int-' + i.id, title: titre, start: i.date_debut, end: endExclusive, backgroundColor: color + '28', borderColor: color, textColor: color, allDay: true, extendedProps: { type: 'intervention', data: i } }]
@@ -820,8 +820,8 @@ export default function Planning() {
               {elementSelectionne?.type === 'date_cle' && (
                 <div className="space-y-4">
                   <p className="text-sm text-slate-500">{elementSelectionne.data.client?.prenom} {elementSelectionne.data.client?.nom}</p>
-                  <div><label className={labelCls}>🏗 Date de démarrage</label><input type="date" value={formDateCle.date_demarrage_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_demarrage_chantier: e.target.value }))} className={inputCls} /></div>
-                  <div><label className={labelCls}>🏁 Date de fin</label><input type="date" value={formDateCle.date_fin_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_fin_chantier: e.target.value }))} className={inputCls} /></div>
+                  <div><label className={labelCls}>🏗 Démarrage</label><input type="date" value={formDateCle.date_demarrage_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_demarrage_chantier: e.target.value }))} className={inputCls} /></div>
+                  <div><label className={labelCls}>🏁 Fin</label><input type="date" value={formDateCle.date_fin_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_fin_chantier: e.target.value }))} className={inputCls} /></div>
                   <div className="flex gap-2 pt-1">
                     <button onClick={fermerModal} className="flex-1 border border-slate-200 text-slate-700 py-2 rounded-xl text-sm font-medium hover:bg-slate-50">Annuler</button>
                     <button onClick={sauvegarderDateCle} disabled={saving} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: COLORS.blue }}>
