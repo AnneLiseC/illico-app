@@ -166,43 +166,34 @@ export default function Finances() {
   // ── CHARGEMENT ─────────────────────────────────────────────────────────────
 
   const chargerTout = async () => {
-    const { data: dossiersData, error: dossiersError } = await supabase
-      .from('dossiers')
-      .select(`
+    const [
+      { data: dossiersData },
+      { data: redevancesData },
+      { data: facturesAgenteData },
+      { data: agentesData },
+      { data: adminData },
+      { data: objectifsData },
+    ] = await Promise.all([
+      supabase.from('dossiers').select(`
         *,
         referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
         client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
         devis_artisans(*, artisan:artisans(id, entreprise, sans_royalties)),
         suivi_financier(*)
-      `)
-      .order('created_at', { ascending: false })
+      `).order('created_at', { ascending: false }),
+      supabase.from('redevances').select('*').order('annee', { ascending: false }).order('mois', { ascending: false }),
+      supabase.from('factures_agente').select('*').order('annee', { ascending: false }).order('mois', { ascending: false }),
+      supabase.from('profiles').select('*').eq('role', 'agente').order('prenom'),
+      supabase.from('profiles').select('prenom, nom').eq('role', 'admin').single(),
+      supabase.from('objectifs_ca').select('*').eq('annee', new Date().getFullYear()),
+    ])
     setDossiers(dossiersData || [])
-
-    const { data: redevancesData } = await supabase
-      .from('redevances').select('*')
-      .order('annee', { ascending: false }).order('mois', { ascending: false })
     setRedevances(redevancesData || [])
-
-    const { data: facturesAgenteData } = await supabase
-      .from('factures_agente').select('*')
-      .order('annee', { ascending: false }).order('mois', { ascending: false })
     setFacturesAgente(facturesAgenteData || [])
-
-    const { data: agentesData } = await supabase
-      .from('profiles').select('*').eq('role', 'agente').order('prenom')
     setAgentes(agentesData || [])
     setAgenteSelectionnee(prev => prev || agentesData?.[0]?.id || null)
-
-    const { data: adminData } = await supabase
-      .from('profiles').select('prenom, nom').eq('role', 'admin').single()
     if (adminData) setNomFranchisee(`${adminData.prenom} ${adminData.nom}`)
-
-    const { data: objectifsData } = await supabase
-      .from('objectifs_ca')
-      .select('*')
-      .eq('annee', new Date().getFullYear())
     setObjectifs(objectifsData || [])
-
   }
 
   // ── INIT ───────────────────────────────────────────────────────────────────

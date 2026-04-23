@@ -25,22 +25,16 @@ export default function Clients() {
         .from('clients')
         .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role)')
         .order('created_at', { ascending: false })
+      if (prof.role === 'agente') query = query.eq('referente', prof.id)
 
-      // Agente → uniquement ses clients
-      if (prof.role === 'agente') {
-        query = query.eq('referente', prof.id)
-      }
-
-      const { data } = await query
+      const [{ data }, { data: agentesData }] = await Promise.all([
+        query,
+        prof.role === 'admin'
+          ? supabase.from('profiles').select('id, prenom, nom').eq('role', 'agente').order('prenom')
+          : Promise.resolve({ data: [] }),
+      ])
       setClients(data || [])
-
-      // Charger les agentes dynamiquement (admin seulement)
-      if (prof.role === 'admin') {
-        const { data: agentesData } = await supabase
-          .from('profiles').select('id, prenom, nom').eq('role', 'agente').order('prenom')
-        setAgentes(agentesData || [])
-      }
-
+      setAgentes(agentesData || [])
       setLoading(false)
     }
     init()

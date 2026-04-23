@@ -28,22 +28,16 @@ export default function Chantiers() {
         .from('dossiers')
         .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut), comptes_rendus(id, type_visite)')
         .order('created_at', { ascending: false })
+      if (profData.role === 'agente') query = query.eq('referente_id', profData.id)
 
-      // Agente → uniquement ses chantiers
-      if (profData.role === 'agente') {
-        query = query.eq('referente_id', profData.id)
-      }
-
-      const { data } = await query
+      const [{ data }, { data: agentesData }] = await Promise.all([
+        query,
+        profData.role === 'admin'
+          ? supabase.from('profiles').select('id, prenom, nom').eq('role', 'agente').order('prenom')
+          : Promise.resolve({ data: [] }),
+      ])
       setDossiers(data || [])
-
-      // Charger les agentes dynamiquement (admin seulement)
-      if (profData.role === 'admin') {
-        const { data: agentesData } = await supabase
-          .from('profiles').select('id, prenom, nom').eq('role', 'agente').order('prenom')
-        setAgentes(agentesData || [])
-      }
-
+      setAgentes(agentesData || [])
       setLoading(false)
     }
     init()
