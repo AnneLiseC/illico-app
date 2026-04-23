@@ -6,6 +6,22 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth-context'
 import Image from 'next/image'
 
+function BellIcon({ count }) {
+  return (
+    <Link href="/notifications" className="relative text-blue-200 hover:text-white p-1.5">
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+      </svg>
+      {count > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5">
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
+    </Link>
+  )
+}
+
 const NAV_LINKS = [
   { href: '/chantiers', label: 'Chantiers', emoji: '🏗' },
   { href: '/clients', label: 'Clients', emoji: '👤' },
@@ -20,7 +36,7 @@ export default function NavBar() {
   const router = useRouter()
   const pathname = usePathname()
   const [menuOuvert, setMenuOuvert] = useState(false)
-  const { profile } = useAuth()
+  const { profile, unreadCount } = useAuth()
 
   // Masquer sur login, page d'accueil, espace-client
   const hidden = ['/', '/login', '/espace-client'].some(p => pathname === p || pathname?.startsWith('/espace-client'))
@@ -56,8 +72,9 @@ export default function NavBar() {
             ))}
           </div>
 
-          {/* Droite : profil + déconnexion */}
+          {/* Droite : cloche + profil + déconnexion */}
           <div className="hidden md:flex items-center gap-3">
+            <BellIcon count={unreadCount} />
             <span className="text-blue-200 text-xs">{profile.prenom} {profile.nom}</span>
             <button onClick={handleLogout}
               className="text-blue-200 hover:text-white text-xs border border-blue-400 hover:border-white px-2 py-1 rounded transition-all">
@@ -66,17 +83,21 @@ export default function NavBar() {
           </div>
 
           {/* Hamburger mobile */}
-          <button onClick={() => setMenuOuvert(o => !o)} className="md:hidden text-white p-2">
-            {menuOuvert ? (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            ) : (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            )}
-          </button>
+          <div className="flex items-center gap-1 md:hidden">
+            <BellIcon count={unreadCount} />
+            <button onClick={() => setMenuOuvert(o => !o)} className="text-white p-2">
+              {menuOuvert ? (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              )}
+            </button>
+          </div>
+
         </div>
       </div>
 
