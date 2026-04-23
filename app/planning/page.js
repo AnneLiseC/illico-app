@@ -63,6 +63,7 @@ export default function Planning() {
   const [syncMessage, setSyncMessage]         = useState('')
   const [sidebarOuverte, setSidebarOuverte]   = useState(false)
   const [calendarView, setCalendarView]       = useState('timeGridWeek')
+  const [quickMenu, setQuickMenu]             = useState(null) // { date, x, y }
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 640) {
@@ -227,9 +228,25 @@ export default function Planning() {
     if (modalType === 'intervention' && formIntervention.type_intervention === 'jours_specifiques') {
       const date = info.dateStr.slice(0, 10)
       setFormIntervention(f => ({ ...f, jours_specifiques: f.jours_specifiques.includes(date) ? f.jours_specifiques.filter(j => j !== date) : [...f.jours_specifiques, date] }))
+      return
+    }
+    // Mini-menu : choisir entre RDV et Intervention
+    const rect = info.jsEvent?.target?.getBoundingClientRect?.() || {}
+    const x = Math.min(info.jsEvent?.clientX ?? 200, window.innerWidth - 200)
+    const y = Math.min(info.jsEvent?.clientY ?? 200, window.innerHeight - 120)
+    setQuickMenu({ date: info.dateStr, x, y })
+  }
+
+  const ouvrirDepuisMenu = (type) => {
+    if (!quickMenu) return
+    const date = quickMenu.date.slice(0, 10)
+    setElementSelectionne(null); setModeEdition(false); setQuickMenu(null)
+    if (type === 'rdv') {
+      setFormRdv(f => ({ ...f, date_heure: date + 'T09:00' }))
+      setModalType('rdv'); setModalOuvert(true)
     } else {
-      setFormRdv(f => ({ ...f, date_heure: info.dateStr.slice(0, 10) + 'T09:00' }))
-      setElementSelectionne(null); setModeEdition(false); setModalType('rdv'); setModalOuvert(true)
+      setFormIntervention(f => ({ ...f, date_debut: date }))
+      setModalType('intervention'); setModalOuvert(true)
     }
   }
 
@@ -809,6 +826,29 @@ export default function Planning() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── QUICK MENU (clic sur une date) ─────────────────────────────────── */}
+      {quickMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setQuickMenu(null)} />
+          <div className="fixed z-50 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden"
+            style={{ top: quickMenu.y + 8, left: quickMenu.x, minWidth: 180 }}>
+            <p className="px-4 pt-3 pb-1.5 text-xs font-bold text-slate-400 uppercase tracking-widest">
+              {new Date(quickMenu.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}
+            </p>
+            <button onClick={() => ouvrirDepuisMenu('rdv')}
+              className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors">
+              <span className="w-5 h-5 rounded flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ background: COLORS.blue }}>R</span>
+              Rendez-vous
+            </button>
+            <button onClick={() => ouvrirDepuisMenu('intervention')}
+              className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-teal-50 hover:text-teal-700 flex items-center gap-2.5 transition-colors border-t border-slate-100">
+              <span className="w-5 h-5 rounded flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ background: COLORS.teal }}>I</span>
+              Intervention artisan
+            </button>
+          </div>
+        </>
       )}
     </div>
   )
