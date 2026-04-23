@@ -1251,12 +1251,14 @@ ${s.contenu}`).join('')
           >
             Dossier
           </button>
-          <button
-            onClick={() => setOnglet('messages')}
-            className={`flex-shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-all ${onglet === 'messages' ? 'border-blue-800 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-          >
-            Messagerie{nbMsgNonLus > 0 && <span className="ml-1.5 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">{nbMsgNonLus}</span>}
-          </button>
+          {dossier?.typologie === 'amo' && (
+            <button
+              onClick={() => setOnglet('messages')}
+              className={`flex-shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-all ${onglet === 'messages' ? 'border-blue-800 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            >
+              Messagerie{nbMsgNonLus > 0 && <span className="ml-1.5 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">{nbMsgNonLus}</span>}
+            </button>
+          )}
         </div>
       </div>
 
@@ -2878,7 +2880,7 @@ ${s.contenu}`).join('')
       </main>
       )}
 
-      {onglet === 'messages' && (
+      {onglet === 'messages' && dossier?.typologie === 'amo' && (
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 space-y-4">
           <div className="flex items-center justify-between">
@@ -2898,12 +2900,12 @@ ${s.contenu}`).join('')
                 const isClient = msg.auteur_role === 'client'
                 return (
                   <div key={msg.id} className={`flex ${isClient ? 'justify-start' : 'justify-end'}`}>
-                    <div className={`max-w-xs sm:max-w-sm rounded-2xl px-3 py-2 ${isClient ? 'bg-white border border-gray-200' : 'bg-blue-800 text-white'}`}>
+                    <div className={`max-w-xs sm:max-w-sm rounded-2xl px-3 py-2 ${isClient ? 'bg-white border border-gray-200' : 'bg-blue-800'}`}>
                       <p className={`text-xs font-medium mb-0.5 ${isClient ? 'text-gray-500' : 'text-blue-200'}`}>
                         {isClient ? `${msg.auteur?.prenom || 'Client'} (client)` : `${msg.auteur?.prenom || 'Équipe'}`}
                       </p>
-                      <p className="text-sm text-gray-800">{msg.contenu}</p>
-                      <p className="text-xs mt-1 opacity-60">
+                      <p className={`text-sm ${isClient ? 'text-gray-800' : 'text-white'}`}>{msg.contenu}</p>
+                      <p className={`text-xs mt-1 opacity-60 ${isClient ? 'text-gray-500' : 'text-white'}`}>
                         {new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>

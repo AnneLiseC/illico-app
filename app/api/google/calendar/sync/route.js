@@ -408,12 +408,6 @@ export async function POST(request) {
       : `${results.errors.length} erreurs — ${uniqueErrors.slice(0, 2).join(' / ')}${uniqueErrors.length > 2 ? '…' : ''}`
     if (results.errors.length > 0) parts.push(errMsg)
 
-    const uniqueErrors = [...new Set(results.errors.map(e => e.replace(/^[^:]+:\s*/, '')))]
-    const errMsg = uniqueErrors.length === 1
-      ? uniqueErrors[0]
-      : `${results.errors.length} erreurs — ${uniqueErrors.slice(0, 2).join(' / ')}${uniqueErrors.length > 2 ? '…' : ''}`
-    if (results.errors.length > 0) parts.push(errMsg)
-    
     return NextResponse.json({
       success: results.errors.length === 0 || parts.some(p => !p.includes('erreur')),
       pushed: results.pushed,
