@@ -7,7 +7,8 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { sendEmail } from '../../../lib/email'
+// import { sendEmail } from '../../../lib/email' // TODO: activer après config HEXAOM (admin consent Azure)
+const sendEmail = async ({ to, subject }) => { /* emails désactivés temporairement */ }
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
