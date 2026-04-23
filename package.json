@@ -20,6 +20,7 @@
     "@vercel/speed-insights": "^2.0.0",
     "claude": "^0.1.1",
     "googleapis": "^171.4.0",
+    "chart.js": "^4.4.9",
     "next": "16.2.0",
     "pdf-lib": "^1.17.1",
     "react": "19.2.4",
