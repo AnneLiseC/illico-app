@@ -10,6 +10,12 @@ const supabaseAdmin = createClient(
 
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID
 
+function nextDay(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
 function buildOAuthClient(userId, tokens) {
   const client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -84,7 +90,7 @@ function interventionToGoogleEvents(intervention) {
     summary,
     description: [...baseDesc, `[illico-int:${intervention.id}:${idx}]`].join('\n'),
     start: { date: jour },
-    end: { date: jour },
+    end: { date: nextDay(jour) },
   }))
 }
 
@@ -207,7 +213,7 @@ export async function POST(request) {
             summary: ` Démarrage${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
             description: `[illico-start:${dossier.id}]`,
             start: { date: dossier.date_demarrage_chantier },
-            end: { date: dossier.date_demarrage_chantier },
+            end: { date: nextDay(dossier.date_demarrage_chantier) },
             colorId: '2',
           }
           if (dossier.google_start_event_id) {
@@ -234,7 +240,7 @@ export async function POST(request) {
             summary: `🏁 Fin${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
             description: `[illico-end:${dossier.id}]`,
             start: { date: dossier.date_fin_chantier },
-            end: { date: dossier.date_fin_chantier },
+            end: { date: nextDay(dossier.date_fin_chantier) },
             colorId: '6',
           }
           if (dossier.google_end_event_id) {

@@ -163,11 +163,11 @@ export default function Planning() {
         const endExclusive = (() => { const d = new Date(i.date_fin); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10) })()
         return [{ id: 'int-' + i.id, title: titre, start: i.date_debut, end: endExclusive, backgroundColor: color + '28', borderColor: color, textColor: color, allDay: true, extendedProps: { type: 'intervention', data: i } }]
       }
-      return (i.jours_specifiques || []).map((jour, idx) => ({
-        id: 'int-' + i.id + '-' + idx, title: titre, start: jour,
-        backgroundColor: color + '28', borderColor: color, textColor: color,
-        allDay: true, extendedProps: { type: 'intervention', data: i }
-      }))
+      return (i.jours_specifiques || []).map((jour, idx) => {
+        const d = jour.slice(0, 10)
+        const endD = new Date(d + 'T00:00:00'); endD.setDate(endD.getDate() + 1)
+        return { id: 'int-' + i.id + '-' + idx, title: titre, start: d, end: endD.toISOString().slice(0, 10), backgroundColor: color + '28', borderColor: color, textColor: color, allDay: true, extendedProps: { type: 'intervention', data: i } }
+      })
     })
 
   const evenementsDates = dossiers

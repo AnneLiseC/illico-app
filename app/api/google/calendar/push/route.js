@@ -12,6 +12,12 @@ const supabaseAdmin = createClient(
 
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID
 
+function nextDay(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
 function buildOAuthClient(userId, tokens) {
   const client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -153,13 +159,13 @@ export async function POST(request) {
           summary,
           description: [...baseDesc, `[illico-int:${intervention.id}:0]`].join('\n'),
           start: { date: jours[0] },
-          end: { date: jours[0] },
+          end: { date: nextDay(jours[0]) },
         }
         extraEvents = jours.slice(1).map((jour, i) => ({
           summary,
           description: [...baseDesc, `[illico-int:${intervention.id}:${i + 1}]`].join('\n'),
           start: { date: jour },
-          end: { date: jour },
+          end: { date: nextDay(jour) },
         }))
       }
 
@@ -190,7 +196,7 @@ export async function POST(request) {
           summary: `🏗 Démarrage${nomClient ? ' | ' + nomClient : ''}`,
           description: `[illico-start:${dossier.id}]`,
           start: { date: dossier.date_demarrage_chantier },
-          end: { date: dossier.date_demarrage_chantier },
+          end: { date: nextDay(dossier.date_demarrage_chantier) },
           colorId: '2',
         }
         const result = await upsertEvent(calendar, dossier.google_start_event_id, eventStart)
@@ -204,7 +210,7 @@ export async function POST(request) {
           summary: `🏁 Fin${nomClient ? ' | ' + nomClient : ''}`,
           description: `[illico-end:${dossier.id}]`,
           start: { date: dossier.date_fin_chantier },
-          end: { date: dossier.date_fin_chantier },
+          end: { date: nextDay(dossier.date_fin_chantier) },
           colorId: '6',
         }
         const result = await upsertEvent(calendar, dossier.google_end_event_id, eventEnd)
