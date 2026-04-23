@@ -256,14 +256,29 @@ export default function Planning() {
     setFormIntervention({ dossier_id: '', artisan_id: '', type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '' })
   }
 
+  const pushToGoogle = (type, id) => {
+    if (!googleConnected || !id) return
+    fetch('/api/google/calendar/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: profile?.id, type, id }),
+    }).catch(() => {})
+  }
+
   const sauvegarderRdv = async () => {
     if (!formRdv.date_heure) return
     setSaving(true); setErreur('')
     const payload = { type_rdv: formRdv.type_rdv, date_heure: formRdv.date_heure, duree_minutes: parseInt(formRdv.duree_minutes), artisan_id: formRdv.artisan_id || null, notes: formRdv.notes || null }
-    const { error } = elementSelectionne?.type === 'rdv' && modeEdition
-      ? await supabase.from('rendez_vous').update(payload).eq('id', elementSelectionne.data.id)
-      : await supabase.from('rendez_vous').insert({ ...payload, dossier_id: formRdv.dossier_id })
-    if (error) { setErreur(error.message); setSaving(false); return }
+    let savedId = elementSelectionne?.data?.id
+    if (elementSelectionne?.type === 'rdv' && modeEdition) {
+      const { error } = await supabase.from('rendez_vous').update(payload).eq('id', savedId)
+      if (error) { setErreur(error.message); setSaving(false); return }
+    } else {
+      const { data, error } = await supabase.from('rendez_vous').insert({ ...payload, dossier_id: formRdv.dossier_id }).select('id').single()
+      if (error) { setErreur(error.message); setSaving(false); return }
+      savedId = data?.id
+    }
+    pushToGoogle('rdv', savedId)
     await chargerTout(); fermerModal(); setSaving(false)
   }
 
@@ -271,10 +286,16 @@ export default function Planning() {
     if (!formIntervention.artisan_id) return
     setSaving(true); setErreur('')
     const payload = { dossier_id: formIntervention.dossier_id, artisan_id: formIntervention.artisan_id, type_intervention: formIntervention.type_intervention, date_debut: formIntervention.date_debut || null, date_fin: formIntervention.type_intervention === 'periode' ? formIntervention.date_fin || null : null, jours_specifiques: formIntervention.type_intervention === 'jours_specifiques' ? formIntervention.jours_specifiques : null, notes: formIntervention.notes || null }
-    const { error } = elementSelectionne?.type === 'intervention' && modeEdition
-      ? await supabase.from('interventions_artisans').update(payload).eq('id', elementSelectionne.data.id)
-      : await supabase.from('interventions_artisans').insert(payload)
-    if (error) { setErreur(error.message); setSaving(false); return }
+    let savedId = elementSelectionne?.data?.id
+    if (elementSelectionne?.type === 'intervention' && modeEdition) {
+      const { error } = await supabase.from('interventions_artisans').update(payload).eq('id', savedId)
+      if (error) { setErreur(error.message); setSaving(false); return }
+    } else {
+      const { data, error } = await supabase.from('interventions_artisans').insert(payload).select('id').single()
+      if (error) { setErreur(error.message); setSaving(false); return }
+      savedId = data?.id
+    }
+    pushToGoogle('intervention', savedId)
     await chargerTout(); fermerModal(); setSaving(false)
   }
 
@@ -283,12 +304,22 @@ export default function Planning() {
     setSaving(true); setErreur('')
     const { error } = await supabase.from('dossiers').update({ date_demarrage_chantier: formDateCle.date_demarrage_chantier || null, date_fin_chantier: formDateCle.date_fin_chantier || null }).eq('id', elementSelectionne.data.id)
     if (error) { setErreur(error.message); setSaving(false); return }
+    pushToGoogle('dossier', elementSelectionne.data.id)
     setDossiers(prev => prev.map(d => d.id === elementSelectionne.data.id ? { ...d, ...formDateCle } : d))
     fermerModal(); setSaving(false)
   }
 
   const supprimer = async () => {
     if (!elementSelectionne || !confirm('Supprimer cet élément ?')) return
+    // Supprimer l'événement Google Calendar en premier (non bloquant)
+    const googleEventId = elementSelectionne.data.google_event_id
+    if (googleConnected && googleEventId) {
+      fetch('/api/google/calendar/event', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: profile?.id, googleEventId }),
+      }).catch(() => {})
+    }
     if (elementSelectionne.type === 'rdv') await supabase.from('rendez_vous').delete().eq('id', elementSelectionne.data.id)
     else await supabase.from('interventions_artisans').delete().eq('id', elementSelectionne.data.id)
     await chargerTout(); fermerModal()
@@ -341,14 +372,16 @@ export default function Planning() {
             <div className="flex items-center gap-1.5 sm:gap-2">
               {googleConnected ? (
                 <button onClick={syncGoogle} disabled={syncing}
-                  className="hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-emerald-500 text-emerald-300 hover:bg-emerald-900 transition-all disabled:opacity-50">
-                  <span className={`w-1.5 h-1.5 rounded-full bg-emerald-400 ${syncing ? 'animate-pulse' : ''}`} />
-                  {syncing ? 'Sync…' : 'Google Calendar'}
+                  className="flex items-center gap-1.5 text-xs px-2 sm:px-3 py-1.5 rounded-lg border border-emerald-500 text-emerald-300 hover:bg-emerald-900 transition-all disabled:opacity-50">
+                  <span className={`w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 ${syncing ? 'animate-pulse' : ''}`} />
+                  <span className="hidden sm:inline">{syncing ? 'Sync…' : 'Google Calendar'}</span>
+                  <span className="sm:hidden">{syncing ? '…' : '📅'}</span>
                 </button>
               ) : (
                 <a href={`/api/auth/google?userId=${profile?.id}`}
-                  className="hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-blue-600 text-blue-300 hover:bg-blue-800 transition-all">
-                  📅 Google Calendar
+                  className="flex items-center gap-1.5 text-xs px-2 sm:px-3 py-1.5 rounded-lg border border-blue-600 text-blue-300 hover:bg-blue-800 transition-all">
+                  <span className="hidden sm:inline">📅 Google Calendar</span>
+                  <span className="sm:hidden">📅</span>
                 </a>
               )}
               <div className="h-4 w-px bg-blue-800 hidden sm:block" />
