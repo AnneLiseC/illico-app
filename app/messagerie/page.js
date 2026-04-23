@@ -21,18 +21,11 @@ export default function MessageriePage() {
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       setProfile(prof)
 
-      // Charger tous les dossiers qui ont au moins un message
-      const { data: msgDoss } = await supabase
-        .from('messages')
-        .select('dossier_id')
-      const dossierIds = [...new Set((msgDoss || []).map(m => m.dossier_id))]
-
-      if (!dossierIds.length) { setLoading(false); return }
-
+      // Charger tous les dossiers AMO
       const { data: dossData } = await supabase
         .from('dossiers')
         .select('id, reference, typologie, client:clients(civilite, prenom, nom, prenom2, nom2)')
-        .in('id', dossierIds)
+        .eq('typologie', 'amo')
         .order('reference', { ascending: true })
       if (!dossData) { setLoading(false); return }
 
