@@ -1,5 +1,6 @@
 import { Geist, Geist_Mono } from "next/font/google"
 import Script from "next/script"
+import { SpeedInsights } from "@vercel/speed-insights/next"
 import "./globals.css"
 import NavBar from "./components/navbar"
 
@@ -21,6 +22,7 @@ export default function RootLayout({ children }) {
         />
         <NavBar />
         {children}
+        <SpeedInsights />
       </body>
     </html>
   )
