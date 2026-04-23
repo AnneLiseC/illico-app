@@ -26,6 +26,7 @@ export default function MessageriePage() {
         .from('dossiers')
         .select('id, reference, typologie, client:clients(civilite, prenom, nom, prenom2, nom2)')
         .eq('typologie', 'amo')
+        .neq('statut', 'annule')
         .order('reference', { ascending: true })
       if (!dossData) { setLoading(false); return }
 
