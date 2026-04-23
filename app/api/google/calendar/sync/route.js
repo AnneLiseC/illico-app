@@ -92,27 +92,6 @@ async function tryUpdate(calendar, googleEventId, eventBody) {
     if (err.code === 404 || err.code === 410) return 'not_found'
     throw err
   }
-  return (intervention.jours_specifiques || []).map((jour, idx) => ({
-    summary,
-    description: [...baseDesc, `[illico-int:${intervention.id}:${idx}]`].join('\n'),
-    start: { date: jour },
-    end: { date: jour },
-  }))
-}
- 
-// Crée ou met à jour un événement Google ; re-crée si 404/410 (supprimé côté Google)
-async function upsertEvent(calendar, googleEventId, eventBody) {
-  if (googleEventId) {
-    try {
-      await calendar.events.update({ calendarId: CALENDAR_ID, eventId: googleEventId, requestBody: eventBody })
-      return { action: 'updated', id: googleEventId }
-    } catch (err) {
-      if (err.code !== 404 && err.code !== 410) throw err
-      // L'événement a été supprimé côté Google → on le re-crée
-    }
-  }
-  const res = await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: eventBody })
-  return { action: 'inserted', id: res.data.id }
 }
 
 export async function POST(request) {
@@ -154,19 +133,15 @@ export async function POST(request) {
         if (rdv.google_event_id) {
           const status = await tryUpdate(calendar, rdv.google_event_id, rdvToGoogleEvent(rdv))
           if (status === 'not_found') {
-            // Supprimé dans Google Calendar → supprimer dans l'app
             await supabaseAdmin.from('rendez_vous').delete().eq('id', rdv.id)
             results.deleted++
           } else {
             results.updated++
           }
         } else {
-          // Pas encore dans Google → créer
           const res = await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: rdvToGoogleEvent(rdv) })
           await supabaseAdmin.from('rendez_vous').update({ google_event_id: res.data.id }).eq('id', rdv.id)
           results.pushed++
-          } else {
-          results.updated++
         }
       } catch (err) {
         results.errors.push(`RDV ${rdv.id}: ${err.message}`)
@@ -199,8 +174,6 @@ export async function POST(request) {
             await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: events[i] })
           }
           results.pushed++
-        } else {
-          results.updated++
         }
       } catch (err) {
         results.errors.push(`Intervention ${intervention.id}: ${err.message}`)
@@ -225,7 +198,6 @@ export async function POST(request) {
           if (dossier.google_start_event_id) {
             const status = await tryUpdate(calendar, dossier.google_start_event_id, eventStart)
             if (status === 'not_found') {
-              // Supprimé dans Google → effacer la date de démarrage dans l'app
               await supabaseAdmin.from('dossiers')
                 .update({ date_demarrage_chantier: null, google_start_event_id: null })
                 .eq('id', dossier.id)
@@ -237,8 +209,6 @@ export async function POST(request) {
             const res = await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: eventStart })
             await supabaseAdmin.from('dossiers').update({ google_start_event_id: res.data.id }).eq('id', dossier.id)
             results.pushed++
-          } else {
-            results.updated++
           }
         } catch (err) { results.errors.push(`Démarrage ${dossier.id}: ${err.message}`) }
       }
@@ -266,8 +236,6 @@ export async function POST(request) {
             const res = await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: eventEnd })
             await supabaseAdmin.from('dossiers').update({ google_end_event_id: res.data.id }).eq('id', dossier.id)
             results.pushed++
-          } else {
-            results.updated++
           }
         } catch (err) { results.errors.push(`Fin ${dossier.id}: ${err.message}`) }
       }
@@ -371,8 +339,6 @@ export async function POST(request) {
       }
 
       // Filet de sécurité : suppressions non détectées par le PUSH
-      // (ex : items avec google_event_id mais dont le PUSH a raté l'itération)
-
       const { data: rdvsWithId } = await supabaseAdmin
         .from('rendez_vous').select('id, date_heure, google_event_id').not('google_event_id', 'is', null)
       for (const rdv of (rdvsWithId || [])) {
