@@ -72,6 +72,7 @@ export default function Dashboard() {
             { label: 'Chantiers', emoji: '📁', href: '/chantiers', desc: 'Gérer les chantiers' },
             { label: 'Clients', emoji: '👤', href: '/clients', desc: 'Fiches clients' },
             { label: 'Artisans', emoji: '🔨', href: '/artisans', desc: 'Partenaires & contacts' },
+            { label: 'Messagerie', emoji: '💬', href: '/messagerie', desc: 'Messages clients AMO' },
             { label: 'Planning', emoji: '📅', href: '/planning', desc: 'Rendez-vous' },
             { label: 'Finances', emoji: '💶', href: '/finances', desc: 'Suivi financier' },
             { label: 'Statistiques', emoji: '📊', href: '/statistiques', desc: 'Tableaux de bord' },

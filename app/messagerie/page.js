@@ -24,9 +24,9 @@ export default function MessageriePage() {
       // Charger chantiers AMO avec compte de messages non lus
       const { data: dossData } = await supabase
         .from('dossiers')
-        .select('id, reference, client:clients(prenom, nom, raison_sociale)')
+        .select('id, reference, client:clients(civilite, prenom, nom, raison_sociale)')
         .eq('typologie', 'amo')
-        .order('reference')
+        .order('reference', { ascending: true })
       if (!dossData) { setLoading(false); return }
 
       // Pour chaque dossier, compter les messages non lus
