@@ -170,6 +170,24 @@ export default function Finances() {
   // ── CHARGEMENT ─────────────────────────────────────────────────────────────
 
   const chargerTout = async () => {
+    const isAdmin = profile?.role === 'admin'
+    const agentId = profile?.id
+
+    let dossiersQuery = supabase.from('dossiers').select(`
+        *,
+        referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
+        client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
+        devis_artisans(*, artisan:artisans(id, entreprise, sans_royalties)),
+        suivi_financier(*)
+      `).order('created_at', { ascending: false })
+    if (!isAdmin) dossiersQuery = dossiersQuery.eq('referente_id', agentId)
+
+    let redevancesQuery = supabase.from('redevances').select('*').order('annee', { ascending: false }).order('mois', { ascending: false })
+    if (!isAdmin) redevancesQuery = redevancesQuery.eq('agente_id', agentId)
+
+    let facturesAgenteQuery = supabase.from('factures_agente').select('*').order('annee', { ascending: false }).order('mois', { ascending: false })
+    if (!isAdmin) facturesAgenteQuery = facturesAgenteQuery.eq('agente_id', agentId)
+
     const [
       { data: dossiersData },
       { data: redevancesData },
@@ -178,16 +196,12 @@ export default function Finances() {
       { data: adminData },
       { data: objectifsData },
     ] = await Promise.all([
-      supabase.from('dossiers').select(`
-        *,
-        referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
-        client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
-        devis_artisans(*, artisan:artisans(id, entreprise, sans_royalties)),
-        suivi_financier(*)
-      `).order('created_at', { ascending: false }),
-      supabase.from('redevances').select('*').order('annee', { ascending: false }).order('mois', { ascending: false }),
-      supabase.from('factures_agente').select('*').order('annee', { ascending: false }).order('mois', { ascending: false }),
-      supabase.from('profiles').select('*').eq('role', 'agente').order('prenom'),
+      dossiersQuery,
+      redevancesQuery,
+      facturesAgenteQuery,
+      isAdmin
+        ? supabase.from('profiles').select('*').eq('role', 'agente').order('prenom')
+        : Promise.resolve({ data: [] }),
       supabase.from('profiles').select('prenom, nom').eq('role', 'admin').single(),
       supabase.from('objectifs_ca').select('*').eq('annee', new Date().getFullYear()),
     ])
