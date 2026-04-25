@@ -1,7 +1,7 @@
 //chantier/[id]/page.js
 
 'use client'
-import { useState, useEffect, use, useRef } from 'react'
+import { useState, useEffect, use } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 
@@ -261,70 +261,58 @@ export default function FicheChantier({ params }) {
   const [suiviFinancier, setSuiviFinancier] = useState([])
   const router = useRouter()
 
-  const signedUrlCache = useRef({})
-
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
-
-      const [
-        { data: profData },
-        { data: adminData },
-        { data: dossierData },
-        { data: devisData },
-        { data: artisansData },
-        { data: photosData },
-        { data: rdvsData },
-        { data: intData },
-        { data: suiviData },
-        { data: docsData },
-        { data: facturesData },
-        { data: crData },
-        { data: msgData },
-        { data: fichesChantierData },
-      ] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', user.id).single(),
-        supabase.from('profiles').select('prenom, nom').eq('role', 'admin').single(),
-        supabase.from('dossiers').select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), client:clients(*)').eq('id', id).single(),
-        supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier, sans_royalties)').eq('dossier_id', id).order('created_at'),
-        supabase.from('artisans').select('id, entreprise, metier').order('entreprise'),
-        supabase.from('photos').select('*').eq('dossier_id', id).order('created_at', { ascending: false }),
-        supabase.from('rendez_vous').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_heure'),
-        supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut'),
-        supabase.from('suivi_financier').select('*').eq('dossier_id', id),
-        supabase.from('chantier_documents').select('*').eq('dossier_id', id).order('created_at', { ascending: false }),
-        supabase.from('factures_artisans').select('*').eq('dossier_id', id).order('created_at'),
-        supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false }),
-        supabase.from('messages').select('*, auteur:profiles(prenom, nom, role)').eq('dossier_id', id).order('created_at'),
-        supabase.from('chantier_fiches_techniques').select('*, fiche:fiches_techniques(id, nom, description)').eq('dossier_id', id),
-      ])
-
+      const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       setProfile(profData)
+
+      // Charger le nom de la franchisée pour les labels dynamiques
+      const { data: adminData } = await supabase
+        .from('profiles').select('prenom, nom').eq('role', 'admin').single()
       if (adminData) setNomFranchisee(`${adminData.prenom} ${adminData.nom}`)
+      const { data: dossierData } = await supabase.from('dossiers')
+        .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), client:clients(*)')        .eq('id', id).single()
       setDossier(dossierData)
       setClient(dossierData?.client)
+      const { data: devisData } = await supabase.from('devis_artisans')
+        .select('*, artisan:artisans(id, entreprise, metier, sans_royalties)').eq('dossier_id', id).order('created_at')
       setDevis(devisData || [])
+      const { data: artisansData } = await supabase.from('artisans').select('id, entreprise, metier').order('entreprise')
       setArtisans(artisansData || [])
-
+      const { data: photosData } = await supabase.from('photos').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
       const photosAvecUrl = await Promise.all((photosData || []).map(async (photo) => {
-        if (signedUrlCache.current[photo.id]) return { ...photo, url_signee: signedUrlCache.current[photo.id] }
         const { data: urlData } = await supabase.storage.from('photos').createSignedUrl(photo.url, 3600)
-        const url = urlData?.signedUrl || ''
-        signedUrlCache.current[photo.id] = url
-        return { ...photo, url_signee: url }
+        return { ...photo, url_signee: urlData?.signedUrl || '' }
       }))
       setPhotos(photosAvecUrl)
-
+      const { data: rdvsData } = await supabase.from('rendez_vous')
+        .select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_heure')
       setRdvsDossier(rdvsData || [])
+      const { data: intData } = await supabase.from('interventions_artisans')
+        .select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
       setInterventionsDossier(intData || [])
+      const { data: suiviData } = await supabase.from('suivi_financier')
+        .select('*').eq('dossier_id', id)
       setSuiviFinancier(suiviData || [])
+      // Comptes-rendus et messages espace client
+      const { data: docsData } = await supabase
+        .from('chantier_documents').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
       setDocuments(docsData || [])
+      const { data: facturesData } = await supabase
+        .from('factures_artisans').select('*').eq('dossier_id', id).order('created_at')
       setFactures(facturesData || [])
+      const { data: crData } = await supabase
+        .from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
       setComptesRendus(crData || [])
+      const { data: msgData } = await supabase
+        .from('messages').select('*, auteur:profiles(prenom, nom, role)').eq('dossier_id', id).order('created_at')
       setMessages(msgData || [])
       setNbMsgNonLus((msgData || []).filter(m => m.auteur_role === 'client' && !m.lu_agence).length)
-
+      setSuiviFinancier(suiviData || [])
+      const { data: fichesChantierData } = await supabase.from('chantier_fiches_techniques')
+        .select('*, fiche:fiches_techniques(id, nom, description)').eq('dossier_id', id)
       const grouped = {}
       ;(fichesChantierData || []).forEach(item => {
         if (!grouped[item.artisan_id]) grouped[item.artisan_id] = []
@@ -339,11 +327,8 @@ export default function FicheChantier({ params }) {
   const chargerPhotos = async () => {
     const { data } = await supabase.from('photos').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
     const photosAvecUrl = await Promise.all((data || []).map(async (photo) => {
-      if (signedUrlCache.current[photo.id]) return { ...photo, url_signee: signedUrlCache.current[photo.id] }
       const { data: urlData } = await supabase.storage.from('photos').createSignedUrl(photo.url, 3600)
-      const url = urlData?.signedUrl || ''
-      signedUrlCache.current[photo.id] = url
-      return { ...photo, url_signee: url }
+      return { ...photo, url_signee: urlData?.signedUrl || '' }
     }))
     setPhotos(photosAvecUrl)
   }

@@ -1,7 +1,7 @@
 // app/finances/page.js
 'use client'
 import React from 'react'
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, Tooltip, Legend, Filler } from 'chart.js'
 Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, Tooltip, Legend, Filler)
 import { supabase } from '../lib/supabase'
@@ -170,24 +170,6 @@ export default function Finances() {
   // ── CHARGEMENT ─────────────────────────────────────────────────────────────
 
   const chargerTout = async () => {
-    const isAdmin = profile?.role === 'admin'
-    const agentId = profile?.id
-
-    let dossiersQuery = supabase.from('dossiers').select(`
-        *,
-        referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
-        client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
-        devis_artisans(*, artisan:artisans(id, entreprise, sans_royalties)),
-        suivi_financier(*)
-      `).order('created_at', { ascending: false })
-    if (!isAdmin) dossiersQuery = dossiersQuery.eq('referente_id', agentId)
-
-    let redevancesQuery = supabase.from('redevances').select('*').order('annee', { ascending: false }).order('mois', { ascending: false })
-    if (!isAdmin) redevancesQuery = redevancesQuery.eq('agente_id', agentId)
-
-    let facturesAgenteQuery = supabase.from('factures_agente').select('*').order('annee', { ascending: false }).order('mois', { ascending: false })
-    if (!isAdmin) facturesAgenteQuery = facturesAgenteQuery.eq('agente_id', agentId)
-
     const [
       { data: dossiersData },
       { data: redevancesData },
@@ -196,12 +178,16 @@ export default function Finances() {
       { data: adminData },
       { data: objectifsData },
     ] = await Promise.all([
-      dossiersQuery,
-      redevancesQuery,
-      facturesAgenteQuery,
-      isAdmin
-        ? supabase.from('profiles').select('*').eq('role', 'agente').order('prenom')
-        : Promise.resolve({ data: [] }),
+      supabase.from('dossiers').select(`
+        *,
+        referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
+        client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
+        devis_artisans(*, artisan:artisans(id, entreprise, sans_royalties)),
+        suivi_financier(*)
+      `).order('created_at', { ascending: false }),
+      supabase.from('redevances').select('*').order('annee', { ascending: false }).order('mois', { ascending: false }),
+      supabase.from('factures_agente').select('*').order('annee', { ascending: false }).order('mois', { ascending: false }),
+      supabase.from('profiles').select('*').eq('role', 'agente').order('prenom'),
       supabase.from('profiles').select('prenom, nom').eq('role', 'admin').single(),
       supabase.from('objectifs_ca').select('*').eq('annee', new Date().getFullYear()),
     ])
@@ -537,29 +523,9 @@ export default function Finances() {
       await supabase.from('factures_artisans').update({ statut: statutFacture })
         .eq('dossier_id', dossierId).eq('artisan_id', artisanId)
     }
-
-    // Reload ciblé : uniquement le suivi_financier du dossier concerné
-    const { data: newSuivi } = await supabase.from('suivi_financier').select('*').eq('dossier_id', dossierId)
-    setDossiers(prev => prev.map(d => {
-      if (d.id !== dossierId) return d
-      return {
-        ...d,
-        suivi_financier: newSuivi || [],
-        ...(type === 'frais_consultation' && updates.statut_client !== undefined
-          ? { frais_statut: updates.statut_client }
-          : {}),
-      }
-    }))
+    await chargerTout()
     setSaving(false)
   }
-
-  // Calculs pré-calculés une seule fois quand dossiers change (getSuivi/calculerReel doivent être définis avant)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const dossiersCalcs = useMemo(() => {
-    const map = new Map()
-    for (const d of dossiers) map.set(d.id, { calc: calculer(d), reel: calculerReel(d) })
-    return map
-  }, [dossiers])
 
   // ── ALERTES ────────────────────────────────────────────────────────────────
 
@@ -647,7 +613,7 @@ export default function Finances() {
   }
 
   listeDossiers.forEach(d => {
-    const c = dossiersCalcs.get(d.id)?.reel || calculerReel(d)
+    const c = calculerReel(d)
     const suivi = d.suivi_financier || []
 
     // Frais consultation
@@ -759,9 +725,9 @@ export default function Finances() {
     return round2(reelProduits + reelRedev - reelCharges)
   })()  
 
-  const mesDossiersGainsPrevi  = mesDossiers.reduce((s, d) => s + (dossiersCalcs.get(d.id)?.calc.gainsAgentePrevi || 0), 0)
-  const mesDossiersGainsReels  = mesDossiers.reduce((s, d) => s + (dossiersCalcs.get(d.id)?.reel.gainsAgenteReels || 0), 0)
-  const mesApporteurDu         = mesDossiers.reduce((s, d) => s + (dossiersCalcs.get(d.id)?.calc.apporteurAgente || 0), 0)
+  const mesDossiersGainsPrevi  = mesDossiers.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
+  const mesDossiersGainsReels  = mesDossiers.reduce((s, d) => s + calculerReel(d).gainsAgenteReels, 0)
+  const mesApporteurDu         = mesDossiers.reduce((s, d) => s + calculer(d).apporteurAgente, 0)
   const mesRedevancesReglees   = mesRedevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
   const monNet                 = mesDossiersGainsReels - mesRedevancesReglees - mesApporteurDu
 
@@ -802,8 +768,8 @@ export default function Finances() {
   const renderAccordeon = (listeDossiers, showBadge = false) => (
     <div className="space-y-2">
       {listeDossiers.map(d => {
-        const c      = dossiersCalcs.get(d.id)?.calc || calculer(d)
-        const r      = dossiersCalcs.get(d.id)?.reel || calculerReel(d)
+        const c      = calculer(d)
+        const r      = calculerReel(d)
         const isOpen = dossierOuvert === d.id
 
         const nbAlertes = [
@@ -1368,7 +1334,7 @@ export default function Finances() {
         const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
         if (!key) return
         if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, comApport: 0, hon: 0, partAgentes: 0, apporteur: 0, royalties: 0 }
-        const c = dossiersCalcs.get(d.id)?.calc || calculer(d)
+        const c = calculer(d)
         mapPrevi[key].frais       = round2(mapPrevi[key].frais       + c.fraisNetPrevi)
         mapPrevi[key].com         = round2(mapPrevi[key].com         + c.netComTous)
         mapPrevi[key].comApport   = round2(mapPrevi[key].comApport   + c.comApporteursPrevi)
@@ -1443,7 +1409,7 @@ export default function Finances() {
         const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
         if (!key || !key.startsWith(String(anneeSelectionnee))) return
         if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, comApport: 0, hon: 0, partAgentes: 0, apporteur: 0, royalties: 0 }
-        const c = dossiersCalcs.get(d.id)?.calc || calculer(d)
+        const c = calculer(d)
         mapPrevi[key].frais       = round2(mapPrevi[key].frais       + c.fraisNetPrevi)
         mapPrevi[key].com         = round2(mapPrevi[key].com         + c.netComTous)
         mapPrevi[key].comApport   = round2(mapPrevi[key].comApport   + c.comApporteursPrevi)
@@ -1459,7 +1425,7 @@ export default function Finances() {
         const p = mapPrevi[cle] || {}; const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}
         totP.frais = round2(totP.frais + (p.frais||0)); totP.com = round2(totP.com + (p.com||0)); totP.comApport = round2(totP.comApport + (p.comApport||0)); totP.hon = round2(totP.hon + (p.hon||0)); totP.redev = round2(totP.redev + redev); totP.partAgentes = round2(totP.partAgentes + (p.partAgentes||0)); totP.royalties = round2(totP.royalties + (p.royalties||0))
         totR.frais = round2(totR.frais + (r.fraisNet||0)); totR.com = round2(totR.com + (r.comReelNet||0)); totR.comApport = round2(totR.comApport + (r.comApporteursReel||0)); totR.hon = round2(totR.hon + (r.honReel||0)); totR.redev = round2(totR.redev + redev); totR.partAgentes = round2(totR.partAgentes + (r.gainsAgenteReels||0)); totR.royalties = round2(totR.royalties + round2((r.comReelNet||0) * (0.05 / 0.95)))
-        const apporteurReel = dossiers.reduce((s, d) => { const lignes = (d.suivi_financier || []).filter(sf => sf.type_echeance === 'apporteur_agente' && sf.statut_ctp === 'rembourse' && sf.date_paiement && getKeyFromDate(sf.date_paiement, false) === cle); if (!lignes.length) return s; const c2 = dossiersCalcs.get(d.id)?.reel || calculerReel(d); return s + round2((c2.finance?.apporteur?.lines || []).reduce((sum, ligne) => { const dv = (d.devis_artisans || []).find(dv => dv.id === ligne.devisId); const artId = dv?.artisan_id || dv?.artisan?.id; const sf = (d.suivi_financier || []).find(s2 => s2.type_echeance === 'apporteur_agente' && s2.artisan_id === artId && s2.statut_ctp === 'rembourse' && s2.date_paiement && getKeyFromDate(s2.date_paiement, false) === cle); return sf ? sum + ligne.agente : sum }, 0)) }, 0)
+        const apporteurReel = dossiers.reduce((s, d) => { const lignes = (d.suivi_financier || []).filter(sf => sf.type_echeance === 'apporteur_agente' && sf.statut_ctp === 'rembourse' && sf.date_paiement && getKeyFromDate(sf.date_paiement, false) === cle); if (!lignes.length) return s; const c2 = calculerReel(d); return s + round2((c2.finance?.apporteur?.lines || []).reduce((sum, ligne) => { const dv = (d.devis_artisans || []).find(dv => dv.id === ligne.devisId); const artId = dv?.artisan_id || dv?.artisan?.id; const sf = (d.suivi_financier || []).find(s2 => s2.type_echeance === 'apporteur_agente' && s2.artisan_id === artId && s2.statut_ctp === 'rembourse' && s2.date_paiement && getKeyFromDate(s2.date_paiement, false) === cle); return sf ? sum + ligne.agente : sum }, 0)) }, 0)
         totR.apporteur = round2(totR.apporteur + apporteurReel)
       })
       const previProduits = round2(totP.frais + totP.com + totP.comApport + totP.hon + (isCTP ? totP.redev : 0))
@@ -1877,7 +1843,7 @@ export default function Finances() {
         const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
         if (!key) return
         if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, hon: 0, comApport: 0, apporteur: 0 }
-        const c = dossiersCalcs.get(d.id)?.calc || calculer(d)
+        const c = calculer(d)
         mapPrevi[key].frais     = round2(mapPrevi[key].frais     + c.fraisAgentePrevi)
         mapPrevi[key].com       = round2(mapPrevi[key].com       + c.comAgenteTous)
         mapPrevi[key].hon       = round2(mapPrevi[key].hon       + c.honPreviAgente)
@@ -1969,7 +1935,7 @@ export default function Finances() {
         const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
         if (!key) return
         if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, hon: 0, comApport: 0, apporteur: 0 }
-        const c = dossiersCalcs.get(d.id)?.calc || calculer(d)
+        const c = calculer(d)
         mapPrevi[key].frais     = round2(mapPrevi[key].frais     + c.fraisAgentePrevi)
         mapPrevi[key].com       = round2(mapPrevi[key].com       + c.comAgenteTous)
         mapPrevi[key].hon       = round2(mapPrevi[key].hon       + c.honPreviAgente)
