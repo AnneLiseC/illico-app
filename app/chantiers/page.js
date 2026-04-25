@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
@@ -55,15 +55,21 @@ export default function Chantiers() {
   const isMarine = profile?.role === 'admin'
 
   // Filtrage par onglet — dynamique par ID d'agente
-  const dossiersFiltresOnglet = getDossiersByScope(dossiers, profile, onglet, agentes)
+  const dossiersFiltresOnglet = useMemo(
+    () => getDossiersByScope(dossiers, profile, onglet, agentes),
+    [dossiers, profile, onglet, agentes]
+  )
 
-  const dossiersFiltres = getFilteredDossiers(dossiersFiltresOnglet, recherche, filtreStatut, filtreTypo, nomClient )
+  const dossiersFiltres = useMemo(
+    () => getFilteredDossiers(dossiersFiltresOnglet, recherche, filtreStatut, filtreTypo, nomClient),
+    [dossiersFiltresOnglet, recherche, filtreStatut, filtreTypo]
+  )
 
   const aujourdhui = new Date()
 
-  const alertes = getAlertesDevis(dossiersFiltresOnglet)
+  const alertes = useMemo(() => getAlertesDevis(dossiersFiltresOnglet), [dossiersFiltresOnglet])
 
-  const compteurs = getCompteurs(dossiersFiltresOnglet)
+  const compteurs = useMemo(() => getCompteurs(dossiersFiltresOnglet), [dossiersFiltresOnglet])
 
   // Onglets dynamiques : "Mes chantiers" + une tab par agente + "Tous"
   const ongletsList = isMarine ? [
