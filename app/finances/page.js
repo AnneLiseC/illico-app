@@ -40,6 +40,10 @@ const normalizeDossier = (d) => ({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function CheckItem({ label, checked, date, onChange, onDateChange, alert, disabled = false, colorClass = '' }) {
+  const [localDate, setLocalDate] = useState(date || '')
+
+  useEffect(() => { setLocalDate(date || '') }, [date])
+
   const handleCheck = (isChecked) => {
     const autoDate = isChecked && !date ? new Date().toISOString().split('T')[0] : null
     onChange(isChecked, autoDate)
@@ -65,8 +69,9 @@ function CheckItem({ label, checked, date, onChange, onDateChange, alert, disabl
       {checked && (
         <input
           type="date"
-          value={date || ''}
-          onChange={e => onDateChange(e.target.value)}
+          value={localDate}
+          onChange={e => setLocalDate(e.target.value)}
+          onBlur={e => { if (e.target.value && e.target.value !== date) onDateChange(e.target.value) }}
           className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none focus:border-blue-400"
         />
       )}
