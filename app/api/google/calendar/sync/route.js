@@ -10,6 +10,12 @@ const supabaseAdmin = createClient(
 
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID
 
+function nextDay(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
 function buildOAuthClient(userId, tokens) {
   const client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -56,10 +62,11 @@ function rdvToGoogleEvent(rdv) {
 }
 
 function interventionToGoogleEvents(intervention) {
+  // Données manquantes → skip
   if (!intervention.date_debut) return []
   if (intervention.type_intervention === 'periode' && !intervention.date_fin) return []
   if (intervention.type_intervention === 'jours_specifiques' && !intervention.jours_specifiques?.length) return []
-  
+
   const artisan = intervention.artisan?.entreprise || 'Artisan'
   const client = intervention.dossier?.client
   const nomClient = client ? `${client.prenom} ${client.nom}`.trim() : ''
@@ -83,7 +90,7 @@ function interventionToGoogleEvents(intervention) {
     summary,
     description: [...baseDesc, `[illico-int:${intervention.id}:${idx}]`].join('\n'),
     start: { date: jour },
-    end: { date: jour },
+    end: { date: nextDay(jour) },
   }))
 }
 
@@ -127,6 +134,14 @@ export async function POST(request) {
     try {
       await calendar.calendars.get({ calendarId: CALENDAR_ID })
     } catch (err) {
+      const isInvalidGrant = err.code === 401
+        || err.message?.includes('invalid_grant')
+        || err.message?.includes('Token has been expired')
+        || err.message?.includes('invalid_client')
+      if (isInvalidGrant) {
+        await supabaseAdmin.from('google_tokens').delete().eq('user_id', userId)
+        return NextResponse.json({ error: 'Session Google expirée, reconnectez Google Calendar', needsReconnect: true }, { status: 400 })
+      }
       const detail = err.code === 404 ? 'Calendrier introuvable (vérifiez GOOGLE_CALENDAR_ID)'
                    : err.code === 403 ? 'Accès refusé au calendrier (partagez-le avec votre compte Google)'
                    : `Erreur calendrier : ${err.message}`
@@ -206,7 +221,7 @@ export async function POST(request) {
             summary: ` Démarrage${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
             description: `[illico-start:${dossier.id}]`,
             start: { date: dossier.date_demarrage_chantier },
-            end: { date: dossier.date_demarrage_chantier },
+            end: { date: nextDay(dossier.date_demarrage_chantier) },
             colorId: '2',
           }
           if (dossier.google_start_event_id) {
@@ -233,7 +248,7 @@ export async function POST(request) {
             summary: `🏁 Fin${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
             description: `[illico-end:${dossier.id}]`,
             start: { date: dossier.date_fin_chantier },
-            end: { date: dossier.date_fin_chantier },
+            end: { date: nextDay(dossier.date_fin_chantier) },
             colorId: '6',
           }
           if (dossier.google_end_event_id) {
@@ -386,12 +401,14 @@ export async function POST(request) {
     if (results.pulled > 0) parts.push(`${results.pulled} importé(s) de Google`)
     if (results.deleted > 0) parts.push(`${results.deleted} supprimé(s) depuis Google`)
 
+    // Dédupliquer les erreurs pour un message lisible
     const uniqueErrors = [...new Set(results.errors.map(e => e.replace(/^[^:]+:\s*/, '')))]
     const errMsg = uniqueErrors.length === 1
       ? uniqueErrors[0]
       : `${results.errors.length} erreurs — ${uniqueErrors.slice(0, 2).join(' / ')}${uniqueErrors.length > 2 ? '…' : ''}`
     if (results.errors.length > 0) parts.push(errMsg)
     
+
     return NextResponse.json({
       success: results.errors.length === 0 || parts.some(p => !p.includes('erreur')),
       pushed: results.pushed,

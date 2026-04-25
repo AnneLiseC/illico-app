@@ -963,6 +963,7 @@ ${s.contenu}`).join('')
   }
 
   // ── MESSAGES AGENTE → CLIENT (schéma : messages avec auteur_role + lu_agence) ──
+  const [onglet, setOnglet] = useState('dossier')
   const [reponseMsg, setReponseMsg] = useState('')
   const [sendingMsg, setSendingMsg] = useState(false)
   const envoyerReponse = async () => {
@@ -1241,6 +1242,27 @@ ${s.contenu}`).join('')
         )}
       </header>
 
+      {/* Barre d'onglets */}
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 flex overflow-x-auto scrollbar-none">
+          <button
+            onClick={() => setOnglet('dossier')}
+            className={`flex-shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-all ${onglet === 'dossier' ? 'border-blue-800 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            Dossier
+          </button>
+          {dossier?.typologie === 'amo' && (
+            <button
+              onClick={() => setOnglet('messages')}
+              className={`flex-shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-all ${onglet === 'messages' ? 'border-blue-800 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            >
+              Messagerie{nbMsgNonLus > 0 && <span className="ml-1.5 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">{nbMsgNonLus}</span>}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {onglet === 'dossier' && (
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
         {succes && <p className="text-green-600 text-sm bg-green-50 border border-green-200 rounded-lg px-4 py-2">{succes}</p>}
         {erreur && <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-2">{erreur}</p>}
@@ -2854,64 +2876,60 @@ ${s.contenu}`).join('')
           </div>
         )}
 
-        {/* ── ESPACE CLIENT AMO ── */}
-        {dossier?.typologie === 'amo' && (
-          <div className="space-y-4">
-            {/* Messagerie */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="font-semibold text-gray-800">
-                  Messagerie client
-                </h2>
-                {nbMsgNonLus > 0 && (
-                  <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full font-medium">
-                    {nbMsgNonLus} message{nbMsgNonLus > 1 ? 's' : ''} non lu{nbMsgNonLus > 1 ? 's' : ''}
-                  </span>
-                )}
-              </div>
 
-              {/* Messages */}
-              <div className="border border-gray-100 rounded-xl p-3 max-h-72 overflow-y-auto space-y-3 bg-gray-50">
-                {messages.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-6">Aucun message</p>
-                ) : (
-                  messages.map(msg => {
-                    const isClient = msg.auteur_role === 'client'
-                    return (
-                      <div key={msg.id} className={`flex ${isClient ? 'justify-start' : 'justify-end'}`}>
-                        <div className={`max-w-xs rounded-2xl px-3 py-2 ${isClient ? 'bg-white border border-gray-200' : 'bg-blue-800 text-white'}`}>
-                          <p className={`text-xs font-medium mb-0.5 ${isClient ? 'text-gray-500' : 'text-blue-200'}`}>
-                            {isClient ? `${msg.auteur?.prenom || 'Client'} (client)` : `${msg.auteur?.prenom || 'Équipe'}`}
-                          </p>
-                          <p className="text-sm">{msg.contenu}</p>
-                          <p className={`text-xs mt-1 opacity-60`}>
-                            {new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-
-              {/* Répondre */}
-              <div className="flex gap-2">
-                <input type="text" value={reponseMsg}
-                  onChange={e => setReponseMsg(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && envoyerReponse()}
-                  placeholder="Répondre au client..."
-                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                <button onClick={envoyerReponse} disabled={!reponseMsg.trim() || sendingMsg}
-                  className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
-                  {sendingMsg ? '...' : 'Envoyer'}
-                </button>
-              </div>
-            </div>
-
-          </div>
-        )}
-      
       </main>
+      )}
+
+      {onglet === 'messages' && dossier?.typologie === 'amo' && (
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-gray-800">Messagerie client</h2>
+            {nbMsgNonLus > 0 && (
+              <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full font-medium">
+                {nbMsgNonLus} message{nbMsgNonLus > 1 ? 's' : ''} non lu{nbMsgNonLus > 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+
+          <div className="border border-gray-100 rounded-xl p-3 max-h-[60vh] overflow-y-auto space-y-3 bg-gray-50">
+            {messages.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-8">Aucun message pour ce chantier</p>
+            ) : (
+              messages.map(msg => {
+                const isClient = msg.auteur_role === 'client'
+                return (
+                  <div key={msg.id} className={`flex ${isClient ? 'justify-start' : 'justify-end'}`}>
+                    <div className={`max-w-xs sm:max-w-sm rounded-2xl px-3 py-2 ${isClient ? 'bg-white border border-gray-200' : 'bg-blue-800'}`}>
+                      <p className={`text-xs font-medium mb-0.5 ${isClient ? 'text-gray-500' : 'text-blue-200'}`}>
+                        {isClient ? `${msg.auteur?.prenom || 'Client'} (client)` : `${msg.auteur?.prenom || 'Équipe'}`}
+                      </p>
+                      <p className={`text-sm ${isClient ? 'text-gray-800' : 'text-white'}`}>{msg.contenu}</p>
+                      <p className={`text-xs mt-1 opacity-60 ${isClient ? 'text-gray-500' : 'text-white'}`}>
+                        {new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <input type="text" value={reponseMsg}
+              onChange={e => setReponseMsg(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && envoyerReponse()}
+              placeholder="Répondre au client..."
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <button onClick={envoyerReponse} disabled={!reponseMsg.trim() || sendingMsg}
+              className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
+              {sendingMsg ? '...' : 'Envoyer'}
+            </button>
+          </div>
+        </div>
+      </main>
+      )}
+
       {/* Modal Créer Intervention */}
       {modalCreerIntervOuvert && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
