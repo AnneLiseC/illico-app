@@ -1374,7 +1374,7 @@ export default function Finances() {
     const sfSousOnglet = sfSousOngletCTP; const setSfSousOnglet = setSfSousOngletCTP
 
     const renderAnnuel = () => {
-      const annees = []; for (let a = new Date().getFullYear(); a >= 2023; a--) annees.push(a)
+      const annees = []; for (let a = new Date().getFullYear(); a >= 2024; a--) annees.push(a)
       const rowsReelAnnee = agrégerParPaiement(dossiers, false)
       const clesMois = Array.from(new Set([...rowsReelAnnee.map(([k]) => k), ...redevances.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`)])).filter(k => k.startsWith(String(anneeSelectionnee))).sort()
       const mapPrevi = {}
@@ -1667,7 +1667,7 @@ export default function Finances() {
 
   const renderFacturationAnneeAgente = () => {
     const annees = []
-    for (let a = new Date().getFullYear(); a >= 2023; a--) annees.push(a)
+    for (let a = new Date().getFullYear(); a >= 2024; a--) annees.push(a)
     const rowsReel = agrégerParPaiement(mesDossiers, false)
 
     const clesMois = Array.from(new Set(rowsReel.map(([k]) => k)))
@@ -1891,7 +1891,7 @@ export default function Finances() {
     // CR annuel agente
     const crAgenteAnnuel = () => {
       const annees = []
-      for (let a = new Date().getFullYear(); a >= 2023; a--) annees.push(a)
+      for (let a = new Date().getFullYear(); a >= 2024; a--) annees.push(a)
       const rowsReelAnnee = agrégerParPaiement(mesDossiers, false)
       const clesMois = Array.from(new Set([
         ...rowsReelAnnee.map(([k]) => k),
@@ -2119,7 +2119,7 @@ export default function Finances() {
     // Totaux annuels si vue année
     if (isAnnee) {
       const annees = []
-      for (let a = new Date().getFullYear(); a >= 2023; a--) annees.push(a)
+      for (let a = new Date().getFullYear(); a >= 2024; a--) annees.push(a)
 
       const clesMois = Array.from(new Set(rowsReel.map(([k]) => k)))
         .filter(k => k.startsWith(String(anneeSelectionnee))).sort()
