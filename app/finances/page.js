@@ -39,11 +39,12 @@ const normalizeDossier = (d) => ({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function CheckItem({ label, checked, date, onChange, onDateChange, alert, disabled = false, colorClass = '' }) {
+  const [localDate, setLocalDate] = useState(date || '')
+  useEffect(() => { setLocalDate(date || '') }, [date])
+
   const handleCheck = (isChecked) => {
-    onChange(isChecked)
-    if (isChecked && !date) {
-      onDateChange(new Date().toISOString().split('T')[0])
-    }
+    const autoDate = isChecked && !date ? new Date().toISOString().split('T')[0] : null
+    onChange(isChecked, autoDate)
   }
 
   return (
@@ -66,8 +67,9 @@ function CheckItem({ label, checked, date, onChange, onDateChange, alert, disabl
       {checked && (
         <input
           type="date"
-          value={date || ''}
-          onChange={e => onDateChange(e.target.value)}
+          value={localDate}
+          onChange={e => setLocalDate(e.target.value)}
+          onBlur={e => { if (e.target.value && e.target.value !== date) onDateChange(e.target.value) }}
           className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none focus:border-blue-400"
         />
       )}
@@ -506,17 +508,18 @@ export default function Finances() {
 
   const majSuivi = async (dossierId, type, artisanId, champ, valeur) => {
     setSaving(true)
+    const updates = typeof champ === 'object' ? champ : { [champ]: valeur }
     let query = supabase.from('suivi_financier').select('id')
       .eq('dossier_id', dossierId).eq('type_echeance', type)
     query = artisanId ? query.eq('artisan_id', artisanId) : query.is('artisan_id', null)
     const { data: existing } = await query.maybeSingle()
 
     if (existing) {
-      await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
+      await supabase.from('suivi_financier').update(updates).eq('id', existing.id)
     } else {
       await supabase.from('suivi_financier').insert({
         dossier_id: dossierId, type_echeance: type,
-        artisan_id: artisanId || null, [champ]: valeur,
+        artisan_id: artisanId || null, ...updates,
       })
     }
 
@@ -854,7 +857,11 @@ export default function Finances() {
                       label="Réglé"
                       checked={d.frais_statut === 'regle'}
                       date={getSuivi(d, 'frais_consultation')?.date_paiement}
-                      onChange={checked => majSuivi(d.id, 'frais_consultation', null, 'statut_client', checked ? 'regle' : 'en_attente')}
+                      onChange={(checked, autoDate) => {
+                        const updates = { statut_client: checked ? 'regle' : 'en_attente' }
+                        if (autoDate) updates.date_paiement = autoDate
+                        majSuivi(d.id, 'frais_consultation', null, updates)
+                      }}
                       onDateChange={date => majSuivi(d.id, 'frais_consultation', null, 'date_paiement', date)}
                       alert={alerte48h(d.date_signature_contrat) && d.frais_statut !== 'regle' ? '⚠️ Retard 48h' : null}
                     />
@@ -928,7 +935,11 @@ export default function Finances() {
                                   label={`Acompte client payé — ${acompteCalc.toFixed(2)} € TTC`}
                                   checked={suiviAcompte?.statut_client === 'regle'}
                                   date={suiviAcompte?.date_paiement}
-                                  onChange={checked => majSuivi(d.id, 'acompte_artisan', artId, 'statut_client', checked ? 'regle' : 'en_attente')}
+                                  onChange={(checked, autoDate) => {
+                                    const updates = { statut_client: checked ? 'regle' : 'en_attente' }
+                                    if (autoDate) updates.date_paiement = autoDate
+                                    majSuivi(d.id, 'acompte_artisan', artId, updates)
+                                  }}
                                   onDateChange={date => majSuivi(d.id, 'acompte_artisan', artId, 'date_paiement', date)}
                                   alert={alerte7j(dv.date_signature) && suiviAcompte?.statut_client !== 'regle' ? '⚠️ Retard 7j' : null}
                                 />
@@ -938,9 +949,13 @@ export default function Finances() {
                                 <CheckItem
                                   label="illiCO France — acompte débloqué"
                                   checked={suiviAcompte?.statut_illico === 'recu'}
-                                  date={suiviAcompte?.date_paiement}
-                                  onChange={checked => majSuivi(d.id, 'acompte_artisan', artId, 'statut_illico', checked ? 'recu' : 'en_attente')}
-                                  onDateChange={date => majSuivi(d.id, 'acompte_artisan', artId, 'date_paiement', date)}
+                                  date={suiviAcompte?.date_deblocage}
+                                  onChange={(checked, autoDate) => {
+                                    const updates = { statut_illico: checked ? 'recu' : 'en_attente' }
+                                    if (autoDate) updates.date_deblocage = autoDate
+                                    majSuivi(d.id, 'acompte_artisan', artId, updates)
+                                  }}
+                                  onDateChange={date => majSuivi(d.id, 'acompte_artisan', artId, 'date_deblocage', date)}
                                   colorClass="text-indigo-600"
                                 />
                               )}
@@ -950,7 +965,11 @@ export default function Finances() {
                                   label={`Facture finale client payée — ${soldeCalc.toFixed(2)} € TTC`}
                                   checked={suiviFact?.statut_client === 'regle'}
                                   date={suiviFact?.date_paiement}
-                                  onChange={checked => majSuivi(d.id, 'facture_finale', artId, 'statut_client', checked ? 'regle' : 'en_attente')}
+                                  onChange={(checked, autoDate) => {
+                                    const updates = { statut_client: checked ? 'regle' : 'en_attente' }
+                                    if (autoDate) updates.date_paiement = autoDate
+                                    majSuivi(d.id, 'facture_finale', artId, updates)
+                                  }}
                                   onDateChange={date => majSuivi(d.id, 'facture_finale', artId, 'date_paiement', date)}
                                   alert={alerte48h(d.date_fin_chantier) && suiviFact?.statut_client !== 'regle' ? '⚠️ Retard 48h' : null}
                                 />
@@ -968,7 +987,11 @@ export default function Finances() {
                                       label={`Agente → CTP remboursé — ${fmt(appLigne.agente)}`}
                                       checked={suiviApp?.statut_ctp === 'rembourse'}
                                       date={suiviApp?.date_paiement}
-                                      onChange={checked => majSuivi(d.id, 'apporteur_agente', artId, 'statut_ctp', checked ? 'rembourse' : 'en_attente')}
+                                      onChange={(checked, autoDate) => {
+                                        const updates = { statut_ctp: checked ? 'rembourse' : 'en_attente' }
+                                        if (autoDate) updates.date_paiement = autoDate
+                                        majSuivi(d.id, 'apporteur_agente', artId, updates)
+                                      }}
                                       onDateChange={date => majSuivi(d.id, 'apporteur_agente', artId, 'date_paiement', date)}
                                       colorClass="text-orange-600"
                                     />
@@ -979,7 +1002,11 @@ export default function Finances() {
                                       label={`CTP retiré — ${fmt(appLigne.admin)}`}
                                       checked={suiviApp?.statut_client === 'retire'}
                                       date={suiviApp?.date_paiement}
-                                      onChange={checked => majSuivi(d.id, 'apporteur_agente', artId, 'statut_client', checked ? 'retire' : 'en_attente')}
+                                      onChange={(checked, autoDate) => {
+                                        const updates = { statut_client: checked ? 'retire' : 'en_attente' }
+                                        if (autoDate) updates.date_paiement = autoDate
+                                        majSuivi(d.id, 'apporteur_agente', artId, updates)
+                                      }}
                                       onDateChange={date => majSuivi(d.id, 'apporteur_agente', artId, 'date_paiement', date)}
                                       colorClass="text-purple-600"
                                     />
@@ -1012,7 +1039,11 @@ export default function Finances() {
                           label="Client réglé"
                           checked={getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'}
                           date={getSuivi(d, 'honoraires_courtage')?.date_paiement}
-                          onChange={checked => majSuivi(d.id, 'honoraires_courtage', null, 'statut_client', checked ? 'regle' : 'en_attente')}
+                          onChange={(checked, autoDate) => {
+                            const updates = { statut_client: checked ? 'regle' : 'en_attente' }
+                            if (autoDate) updates.date_paiement = autoDate
+                            majSuivi(d.id, 'honoraires_courtage', null, updates)
+                          }}
                           onDateChange={date => majSuivi(d.id, 'honoraires_courtage', null, 'date_paiement', date)}
                         />
                       </div>
@@ -1030,7 +1061,11 @@ export default function Finances() {
                             label="Client réglé"
                             checked={getSuivi(d, 'solde_amo')?.statut_client === 'regle'}
                             date={getSuivi(d, 'solde_amo')?.date_paiement}
-                            onChange={checked => majSuivi(d.id, 'solde_amo', null, 'statut_client', checked ? 'regle' : 'en_attente')}
+                            onChange={(checked, autoDate) => {
+                              const updates = { statut_client: checked ? 'regle' : 'en_attente' }
+                              if (autoDate) updates.date_paiement = autoDate
+                              majSuivi(d.id, 'solde_amo', null, updates)
+                            }}
                             onDateChange={date => majSuivi(d.id, 'solde_amo', null, 'date_paiement', date)}
                             alert={alerte48h(d.date_fin_chantier) && getSuivi(d, 'solde_amo')?.statut_client !== 'regle' ? '⚠️ Retard 48h' : null}
                           />
