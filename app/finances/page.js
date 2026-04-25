@@ -501,14 +501,6 @@ export default function Finances() {
     }
   }
 
-  // Calculs pré-calculés une seule fois quand dossiers change (évite les recalculs à chaque render)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const dossiersCalcs = useMemo(() => {
-    const map = new Map()
-    for (const d of dossiers) map.set(d.id, { calc: calculer(d), reel: calculerReel(d) })
-    return map
-  }, [dossiers])
-
   // ── SUIVI FINANCIER ────────────────────────────────────────────────────────
 
   const getSuivi = (d, type, artisanId = null) =>
@@ -560,6 +552,14 @@ export default function Finances() {
     }))
     setSaving(false)
   }
+
+  // Calculs pré-calculés une seule fois quand dossiers change (getSuivi/calculerReel doivent être définis avant)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const dossiersCalcs = useMemo(() => {
+    const map = new Map()
+    for (const d of dossiers) map.set(d.id, { calc: calculer(d), reel: calculerReel(d) })
+    return map
+  }, [dossiers])
 
   // ── ALERTES ────────────────────────────────────────────────────────────────
 
