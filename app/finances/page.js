@@ -801,6 +801,9 @@ export default function Finances() {
                     {c.estChantierMarine ? nomFranchisee : nomReferente(d)}
                   </span>
                 )}
+                {d.statut === 'annule' && (
+                  <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">Annulé</span>
+                )}
                 {nbAlertes > 0 && (
                   <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">⚠️ {nbAlertes}</span>
                 )}
@@ -857,6 +860,7 @@ export default function Finances() {
                       }}
                       onDateChange={date => majSuivi(d.id, 'frais_consultation', null, 'date_paiement', date)}
                       alert={alerte48h(d.date_signature_contrat) && d.frais_statut !== 'regle' ? '⚠️ Retard 48h' : null}
+                      disabled={d.statut === 'annule' && d.frais_statut === 'regle'}
                     />
                     <label className="flex items-center gap-2 cursor-pointer border-t border-gray-100 pt-2">
                       <input
