@@ -70,7 +70,10 @@ function CheckItem({ label, checked, date, onChange, onDateChange, alert, disabl
         <input
           type="date"
           value={localDate}
-          onChange={e => setLocalDate(e.target.value)}
+          onChange={e => {
+            setLocalDate(e.target.value)
+            if (e.target.value && e.target.value !== date) onDateChange(e.target.value)
+          }}
           onBlur={e => { if (e.target.value && e.target.value !== date) onDateChange(e.target.value) }}
           className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none focus:border-blue-400"
         />
