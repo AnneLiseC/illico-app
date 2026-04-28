@@ -1990,19 +1990,6 @@ ${s.contenu}`).join('')
             <div className="bg-gray-50 rounded-lg p-4 space-y-3 border border-gray-200">
               <p className="text-xs font-medium text-gray-600 uppercase">Récapitulatif chantier</p>
 
-              {/* Frais consultation */}
-              {dossier.frais_consultation > 0 && dossier.frais_statut !== 'offerts' && (
-                <div className="space-y-1">
-                  <p className="text-xs text-gray-400 font-medium">Frais de consultation</p>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Montant TTC</span>
-                    <span className={`font-medium ${dossier.frais_statut === 'regle' ? 'text-green-600' : 'text-gray-800'}`}>
-                      {(dossier.frais_consultation || 0).toFixed(2)} € {dossier.frais_statut === 'regle' ? '✅' : '⏳'}
-                    </span>
-                  </div>
-                </div>
-              )}
-
               {/* BLOC PRÉVISIONNEL */}
               {devisRecus.length > 0 && (
                 <div className="border border-blue-200 rounded-lg p-3 space-y-1 bg-blue-50">
