@@ -228,6 +228,10 @@ export default function Statistiques() {
     return Object.values(map).map(c => ({ ...c, typologies: [...c.typologies] })).sort((a, b) => b.ca - a.ca).slice(0, 15)
   })()
 
+  const filterAnnee = (list, y) => list.filter(d => { const dt = d.date_signature_contrat || d.created_at; return dt && new Date(dt).getFullYear() === y })
+  const enrichir = (list) => list.map(d => ({ ...d, _s: calculerStats(d) }))
+  const caParMois = (list) => { const arr = Array(12).fill(0); list.forEach(d => { const dt = d.date_signature_contrat || d.created_at; if (dt) arr[new Date(dt).getMonth()] += d._s.netTotal }); return arr }
+
   const statsAgentes = agentes.map((a, i) => {
     const listN = enrichir(filterAnnee(dossiers.filter(d => d.referente?.id === a.id), annee))
     const listN1 = enrichir(filterAnnee(dossiers.filter(d => d.referente?.id === a.id), annee - 1))
