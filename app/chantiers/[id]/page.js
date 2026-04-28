@@ -2010,10 +2010,26 @@ ${s.contenu}`).join('')
                     <span className="text-gray-500">Total TTC</span>
                     <span className="font-medium text-blue-700">{totalDevisTTCRecus.toFixed(2)} €</span>
                   </div>
-                  {['courtage', 'amo'].includes(dossier?.typologie) && (
+                  {dossier?.typologie === 'courtage' && (
                     <div className="flex justify-between text-sm border-t border-blue-100 pt-1 mt-1">
                       <span className="text-gray-400">Honoraires estimés ({tauxCourtagePct}%)</span>
                       <span className="font-medium text-blue-600">{(totalDevisTTCRecus * tauxCourtage).toFixed(2)} €</span>
+                    </div>
+                  )}
+                  {dossier?.typologie === 'amo' && (
+                    <div className="border-t border-blue-100 pt-1 mt-1 space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-400">Honoraires courtage estimés ({tauxCourtagePct}%)</span>
+                        <span className="font-medium text-blue-600">{(totalDevisTTCRecus * tauxCourtage).toFixed(2)} €</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-400">Honoraires AMO estimés ({tauxAmoPct}%)</span>
+                        <span className="font-medium text-blue-600">{(totalDevisTTCRecus * tauxAmo).toFixed(2)} €</span>
+                      </div>
+                      <div className="flex justify-between text-sm border-t border-blue-100 pt-1 mt-1">
+                        <span className="text-gray-400 font-medium">Total honoraires estimés ({(Number(tauxCourtagePct) + Number(tauxAmoPct)).toFixed(1)}%)</span>
+                        <span className="font-medium text-blue-700">{(totalDevisTTCRecus * (tauxCourtage + tauxAmo)).toFixed(2)} €</span>
+                      </div>
                     </div>
                   )}
                 </div>
