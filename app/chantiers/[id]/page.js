@@ -945,8 +945,10 @@ ${s.contenu}`).join('')
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
-      const filename = type === 'recapitulatif'
-        ? `Recapitulatif_${dossier.reference}.pdf`
+      const filename = type === 'recapitulatif_prev'
+        ? `Recapitulatif_Previsionnel_${dossier.reference}.pdf`
+        : type === 'recapitulatif'
+        ? `Recapitulatif_Suivi_${dossier.reference}.pdf`
         : type === 'dossier_restitution'
         ? `DossierRestitution_${dossier.reference}.pdf`
         : type === 'cr'
@@ -1204,9 +1206,13 @@ ${s.contenu}`).join('')
               <>
                 {/* PDFs — cachés sur mobile */}
                 <div className="hidden sm:flex items-center gap-2">
+                  <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
+                    className="border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
+                    {generatingPDF === 'recapitulatif_prev' ? '⏳' : '📄 Récap. prévi.'}
+                  </button>
                   <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
                     className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">
-                    {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Récap.'}
+                    {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Récap. suivi'}
                   </button>
                   <button onClick={() => generatePDF('dossier_r3')} disabled={!!generatingPDF}
                     className="border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
@@ -1232,9 +1238,13 @@ ${s.contenu}`).join('')
         {/* PDF buttons — mobile uniquement */}
         {mode === 'lecture' && (
           <div className="flex gap-2 mt-3 sm:hidden overflow-x-auto scrollbar-none">
+            <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
+              className="border border-blue-300 text-blue-700 px-3 py-1.5 rounded-lg text-xs hover:bg-blue-50 disabled:opacity-50 flex-shrink-0">
+              {generatingPDF === 'recapitulatif_prev' ? '⏳' : '📄 Récap. prévi.'}
+            </button>
             <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
               className="border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-50 flex-shrink-0">
-              {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Récapitulatif'}
+              {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Récap. suivi'}
             </button>
             <button onClick={() => generatePDF('dossier_r3')} disabled={!!generatingPDF}
               className="border border-blue-300 text-blue-700 px-3 py-1.5 rounded-lg text-xs hover:bg-blue-50 disabled:opacity-50 flex-shrink-0">

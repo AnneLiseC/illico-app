@@ -81,23 +81,161 @@ const styles = StyleSheet.create({
   signatureLabel: { fontSize: 8, color: GRIS_TEXTE, marginTop: 4 },
 })
 
-// ── RÉCAPITULATIF FINANCIER CLIENT ──
-function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures }) {
+// ── HELPERS RÉCAPITULATIF ──
+function buildRecapHeader(dossier, titre, dateAuj) {
   const client = dossier.client
-  const nomClient = client
-    ? `${client.civilite || ''} ${client.prenom || ''} ${client.nom || ''}`.trim()
-    : '—'
-  const referente = dossier.referente
-    ? `${dossier.referente.prenom || ''} ${dossier.referente.nom || ''}`.trim()
-    : '—'
-  const typologieLabel = {
-    courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo',
-    audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin',
-  }[dossier.typologie] || dossier.typologie || '—'
+  const nomClient = client ? `${client.civilite || ''} ${client.prenom || ''} ${client.nom || ''}`.trim() : '—'
+  const referente = dossier.referente ? `${dossier.referente.prenom || ''} ${dossier.referente.nom || ''}`.trim() : '—'
+  const typologieLabel = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }[dossier.typologie] || dossier.typologie || '—'
+  return (
+    <>
+      <View style={styles.header}>
+        {logoBase64 ? <PdfImage src={logoBase64} style={styles.logo} /> : <View style={styles.logo} />}
+        <View style={styles.headerRight}>
+          <Text style={styles.headerTitle}>{titre}</Text>
+          <Text style={styles.headerSub}>illiCO travaux Martigues</Text>
+          <Text style={[styles.headerSub, { marginTop: 2 }]}>Établi le {dateAuj}</Text>
+        </View>
+      </View>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Informations du dossier</Text>
+        <View style={styles.infoGrid}>
+          <View style={styles.infoBlock}><Text style={styles.infoLabel}>Client</Text><Text style={styles.infoValue}>{nomClient}</Text></View>
+          <View style={styles.infoBlock}><Text style={styles.infoLabel}>Référence chantier</Text><Text style={styles.infoValue}>{dossier.reference || '—'}</Text></View>
+          <View style={styles.infoBlock}><Text style={styles.infoLabel}>Prestation</Text><Text style={styles.infoValue}>{typologieLabel}</Text></View>
+          <View style={styles.infoBlock}><Text style={styles.infoLabel}>Référente</Text><Text style={styles.infoValue}>{referente}</Text></View>
+        </View>
+        {dossier.client?.adresse ? (<View style={{ marginTop: 4 }}><Text style={styles.infoLabel}>Adresse</Text><Text style={styles.cell}>{dossier.client.adresse}</Text></View>) : null}
+      </View>
+    </>
+  )
+}
 
+function buildDevisTable(devisList, fraisTTC, dossier, sectionTitle) {
+  const totalHT  = devisList.reduce((s, d) => s + toNumber(d.montant_ht), 0)
+  const totalTTC = devisList.reduce((s, d) => s + toNumber(d.montant_ttc), 0)
+  const showFrais = fraisTTC > 0 && dossier.frais_statut !== 'offerts' && !dossier.frais_deduits
+  if (devisList.length === 0 && !showFrais) return null
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{sectionTitle}</Text>
+      <View style={styles.table}>
+        <View style={styles.tableHeader}>
+          <Text style={[styles.tableHeaderCell, { width: 18 }]}> </Text>
+          <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Intervenant</Text>
+          <Text style={[styles.tableHeaderCell, { flex: 4 }]}>Description</Text>
+          <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>Montant HT</Text>
+          <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>Montant TTC</Text>
+        </View>
+        {showFrais ? (
+          <View style={styles.tableRow}>
+            <Text style={[styles.cell, { width: 18, color: GRIS_TEXTE }]}>0</Text>
+            <Text style={[styles.cell, { flex: 3 }]}>illiCO travaux</Text>
+            <Text style={[styles.cell, { flex: 4 }]}>Frais de consultation</Text>
+            <Text style={[styles.cellRight, { flex: 2 }]}>{fmt(fraisTTC / 1.2)}</Text>
+            <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(fraisTTC)}</Text>
+          </View>
+        ) : null}
+        {devisList.map((d, idx) => {
+          const n = idx + 1
+          const rowStyle = n % 2 === 0 ? styles.tableRow : styles.tableRowAlt
+          return (
+            <View key={d.id} style={rowStyle}>
+              <Text style={[styles.cell, { width: 18, color: GRIS_TEXTE }]}>{String(n)}</Text>
+              <Text style={[styles.cell, { flex: 3 }]}>{d.artisan?.entreprise || '—'}</Text>
+              <Text style={[styles.cell, { flex: 4, color: GRIS_TEXTE }]}>{d.notes || '—'}</Text>
+              <Text style={[styles.cellRight, { flex: 2 }]}>{fmt(d.montant_ht)}</Text>
+              <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(d.montant_ttc)}</Text>
+            </View>
+          )
+        })}
+        <View style={{ flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 4, backgroundColor: '#ddeef8' }}>
+          <Text style={[styles.cellBold, { width: 18 }]}> </Text>
+          <Text style={[styles.cellBold, { flex: 9 }]}>Total HT</Text>
+          <Text style={[styles.cellRightBold, { flex: 2, color: BLEU }]}>{fmt(totalHT + (showFrais ? fraisTTC / 1.2 : 0))}</Text>
+          <Text style={{ flex: 2 }}> </Text>
+        </View>
+        <View style={{ flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 4, backgroundColor: BLEU }}>
+          <Text style={[styles.cellBold, { width: 18, color: 'white' }]}> </Text>
+          <Text style={[styles.cellBold, { flex: 9, color: 'white' }]}>Total TTC</Text>
+          <Text style={{ flex: 2 }}> </Text>
+          <Text style={[styles.cellRightBold, { flex: 2, color: 'white' }]}>{fmt(totalTTC + (showFrais ? fraisTTC : 0))}</Text>
+        </View>
+      </View>
+    </View>
+  )
+}
+
+function buildHonorairesSection(dossier, baseTTC, honorairesCourtage, honorairesAMO) {
+  const isAMO = dossier.typologie === 'amo'
+  const isCourtage = ['courtage', 'amo'].includes(dossier.typologie)
+  const tauxCourtage = toNumber(dossier.taux_courtage ?? 0.06)
+  const tauxAmo = toNumber(dossier.honoraires_amo_taux ?? 9) / 100
+  if (!isCourtage || baseTTC <= 0) return null
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Honoraires illiCO travaux</Text>
+      <View style={styles.infoRow}>
+        <Text style={styles.infoRowLabel}>Honoraires courtage ({(tauxCourtage * 100).toFixed(1)}%) — à la signature des devis</Text>
+        <View style={{ alignItems: 'flex-end' }}><Text style={styles.infoRowValue}>{fmt(honorairesCourtage)}</Text></View>
+      </View>
+      {isAMO ? (
+        <View style={styles.infoRow}>
+          <Text style={styles.infoRowLabel}>Honoraires AMO solde ({(tauxAmo * 100).toFixed(1)}%) — à la fin du chantier</Text>
+          <View style={{ alignItems: 'flex-end' }}><Text style={styles.infoRowValue}>{fmt(honorairesAMO - honorairesCourtage)}</Text></View>
+        </View>
+      ) : null}
+      {isAMO ? (
+        <View style={[styles.infoRow, { backgroundColor: BLEU_CLAIR, borderRadius: 4, paddingHorizontal: 8 }]}>
+          <Text style={styles.cellBold}>Total honoraires AMO ({((tauxCourtage + tauxAmo) * 100).toFixed(1)}%)</Text>
+          <Text style={styles.cellRightBold}>{fmt(honorairesAMO)}</Text>
+        </View>
+      ) : null}
+    </View>
+  )
+}
+
+// ── RÉCAPITULATIF PRÉVISIONNEL (présentation devis) ──
+function RecapitulatifPrevPDF({ dossier, devis }) {
+  const devisList = (devis || []).filter((d) => ['recu', 'accepte'].includes(d.statut))
+  const totalTTC  = devisList.reduce((s, d) => s + toNumber(d.montant_ttc), 0)
+  const tauxCourtage = toNumber(dossier.taux_courtage ?? 0.06)
+  const tauxAmo = toNumber(dossier.honoraires_amo_taux ?? 9) / 100
+  const fraisTTC = toNumber(dossier.frais_consultation)
+  const fraisHT  = (dossier.frais_deduits && fraisTTC) ? fraisTTC / 1.2 : 0
+  const baseTTC  = totalTTC - (fraisHT * 1.2)
+  const honCourtage = baseTTC * tauxCourtage
+  const honAMO      = baseTTC * (tauxCourtage + tauxAmo)
+  const isAMO = dossier.typologie === 'amo'
+  const isCourtage = ['courtage', 'amo'].includes(dossier.typologie)
+  const fraisInclus = fraisTTC > 0 && dossier.frais_statut !== 'offerts'
+  const fraisNonDeduits = fraisInclus && !dossier.frais_deduits
+  const totalProjet = totalTTC + (isAMO ? honAMO : isCourtage ? honCourtage : 0) + (fraisNonDeduits ? fraisTTC : 0)
+  const dateAuj = new Date().toLocaleDateString('fr-FR')
+
+  return (
+    <Document>
+      <Page size="A4" style={styles.page}>
+        {buildRecapHeader(dossier, 'Récapitulatif prévisionnel', dateAuj)}
+        {buildDevisTable(devisList, fraisTTC, dossier, 'Devis artisans (reçus + signés)')}
+        {buildHonorairesSection(dossier, baseTTC, honCourtage, honAMO)}
+        <View style={styles.montantBlock}>
+          <Text style={styles.montantLabel}>TOTAL PROJET PRÉVISIONNEL</Text>
+          <Text style={styles.montantValue}>{fmt(totalProjet)}</Text>
+        </View>
+        <View style={styles.footer} fixed>
+          <Text style={styles.footerText}>illiCO travaux Martigues — {dossier.reference} — PRÉVISIONNEL</Text>
+          <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
+        </View>
+      </Page>
+    </Document>
+  )
+}
+
+// ── RÉCAPITULATIF RÉEL / SUIVI PAIEMENTS ──
+function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures }) {
   const devisAcceptes = (devis || []).filter((d) => d.statut === 'accepte')
   const totalDevisTTCSignes = devisAcceptes.reduce((s, d) => s + toNumber(d.montant_ttc), 0)
-  const totalDevisHTSignes = devisAcceptes.reduce((s, d) => s + toNumber(d.montant_ht), 0)
   const tauxCourtage = toNumber(dossier.taux_courtage ?? 0.06)
   const tauxAmo = toNumber(dossier.honoraires_amo_taux ?? 9) / 100
   const fraisTTC = toNumber(dossier.frais_consultation)
@@ -112,110 +250,16 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures }) {
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        <View style={styles.header}>
-          {logoBase64 ? <PdfImage src={logoBase64} style={styles.logo} /> : <View style={styles.logo} />}
-          <View style={styles.headerRight}>
-            <Text style={styles.headerTitle}>Récapitulatif financier</Text>
-            <Text style={styles.headerSub}>illiCO travaux Martigues</Text>
-            <Text style={[styles.headerSub, { marginTop: 2 }]}>Établi le {dateAuj}</Text>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Informations du dossier</Text>
-          <View style={styles.infoGrid}>
-            <View style={styles.infoBlock}><Text style={styles.infoLabel}>Client</Text><Text style={styles.infoValue}>{nomClient}</Text></View>
-            <View style={styles.infoBlock}><Text style={styles.infoLabel}>Référence chantier</Text><Text style={styles.infoValue}>{dossier.reference || '—'}</Text></View>
-            <View style={styles.infoBlock}><Text style={styles.infoLabel}>Prestation</Text><Text style={styles.infoValue}>{typologieLabel}</Text></View>
-            <View style={styles.infoBlock}><Text style={styles.infoLabel}>Référente</Text><Text style={styles.infoValue}>{referente}</Text></View>
-          </View>
-          {client?.adresse ? (<View style={{ marginTop: 4 }}><Text style={styles.infoLabel}>Adresse</Text><Text style={styles.cell}>{client.adresse}</Text></View>) : null}
-        </View>
-
-        {(devisAcceptes.length > 0 || (fraisTTC > 0 && dossier.frais_statut !== 'offerts' && !dossier.frais_deduits)) ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Devis artisans signés</Text>
-            <View style={styles.table}>
-              <View style={styles.tableHeader}>
-                <Text style={[styles.tableHeaderCell, { width: 18 }]}> </Text>
-                <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Intervenant</Text>
-                <Text style={[styles.tableHeaderCell, { flex: 4 }]}>Description</Text>
-                <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>Montant HT</Text>
-                <Text style={[styles.tableHeaderCell, { flex: 2, textAlign: 'right' }]}>Montant TTC</Text>
-              </View>
-              {fraisTTC > 0 && dossier.frais_statut !== 'offerts' && !dossier.frais_deduits ? (
-                <View style={styles.tableRow}>
-                  <Text style={[styles.cell, { width: 18, color: GRIS_TEXTE }]}>0</Text>
-                  <Text style={[styles.cell, { flex: 3 }]}>illiCO travaux</Text>
-                  <Text style={[styles.cell, { flex: 4 }]}>Frais de consultation</Text>
-                  <Text style={[styles.cellRight, { flex: 2 }]}>{fmt(fraisTTC / 1.2)}</Text>
-                  <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(fraisTTC)}</Text>
-                </View>
-              ) : null}
-              {devisAcceptes.map((d, idx) => {
-                const n = idx + 1
-                const rowStyle = n % 2 === 0 ? styles.tableRow : styles.tableRowAlt
-                return (
-                  <View key={d.id} style={rowStyle}>
-                    <Text style={[styles.cell, { width: 18, color: GRIS_TEXTE }]}>{String(n)}</Text>
-                    <Text style={[styles.cell, { flex: 3 }]}>{d.artisan?.entreprise || '—'}</Text>
-                    <Text style={[styles.cell, { flex: 4, color: GRIS_TEXTE }]}>{d.notes || '—'}</Text>
-                    <Text style={[styles.cellRight, { flex: 2 }]}>{fmt(d.montant_ht)}</Text>
-                    <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(d.montant_ttc)}</Text>
-                  </View>
-                )
-              })}
-              <View style={{ flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 4, backgroundColor: '#ddeef8' }}>
-                <Text style={[styles.cellBold, { width: 18 }]}> </Text>
-                <Text style={[styles.cellBold, { flex: 9 }]}>Total HT</Text>
-                <Text style={[styles.cellRightBold, { flex: 2, color: BLEU }]}>
-                  {fmt(totalDevisHTSignes + (fraisTTC > 0 && dossier.frais_statut !== 'offerts' && !dossier.frais_deduits ? fraisTTC / 1.2 : 0))}
-                </Text>
-                <Text style={{ flex: 2 }}> </Text>
-              </View>
-              <View style={{ flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 4, backgroundColor: BLEU }}>
-                <Text style={[styles.cellBold, { width: 18, color: 'white' }]}> </Text>
-                <Text style={[styles.cellBold, { flex: 9, color: 'white' }]}>Total TTC</Text>
-                <Text style={{ flex: 2 }}> </Text>
-                <Text style={[styles.cellRightBold, { flex: 2, color: 'white' }]}>
-                  {fmt(totalDevisTTCSignes + (fraisTTC > 0 && dossier.frais_statut !== 'offerts' && !dossier.frais_deduits ? fraisTTC : 0))}
-                </Text>
-              </View>
-            </View>
-          </View>
-        ) : null}
-
+        {buildRecapHeader(dossier, 'Récapitulatif financier', dateAuj)}
+        {buildDevisTable(devisAcceptes, fraisTTC, dossier, 'Devis artisans signés')}
         {buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier })}
-
-        {isCourtage && totalDevisTTCSignes > 0 ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Honoraires illiCO travaux</Text>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoRowLabel}>Honoraires courtage ({(tauxCourtage * 100).toFixed(1)}%) — à la signature des devis</Text>
-              <View style={{ alignItems: 'flex-end' }}><Text style={styles.infoRowValue}>{fmt(honorairesCourtage)}</Text></View>
-            </View>
-            {isAMO ? (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoRowLabel}>Honoraires AMO solde ({(tauxAmo * 100).toFixed(1)}%) — à la fin du chantier</Text>
-                <View style={{ alignItems: 'flex-end' }}><Text style={styles.infoRowValue}>{fmt(honorairesAMO - honorairesCourtage)}</Text></View>
-              </View>
-            ) : null}
-            {isAMO ? (
-              <View style={[styles.infoRow, { backgroundColor: BLEU_CLAIR, borderRadius: 4, paddingHorizontal: 8 }]}>
-                <Text style={styles.cellBold}>Total honoraires AMO ({((tauxCourtage + tauxAmo) * 100).toFixed(1)}%)</Text>
-                <Text style={styles.cellRightBold}>{fmt(honorairesAMO)}</Text>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-
+        {buildHonorairesSection(dossier, baseCourtageHTTC, honorairesCourtage, honorairesAMO)}
         <View style={styles.montantBlock}>
-          <Text style={styles.montantLabel}>TOTAL PROJET</Text>
+          <Text style={styles.montantLabel}>TOTAL PROJET SIGNÉ</Text>
           <Text style={styles.montantValue}>
             {fmt(totalDevisTTCSignes + (isAMO ? honorairesAMO : isCourtage ? honorairesCourtage : 0) + (dossier.frais_statut === 'offerts' || dossier.frais_deduits ? 0 : fraisTTC))}
           </Text>
         </View>
-
         <View style={styles.footer} fixed>
           <Text style={styles.footerText}>illiCO travaux Martigues — {dossier.reference}</Text>
           <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
@@ -227,6 +271,10 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures }) {
 
 function buildRecapitulatifDocument({ dossier, devis, suiviFinancier, factures }) {
   return React.createElement(RecapitulatifPDF, { dossier, devis, suiviFinancier, factures })
+}
+
+function buildRecapitulatifPrevDocument({ dossier, devis }) {
+  return React.createElement(RecapitulatifPrevPDF, { dossier, devis })
 }
 
 // ── COMPTE-RENDU PDF ──
@@ -387,7 +435,11 @@ export async function POST(request) {
 
     let pdfBuffer
 
-    if (type === 'recapitulatif') {
+    if (type === 'recapitulatif_prev') {
+      const doc = buildRecapitulatifPrevDocument({ dossier, devis: devis || [] })
+      pdfBuffer = await renderToBuffer(doc)
+
+    } else if (type === 'recapitulatif') {
       const { data: suiviFinancier, error: suiviError } = await supabaseAdmin
         .from('suivi_financier').select('*').eq('dossier_id', dossierId)
       if (suiviError) return NextResponse.json({ error: suiviError.message }, { status: 500 })
