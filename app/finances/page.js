@@ -1238,12 +1238,12 @@ export default function Finances() {
       { label: nomFranchisee,  key: 'gainAdminReel',      type: 'total'  },
     ]
     const colonnesAgente = [
-      { label: 'Frais net',    key: 'fraisNet',           type: 'normal' },
-      { label: 'Com. net',     key: 'comNet',             type: 'normal' },
-      { label: 'Com. apport.', key: 'comApporteursNet',   type: 'normal' },
-      { label: 'Hon. net',     key: 'honReel',            type: 'normal' },
-      { label: 'Apporteur',    key: 'apporteurRembourseNet', type: 'neg' },
-      { label: 'Mes gains',    key: 'gainsAgenteReels',   type: 'total'  },
+      { label: 'Frais net',    key: 'fraisAgenteNet',          type: 'normal' },
+      { label: 'Com. net',     key: 'comAgenteNet',            type: 'normal' },
+      { label: 'Com. apport.', key: 'comApporteursAgenteNet',  type: 'normal' },
+      { label: 'Hon. net',     key: 'honAgenteNet',            type: 'normal' },
+      { label: 'Apporteur',    key: 'apporteurRembourseNet',   type: 'neg'    },
+      { label: 'Mes gains',    key: 'gainsAgenteReels',        type: 'total'  },
     ]
     const colonnes = isMarine ? colonnesMarine : colonnesAgente
     const getDossierMontant = (d, key, periodKey) => {

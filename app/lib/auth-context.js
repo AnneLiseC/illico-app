@@ -36,7 +36,7 @@ export function AuthProvider({ children }) {
       const u = session?.user ?? null
       setUser(u)
       if (!u) { setProfile(null); setUnreadCount(0); setInitialized(true); return }
-      if (event === 'SIGNED_IN') {
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
         const { data } = await supabase.from('profiles').select('*').eq('id', u.id).single()
         setProfile(data)
         loadUnread(u.id)

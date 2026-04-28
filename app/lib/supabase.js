@@ -7,4 +7,10 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 // des conflits d'écriture IndexedDB ("write batch already active")
 export const supabase =
   globalThis.__supabase ??
-  (globalThis.__supabase = createClient(supabaseUrl, supabaseAnonKey))
+  (globalThis.__supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  }))
