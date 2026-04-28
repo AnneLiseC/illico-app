@@ -1,7 +1,8 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../lib/auth-context'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -9,32 +10,28 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const { user, profile, initialized } = useAuth()
+
+  // Redirection pilotée par le contexte auth — évite la race condition
+  useEffect(() => {
+    if (!initialized || !user || !profile) return
+    if (profile.role === 'client') router.replace('/espace-client')
+    else router.replace('/dashboard')
+  }, [initialized, user?.id, profile?.id, profile?.role, router])
 
   const handleLogin = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError('')
 
-    const { data: authData, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
       setError('Email ou mot de passe incorrect')
       setLoading(false)
-      return
     }
-
-    // Vérifier le rôle pour rediriger directement
-    const { data: profData } = await supabase
-      .from('profiles').select('role').eq('id', authData.user.id).single()
-
-    if (profData?.role === 'client') {
-      router.replace('/espace-client')
-    } else {
-      router.replace('/dashboard')
-    }
+    // Pas de router.replace ici : le useEffect ci-dessus s'en charge
+    // quand le contexte auth aura reçu user + profile
   }
 
   return (
