@@ -41,8 +41,11 @@ const normalizeDossier = (d) => ({
 
 function CheckItem({ label, checked, date, onChange, onDateChange, alert, disabled = false, colorClass = '' }) {
   const [localDate, setLocalDate] = useState(date || '')
-
-  useEffect(() => { setLocalDate(date || '') }, [date])
+  const [syncedDate, setSyncedDate] = useState(date)
+  if (syncedDate !== date) {
+    setSyncedDate(date)
+    setLocalDate(date || '')
+  }
 
   const handleCheck = (isChecked) => {
     const autoDate = isChecked && !date ? new Date().toISOString().split('T')[0] : null
@@ -909,7 +912,7 @@ export default function Finances() {
                           {/* En-tête artisan */}
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-medium text-gray-800">🔨 {dv.artisan?.entreprise}</span>
-                            {estApporteur && <span className="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">Apporteur d'affaires</span>}
+                            {estApporteur && <span className="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">Apporteur d&apos;affaires</span>}
                             <span className="text-xs text-gray-400">{(dv.montant_ht || 0).toFixed(2)} € HT / {(dv.montant_ttc || 0).toFixed(2)} € TTC</span>
                             {dv.commission_pourcentage > 0 && dvF && (
                               <span className="text-xs text-gray-500">
@@ -1674,7 +1677,7 @@ export default function Finances() {
                       {redevMois > 0 && <div className="flex justify-between"><span>Redevance mensuelle</span><span>{fmt(redevMois)}</span></div>}
                       {apporteurMois > 0 && <div className="flex justify-between"><span>Apporteur client remboursé</span><span>{fmt(apporteurMois)}</span></div>}
                     </div>
-                    {/* Agente = réceptrice : badge statut + case à cocher "J'ai payé" */}
+                    {/* Agente = réceptrice : badge statut + case à cocher "J&apos;ai payé" */}
                     <div className="flex items-center gap-3 pt-1 border-t border-red-100 flex-wrap">
                       {statutBadge(f2)}
                       {f2?.facture_path && (
@@ -1684,7 +1687,7 @@ export default function Finances() {
                         <input type="checkbox" checked={f2?.statut === 'paye'}
                           onChange={e => upsertFactureMoisType(mois, annee, montantF2, 'ctp_vers_agente', { statut: e.target.checked ? 'paye' : 'facture' })}
                           className="w-4 h-4 accent-red-600" />
-                        <span className="text-xs text-red-700 font-medium">J'ai payé</span>
+                        <span className="text-xs text-red-700 font-medium">J&apos;ai payé</span>
                       </label>
                     </div>
                   </div>
@@ -2363,7 +2366,7 @@ export default function Finances() {
                 <input type="checkbox" checked={f1?.statut === 'paye'}
                   onChange={e => upsertFactureMoisType(mois, annee, gains, 'agente_vers_ctp', { statut: e.target.checked ? 'paye' : 'a_facturer' })}
                   className="w-4 h-4 accent-red-600" />
-                <span className="text-xs text-red-700 font-medium">J'ai payé</span>
+                <span className="text-xs text-red-700 font-medium">J&apos;ai payé</span>
               </label>
             </div>
           </div>
