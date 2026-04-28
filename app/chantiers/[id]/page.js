@@ -2003,11 +2003,10 @@ ${s.contenu}`).join('')
                 </div>
               )}
 
-              {/* Devis */}
-              {/* Devis reçus */}
+              {/* BLOC PRÉVISIONNEL */}
               {devisRecus.length > 0 && (
-                <div className="space-y-1 border-t border-gray-200 pt-2">
-                  <p className="text-xs text-blue-500 font-medium">Devis reçus (reçus + signés) — {devisRecus.length}</p>
+                <div className="border border-blue-200 rounded-lg p-3 space-y-1 bg-blue-50">
+                  <p className="text-xs text-blue-600 font-semibold uppercase">Prévisionnel — {devisRecus.length} devis</p>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Total HT</span>
                     <span className="font-medium text-blue-700">{totalDevisHTRecus.toFixed(2)} €</span>
@@ -2016,80 +2015,83 @@ ${s.contenu}`).join('')
                     <span className="text-gray-500">Total TTC</span>
                     <span className="font-medium text-blue-700">{totalDevisTTCRecus.toFixed(2)} €</span>
                   </div>
-                  {dossier?.typologie === 'courtage' && (
-                    <div className="flex justify-between text-sm border-t border-blue-100 pt-1 mt-1">
-                      <span className="text-gray-400">Honoraires estimés ({tauxCourtagePct}%)</span>
-                      <span className="font-medium text-blue-600">{honorairesCourtagePrev.toFixed(2)} €</span>
-                    </div>
-                  )}
-                  {dossier?.typologie === 'amo' && (
-                    <div className="border-t border-blue-100 pt-1 mt-1 space-y-1">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Honoraires courtage estimés ({tauxCourtagePct}%)</span>
-                        <span className="font-medium text-blue-600">{honorairesCourtagePrev.toFixed(2)} €</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Honoraires AMO estimés ({tauxAmoPct}%)</span>
-                        <span className="font-medium text-blue-600">{(honorairesAMOPrev - honorairesCourtagePrev).toFixed(2)} €</span>
-                      </div>
-                      <div className="flex justify-between text-sm border-t border-blue-100 pt-1 mt-1">
-                        <span className="text-gray-400 font-medium">Total honoraires estimés ({(Number(tauxCourtagePct) + Number(tauxAmoPct)).toFixed(1)}%)</span>
-                        <span className="font-medium text-blue-700">{honorairesAMOPrev.toFixed(2)} €</span>
+                  {['courtage', 'amo'].includes(dossier?.typologie) && (
+                    <div className="border-t border-blue-200 pt-1 mt-1 space-y-1">
+                      {dossier.typologie === 'courtage' && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Honoraires ({tauxCourtagePct}%)</span>
+                          <span className="font-medium text-blue-600">{honorairesCourtagePrev.toFixed(2)} €</span>
+                        </div>
+                      )}
+                      {dossier.typologie === 'amo' && (<>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Honoraires courtage ({tauxCourtagePct}%)</span>
+                          <span className="font-medium text-blue-600">{honorairesCourtagePrev.toFixed(2)} €</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Honoraires AMO ({tauxAmoPct}%)</span>
+                          <span className="font-medium text-blue-600">{(honorairesAMOPrev - honorairesCourtagePrev).toFixed(2)} €</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Total honoraires ({(Number(tauxCourtagePct) + Number(tauxAmoPct)).toFixed(1)}%)</span>
+                          <span className="font-medium text-blue-600">{honorairesAMOPrev.toFixed(2)} €</span>
+                        </div>
+                      </>)}
+                      {fraisInclus && !dossier.frais_deduits && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Frais consultation</span>
+                          <span className="font-medium text-blue-600">{fraisTTC.toFixed(2)} €</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-sm border-t border-blue-300 pt-1 mt-1">
+                        <span className="font-bold text-blue-700">Total chantier prévisionnel</span>
+                        <span className="font-bold text-blue-700">
+                          {(totalDevisTTCRecus + (dossier.typologie === 'amo' ? honorairesAMOPrev : honorairesCourtagePrev) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0)).toFixed(2)} €
+                        </span>
                       </div>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Devis signés */}
-              <div className="space-y-1 border-t border-gray-200 pt-2">
-                <p className="text-xs text-gray-400 font-medium">Devis artisans signés — {devisSignes.length}</p>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total HT</span>
-                   <span className="font-medium text-gray-800">{totalDevisHTSignes.toFixed(2)} €</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total TTC</span>
-                  <span className="font-medium text-gray-800">{totalDevisTTCSignes.toFixed(2)} €</span>
-                </div>
-              </div>
-
-              {/* Honoraires + Total chantier */}
-              {['courtage', 'amo'].includes(dossier.typologie) && (
-                <div className="space-y-1 border-t border-gray-200 pt-2">
-                  {/* ── Signé ── */}
-                  {totalDevisTTCSignes > 0 && (
-                    <>
-                      <p className="text-xs text-gray-400 font-medium">
-                        Honoraires signés (sur {baseCourtageHTTC.toFixed(2)} € TTC
-                        {fraisHT > 0 && <span className="text-purple-500"> — frais déduits</span>})
-                      </p>
+              {/* BLOC SIGNÉ */}
+              {devisSignes.length > 0 && (
+                <div className="border border-gray-200 rounded-lg p-3 space-y-1 bg-white">
+                  <p className="text-xs text-gray-500 font-semibold uppercase">Signé — {devisSignes.length} devis</p>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Total HT</span>
+                    <span className="font-medium text-gray-800">{totalDevisHTSignes.toFixed(2)} €</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Total TTC</span>
+                    <span className="font-medium text-gray-800">{totalDevisTTCSignes.toFixed(2)} €</span>
+                  </div>
+                  {['courtage', 'amo'].includes(dossier?.typologie) && (
+                    <div className="border-t border-gray-200 pt-1 mt-1 space-y-1">
                       {dossier.typologie === 'courtage' && (
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-500">Honoraires courtage ({tauxCourtagePct}%)</span>
-                          <span className="font-medium text-gray-800">{honorairesCourtage.toFixed(2)} €</span>
+                          <span className="text-gray-500">Honoraires ({tauxCourtagePct}%)</span>
+                          <span className="font-medium text-gray-700">{honorairesCourtage.toFixed(2)} €</span>
                         </div>
                       )}
-                      {dossier.typologie === 'amo' && (
-                        <>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Solde courtage ({tauxCourtagePct}%)</span>
-                            <span className="font-medium text-gray-800">{honorairesCourtage.toFixed(2)} €</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Solde AMO ({tauxAmoPct}%)</span>
-                            <span className="font-medium text-gray-800">{(honorairesAMO - honorairesCourtage).toFixed(2)} €</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-500">Total honoraires ({(Number(tauxCourtagePct) + Number(tauxAmoPct)).toFixed(1)}%)</span>
-                            <span className="font-medium text-gray-800">{honorairesAMO.toFixed(2)} €</span>
-                          </div>
-                        </>
-                      )}
+                      {dossier.typologie === 'amo' && (<>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Honoraires courtage ({tauxCourtagePct}%)</span>
+                          <span className="font-medium text-gray-700">{honorairesCourtage.toFixed(2)} €</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Honoraires AMO ({tauxAmoPct}%)</span>
+                          <span className="font-medium text-gray-700">{(honorairesAMO - honorairesCourtage).toFixed(2)} €</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Total honoraires ({(Number(tauxCourtagePct) + Number(tauxAmoPct)).toFixed(1)}%)</span>
+                          <span className="font-medium text-gray-700">{honorairesAMO.toFixed(2)} €</span>
+                        </div>
+                      </>)}
                       {fraisInclus && !dossier.frais_deduits && (
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-500">Frais de consultation</span>
-                          <span className="font-medium text-gray-800">{fraisTTC.toFixed(2)} €</span>
+                          <span className="text-gray-500">Frais consultation</span>
+                          <span className="font-medium text-gray-700">{fraisTTC.toFixed(2)} €</span>
                         </div>
                       )}
                       <div className="flex justify-between text-sm border-t border-gray-200 pt-1 mt-1">
@@ -2098,51 +2100,7 @@ ${s.contenu}`).join('')
                           {(totalDevisTTCSignes + (dossier.typologie === 'amo' ? honorairesAMO : honorairesCourtage) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0)).toFixed(2)} €
                         </span>
                       </div>
-                    </>
-                  )}
-
-                  {/* ── Prévisionnel (reçu + signé) ── */}
-                  {totalDevisTTCRecus > 0 && (
-                    <>
-                      <p className="text-xs text-blue-400 font-medium mt-2">
-                        Honoraires prévisionnels (sur {baseCourtageHTTCPrev.toFixed(2)} € TTC
-                        {fraisHT > 0 && <span className="text-purple-400"> — frais déduits</span>})
-                      </p>
-                      {dossier.typologie === 'courtage' && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-400">Honoraires courtage ({tauxCourtagePct}%)</span>
-                          <span className="font-medium text-blue-600">{honorairesCourtagePrev.toFixed(2)} €</span>
-                        </div>
-                      )}
-                      {dossier.typologie === 'amo' && (
-                        <>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-400">Solde courtage ({tauxCourtagePct}%)</span>
-                            <span className="font-medium text-blue-600">{honorairesCourtagePrev.toFixed(2)} €</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-400">Solde AMO ({tauxAmoPct}%)</span>
-                            <span className="font-medium text-blue-600">{(honorairesAMOPrev - honorairesCourtagePrev).toFixed(2)} €</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-400">Total honoraires ({(Number(tauxCourtagePct) + Number(tauxAmoPct)).toFixed(1)}%)</span>
-                            <span className="font-medium text-blue-600">{honorairesAMOPrev.toFixed(2)} €</span>
-                          </div>
-                        </>
-                      )}
-                      {fraisInclus && !dossier.frais_deduits && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-400">Frais de consultation</span>
-                          <span className="font-medium text-blue-600">{fraisTTC.toFixed(2)} €</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between text-sm border-t border-blue-100 pt-1 mt-1">
-                        <span className="font-bold text-blue-700">Total chantier prévisionnel</span>
-                        <span className="font-bold text-blue-700">
-                          {(totalDevisTTCRecus + (dossier.typologie === 'amo' ? honorairesAMOPrev : honorairesCourtagePrev) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0)).toFixed(2)} €
-                        </span>
-                      </div>
-                    </>
+                    </div>
                   )}
                 </div>
               )}
