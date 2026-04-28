@@ -100,9 +100,11 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures }) {
   const totalDevisHTSignes = devisAcceptes.reduce((s, d) => s + toNumber(d.montant_ht), 0)
   const tauxCourtage = toNumber(dossier.taux_courtage ?? 0.06)
   const tauxAmo = toNumber(dossier.honoraires_amo_taux ?? 9) / 100
-  const honorairesCourtage = totalDevisTTCSignes * tauxCourtage
-  const honorairesAMO = totalDevisTTCSignes * (tauxCourtage + tauxAmo)
   const fraisTTC = toNumber(dossier.frais_consultation)
+  const fraisHT = (dossier.frais_deduits && fraisTTC) ? fraisTTC / 1.2 : 0
+  const baseCourtageHTTC = totalDevisTTCSignes - (fraisHT * 1.2)
+  const honorairesCourtage = baseCourtageHTTC * tauxCourtage
+  const honorairesAMO = baseCourtageHTTC * (tauxCourtage + tauxAmo)
   const isAMO = dossier.typologie === 'amo'
   const isCourtage = ['courtage', 'amo'].includes(dossier.typologie)
   const dateAuj = new Date().toLocaleDateString('fr-FR')
