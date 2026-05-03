@@ -71,9 +71,6 @@ export default function FicheArtisan({ params }) {
         metier: artisan.metier,
         decennale_expiration: artisan.decennale_expiration,
         sans_royalties: artisan.sans_royalties || false,
-        rib_iban: artisan.rib_iban || null,
-        rib_bic: artisan.rib_bic || null,
-        rib_titulaire: artisan.rib_titulaire || null,
       })
       .eq('id', id)
 
