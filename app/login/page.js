@@ -28,10 +28,8 @@ export default function Login() {
 
     if (error) {
       setError('Email ou mot de passe incorrect')
-      setLoading(false)
     }
-    // Pas de router.replace ici : le useEffect ci-dessus s'en charge
-    // quand le contexte auth aura reçu user + profile
+    setLoading(false)
   }
 
   return (
