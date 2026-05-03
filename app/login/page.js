@@ -12,9 +12,9 @@ export default function Login() {
   const router = useRouter()
   const { user, profile, initialized } = useAuth()
 
-  // Redirection pilotée par le contexte auth — évite la race condition
   useEffect(() => {
-    if (!initialized || !user || !profile) return
+    if (!initialized || !user) return
+    if (!profile) { router.replace('/dashboard'); return }
     if (profile.role === 'client') router.replace('/espace-client')
     else router.replace('/dashboard')
   }, [initialized, user?.id, profile?.id, profile?.role, router])
