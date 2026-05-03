@@ -24,12 +24,14 @@ export default function Login() {
     setLoading(true)
     setError('')
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-
-    if (error) {
-      setError('Email ou mot de passe incorrect')
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) setError('Email ou mot de passe incorrect')
+    } catch {
+      setError('Erreur de connexion, veuillez réessayer')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   return (
