@@ -1004,9 +1004,10 @@ ${s.contenu}`).join('')
     refuse: { label: 'Refusé', color: 'bg-red-100 text-red-600' },
   }
   const fraisStatutConfig = {
-    offerts: { label: 'Offerts', color: 'bg-blue-100 text-blue-700' },
-    factures: { label: 'Facturés — en attente', color: 'bg-amber-100 text-amber-700' },
-    regle: { label: 'Réglés', color: 'bg-green-100 text-green-700' },
+    offerts:    { label: 'Offerts',               color: 'bg-blue-100 text-blue-700' },
+    factures:   { label: 'Facturés — en attente', color: 'bg-amber-100 text-amber-700' },
+    regle:      { label: 'Réglés',                color: 'bg-green-100 text-green-700' },
+    rembourse:  { label: 'Remboursé',             color: 'bg-purple-100 text-purple-700' },
   }
 
   const devisSignes = devis.filter(d => d.statut === 'accepte' && d.date_signature && d.montant_ttc)
@@ -1072,8 +1073,8 @@ ${s.contenu}`).join('')
   if (!dossier) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-gray-400">Chantier introuvable</p></div>
 
   const nomComplet = client ? `${client.civilite} ${client.prenom} ${client.nom}${client.prenom2 ? ` & ${client.prenom2} ${client.nom2}` : ''}` : ''
-  const s = statutConfig[dossier.statut]
-  const f = fraisStatutConfig[dossier.frais_statut]
+  const s = statutConfig[dossier.statut] ?? { label: dossier.statut ?? '—', color: 'bg-gray-100 text-gray-600' }
+  const f = fraisStatutConfig[dossier.frais_statut] ?? { label: dossier.frais_statut ?? '—', color: 'bg-gray-100 text-gray-600' }
 
   const supprimerChantier = async () => {
     const ok = confirm(
