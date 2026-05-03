@@ -21,27 +21,25 @@ export function AuthProvider({ children }) {
   }, [])
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      const u = session?.user ?? null
-      setUser(u)
-      if (u) {
-        const { data } = await supabase.from('profiles').select('*').eq('id', u.id).single()
-        setProfile(data)
-        loadUnread(u.id)
-      }
-      setInitialized(true)
-    })
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       const u = session?.user ?? null
       setUser(u)
-      if (!u) { setProfile(null); setUnreadCount(0); setInitialized(true); return }
-      if (event === 'SIGNED_IN') {
-        const { data } = await supabase.from('profiles').select('*').eq('id', u.id).single()
-        setProfile(data)
-        loadUnread(u.id)
+      if (!u) {
+        setProfile(null)
+        setUnreadCount(0)
         setInitialized(true)
+        return
       }
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        try {
+          const { data } = await supabase.from('profiles').select('*').eq('id', u.id).single()
+          setProfile(data)
+          loadUnread(u.id)
+        } catch {
+          setProfile(null)
+        }
+      }
+      setInitialized(true)
     })
 
     return () => subscription.unsubscribe()
