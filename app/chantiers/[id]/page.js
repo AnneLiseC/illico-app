@@ -748,14 +748,23 @@ export default function FicheChantier({ params }) {
     setSucces('Devis modifié ✓')
   }
 
+  const parseDateFR = (str) => {
+    if (!str) return null
+    const parts = str.split('/')
+    if (parts.length !== 3) return null
+    const [j, m, a] = parts
+    if (!j || !m || !a || a.length !== 4) return null
+    return `${a}-${m.padStart(2,'0')}-${j.padStart(2,'0')}`
+  }
+
   const changerStatutDevis = async (devisId, statut) => {
     if (statut === 'accepte') {
       const aujourd_hui = new Date().toISOString().slice(0, 10)
       const [annee, mois, jour] = aujourd_hui.split('-')
       const dateSignature = prompt('Date de signature du devis (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
-      if (dateSignature) {
-        const [j, m, a] = dateSignature.split('/')
-        await supabase.from('devis_artisans').update({ statut, date_signature: `${a}-${m.padStart(2,'0')}-${j.padStart(2,'0')}` }).eq('id', devisId)
+      const dateParsee = parseDateFR(dateSignature)
+      if (dateSignature && dateParsee) {
+        await supabase.from('devis_artisans').update({ statut, date_signature: dateParsee }).eq('id', devisId)
       } else {
         await supabase.from('devis_artisans').update({ statut: 'recu' }).eq('id', devisId)
       }
@@ -785,11 +794,11 @@ export default function FicheChantier({ params }) {
         const aujourd_hui = new Date().toISOString().slice(0, 10)
         const [annee, mois, jour] = aujourd_hui.split('-')
         const dateSignature = prompt('Date de signature du devis (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
-        if (dateSignature) {
-          const [j, m, a] = dateSignature.split('/')
+        const dateParsee = parseDateFR(dateSignature)
+        if (dateSignature && dateParsee) {
           await supabase.from('devis_artisans').update({
             statut: 'accepte',
-            date_signature: `${a}-${m.padStart(2,'0')}-${j.padStart(2,'0')}`
+            date_signature: dateParsee,
           }).eq('id', devisId)
         }
       }
@@ -1106,7 +1115,7 @@ ${s.contenu}`).join('')
 
       const { data: devisData, error: devisErr } = await supabase
         .from('devis_artisans')
-        .select('id, devis_signe_path, facture_path')
+        .select('id, devis_signe_path, pdf_path')
         .eq('dossier_id', id)
 
       if (devisErr) throw devisErr
@@ -1117,7 +1126,7 @@ ${s.contenu}`).join('')
         .filter(Boolean)
 
       const documentPaths = (devisData || [])
-        .flatMap(d => [d.devis_signe_path, d.facture_path])
+        .flatMap(d => [d.devis_signe_path, d.pdf_path])
         .filter(Boolean)
 
       if (photoPaths.length > 0) {
@@ -1359,9 +1368,9 @@ ${s.contenu}`).join('')
                           const today = new Date().toISOString().slice(0, 10)
                           const [annee, mois, jour] = today.split('-')
                           const saisi = prompt('Date de signature du contrat (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
-                          if (saisi) {
-                            const [j, m, a] = saisi.split('/')
-                            dateSignature = `${a}-${m.padStart(2,'0')}-${j.padStart(2,'0')}`
+                          const dateParsee = parseDateFR(saisi)
+                          if (saisi && dateParsee) {
+                            dateSignature = dateParsee
                           }
                         }
                         await supabase.from('dossiers').update({ contrat_signe: signe, date_signature_contrat: signe ? dateSignature : null }).eq('id', id)
