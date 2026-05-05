@@ -35,7 +35,7 @@ function NouveauChantierForm() {
         .single()
       setProfile(profData)
 
-      setForm(f => ({ ...f, part_agente: parseFloat(profData?.part_agente_defaut) ?? 0.5 }))
+      setForm(f => ({ ...f, part_agente: parseFloat(profData?.part_agente_defaut) || 0.5 }))
 
       if (clientId) {
         const { data: clientData } = await supabase

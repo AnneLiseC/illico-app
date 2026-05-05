@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from './supabase'
 
 const AuthContext = createContext(null)
@@ -9,6 +9,7 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [initialized, setInitialized] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+  const prevUserIdRef = useRef(null)
 
   const loadUnread = useCallback(async (uid) => {
     if (!uid) { setUnreadCount(0); return }
@@ -25,12 +26,15 @@ export function AuthProvider({ children }) {
       const u = session?.user ?? null
       setUser(u)
       if (!u) {
+        prevUserIdRef.current = null
         setProfile(null)
         setUnreadCount(0)
         setInitialized(true)
         return
       }
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+      const userChanged = prevUserIdRef.current !== u.id
+      prevUserIdRef.current = u.id
+      if (userChanged || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         try {
           const { data } = await supabase.from('profiles').select('*').eq('id', u.id).single()
           setProfile(data)
