@@ -81,7 +81,7 @@ export default function MessageriePage() {
   const envoyer = async () => {
     if (!reponse.trim() || !profile) return
     setSending(true)
-    const { data: newMsg } = await supabase.from('messages').insert({
+    const { data: newMsg, error } = await supabase.from('messages').insert({
       dossier_id: dossierId,
       auteur_id: profile.id,
       auteur_role: profile.role === 'admin' ? 'admin' : 'agente',
@@ -89,8 +89,12 @@ export default function MessageriePage() {
       lu: false,
       lu_agence: true,
     }).select('*, auteur:profiles(prenom, nom, role)').single()
-    if (newMsg) setMessages(prev => [...prev, newMsg])
-    setReponse('')
+    if (error) {
+      alert('Erreur lors de l\'envoi : ' + error.message)
+    } else {
+      if (newMsg) setMessages(prev => [...prev, newMsg])
+      setReponse('')
+    }
     setSending(false)
   }
 

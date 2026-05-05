@@ -35,7 +35,7 @@ function NouveauChantierForm() {
         .single()
       setProfile(profData)
 
-      setForm(f => ({ ...f, part_agente: parseFloat(profData?.part_agente_defaut) ?? 0.5 }))
+      setForm(f => ({ ...f, part_agente: parseFloat(profData?.part_agente_defaut) || 0.5 }))
 
       if (clientId) {
         const { data: clientData } = await supabase
@@ -73,27 +73,34 @@ function NouveauChantierForm() {
     setLoading(true)
     setErreur('')
 
-    const reference = genererReference(form.typologie, client?.nom)
+    try {
+      const reference = genererReference(form.typologie, client?.nom)
 
-    const { data, error } = await supabase.from('dossiers').insert({
-      reference,
-      client_id: clientId,
-      referente_id: profile?.id,
-      typologie: form.typologie,
-      statut: 'en_cours',
-      frais_consultation: form.frais_consultation ? parseFloat(form.frais_consultation) : null,
-      description: form.description || null,
-      frais_statut: form.frais_statut,
-      date_limite_devis: form.date_limite_devis || null,
-      part_agente: form.part_agente ?? profile?.part_agente_defaut ?? 0.5,
-      frais_part_agente: profile?.frais_part_agente_defaut ?? null,
-    }).select()
+      const { data, error } = await supabase.from('dossiers').insert({
+        reference,
+        client_id: clientId,
+        referente_id: profile?.id,
+        typologie: form.typologie,
+        statut: 'en_cours',
+        frais_consultation: form.frais_consultation ? parseFloat(form.frais_consultation) : null,
+        description: form.description || null,
+        frais_statut: form.frais_statut,
+        date_limite_devis: form.date_limite_devis || null,
+        part_agente: form.part_agente ?? profile?.part_agente_defaut ?? 0.5,
+        frais_part_agente: profile?.frais_part_agente_defaut ?? null,
+      }).select()
 
-    if (error) {
-      setErreur('Erreur : ' + error.message)
+      if (error) {
+        setErreur('Erreur : ' + error.message)
+      } else if (data?.[0]?.id) {
+        router.push(`/chantiers/${data[0].id}`)
+      } else {
+        setErreur('Erreur : impossible de créer le chantier.')
+      }
+    } catch (err) {
+      setErreur('Erreur inattendue : ' + err.message)
+    } finally {
       setLoading(false)
-    } else {
-      router.push(`/chantiers/${data[0].id}`)
     }
   }
 

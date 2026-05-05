@@ -505,32 +505,37 @@ export default function Finances() {
     const updates = typeof champOrUpdates === 'object'
       ? champOrUpdates
       : { [champOrUpdates]: valeur }
-    let query = supabase.from('suivi_financier').select('id')
-      .eq('dossier_id', dossierId).eq('type_echeance', type)
-    query = artisanId ? query.eq('artisan_id', artisanId) : query.is('artisan_id', null)
-    const { data: existing } = await query.maybeSingle()
+    try {
+      let query = supabase.from('suivi_financier').select('id')
+        .eq('dossier_id', dossierId).eq('type_echeance', type)
+      query = artisanId ? query.eq('artisan_id', artisanId) : query.is('artisan_id', null)
+      const { data: existing } = await query.maybeSingle()
 
-    if (existing) {
-      await supabase.from('suivi_financier').update(updates).eq('id', existing.id)
-    } else {
-      await supabase.from('suivi_financier').insert({
-        dossier_id: dossierId, type_echeance: type,
-        artisan_id: artisanId || null, ...updates,
-      })
-    }
+      let error
+      if (existing) {
+        ;({ error } = await supabase.from('suivi_financier').update(updates).eq('id', existing.id))
+      } else {
+        ;({ error } = await supabase.from('suivi_financier').insert({
+          dossier_id: dossierId, type_echeance: type,
+          artisan_id: artisanId || null, ...updates,
+        }))
+      }
+      if (error) { alert('Erreur sauvegarde : ' + error.message); return }
 
-    // Sync frais_statut sur dossiers
-    if (type === 'frais_consultation' && updates.statut_client !== undefined) {
-      await supabase.from('dossiers').update({ frais_statut: updates.statut_client }).eq('id', dossierId)
-    }
+      // Sync frais_statut sur dossiers
+      if (type === 'frais_consultation' && updates.statut_client !== undefined) {
+        await supabase.from('dossiers').update({ frais_statut: updates.statut_client }).eq('id', dossierId)
+      }
 
-    if (type === 'facture_finale' && updates.statut_client !== undefined && artisanId) {
-      const statutFacture = updates.statut_client === 'regle' ? 'paye' : 'en_attente'
-      await supabase.from('factures_artisans').update({ statut: statutFacture })
-        .eq('dossier_id', dossierId).eq('artisan_id', artisanId)
+      if (type === 'facture_finale' && updates.statut_client !== undefined && artisanId) {
+        const statutFacture = updates.statut_client === 'regle' ? 'paye' : 'en_attente'
+        await supabase.from('factures_artisans').update({ statut: statutFacture })
+          .eq('dossier_id', dossierId).eq('artisan_id', artisanId)
+      }
+      await chargerTout()
+    } finally {
+      setSaving(false)
     }
-    await chargerTout()
-    setSaving(false)
   }
 
   // ── ALERTES ────────────────────────────────────────────────────────────────

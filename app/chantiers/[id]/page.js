@@ -410,41 +410,50 @@ export default function FicheChantier({ params }) {
   const creerInterventionDossier = async () => {
     if (!nouvIntervArtisanId) return
     setSaving(true)
-    const payload = {
-      dossier_id: id,
-      artisan_id: nouvIntervArtisanId,
-      type_intervention: nouvIntervForm.type_intervention,
-      date_debut: nouvIntervForm.date_debut || null,
-      date_fin: nouvIntervForm.type_intervention === 'periode' ? nouvIntervForm.date_fin || null : null,
-      jours_specifiques: nouvIntervForm.type_intervention === 'jours_specifiques' ? nouvIntervForm.jours_specifiques : null,
-      notes: nouvIntervForm.notes || null,
+    setErreur('')
+    try {
+      const payload = {
+        dossier_id: id,
+        artisan_id: nouvIntervArtisanId,
+        type_intervention: nouvIntervForm.type_intervention,
+        date_debut: nouvIntervForm.date_debut || null,
+        date_fin: nouvIntervForm.type_intervention === 'periode' ? nouvIntervForm.date_fin || null : null,
+        jours_specifiques: nouvIntervForm.type_intervention === 'jours_specifiques' ? nouvIntervForm.jours_specifiques : null,
+        notes: nouvIntervForm.notes || null,
+      }
+      const { data: intData, error: insertErr } = await supabase.from('interventions_artisans').insert(payload).select('*, artisan:artisans(id, entreprise)')
+      if (insertErr) { setErreur('Erreur : ' + insertErr.message); return }
+      // Sync Google si connecté (non bloquant)
+      if (intData?.[0] && profile?.id) {
+        fetch('/api/google/calendar/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: profile.id, singleIntervId: intData[0].id }),
+        }).catch(() => {})
+      }
+      await chargerRdvsDossier()
+      setModalCreerIntervOuvert(false)
+      setNouvIntervArtisanId(null)
+      setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '' })
+      setSucces('Intervention planifiée ✓')
+    } catch (err) {
+      setErreur('Erreur inattendue : ' + err.message)
+    } finally {
+      setSaving(false)
     }
-    const { data: intData } = await supabase.from('interventions_artisans').insert(payload).select('*, artisan:artisans(id, entreprise)')
-    // Sync Google si connecté
-    if (intData?.[0] && profile?.id) {
-      await fetch('/api/google/calendar/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: profile.id, singleIntervId: intData[0].id }),
-      })
-    }
-    await chargerRdvsDossier()
-    setModalCreerIntervOuvert(false)
-    setNouvIntervArtisanId(null)
-    setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '' })
-    setSucces('Intervention planifiée ✓')
-    setSaving(false)
   }
 
   const modifierInterventionDossier = async () => {
     if (!interventionEnEdition) return
-    await supabase.from('interventions_artisans').update({
+    setErreur('')
+    const { error } = await supabase.from('interventions_artisans').update({
       type_intervention: interventionEnEdition.type_intervention,
       date_debut: interventionEnEdition.date_debut || null,
       date_fin: interventionEnEdition.type_intervention === 'periode' ? interventionEnEdition.date_fin || null : null,
       jours_specifiques: interventionEnEdition.type_intervention === 'jours_specifiques' ? interventionEnEdition.jours_specifiques : null,
       notes: interventionEnEdition.notes || null,
     }).eq('id', interventionEnEdition.id)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerRdvsDossier()
     setModalInterventionOuvert(false)
     setInterventionEnEdition(null)
@@ -739,14 +748,23 @@ export default function FicheChantier({ params }) {
     setSucces('Devis modifié ✓')
   }
 
+  const parseDateFR = (str) => {
+    if (!str) return null
+    const parts = str.split('/')
+    if (parts.length !== 3) return null
+    const [j, m, a] = parts
+    if (!j || !m || !a || a.length !== 4) return null
+    return `${a}-${m.padStart(2,'0')}-${j.padStart(2,'0')}`
+  }
+
   const changerStatutDevis = async (devisId, statut) => {
     if (statut === 'accepte') {
       const aujourd_hui = new Date().toISOString().slice(0, 10)
       const [annee, mois, jour] = aujourd_hui.split('-')
       const dateSignature = prompt('Date de signature du devis (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
-      if (dateSignature) {
-        const [j, m, a] = dateSignature.split('/')
-        await supabase.from('devis_artisans').update({ statut, date_signature: `${a}-${m.padStart(2,'0')}-${j.padStart(2,'0')}` }).eq('id', devisId)
+      const dateParsee = parseDateFR(dateSignature)
+      if (dateSignature && dateParsee) {
+        await supabase.from('devis_artisans').update({ statut, date_signature: dateParsee }).eq('id', devisId)
       } else {
         await supabase.from('devis_artisans').update({ statut: 'recu' }).eq('id', devisId)
       }
@@ -776,11 +794,11 @@ export default function FicheChantier({ params }) {
         const aujourd_hui = new Date().toISOString().slice(0, 10)
         const [annee, mois, jour] = aujourd_hui.split('-')
         const dateSignature = prompt('Date de signature du devis (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
-        if (dateSignature) {
-          const [j, m, a] = dateSignature.split('/')
+        const dateParsee = parseDateFR(dateSignature)
+        if (dateSignature && dateParsee) {
           await supabase.from('devis_artisans').update({
             statut: 'accepte',
-            date_signature: `${a}-${m.padStart(2,'0')}-${j.padStart(2,'0')}`
+            date_signature: dateParsee,
           }).eq('id', devisId)
         }
       }
@@ -1097,7 +1115,7 @@ ${s.contenu}`).join('')
 
       const { data: devisData, error: devisErr } = await supabase
         .from('devis_artisans')
-        .select('id, devis_signe_path, facture_path')
+        .select('id, devis_signe_path, pdf_path')
         .eq('dossier_id', id)
 
       if (devisErr) throw devisErr
@@ -1108,7 +1126,7 @@ ${s.contenu}`).join('')
         .filter(Boolean)
 
       const documentPaths = (devisData || [])
-        .flatMap(d => [d.devis_signe_path, d.facture_path])
+        .flatMap(d => [d.devis_signe_path, d.pdf_path])
         .filter(Boolean)
 
       if (photoPaths.length > 0) {
@@ -1350,9 +1368,9 @@ ${s.contenu}`).join('')
                           const today = new Date().toISOString().slice(0, 10)
                           const [annee, mois, jour] = today.split('-')
                           const saisi = prompt('Date de signature du contrat (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
-                          if (saisi) {
-                            const [j, m, a] = saisi.split('/')
-                            dateSignature = `${a}-${m.padStart(2,'0')}-${j.padStart(2,'0')}`
+                          const dateParsee = parseDateFR(saisi)
+                          if (saisi && dateParsee) {
+                            dateSignature = dateParsee
                           }
                         }
                         await supabase.from('dossiers').update({ contrat_signe: signe, date_signature_contrat: signe ? dateSignature : null }).eq('id', id)
@@ -2209,7 +2227,7 @@ ${s.contenu}`).join('')
           <h2 className="font-semibold text-gray-800">Photos du chantier</h2>
           <div className="flex gap-2 flex-wrap">
             {['avant', 'pendant', 'apres', 'maquette'].map(cat => (
-              <button key={cat} onClick={() => {setCategorie(cat); setPhotosAffichees(3)}}
+              <button key={cat} onClick={() => {setCategorie(cat); setPhotosAffichees(3); setPhotoOuverte(null)}}
                 className={`text-xs px-3 py-1.5 rounded-full border transition-all ${categorie === cat ? 'bg-blue-800 text-white border-blue-800' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
                 {cat === 'avant' ? 'Avant' : cat === 'pendant' ? 'Pendant' : cat === 'apres' ? 'Après' : 'Maquette'}
                 {photos.filter(p => p.categorie === cat).length > 0 && <span className="ml-1">({photos.filter(p => p.categorie === cat).length})</span>}

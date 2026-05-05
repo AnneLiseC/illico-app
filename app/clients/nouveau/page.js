@@ -89,8 +89,11 @@ export default function NouveauClient() {
     if (error) {
       setErreur('Erreur : ' + error.message)
       setLoading(false)
-    } else {
+    } else if (data?.[0]?.id) {
       router.push(`/chantiers/nouveau?client=${data[0].id}`)
+    } else {
+      setErreur('Erreur : impossible de créer le client.')
+      setLoading(false)
     }
   }
 

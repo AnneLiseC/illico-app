@@ -69,29 +69,34 @@ export default function NouvelArtisan() {
       return
     }
 
-    const artisanId = artisanInsere.id
+    try {
+      const artisanId = artisanInsere.id
 
-    // Upload Kbis si fourni
-    if (fichiers.kbis) {
-      const ext = fichiers.kbis.name.split('.').pop()
-      const chemin = `artisans/${artisanId}/kbis.${ext}`
-      const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, fichiers.kbis)
-      if (!uploadError) {
-        await supabase.from('artisans').update({ kbis_url: chemin }).eq('id', artisanId)
+      // Upload Kbis si fourni
+      if (fichiers.kbis) {
+        const ext = fichiers.kbis.name.split('.').pop()
+        const chemin = `artisans/${artisanId}/kbis.${ext}`
+        const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, fichiers.kbis)
+        if (!uploadError) {
+          await supabase.from('artisans').update({ kbis_url: chemin }).eq('id', artisanId)
+        }
       }
-    }
 
-    // Upload Décennale si fournie
-    if (fichiers.decennale) {
-      const ext = fichiers.decennale.name.split('.').pop()
-      const chemin = `artisans/${artisanId}/decennale.${ext}`
-      const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, fichiers.decennale)
-      if (!uploadError) {
-        await supabase.from('artisans').update({ decennale_url: chemin }).eq('id', artisanId)
+      // Upload Décennale si fournie
+      if (fichiers.decennale) {
+        const ext = fichiers.decennale.name.split('.').pop()
+        const chemin = `artisans/${artisanId}/decennale.${ext}`
+        const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, fichiers.decennale)
+        if (!uploadError) {
+          await supabase.from('artisans').update({ decennale_url: chemin }).eq('id', artisanId)
+        }
       }
-    }
 
-    router.push(`/artisans/${artisanId}`)
+      router.push(`/artisans/${artisanId}`)
+    } catch (err) {
+      setErreur('Erreur inattendue : ' + err.message)
+      setSaving(false)
+    }
   }
 
   return (
