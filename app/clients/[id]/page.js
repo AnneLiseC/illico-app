@@ -39,7 +39,8 @@ export default function FicheClient({ params }) {
         .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role)')
         .eq('id', id)
         .single()
-        const sameAddress = !clientData?.adresse_chantier ||
+      if (!clientData) { setLoading(false); return }
+      const sameAddress = !clientData.adresse_chantier ||
         clientData.adresse_chantier === clientData.adresse
       setClient({ ...clientData, adresse_chantier_identique: sameAddress })
       

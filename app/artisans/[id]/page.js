@@ -134,7 +134,9 @@ export default function FicheArtisan({ params }) {
       url,
     })
 
-    if (!error) {
+    if (error) {
+      setErreur('Erreur : ' + error.message)
+    } else {
       await chargerFiches()
       setAjouterFiche(false)
       setNouvelleFiche({ nom: '', description: '', fichier: null })
