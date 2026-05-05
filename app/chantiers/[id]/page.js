@@ -410,41 +410,50 @@ export default function FicheChantier({ params }) {
   const creerInterventionDossier = async () => {
     if (!nouvIntervArtisanId) return
     setSaving(true)
-    const payload = {
-      dossier_id: id,
-      artisan_id: nouvIntervArtisanId,
-      type_intervention: nouvIntervForm.type_intervention,
-      date_debut: nouvIntervForm.date_debut || null,
-      date_fin: nouvIntervForm.type_intervention === 'periode' ? nouvIntervForm.date_fin || null : null,
-      jours_specifiques: nouvIntervForm.type_intervention === 'jours_specifiques' ? nouvIntervForm.jours_specifiques : null,
-      notes: nouvIntervForm.notes || null,
+    setErreur('')
+    try {
+      const payload = {
+        dossier_id: id,
+        artisan_id: nouvIntervArtisanId,
+        type_intervention: nouvIntervForm.type_intervention,
+        date_debut: nouvIntervForm.date_debut || null,
+        date_fin: nouvIntervForm.type_intervention === 'periode' ? nouvIntervForm.date_fin || null : null,
+        jours_specifiques: nouvIntervForm.type_intervention === 'jours_specifiques' ? nouvIntervForm.jours_specifiques : null,
+        notes: nouvIntervForm.notes || null,
+      }
+      const { data: intData, error: insertErr } = await supabase.from('interventions_artisans').insert(payload).select('*, artisan:artisans(id, entreprise)')
+      if (insertErr) { setErreur('Erreur : ' + insertErr.message); return }
+      // Sync Google si connecté (non bloquant)
+      if (intData?.[0] && profile?.id) {
+        fetch('/api/google/calendar/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: profile.id, singleIntervId: intData[0].id }),
+        }).catch(() => {})
+      }
+      await chargerRdvsDossier()
+      setModalCreerIntervOuvert(false)
+      setNouvIntervArtisanId(null)
+      setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '' })
+      setSucces('Intervention planifiée ✓')
+    } catch (err) {
+      setErreur('Erreur inattendue : ' + err.message)
+    } finally {
+      setSaving(false)
     }
-    const { data: intData } = await supabase.from('interventions_artisans').insert(payload).select('*, artisan:artisans(id, entreprise)')
-    // Sync Google si connecté
-    if (intData?.[0] && profile?.id) {
-      await fetch('/api/google/calendar/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: profile.id, singleIntervId: intData[0].id }),
-      })
-    }
-    await chargerRdvsDossier()
-    setModalCreerIntervOuvert(false)
-    setNouvIntervArtisanId(null)
-    setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '' })
-    setSucces('Intervention planifiée ✓')
-    setSaving(false)
   }
 
   const modifierInterventionDossier = async () => {
     if (!interventionEnEdition) return
-    await supabase.from('interventions_artisans').update({
+    setErreur('')
+    const { error } = await supabase.from('interventions_artisans').update({
       type_intervention: interventionEnEdition.type_intervention,
       date_debut: interventionEnEdition.date_debut || null,
       date_fin: interventionEnEdition.type_intervention === 'periode' ? interventionEnEdition.date_fin || null : null,
       jours_specifiques: interventionEnEdition.type_intervention === 'jours_specifiques' ? interventionEnEdition.jours_specifiques : null,
       notes: interventionEnEdition.notes || null,
     }).eq('id', interventionEnEdition.id)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerRdvsDossier()
     setModalInterventionOuvert(false)
     setInterventionEnEdition(null)
