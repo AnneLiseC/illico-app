@@ -2209,7 +2209,7 @@ ${s.contenu}`).join('')
           <h2 className="font-semibold text-gray-800">Photos du chantier</h2>
           <div className="flex gap-2 flex-wrap">
             {['avant', 'pendant', 'apres', 'maquette'].map(cat => (
-              <button key={cat} onClick={() => {setCategorie(cat); setPhotosAffichees(3)}}
+              <button key={cat} onClick={() => {setCategorie(cat); setPhotosAffichees(3); setPhotoOuverte(null)}}
                 className={`text-xs px-3 py-1.5 rounded-full border transition-all ${categorie === cat ? 'bg-blue-800 text-white border-blue-800' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
                 {cat === 'avant' ? 'Avant' : cat === 'pendant' ? 'Pendant' : cat === 'apres' ? 'Après' : 'Maquette'}
                 {photos.filter(p => p.categorie === cat).length > 0 && <span className="ml-1">({photos.filter(p => p.categorie === cat).length})</span>}
