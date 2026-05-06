@@ -4,6 +4,11 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 
+function redirectByRole(role, router) {
+  if (role === 'client') router.replace('/espace-client')
+  else router.replace('/dashboard')
+}
+
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -12,11 +17,10 @@ export default function Login() {
   const router = useRouter()
   const { user, profile, initialized } = useAuth()
 
+  // Redirige si déjà connecté (ex: retour sur /login depuis le navigateur)
   useEffect(() => {
-    if (!initialized || !user) return
-    if (!profile) { router.replace('/dashboard'); return }
-    if (profile.role === 'client') router.replace('/espace-client')
-    else router.replace('/dashboard')
+    if (!initialized || !user || !profile) return
+    redirectByRole(profile.role, router)
   }, [initialized, user?.id, profile?.id, profile?.role, router])
 
   const handleLogin = async (e) => {
@@ -28,17 +32,17 @@ export default function Login() {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) {
         setError('Email ou mot de passe incorrect')
-        setLoading(false)
-      } else {
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', data.user.id)
-          .single()
-        router.replace(profileData?.role === 'client' ? '/espace-client' : '/dashboard')
+        return
       }
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', data.user.id)
+        .single()
+      redirectByRole(profileData?.role, router)
     } catch {
       setError('Erreur de connexion, veuillez réessayer')
+    } finally {
       setLoading(false)
     }
   }
