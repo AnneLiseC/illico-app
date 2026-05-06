@@ -216,7 +216,6 @@ export default function MessageriePage() {
             </div>
           </div>
         </div>
-      </div>
     </div>
   )
 }
