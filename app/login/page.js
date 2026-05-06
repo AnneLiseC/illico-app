@@ -32,6 +32,7 @@ export default function Login() {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) {
         setError('Email ou mot de passe incorrect')
+        setLoading(false)
         return
       }
       const { data: profileData } = await supabase
@@ -39,10 +40,10 @@ export default function Login() {
         .select('role')
         .eq('id', data.user.id)
         .single()
-      redirectByRole(profileData?.role, router)
+      const dest = profileData?.role === 'client' ? '/espace-client' : '/dashboard'
+      window.location.replace(dest)
     } catch {
       setError('Erreur de connexion, veuillez réessayer')
-    } finally {
       setLoading(false)
     }
   }
