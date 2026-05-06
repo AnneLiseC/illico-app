@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
@@ -7,7 +7,8 @@ import { useAuth } from '../lib/auth-context'
 export default function Dashboard() {
   const [erreur, setErreur] = useState('')
   const router = useRouter()
-  const { user, profile, initialized } = useAuth()
+  const { user, profile, initialized, fetchProfile } = useAuth()
+  const retriedRef = useRef(false)
 
   useEffect(() => {
     if (!initialized) return
@@ -15,6 +16,13 @@ export default function Dashboard() {
     if (!profile) return
     if (profile.role === 'client') router.replace('/espace-client')
   }, [initialized, user?.id, profile?.id, profile?.role, router])
+
+  // Filet de sécurité : si le profil n'est pas chargé après init, on retente une fois
+  useEffect(() => {
+    if (!initialized || !user || profile || retriedRef.current) return
+    retriedRef.current = true
+    fetchProfile(user.id)
+  }, [initialized, user?.id, profile, fetchProfile])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
