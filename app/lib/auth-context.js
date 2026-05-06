@@ -21,6 +21,16 @@ export function AuthProvider({ children }) {
     setUnreadCount(count || 0)
   }, [])
 
+  const fetchProfile = useCallback(async (uid) => {
+    try {
+      const { data } = await supabase.from('profiles').select('*').eq('id', uid).single()
+      if (data) setProfile(data)
+      loadUnread(uid)
+    } catch {
+      // erreur réseau transitoire, on ne reset pas le profil
+    }
+  }, [loadUnread])
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       const u = session?.user ?? null
@@ -34,20 +44,17 @@ export function AuthProvider({ children }) {
       }
       const userChanged = prevUserIdRef.current !== u.id
       prevUserIdRef.current = u.id
-      if (userChanged || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        try {
-          const { data } = await supabase.from('profiles').select('*').eq('id', u.id).single()
-          setProfile(data)
-          loadUnread(u.id)
-        } catch {
-          setProfile(null)
-        }
+      // Charger le profil uniquement si l'utilisateur change ou au chargement initial.
+      // userChanged couvre SIGNED_IN (première fois) et INITIAL_SESSION (rechargement page).
+      // On exclut les events répétés (TOKEN_REFRESHED, SIGNED_IN dupliqué) via userChanged.
+      if (userChanged || event === 'INITIAL_SESSION') {
+        await fetchProfile(u.id)
       }
       setInitialized(true)
     })
 
     return () => subscription.unsubscribe()
-  }, [loadUnread])
+  }, [fetchProfile])
 
   // Écoute en temps réel les nouvelles notifications
   useEffect(() => {
@@ -86,7 +93,7 @@ export function AuthProvider({ children }) {
   }, [user?.id])
 
   return (
-    <AuthContext.Provider value={{ user, profile, initialized, unreadCount, markAllRead, loadUnread }}>
+    <AuthContext.Provider value={{ user, profile, initialized, unreadCount, markAllRead, loadUnread, fetchProfile }}>
       {children}
     </AuthContext.Provider>
   )
