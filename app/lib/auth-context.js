@@ -10,6 +10,7 @@ export function AuthProvider({ children }) {
   const [initialized, setInitialized] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const prevUserIdRef = useRef(null)
+  const fetchingProfileRef = useRef(false)
 
   const loadUnread = useCallback(async (uid) => {
     if (!uid) { setUnreadCount(0); return }
@@ -34,13 +35,16 @@ export function AuthProvider({ children }) {
       }
       const userChanged = prevUserIdRef.current !== u.id
       prevUserIdRef.current = u.id
-      if (userChanged || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+      if ((userChanged || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && !fetchingProfileRef.current) {
+        fetchingProfileRef.current = true
         try {
           const { data } = await supabase.from('profiles').select('*').eq('id', u.id).single()
-          setProfile(data)
+          if (data) setProfile(data)
           loadUnread(u.id)
         } catch {
-          setProfile(null)
+          // ne pas écraser le profil déjà chargé sur erreur réseau transitoire
+        } finally {
+          fetchingProfileRef.current = false
         }
       }
       setInitialized(true)
