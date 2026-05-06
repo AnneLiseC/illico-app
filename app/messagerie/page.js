@@ -2,11 +2,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
-import NavBar from '../components/navbar'
+import { useAuth } from '../lib/auth-context'
 
 export default function MessageriePage() {
   const router = useRouter()
-  const [profile, setProfile] = useState(null)
+  const { user, profile, initialized } = useAuth()
   const [dossiers, setDossiers] = useState([])
   const [dossierId, setDossierId] = useState(null)
   const [messages, setMessages] = useState([])
@@ -16,21 +16,19 @@ export default function MessageriePage() {
   const messagesEndRef = useRef(null)
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-      const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      setProfile(prof)
+    if (!initialized) return
+    if (!user) { router.replace('/login'); return }
+    if (!profile) return
 
-      // Charger chantiers AMO avec compte de messages non lus
+    const chargerDossiers = async () => {
       const { data: dossData } = await supabase
         .from('dossiers')
         .select('id, reference, client:clients(prenom, nom, raison_sociale)')
         .eq('typologie', 'amo')
         .order('reference')
+
       if (!dossData) { setLoading(false); return }
 
-      // Pour chaque dossier, compter les messages non lus
       const dossiersAvecMsgs = await Promise.all(dossData.map(async (d) => {
         const { count } = await supabase
           .from('messages')
@@ -44,12 +42,12 @@ export default function MessageriePage() {
       setDossiers(dossiersAvecMsgs)
       setLoading(false)
 
-      // Ouvrir le premier chantier avec des messages non lus, sinon le premier
       const premier = dossiersAvecMsgs.find(d => d.nbNonLus > 0) || dossiersAvecMsgs[0]
       if (premier) setDossierId(premier.id)
     }
-    init()
-  }, [router])
+
+    chargerDossiers()
+  }, [initialized, user?.id, profile?.id, router])
 
   // Charger messages quand dossier change
   useEffect(() => {
@@ -104,21 +102,16 @@ export default function MessageriePage() {
     return c.raison_sociale || `${c.prenom || ''} ${c.nom || ''}`.trim() || d.reference
   }
 
-  if (loading) return (
-    <>
-      <NavBar />
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500 text-sm">Chargement...</p>
-      </div>
-    </>
+  if (!initialized || !profile || loading) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <p className="text-gray-500 text-sm">Chargement...</p>
+    </div>
   )
 
   const dossierActif = dossiers.find(d => d.id === dossierId)
 
   return (
-    <>
-      <NavBar />
-      <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
           <h1 className="text-xl font-bold text-gray-800 mb-4">Messagerie</h1>
 
@@ -224,6 +217,6 @@ export default function MessageriePage() {
           </div>
         </div>
       </div>
-    </>
+    </div>
   )
 }
