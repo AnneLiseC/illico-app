@@ -8,7 +8,11 @@ import { useAuth } from '../lib/auth-context'
 import { calculateDossierFinance } from '../lib/finance'
 
 const round2 = (n) => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100
-const fmt = (n) => { const num = Math.round(n || 0); return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0') + '\u00a0€' }
+const fmt = (n) => {
+  const v = (Number(n) || 0).toFixed(2)
+  const [int, dec] = v.split('.')
+  return int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + '.' + dec + ' €'
+}
 const fmtPct = (n, dec = 1) => `${(n || 0).toFixed(dec)}%`
 const fmtDays = (n) => `${Math.round(n || 0)}\u00a0j`
 const MOIS_SHORT = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc']

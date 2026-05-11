@@ -21,8 +21,11 @@ const MOIS_LABELS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Jui
 // ─────────────────────────────────────────────────────────────────────────────
 
 const round2 = (n) => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100
-const fmt    = (n) => (Number(n) || 0).toFixed(2) + ' €'
-
+const fmt = (n) => {
+  const v = (Number(n) || 0).toFixed(2)
+  const [int, dec] = v.split('.')
+  return int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + '.' + dec + ' €'
+}
 const normalizeDossier = (d) => ({
   ...d,
   part_agente: d.part_agente ?? (d.referente?.role === 'admin' ? 0 : 0.5),
@@ -110,9 +113,9 @@ function ObjectifBar({ label, reel, objectifMontant, cible, agenteId = null, can
         )}
       </div>
       <div className="flex items-baseline gap-2">
-        <span className="text-lg font-bold text-gray-800">{(Number(reel) || 0).toFixed(2)} €</span>
+        <span className="text-lg font-bold text-gray-800">{fmt(reel)}</span>
         {objectifMontant > 0 && (
-          <span className="text-xs text-gray-400">/ {(Number(objectifMontant) || 0).toFixed(2)} € · {pct}%</span>
+          <span className="text-xs text-gray-400">/ {fmt(objectifMontant)} · {pct}%</span>
         )}
       </div>
       {objectifMontant > 0 && (
@@ -918,7 +921,7 @@ export default function Finances() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-medium text-gray-800">🔨 {dv.artisan?.entreprise}</span>
                             {estApporteur && <span className="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">Apporteur d&apos;affaires</span>}
-                            <span className="text-xs text-gray-400">{(dv.montant_ht || 0).toFixed(2)} € HT / {(dv.montant_ttc || 0).toFixed(2)} € TTC</span>
+                            <span className="text-xs text-gray-400">{fmt(dv.montant_ht)} HT / {fmt(dv.montant_ttc)} TTC</span>
                             {dv.commission_pourcentage > 0 && dvF && (
                               <span className="text-xs text-gray-500">
                                 Com. {dv.commission_pourcentage}% → {fmt(dvF.comHT)} HT → net {fmt(dvF.netCom)}
@@ -937,7 +940,7 @@ export default function Finances() {
                               {/* Acompte client */}
                               {acompteCalc > 0 && (
                                 <CheckItem
-                                  label={`Acompte client payé — ${acompteCalc.toFixed(2)} € TTC`}
+                                  label={`Acompte client payé — ${fmt(acompteCalc)} TTC`}
                                   checked={suiviAcompte?.statut_client === 'regle'}
                                   date={suiviAcompte?.date_paiement}
                                   onChange={(checked, autoDate) => {
@@ -967,7 +970,7 @@ export default function Finances() {
                               {/* Facture finale AMO */}
                               {d.typologie === 'amo' && (
                                 <CheckItem
-                                  label={`Facture finale client payée — ${soldeCalc.toFixed(2)} € TTC`}
+                                  label={`Facture finale client payée — ${fmt(soldeCalc)} TTC`}
                                   checked={suiviFact?.statut_client === 'regle'}
                                   date={suiviFact?.date_paiement}
                                   onChange={(checked, autoDate) => {
@@ -1243,12 +1246,12 @@ export default function Finances() {
       { label: nomFranchisee,  key: 'gainAdminReel',      type: 'total'  },
     ]
     const colonnesAgente = [
-      { label: 'Frais net',    key: 'fraisNet',           type: 'normal' },
-      { label: 'Com. net',     key: 'comNet',             type: 'normal' },
-      { label: 'Com. apport.', key: 'comApporteursNet',   type: 'normal' },
-      { label: 'Hon. net',     key: 'honReel',            type: 'normal' },
-      { label: 'Apporteur',    key: 'apporteurRembourseNet', type: 'neg' },
-      { label: 'Mes gains',    key: 'gainsAgenteReels',   type: 'total'  },
+      { label: 'Frais net',    key: 'fraisAgenteNet',          type: 'normal' },
+      { label: 'Com. net',     key: 'comAgenteNet',            type: 'normal' },
+      { label: 'Com. apport.', key: 'comApporteursAgenteNet',  type: 'normal' },
+      { label: 'Hon. net',     key: 'honAgenteNet',            type: 'normal' },
+      { label: 'Apporteur',    key: 'apporteurRembourseNet',   type: 'neg'    },
+      { label: 'Mes gains',    key: 'gainsAgenteReels',        type: 'total'  },
     ]
     const colonnes = isMarine ? colonnesMarine : colonnesAgente
     const getDossierMontant = (d, key, periodKey) => {

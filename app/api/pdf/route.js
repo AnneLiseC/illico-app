@@ -29,7 +29,11 @@ const toNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-const fmt = (n) => `${toNumber(n).toFixed(2)} €`
+const fmt = (n) => {
+  const v = toNum(n).toFixed(2)
+  const [int, dec] = v.split('.')
+  return int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ',' + dec + ' €'
+}
 
 function getLogoBase64() {
   const filePath = path.join(process.cwd(), 'public', 'logo.png')

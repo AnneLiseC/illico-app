@@ -25,7 +25,11 @@ const toNum = (v) => {
   const n = Number(String(v).replace(/\s/g, '').replace(',', '.'))
   return Number.isFinite(n) ? n : 0
 }
-const fmt = (n) => `${toNum(n).toFixed(2).replace('.', ',')} €`
+const fmt = (n) => {
+  const v = toNum(n).toFixed(2)
+  const [int, dec] = v.split('.')
+  return int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ',' + dec + ' €'
+}
 
 function getTelReferente(ref) {
   if (!ref) return '06 59 81 06 81'
@@ -469,9 +473,8 @@ async function generateResumeProjet({ crR1, description, devisNotes }) {
 
   if (parts.length === 0) return null
 
-  const prompt = `Tu es un assistant pour illiCO travaux, une société de courtage et assistance à maîtrise d'ouvrage dans le bâtiment.
-
-À partir des éléments ci-dessous, rédige un résumé professionnel et synthétique du projet de rénovation. Le résumé doit être clair, fluide, en français, sans bullet points, en 3 à 5 phrases maximum. Ne mentionne pas les artisans ni les montants. Parle du projet du point de vue du client.
+  const prompt = `Tu es un assistant pour illiCO travaux, une société de courtage en travaux et assistance à maîtrise d'ouvrage dans le bâtiment. 
+  À partir des éléments ci-dessous, rédige un résumé professionnel et synthétique du projet de rénovation. Le résumé doit être clair, fluide, en français, sans bullet points, en 3 à 5 phrases maximum. Ne mentionne pas les artisans ni les montants. Parle du projet du point de vue du client.
 
 ${parts.join('\n\n')}
 
@@ -717,7 +720,7 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
     React.createElement(Page, { key: 'recap', size: 'A4', style: CS.page },
       React.createElement(Hdr, { title: 'Récapitulatif financier', sub: `${dossier.reference} — ${nomClient}`, logo }),
       React.createElement(Text, { style: { fontSize: 8, color: '#f37f2b', fontFamily: 'Helvetica-Oblique', marginBottom: 8 } },
-        "Vue globale — devis signés (engagés) et devis à valider (simulation). Les montants définitifs dépendent de la signature des devis en attente.",
+        "Vue globale — devis signés (engagés) et devis à valider. Les montants définitifs dépendent de la signature des devis en attente.",
       ),
       React.createElement(View, { style: CS.tableHdr },
         React.createElement(Text, { style: [CS.th, { width: 18 }] }, ' '),
@@ -795,7 +798,7 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
           React.createElement(Text, { style: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#f37f2b' } }, fmt(honAMO)),
         ),
         React.createElement(View, { style: CS.totalBlock },
-          React.createElement(Text, { style: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' } }, 'TOTAL PROJET (simulation)'),
+          React.createElement(Text, { style: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' } }, 'TOTAL PROJET'),
           React.createElement(Text, { style: { color: BLANC, fontSize: 13, fontFamily: 'Helvetica-Bold' } }, fmt(totalTTC + (showFrais ? fraisTTC : 0) + (isAMO ? honAMO : honC))),
         ),
       ),
