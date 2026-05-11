@@ -433,7 +433,7 @@ export async function POST(request) {
       const { data: devisComplets } = await supabaseAdmin
         .from('devis_artisans')
         .select('*, artisan:artisans(id, entreprise, metier, kbis_url, decennale_url, decennale_expiration)')
-        .eq('dossier_id', dossierId).order('created_at')
+        .eq('dossier_id', dossierId).order('ordre', { nullsFirst: false }).order('created_at')
 
       const { data: photos } = await supabaseAdmin
         .from('photos').select('*')
@@ -490,7 +490,7 @@ export async function POST(request) {
       const { data: devisComplets } = await supabaseAdmin
         .from('devis_artisans')
         .select('*, artisan:artisans(id, entreprise, metier, kbis_url, decennale_url)')
-        .eq('dossier_id', dossierId).order('created_at')
+        .eq('dossier_id', dossierId).order('ordre', { nullsFirst: false }).order('created_at')
 
       pdfBuffer = await buildDossierR3({
         dossier,
