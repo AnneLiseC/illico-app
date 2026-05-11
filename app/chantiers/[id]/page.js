@@ -889,7 +889,7 @@ export default function FicheChantier({ params }) {
     setCrSavingFinal(true)
     const contenuFinal = crSectionsEditees.map(s => `## ${s.numero}. ${s.titre}
 
-${s.contenu}`).join('')
+  ${s.contenu}`).join('')
     const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('')
     await supabase.from('comptes_rendus').insert({
       dossier_id: id,
@@ -1230,7 +1230,7 @@ ${s.contenu}`).join('')
               <>
                 {/* PDFs — cachés sur mobile */}
                 <div className="hidden sm:flex items-center gap-2">
-                   <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
+                  <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
                     className="border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
                     {generatingPDF === 'recapitulatif_prev' ? '⏳' : '📄 Récap. prévi.'}
                   </button>

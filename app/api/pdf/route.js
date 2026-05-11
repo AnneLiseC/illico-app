@@ -86,7 +86,7 @@ const styles = StyleSheet.create({
 })
 
 // ── RÉCAPITULATIF FINANCIER CLIENT ──
-function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures }) {
+function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = false }) {
   const client = dossier.client
   const nomClient = client
     ? `${client.civilite || ''} ${client.prenom || ''} ${client.nom || ''}`.trim()
@@ -99,7 +99,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures }) {
     audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin',
   }[dossier.typologie] || dossier.typologie || '—'
 
-  const devisAcceptes = (devis || []).filter((d) => d.statut === 'accepte')
+  const devisAcceptes = (devis || []).filter((d) => preview ? (d.statut === 'recu' || d.statut === 'accepte') : d.statut === 'accepte')
   const totalDevisTTCSignes = devisAcceptes.reduce((s, d) => s + toNumber(d.montant_ttc), 0)
   const totalDevisHTSignes = devisAcceptes.reduce((s, d) => s + toNumber(d.montant_ht), 0)
   const tauxCourtage = toNumber(dossier.taux_courtage ?? 0.06)
@@ -136,7 +136,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures }) {
 
         {(devisAcceptes.length > 0 || (fraisTTC > 0 && dossier.frais_statut !== 'offerts' && !dossier.frais_deduits)) ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Devis artisans signés</Text>
+            <Text style={styles.sectionTitle}>{preview ? 'Devis artisans' : 'Devis artisans signés'}</Text>
             <View style={styles.table}>
               <View style={styles.tableHeader}>
                 <Text style={[styles.tableHeaderCell, { width: 18 }]}> </Text>
@@ -187,7 +187,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures }) {
           </View>
         ) : null}
 
-        {buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier })}
+        {preview ? <View /> : (buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier }) || <View />)}
 
         {isCourtage && totalDevisTTCSignes > 0 ? (
           <View style={styles.section}>
@@ -227,8 +227,9 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures }) {
   )
 }
 
-function buildRecapitulatifDocument({ dossier, devis, suiviFinancier, factures }) {
-  return React.createElement(RecapitulatifPDF, { dossier, devis, suiviFinancier, factures })
+function buildRecapitulatifDocument({ dossier, devis, suiviFinancier, factures, preview = false }) 
+{
+  return React.createElement(RecapitulatifPDF, { dossier, devis, suiviFinancier, factures, preview })
 }
 
 // ── COMPTE-RENDU PDF ──
@@ -389,7 +390,11 @@ export async function POST(request) {
 
     let pdfBuffer
 
-    if (type === 'recapitulatif') {
+    if (type === 'recapitulatif_prev') {
+      const doc = buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: [], factures: [], preview: true })
+      pdfBuffer = await renderToBuffer(doc)
+
+    } else if (type === 'recapitulatif') {
       const { data: suiviFinancier, error: suiviError } = await supabaseAdmin
         .from('suivi_financier').select('*').eq('dossier_id', dossierId)
       if (suiviError) return NextResponse.json({ error: suiviError.message }, { status: 500 })
@@ -491,7 +496,8 @@ export async function POST(request) {
 
     const TYPES_LABEL = { r1: 'R1', r2: 'R2', r3: 'R3', suivi: 'Suivi', reception: 'Reception' }
     const filename =
-      type === 'recapitulatif' ? `Recapitulatif_${dossier.reference}.pdf`
+      type === 'recapitulatif_prev' ? `Recapitulatif_Previsionnel_${dossier.reference}.pdf`
+      : type === 'recapitulatif' ? `Recapitulatif_${dossier.reference}.pdf`
       : type === 'dossier_restitution' ? `DossierRestitution_${dossier.reference}.pdf`
       : type === 'dossier_r3' ? `DossierR3_${dossier.reference}.pdf`
       : type === 'cr' ? `CR_${TYPES_LABEL[cr?.type_visite] || 'visite'}_${dossier.reference}.pdf`

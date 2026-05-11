@@ -513,7 +513,7 @@ async function downloadPDF(supabaseAdmin, bucket, path) {
   }
 }
 
-// ── Merge principal ──
+// ── DOSSIER RESTITUTION ──
 export async function buildDossierRestitution({ dossier, devis, photos, interventions, fichesTech, docsRestitution, factures, suiviFinancier, logo, supabaseAdmin }) {
   const isAMO = dossier.typologie === 'amo'
   const devisAcceptes = (devis || []).filter(d => d.statut === 'accepte')
@@ -814,11 +814,10 @@ export async function buildDossierR3({ dossier, devis, supabaseAdmin, logo }) {
   const devisR3 = (devis || []).filter(d => d.statut === 'recu' || d.statut === 'accepte')
 
   const loadSep = async (b64) => PDFDocument.load(Buffer.from(b64, 'base64'))
-  const [sepDescriptif, sepRecap, sepDevis, sepKbis] = await Promise.all([
+  const [sepDescriptif, sepRecap, sepDevis] = await Promise.all([
     loadSep(SEP_DESCRIPTIF),
     loadSep(SEP_RECAP),
     loadSep(SEP_DEVIS),
-    loadSep(SEP_KBIS),
   ])
 
   // Charger CR R1
@@ -883,16 +882,11 @@ export async function buildDossierR3({ dossier, devis, supabaseAdmin, logo }) {
     }
   }
 
-  // Kbis + décennales
-  await addSep(sepKbis)
+  //RIB ARTISANS
   for (const d of devisR3) {
     const art = d.artisan || {}
-    if (art.kbis_url) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', art.kbis_url)
-      await addExternalPDF(buf)
-    }
-    if (art.decennale_url) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', art.decennale_url)
+    if (art.rib_url) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', art.rib_url)
       await addExternalPDF(buf)
     }
   }
