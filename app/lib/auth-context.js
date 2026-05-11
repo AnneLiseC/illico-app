@@ -44,13 +44,12 @@ export function AuthProvider({ children }) {
       }
       const userChanged = prevUserIdRef.current !== u.id
       prevUserIdRef.current = u.id
-      // Charger le profil uniquement si l'utilisateur change ou au chargement initial.
-      // userChanged couvre SIGNED_IN (première fois) et INITIAL_SESSION (rechargement page).
-      // On exclut les events répétés (TOKEN_REFRESHED, SIGNED_IN dupliqué) via userChanged.
-      if (userChanged || event === 'INITIAL_SESSION') {
-        await fetchProfile(u.id)
-      }
+      // initialized est positionné immédiatement — fetchProfile tourne en arrière-plan.
+      // Si on attendait le fetch, un hang réseau bloquerait initialized indéfiniment.
       setInitialized(true)
+      if (userChanged || event === 'INITIAL_SESSION') {
+        fetchProfile(u.id)
+      }
     })
 
     return () => subscription.unsubscribe()
