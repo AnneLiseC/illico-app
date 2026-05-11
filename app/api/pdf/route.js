@@ -198,13 +198,19 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
             </View>
             {isAMO ? (
               <View style={styles.infoRow}>
-                <Text style={styles.infoRowLabel}>Honoraires AMO solde ({(tauxAmo * 100).toFixed(1)}%) — à la fin du chantier</Text>
-                <View style={{ alignItems: 'flex-end' }}><Text style={styles.infoRowValue}>{fmt(honorairesAMO - honorairesCourtage)}</Text></View>
+                <Text style={styles.infoRowLabel}>Honoraires AMO solde (9%) — à la fin du chantier</Text>
+                <View style={{ alignItems: 'flex-end' }}><Text style={styles.infoRowValue}>{fmt(totalDevisTTCSignes * 0.09)}</Text></View>
+              </View>
+            ) : null}
+            {isAMO && Math.round(tauxAmo * 1000) !== 90 ? (
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoRowLabel, { fontStyle: 'italic', color: '#f97316' }]}>Remise commerciale exceptionnelle sur honoraire AMO</Text>
+                <View style={{ alignItems: 'flex-end' }}><Text style={[styles.infoRowValue, { color: '#f97316' }]}>{fmt(totalDevisTTCSignes * (tauxAmo - 0.09))}</Text></View>
               </View>
             ) : null}
             {isAMO ? (
               <View style={[styles.infoRow, { backgroundColor: BLEU_CLAIR, borderRadius: 4, paddingHorizontal: 8 }]}>
-                <Text style={styles.cellBold}>Total honoraires AMO ({((tauxCourtage + tauxAmo) * 100).toFixed(1)}%)</Text>
+                 <Text style={styles.cellBold}>Total honoraires AMO (15%)</Text>
                 <Text style={styles.cellRightBold}>{fmt(honorairesAMO)}</Text>
               </View>
             ) : null}
@@ -384,6 +390,7 @@ export async function POST(request) {
       .from('devis_artisans')
       .select('*, artisan:artisans(id, entreprise)')
       .eq('dossier_id', dossierId)
+      .order('ordre')
       .order('created_at')
 
     if (devisError) return NextResponse.json({ error: devisError.message }, { status: 500 })

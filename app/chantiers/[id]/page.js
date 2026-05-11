@@ -283,7 +283,7 @@ export default function FicheChantier({ params }) {
       setDossier(dossierData)
       setClient(dossierData?.client)
       const { data: devisData } = await supabase.from('devis_artisans')
-        .select('*, artisan:artisans(id, entreprise, metier, sans_royalties)').eq('dossier_id', id).order('created_at')
+        .select('*, artisan:artisans(id, entreprise, metier, sans_royalties)').eq('dossier_id', id).order('ordre').order('created_at')
       setDevis(devisData || [])
       const { data: artisansData } = await supabase.from('artisans').select('id, entreprise, metier').order('entreprise')
       setArtisans(artisansData || [])
@@ -497,10 +497,21 @@ export default function FicheChantier({ params }) {
   }
 
   const chargerDevis = async () => {
-    const { data } = await supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier, sans_royalties)').eq('dossier_id', id).order('created_at', { ascending: false })
+    const { data } = await supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier, sans_royalties)').eq('dossier_id', id).order('ordre').order('created_at')
     setDevis(data || [])
   }
 
+  const deplacerDevis = async (devisId, direction) => {
+    const idx = devis.findIndex(d => d.id === devisId)
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (swapIdx < 0 || swapIdx >= devis.length) return
+    const a = devis[idx], b = devis[swapIdx]
+    const ordreA = a.ordre ?? idx + 1, ordreB = b.ordre ?? swapIdx + 1
+    await supabase.from('devis_artisans').update({ ordre: ordreB }).eq('id', a.id)
+    await supabase.from('devis_artisans').update({ ordre: ordreA }).eq('id', b.id)
+    await chargerDevis()
+  }
+  
   const set = (champ, valeur) => setDossier(d => ({ ...d, [champ]: valeur }))
   const setND = (champ, valeur) => setNouveauDevis(d => ({ ...d, [champ]: valeur }))
 
@@ -716,6 +727,7 @@ export default function FicheChantier({ params }) {
     if (!nouveauDevis.artisan_id) return
     setSavingDevis(true)
     const partAgente = estChantierMarine ? 0 : parseFloat(nouveauDevis.part_agente)
+    const prochainOrdre = devis.length > 0 ? Math.max(...devis.map(d => d.ordre ?? 0)) + 1 : 1
     const { data: devisInsere, error } = await supabase.from('devis_artisans').insert({
       dossier_id: id, artisan_id: nouveauDevis.artisan_id,
       montant_ht: nouveauDevis.montant_ht ? parseFloat(nouveauDevis.montant_ht) : null,
@@ -724,6 +736,7 @@ export default function FicheChantier({ params }) {
       part_agente: partAgente, date_reception: nouveauDevis.date_reception || null, date_limite: nouveauDevis.date_limite || null,
       notes: nouveauDevis.notes || null,
       statut: (nouveauDevis.date_reception || nouveauDevis.fichier) ? 'recu' : 'en_attente',
+      ordre: prochainOrdre,
     }).select()
     if (!error && nouveauDevis.fichier && devisInsere?.[0]) {
       const ext = nouveauDevis.fichier.name.split('.').pop()
@@ -1732,14 +1745,22 @@ export default function FicheChantier({ params }) {
             <p className="text-sm text-gray-400 text-center py-4">Aucun devis pour ce chantier</p>
           ) : (
             <div className="space-y-3">
-              {devis.map(d => {
+              {devis.map((d, idx) => {
                 const sd = statutDevisConfig[d.statut]
                 return (
                   <div key={d.id} className="border border-gray-100 rounded-lg p-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-800">{d.artisan?.entreprise}</p>
-                        <p className="text-xs text-gray-400">{d.artisan?.metier}</p>
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-col">
+                          <button onClick={() => deplacerDevis(d.id, 'up')} disabled={idx === 0}
+                            className="text-gray-300 hover:text-gray-500 disabled:opacity-20 leading-none text-xs">▲</button>
+                          <button onClick={() => deplacerDevis(d.id, 'down')} disabled={idx === devis.length - 1}
+                            className="text-gray-300 hover:text-gray-500 disabled:opacity-20 leading-none text-xs">▼</button>
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">{d.artisan?.entreprise}</p>
+                          <p className="text-xs text-gray-400">{d.artisan?.metier}</p>
+                        </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={`text-xs px-2 py-1 rounded-full font-medium ${sd.color}`}>{sd.label}</span>
@@ -2050,11 +2071,17 @@ export default function FicheChantier({ params }) {
                           <span className="font-medium text-blue-600">{fmt(honorairesCourtagePrev)}</span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-400">Honoraires AMO ({tauxAmoPct}%)</span>
-                          <span className="font-medium text-blue-600">{fmt(honorairesAMOPrev - honorairesCourtagePrev)}</span>
+                          <span className="text-gray-400">Honoraires AMO (9%)</span>
+                          <span className="font-medium text-blue-600">{fmt(baseCourtageHTTCPrev * 0.09)}</span>
                         </div>
+                        {Number(tauxAmoPct) !== 9 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-400 italic">Remise commerciale exceptionnelle sur honoraire AMO</span>
+                            <span className="font-medium text-orange-500">{fmt(baseCourtageHTTCPrev * (tauxAmo - 0.09))}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-400">Total honoraires ({(Number(tauxCourtagePct) + Number(tauxAmoPct)).toFixed(1)}%)</span>
+                          <span className="text-gray-400">Total honoraires (15%)</span>
                           <span className="font-medium text-blue-600">{fmt(honorairesAMOPrev)}</span>
                         </div>
                       </>)}
@@ -2101,11 +2128,17 @@ export default function FicheChantier({ params }) {
                           <span className="font-medium text-gray-700">{fmt(honorairesCourtage)}</span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-500">Honoraires AMO ({tauxAmoPct}%)</span>
-                          <span className="font-medium text-gray-700">{fmt(honorairesAMO - honorairesCourtage)}</span>
+                          <span className="text-gray-500">Honoraires AMO (9%)</span>
+                          <span className="font-medium text-gray-700">{fmt(baseCourtageHTTC * 0.09)}</span>
                         </div>
+                        {Number(tauxAmoPct) !== 9 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-500 italic">Remise commerciale exceptionnelle sur honoraire AMO</span>
+                            <span className="font-medium text-orange-500">{fmt(baseCourtageHTTC * (tauxAmo - 0.09))}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between text-sm">
-                          <span className="text-gray-500">Total honoraires ({(Number(tauxCourtagePct) + Number(tauxAmoPct)).toFixed(1)}%)</span>
+                          <span className="text-gray-500">Total honoraires (15%)</span>
                           <span className="font-medium text-gray-700">{fmt(honorairesAMO)}</span>
                         </div>
                       </>)}
