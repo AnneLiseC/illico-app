@@ -46,37 +46,37 @@ const logoBase64 = getLogoBase64()
 
 // ── Styles ──
 const styles = StyleSheet.create({
-  page: { padding: 40, fontFamily: 'Helvetica', fontSize: 10, color: '#1F2937' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, paddingBottom: 16, borderBottomWidth: 2, borderBottomColor: BLEU },
-  logo: { width: 140, height: 50 },
+  page: { padding: 32, paddingBottom: 50, fontFamily: 'Helvetica', fontSize: 10, color: '#1F2937' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 10, borderBottomWidth: 2, borderBottomColor: BLEU },
+  logo: { width: 120, height: 44 },
   headerRight: { alignItems: 'flex-end' },
-  headerTitle: { fontSize: 18, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 2 },
-  headerSub: { fontSize: 9, color: GRIS_TEXTE },
-  section: { marginBottom: 20 },
-  sectionTitle: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 8, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: BLEU_CLAIR },
-  infoGrid: { flexDirection: 'row', gap: 20, marginBottom: 4 },
+  headerTitle: { fontSize: 16, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 2 },
+  headerSub: { fontSize: 8, color: GRIS_TEXTE },
+  section: { marginBottom: 10 },
+  sectionTitle: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 5, paddingBottom: 3, borderBottomWidth: 1, borderBottomColor: BLEU_CLAIR },
+  infoGrid: { flexDirection: 'row', gap: 16, marginBottom: 3 },
   infoBlock: { flex: 1 },
-  infoLabel: { fontSize: 8, color: GRIS_TEXTE, marginBottom: 2 },
-  infoValue: { fontSize: 10, fontFamily: 'Helvetica-Bold' },
-  table: { marginBottom: 12 },
-  tableHeader: { flexDirection: 'row', backgroundColor: BLEU, padding: 6, borderRadius: 3 },
-  tableHeaderCell: { color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' },
-  tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E5E7EB', paddingVertical: 6, paddingHorizontal: 4 },
-  tableRowAlt: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E5E7EB', paddingVertical: 6, paddingHorizontal: 4, backgroundColor: GRIS },
-  tableRowTotal: { flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 4, backgroundColor: BLEU_CLAIR, marginTop: 4, borderRadius: 3 },
-  cell: { fontSize: 9 },
-  cellBold: { fontSize: 9, fontFamily: 'Helvetica-Bold' },
-  cellRight: { fontSize: 9, textAlign: 'right' },
-  cellRightBold: { fontSize: 9, fontFamily: 'Helvetica-Bold', textAlign: 'right' },
-  montantBlock: { flexDirection: 'row', justifyContent: 'space-between', padding: 10, backgroundColor: BLEU, borderRadius: 6, marginTop: 8 },
-  montantLabel: { color: 'white', fontSize: 14, fontFamily: 'Helvetica-Bold' },
-  montantValue: { color: 'white', fontSize: 14, fontFamily: 'Helvetica-Bold' },
-  footer: { position: 'absolute', bottom: 30, left: 40, right: 40, flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 8 },
-  footerText: { fontSize: 8, color: GRIS_TEXTE },
-  divider: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 8 },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  infoRowLabel: { fontSize: 9, color: GRIS_TEXTE, flex: 1, paddingRight: 12 },
-  infoRowValue: { fontSize: 9, fontFamily: 'Helvetica-Bold' },
+  infoLabel: { fontSize: 7.5, color: GRIS_TEXTE, marginBottom: 1 },
+  infoValue: { fontSize: 9, fontFamily: 'Helvetica-Bold' },
+  table: { marginBottom: 8 },
+  tableHeader: { flexDirection: 'row', backgroundColor: BLEU, padding: 5, borderRadius: 3 },
+  tableHeaderCell: { color: 'white', fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E5E7EB', paddingVertical: 4, paddingHorizontal: 4 },
+  tableRowAlt: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E5E7EB', paddingVertical: 4, paddingHorizontal: 4, backgroundColor: GRIS },
+  tableRowTotal: { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 4, backgroundColor: BLEU_CLAIR, marginTop: 3, borderRadius: 3 },
+  cell: { fontSize: 8 },
+  cellBold: { fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  cellRight: { fontSize: 8, textAlign: 'right' },
+  cellRightBold: { fontSize: 8, fontFamily: 'Helvetica-Bold', textAlign: 'right' },
+  montantBlock: { flexDirection: 'row', justifyContent: 'space-between', padding: 8, backgroundColor: BLEU, borderRadius: 6, marginTop: 6 },
+  montantLabel: { color: 'white', fontSize: 13, fontFamily: 'Helvetica-Bold' },
+  montantValue: { color: 'white', fontSize: 13, fontFamily: 'Helvetica-Bold' },
+  footer: { position: 'absolute', bottom: 22, left: 32, right: 32, flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 6 },
+  footerText: { fontSize: 7.5, color: GRIS_TEXTE },
+  divider: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 5 },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  infoRowLabel: { fontSize: 8.5, color: GRIS_TEXTE, flex: 1, paddingRight: 12 },
+  infoRowValue: { fontSize: 8.5, fontFamily: 'Helvetica-Bold' },
   coverBlock: { backgroundColor: BLEU, borderRadius: 8, padding: 20, marginBottom: 24 },
   coverTitle: { color: 'white', fontSize: 20, fontFamily: 'Helvetica-Bold', marginBottom: 8 },
   coverRef: { color: '#93C5FD', fontSize: 12, marginBottom: 4 },
@@ -191,31 +191,46 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
 
         {isCourtage && totalDevisTTCSignes > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Honoraires illiCO travaux</Text>
+            <Text style={styles.sectionTitle}>Honoraires illiCO travaux</Text>   
+
+            {/* Bloc standard — toujours affiché */}
             <View style={styles.infoRow}>
-              <Text style={styles.infoRowLabel}>Honoraires courtage ({(tauxCourtage * 100).toFixed(1)}%) — à la signature des devis</Text>
-              <View style={{ alignItems: 'flex-end' }}><Text style={styles.infoRowValue}>{fmt(honorairesCourtage)}</Text></View>
+              <Text style={styles.infoRowLabel}>Honoraires courtage ({(tauxCourtage * 100).toFixed(0)}%) — à la signature des devis</Text>
+              <Text style={styles.infoRowValue}>{fmt(honorairesCourtage)}</Text>
             </View>
             {isAMO ? (
               <View style={styles.infoRow}>
-                <Text style={styles.infoRowLabel}>Honoraires AMO solde (9%) — à la fin du chantier</Text>
-                <View style={{ alignItems: 'flex-end' }}><Text style={styles.infoRowValue}>{fmt(totalDevisTTCSignes * 0.09)}</Text></View>
-              </View>
-            ) : null}
-            {isAMO && Math.round(tauxAmo * 1000) !== 90 ? (
-              <View style={styles.infoRow}>
-                <Text style={[styles.infoRowLabel, { fontStyle: 'italic', color: '#f97316' }]}>Remise commerciale exceptionnelle sur honoraire AMO</Text>
-                <View style={{ alignItems: 'flex-end' }}><Text style={[styles.infoRowValue, { color: '#f97316' }]}>{fmt(totalDevisTTCSignes * (tauxAmo - 0.09))}</Text></View>
+                <Text style={styles.infoRowLabel}>Honoraires AMO (9%) — à la fin du chantier</Text>
+                <Text style={styles.infoRowValue}>{fmt(totalDevisTTCSignes * 0.09)}</Text>
               </View>
             ) : null}
             {isAMO ? (
               <View style={[styles.infoRow, { backgroundColor: BLEU_CLAIR, borderRadius: 4, paddingHorizontal: 8 }]}>
-                 <Text style={styles.cellBold}>
-                  {`Total honoraires AMO (${Math.round(tauxAmo * 1000) !== 90 ? `${(tauxCourtage * 100).toFixed(0)}% + ${(tauxAmo * 100).toFixed(0)}%` : '15%'})`}
-                </Text>
-                <Text style={styles.cellRightBold}>{fmt(honorairesAMO)}</Text>
+                  <Text style={styles.cellBold}>Total honoraires (15%)</Text>
+                <Text style={styles.cellRightBold}>{fmt(totalDevisTTCSignes * (tauxCourtage + 0.09))}</Text>
               </View>
             ) : null}
+
+            {/* Bloc remise — uniquement si taux AMO ≠ 9% */}
+            {isAMO && Math.round(tauxAmo * 1000) !== 90 ? (<>
+              <View style={{ height: 1, backgroundColor: '#E5E7EB', marginVertical: 5 }} />
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoRowLabel, { fontStyle: 'italic', color: '#f97316' }]}>Remise commerciale exceptionnelle sur honoraire AMO</Text>
+                <Text style={[styles.infoRowValue, { color: '#f97316' }]}>{fmt(totalDevisTTCSignes * (tauxAmo - 0.09))}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoRowLabel}>Honoraires courtage — à la signature des devis</Text>
+                <Text style={styles.infoRowValue}>{fmt(honorairesCourtage)}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoRowLabel}>Honoraires AMO — à la fin du chantier</Text>
+                <Text style={styles.infoRowValue}>{fmt(honorairesAMO - honorairesCourtage)}</Text>
+              </View>
+              <View style={[styles.infoRow, { backgroundColor: BLEU_CLAIR, borderRadius: 4, paddingHorizontal: 8 }]}>
+                <Text style={styles.cellBold}>Total honoraires AMO</Text>
+                <Text style={styles.cellRightBold}>{fmt(honorairesAMO)}</Text>
+              </View>
+            </>) : null}
           </View>
         ) : null}
 
@@ -234,6 +249,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
     </Document>
   )
 }
+            
 
 function buildRecapitulatifDocument({ dossier, devis, suiviFinancier, factures, preview = false }) 
 {

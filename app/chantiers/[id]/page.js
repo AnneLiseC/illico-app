@@ -2090,7 +2090,19 @@ export default function FicheChantier({ params }) {
                           </div>
                         </>)}
                       </>)}
-                    </div> 
+                      {fraisInclus && !dossier.frais_deduits && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-400">Frais consultation</span>
+                          <span className="font-medium text-blue-600">{fmt(fraisTTC)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-sm border-t border-blue-300 pt-1 mt-1">
+                        <span className="font-bold text-blue-700">Total chantier prévisionnel</span>
+                        <span className="font-bold text-blue-700">
+                          {fmt(totalDevisTTCRecus + (dossier.typologie === 'amo' ? honorairesAMOPrev : honorairesCourtagePrev) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))}
+                        </span>
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
@@ -2140,6 +2152,18 @@ export default function FicheChantier({ params }) {
                           </div>
                         </>)}
                       </>)}
+                      {fraisInclus && !dossier.frais_deduits && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Frais consultation</span>
+                          <span className="font-medium text-gray-700">{fmt(fraisTTC)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-sm border-t border-gray-200 pt-1 mt-1">
+                        <span className="font-bold text-gray-700">Total chantier signé</span>
+                        <span className="font-bold text-blue-800">
+                          {fmt(totalDevisTTCSignes + (dossier.typologie === 'amo' ? honorairesAMO : honorairesCourtage) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))}
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
