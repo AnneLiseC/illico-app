@@ -30,7 +30,7 @@ const toNumber = (value) => {
 }
 
 const fmt = (n) => {
-  const v = toNum(n).toFixed(2)
+  const v = toNumber(n).toFixed(2)
   const [int, dec] = v.split('.')
   return int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ',' + dec + ' €'
 }
