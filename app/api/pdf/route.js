@@ -210,7 +210,9 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
             ) : null}
             {isAMO ? (
               <View style={[styles.infoRow, { backgroundColor: BLEU_CLAIR, borderRadius: 4, paddingHorizontal: 8 }]}>
-                 <Text style={styles.cellBold}>Total honoraires AMO (15%)</Text>
+                 <Text style={styles.cellBold}>
+                  {`Total honoraires AMO (${Math.round(tauxAmo * 1000) !== 90 ? `${(tauxCourtage * 100).toFixed(0)}% + ${(tauxAmo * 100).toFixed(0)}%` : '15%'})`}
+                </Text>
                 <Text style={styles.cellRightBold}>{fmt(honorairesAMO)}</Text>
               </View>
             ) : null}

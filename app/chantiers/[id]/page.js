@@ -2074,29 +2074,22 @@ export default function FicheChantier({ params }) {
                           <span className="text-gray-400">Honoraires AMO (9%)</span>
                           <span className="font-medium text-blue-600">{fmt(baseCourtageHTTCPrev * 0.09)}</span>
                         </div>
-                        {Number(tauxAmoPct) !== 9 && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-400 italic">Remise commerciale exceptionnelle sur honoraire AMO</span>
-                            <span className="font-medium text-orange-500">{fmt(baseCourtageHTTCPrev * (tauxAmo - 0.09))}</span>
-                          </div>
-                        )}
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-400">Total honoraires (15%)</span>
-                          <span className="font-medium text-blue-600">{fmt(honorairesAMOPrev)}</span>
+                          <span className="font-medium text-blue-600">{fmt(baseCourtageHTTCPrev * (tauxCourtage + 0.09))}</span>
                         </div>
+                        {Number(tauxAmoPct) !== 9 && (<>
+                          <div className="border-t border-blue-100 my-1" />
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-400">Honoraires AMO ({tauxAmoPct}%)</span>
+                            <span className="font-medium text-blue-600">{fmt(honorairesAMOPrev - honorairesCourtagePrev)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm font-semibold">
+                            <span className="text-gray-500">Total honoraires ({(Number(tauxCourtagePct) + Number(tauxAmoPct)).toFixed(1)}%)</span>
+                            <span className="text-blue-700">{fmt(honorairesAMOPrev)}</span>
+                          </div>
+                        </>)}
                       </>)}
-                      {fraisInclus && !dossier.frais_deduits && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-400">Frais consultation</span>
-                          <span className="font-medium text-blue-600">{fmt(fraisTTC)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between text-sm border-t border-blue-300 pt-1 mt-1">
-                        <span className="font-bold text-blue-700">Total chantier prévisionnel</span>
-                        <span className="font-bold text-blue-700">
-                          {fmt(totalDevisTTCRecus + (dossier.typologie === 'amo' ? honorairesAMOPrev : honorairesCourtagePrev) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))}
-                        </span>
-                      </div>
                     </div> 
                   )}
                 </div>
@@ -2131,29 +2124,22 @@ export default function FicheChantier({ params }) {
                           <span className="text-gray-500">Honoraires AMO (9%)</span>
                           <span className="font-medium text-gray-700">{fmt(baseCourtageHTTC * 0.09)}</span>
                         </div>
-                        {Number(tauxAmoPct) !== 9 && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-500 italic">Remise commerciale exceptionnelle sur honoraire AMO</span>
-                            <span className="font-medium text-orange-500">{fmt(baseCourtageHTTC * (tauxAmo - 0.09))}</span>
-                          </div>
-                        )}
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-500">Total honoraires (15%)</span>
-                          <span className="font-medium text-gray-700">{fmt(honorairesAMO)}</span>
+                          <span className="font-medium text-gray-700">{fmt(baseCourtageHTTC * (tauxCourtage + 0.09))}</span>
                         </div>
+                        {Number(tauxAmoPct) !== 9 && (<>
+                          <div className="border-t border-gray-100 my-1" />
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Honoraires AMO ({tauxAmoPct}%)</span>
+                            <span className="font-medium text-gray-700">{fmt(honorairesAMO - honorairesCourtage)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm font-semibold">
+                            <span className="text-gray-600">Total honoraires ({(Number(tauxCourtagePct) + Number(tauxAmoPct)).toFixed(1)}%)</span>
+                            <span className="text-gray-800">{fmt(honorairesAMO)}</span>
+                          </div>
+                        </>)}
                       </>)}
-                      {fraisInclus && !dossier.frais_deduits && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-500">Frais consultation</span>
-                          <span className="font-medium text-gray-700">{fmt(fraisTTC)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between text-sm border-t border-gray-200 pt-1 mt-1">
-                        <span className="font-bold text-gray-700">Total chantier signé</span>
-                        <span className="font-bold text-blue-800">
-                          {fmt(totalDevisTTCSignes + (dossier.typologie === 'amo' ? honorairesAMO : honorairesCourtage) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))}
-                        </span>
-                      </div>
                     </div>
                   )}
                 </div>
