@@ -679,6 +679,7 @@ export default function FicheChantier({ params }) {
       date_signature_contrat: dossier.date_signature_contrat, date_demarrage_chantier: dossier.date_demarrage_chantier,
       date_fin_chantier: dossier.date_fin_chantier, taux_courtage: dossier.taux_courtage, honoraires_amo_taux: dossier.honoraires_amo_taux,
       resume_projet: dossier.resume_projet || null,
+      description: dossier.description || null,
       part_agente: newPartAgente,
       frais_part_agente: dossier.frais_part_agente ?? null,
     }).eq('id', id)
@@ -1370,6 +1371,12 @@ export default function FicheChantier({ params }) {
                   <span className="text-sm text-red-600">Chantier annulé</span>
                 </label>
               </div>
+              {dossier.description && (
+                <div className="border-t border-gray-100 pt-3">
+                  <p className="text-xs text-gray-400 mb-1">Description</p>
+                  <p className="text-sm text-gray-700 leading-relaxed">{dossier.description}</p>
+                </div>
+              )}
               {dossier.resume_projet && (
                 <div className="border-t border-gray-100 pt-3">
                   <p className="text-xs text-gray-400 mb-1">Résumé du projet</p>
@@ -1508,6 +1515,16 @@ export default function FicheChantier({ params }) {
                     <span className="text-sm text-gray-500">Marquer comme terminé</span>
                   </label>
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={dossier.description || ''}
+                  onChange={e => set('description', e.target.value)}
+                  rows={4}
+                  placeholder="Décrivez les travaux envisagés, le contexte du projet..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
               </div>
               {!estChantierMarine && profile?.parts_agente_disponibles?.length > 1 && (
                 <div className="border-t border-gray-100 pt-4">
@@ -1841,6 +1858,9 @@ export default function FicheChantier({ params }) {
                         )
                       })()}
                     </div>
+                    {d.notes && (
+                      <p className="text-xs text-gray-500 italic">{d.notes}</p>
+                    )}
 
                     {devisEnEdition === d.id && (
                       <EditDevis devis={d} isMarine={estChantierMarine} onSave={(updates) => modifierDevis(d.id, updates)} onCancel={() => setDevisEnEdition(null)} />
