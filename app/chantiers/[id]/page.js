@@ -135,11 +135,16 @@ function EditDevis({ devis, onSave, onCancel, isMarine }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Montant HT (€)</label>
-          <input type="number" step="0.01" value={form.montant_ht} onChange={e => set('montant_ht', e.target.value)}
+          <input type="number" step="0.01" value={form.montant_ht}
+            onChange={e => {
+              const ht = e.target.value
+              const ttcAuto = ht !== '' ? (parseFloat(ht) * 1.1).toFixed(2) : ''
+              setForm(f => ({ ...f, montant_ht: ht, montant_ttc: ttcAuto }))
+            }}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Montant TTC (€)</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Montant TTC (€) <span className="text-gray-400 font-normal">auto 10%</span></label>
           <input type="number" step="0.01" value={form.montant_ttc} onChange={e => set('montant_ttc', e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
@@ -985,16 +990,14 @@ export default function FicheChantier({ params }) {
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
-       const filename = type === 'recapitulatif_prev'
-        ? `Recapitulatif_Previsionnel_${dossier.reference}.pdf`
+      const filename = type === 'recapitulatif_prev'
+        ? `Recap_Financier_${dossier.reference}.pdf`
         : type === 'recapitulatif'
-        ? `Recapitulatif_Suivi_${dossier.reference}.pdf`
-        : type === 'dossier_restitution'
-        ? `DossierRestitution_${dossier.reference}.pdf`
+        ? `Suivi_Financier_${dossier.reference}.pdf`
+        : type === 'dossier_suivi'
+        ? `DossierSuivi_${dossier.reference}.pdf`
         : type === 'cr'
         ? `CR_${dossier.reference}.pdf`
-        : type === 'dossier_r3'
-        ? `DossierR3_${dossier.reference}.pdf`
         : `Dossier_${dossier.reference}.pdf`
       setDocViewer({ url, nom: filename })
     } catch (err) {
@@ -1047,7 +1050,8 @@ export default function FicheChantier({ params }) {
   }
   const fraisStatutConfig = {
     offerts:    { label: 'Offerts',               color: 'bg-blue-100 text-blue-700' },
-    factures:   { label: 'Facturés - en attente', color: 'bg-amber-100 text-amber-700' },
+    rembourse_apres_signature: { label: 'Remboursé après signature', color: 'bg-purple-100 text-purple-700' },
+    factures:   { label: 'Facturés — en attente', color: 'bg-amber-100 text-amber-700' },
     regle:      { label: 'Réglés',                color: 'bg-green-100 text-green-700' },
     rembourse:  { label: 'Remboursé',             color: 'bg-purple-100 text-purple-700' },
   }
@@ -1112,6 +1116,54 @@ export default function FicheChantier({ params }) {
     if (type === 'acompte_amo' && dossier?.typologie === 'amo') await upsertOne('honoraires_courtage', montant)
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
+  }
+
+  const convertirEnAMO = async () => {
+    const ok = confirm(
+      'Convertir ce dossier Courtage en AMO ?\n\n' +
+      '• La ligne de suivi "Honoraires courtage" deviendra "Acompte AMO"\n' +
+      '• Une ligne "Solde AMO" sera créée\n' +
+      '• Le taux courtage existant est conservé\n' +
+      '• Le taux AMO est initialisé à 9%\n\n' +
+      'Cette action ne peut pas être annulée facilement.'
+    )
+    if (!ok) return
+    setSaving(true)
+    try {
+      // Mettre à jour la typologie + taux AMO si non défini
+      await supabase.from('dossiers').update({
+        typologie: 'amo',
+        honoraires_amo_taux: dossier.honoraires_amo_taux ?? 9,
+      }).eq('id', id)
+
+      // Migrer la ligne honoraires_courtage → acompte_amo
+      const { data: ligneCourtage } = await supabase
+        .from('suivi_financier').select('*')
+        .eq('dossier_id', id).eq('type_echeance', 'honoraires_courtage').is('artisan_id', null).maybeSingle()
+
+      if (ligneCourtage) {
+        await supabase.from('suivi_financier').update({ type_echeance: 'acompte_amo' }).eq('id', ligneCourtage.id)
+        // Créer la ligne solde_amo si elle n'existe pas
+        const { data: ligneSolde } = await supabase
+          .from('suivi_financier').select('id')
+          .eq('dossier_id', id).eq('type_echeance', 'solde_amo').is('artisan_id', null).maybeSingle()
+        if (!ligneSolde) {
+          await supabase.from('suivi_financier').insert({
+            dossier_id: id, type_echeance: 'solde_amo',
+            montant_ttc: 0, statut_client: 'en_attente',
+          })
+        }
+      }
+
+      // Recharger état
+      setDossier(d => ({ ...d, typologie: 'amo', honoraires_amo_taux: d.honoraires_amo_taux ?? 9 }))
+      const { data: newSuivi } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+      setSuiviFinancier(newSuivi || [])
+      setSucces('Dossier converti en AMO ✓')
+    } catch (e) {
+      setErreur('Erreur lors de la conversion : ' + e.message)
+    }
+    setSaving(false)
   }
 
   const montantAcompte = (d) => (d.montant_ttc || 0) * ((d.acompte_pourcentage || 30) / 100)
@@ -1248,19 +1300,15 @@ export default function FicheChantier({ params }) {
                 <div className="hidden sm:flex items-center gap-2">
                   <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
                     className="border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
-                    {generatingPDF === 'recapitulatif_prev' ? '⏳' : '📄 Récap. prévi.'}
+                    {generatingPDF === 'recapitulatif_prev' ? '⏳' : '📄 Récap. financier'}
                   </button>
                   <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
                     className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">
-                    {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Récap. suivi'}
+                    {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Suivi financier'}
                   </button>
-                  <button onClick={() => generatePDF('dossier_r3')} disabled={!!generatingPDF}
-                    className="border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
-                    {generatingPDF === 'dossier_r3' ? '⏳' : '📋 R3'}
-                  </button>
-                  <button onClick={() => generatePDF('dossier_restitution')} disabled={!!generatingPDF}
+                  <button onClick={() => generatePDF('dossier_suivi')} disabled={!!generatingPDF}
                     className="border border-orange-300 text-orange-700 px-3 py-2 rounded-lg text-sm hover:bg-orange-50 disabled:opacity-50">
-                    {generatingPDF === 'dossier_restitution' ? '⏳' : '🎁 Restitution'}
+                    {generatingPDF === 'dossier_suivi' ? '⏳' : '📋 Dossier de suivi'}
                   </button>
                 </div>
                 <button onClick={() => setMode('edition')} className="bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-blue-900">Modifier</button>
@@ -1280,19 +1328,15 @@ export default function FicheChantier({ params }) {
           <div className="flex gap-2 mt-3 sm:hidden overflow-x-auto scrollbar-none">
             <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
               className="border border-blue-300 text-blue-700 px-3 py-1.5 rounded-lg text-xs hover:bg-blue-50 disabled:opacity-50 flex-shrink-0">
-              {generatingPDF === 'recapitulatif_prev' ? '⏳' : '📄 Récap. prévi.'}
+              {generatingPDF === 'recapitulatif_prev' ? '⏳' : '📄 Récap. financier'}
             </button>
             <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
               className="border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-50 flex-shrink-0">
-              {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Récap. suivi'}
+              {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Suivi financier'}
             </button>
-            <button onClick={() => generatePDF('dossier_r3')} disabled={!!generatingPDF}
-              className="border border-blue-300 text-blue-700 px-3 py-1.5 rounded-lg text-xs hover:bg-blue-50 disabled:opacity-50 flex-shrink-0">
-              {generatingPDF === 'dossier_r3' ? '⏳' : '📋 Dossier R3'}
-            </button>
-            <button onClick={() => generatePDF('dossier_restitution')} disabled={!!generatingPDF}
+            <button onClick={() => generatePDF('dossier_suivi')} disabled={!!generatingPDF}
               className="border border-orange-300 text-orange-700 px-3 py-1.5 rounded-lg text-xs hover:bg-orange-50 disabled:opacity-50 flex-shrink-0">
-              {generatingPDF === 'dossier_restitution' ? '⏳' : '🎁 Restitution'}
+              {generatingPDF === 'dossier_suivi' ? '⏳' : '📋 Dossier de suivi'}
             </button>
           </div>
         )}
@@ -1343,6 +1387,19 @@ export default function FicheChantier({ params }) {
                   </div>
                 ))}
               </div>
+              {dossier.typologie === 'courtage' && (
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  <button
+                    onClick={convertirEnAMO}
+                    disabled={saving}
+                    className="text-sm border border-orange-300 text-orange-700 px-3 py-1.5 rounded-lg hover:bg-orange-50 disabled:opacity-50"
+                  >
+                    Convertir en AMO
+                  </button>
+                  <p className="text-xs text-gray-400 mt-1">Pour les chantiers Courtage qui deviennent AMO en cours de route.</p>
+                </div>
+              )}
+
                 <div className="flex flex-wrap items-center gap-4 mt-2">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1655,6 +1712,7 @@ export default function FicheChantier({ params }) {
                   <select value={dossier.frais_statut} onChange={e => set('frais_statut', e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="offerts">Offerts</option>
+                    <option value="rembourse_apres_signature">Remboursé après signature</option>
                     <option value="factures">Facturés (à régler)</option>
                     <option value="regle">Facturés et réglés</option>
                   </select>
@@ -1696,11 +1754,16 @@ export default function FicheChantier({ params }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Montant HT (€)</label>
-                  <input type="number" step="0.01" min="0" value={nouveauDevis.montant_ht} onChange={e => setND('montant_ht', e.target.value)}
+                  <input type="number" step="0.01" min="0" value={nouveauDevis.montant_ht}
+                    onChange={e => {
+                      const ht = e.target.value
+                      const ttcAuto = ht !== '' ? (parseFloat(ht) * 1.1).toFixed(2) : ''
+                      setNouveauDevis(d => ({ ...d, montant_ht: ht, montant_ttc: ttcAuto }))
+                    }}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Montant TTC (€)</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Montant TTC (€) <span className="text-gray-400 font-normal">auto 10%</span></label>
                   <input type="number" step="0.01" min="0" value={nouveauDevis.montant_ttc} onChange={e => setND('montant_ttc', e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>

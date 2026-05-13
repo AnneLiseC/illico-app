@@ -632,6 +632,14 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
   // ── Références produits (seulement si fiches techniques cochées) ──
   if (hasFichesTech) {
     await addSep(sepRefs)
+    // Inclure les PDFs des fiches techniques
+    for (const ft of (fichesTech || [])) {
+      const url = ft.fiche?.url || ft.url
+      if (url) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', url)
+        await addExternalPDF(buf)
+      }
+    }
   }
 
   // ── Documents chantier cochés "dans_restitution" ──
@@ -908,12 +916,175 @@ export async function buildDossierR3({ dossier, devis, supabaseAdmin, logo }) {
     }
   }
 
-  //RIB ARTISANS
-  for (const d of devisR3) {
-    const art = d.artisan || {}
-    if (art.rib_url) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', art.rib_url)
+  const bytes = await final.save()
+  return Buffer.from(bytes)
+}
+
+// ── DOSSIER DE SUIVI (fusion R3 + Restitution selon statut) ──
+// Génère un dossier adaptatif selon l'avancement du dossier :
+//   - Phase avant signature (devis_en_attente, devis_a_modifier…) → style R3 : devis reçus + récap
+//   - en_cours_chantier → devis signés + KBIS/assurances + FT
+//   - termine → restitution complète avec photos, planning, etc.
+export async function buildDossierSuivi({ dossier, devis, photos, interventions, fichesTech, docsRestitution, factures, suiviFinancier, logo, supabaseAdmin }) {
+  const statut = dossier.statut || 'en_cours_chantier'
+  const isPreSignature = ['a_contacter', 'a_relancer', 'devis_en_attente', 'devis_a_modifier'].includes(statut)
+  const isTermine = statut === 'termine'
+  const isAMO = dossier.typologie === 'amo'
+
+  // Filtrage devis selon le stade
+  const devisR3 = (devis || []).filter(d => d.statut === 'recu' || d.statut === 'accepte')
+  const devisAcceptes = (devis || []).filter(d => d.statut === 'accepte')
+  const devisActifs = isPreSignature ? devisR3 : devisAcceptes
+
+  const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
+  const hasFichesTech = (fichesTech || []).length > 0
+  const hasQualif = devisAcceptes.some(d => d.artisan?.qualification_url)
+
+  const loadSep = async (b64) => PDFDocument.load(Buffer.from(b64, 'base64'))
+  const [sepDescriptif, sepIllustrations, sepRecap, sepDevis, sepPlanning, sepRefs, sepKbis, sepQualification] = await Promise.all([
+    loadSep(SEP_DESCRIPTIF), loadSep(SEP_ILLUSTRATIONS), loadSep(SEP_RECAP),
+    loadSep(SEP_DEVIS), loadSep(SEP_PLANNING), loadSep(SEP_REFS),
+    loadSep(SEP_KBIS), loadSep(SEP_QUALIFICATION),
+  ])
+
+  // Charger CR R1
+  const { data: crsData } = await supabaseAdmin.from('comptes_rendus')
+    .select('id, type_visite, contenu_final').eq('dossier_id', dossier.id).order('created_at')
+  const crR1 = crsData?.find(cr => cr.type_visite === 'r1') || null
+
+  // Générer le résumé IA
+  const devisNotes = (devisActifs || []).map(d => d.notes).filter(Boolean)
+  const resumeGenere = await generateResumeProjet({ crR1, description: dossier.description, devisNotes })
+
+  // Générer les pages de contenu (descriptif + récap)
+  const contentBuffer = isPreSignature
+    ? await buildR3ContentPDF({ dossier, devisR3: devisActifs, logo, resumeGenere })
+    : await buildContentPDF({ dossier, devis: devisActifs, photos, interventions, factures, suiviFinancier, logo, resumeGenere })
+  const contentPdf = await PDFDocument.load(contentBuffer)
+
+  const final = await PDFDocument.create()
+  let cIdx = 0
+
+  const addSep = async (sepPdf) => {
+    const [p] = await final.copyPages(sepPdf, [0])
+    final.addPage(p)
+  }
+  const addContent = async () => {
+    const [p] = await final.copyPages(contentPdf, [cIdx++])
+    final.addPage(p)
+  }
+  const addExternalPDF = async (buf) => {
+    if (!buf) return
+    try {
+      const ext = await PDFDocument.load(buf)
+      const copied = await final.copyPages(ext, ext.getPageIndices())
+      copied.forEach(p => {
+        const { width, height } = p.getSize()
+        if (width > height) p.setRotation(degrees(90))
+        final.addPage(p)
+      })
+    } catch {}
+  }
+
+  // ── Page de garde ──
+  const nomRef = getNomRef(dossier.referente)
+  const telRef = getTelReferente(dossier.referente)
+  const coverBuf = await makeCoverPage({ nomRef, telRef })
+  const coverPdf = await PDFDocument.load(coverBuf)
+  const [coverPage] = await final.copyPages(coverPdf, [0])
+  final.addPage(coverPage)
+
+  // ── Descriptif du projet ──
+  await addSep(sepDescriptif)
+  await addContent()
+
+  // ── Récapitulatif financier ──
+  await addSep(sepRecap)
+  await addContent()
+
+  // ── Devis ──
+  await addSep(sepDevis)
+  if (isPreSignature) {
+    // Phase pré-signature : inclure les PDFs de devis reçus
+    for (const d of devisActifs) {
+      if (d.devis_pdf_path) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', d.devis_pdf_path)
+        await addExternalPDF(buf)
+      }
+    }
+  } else {
+    // Phase post-signature : devis signés + factures
+    for (const d of devisAcceptes) {
+      if (d.devis_signe_path) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', d.devis_signe_path)
+        await addExternalPDF(buf)
+      }
+      if (d.facture_path) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', d.facture_path)
+        await addExternalPDF(buf)
+      }
+    }
+  }
+
+  // ── Qualifications (si présentes et stade post-signature) ──
+  if (!isPreSignature && hasQualif) {
+    await addSep(sepQualification)
+    for (const d of devisAcceptes) {
+      if (d.artisan?.qualification_url) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', d.artisan.qualification_url)
+        await addExternalPDF(buf)
+      }
+    }
+  }
+
+  // ── Planning (AMO + post-signature + chantier terminé) ──
+  if (isAMO && !isPreSignature && isTermine && (interventions || []).length > 0) {
+    await addSep(sepPlanning)
+    await addContent()
+  }
+
+  // ── Illustrations (photos maquette — si disponibles et chantier terminé) ──
+  if (isTermine && photosMaquette.length > 0) {
+    await addSep(sepIllustrations)
+    const nbPhotoPages = Math.ceil(photosMaquette.length / 2)
+    for (let i = 0; i < nbPhotoPages; i++) {
+      await addContent()
+    }
+  }
+
+  // ── Références produits / FT (si cochées) ──
+  if (hasFichesTech) {
+    await addSep(sepRefs)
+    for (const ft of (fichesTech || [])) {
+      const url = ft.fiche?.url || ft.url
+      if (url) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', url)
+        await addExternalPDF(buf)
+      }
+    }
+  }
+
+  // ── Documents chantier cochés "dans_restitution" ──
+  if ((docsRestitution || []).length > 0) {
+    for (const doc of docsRestitution) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path)
       await addExternalPDF(buf)
+    }
+  }
+
+  // ── KBIS + Assurances (post-signature) ──
+  if (!isPreSignature) {
+    await addSep(sepKbis)
+    for (const d of devisAcceptes) {
+      const art = d.artisan || {}
+      if (art.kbis_url) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', art.kbis_url)
+        await addExternalPDF(buf)
+      }
+      if (art.decennale_url) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', art.decennale_url)
+        await addExternalPDF(buf)
+      }
     }
   }
 

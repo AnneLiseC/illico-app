@@ -76,7 +76,9 @@ export default function FicheClient({ params }) {
         nom2: client.nom2 || null,
         prenom2: client.prenom2 || null,
         email: client.email || null,
+        email2: client.email2 || null,
         telephone: client.telephone || null,
+        telephone2: client.telephone2 || null,
         adresse: client.adresse || null,
         adresse_chantier: adresseChantier,
         type_client: client.type_client,
@@ -193,8 +195,10 @@ export default function FicheClient({ params }) {
               {[
                 ['Civilité', client.civilite],
                 ['Prénom / Nom', nomComplet.replace(`${client.civilite} `, '')],
-                ['Email', client.email || '—'],
-                ['Téléphone', client.telephone || '—'],
+                ['Email 1', client.email || '—'],
+                ...(client.email2 ? [['Email 2', client.email2]] : []),
+                ['Tél 1', client.telephone || '—'],
+                ...(client.telephone2 ? [['Tél 2', client.telephone2]] : []),
                 ['Adresse client', client.adresse || '—'],
                 ['Adresse chantier', client.adresse_chantier || client.adresse || '—'],
                 ['Type', client.type_client === 'professionnel' ? 'Professionnel' : 'Particulier'],
@@ -253,13 +257,25 @@ export default function FicheClient({ params }) {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email 1</label>
                   <input type="email" value={client.email || ''} onChange={e => set('email', e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email 2 <span className="text-gray-400 font-normal">(optionnel)</span></label>
+                  <input type="email" value={client.email2 || ''} onChange={e => set('email2', e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Tél 1</label>
                   <input type="tel" value={client.telephone || ''} onChange={e => set('telephone', e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Tél 2 <span className="text-gray-400 font-normal">(optionnel)</span></label>
+                  <input type="tel" value={client.telephone2 || ''} onChange={e => set('telephone2', e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
