@@ -224,15 +224,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
         ) : null}
 
         {/* ── Geste commercial — frais remboursés après signature ── */}
-        {fraisRembourse ? (
-          <View style={[styles.section, { marginTop: 2 }]}>
-            <Text style={styles.sectionTitle}>Geste commercial</Text>
-            <View style={styles.infoRow}>
-              <Text style={[styles.infoRowLabel, { fontStyle: 'italic', color: '#7c3aed' }]}>Frais de consultation remboursés après signature</Text>
-              <Text style={[styles.infoRowValue, { color: '#7c3aed' }]}>— {fmt(fraisTTC)}</Text>
-            </View>
-          </View>
-        ) : null}
+        {/* NOTE: affiché dans la section honoraires ci-dessous */}
 
         {/* ── Acomptes artisans ── */}
         {acomptesArtisans.length > 0 ? (
@@ -257,59 +249,71 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
         {/* ── Suivi paiements (final uniquement) ── */}
         {preview ? null : (buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier }) || null)}
 
-        {/* ── Honoraires illiCO ── */}
+        {/* ── Honoraires illiCO : deux blocs Courtage / AMO ── */}
         {isCourtage && totalDevisTTCSignes > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Honoraires illiCO travaux</Text>
 
-            {isAMO ? (<>
-              {/* AMO actif : détail acompte + solde */}
+            {/* Remise sur frais de consultation (si remboursés après signature) */}
+            {fraisRembourse ? (
+              <View style={[styles.infoRow, { marginBottom: 6 }]}>
+                <Text style={[styles.infoRowLabel, { fontStyle: 'italic', color: '#7c3aed' }]}>Remise commerciale sur frais de consultation</Text>
+                <Text style={[styles.infoRowValue, { color: '#7c3aed' }]}>— {fmt(fraisTTC)}</Text>
+              </View>
+            ) : null}
+
+            {/* ── Bloc COURTAGE ── */}
+            <View style={{ borderLeftWidth: 3, borderLeftColor: BLEU_CLAIR, paddingLeft: 8, marginBottom: 8 }}>
+              <Text style={{ fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 4 }}>
+                Honoraires illiCO travaux COURTAGE ({(tauxCourtage * 100).toFixed(1)}%)
+              </Text>
               <View style={styles.infoRow}>
-                <Text style={styles.infoRowLabel}>Acompte AMO ({(tauxCourtage * 100).toFixed(0)}%) — à la signature des devis</Text>
+                <Text style={styles.infoRowLabel}>Honoraires courtage — à la signature des devis</Text>
+                <Text style={styles.infoRowValue}>{fmt(honorairesCourtageSimul)}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 6, backgroundColor: BLEU, borderRadius: 4, marginTop: 4 }}>
+                <Text style={{ color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' }}>TOTAL CHANTIER si COURTAGE</Text>
+                <Text style={{ color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' }}>
+                  {fmt(totalDevisTTCSignes + honorairesCourtageSimul + totalFraisTable - (fraisRembourse ? fraisTTC : 0))}
+                </Text>
+              </View>
+            </View>
+
+            {/* ── Bloc AMO ── */}
+            <View style={{ borderLeftWidth: 3, borderLeftColor: '#f97316', paddingLeft: 8 }}>
+              <Text style={{ fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: '#c2410c', marginBottom: 4 }}>
+                Honoraires illiCO travaux AMO ({((tauxCourtage + tauxAmo) * 100).toFixed(1)}%)
+              </Text>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoRowLabel}>Acompte AMO ({(tauxCourtage * 100).toFixed(1)}%) — à la signature des devis</Text>
                 <Text style={styles.infoRowValue}>{fmt(honorairesCourtage)}</Text>
               </View>
               <View style={styles.infoRow}>
-                <Text style={styles.infoRowLabel}>Solde AMO ({(tauxAmo * 100).toFixed(0)}%) — à l'avancement du chantier</Text>
+                <Text style={styles.infoRowLabel}>Solde AMO ({(tauxAmo * 100).toFixed(1)}%) — à l'avancement du chantier</Text>
                 <Text style={styles.infoRowValue}>{fmt(honorairesAMO - honorairesCourtage)}</Text>
               </View>
-              <View style={[styles.infoRow, { backgroundColor: BLEU_CLAIR, borderRadius: 4, paddingHorizontal: 8, marginTop: 2 }]}>
-                <Text style={[styles.cellBold, { fontSize: 9 }]}>Total honoraires AMO ({((tauxCourtage + tauxAmo) * 100).toFixed(0)}%)</Text>
-                <Text style={[styles.cellRightBold, { fontSize: 9 }]}>{fmt(honorairesAMO)}</Text>
-              </View>
-              {/* Remise commerciale si taux AMO ≠ 9% */}
+              {/* Remise commerciale AMO si taux ≠ 9% */}
               {Math.round(tauxAmo * 1000) !== 90 ? (
-                <View style={{ marginTop: 4 }}>
-                  <View style={{ height: 1, backgroundColor: '#E5E7EB', marginVertical: 4 }} />
-                  <View style={styles.infoRow}>
-                    <Text style={[styles.infoRowLabel, { fontStyle: 'italic', color: '#f97316' }]}>Remise commerciale exceptionnelle sur honoraire AMO</Text>
-                    <Text style={[styles.infoRowValue, { color: '#f97316' }]}>{fmt(totalDevisTTCSignes * (tauxAmo - 0.09))}</Text>
-                  </View>
+                <View style={[styles.infoRow, { marginTop: 2 }]}>
+                  <Text style={[styles.infoRowLabel, { fontStyle: 'italic', color: '#f97316' }]}>
+                    Remise commerciale sur honoraire AMO ({(Math.abs((tauxAmo - 0.09) * 100)).toFixed(1)}%)
+                  </Text>
+                  <Text style={[styles.infoRowValue, { color: '#f97316' }]}>
+                    — {fmt(totalDevisTTCSignes * Math.abs(tauxAmo - 0.09))}
+                  </Text>
                 </View>
               ) : null}
-            </>) : (<>
-              {/* Courtage simple */}
-              <View style={styles.infoRow}>
-                <Text style={styles.infoRowLabel}>Honoraires courtage ({(tauxCourtage * 100).toFixed(0)}%) — à la signature des devis</Text>
-                <Text style={styles.infoRowValue}>{fmt(honorairesCourtage)}</Text>
-              </View>
-            </>)}
-
-            {/* Double scénario — toujours affiché pour Courtage/AMO */}
-            <View style={{ marginTop: 6, borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 5 }}>
-              <Text style={[styles.cell, { color: GRIS_TEXTE, fontSize: 7.5, marginBottom: 3, fontStyle: 'italic' }]}>Simulation des deux scénarios :</Text>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoRowLabel}>Total projet en cas de Courtage ({(tauxCourtage * 100).toFixed(0)}%)</Text>
-                <Text style={styles.infoRowValue}>{fmt(totalDevisTTCSignes + honorairesCourtageSimul + (fraisRembourse ? 0 : totalFraisTable))}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoRowLabel}>Total projet en cas d'AMO ({(tauxCourtage * 100).toFixed(0)}% + 9%)</Text>
-                <Text style={styles.infoRowValue}>{fmt(totalDevisTTCSignes + honorairesAMOSimul + (fraisRembourse ? 0 : totalFraisTable))}</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 6, backgroundColor: '#c2410c', borderRadius: 4, marginTop: 4 }}>
+                <Text style={{ color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' }}>TOTAL CHANTIER si AMO</Text>
+                <Text style={{ color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' }}>
+                  {fmt(totalDevisTTCSignes + honorairesAMO + totalFraisTable - (fraisRembourse ? fraisTTC : 0))}
+                </Text>
               </View>
             </View>
           </View>
         ) : null}
 
-        {/* ── TOTAL PROJET ── */}
+        {/* ── TOTAL PROJET (scénario actif) ── */}
         <View style={[styles.montantBlock, { marginTop: 8 }]}>
           <Text style={[styles.montantLabel, { fontSize: 15 }]}>TOTAL PROJET</Text>
           <Text style={[styles.montantValue, { fontSize: 15 }]}>
