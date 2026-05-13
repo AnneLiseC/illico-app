@@ -233,7 +233,9 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
             {acomptesArtisans.map((a, i) => (
               <View key={i} style={styles.infoRow}>
                 <Text style={[styles.infoRowLabel, { flex: 1 }]}>{a.entreprise}{a.pctLabel}</Text>
-                <Text style={{ fontSize: 7.5, color: a.couleurStatut, fontFamily: 'Helvetica-Bold', width: 54, textAlign: 'center' }}>{a.statut}</Text>
+                {!preview ? (
+                  <Text style={{ fontSize: 7.5, color: a.couleurStatut, fontFamily: 'Helvetica-Bold', width: 54, textAlign: 'center' }}>{a.statut}</Text>
+                ) : null}
                 <Text style={[styles.infoRowValue, { width: 72, textAlign: 'right' }]}>{fmt(a.acompte)}</Text>
               </View>
             ))}

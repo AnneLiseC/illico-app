@@ -313,6 +313,19 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
   const isC   = ['courtage', 'amo'].includes(dossier.typologie)
   const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
 
+  const acomptesArtisans = devisAcceptes.map(d => {
+    const ttc = toNum(d.montant_ttc)
+    const pct = toNum(d.acompte_pourcentage ?? 30)
+    const montantFixe = toNum(d.acompte_montant_fixe)
+    const acompte = pct === -1 ? montantFixe : ttc * (pct / 100)
+    const pctLabel = pct === -1 ? '' : ` (${pct}%)`
+    const suiviArt = (suiviFinancier || []).find(s => s.type_echeance === 'acompte_artisan' && (s.artisan_id === d.artisan_id || s.artisan_id === d.artisan?.id))
+    const statut = suiviArt?.statut_client === 'paye' ? 'Payé' : 'À régler'
+    const couleurStatut = suiviArt?.statut_client === 'paye' ? '#16a34a' : '#d97706'
+    return { entreprise: d.artisan?.entreprise || '—', acompte, pctLabel, statut, couleurStatut }
+  })
+  const totalAcomptes = acomptesArtisans.reduce((s, a) => s + a.acompte, 0)
+
   const pages = []
 
   // ── Descriptif du projet ──
@@ -385,8 +398,21 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
         React.createElement(Text, { style: { flex: 2 } }, ''),
         React.createElement(Text, { style: [CS.tdRWB, { flex: 2 }] }, fmt(totalTTC + fraisTTC)),
       ),
-      // Suivi des paiements (remplace l'ancienne section "Acomptes entreprises")
-      buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier }),
+      // Acomptes artisans avec statut Payé / À régler
+      acomptesArtisans.length > 0 && React.createElement(View, { style: { marginTop: 6 } },
+        React.createElement(Text, { style: CS.sectionH }, 'Acomptes entreprises'),
+        ...acomptesArtisans.map((a, i) =>
+          React.createElement(View, { key: i, style: CS.infoRow },
+            React.createElement(Text, { style: [CS.infoLabel, { flex: 1 }] }, `${a.entreprise}${a.pctLabel}`),
+            React.createElement(Text, { style: { fontSize: 7.5, color: a.couleurStatut, fontFamily: 'Helvetica-Bold', width: 54, textAlign: 'center' } }, a.statut),
+            React.createElement(Text, { style: [CS.infoValue, { width: 72, textAlign: 'right' }] }, fmt(a.acompte)),
+          )
+        ),
+        React.createElement(View, { style: [CS.infoRow, { backgroundColor: '#ddeef8', paddingHorizontal: 4, borderRadius: 3 }] },
+          React.createElement(Text, { style: [CS.tdB, { flex: 1 }] }, 'Total acomptes artisans'),
+          React.createElement(Text, { style: [CS.tdRB, { color: BLEU, fontSize: 9 }] }, fmt(totalAcomptes)),
+        ),
+      ),
       // Honoraires — deux blocs Courtage / AMO
       isC && totalTTC > 0 && React.createElement(View, { style: { marginTop: 10 } },
         React.createElement(Text, { style: CS.sectionH }, 'Honoraires illiCO travaux'),
@@ -427,6 +453,15 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
           ),
         ),
       ),
+      React.createElement(Ftr, { ref: dossier.reference }),
+    )
+  )
+
+  // ── Suivi des paiements (page séparée) ──
+  pages.push(
+    React.createElement(Page, { key: 'suivi-paiements', size: 'A4', style: CS.page },
+      React.createElement(Hdr, { title: 'Suivi des paiements', sub: `${dossier.reference} — ${nomClient}`, logo }),
+      buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier }),
       React.createElement(Ftr, { ref: dossier.reference }),
     )
   )
