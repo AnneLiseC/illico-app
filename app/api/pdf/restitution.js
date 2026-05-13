@@ -320,8 +320,8 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
     const acompte = pct === -1 ? montantFixe : ttc * (pct / 100)
     const pctLabel = pct === -1 ? '' : ` (${pct}%)`
     const suiviArt = (suiviFinancier || []).find(s => s.type_echeance === 'acompte_artisan' && (s.artisan_id === d.artisan_id || s.artisan_id === d.artisan?.id))
-    const statut = suiviArt?.statut_client === 'paye' ? 'Payé' : 'À régler'
-    const couleurStatut = suiviArt?.statut_client === 'paye' ? '#16a34a' : '#d97706'
+    const statut = suiviArt?.statut_client === 'regle' ? 'Payé' : 'À régler'
+    const couleurStatut = suiviArt?.statut_client === 'regle' ? '#16a34a' : '#d97706'
     return { entreprise: d.artisan?.entreprise || '—', acompte, pctLabel, statut, couleurStatut }
   })
   const totalAcomptes = acomptesArtisans.reduce((s, a) => s + a.acompte, 0)
@@ -1059,7 +1059,10 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
 
   // ── Récapitulatif financier ──
   await addSep(sepRecap)
-  await addContent()
+  await addContent()  // page récap financier
+  if (!isPreSignature) {
+    await addContent()  // page suivi des paiements
+  }
 
   // ── Devis ──
   await addSep(sepDevis)
