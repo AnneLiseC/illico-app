@@ -17,7 +17,9 @@ export default function NouveauClient() {
     nom2: '',
     prenom2: '',
     email: '',
+    email2: '',
     telephone: '',
+    telephone2: '',
     adresse: '',
     adresse_chantier: '',
     adresse_chantier_identique: true,
@@ -75,7 +77,9 @@ export default function NouveauClient() {
       nom2: form.nom2 || null,
       prenom2: form.prenom2 || null,
       email: form.email || null,
+      email2: form.email2 || null,
       telephone: form.telephone || null,
+      telephone2: form.telephone2 || null,
       adresse: form.adresse || null,
       adresse_chantier: adresseChantier,
       type_client: form.type_client,
@@ -164,20 +168,18 @@ export default function NouveauClient() {
             {estCouple && (
               <div className="grid grid-cols-2 gap-4 pt-3 border-t border-gray-100">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Prénom 2 *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Prénom 2 <span className="text-gray-400 font-normal">(optionnel)</span></label>
                   <input
                     type="text"
-                    required
                     value={form.prenom2}
                     onChange={e => set('prenom2', e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom 2 *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom 2 <span className="text-gray-400 font-normal">(optionnel)</span></label>
                   <input
                     type="text"
-                    required
                     value={form.nom2}
                     onChange={e => set('nom2', e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -189,7 +191,7 @@ export default function NouveauClient() {
             {/* Contact */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email 1</label>
                 <input
                   type="email"
                   value={form.email}
@@ -198,11 +200,31 @@ export default function NouveauClient() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email 2 <span className="text-gray-400 font-normal">(optionnel)</span></label>
+                <input
+                  type="email"
+                  value={form.email2}
+                  onChange={e => set('email2', e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tél 1</label>
                 <input
                   type="tel"
                   value={form.telephone}
                   onChange={e => set('telephone', e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tél 2 <span className="text-gray-400 font-normal">(optionnel)</span></label>
+                <input
+                  type="tel"
+                  value={form.telephone2}
+                  onChange={e => set('telephone2', e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
