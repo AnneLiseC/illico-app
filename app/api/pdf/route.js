@@ -203,19 +203,19 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
                   </View>
                 )
               })}
-              <View style={{ flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 4, backgroundColor: '#ddeef8' }}>
-                <Text style={[styles.cellBold, { width: 18 }]}> </Text>
-                <Text style={[styles.cellBold, { flex: 9 }]}>Total HT</Text>
-                <Text style={[styles.cellRightBold, { flex: 2, color: BLEU }]}>
+              <View style={{ flexDirection: 'row', paddingVertical: 3, paddingHorizontal: 4, backgroundColor: '#ddeef8' }}>
+                <Text style={[styles.cell, { width: 18 }]}> </Text>
+                <Text style={[styles.cell, { flex: 9, fontSize: 7.5 }]}>Total HT</Text>
+                <Text style={[styles.cellRight, { flex: 2, color: BLEU, fontSize: 7.5 }]}>
                   {fmt(totalDevisHTSignes + (fraisInTable ? fraisTTC / 1.2 : 0))}
                 </Text>
                 <Text style={{ flex: 2 }}> </Text>
               </View>
-              <View style={{ flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 4, backgroundColor: BLEU }}>
-                <Text style={[styles.cellBold, { width: 18, color: 'white' }]}> </Text>
-                <Text style={[styles.cellBold, { flex: 9, color: 'white', fontSize: 9 }]}>Total TTC artisans</Text>
+              <View style={{ flexDirection: 'row', paddingVertical: 4, paddingHorizontal: 4, backgroundColor: BLEU }}>
+                <Text style={[styles.cell, { width: 18, color: 'white' }]}> </Text>
+                <Text style={[styles.cell, { flex: 9, color: 'white', fontSize: 7.5 }]}>Total TTC artisans</Text>
                 <Text style={{ flex: 2 }}> </Text>
-                <Text style={[styles.cellRightBold, { flex: 2, color: 'white', fontSize: 9 }]}>
+                <Text style={[styles.cellRight, { flex: 2, color: 'white', fontSize: 7.5 }]}>
                   {fmt(totalTTCAvecFrais)}
                 </Text>
               </View>
@@ -232,11 +232,11 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
             <Text style={styles.sectionTitle}>Acomptes entreprises</Text>
             {acomptesArtisans.map((a, i) => (
               <View key={i} style={styles.infoRow}>
-                <Text style={styles.infoRowLabel}>{a.entreprise}{a.pctLabel}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={[styles.cell, { color: a.couleurStatut, fontSize: 7.5 }]}>{a.statut}</Text>
-                  <Text style={styles.infoRowValue}>{fmt(a.acompte)}</Text>
+                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Text style={styles.infoRowLabel}>{a.entreprise}{a.pctLabel}</Text>
+                  <Text style={{ fontSize: 7, color: a.couleurStatut, fontFamily: 'Helvetica-Bold' }}>{a.statut}</Text>
                 </View>
+                <Text style={styles.infoRowValue}>{fmt(a.acompte)}</Text>
               </View>
             ))}
             <View style={[styles.infoRow, { backgroundColor: '#ddeef8', paddingHorizontal: 4, borderRadius: 3 }]}>
@@ -313,13 +313,6 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
           </View>
         ) : null}
 
-        {/* ── TOTAL PROJET (scénario actif) ── */}
-        <View style={[styles.montantBlock, { marginTop: 8 }]}>
-          <Text style={[styles.montantLabel, { fontSize: 15 }]}>TOTAL PROJET</Text>
-          <Text style={[styles.montantValue, { fontSize: 15 }]}>
-            {fmt(totalDevisTTCSignes + (isAMO ? honorairesAMO : isCourtage ? honorairesCourtage : 0) + (fraisRembourse ? 0 : totalFraisTable))}
-          </Text>
-        </View>
 
         <View style={styles.footer} fixed>
           <Text style={styles.footerText}>illiCO travaux Martigues — {dossier.reference}</Text>
