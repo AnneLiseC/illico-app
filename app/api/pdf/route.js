@@ -160,7 +160,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
 
         {/* ── Tableau intervenants ── */}
         {(devisAcceptes.length > 0 || fraisInTable || fraisOfferts) ? (
-          <View style={styles.section}>
+          <View style={[styles.section, { marginBottom: 2 }]}>
             <Text style={styles.sectionTitle}>{preview ? 'Intervenants' : 'Intervenants (devis signés)'}</Text>
             <View style={styles.table}>
               <View style={styles.tableHeader}>
@@ -232,11 +232,9 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
             <Text style={styles.sectionTitle}>Acomptes entreprises</Text>
             {acomptesArtisans.map((a, i) => (
               <View key={i} style={styles.infoRow}>
-                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                  <Text style={styles.infoRowLabel}>{a.entreprise}{a.pctLabel}</Text>
-                  <Text style={{ fontSize: 7, color: a.couleurStatut, fontFamily: 'Helvetica-Bold' }}>{a.statut}</Text>
-                </View>
-                <Text style={styles.infoRowValue}>{fmt(a.acompte)}</Text>
+                <Text style={[styles.infoRowLabel, { flex: 1 }]}>{a.entreprise}{a.pctLabel}</Text>
+                <Text style={{ fontSize: 7.5, color: a.couleurStatut, fontFamily: 'Helvetica-Bold', width: 54, textAlign: 'center' }}>{a.statut}</Text>
+                <Text style={[styles.infoRowValue, { width: 72, textAlign: 'right' }]}>{fmt(a.acompte)}</Text>
               </View>
             ))}
             <View style={[styles.infoRow, { backgroundColor: '#ddeef8', paddingHorizontal: 4, borderRadius: 3 }]}>
