@@ -78,6 +78,7 @@ export default function Planning() {
   const [formIntervention, setFormIntervention] = useState({
     dossier_id: '', artisan_id: '', type_intervention: 'periode',
     date_debut: '', date_fin: '', jours_specifiques: [], notes: '',
+    heure_debut: '', duree_minutes: 60,
   })
   const [formDateCle, setFormDateCle] = useState({ date_demarrage_chantier: '', date_fin_chantier: '' })
 
@@ -304,7 +305,7 @@ export default function Planning() {
   const sauvegarderIntervention = async () => {
     if (!formIntervention.artisan_id) return
     setSaving(true); setErreur('')
-    const payload = { dossier_id: formIntervention.dossier_id, artisan_id: formIntervention.artisan_id, type_intervention: formIntervention.type_intervention, date_debut: formIntervention.date_debut || null, date_fin: formIntervention.type_intervention === 'periode' ? formIntervention.date_fin || null : null, jours_specifiques: formIntervention.type_intervention === 'jours_specifiques' ? formIntervention.jours_specifiques : null, notes: formIntervention.notes || null }
+    const payload = { dossier_id: formIntervention.dossier_id, artisan_id: formIntervention.artisan_id, type_intervention: formIntervention.type_intervention, date_debut: formIntervention.date_debut || null, date_fin: formIntervention.type_intervention === 'periode' ? formIntervention.date_fin || null : null, jours_specifiques: formIntervention.type_intervention === 'jours_specifiques' ? formIntervention.jours_specifiques : null, notes: formIntervention.notes || null, heure_debut: formIntervention.heure_debut || null, duree_minutes: formIntervention.heure_debut ? (formIntervention.duree_minutes || 60) : null }
     let savedId = elementSelectionne?.data?.id
     if (elementSelectionne?.type === 'intervention' && modeEdition) {
       const { error } = await supabase.from('interventions_artisans').update(payload).eq('id', savedId)
@@ -810,6 +811,23 @@ export default function Planning() {
                       )}
                     </div>
                   )}
+                  <div>
+                    <label className={labelCls}>Horaire</label>
+                    <div className="flex items-center gap-2 mb-2">
+                      <input type="checkbox" id="int-journee" checked={!formIntervention.heure_debut} onChange={e => setFormIntervention(f => ({ ...f, heure_debut: e.target.checked ? '' : '08:00' }))} className="accent-blue-700" />
+                      <label htmlFor="int-journee" className="text-sm text-slate-700 cursor-pointer">Journée entière</label>
+                    </div>
+                    {formIntervention.heure_debut && (
+                      <div className="flex gap-2">
+                        <div className="flex-1"><label className={labelCls}>Heure de début</label><input type="time" value={formIntervention.heure_debut} onChange={e => setFormIntervention(f => ({ ...f, heure_debut: e.target.value }))} className={inputCls} /></div>
+                        <div className="flex-1"><label className={labelCls}>Durée</label>
+                          <select value={formIntervention.duree_minutes} onChange={e => setFormIntervention(f => ({ ...f, duree_minutes: Number(e.target.value) }))} className={inputCls}>
+                            {[30,60,90,120,180,240,300,360,480].map(m => <option key={m} value={m}>{m < 60 ? `${m} min` : `${m/60}h${m%60 ? m%60 : ''}`}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   <div><label className={labelCls}>Notes</label><textarea value={formIntervention.notes} onChange={e => setFormIntervention(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} /></div>
                   <div className="flex gap-2 pt-1">
                     <button onClick={fermerModal} className="flex-1 border border-slate-200 text-slate-700 py-2 rounded-xl text-sm font-medium hover:bg-slate-50">Annuler</button>

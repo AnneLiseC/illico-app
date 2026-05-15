@@ -65,20 +65,32 @@ async function upsertEvent(calendar, googleEventId, eventBody) {
   return { action: 'inserted', id: res.data.id }
 }
 
+function buildIntervTimes(date, heure_debut, duree_minutes) {
+  if (heure_debut) {
+    const start = new Date(`${date}T${heure_debut}`)
+    const end = new Date(start.getTime() + (duree_minutes || 60) * 60000)
+    const fmt = d => d.toISOString().slice(0, 19)
+    return { start: { dateTime: fmt(start), timeZone: 'Europe/Paris' }, end: { dateTime: fmt(end), timeZone: 'Europe/Paris' } }
+  }
+  return { start: { date }, end: { date: nextDay(date) } }
+}
+
 function rdvToGoogleEvent(rdv) {
   const typeLabels = {
     visite_technique_client: 'R1 — Visite technique client',
     visite_technique_artisan: 'R2 — Visite technique avec artisan',
     presentation_devis: 'R3 — Présentation devis',
   }
-  const label = typeLabels[rdv.type_rdv] || rdv.type_rdv
   const client = rdv.dossier?.client
   const nomClient = client ? `${client.civilite || ''} ${client.prenom} ${client.nom}`.trim() : ''
   const artisan = rdv.artisan?.entreprise || ''
   const start = new Date(rdv.date_heure)
   const end = new Date(start.getTime() + (rdv.duree_minutes || 60) * 60000)
+  const summary = rdv.type_rdv === 'autres'
+    ? (rdv.titre || rdv.notes || 'Autre RDV')
+    : `${typeLabels[rdv.type_rdv] || rdv.type_rdv}${nomClient ? ' | ' + nomClient : ''}${artisan ? ' x ' + artisan : ''}`
   return {
-    summary: `${label}${nomClient ? ' | ' + nomClient : ''}${artisan ? ' x ' + artisan : ''}`,
+    summary,
     description: [
       rdv.dossier?.reference ? `Chantier : ${rdv.dossier.reference}` : '',
       rdv.notes ? `Notes : ${rdv.notes}` : '',
@@ -143,14 +155,25 @@ export async function POST(request) {
       let firstEvent
       let extraEvents = []
 
+      const { heure_debut, duree_minutes } = intervention
+
       if (intervention.type_intervention === 'periode') {
-        const endDate = new Date(intervention.date_fin)
-        endDate.setDate(endDate.getDate() + 1)
-        firstEvent = {
-          summary,
-          description: [...baseDesc, `[illico-int:${intervention.id}]`].join('\n'),
-          start: { date: intervention.date_debut },
-          end: { date: endDate.toISOString().slice(0, 10) },
+        if (!intervention.date_fin && !heure_debut) return NextResponse.json({ success: true, skipped: true })
+        if (heure_debut) {
+          firstEvent = {
+            summary,
+            description: [...baseDesc, `[illico-int:${intervention.id}]`].join('\n'),
+            ...buildIntervTimes(intervention.date_debut, heure_debut, duree_minutes),
+          }
+        } else {
+          const endDate = new Date(intervention.date_fin)
+          endDate.setDate(endDate.getDate() + 1)
+          firstEvent = {
+            summary,
+            description: [...baseDesc, `[illico-int:${intervention.id}]`].join('\n'),
+            start: { date: intervention.date_debut },
+            end: { date: endDate.toISOString().slice(0, 10) },
+          }
         }
       } else {
         const jours = intervention.jours_specifiques || []
@@ -158,14 +181,12 @@ export async function POST(request) {
         firstEvent = {
           summary,
           description: [...baseDesc, `[illico-int:${intervention.id}:0]`].join('\n'),
-          start: { date: jours[0] },
-          end: { date: nextDay(jours[0]) },
+          ...buildIntervTimes(jours[0], heure_debut, duree_minutes),
         }
         extraEvents = jours.slice(1).map((jour, i) => ({
           summary,
           description: [...baseDesc, `[illico-int:${intervention.id}:${i + 1}]`].join('\n'),
-          start: { date: jour },
-          end: { date: nextDay(jour) },
+          ...buildIntervTimes(jour, heure_debut, duree_minutes),
         }))
       }
 

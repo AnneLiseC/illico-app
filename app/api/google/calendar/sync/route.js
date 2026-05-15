@@ -41,14 +41,16 @@ function rdvToGoogleEvent(rdv) {
     visite_technique_artisan: 'R2 — Visite technique avec artisan',
     presentation_devis: 'R3 — Présentation devis',
   }
-  const label = typeLabels[rdv.type_rdv] || rdv.type_rdv
   const client = rdv.dossier?.client
   const nomClient = client ? `${client.civilite || ''} ${client.prenom} ${client.nom}`.trim() : ''
   const artisan = rdv.artisan?.entreprise || ''
   const start = new Date(rdv.date_heure)
   const end = new Date(start.getTime() + (rdv.duree_minutes || 60) * 60000)
+  const summary = rdv.type_rdv === 'autres'
+    ? (rdv.titre || rdv.notes || 'Autre RDV')
+    : `${typeLabels[rdv.type_rdv] || rdv.type_rdv}${nomClient ? ' | ' + nomClient : ''}${artisan ? ' x ' + artisan : ''}`
   return {
-    summary: `${label}${nomClient ? ' | ' + nomClient : ''}${artisan ? ' x ' + artisan : ''}`,
+    summary,
     description: [
       rdv.dossier?.reference ? `Chantier : ${rdv.dossier.reference}` : '',
       rdv.notes ? `Notes : ${rdv.notes}` : '',
@@ -61,8 +63,17 @@ function rdvToGoogleEvent(rdv) {
   }
 }
 
+function buildIntervTimes(date, heure_debut, duree_minutes) {
+  if (heure_debut) {
+    const start = new Date(`${date}T${heure_debut}`)
+    const end = new Date(start.getTime() + (duree_minutes || 60) * 60000)
+    const fmt = d => d.toISOString().slice(0, 19)
+    return { start: { dateTime: fmt(start), timeZone: 'Europe/Paris' }, end: { dateTime: fmt(end), timeZone: 'Europe/Paris' } }
+  }
+  return { start: { date }, end: { date: nextDay(date) } }
+}
+
 function interventionToGoogleEvents(intervention) {
-  // Données manquantes → skip
   if (!intervention.date_debut) return []
   if (intervention.type_intervention === 'periode' && !intervention.date_fin) return []
   if (intervention.type_intervention === 'jours_specifiques' && !intervention.jours_specifiques?.length) return []
@@ -70,13 +81,21 @@ function interventionToGoogleEvents(intervention) {
   const artisan = intervention.artisan?.entreprise || 'Artisan'
   const client = intervention.dossier?.client
   const nomClient = client ? `${client.prenom} ${client.nom}`.trim() : ''
-  const summary = ` ${artisan}${nomClient ? ' | ' + nomClient : ''}`
+  const summary = `🔨 ${artisan}${nomClient ? ' | ' + nomClient : ''}`
   const baseDesc = [
     intervention.dossier?.reference ? `Chantier : ${intervention.dossier.reference}` : '',
     intervention.notes ? `Notes : ${intervention.notes}` : '',
   ].filter(Boolean)
+  const { heure_debut, duree_minutes } = intervention
 
   if (intervention.type_intervention === 'periode') {
+    if (heure_debut) {
+      return [{
+        summary,
+        description: [...baseDesc, `[illico-int:${intervention.id}]`].join('\n'),
+        ...buildIntervTimes(intervention.date_debut, heure_debut, duree_minutes),
+      }]
+    }
     const endDate = new Date(intervention.date_fin)
     endDate.setDate(endDate.getDate() + 1)
     return [{
@@ -89,8 +108,7 @@ function interventionToGoogleEvents(intervention) {
   return intervention.jours_specifiques.map((jour, idx) => ({
     summary,
     description: [...baseDesc, `[illico-int:${intervention.id}:${idx}]`].join('\n'),
-    start: { date: jour },
-    end: { date: nextDay(jour) },
+    ...buildIntervTimes(jour, heure_debut, duree_minutes),
   }))
 }
 
@@ -273,12 +291,12 @@ export async function POST(request) {
     // ── PULL : Google → App ──────────────────────────────────────────────────
     try {
       const now = new Date()
-      const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1)
+      const januaryFirst = new Date(now.getFullYear(), 0, 1)
       const twelveMonthsAhead = new Date(now.getFullYear(), now.getMonth() + 12, 1)
 
       const { data: calData } = await calendar.events.list({
         calendarId: CALENDAR_ID,
-        timeMin: sixMonthsAgo.toISOString(),
+        timeMin: januaryFirst.toISOString(),
         timeMax: twelveMonthsAhead.toISOString(),
         maxResults: 1000,
         singleEvents: true,
@@ -317,51 +335,33 @@ export async function POST(request) {
           continue
         }
 
-        // Intervention période déplacée dans Google ?
-        const intMatch = desc.match(/\[illico-int:([a-f0-9-]{36})\]\s*$/)
-        if (intMatch && evt.start?.date && evt.end?.date) {
+        // Interventions et dates chantier : gérées uniquement depuis l'app, on ignore le pull
+        if (desc.match(/\[illico-int[^\]]*\]/) || desc.match(/\[illico-(?:start|end):[^\]]+\]/)) continue
+
+        // Événement Google sans tag illico → importer comme RDV "Autres" (avec heure ou journée entière)
+        if (evt.start?.dateTime || evt.start?.date) {
           try {
-            const { data: intervention } = await supabaseAdmin
-              .from('interventions_artisans').select('id, type_intervention, date_debut, date_fin').eq('id', intMatch[1]).single()
-            if (intervention?.type_intervention === 'periode') {
-              const gEndExcl = new Date(evt.end.date)
-              gEndExcl.setDate(gEndExcl.getDate() - 1)
-              const gEndStr = gEndExcl.toISOString().slice(0, 10)
-              if (evt.start.date !== intervention.date_debut || gEndStr !== intervention.date_fin) {
-                await supabaseAdmin.from('interventions_artisans')
-                  .update({ date_debut: evt.start.date, date_fin: gEndStr }).eq('id', intMatch[1])
-                results.pulled++
+            const { data: existing } = await supabaseAdmin
+              .from('rendez_vous').select('id').eq('google_event_id', evt.id).maybeSingle()
+            if (!existing) {
+              let dateHeure, dureeMinutes
+              if (evt.start.dateTime) {
+                const gStart = new Date(evt.start.dateTime)
+                const gEnd = new Date(evt.end.dateTime)
+                dateHeure = gStart.toISOString()
+                dureeMinutes = Math.round((gEnd - gStart) / 60000) || 60
+              } else {
+                dateHeure = new Date(evt.start.date + 'T00:00:00').toISOString()
+                dureeMinutes = 1440
               }
-            }
-          } catch {}
-          continue
-        }
-
-        // Date démarrage chantier déplacée dans Google ?
-        const startMatch = desc.match(/\[illico-start:([^\]]+)\]/)
-        if (startMatch && evt.start?.date) {
-          try {
-            const { data: dossier } = await supabaseAdmin
-              .from('dossiers').select('id, date_demarrage_chantier').eq('id', startMatch[1]).single()
-            if (dossier && evt.start.date !== dossier.date_demarrage_chantier) {
-              await supabaseAdmin.from('dossiers')
-                .update({ date_demarrage_chantier: evt.start.date }).eq('id', startMatch[1])
-              results.pulled++
-            }
-          } catch {}
-          continue
-        }
-
-        // Date fin chantier déplacée dans Google ?
-        const endMatch = desc.match(/\[illico-end:([^\]]+)\]/)
-        if (endMatch && evt.start?.date) {
-          try {
-            const { data: dossier } = await supabaseAdmin
-              .from('dossiers').select('id, date_fin_chantier').eq('id', endMatch[1]).single()
-            if (dossier && evt.start.date !== dossier.date_fin_chantier) {
-              await supabaseAdmin.from('dossiers')
-                .update({ date_fin_chantier: evt.start.date }).eq('id', endMatch[1])
-              results.pulled++
+              const { error: insertError } = await supabaseAdmin.from('rendez_vous').insert({
+                type_rdv: 'autres',
+                date_heure: dateHeure,
+                duree_minutes: dureeMinutes,
+                titre: evt.summary || null,
+                google_event_id: evt.id,
+              })
+              if (!insertError) results.pulled++
             }
           } catch {}
         }
@@ -372,7 +372,7 @@ export async function POST(request) {
         .from('rendez_vous').select('id, date_heure, google_event_id').not('google_event_id', 'is', null)
       for (const rdv of (rdvsWithId || [])) {
         const d = new Date(rdv.date_heure)
-        if (d >= sixMonthsAgo && d <= twelveMonthsAhead && !activeGoogleIds.has(rdv.google_event_id)) {
+        if (d >= januaryFirst && d <= twelveMonthsAhead && !activeGoogleIds.has(rdv.google_event_id)) {
           await supabaseAdmin.from('rendez_vous').delete().eq('id', rdv.id)
           results.deleted++
         }
@@ -382,7 +382,7 @@ export async function POST(request) {
         .from('interventions_artisans').select('id, date_debut, google_event_id').not('google_event_id', 'is', null)
       for (const int of (intsWithId || [])) {
         const d = new Date(int.date_debut)
-        if (d >= sixMonthsAgo && d <= twelveMonthsAhead && !activeGoogleIds.has(int.google_event_id)) {
+        if (d >= januaryFirst && d <= twelveMonthsAhead && !activeGoogleIds.has(int.google_event_id)) {
           await supabaseAdmin.from('interventions_artisans').delete().eq('id', int.id)
           results.deleted++
         }
