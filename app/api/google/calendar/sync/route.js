@@ -88,12 +88,13 @@ function interventionToGoogleEvents(intervention) {
       end: { date: endDate.toISOString().slice(0, 10) },
     }]
   }
-  return intervention.jours_specifiques.map((jour, idx) => ({
+  const jours = [...intervention.jours_specifiques].sort()
+  return [{
     summary,
-    description: [...baseDesc, `[illico-int:${intervention.id}:${idx}]`].join('\n'),
-    start: { date: jour },
-    end: { date: nextDay(jour) },
-  }))
+    description: [...baseDesc, `[illico-int:${intervention.id}]`].join('\n'),
+    start: { date: jours[0] },
+    end: { date: nextDay(jours[jours.length - 1]) },
+  }]
 }
 
 // Tente une mise à jour ; retourne 'updated' ou 'not_found' si supprimé côté Google

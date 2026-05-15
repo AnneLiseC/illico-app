@@ -155,20 +155,14 @@ export async function POST(request) {
           end: { date: endDate.toISOString().slice(0, 10) },
         }
       } else {
-        const jours = intervention.jours_specifiques || []
+        const jours = [...(intervention.jours_specifiques || [])].sort()
         if (!jours.length) return NextResponse.json({ success: true, skipped: true })
         firstEvent = {
           summary,
-          description: [...baseDesc, `[illico-int:${intervention.id}:0]`].join('\n'),
+          description: [...baseDesc, `[illico-int:${intervention.id}]`].join('\n'),
           start: { date: jours[0] },
-          end: { date: nextDay(jours[0]) },
+          end: { date: nextDay(jours[jours.length - 1]) },
         }
-        extraEvents = jours.slice(1).map((jour, i) => ({
-          summary,
-          description: [...baseDesc, `[illico-int:${intervention.id}:${i + 1}]`].join('\n'),
-          start: { date: jour },
-          end: { date: nextDay(jour) },
-        }))
       }
 
       const result = await upsertEvent(calendar, intervention.google_event_id, firstEvent)
