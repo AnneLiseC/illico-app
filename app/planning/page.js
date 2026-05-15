@@ -733,7 +733,15 @@ export default function Planning() {
               {(modalType === 'rdv' || (elementSelectionne?.type === 'rdv' && modeEdition)) && (!elementSelectionne || modeEdition) && (
                 <div className="space-y-4">
                   <div><label className={labelCls}>Type de rendez-vous</label>
-                    <select value={formRdv.type_rdv} onChange={e => setFormRdv(f => ({ ...f, type_rdv: e.target.value }))} className={inputCls}>
+                    <select value={formRdv.type_rdv} onChange={e => {
+                      const newType = e.target.value
+                      setFormRdv(f => ({
+                        ...f,
+                        type_rdv: newType,
+                        titre: newType !== 'autres' ? '' : f.titre,
+                        dossier_id: newType === 'autres' ? '' : (f.type_rdv === 'autres' ? '' : f.dossier_id),
+                      }))
+                    }} className={inputCls}>
                       <option value="visite_technique_client">R1 — Visite technique client</option>
                       <option value="visite_technique_artisan">R2 — Visite technique avec artisan</option>
                       <option value="presentation_devis">R3 — Présentation devis</option>
@@ -743,7 +751,7 @@ export default function Planning() {
                   {formRdv.type_rdv === 'autres' && <div><label className={labelCls}>Titre du rendez-vous *</label>
                     <input type="text" value={formRdv.titre} onChange={e => setFormRdv(f => ({ ...f, titre: e.target.value }))} placeholder="Ex : Réunion de chantier, Appel fournisseur…" className={inputCls} />
                   </div>}
-                  {!modeEdition && formRdv.type_rdv !== 'autres' && <div><label className={labelCls}>Chantier *</label>
+                  {formRdv.type_rdv !== 'autres' && !formRdv.dossier_id && <div><label className={labelCls}>Chantier *</label>
                     <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls}>
                       <option value="">— Choisir un chantier —</option>
                       {dossiers.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
@@ -766,7 +774,7 @@ export default function Planning() {
                   <div><label className={labelCls}>Notes</label><textarea value={formRdv.notes} onChange={e => setFormRdv(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} /></div>
                   <div className="flex gap-2 pt-1">
                     <button onClick={fermerModal} className="flex-1 border border-slate-200 text-slate-700 py-2 rounded-xl text-sm font-medium hover:bg-slate-50">Annuler</button>
-                    <button onClick={sauvegarderRdv} disabled={(!formRdv.dossier_id && !modeEdition && formRdv.type_rdv !== 'autres') || !formRdv.date_heure || saving} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: COLORS.blue }}>
+                    <button onClick={sauvegarderRdv} disabled={(!formRdv.dossier_id && formRdv.type_rdv !== 'autres') || !formRdv.date_heure || saving} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: COLORS.blue }}>
                       {saving ? 'Enregistrement…' : modeEdition ? 'Enregistrer' : 'Créer le RDV'}
                     </button>
                   </div>
