@@ -37,9 +37,9 @@ function buildOAuthClient(userId, tokens) {
 
 function rdvToGoogleEvent(rdv) {
   const typeLabels = {
-    visite_technique_client: 'R1 — Visite technique client',
-    visite_technique_artisan: 'R2 — Visite technique avec artisan',
-    presentation_devis: 'R3 — Présentation devis',
+    visite_technique_client: 'R1 — ',
+    visite_technique_artisan: 'R2 — ',
+    presentation_devis: 'R3 — ',
   }
   const label = typeLabels[rdv.type_rdv] || rdv.type_rdv
   const client = rdv.dossier?.client
@@ -47,24 +47,24 @@ function rdvToGoogleEvent(rdv) {
   const artisan = rdv.artisan?.entreprise || ''
   const start = new Date(rdv.date_heure)
   const end = new Date(start.getTime() + (rdv.duree_minutes || 60) * 60000)
+  // Envoyer sans suffixe Z pour que Google interprète via timeZone (évite le décalage UTC→Paris)
+  const fmtNaive = (d) => d.toISOString().slice(0, 19)
   return {
     summary: `${label}${nomClient ? ' | ' + nomClient : ''}${artisan ? ' x ' + artisan : ''}`,
     description: [
       rdv.dossier?.reference ? `Chantier : ${rdv.dossier.reference}` : '',
       rdv.notes ? `Notes : ${rdv.notes}` : '',
-      `[illico-rdv:${rdv.id}]`,
+      `[illico-rdv:${nomClient}]`,
     ].filter(Boolean).join('\n'),
-    start: { dateTime: start.toISOString(), timeZone: 'Europe/Paris' },
-    end: { dateTime: end.toISOString(), timeZone: 'Europe/Paris' },
+    start: { dateTime: fmtNaive(start), timeZone: 'Europe/Paris' },
+    end: { dateTime: fmtNaive(end), timeZone: 'Europe/Paris' },
     colorId: rdv.type_rdv === 'visite_technique_client' ? '1'
             : rdv.type_rdv === 'visite_technique_artisan' ? '2' : '6',
   }
 }
 
 function interventionToGoogleEvents(intervention) {
-  // Données manquantes → skip
   if (!intervention.date_debut) return []
-  if (intervention.type_intervention === 'periode' && !intervention.date_fin) return []
   if (intervention.type_intervention === 'jours_specifiques' && !intervention.jours_specifiques?.length) return []
 
   const artisan = intervention.artisan?.entreprise || 'Artisan'
@@ -74,24 +74,40 @@ function interventionToGoogleEvents(intervention) {
   const baseDesc = [
     intervention.dossier?.reference ? `Chantier : ${intervention.dossier.reference}` : '',
     intervention.notes ? `Notes : ${intervention.notes}` : '',
-  ].filter(Boolean)
+  ].filter(Boolean).join('\n')
 
   if (intervention.type_intervention === 'periode') {
-    const endDate = new Date(intervention.date_fin)
-    endDate.setDate(endDate.getDate() + 1)
-    return [{
-      summary,
-      description: [...baseDesc, `[illico-int:${intervention.id}]`].join('\n'),
+    const events = [{
+      summary: `Début ${summary}`,
+      description: [baseDesc, `[illico-int-debut:${intervention.id}]`].filter(Boolean).join('\n'),
       start: { date: intervention.date_debut },
-      end: { date: endDate.toISOString().slice(0, 10) },
+      end: { date: nextDay(intervention.date_debut) },
+      colorId: '2',
+      _googleEventId: intervention.google_event_id,
+      _field: 'google_event_id',
     }]
+    if (intervention.date_fin) {
+      events.push({
+        summary: `Fin ${summary}`,
+        description: [baseDesc, `[illico-int-fin:${intervention.id}]`].filter(Boolean).join('\n'),
+        start: { date: intervention.date_fin },
+        end: { date: nextDay(intervention.date_fin) },
+        colorId: '6',
+        _googleEventId: intervention.google_end_event_id,
+        _field: 'google_end_event_id',
+      })
+    }
+    return events
   }
-  return intervention.jours_specifiques.map((jour, idx) => ({
+  const jours = [...intervention.jours_specifiques].sort()
+  return [{
     summary,
-    description: [...baseDesc, `[illico-int:${intervention.id}:${idx}]`].join('\n'),
-    start: { date: jour },
-    end: { date: nextDay(jour) },
-  }))
+    description: [baseDesc, `[illico-int:${intervention.id}]`].filter(Boolean).join('\n'),
+    start: { date: jours[0] },
+    end: { date: nextDay(jours[jours.length - 1]) },
+    _googleEventId: intervention.google_event_id,
+    _field: 'google_event_id',
+  }]
 }
 
 // Tente une mise à jour ; retourne 'updated' ou 'not_found' si supprimé côté Google
@@ -187,22 +203,28 @@ export async function POST(request) {
         const events = interventionToGoogleEvents(intervention)
         if (!events.length) continue
 
-        if (intervention.google_event_id) {
-          const status = await tryUpdate(calendar, intervention.google_event_id, events[0])
-          if (status === 'not_found') {
-            await supabaseAdmin.from('interventions_artisans').delete().eq('id', intervention.id)
-            results.deleted++
+        for (const evt of events) {
+          const { _googleEventId, _field, ...eventBody } = evt
+          if (_googleEventId) {
+            const status = await tryUpdate(calendar, _googleEventId, eventBody)
+            if (status === 'not_found') {
+              if (_field === 'google_event_id') {
+                await supabaseAdmin.from('interventions_artisans').delete().eq('id', intervention.id)
+                results.deleted++
+                break
+              } else {
+                await supabaseAdmin.from('interventions_artisans')
+                  .update({ [_field]: null }).eq('id', intervention.id)
+              }
+            } else {
+              results.updated++
+            }
           } else {
-            results.updated++
+            const res = await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: eventBody })
+            await supabaseAdmin.from('interventions_artisans')
+              .update({ [_field]: res.data.id }).eq('id', intervention.id)
+            results.pushed++
           }
-        } else {
-          const res = await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: events[0] })
-          await supabaseAdmin.from('interventions_artisans')
-            .update({ google_event_id: res.data.id }).eq('id', intervention.id)
-          for (let i = 1; i < events.length; i++) {
-            await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: events[i] })
-          }
-          results.pushed++
         }
       } catch (err) {
         results.errors.push(`Intervention ${intervention.id}: ${err.message}`)
@@ -219,7 +241,7 @@ export async function POST(request) {
         try {
           const eventStart = {
             summary: ` Démarrage${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
-            description: `[illico-start:${dossier.id}]`,
+            description: `[illico-start:${dossier.client.nom}]`,
             start: { date: dossier.date_demarrage_chantier },
             end: { date: nextDay(dossier.date_demarrage_chantier) },
             colorId: '2',
@@ -245,8 +267,8 @@ export async function POST(request) {
       if (dossier.date_fin_chantier) {
         try {
           const eventEnd = {
-            summary: `🏁 Fin${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
-            description: `[illico-end:${dossier.id}]`,
+            summary: ` Fin${dossier.client ? ' | ' + dossier.client.prenom + ' ' + dossier.client.nom : ''}`,
+            description: `[illico-end:${dossier.client.nom}]`,
             start: { date: dossier.date_fin_chantier },
             end: { date: nextDay(dossier.date_fin_chantier) },
             colorId: '6',
@@ -317,25 +339,38 @@ export async function POST(request) {
           continue
         }
 
-        // Intervention période déplacée dans Google ?
-        const intMatch = desc.match(/\[illico-int:([a-f0-9-]{36})\]\s*$/)
-        if (intMatch && evt.start?.date && evt.end?.date) {
+        // Début d'intervention déplacé dans Google ?
+        const intDebutMatch = desc.match(/\[illico-int-debut:([a-f0-9-]{36})\]/)
+        if (intDebutMatch && evt.start?.date) {
           try {
             const { data: intervention } = await supabaseAdmin
-              .from('interventions_artisans').select('id, type_intervention, date_debut, date_fin').eq('id', intMatch[1]).single()
-            if (intervention?.type_intervention === 'periode') {
-              const gEndExcl = new Date(evt.end.date)
-              gEndExcl.setDate(gEndExcl.getDate() - 1)
-              const gEndStr = gEndExcl.toISOString().slice(0, 10)
-              if (evt.start.date !== intervention.date_debut || gEndStr !== intervention.date_fin) {
-                await supabaseAdmin.from('interventions_artisans')
-                  .update({ date_debut: evt.start.date, date_fin: gEndStr }).eq('id', intMatch[1])
-                results.pulled++
-              }
+              .from('interventions_artisans').select('id, date_debut').eq('id', intDebutMatch[1]).single()
+            if (intervention && evt.start.date !== intervention.date_debut) {
+              await supabaseAdmin.from('interventions_artisans')
+                .update({ date_debut: evt.start.date }).eq('id', intDebutMatch[1])
+              results.pulled++
             }
           } catch {}
           continue
         }
+
+        // Fin d'intervention déplacée dans Google ?
+        const intFinMatch = desc.match(/\[illico-int-fin:([a-f0-9-]{36})\]/)
+        if (intFinMatch && evt.start?.date) {
+          try {
+            const { data: intervention } = await supabaseAdmin
+              .from('interventions_artisans').select('id, date_fin').eq('id', intFinMatch[1]).single()
+            if (intervention && evt.start.date !== intervention.date_fin) {
+              await supabaseAdmin.from('interventions_artisans')
+                .update({ date_fin: evt.start.date }).eq('id', intFinMatch[1])
+              results.pulled++
+            }
+          } catch {}
+          continue
+        }
+        // Intervention jours_specifiques déplacée dans Google ? (lecture seule, pas de pull)
+        const intMatch = desc.match(/\[illico-int:([a-f0-9-]{36})\]/)
+        if (intMatch) continue
 
         // Date démarrage chantier déplacée dans Google ?
         const startMatch = desc.match(/\[illico-start:([^\]]+)\]/)
@@ -379,12 +414,17 @@ export async function POST(request) {
       }
 
       const { data: intsWithId } = await supabaseAdmin
-        .from('interventions_artisans').select('id, date_debut, google_event_id').not('google_event_id', 'is', null)
+        .from('interventions_artisans').select('id, date_debut, google_event_id, google_end_event_id').not('google_event_id', 'is', null)
       for (const int of (intsWithId || [])) {
         const d = new Date(int.date_debut)
         if (d >= sixMonthsAgo && d <= twelveMonthsAhead && !activeGoogleIds.has(int.google_event_id)) {
           await supabaseAdmin.from('interventions_artisans').delete().eq('id', int.id)
           results.deleted++
+          continue
+        }
+        if (int.google_end_event_id && !activeGoogleIds.has(int.google_end_event_id)) {
+          await supabaseAdmin.from('interventions_artisans')
+            .update({ google_end_event_id: null }).eq('id', int.id)
         }
       }
 
