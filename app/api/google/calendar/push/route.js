@@ -77,6 +77,8 @@ function rdvToGoogleEvent(rdv) {
   const artisan = rdv.artisan?.entreprise || ''
   const start = new Date(rdv.date_heure)
   const end = new Date(start.getTime() + (rdv.duree_minutes || 60) * 60000)
+  // Envoyer sans suffixe Z pour que Google interprète via timeZone (évite le décalage UTC→Paris)
+  const fmtNaive = (d) => d.toISOString().slice(0, 19)
   return {
     summary: `${label}${nomClient ? ' | ' + nomClient : ''}${artisan ? ' x ' + artisan : ''}`,
     description: [
@@ -84,8 +86,8 @@ function rdvToGoogleEvent(rdv) {
       rdv.notes ? `Notes : ${rdv.notes}` : '',
       `[illico-rdv:${rdv.id}]`,
     ].filter(Boolean).join('\n'),
-    start: { dateTime: start.toISOString(), timeZone: 'Europe/Paris' },
-    end: { dateTime: end.toISOString(), timeZone: 'Europe/Paris' },
+    start: { dateTime: fmtNaive(start), timeZone: 'Europe/Paris' },
+    end: { dateTime: fmtNaive(end), timeZone: 'Europe/Paris' },
     colorId: rdv.type_rdv === 'visite_technique_client' ? '1'
             : rdv.type_rdv === 'visite_technique_artisan' ? '2' : '6',
   }
