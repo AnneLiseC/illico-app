@@ -261,7 +261,7 @@ export default function FicheChantier({ params }) {
   const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '' })
   const [modalCreerIntervOuvert, setModalCreerIntervOuvert] = useState(false)
   const [nouvIntervArtisanId, setNouvIntervArtisanId] = useState(null)
-  const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '' })
+  const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60 })
   const [fichesTechChantier, setFichesTechChantier] = useState({})
   const [fichesPanelOuvert, setFichesPanelOuvert] = useState(null)
   const [documents, setDocuments] = useState([])
@@ -433,6 +433,8 @@ export default function FicheChantier({ params }) {
         date_fin: nouvIntervForm.type_intervention === 'periode' ? nouvIntervForm.date_fin || null : null,
         jours_specifiques: nouvIntervForm.type_intervention === 'jours_specifiques' ? nouvIntervForm.jours_specifiques : null,
         notes: nouvIntervForm.notes || null,
+        heure_debut: nouvIntervForm.heure_debut || null,
+        duree_minutes: nouvIntervForm.heure_debut ? (nouvIntervForm.duree_minutes || 60) : null,
       }
       const { data: intData, error: insertErr } = await supabase.from('interventions_artisans').insert(payload).select('*, artisan:artisans(id, entreprise)')
       if (insertErr) { setErreur('Erreur : ' + insertErr.message); return }
@@ -447,7 +449,7 @@ export default function FicheChantier({ params }) {
       await chargerRdvsDossier()
       setModalCreerIntervOuvert(false)
       setNouvIntervArtisanId(null)
-      setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '' })
+      setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60 })
       setSucces('Intervention planifiée ✓')
     } catch (err) {
       setErreur('Erreur inattendue : ' + err.message)
@@ -465,6 +467,8 @@ export default function FicheChantier({ params }) {
       date_fin: interventionEnEdition.type_intervention === 'periode' ? interventionEnEdition.date_fin || null : null,
       jours_specifiques: interventionEnEdition.type_intervention === 'jours_specifiques' ? interventionEnEdition.jours_specifiques : null,
       notes: interventionEnEdition.notes || null,
+      heure_debut: interventionEnEdition.heure_debut || null,
+      duree_minutes: interventionEnEdition.heure_debut ? (interventionEnEdition.duree_minutes || 60) : null,
     }).eq('id', interventionEnEdition.id)
     if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerRdvsDossier()
@@ -2694,6 +2698,27 @@ export default function FicheChantier({ params }) {
                 </div>
               )}
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Horaire</label>
+                <div className="flex items-center gap-2 mb-2">
+                  <input type="checkbox" id="int-edit-journee" checked={!interventionEnEdition.heure_debut} onChange={e => setInterventionEnEdition(i => ({ ...i, heure_debut: e.target.checked ? '' : '08:00' }))} className="accent-blue-700" />
+                  <label htmlFor="int-edit-journee" className="text-sm text-gray-700 cursor-pointer">Journée entière</label>
+                </div>
+                {interventionEnEdition.heure_debut && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Heure de début</label>
+                      <input type="time" value={interventionEnEdition.heure_debut} onChange={e => setInterventionEnEdition(i => ({ ...i, heure_debut: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Durée</label>
+                      <select value={interventionEnEdition.duree_minutes || 60} onChange={e => setInterventionEnEdition(i => ({ ...i, duree_minutes: Number(e.target.value) }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        {[30,60,90,120,180,240,300,360,480].map(m => <option key={m} value={m}>{m < 60 ? `${m} min` : `${m/60}h${m%60 ? m%60 : ''}`}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
                 <textarea value={interventionEnEdition.notes || ''} onChange={e => setInterventionEnEdition(i => ({ ...i, notes: e.target.value }))}
                   rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -3207,6 +3232,28 @@ export default function FicheChantier({ params }) {
                 </div>
               </div>
             )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Horaire</label>
+              <div className="flex items-center gap-2 mb-2">
+                <input type="checkbox" id="int-new-journee" checked={!nouvIntervForm.heure_debut} onChange={e => setNouvIntervForm(f => ({ ...f, heure_debut: e.target.checked ? '' : '08:00' }))} className="accent-blue-700" />
+                <label htmlFor="int-new-journee" className="text-sm text-gray-700 cursor-pointer">Journée entière</label>
+              </div>
+              {nouvIntervForm.heure_debut && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Heure de début</label>
+                    <input type="time" value={nouvIntervForm.heure_debut} onChange={e => setNouvIntervForm(f => ({ ...f, heure_debut: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Durée</label>
+                    <select value={nouvIntervForm.duree_minutes} onChange={e => setNouvIntervForm(f => ({ ...f, duree_minutes: Number(e.target.value) }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      {[30,60,90,120,180,240,300,360,480].map(m => <option key={m} value={m}>{m < 60 ? `${m} min` : `${m/60}h${m%60 ? m%60 : ''}`}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
