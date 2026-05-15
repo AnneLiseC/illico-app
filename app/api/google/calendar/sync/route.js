@@ -466,6 +466,25 @@ export async function POST(request) {
             }
           } catch {}
         }
+
+        // Événement Google toute la journée (all-day) sans tag illico
+        if (evt.start?.date && !evt.start?.dateTime) {
+          try {
+            const { data: existing } = await supabaseAdmin
+              .from('rendez_vous').select('id').eq('google_event_id', evt.id).maybeSingle()
+            if (!existing) {
+              const days = Math.round((new Date(evt.end.date) - new Date(evt.start.date)) / 86400000)
+              const { error: insertError } = await supabaseAdmin.from('rendez_vous').insert({
+                type_rdv: 'autres',
+                date_heure: evt.start.date + 'T00:00:00',
+                duree_minutes: days * 1440,
+                notes: evt.summary || null,
+                google_event_id: evt.id,
+              })
+              if (!insertError) results.pulled++
+            }
+          } catch {}
+        }
       }
 
       // Filet de sécurité : suppressions non détectées par le PUSH

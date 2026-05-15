@@ -146,6 +146,17 @@ export default function Planning() {
         : r.type_rdv === 'visite_technique_artisan'
           ? `${cfg.short} · ${client} × ${r.artisan?.entreprise || ''}`
           : `${cfg.short} · ${client}`
+      const isAllDay = r.type_rdv === 'autres' && r.duree_minutes >= 1440 && r.duree_minutes % 1440 === 0
+      if (isAllDay) {
+        const endDate = new Date(new Date(r.date_heure).getTime() + r.duree_minutes * 60000)
+        return {
+          id: 'rdv-' + r.id, title: titre, allDay: true,
+          start: r.date_heure.slice(0, 10),
+          end: endDate.toISOString().slice(0, 10),
+          backgroundColor: cfg.color, borderColor: cfg.color, textColor: '#fff',
+          extendedProps: { type: 'rdv', data: r, cfg },
+        }
+      }
       return {
         id: 'rdv-' + r.id, title: titre,
         start: r.date_heure,
