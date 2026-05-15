@@ -283,7 +283,7 @@ export async function POST(request) {
           }
         } catch (err) { results.errors.push(`Fin ${dossier.id}: ${err.message}`) }
       }
-    }
+    } 
 
     // ── PULL : Google → App ──────────────────────────────────────────────────
     try {
