@@ -230,7 +230,6 @@ export default function Chantiers() {
                       )}
                       <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Statut</th>
                       <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Limite devis</th>
-                      <th className="px-6 py-3"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -240,7 +239,7 @@ export default function Chantiers() {
                       const diff = limiteDevis ? (limiteDevis - aujourdhui) / (1000 * 60 * 60 * 24) : null
                       const urgent = diff !== null && diff <= 7 && diff >= 0
                       return (
-                        <tr key={d.id} className="hover:bg-gray-50">
+                        <tr key={d.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/chantiers/${d.id}`)}>
                           <td className="px-6 py-4">
                             <p className="font-medium text-gray-800 text-sm">{d.reference}</p>
                           </td>
@@ -267,10 +266,6 @@ export default function Chantiers() {
                             ) : (
                               <span className="text-xs text-gray-300">—</span>
                             )}
-                          </td>
-                          <td className="px-6 py-4">
-                            <button onClick={() => router.push(`/chantiers/${d.id}`)}
-                              className="text-blue-600 text-sm hover:underline">Voir →</button>
                           </td>
                         </tr>
                       )

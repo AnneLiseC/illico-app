@@ -29,6 +29,7 @@ export default function NouveauClient() {
     apporteur_nom: '',
     apporteur_pourcentage: '',
     apporteur_base: 'total_chantier',
+    notes: '',
   })
 
   useEffect(() => {
@@ -88,6 +89,7 @@ export default function NouveauClient() {
       apporteur_nom: form.apporteur_affaires ? form.apporteur_nom : null,
       apporteur_pourcentage: form.apporteur_affaires ? parseFloat(form.apporteur_pourcentage) : null,
       apporteur_base: form.apporteur_affaires ? form.apporteur_base : null,
+      notes: form.notes || null,
     }).select()
 
     if (error) {
@@ -359,6 +361,18 @@ export default function NouveauClient() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Notes */}
+          <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+            <h2 className="font-semibold text-gray-800">Notes</h2>
+            <textarea
+              value={form.notes}
+              onChange={e => set('notes', e.target.value)}
+              rows={4}
+              placeholder="Informations complémentaires sur le client..."
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+            />
           </div>
 
           {erreur && <p className="text-red-500 text-sm">{erreur}</p>}

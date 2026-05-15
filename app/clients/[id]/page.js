@@ -87,6 +87,7 @@ export default function FicheClient({ params }) {
         apporteur_nom: client.apporteur_affaires ? client.apporteur_nom : null,
         apporteur_pourcentage: client.apporteur_affaires ? parseFloat(client.apporteur_pourcentage) : null,
         apporteur_base: client.apporteur_affaires ? client.apporteur_base : null,
+        notes: client.notes || null,
       })
       .eq('id', id)
 
@@ -425,6 +426,24 @@ export default function FicheClient({ params }) {
             </div>
         )}
         </div>
+
+        {/* Notes */}
+        {(mode === 'edition' || client.notes) && (
+          <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-3">
+            <h2 className="font-semibold text-gray-800">Notes</h2>
+            {mode === 'lecture' ? (
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{client.notes}</p>
+            ) : (
+              <textarea
+                value={client.notes || ''}
+                onChange={e => set('notes', e.target.value)}
+                rows={4}
+                placeholder="Informations complémentaires sur le client..."
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+              />
+            )}
+          </div>
+        )}
 
         {/* Dossiers chantiers */}
         <div className="bg-white border border-gray-200 rounded-xl p-6">
