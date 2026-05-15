@@ -86,7 +86,7 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
   if (loading) return <p className="text-xs text-gray-400 mt-2">Chargement...</p>
   if (fiches.length === 0) return (
     <p className="text-xs text-gray-400 mt-2">
-      Aucune fiche technique pour cet artisan —
+      Aucune fiche technique pour cet artisan
       <a href={`/artisans/${artisanId}`} target="_blank" className="text-blue-500 hover:underline ml-1">En ajouter →</a>
     </p>
   )
@@ -101,7 +101,7 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
               <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
                 <input type="checkbox" checked={cochee} onChange={() => onToggle(fiche.id, artisanId)} className="w-4 h-4 accent-blue-700 flex-shrink-0" />
                 <span className="text-xs text-gray-700 truncate">{fiche.nom}</span>
-                {fiche.description && <span className="text-xs text-gray-400 truncate">— {fiche.description}</span>}
+                {fiche.description && <span className="text-xs text-gray-400 truncate">- {fiche.description}</span>}
               </label>
               {fiche.url && (
                 <button
@@ -1045,7 +1045,7 @@ export default function FicheChantier({ params }) {
   }
   const fraisStatutConfig = {
     offerts:    { label: 'Offerts',               color: 'bg-blue-100 text-blue-700' },
-    factures:   { label: 'Facturés — en attente', color: 'bg-amber-100 text-amber-700' },
+    factures:   { label: 'Facturés - en attente', color: 'bg-amber-100 text-amber-700' },
     regle:      { label: 'Réglés',                color: 'bg-green-100 text-green-700' },
     rembourse:  { label: 'Remboursé',             color: 'bg-purple-100 text-purple-700' },
   }
@@ -1118,8 +1118,8 @@ export default function FicheChantier({ params }) {
   if (!dossier) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-gray-400">Chantier introuvable</p></div>
 
   const nomComplet = client ? `${client.civilite} ${client.prenom} ${client.nom}${client.prenom2 ? ` & ${client.prenom2} ${client.nom2}` : ''}` : ''
-  const s = statutConfig[dossier.statut] ?? { label: dossier.statut ?? '—', color: 'bg-gray-100 text-gray-600' }
-  const f = fraisStatutConfig[dossier.frais_statut] ?? { label: dossier.frais_statut ?? '—', color: 'bg-gray-100 text-gray-600' }
+  const s = statutConfig[dossier.statut] ?? { label: dossier.statut ?? '-', color: 'bg-gray-100 text-gray-600' }
+  const f = fraisStatutConfig[dossier.frais_statut] ?? { label: dossier.frais_statut ?? '-', color: 'bg-gray-100 text-gray-600' }
 
   const supprimerChantier = async () => {
     const ok = confirm(
@@ -1236,13 +1236,13 @@ export default function FicheChantier({ params }) {
                 <h1 className="text-lg font-bold text-blue-900">{dossier.reference}</h1>
                 <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.color}`}>{s.label}</span>
               </div>
-              <p className="text-xs text-gray-400 truncate">{nomComplet} — {typologieLabel(dossier.typologie)}</p>
+              <p className="text-xs text-gray-400 truncate">{nomComplet} - {typologieLabel(dossier.typologie)}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {mode === 'lecture' ? (
               <>
-                {/* PDFs — cachés sur mobile */}
+                {/* PDFs - cachés sur mobile */}
                 <div className="hidden sm:flex items-center gap-2">
                   <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
                     className="border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
@@ -1273,7 +1273,7 @@ export default function FicheChantier({ params }) {
             )}
           </div>
         </div>
-        {/* PDF buttons — mobile uniquement */}
+        {/* PDF buttons - mobile uniquement */}
         {mode === 'lecture' && (
           <div className="flex gap-2 mt-3 sm:hidden overflow-x-auto scrollbar-none">
             <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
@@ -1329,11 +1329,11 @@ export default function FicheChantier({ params }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {[
                   ['Référence', dossier.reference],
-                  ['Référente', dossier.referente ? `${dossier.referente.prenom} ${dossier.referente.nom}` : '—'],
+                  ['Référente', dossier.referente ? `${dossier.referente.prenom} ${dossier.referente.nom}` : '-'],
                   ['Typologie', typologieLabel(dossier.typologie)],
-                  ['Date limite devis', dossier.date_limite_devis ? new Date(dossier.date_limite_devis).toLocaleDateString('fr-FR') : '—'],
-                  ['Démarrage chantier', dossier.date_demarrage_chantier ? new Date(dossier.date_demarrage_chantier).toLocaleDateString('fr-FR') : '—'],
-                  ['Fin de chantier', dossier.date_fin_chantier ? new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR') : '—'],
+                  ['Date limite devis', dossier.date_limite_devis ? new Date(dossier.date_limite_devis).toLocaleDateString('fr-FR') : '-'],
+                  ['Démarrage chantier', dossier.date_demarrage_chantier ? new Date(dossier.date_demarrage_chantier).toLocaleDateString('fr-FR') : '-'],
+                  ['Fin de chantier', dossier.date_fin_chantier ? new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR') : '-'],
                 ].map(([label, valeur]) => (
                   <div key={label}>
                     <p className="text-xs text-gray-400 mb-1">{label}</p>
@@ -1631,18 +1631,18 @@ export default function FicheChantier({ params }) {
                       className="w-4 h-4 accent-blue-700"
                     />
                     <span className={`text-xs font-medium ${dossier.frais_deduits ? 'text-purple-600' : 'text-gray-500'}`}>
-                      Remboursés — déduit du courtage
+                      Remboursés - déduit du courtage
                     </span>
                     {dossier.frais_deduits && (
                       <span className="text-xs text-purple-500 ml-auto">
-                        — {fmt((dossier.frais_consultation || 0) / 1.2)} € HT
+                        - {fmt((dossier.frais_consultation || 0) / 1.2)} € HT
                       </span>
                     )}
                   </div>
                 </>
               )}
               {dossier.frais_statut === 'offerts' && (
-                <p className="text-xs text-gray-400">Offerts — 0 €</p>
+                <p className="text-xs text-gray-400">Offerts - 0 €</p>
               )}
             </div>
           ) : (
@@ -1792,11 +1792,11 @@ export default function FicheChantier({ params }) {
                     <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
                       <div className="flex justify-between">
                         <span className="text-xs text-gray-400">Montant HT</span>
-                        <span className="font-medium">{d.montant_ht ? fmt(d.montant_ht) : '—'}</span>
+                        <span className="font-medium">{d.montant_ht ? fmt(d.montant_ht) : '-'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-xs text-gray-400">Montant TTC</span>
-                       <span className="font-medium">{d.montant_ttc ? fmt(d.montant_ttc) : '—'}</span>
+                       <span className="font-medium">{d.montant_ttc ? fmt(d.montant_ttc) : '-'}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-xs text-gray-400">Acompte</span>
@@ -1826,7 +1826,7 @@ export default function FicheChantier({ params }) {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-xs text-gray-400">Commission</span>
-                        <span className="font-medium">{d.commission_pourcentage ? `${(d.commission_pourcentage * 100).toFixed(1)} %` : '—'}</span>
+                        <span className="font-medium">{d.commission_pourcentage ? `${(d.commission_pourcentage * 100).toFixed(1)} %` : '-'}</span>
                       </div>
                       {!estChantierMarine && (
                         <div className="flex justify-between">
@@ -1947,7 +1947,7 @@ export default function FicheChantier({ params }) {
                           <div key={f.id} className="bg-gray-50 rounded-lg p-2 space-y-1">
                             <div className="flex items-center justify-between">
                               <span className="text-xs font-medium text-gray-700">
-                                {f.libelle || 'Facture'} — {fmt(f.montant_ttc || 0)} TTC
+                                {f.libelle || 'Facture'} - {fmt(f.montant_ttc || 0)} TTC
                               </span>
                               <div className="flex items-center gap-2">
                                 {f.date_paiement && <span className="text-xs text-gray-400">{new Date(f.date_paiement).toLocaleDateString('fr-FR')}</span>}
@@ -2049,7 +2049,7 @@ export default function FicheChantier({ params }) {
                             {i.type_intervention === 'periode'
                               ? `${new Date(i.date_debut).toLocaleDateString('fr-FR')} → ${new Date(i.date_fin).toLocaleDateString('fr-FR')}`
                               : `${i.jours_specifiques?.length} jour(s)`}
-                            {i.notes && <span className="text-gray-400">— {i.notes}</span>}
+                            {i.notes && <span className="text-gray-400">- {i.notes}</span>}
                           </div>
                         ))}
                       </div>
@@ -2068,7 +2068,7 @@ export default function FicheChantier({ params }) {
               {/* BLOC PRÉVISIONNEL */}
               {devisRecus.length > 0 && (
                 <div className="border border-blue-200 rounded-lg p-3 space-y-1 bg-blue-50">
-                  <p className="text-xs text-blue-600 font-semibold uppercase">Prévisionnel — {devisRecus.length} devis</p>
+                  <p className="text-xs text-blue-600 font-semibold uppercase">Prévisionnel - {devisRecus.length} devis</p>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Total HT</span>
                     <span className="font-medium text-blue-700">{fmt(totalDevisHTRecus)}</span>
@@ -2130,7 +2130,7 @@ export default function FicheChantier({ params }) {
               {/* BLOC SIGNÉ */}
               {devisSignes.length > 0 && (
                 <div className="border border-gray-200 rounded-lg p-3 space-y-1 bg-white">
-                  <p className="text-xs text-gray-500 font-semibold uppercase">Signé — {devisSignes.length} devis</p>
+                  <p className="text-xs text-gray-500 font-semibold uppercase">Signé - {devisSignes.length} devis</p>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Total HT</span>
                     <span className="font-medium text-gray-800">{fmt(totalDevisHTSignes)}</span>
@@ -2198,7 +2198,7 @@ export default function FicheChantier({ params }) {
             <h2 className="font-semibold text-gray-800">Honoraires client</h2>
             <p className="text-xs text-gray-400">
               Calculés sur {fmt(baseCourtageHTTCPrev)} TTC (devis reçus + signés
-              {fraisHT > 0 && <span className="text-purple-500"> — frais déduits</span>})
+              {fraisHT > 0 && <span className="text-purple-500"> - frais déduits</span>})
             </p>
 
             <div className="border border-gray-100 rounded-lg p-4">
@@ -2211,7 +2211,7 @@ export default function FicheChantier({ params }) {
                 </span>
               </div>
               <p className="text-xs text-gray-400 mb-3">
-                {tauxCourtagePct}% × {fmt(baseCourtageHTTCPrev)} € TTC — Échéance : 48h après signature devis
+                {tauxCourtagePct}% × {fmt(baseCourtageHTTCPrev)} € TTC - Échéance : 48h après signature devis
               </p>
               <div className="flex items-center gap-3">
                 <label className="text-xs font-medium text-blue-700">Taux courtage (%)</label>
@@ -2279,7 +2279,7 @@ export default function FicheChantier({ params }) {
                   <div className="bg-white rounded-lg p-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-medium text-blue-700">
-                        Acompte AMO ({tauxCourtagePct}%) — {fmt(honorairesCourtagePrev)}
+                        Acompte AMO ({tauxCourtagePct}%) - {fmt(honorairesCourtagePrev)}
                       </span>
                       <span className="text-xs text-blue-400">Signature devis</span>
                     </div>
@@ -2297,7 +2297,7 @@ export default function FicheChantier({ params }) {
                   <div className="bg-white rounded-lg p-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-medium text-blue-700">
-                        Solde AMO ({tauxAmoPct}%) — {fmt(honorairesAMOPrev - honorairesCourtagePrev)}
+                        Solde AMO ({tauxAmoPct}%) - {fmt(honorairesAMOPrev - honorairesCourtagePrev)}
                       </span>
                       <span className="text-xs text-blue-400">Fin de chantier</span>
                     </div>
@@ -2369,7 +2369,7 @@ export default function FicheChantier({ params }) {
                 <img src={photos.filter(p => p.categorie === categorie)[photoOuverte]?.url_signee} alt=""
                   className="max-h-screen max-w-full object-contain rounded" />
                 <p className="text-white text-center text-sm mt-2 opacity-60">
-                  {photoOuverte + 1} / {photos.filter(p => p.categorie === categorie).length} — Clic en dehors pour fermer
+                  {photoOuverte + 1} / {photos.filter(p => p.categorie === categorie).length} - Clic en dehors pour fermer
                 </p>
               </div>
               <button onClick={e => { e.stopPropagation(); setPhotoOuverte(i => i < photos.filter(p => p.categorie === categorie).length - 1 ? i + 1 : 0) }}
@@ -2389,7 +2389,7 @@ export default function FicheChantier({ params }) {
             </label>
           </div>
           {documents.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">Aucun document — plans, courriers, notes...</p>
+            <p className="text-sm text-gray-400 text-center py-4">Aucun document - plans, courriers, notes...</p>
           ) : (
             <div className="space-y-2">
               {documents.map(doc => (
@@ -2438,9 +2438,9 @@ export default function FicheChantier({ params }) {
               <div className="space-y-2">
                 {rdvsDossier.map(r => {
                   const typeConfig = {
-                    visite_technique_client: { label: 'R1 — Visite technique client', color: 'bg-blue-100 text-blue-700' },
-                    visite_technique_artisan: { label: 'R2 — Visite technique avec artisan', color: 'bg-green-100 text-green-700' },
-                    presentation_devis: { label: 'R3 — Présentation devis', color: 'bg-amber-100 text-amber-700' },
+                    visite_technique_client: { label: 'R1 - Visite technique client', color: 'bg-blue-100 text-blue-700' },
+                    visite_technique_artisan: { label: 'R2 - Visite technique avec artisan', color: 'bg-green-100 text-green-700' },
+                    presentation_devis: { label: 'R3 - Présentation devis', color: 'bg-amber-100 text-amber-700' },
                     autres: { label: 'Autre RDV', color: 'bg-slate-100 text-slate-700' },
                   }
                   const tc = typeConfig[r.type_rdv] || typeConfig.autres
@@ -2450,7 +2450,7 @@ export default function FicheChantier({ params }) {
                         <span className={`text-xs px-2 py-1 rounded-full font-medium ${tc.color}`}>{tc.label}</span>
                         <p className="text-sm font-medium text-gray-800 mt-1">
                           {new Date(r.date_heure).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
-                          {r.artisan && ` — ${r.artisan.entreprise}`}
+                          {r.artisan && ` - ${r.artisan.entreprise}`}
                         </p>
                         {r.notes && <p className="text-xs text-gray-400">{r.notes}</p>}
                       </div>
@@ -2503,9 +2503,9 @@ export default function FicheChantier({ params }) {
                 <select value={rdvEnEdition ? rdvEnEdition.type_rdv : nouveauRdvDossier.type_rdv}
                   onChange={e => rdvEnEdition ? setRdvEnEdition(r => ({ ...r, type_rdv: e.target.value })) : setNouveauRdvDossier(f => ({ ...f, type_rdv: e.target.value }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="visite_technique_client">R1 — Visite technique client</option>
-                  <option value="visite_technique_artisan">R2 — Visite technique avec artisan</option>
-                  <option value="presentation_devis">R3 — Présentation devis</option>
+                  <option value="visite_technique_client">R1 - Visite technique client</option>
+                  <option value="visite_technique_artisan">R2 - Visite technique avec artisan</option>
+                  <option value="presentation_devis">R3 - Présentation devis</option>
                   <option value="autres">Autre rendez-vous</option>
                 </select>
               </div>
@@ -2659,7 +2659,7 @@ export default function FicheChantier({ params }) {
                         {cr.type_visite === 'r1' ? 'R1 – Visite technique' : cr.type_visite === 'r2' ? 'R2 – Visite artisans' : cr.type_visite === 'r3' ? 'R3 – Présentation devis' : cr.type_visite === 'suivi' ? 'Suivi de chantier' : cr.type_visite === 'reception' ? 'Réception' : cr.type_visite}
                       </span>
                       {cr.date_visite && (
-                        <span className="text-xs text-gray-400 ml-2">— {new Date(cr.date_visite).toLocaleDateString('fr-FR')}</span>
+                        <span className="text-xs text-gray-400 ml-2">- {new Date(cr.date_visite).toLocaleDateString('fr-FR')}</span>
                       )}
                     </div>
                     <div className="flex items-center gap-3">
@@ -2701,9 +2701,9 @@ export default function FicheChantier({ params }) {
                   <select value={crManuelForm.type_visite} onChange={e => setCrManuelForm(f => ({ ...f, type_visite: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="">— Sélectionner —</option>
-                    <option value="r1">R1 — Visite technique</option>
-                    <option value="r2">R2 — Visite artisans</option>
-                    <option value="r3">R3 — Présentation devis</option>
+                    <option value="r1">R1 - Visite technique</option>
+                    <option value="r2">R2 - Visite artisans</option>
+                    <option value="r3">R3 - Présentation devis</option>
                     <option value="suivi">Suivi de chantier</option>
                     <option value="reception">Réception</option>
                   </select>
@@ -2845,13 +2845,13 @@ export default function FicheChantier({ params }) {
                 {crEtape === 2 && (
                   <div className="space-y-4">
                     <p className="text-sm font-medium text-gray-700">Saisie des notes brutes</p>
-                    <p className="text-xs text-gray-400">Combinez plusieurs sources — l'IA synthétise tout</p>
+                    <p className="text-xs text-gray-400">Combinez plusieurs sources - l'IA synthétise tout</p>
 
                     {/* Texte */}
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">📝 Texte (copier-coller depuis OneNote, Outlook…)</label>
                       <textarea value={crNotes} onChange={e => setCrNotes(e.target.value)}
-                        rows={5} placeholder="Coller vos notes brutes ici — bullet points, phrases incomplètes, tout est ok..."
+                        rows={5} placeholder="Coller vos notes brutes ici - bullet points, phrases incomplètes, tout est ok..."
                         className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
                     </div>
 

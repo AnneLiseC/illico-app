@@ -67,9 +67,9 @@ async function upsertEvent(calendar, googleEventId, eventBody) {
 
 function rdvToGoogleEvent(rdv) {
   const typeLabels = {
-    visite_technique_client: 'R1 — Visite technique client',
-    visite_technique_artisan: 'R2 — Visite technique avec artisan',
-    presentation_devis: 'R3 — Présentation devis',
+    visite_technique_client: 'R1 -',
+    visite_technique_artisan: 'R2 -',
+    presentation_devis: 'R3 -',
     autres: 'Autre RDV',
   }
   const label = typeLabels[rdv.type_rdv] || rdv.type_rdv
@@ -78,14 +78,15 @@ function rdvToGoogleEvent(rdv) {
   const artisan = rdv.artisan?.entreprise || ''
   const start = new Date(rdv.date_heure)
   const end = new Date(start.getTime() + (rdv.duree_minutes || 60) * 60000)
+
   // Envoyer sans suffixe Z pour que Google interprète via timeZone (évite le décalage UTC→Paris)
   const fmtNaive = (d) => d.toISOString().slice(0, 19)
+
   return {
-    summary: `${label}${nomClient ? ' | ' + nomClient : ''}${artisan ? ' x ' + artisan : ''}`,
+    summary: `${nomClient}${artisan ? ' x ' + artisan : ''}`,
     description: [
       rdv.dossier?.reference ? `Chantier : ${rdv.dossier.reference}` : '',
       rdv.notes ? `Notes : ${rdv.notes}` : '',
-      `[illico-rdv:${rdv.id}]`,
     ].filter(Boolean).join('\n'),
     start: { dateTime: fmtNaive(start), timeZone: 'Europe/Paris' },
     end: { dateTime: fmtNaive(end), timeZone: 'Europe/Paris' },
@@ -135,20 +136,22 @@ export async function POST(request) {
       const artisan = intervention.artisan?.entreprise || 'Artisan'
       const client = intervention.dossier?.client
       const nomClient = client ? `${client.prenom} ${client.nom}`.trim() : ''
-      const summary = `🔨 ${artisan}${nomClient ? ' | ' + nomClient : ''}`
+      const summary = ` ${artisan}${nomClient ? ' | ' + nomClient : ''}`
       const baseDesc = [
         intervention.dossier?.reference ? `Chantier : ${intervention.dossier.reference}` : '',
         intervention.notes ? `Notes : ${intervention.notes}` : '',
       ].filter(Boolean)
+
       if (intervention.type_intervention === 'periode') {
         if (!intervention.date_debut) return NextResponse.json({ success: true, skipped: true })
         const baseDescStr = baseDesc.join('\n')
 
         const eventDebut = {
           summary: `Début ${summary}`,
-          description: [baseDescStr, `[illico-int-debut:${intervention.id}]`].filter(Boolean).join('\n'),
+          description: [baseDescStr].filter(Boolean).join('\n'),
           start: { date: intervention.date_debut },
-          end: { date: nextDay(intervention.date_debut) },
+           end: { date: nextDay(intervention.date_debut) },
+          colorId: '2',
         }
         const resultDebut = await upsertEvent(calendar, intervention.google_event_id, eventDebut)
         if (resultDebut.action === 'inserted') {
@@ -159,7 +162,7 @@ export async function POST(request) {
         if (intervention.date_fin) {
           const eventFin = {
             summary: `Fin ${summary}`,
-            description: [baseDescStr, `[illico-int-fin:${intervention.id}]`].filter(Boolean).join('\n'),
+            description: [baseDescStr].filter(Boolean).join('\n'),
             start: { date: intervention.date_fin },
             end: { date: nextDay(intervention.date_fin) },
           }
@@ -174,7 +177,7 @@ export async function POST(request) {
         if (!jours.length) return NextResponse.json({ success: true, skipped: true })
         const firstEvent = {
           summary,
-          description: [...baseDesc, `[illico-int:${intervention.id}]`].join('\n'),
+          description: [...baseDesc].join('\n'),
           start: { date: jours[0] },
           end: { date: nextDay(jours[jours.length - 1]) },
         }
@@ -200,8 +203,8 @@ export async function POST(request) {
 
       if (dossier.date_demarrage_chantier) {
         const eventStart = {
-          summary: `🏗 Démarrage${nomClient ? ' | ' + nomClient : ''}`,
-          description: `[illico-start:${dossier.id}]`,
+          summary: `Démarrage${nomClient ? ' | ' + nomClient : ''}`,
+          description: [baseDesc].filter(Boolean).join('\n'),
           start: { date: dossier.date_demarrage_chantier },
           end: { date: nextDay(dossier.date_demarrage_chantier) },
           colorId: '2',
@@ -214,8 +217,8 @@ export async function POST(request) {
 
       if (dossier.date_fin_chantier) {
         const eventEnd = {
-          summary: `🏁 Fin${nomClient ? ' | ' + nomClient : ''}`,
-          description: `[illico-end:${dossier.id}]`,
+          summary: `Fin${nomClient ? ' | ' + nomClient : ''}`,
+          description: [baseDesc].filter(Boolean).join('\n'),
           start: { date: dossier.date_fin_chantier },
           end: { date: nextDay(dossier.date_fin_chantier) },
           colorId: '6',
