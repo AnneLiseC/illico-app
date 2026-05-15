@@ -141,36 +141,50 @@ export async function POST(request) {
         intervention.dossier?.reference ? `Chantier : ${intervention.dossier.reference}` : '',
         intervention.notes ? `Notes : ${intervention.notes}` : '',
       ].filter(Boolean)
-
-      let firstEvent
-      let extraEvents = []
-
       if (intervention.type_intervention === 'periode') {
-        const endDate = new Date(intervention.date_fin)
-        endDate.setDate(endDate.getDate() + 1)
-        firstEvent = {
-          summary,
-          description: [...baseDesc, `[illico-int:${intervention.id}]`].join('\n'),
+        if (!intervention.date_debut) return NextResponse.json({ success: true, skipped: true })
+        const baseDescStr = baseDesc.join('\n')
+
+        const eventDebut = {
+          summary: `Début ${summary}`,
+          description: [baseDescStr, `[illico-int-debut:${intervention.id}]`].filter(Boolean).join('\n'),
           start: { date: intervention.date_debut },
-          end: { date: endDate.toISOString().slice(0, 10) },
+          end: { date: nextDay(intervention.date_debut) },
+          colorId: '2',
+        }
+        const resultDebut = await upsertEvent(calendar, intervention.google_event_id, eventDebut)
+        if (resultDebut.action === 'inserted') {
+          await supabaseAdmin.from('interventions_artisans')
+            .update({ google_event_id: resultDebut.id }).eq('id', id)
+        }
+
+        if (intervention.date_fin) {
+          const eventFin = {
+            summary: `Fin ${summary}`,
+            description: [baseDescStr, `[illico-int-fin:${intervention.id}]`].filter(Boolean).join('\n'),
+            start: { date: intervention.date_fin },
+            end: { date: nextDay(intervention.date_fin) },
+            colorId: '6',
+          }
+          const resultFin = await upsertEvent(calendar, intervention.google_end_event_id, eventFin)
+          if (resultFin.action === 'inserted') {
+            await supabaseAdmin.from('interventions_artisans')
+              .update({ google_end_event_id: resultFin.id }).eq('id', id)
+          }
         }
       } else {
         const jours = [...(intervention.jours_specifiques || [])].sort()
         if (!jours.length) return NextResponse.json({ success: true, skipped: true })
-        firstEvent = {
+        const firstEvent = {
           summary,
           description: [...baseDesc, `[illico-int:${intervention.id}]`].join('\n'),
           start: { date: jours[0] },
           end: { date: nextDay(jours[jours.length - 1]) },
         }
-      }
-
-      const result = await upsertEvent(calendar, intervention.google_event_id, firstEvent)
-      if (result.action === 'inserted') {
-        await supabaseAdmin.from('interventions_artisans')
-          .update({ google_event_id: result.id }).eq('id', id)
-        for (const evt of extraEvents) {
-          await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: evt })
+        const result = await upsertEvent(calendar, intervention.google_event_id, firstEvent)
+        if (result.action === 'inserted') {
+          await supabaseAdmin.from('interventions_artisans')
+            .update({ google_event_id: result.id }).eq('id', id)
         }
       }
     }
