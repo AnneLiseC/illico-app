@@ -253,7 +253,7 @@ export default function FicheChantier({ params }) {
   const [interventionEnEdition, setInterventionEnEdition] = useState(null)
   const [modalInterventionOuvert, setModalInterventionOuvert] = useState(false)
   const [interventionsDossier, setInterventionsDossier] = useState([])
-  const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '' })
+  const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '' })
   const [modalCreerIntervOuvert, setModalCreerIntervOuvert] = useState(false)
   const [nouvIntervArtisanId, setNouvIntervArtisanId] = useState(null)
   const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '' })
@@ -371,11 +371,12 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.from('rendez_vous').insert({
       dossier_id: id, type_rdv: nouveauRdvDossier.type_rdv, date_heure: nouveauRdvDossier.date_heure,
       duree_minutes: parseInt(nouveauRdvDossier.duree_minutes), artisan_id: nouveauRdvDossier.artisan_id || null, notes: nouveauRdvDossier.notes || null,
+      titre: nouveauRdvDossier.type_rdv === 'autres' ? (nouveauRdvDossier.titre || null) : null,
     })
     if (!error) {
       await chargerRdvsDossier()
       setModalRdvOuvert(false)
-      setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '' })
+      setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '' })
       setSucces('RDV créé ✓')
     }
   }
@@ -406,6 +407,7 @@ export default function FicheChantier({ params }) {
     await supabase.from('rendez_vous').update({
       type_rdv: rdvEnEdition.type_rdv, date_heure: rdvEnEdition.date_heure,
       duree_minutes: parseInt(rdvEnEdition.duree_minutes), artisan_id: rdvEnEdition.artisan_id || null, notes: rdvEnEdition.notes || null,
+      titre: rdvEnEdition.type_rdv === 'autres' ? (rdvEnEdition.titre || null) : null,
     }).eq('id', rdvEnEdition.id)
     await chargerRdvsDossier()
     setModalRdvOuvert(false)
@@ -2509,6 +2511,16 @@ export default function FicheChantier({ params }) {
                   <option value="autres">Autre rendez-vous</option>
                 </select>
               </div>
+              {(rdvEnEdition ? rdvEnEdition.type_rdv : nouveauRdvDossier.type_rdv) === 'autres' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Titre du rendez-vous *</label>
+                  <input type="text"
+                    value={rdvEnEdition ? rdvEnEdition.titre || '' : nouveauRdvDossier.titre}
+                    onChange={e => rdvEnEdition ? setRdvEnEdition(r => ({ ...r, titre: e.target.value })) : setNouveauRdvDossier(f => ({ ...f, titre: e.target.value }))}
+                    placeholder="Ex : Réunion de chantier, Appel fournisseur…"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date et heure *</label>
