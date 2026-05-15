@@ -74,7 +74,7 @@ export default function Planning() {
 
   const [formRdv, setFormRdv] = useState({
     dossier_id: '', type_rdv: 'visite_technique_client',
-    date_heure: '', duree_minutes: 60, artisan_id: '', notes: '',
+    date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '',
   })
   const [formIntervention, setFormIntervention] = useState({
     dossier_id: '', artisan_id: '', type_intervention: 'periode',
@@ -141,9 +141,11 @@ export default function Planning() {
     .map(r => {
       const cfg = TYPE_CONFIG[r.type_rdv] || TYPE_CONFIG.visite_technique_client
       const client = `${r.dossier?.client?.prenom || ''} ${r.dossier?.client?.nom || ''}`.trim()
-      const titre = r.type_rdv === 'visite_technique_artisan'
-        ? `${cfg.short} · ${client} × ${r.artisan?.entreprise || ''}`
-        : `${cfg.short} · ${client}`
+      const titre = r.type_rdv === 'autres' && r.titre
+        ? `${cfg.short} · ${r.titre}`
+        : r.type_rdv === 'visite_technique_artisan'
+          ? `${cfg.short} · ${client} × ${r.artisan?.entreprise || ''}`
+          : `${cfg.short} · ${client}`
       return {
         id: 'rdv-' + r.id, title: titre,
         start: r.date_heure,
@@ -255,7 +257,7 @@ export default function Planning() {
   const handleEventClick = (info) => {
     const { type, data, cfg } = info.event.extendedProps
     setElementSelectionne({ type, data, cfg }); setModalType(type); setModeEdition(false)
-    if (type === 'rdv') setFormRdv({ dossier_id: data.dossier_id, type_rdv: data.type_rdv, date_heure: data.date_heure?.slice(0, 16), duree_minutes: data.duree_minutes || 60, artisan_id: data.artisan_id || '', notes: data.notes || '' })
+    if (type === 'rdv') setFormRdv({ dossier_id: data.dossier_id, type_rdv: data.type_rdv, date_heure: data.date_heure?.slice(0, 16), duree_minutes: data.duree_minutes || 60, artisan_id: data.artisan_id || '', notes: data.notes || '', titre: data.titre || '' })
     else if (type === 'intervention') setFormIntervention({ dossier_id: data.dossier_id, artisan_id: data.artisan_id, type_intervention: data.type_intervention, date_debut: data.date_debut || '', date_fin: data.date_fin || '', jours_specifiques: data.jours_specifiques || [], notes: data.notes || '' })
     else if (type === 'date_cle') setFormDateCle({ date_demarrage_chantier: data.date_demarrage_chantier || '', date_fin_chantier: data.date_fin_chantier || '' })
     setModalOuvert(true)
@@ -264,14 +266,14 @@ export default function Planning() {
   const ouvrirSidebar = (item) => {
     setElementSelectionne({ type: item.type, data: item.data })
     setModalType(item.type); setModeEdition(false)
-    if (item.type === 'rdv') setFormRdv({ dossier_id: item.data.dossier_id, type_rdv: item.data.type_rdv, date_heure: item.data.date_heure?.slice(0, 16), duree_minutes: item.data.duree_minutes || 60, artisan_id: item.data.artisan_id || '', notes: item.data.notes || '' })
+    if (item.type === 'rdv') setFormRdv({ dossier_id: item.data.dossier_id, type_rdv: item.data.type_rdv, date_heure: item.data.date_heure?.slice(0, 16), duree_minutes: item.data.duree_minutes || 60, artisan_id: item.data.artisan_id || '', notes: item.data.notes || '', titre: item.data.titre || '' })
     else if (item.type === 'intervention') setFormIntervention({ dossier_id: item.data.dossier_id, artisan_id: item.data.artisan_id, type_intervention: item.data.type_intervention, date_debut: item.data.date_debut || '', date_fin: item.data.date_fin || '', jours_specifiques: item.data.jours_specifiques || [], notes: item.data.notes || '' })
     setModalOuvert(true)
   }
 
   const fermerModal = () => {
     setModalOuvert(false); setElementSelectionne(null); setModeEdition(false); setErreur('')
-    setFormRdv({ dossier_id: '', type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '' })
+    setFormRdv({ dossier_id: '', type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '' })
     setFormIntervention({ dossier_id: '', artisan_id: '', type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '' })
   }
 
@@ -287,7 +289,7 @@ export default function Planning() {
   const sauvegarderRdv = async () => {
     if (!formRdv.date_heure) return
     setSaving(true); setErreur('')
-    const payload = { type_rdv: formRdv.type_rdv, date_heure: formRdv.date_heure, duree_minutes: parseInt(formRdv.duree_minutes), artisan_id: formRdv.artisan_id || null, notes: formRdv.notes || null }
+    const payload = { type_rdv: formRdv.type_rdv, date_heure: formRdv.date_heure, duree_minutes: parseInt(formRdv.duree_minutes), artisan_id: formRdv.artisan_id || null, notes: formRdv.notes || null, titre: formRdv.type_rdv === 'autres' ? (formRdv.titre || null) : null }
     let savedId = elementSelectionne?.data?.id
     if (elementSelectionne?.type === 'rdv' && modeEdition) {
       const { error } = await supabase.from('rendez_vous').update(payload).eq('id', savedId)
@@ -661,7 +663,11 @@ export default function Planning() {
                       <div className="w-5 h-5 rounded flex items-center justify-center text-white text-xs font-bold" style={{ background: cfg?.color }}>{cfg?.short}</div>
                       <p className="text-xs font-bold uppercase tracking-widest" style={{ color: cfg?.color }}>{cfg?.label}</p>
                     </div>
-                    <h2 className="font-bold text-slate-800 text-base">{elementSelectionne.data.dossier?.client?.prenom} {elementSelectionne.data.dossier?.client?.nom}</h2>
+                    <h2 className="font-bold text-slate-800 text-base">
+                      {elementSelectionne.data.type_rdv === 'autres' && elementSelectionne.data.titre
+                        ? elementSelectionne.data.titre
+                        : `${elementSelectionne.data.dossier?.client?.prenom || ''} ${elementSelectionne.data.dossier?.client?.nom || ''}`.trim() || 'Autre RDV'}
+                    </h2>
                   </>
                 })()}
                 {elementSelectionne?.type === 'intervention' && !modeEdition && <>
@@ -693,6 +699,7 @@ export default function Planning() {
                     <p className="text-sm font-semibold text-slate-800 capitalize">{fmtDateLong(elementSelectionne.data.date_heure)}</p>
                     <p className="text-xs text-slate-500 mt-0.5 font-medium">{fmtHeure(elementSelectionne.data.date_heure)}</p>
                   </div>
+                  {elementSelectionne.data.type_rdv === 'autres' && elementSelectionne.data.titre && <div className="bg-slate-50 rounded-xl p-3"><p className={labelCls}>Titre</p><p className="text-sm font-semibold text-slate-800">{elementSelectionne.data.titre}</p></div>}
                   {elementSelectionne.data.artisan && <div className="bg-slate-50 rounded-xl p-3"><p className={labelCls}>Artisan présent</p><p className="text-sm font-semibold text-slate-800">{elementSelectionne.data.artisan.entreprise}</p></div>}
                   {elementSelectionne.data.notes && <div className="bg-slate-50 rounded-xl p-3"><p className={labelCls}>Notes</p><p className="text-sm text-slate-700">{elementSelectionne.data.notes}</p></div>}
                   <div className="flex gap-2 pt-1">
@@ -726,14 +733,25 @@ export default function Planning() {
               {(modalType === 'rdv' || (elementSelectionne?.type === 'rdv' && modeEdition)) && (!elementSelectionne || modeEdition) && (
                 <div className="space-y-4">
                   <div><label className={labelCls}>Type de rendez-vous</label>
-                    <select value={formRdv.type_rdv} onChange={e => setFormRdv(f => ({ ...f, type_rdv: e.target.value }))} className={inputCls}>
+                    <select value={formRdv.type_rdv} onChange={e => {
+                      const newType = e.target.value
+                      setFormRdv(f => ({
+                        ...f,
+                        type_rdv: newType,
+                        titre: newType !== 'autres' ? '' : f.titre,
+                        dossier_id: newType === 'autres' ? '' : (f.type_rdv === 'autres' ? '' : f.dossier_id),
+                      }))
+                    }} className={inputCls}>
                       <option value="visite_technique_client">R1 — Visite technique client</option>
                       <option value="visite_technique_artisan">R2 — Visite technique avec artisan</option>
                       <option value="presentation_devis">R3 — Présentation devis</option>
                       <option value="autres">Autre rendez-vous</option>
                     </select>
                   </div>
-                  {!modeEdition && formRdv.type_rdv !== 'autres' && <div><label className={labelCls}>Chantier *</label>
+                  {formRdv.type_rdv === 'autres' && <div><label className={labelCls}>Titre du rendez-vous *</label>
+                    <input type="text" value={formRdv.titre} onChange={e => setFormRdv(f => ({ ...f, titre: e.target.value }))} placeholder="Ex : Réunion de chantier, Appel fournisseur…" className={inputCls} />
+                  </div>}
+                  {formRdv.type_rdv !== 'autres' && !formRdv.dossier_id && <div><label className={labelCls}>Chantier *</label>
                     <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls}>
                       <option value="">— Choisir un chantier —</option>
                       {dossiers.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
@@ -756,7 +774,7 @@ export default function Planning() {
                   <div><label className={labelCls}>Notes</label><textarea value={formRdv.notes} onChange={e => setFormRdv(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} /></div>
                   <div className="flex gap-2 pt-1">
                     <button onClick={fermerModal} className="flex-1 border border-slate-200 text-slate-700 py-2 rounded-xl text-sm font-medium hover:bg-slate-50">Annuler</button>
-                    <button onClick={sauvegarderRdv} disabled={(!formRdv.dossier_id && !modeEdition && formRdv.type_rdv !== 'autres') || !formRdv.date_heure || saving} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: COLORS.blue }}>
+                    <button onClick={sauvegarderRdv} disabled={(!formRdv.dossier_id && formRdv.type_rdv !== 'autres') || !formRdv.date_heure || saving} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: COLORS.blue }}>
                       {saving ? 'Enregistrement…' : modeEdition ? 'Enregistrer' : 'Créer le RDV'}
                     </button>
                   </div>
