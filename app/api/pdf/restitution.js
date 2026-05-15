@@ -313,6 +313,19 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
   const isC   = ['courtage', 'amo'].includes(dossier.typologie)
   const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
 
+  const acomptesArtisans = devisAcceptes.map(d => {
+    const ttc = toNum(d.montant_ttc)
+    const pct = toNum(d.acompte_pourcentage ?? 30)
+    const montantFixe = toNum(d.acompte_montant_fixe)
+    const acompte = pct === -1 ? montantFixe : ttc * (pct / 100)
+    const pctLabel = pct === -1 ? '' : ` (${pct}%)`
+    const suiviArt = (suiviFinancier || []).find(s => s.type_echeance === 'acompte_artisan' && (s.artisan_id === d.artisan_id || s.artisan_id === d.artisan?.id))
+    const statut = suiviArt?.statut_client === 'regle' ? 'Payé' : 'À régler'
+    const couleurStatut = suiviArt?.statut_client === 'regle' ? '#16a34a' : '#d97706'
+    return { entreprise: d.artisan?.entreprise || '—', acompte, pctLabel, statut, couleurStatut }
+  })
+  const totalAcomptes = acomptesArtisans.reduce((s, a) => s + a.acompte, 0)
+
   const pages = []
 
   // ── Descriptif du projet ──
@@ -385,24 +398,70 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
         React.createElement(Text, { style: { flex: 2 } }, ''),
         React.createElement(Text, { style: [CS.tdRWB, { flex: 2 }] }, fmt(totalTTC + fraisTTC)),
       ),
-      // Suivi des paiements (remplace l'ancienne section "Acomptes entreprises")
-      buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier }),
-      // Honoraires
-      isC && totalTTC > 0 && React.createElement(View, { style: { marginTop: 10 } },
-        React.createElement(Text, { style: CS.sectionH }, 'Honoraires illiCO travaux'),
-        React.createElement(View, { style: CS.sumRow },
-          React.createElement(Text, { style: CS.sumLabel }, `Honoraires courtage (${(tauxC * 100).toFixed(1)}%)`),
-          React.createElement(Text, { style: CS.sumValue }, fmt(honC)),
+      // Acomptes artisans avec statut Payé / À régler
+      acomptesArtisans.length > 0 && React.createElement(View, { style: { marginTop: 6 } },
+        React.createElement(Text, { style: CS.sectionH }, 'Acomptes entreprises'),
+        ...acomptesArtisans.map((a, i) =>
+          React.createElement(View, { key: i, style: CS.infoRow },
+            React.createElement(Text, { style: [CS.infoLabel, { flex: 1 }] }, `${a.entreprise}${a.pctLabel}`),
+            React.createElement(Text, { style: { fontSize: 7.5, color: a.couleurStatut, fontFamily: 'Helvetica-Bold', width: 54, textAlign: 'center' } }, a.statut),
+            React.createElement(Text, { style: [CS.infoValue, { width: 72, textAlign: 'right' }] }, fmt(a.acompte)),
+          )
         ),
-        isAMO && React.createElement(View, { style: CS.sumOrange },
-          React.createElement(Text, { style: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#f37f2b', flex: 1 } }, `Honoraires AMO (${((tauxC + tauxA) * 100).toFixed(1)}%)`),
-          React.createElement(Text, { style: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#f37f2b' } }, fmt(honAMO)),
-        ),
-        React.createElement(View, { style: CS.totalBlock },
-          React.createElement(Text, { style: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' } }, 'TOTAL CHANTIER'),
-          React.createElement(Text, { style: { color: BLANC, fontSize: 13, fontFamily: 'Helvetica-Bold' } }, fmt(totalTTC + fraisTTC + (isAMO ? honAMO : honC))),
+        React.createElement(View, { style: [CS.infoRow, { backgroundColor: '#ddeef8', paddingHorizontal: 4, borderRadius: 3 }] },
+          React.createElement(Text, { style: [CS.tdB, { flex: 1 }] }, 'Total acomptes artisans'),
+          React.createElement(Text, { style: [CS.tdRB, { color: BLEU, fontSize: 9 }] }, fmt(totalAcomptes)),
         ),
       ),
+      // Honoraires — deux blocs Courtage / AMO
+      isC && totalTTC > 0 && React.createElement(View, { style: { marginTop: 10 } },
+        React.createElement(Text, { style: CS.sectionH }, 'Honoraires illiCO travaux'),
+        // Bloc COURTAGE
+        React.createElement(View, { style: { borderLeftWidth: 3, borderLeftColor: BLEU2, paddingLeft: 8, marginBottom: 8 } },
+          React.createElement(Text, { style: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 4 } },
+            `Honoraires illiCO travaux COURTAGE (${(tauxC * 100).toFixed(1)}%)`),
+          React.createElement(View, { style: CS.sumRow },
+            React.createElement(Text, { style: CS.sumLabel }, 'Honoraires courtage — à la signature des devis'),
+            React.createElement(Text, { style: CS.sumValue }, fmt(honC)),
+          ),
+          React.createElement(View, { style: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 6, backgroundColor: BLEU, borderRadius: 4, marginTop: 4 } },
+            React.createElement(Text, { style: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' } }, 'TOTAL CHANTIER si COURTAGE'),
+            React.createElement(Text, { style: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' } }, fmt(totalTTC + fraisTTC + honC)),
+          ),
+        ),
+        // Bloc AMO
+        React.createElement(View, { style: { borderLeftWidth: 3, borderLeftColor: '#f97316', paddingLeft: 8 } },
+          React.createElement(Text, { style: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: '#c2410c', marginBottom: 4 } },
+            `Honoraires illiCO travaux AMO (${((tauxC + tauxA) * 100).toFixed(1)}%)`),
+          React.createElement(View, { style: CS.sumRow },
+            React.createElement(Text, { style: CS.sumLabel }, `Acompte AMO (${(tauxC * 100).toFixed(1)}%) — à la signature des devis`),
+            React.createElement(Text, { style: CS.sumValue }, fmt(honC)),
+          ),
+          React.createElement(View, { style: CS.sumRow },
+            React.createElement(Text, { style: CS.sumLabel }, `Solde AMO (${(tauxA * 100).toFixed(1)}%) — à l'avancement du chantier`),
+            React.createElement(Text, { style: CS.sumValue }, fmt(honAMO - honC)),
+          ),
+          Math.round(tauxA * 1000) !== 90 && React.createElement(View, { style: [CS.sumRow, { marginTop: 2 }] },
+            React.createElement(Text, { style: { fontSize: 7.5, color: '#f97316', flex: 1, fontStyle: 'italic' } },
+              `Remise commerciale sur honoraire AMO (${(Math.abs((tauxA - 0.09) * 100)).toFixed(1)}%)`),
+            React.createElement(Text, { style: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#f97316' } },
+              `— ${fmt(totalTTC * Math.abs(tauxA - 0.09))}`),
+          ),
+          React.createElement(View, { style: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 6, backgroundColor: '#c2410c', borderRadius: 4, marginTop: 4 } },
+            React.createElement(Text, { style: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' } }, 'TOTAL CHANTIER si AMO'),
+            React.createElement(Text, { style: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' } }, fmt(totalTTC + fraisTTC + honAMO)),
+          ),
+        ),
+      ),
+      React.createElement(Ftr, { ref: dossier.reference }),
+    )
+  )
+
+  // ── Suivi des paiements (page séparée) ──
+  pages.push(
+    React.createElement(Page, { key: 'suivi-paiements', size: 'A4', style: CS.page },
+      React.createElement(Hdr, { title: 'Suivi des paiements', sub: `${dossier.reference} — ${nomClient}`, logo }),
+      buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier }),
       React.createElement(Ftr, { ref: dossier.reference }),
     )
   )
@@ -632,6 +691,14 @@ export async function buildDossierRestitution({ dossier, devis, photos, interven
   // ── Références produits (seulement si fiches techniques cochées) ──
   if (hasFichesTech) {
     await addSep(sepRefs)
+    // Inclure les PDFs des fiches techniques
+    for (const ft of (fichesTech || [])) {
+      const url = ft.fiche?.url || ft.url
+      if (url) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', url)
+        await addExternalPDF(buf)
+      }
+    }
   }
 
   // ── Documents chantier cochés "dans_restitution" ──
@@ -908,12 +975,178 @@ export async function buildDossierR3({ dossier, devis, supabaseAdmin, logo }) {
     }
   }
 
-  //RIB ARTISANS
-  for (const d of devisR3) {
-    const art = d.artisan || {}
-    if (art.rib_url) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', art.rib_url)
+  const bytes = await final.save()
+  return Buffer.from(bytes)
+}
+
+// ── DOSSIER DE SUIVI (fusion R3 + Restitution selon statut) ──
+// Génère un dossier adaptatif selon l'avancement du dossier :
+//   - Phase avant signature (devis_en_attente, devis_a_modifier…) → style R3 : devis reçus + récap
+//   - en_cours_chantier → devis signés + KBIS/assurances + FT
+//   - termine → restitution complète avec photos, planning, etc.
+export async function buildDossierSuivi({ dossier, devis, photos, interventions, fichesTech, docsRestitution, factures, suiviFinancier, logo, supabaseAdmin }) {
+  const statut = dossier.statut || 'en_cours_chantier'
+  const isPreSignature = ['a_contacter', 'a_relancer', 'devis_en_attente', 'devis_a_modifier'].includes(statut)
+  const isTermine = statut === 'termine'
+  const isAMO = dossier.typologie === 'amo'
+
+  // Filtrage devis selon le stade
+  const devisR3 = (devis || []).filter(d => d.statut === 'recu' || d.statut === 'accepte')
+  const devisAcceptes = (devis || []).filter(d => d.statut === 'accepte')
+  const devisActifs = isPreSignature ? devisR3 : devisAcceptes
+
+  const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
+  const hasFichesTech = (fichesTech || []).length > 0
+  const hasQualif = devisAcceptes.some(d => d.artisan?.qualification_url)
+
+  const loadSep = async (b64) => PDFDocument.load(Buffer.from(b64, 'base64'))
+  const [sepDescriptif, sepIllustrations, sepRecap, sepDevis, sepPlanning, sepRefs, sepKbis, sepQualification] = await Promise.all([
+    loadSep(SEP_DESCRIPTIF), loadSep(SEP_ILLUSTRATIONS), loadSep(SEP_RECAP),
+    loadSep(SEP_DEVIS), loadSep(SEP_PLANNING), loadSep(SEP_REFS),
+    loadSep(SEP_KBIS), loadSep(SEP_QUALIFICATION),
+  ])
+
+  // Charger CR R1
+  const { data: crsData } = await supabaseAdmin.from('comptes_rendus')
+    .select('id, type_visite, contenu_final').eq('dossier_id', dossier.id).order('created_at')
+  const crR1 = crsData?.find(cr => cr.type_visite === 'r1') || null
+
+  // Générer le résumé IA
+  const devisNotes = (devisActifs || []).map(d => d.notes).filter(Boolean)
+  const resumeGenere = await generateResumeProjet({ crR1, description: dossier.description, devisNotes })
+
+  // Générer les pages de contenu (descriptif + récap)
+  const contentBuffer = isPreSignature
+    ? await buildR3ContentPDF({ dossier, devisR3: devisActifs, logo, resumeGenere })
+    : await buildContentPDF({ dossier, devis: devisActifs, photos, interventions, factures, suiviFinancier, logo, resumeGenere })
+  const contentPdf = await PDFDocument.load(contentBuffer)
+
+  const final = await PDFDocument.create()
+  let cIdx = 0
+
+  const addSep = async (sepPdf) => {
+    const [p] = await final.copyPages(sepPdf, [0])
+    final.addPage(p)
+  }
+  const addContent = async () => {
+    const [p] = await final.copyPages(contentPdf, [cIdx++])
+    final.addPage(p)
+  }
+  const addExternalPDF = async (buf) => {
+    if (!buf) return
+    try {
+      const ext = await PDFDocument.load(buf)
+      const copied = await final.copyPages(ext, ext.getPageIndices())
+      copied.forEach(p => {
+        const { width, height } = p.getSize()
+        if (width > height) p.setRotation(degrees(90))
+        final.addPage(p)
+      })
+    } catch {}
+  }
+
+  // ── Page de garde ──
+  const nomRef = getNomRef(dossier.referente)
+  const telRef = getTelReferente(dossier.referente)
+  const coverBuf = await makeCoverPage({ nomRef, telRef })
+  const coverPdf = await PDFDocument.load(coverBuf)
+  const [coverPage] = await final.copyPages(coverPdf, [0])
+  final.addPage(coverPage)
+
+  // ── Descriptif du projet ──
+  await addSep(sepDescriptif)
+  await addContent()
+
+  // ── Récapitulatif financier ──
+  await addSep(sepRecap)
+  await addContent()  // page récap financier
+  if (!isPreSignature) {
+    await addContent()  // page suivi des paiements
+  }
+
+  // ── Devis ──
+  await addSep(sepDevis)
+  if (isPreSignature) {
+    // Phase pré-signature : inclure les PDFs de devis reçus
+    for (const d of devisActifs) {
+      if (d.devis_pdf_path) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', d.devis_pdf_path)
+        await addExternalPDF(buf)
+      }
+    }
+  } else {
+    // Phase post-signature : devis signés + factures
+    for (const d of devisAcceptes) {
+      if (d.devis_signe_path) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', d.devis_signe_path)
+        await addExternalPDF(buf)
+      }
+      if (d.facture_path) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', d.facture_path)
+        await addExternalPDF(buf)
+      }
+    }
+  }
+
+  // ── Qualifications (si présentes et stade post-signature) ──
+  if (!isPreSignature && hasQualif) {
+    await addSep(sepQualification)
+    for (const d of devisAcceptes) {
+      if (d.artisan?.qualification_url) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', d.artisan.qualification_url)
+        await addExternalPDF(buf)
+      }
+    }
+  }
+
+  // ── Planning (AMO + post-signature + chantier terminé) ──
+  if (isAMO && !isPreSignature && isTermine && (interventions || []).length > 0) {
+    await addSep(sepPlanning)
+    await addContent()
+  }
+
+  // ── Illustrations (photos maquette — si disponibles et chantier terminé) ──
+  if (isTermine && photosMaquette.length > 0) {
+    await addSep(sepIllustrations)
+    const nbPhotoPages = Math.ceil(photosMaquette.length / 2)
+    for (let i = 0; i < nbPhotoPages; i++) {
+      await addContent()
+    }
+  }
+
+  // ── Références produits / FT (si cochées) ──
+  if (hasFichesTech) {
+    await addSep(sepRefs)
+    for (const ft of (fichesTech || [])) {
+      const url = ft.fiche?.url || ft.url
+      if (url) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', url)
+        await addExternalPDF(buf)
+      }
+    }
+  }
+
+  // ── Documents chantier cochés "dans_restitution" ──
+  if ((docsRestitution || []).length > 0) {
+    for (const doc of docsRestitution) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path)
       await addExternalPDF(buf)
+    }
+  }
+
+  // ── KBIS + Assurances (post-signature) ──
+  if (!isPreSignature) {
+    await addSep(sepKbis)
+    for (const d of devisAcceptes) {
+      const art = d.artisan || {}
+      if (art.kbis_url) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', art.kbis_url)
+        await addExternalPDF(buf)
+      }
+      if (art.decennale_url) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', art.decennale_url)
+        await addExternalPDF(buf)
+      }
     }
   }
 

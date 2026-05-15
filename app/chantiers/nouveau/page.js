@@ -51,8 +51,8 @@ function NouveauChantierForm() {
 
   const set = (champ, valeur) => setForm(f => ({ ...f, [champ]: valeur }))
 
-  // Génère la référence automatiquement
-  const genererReference = (typologie, nomClient) => {
+  // Génère la référence automatiquement : AAAA-CODE-NNN (séquentiel sur l'année)
+  const genererReference = async (typologie) => {
     const codes = {
       courtage: 'CT',
       amo: 'AM',
@@ -63,9 +63,13 @@ function NouveauChantierForm() {
     }
     const code = codes[typologie] || 'XX'
     const annee = new Date().getFullYear()
-    const nom = nomClient?.toUpperCase().slice(0, 3) || 'XXX'
-    const rand = Math.floor(Math.random() * 100).toString().padStart(2, '0')
-    return `${code}-${annee}-${nom}${rand}`
+    const { count } = await supabase
+      .from('dossiers')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', `${annee}-01-01`)
+      .lt('created_at', `${annee + 1}-01-01`)
+    const numero = ((count || 0) + 1).toString().padStart(3, '0')
+    return `${annee}-${code}-${numero}`
   }
 
   const handleSubmit = async (e) => {
@@ -74,7 +78,7 @@ function NouveauChantierForm() {
     setErreur('')
 
     try {
-      const reference = genererReference(form.typologie, client?.nom)
+      const reference = await genererReference(form.typologie)
 
       const { data, error } = await supabase.from('dossiers').insert({
         reference,

@@ -65,6 +65,16 @@ async function upsertEvent(calendar, googleEventId, eventBody) {
   return { action: 'inserted', id: res.data.id }
 }
 
+function buildIntervTimes(date, heure_debut, duree_minutes) {
+  if (heure_debut) {
+    const start = new Date(`${date}T${heure_debut}`)
+    const end = new Date(start.getTime() + (duree_minutes || 60) * 60000)
+    const fmt = d => d.toISOString().slice(0, 19)
+    return { start: { dateTime: fmt(start), timeZone: 'Europe/Paris' }, end: { dateTime: fmt(end), timeZone: 'Europe/Paris' } }
+  }
+  return { start: { date }, end: { date: nextDay(date) } }
+}
+
 function rdvToGoogleEvent(rdv) {
   const typeLabels = {
     visite_technique_client: 'R1 - ',
@@ -72,18 +82,17 @@ function rdvToGoogleEvent(rdv) {
     presentation_devis: 'R3 - ',
     autres: 'Autre - ',
   }
-  const label = typeLabels[rdv.type_rdv] || rdv.type_rdv
   const client = rdv.dossier?.client
   const nomClient = client ? `${client.civilite || ''} ${client.prenom} ${client.nom}`.trim() : ''
   const artisan = rdv.artisan?.entreprise || ''
   const start = new Date(rdv.date_heure)
   const end = new Date(start.getTime() + (rdv.duree_minutes || 60) * 60000)
-
-  // Envoyer sans suffixe Z pour que Google interprète via timeZone (évite le décalage UTC→Paris)
   const fmtNaive = (d) => d.toISOString().slice(0, 19)
-
+  const summary = rdv.type_rdv === 'autres'
+    ? (rdv.titre || rdv.notes || 'Autre RDV')
+    : `${typeLabels[rdv.type_rdv] || rdv.type_rdv}${nomClient ? ' | ' + nomClient : ''}${artisan ? ' x ' + artisan : ''}`
   return {
-    summary: `${nomClient}${artisan ? ' x ' + artisan : ''}`,
+    summary,
     description: [
       rdv.dossier?.reference ? `Chantier : ${rdv.dossier.reference}` : '',
       rdv.notes ? `Notes : ${rdv.notes}` : '',
@@ -142,49 +151,50 @@ export async function POST(request) {
         intervention.notes ? `Notes : ${intervention.notes}` : '',
       ].filter(Boolean)
 
+      let firstEvent
+      let extraEvents = []
+
+      const { heure_debut, duree_minutes } = intervention
+
       if (intervention.type_intervention === 'periode') {
-        if (!intervention.date_debut) return NextResponse.json({ success: true, skipped: true })
-        const baseDescStr = baseDesc.join('\n')
-
-        const eventDebut = {
-          summary: `Début ${summary}`,
-          description: [baseDescStr].filter(Boolean).join('\n'),
-          start: { date: intervention.date_debut },
-           end: { date: nextDay(intervention.date_debut) },
-          colorId: '2',
-        }
-        const resultDebut = await upsertEvent(calendar, intervention.google_event_id, eventDebut)
-        if (resultDebut.action === 'inserted') {
-          await supabaseAdmin.from('interventions_artisans')
-            .update({ google_event_id: resultDebut.id }).eq('id', id)
-        }
-
-        if (intervention.date_fin) {
-          const eventFin = {
-            summary: `Fin ${summary}`,
-            description: [baseDescStr].filter(Boolean).join('\n'),
-            start: { date: intervention.date_fin },
-            end: { date: nextDay(intervention.date_fin) },
+        if (!intervention.date_fin && !heure_debut) return NextResponse.json({ success: true, skipped: true })
+        if (heure_debut) {
+          firstEvent = {
+            summary,
+            description: [...baseDesc, `[illico-int:${intervention.id}]`].join('\n'),
+            ...buildIntervTimes(intervention.date_debut, heure_debut, duree_minutes),
           }
-          const resultFin = await upsertEvent(calendar, intervention.google_end_event_id, eventFin)
-          if (resultFin.action === 'inserted') {
-            await supabaseAdmin.from('interventions_artisans')
-              .update({ google_end_event_id: resultFin.id }).eq('id', id)
+        } else {
+          const endDate = new Date(intervention.date_fin)
+          endDate.setDate(endDate.getDate() + 1)
+          firstEvent = {
+            summary,
+            description: [...baseDesc, `[illico-int:${intervention.id}]`].join('\n'),
+            start: { date: intervention.date_debut },
+            end: { date: endDate.toISOString().slice(0, 10) },
           }
         }
       } else {
         const jours = [...(intervention.jours_specifiques || [])].sort()
         if (!jours.length) return NextResponse.json({ success: true, skipped: true })
-        const firstEvent = {
+        firstEvent = {
           summary,
-          description: [...baseDesc].join('\n'),
-          start: { date: jours[0] },
-          end: { date: nextDay(jours[jours.length - 1]) },
+          description: [...baseDesc, `[illico-int:${intervention.id}:0]`].join('\n'),
+          ...buildIntervTimes(jours[0], heure_debut, duree_minutes),
         }
-        const result = await upsertEvent(calendar, intervention.google_event_id, firstEvent)
-        if (result.action === 'inserted') {
-          await supabaseAdmin.from('interventions_artisans')
-            .update({ google_event_id: result.id }).eq('id', id)
+        extraEvents = jours.slice(1).map((jour, i) => ({
+          summary,
+          description: [...baseDesc, `[illico-int:${intervention.id}:${i + 1}]`].join('\n'),
+          ...buildIntervTimes(jour, heure_debut, duree_minutes),
+        }))
+      }
+
+      const result = await upsertEvent(calendar, intervention.google_event_id, firstEvent)
+      if (result.action === 'inserted') {
+        await supabaseAdmin.from('interventions_artisans')
+          .update({ google_event_id: result.id }).eq('id', id)
+        for (const evt of extraEvents) {
+          await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: evt })
         }
       }
     }
@@ -204,7 +214,6 @@ export async function POST(request) {
       if (dossier.date_demarrage_chantier) {
         const eventStart = {
           summary: `Démarrage${nomClient ? ' | ' + nomClient : ''}`,
-          description: [baseDesc].filter(Boolean).join('\n'),
           start: { date: dossier.date_demarrage_chantier },
           end: { date: nextDay(dossier.date_demarrage_chantier) },
           colorId: '2',
@@ -218,7 +227,6 @@ export async function POST(request) {
       if (dossier.date_fin_chantier) {
         const eventEnd = {
           summary: `Fin${nomClient ? ' | ' + nomClient : ''}`,
-          description: [baseDesc].filter(Boolean).join('\n'),
           start: { date: dossier.date_fin_chantier },
           end: { date: nextDay(dossier.date_fin_chantier) },
           colorId: '6',
