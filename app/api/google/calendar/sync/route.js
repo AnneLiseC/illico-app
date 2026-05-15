@@ -288,12 +288,12 @@ export async function POST(request) {
     // ── PULL : Google → App ──────────────────────────────────────────────────
     try {
       const now = new Date()
-      const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1)
+      const januaryFirst = new Date(now.getFullYear(), 0, 1)
       const twelveMonthsAhead = new Date(now.getFullYear(), now.getMonth() + 12, 1)
 
       const { data: calData } = await calendar.events.list({
         calendarId: CALENDAR_ID,
-        timeMin: sixMonthsAgo.toISOString(),
+        timeMin: januaryFirst.toISOString(),
         timeMax: twelveMonthsAhead.toISOString(),
         maxResults: 1000,
         singleEvents: true,
@@ -421,7 +421,7 @@ export async function POST(request) {
         .from('rendez_vous').select('id, date_heure, google_event_id').not('google_event_id', 'is', null)
       for (const rdv of (rdvsWithId || [])) {
         const d = new Date(rdv.date_heure)
-        if (d >= sixMonthsAgo && d <= twelveMonthsAhead && !activeGoogleIds.has(rdv.google_event_id)) {
+        if (d >= januaryFirst && d <= twelveMonthsAhead && !activeGoogleIds.has(rdv.google_event_id)) {
           await supabaseAdmin.from('rendez_vous').delete().eq('id', rdv.id)
           results.deleted++
         }
@@ -431,7 +431,7 @@ export async function POST(request) {
         .from('interventions_artisans').select('id, date_debut, google_event_id, google_end_event_id').not('google_event_id', 'is', null)
       for (const int of (intsWithId || [])) {
         const d = new Date(int.date_debut)
-        if (d >= sixMonthsAgo && d <= twelveMonthsAhead && !activeGoogleIds.has(int.google_event_id)) {
+        if (d >= januaryFirst && d <= twelveMonthsAhead && !activeGoogleIds.has(int.google_event_id)) {
           await supabaseAdmin.from('interventions_artisans').delete().eq('id', int.id)
           results.deleted++
           continue
