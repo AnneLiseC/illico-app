@@ -403,14 +403,14 @@ export async function POST(request) {
               const gStart = new Date(evt.start.dateTime)
               const gEnd = new Date(evt.end.dateTime)
               const duree = Math.round((gEnd - gStart) / 60000)
-              await supabaseAdmin.from('rendez_vous').insert({
+              const { error: insertError } = await supabaseAdmin.from('rendez_vous').insert({
                 type_rdv: 'autres',
                 date_heure: gStart.toISOString(),
                 duree_minutes: duree || 60,
                 notes: evt.summary || null,
                 google_event_id: evt.id,
               })
-              results.pulled++
+              if (!insertError) results.pulled++
             }
           } catch {}
         }
