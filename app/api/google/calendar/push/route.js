@@ -150,7 +150,6 @@ export async function POST(request) {
           description: [baseDescStr, `[illico-int-debut:${intervention.id}]`].filter(Boolean).join('\n'),
           start: { date: intervention.date_debut },
           end: { date: nextDay(intervention.date_debut) },
-          colorId: '2',
         }
         const resultDebut = await upsertEvent(calendar, intervention.google_event_id, eventDebut)
         if (resultDebut.action === 'inserted') {
@@ -164,7 +163,6 @@ export async function POST(request) {
             description: [baseDescStr, `[illico-int-fin:${intervention.id}]`].filter(Boolean).join('\n'),
             start: { date: intervention.date_fin },
             end: { date: nextDay(intervention.date_fin) },
-            colorId: '6',
           }
           const resultFin = await upsertEvent(calendar, intervention.google_end_event_id, eventFin)
           if (resultFin.action === 'inserted') {
