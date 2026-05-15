@@ -25,9 +25,10 @@ const COLORS = {
 }
 
 const TYPE_CONFIG = {
-  visite_technique_client:  { label: 'R1 — Visite client',      short: 'R1', color: COLORS.blue,   bg: '#EFF6FF' },
-  visite_technique_artisan: { label: 'R2 — Visite artisan',     short: 'R2', color: COLORS.teal,   bg: '#F0FDF9' },
-  presentation_devis:       { label: 'R3 — Présentation devis', short: 'R3', color: COLORS.amber,  bg: '#FFFBEB' },
+  visite_technique_client:  { label: 'R1 — Visite client',      short: 'R1',    color: COLORS.blue,   bg: '#EFF6FF' },
+  visite_technique_artisan: { label: 'R2 — Visite artisan',     short: 'R2',    color: COLORS.teal,   bg: '#F0FDF9' },
+  presentation_devis:       { label: 'R3 — Présentation devis', short: 'R3',    color: COLORS.amber,  bg: '#FFFBEB' },
+  autres:                   { label: 'Autre RDV',               short: 'Autre', color: '#64748B',     bg: '#F8FAFC' },
 }
 
 const ARTISAN_COLORS = [COLORS.violet, COLORS.coral, COLORS.mint, COLORS.gold, COLORS.sky, COLORS.teal, '#9333EA', '#0891B2']
@@ -442,7 +443,7 @@ export default function Planning() {
 
             {/* Type RDV */}
             <div className="flex gap-0.5 rounded-lg p-0.5" style={{ background: 'rgba(255,255,255,0.08)' }}>
-              {[{ k: '', l: 'Tous types' }, { k: 'visite_technique_client', l: 'R1' }, { k: 'visite_technique_artisan', l: 'R2' }, { k: 'presentation_devis', l: 'R3' }].map(({ k, l }) => (
+              {[{ k: '', l: 'Tous types' }, { k: 'visite_technique_client', l: 'R1' }, { k: 'visite_technique_artisan', l: 'R2' }, { k: 'presentation_devis', l: 'R3' }, { k: 'autres', l: 'Autres' }].map(({ k, l }) => (
                 <button key={k} onClick={() => setTypeFiltre(k)}
                   className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${typeFiltre === k ? 'bg-blue-600 text-white shadow' : 'text-blue-300 hover:text-white'}`}>
                   {l}
@@ -729,9 +730,10 @@ export default function Planning() {
                       <option value="visite_technique_client">R1 — Visite technique client</option>
                       <option value="visite_technique_artisan">R2 — Visite technique avec artisan</option>
                       <option value="presentation_devis">R3 — Présentation devis</option>
+                      <option value="autres">Autre rendez-vous</option>
                     </select>
                   </div>
-                  {!modeEdition && <div><label className={labelCls}>Chantier *</label>
+                  {!modeEdition && formRdv.type_rdv !== 'autres' && <div><label className={labelCls}>Chantier *</label>
                     <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls}>
                       <option value="">— Choisir un chantier —</option>
                       {dossiers.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
@@ -754,7 +756,7 @@ export default function Planning() {
                   <div><label className={labelCls}>Notes</label><textarea value={formRdv.notes} onChange={e => setFormRdv(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} /></div>
                   <div className="flex gap-2 pt-1">
                     <button onClick={fermerModal} className="flex-1 border border-slate-200 text-slate-700 py-2 rounded-xl text-sm font-medium hover:bg-slate-50">Annuler</button>
-                    <button onClick={sauvegarderRdv} disabled={(!formRdv.dossier_id && !modeEdition) || !formRdv.date_heure || saving} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: COLORS.blue }}>
+                    <button onClick={sauvegarderRdv} disabled={(!formRdv.dossier_id && !modeEdition && formRdv.type_rdv !== 'autres') || !formRdv.date_heure || saving} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: COLORS.blue }}>
                       {saving ? 'Enregistrement…' : modeEdition ? 'Enregistrer' : 'Créer le RDV'}
                     </button>
                   </div>

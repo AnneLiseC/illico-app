@@ -70,6 +70,7 @@ function rdvToGoogleEvent(rdv) {
     visite_technique_client: 'R1 — Visite technique client',
     visite_technique_artisan: 'R2 — Visite technique avec artisan',
     presentation_devis: 'R3 — Présentation devis',
+    autres: 'Autre RDV',
   }
   const label = typeLabels[rdv.type_rdv] || rdv.type_rdv
   const client = rdv.dossier?.client

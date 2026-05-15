@@ -40,6 +40,7 @@ function rdvToGoogleEvent(rdv) {
     visite_technique_client: 'R1 — Visite technique client',
     visite_technique_artisan: 'R2 — Visite technique avec artisan',
     presentation_devis: 'R3 — Présentation devis',
+    autres: 'Autre RDV',
   }
   const label = typeLabels[rdv.type_rdv] || rdv.type_rdv
   const client = rdv.dossier?.client
@@ -393,6 +394,28 @@ export async function POST(request) {
             if (dossier && evt.start.date !== dossier.date_fin_chantier) {
               await supabaseAdmin.from('dossiers')
                 .update({ date_fin_chantier: evt.start.date }).eq('id', endMatch[1])
+              results.pulled++
+            }
+          } catch {}
+          continue
+        }
+
+        // Événement Google sans tag illico → importer comme RDV "Autres"
+        if (evt.start?.dateTime) {
+          try {
+            const { data: existing } = await supabaseAdmin
+              .from('rendez_vous').select('id').eq('google_event_id', evt.id).maybeSingle()
+            if (!existing) {
+              const gStart = new Date(evt.start.dateTime)
+              const gEnd = new Date(evt.end.dateTime)
+              const duree = Math.round((gEnd - gStart) / 60000)
+              await supabaseAdmin.from('rendez_vous').insert({
+                type_rdv: 'autres',
+                date_heure: gStart.toISOString(),
+                duree_minutes: duree || 60,
+                notes: evt.summary || null,
+                google_event_id: evt.id,
+              })
               results.pulled++
             }
           } catch {}

@@ -2441,8 +2441,9 @@ export default function FicheChantier({ params }) {
                     visite_technique_client: { label: 'R1 — Visite technique client', color: 'bg-blue-100 text-blue-700' },
                     visite_technique_artisan: { label: 'R2 — Visite technique avec artisan', color: 'bg-green-100 text-green-700' },
                     presentation_devis: { label: 'R3 — Présentation devis', color: 'bg-amber-100 text-amber-700' },
+                    autres: { label: 'Autre RDV', color: 'bg-slate-100 text-slate-700' },
                   }
-                  const tc = typeConfig[r.type_rdv]
+                  const tc = typeConfig[r.type_rdv] || typeConfig.autres
                   return (
                     <div key={r.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
                       <div>
@@ -2505,6 +2506,7 @@ export default function FicheChantier({ params }) {
                   <option value="visite_technique_client">R1 — Visite technique client</option>
                   <option value="visite_technique_artisan">R2 — Visite technique avec artisan</option>
                   <option value="presentation_devis">R3 — Présentation devis</option>
+                  <option value="autres">Autre rendez-vous</option>
                 </select>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
