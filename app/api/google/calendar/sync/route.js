@@ -372,10 +372,6 @@ export async function POST(request) {
         const intMatch = desc.match(/\[illico-int:([a-f0-9-]{36})\]/)
         if (intMatch) continue
 
-        // Intervention jours_specifiques déplacée dans Google ? (lecture seule, pas de pull)
-        const intMatch = desc.match(/\[illico-int:([a-f0-9-]{36})\]/)
-        if (intMatch) continue
-
         // Date démarrage chantier déplacée dans Google ?
         const startMatch = desc.match(/\[illico-start:([^\]]+)\]/)
         if (startMatch && evt.start?.date) {
