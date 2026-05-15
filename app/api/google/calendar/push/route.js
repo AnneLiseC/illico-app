@@ -90,8 +90,6 @@ function rdvToGoogleEvent(rdv) {
     ].filter(Boolean).join('\n'),
     start: { dateTime: fmtNaive(start), timeZone: 'Europe/Paris' },
     end: { dateTime: fmtNaive(end), timeZone: 'Europe/Paris' },
-    colorId: rdv.type_rdv === 'visite_technique_client' ? '1'
-            : rdv.type_rdv === 'visite_technique_artisan' ? '2' : '6',
   }
 }
 
@@ -167,7 +165,6 @@ export async function POST(request) {
             description: [baseDescStr, `[illico-int-fin:${intervention.id}]`].filter(Boolean).join('\n'),
             start: { date: intervention.date_fin },
             end: { date: nextDay(intervention.date_fin) },
-            colorId: '6',
           }
           const resultFin = await upsertEvent(calendar, intervention.google_end_event_id, eventFin)
           if (resultFin.action === 'inserted') {

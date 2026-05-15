@@ -58,8 +58,6 @@ function rdvToGoogleEvent(rdv) {
     ].filter(Boolean).join('\n'),
     start: { dateTime: fmtNaive(start), timeZone: 'Europe/Paris' },
     end: { dateTime: fmtNaive(end), timeZone: 'Europe/Paris' },
-    colorId: rdv.type_rdv === 'visite_technique_client' ? '1'
-            : rdv.type_rdv === 'visite_technique_artisan' ? '2' : '6',
   }
 }
 
@@ -82,7 +80,6 @@ function interventionToGoogleEvents(intervention) {
       description: [baseDesc, `[illico-int-debut:${intervention.id}]`].filter(Boolean).join('\n'),
       start: { date: intervention.date_debut },
       end: { date: nextDay(intervention.date_debut) },
-      colorId: '2',
       _googleEventId: intervention.google_event_id,
       _field: 'google_event_id',
     }]
@@ -92,7 +89,6 @@ function interventionToGoogleEvents(intervention) {
         description: [baseDesc, `[illico-int-fin:${intervention.id}]`].filter(Boolean).join('\n'),
         start: { date: intervention.date_fin },
         end: { date: nextDay(intervention.date_fin) },
-        colorId: '6',
         _googleEventId: intervention.google_end_event_id,
         _field: 'google_end_event_id',
       })
