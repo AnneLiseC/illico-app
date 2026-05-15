@@ -295,6 +295,13 @@ export async function POST(request) {
       const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1)
       const twelveMonthsAhead = new Date(now.getFullYear(), now.getMonth() + 12, 1)
 
+      // Pré-chargement pour le matching R1/R2/R3
+      const normaliser = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
+      const { data: allDossiers } = await supabaseAdmin
+        .from('dossiers').select('id, client:clients(prenom, nom)')
+      const { data: allArtisans } = await supabaseAdmin
+        .from('artisans').select('id, entreprise')
+
       const { data: calData } = await calendar.events.list({
         calendarId: CALENDAR_ID,
         timeMin: sixMonthsAgo.toISOString(),
@@ -328,7 +335,7 @@ export async function POST(request) {
               const gDuration = Math.round((gEnd - gStart) / 60000)
               if (Math.abs(gStart - new Date(rdv.date_heure)) > 60000 || gDuration !== rdv.duree_minutes) {
                 await supabaseAdmin.from('rendez_vous')
-                  .update({ date_heure: gStart.toISOString(), duree_minutes: gDuration }).eq('id', rdvMatch[1])
+                  .update({ date_heure: evt.start.dateTime.slice(0, 19), duree_minutes: gDuration }).eq('id', rdvMatch[1])
                 results.pulled++
               }
             }
@@ -400,7 +407,7 @@ export async function POST(request) {
           continue
         }
 
-        // Événement Google sans tag illico → importer comme RDV "Autres"
+        // Événement Google sans tag illico → importer comme RDV
         if (evt.start?.dateTime) {
           try {
             const { data: existing } = await supabaseAdmin
@@ -409,11 +416,50 @@ export async function POST(request) {
               const gStart = new Date(evt.start.dateTime)
               const gEnd = new Date(evt.end.dateTime)
               const duree = Math.round((gEnd - gStart) / 60000)
+              const title = evt.summary || ''
+              const titleNorm = normaliser(title)
+
+              // Détection du type depuis le titre
+              let type_rdv = 'autres'
+              if (/\bR1\b/i.test(title)) type_rdv = 'visite_technique_client'
+              else if (/\bR2\b/i.test(title)) type_rdv = 'visite_technique_artisan'
+              else if (/\bR3\b/i.test(title)) type_rdv = 'presentation_devis'
+
+              // Matching dossier par nom client dans le titre
+              let dossier_id = null
+              let artisan_id = null
+              if (type_rdv !== 'autres') {
+                for (const d of (allDossiers || [])) {
+                  const nomComplet = normaliser(`${d.client?.prenom || ''} ${d.client?.nom || ''}`)
+                  const nomSeul = normaliser(d.client?.nom || '')
+                  if ((nomComplet.length > 2 && titleNorm.includes(nomComplet)) ||
+                      (nomSeul.length > 2 && titleNorm.includes(nomSeul))) {
+                    dossier_id = d.id
+                    break
+                  }
+                }
+                // Matching artisan pour R2
+                if (type_rdv === 'visite_technique_artisan') {
+                  for (const a of (allArtisans || [])) {
+                    const entNorm = normaliser(a.entreprise || '')
+                    if (entNorm.length > 2 && titleNorm.includes(entNorm)) {
+                      artisan_id = a.id
+                      break
+                    }
+                  }
+                }
+              }
+
+              // Heure locale depuis Google (sans conversion UTC)
+              const dateHeure = evt.start.dateTime.slice(0, 19)
+
               const { error: insertError } = await supabaseAdmin.from('rendez_vous').insert({
-                type_rdv: 'autres',
-                date_heure: gStart.toISOString(),
+                type_rdv,
+                dossier_id,
+                artisan_id,
+                date_heure: dateHeure,
                 duree_minutes: duree || 60,
-                notes: evt.summary || null,
+                notes: type_rdv === 'autres' ? title || null : null,
                 google_event_id: evt.id,
               })
               if (!insertError) results.pulled++
