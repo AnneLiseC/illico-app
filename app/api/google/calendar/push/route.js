@@ -88,8 +88,6 @@ function rdvToGoogleEvent(rdv) {
     ].filter(Boolean).join('\n'),
     start: { dateTime: fmtNaive(start), timeZone: 'Europe/Paris' },
     end: { dateTime: fmtNaive(end), timeZone: 'Europe/Paris' },
-    colorId: rdv.type_rdv === 'visite_technique_client' ? '1'
-            : rdv.type_rdv === 'visite_technique_artisan' ? '2' : '6',
   }
 }
 
