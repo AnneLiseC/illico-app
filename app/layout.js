@@ -16,10 +16,13 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="fr" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col bg-gray-50">
+      <body className="min-h-full bg-[#f0f4f8]">
         <AuthProvider>
           <NavBar />
-          {children}
+          {/* pl-[72px] offsets the fixed 72px-wide collapsed sidebar */}
+          <div className="pl-[72px] min-h-screen">
+            {children}
+          </div>
         </AuthProvider>
         <SpeedInsights />
         <Analytics />
