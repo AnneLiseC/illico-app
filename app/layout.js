@@ -3,6 +3,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Analytics } from "@vercel/analytics/react"
 import "./globals.css"
 import NavBar from "./components/navbar"
+import AppHeader from "./components/app-header"
 import { AuthProvider } from "./lib/auth-context"
 
 const manrope = Manrope({
