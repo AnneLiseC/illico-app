@@ -560,6 +560,21 @@ select.input { padding-right: 32px; }
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
 }
+
+.kpi {
+  position: relative;
+  overflow: hidden;
+  padding: 22px;
+}
+.kpi .kpi-corner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 80px;
+  height: 80px;
+  opacity: 0.5;
+  pointer-events: none;
+}
 @media (max-width: 1100px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px)  { .kpi-grid { grid-template-columns: 1fr; } }
 
