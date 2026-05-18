@@ -99,7 +99,7 @@ export default function NavBar() {
 
   return (
     <aside
-      className={`sidebar${open ? ' open' : ''}${pinned ? ' pinned' : ''}`}
+      className={`sidebar${open ? ' open' : ''}${pinned ? ' pinned-open' : ''}`}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
@@ -116,7 +116,7 @@ export default function NavBar() {
 
         {/* Pin toggle */}
         <button
-          className={`pin-btn${pinned ? ' active' : ''}`}
+          className="pin"
           onClick={() => setPinned(p => !p)}
           title={pinned ? 'Désépingler' : 'Épingler ouvert'}
         >
@@ -125,27 +125,28 @@ export default function NavBar() {
 
         {/* Nav */}
         <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 0' }}>
-          {NAV_GROUPS.map(group => (
-            <div key={group.label}>
-              <div className="nav-section-label">{group.label}</div>
-              {group.items
-                .filter(item => !item.adminOnly || profile?.role === 'admin')
-                .map(item => (
+          {NAV_GROUPS.map(group => {
+            const visibleItems = group.items.filter(item => !item.adminOnly || profile?.role === 'admin')
+            if (visibleItems.length === 0) return null
+            return (
+              <div key={group.label}>
+                <div className="nav-section-label">{group.label}</div>
+                {visibleItems.map(item => (
                   <NavItem
                     key={item.href}
                     {...item}
                     active={isActive(item.href)}
                     open={open}
                   />
-                ))
-              }
-            </div>
-          ))}
+                ))}
+              </div>
+            )
+          })}
         </nav>
 
         {/* User block */}
         <div className="user-block">
-          <span className="user-avatar">{initials}</span>
+          <span className="avatar">{initials}</span>
           <div className="user-meta">
             <div className="name">{profile.prenom} {profile.nom}</div>
             <div className="role">{roleLabel}</div>
