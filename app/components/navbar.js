@@ -125,22 +125,23 @@ export default function NavBar() {
 
         {/* Nav */}
         <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 0' }}>
-          {NAV_GROUPS.map(group => (
-            <div key={group.label}>
-              <div className="nav-section-label">{group.label}</div>
-              {group.items
-                .filter(item => !item.adminOnly || profile?.role === 'admin')
-                .map(item => (
+          {NAV_GROUPS.map(group => {
+            const visibleItems = group.items.filter(item => !item.adminOnly || profile?.role === 'admin')
+            if (visibleItems.length === 0) return null
+            return (
+              <div key={group.label}>
+                <div className="nav-section-label">{group.label}</div>
+                {visibleItems.map(item => (
                   <NavItem
                     key={item.href}
                     {...item}
                     active={isActive(item.href)}
                     open={open}
                   />
-                ))
-              }
-            </div>
-          ))}
+                ))}
+              </div>
+            )
+          })}
         </nav>
 
         {/* User block */}

@@ -3,8 +3,10 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../lib/auth-context'
 
 export default function Parametres() {
+  const { profile: authProfile, initialized } = useAuth()
   const [profile, setProfile]       = useState(null)
   const [loading, setLoading]       = useState(true)
   const [agentes, setAgentes]       = useState([])
@@ -37,17 +39,12 @@ export default function Parametres() {
   }
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-      const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      if (profData?.role !== 'admin') { router.push('/dashboard'); return }
-      setProfile(profData)
-      await chargerAgentes()
-      setLoading(false)
-    }
-    init()
-  }, [router])
+    if (!initialized) return
+    if (!authProfile) { router.push('/login'); return }
+    if (authProfile.role !== 'admin') { router.push('/dashboard'); return }
+    setProfile(authProfile)
+    chargerAgentes().then(() => setLoading(false))
+  }, [initialized, authProfile, router])
 
   const ouvrirCreer = () => {
     setForm(emptyForm)
