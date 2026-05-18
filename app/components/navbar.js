@@ -99,7 +99,7 @@ export default function NavBar() {
 
   return (
     <aside
-      className={`sidebar${open ? ' open' : ''}${pinned ? ' pinned-open' : ''}`}
+      className={`sidebar${open ? ' open' : ''}${pinned ? ' pinned' : ''}`}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
@@ -116,7 +116,7 @@ export default function NavBar() {
 
         {/* Pin toggle */}
         <button
-          className="pin"
+          className={`pin-btn${pinned ? ' active' : ''}`}
           onClick={() => setPinned(p => !p)}
           title={pinned ? 'Désépingler' : 'Épingler ouvert'}
         >
@@ -146,7 +146,7 @@ export default function NavBar() {
 
         {/* User block */}
         <div className="user-block">
-          <span className="avatar">{initials}</span>
+          <span className="user-avatar">{initials}</span>
           <div className="user-meta">
             <div className="name">{profile.prenom} {profile.nom}</div>
             <div className="role">{roleLabel}</div>
