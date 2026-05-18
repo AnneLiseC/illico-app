@@ -103,119 +103,146 @@ export default function MessageriePage() {
   }
 
   if (!initialized || !profile || loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <p className="text-gray-500 text-sm">Chargement...</p>
+    <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>
+      Chargement…
     </div>
   )
 
   const dossierActif = dossiers.find(d => d.id === dossierId)
 
   return (
-    <div className="min-h-screen bg-gray-50">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
-          <h1 className="text-xl font-bold text-gray-800 mb-4">Messagerie</h1>
+    <div className="page-enter" style={{display:'flex', flexDirection:'column', gap:18}}>
 
-          <div className="flex gap-4 h-[calc(100vh-160px)]">
-
-            {/* Liste des chantiers */}
-            <div className="w-64 flex-shrink-0 bg-white border border-gray-200 rounded-xl overflow-y-auto">
-              {dossiers.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-8 px-4">Aucun chantier AMO</p>
-              ) : (
-                <div className="divide-y divide-gray-100">
-                  {dossiers.map(d => (
-                    <button
-                      key={d.id}
-                      onClick={() => setDossierId(d.id)}
-                      className={`w-full text-left px-4 py-3 transition-colors ${d.id === dossierId ? 'bg-blue-50 border-l-2 border-blue-800' : 'hover:bg-gray-50'}`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className={`text-sm font-medium truncate ${d.id === dossierId ? 'text-blue-800' : 'text-gray-800'}`}>{d.reference}</p>
-                          <p className="text-xs text-gray-500 truncate">{nomClient(d)}</p>
-                        </div>
-                        {d.nbNonLus > 0 && (
-                          <span className="flex-shrink-0 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium">
-                            {d.nbNonLus}
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Zone de conversation */}
-            <div className="flex-1 flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden">
-              {!dossierId ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <p className="text-sm text-gray-400">Sélectionnez un chantier</p>
-                </div>
-              ) : (
-                <>
-                  {/* En-tête conversation */}
-                  <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-gray-800 text-sm">{dossierActif?.reference}</p>
-                      <p className="text-xs text-gray-500">{dossierActif ? nomClient(dossierActif) : ''}</p>
-                    </div>
-                    <button
-                      onClick={() => router.push(`/chantiers/${dossierId}`)}
-                      className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
-                    >
-                      Voir le dossier →
-                    </button>
-                  </div>
-
-                  {/* Messages */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
-                    {messages.length === 0 ? (
-                      <p className="text-sm text-gray-400 text-center py-8">Aucun message pour ce chantier</p>
-                    ) : (
-                      messages.map(msg => {
-                        const isClient = msg.auteur_role === 'client'
-                        return (
-                          <div key={msg.id} className={`flex ${isClient ? 'justify-start' : 'justify-end'}`}>
-                            <div className={`max-w-xs sm:max-w-md rounded-2xl px-3 py-2 ${isClient ? 'bg-white border border-gray-200' : 'bg-blue-800'}`}>
-                              <p className={`text-xs font-medium mb-0.5 ${isClient ? 'text-gray-500' : 'text-blue-200'}`}>
-                                {isClient ? `${msg.auteur?.prenom || 'Client'} (client)` : `${msg.auteur?.prenom || 'Équipe'}`}
-                              </p>
-                              <p className={`text-sm ${isClient ? 'text-gray-800' : 'text-white'}`}>{msg.contenu}</p>
-                              <p className={`text-xs mt-1 opacity-60 ${isClient ? 'text-gray-500' : 'text-white'}`}>
-                                {new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                              </p>
-                            </div>
-                          </div>
-                        )
-                      })
-                    )}
-                    <div ref={messagesEndRef} />
-                  </div>
-
-                  {/* Champ de réponse */}
-                  <div className="p-3 border-t border-gray-100 bg-white flex gap-2">
-                    <input
-                      type="text"
-                      value={reponse}
-                      onChange={e => setReponse(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && !e.shiftKey && envoyer()}
-                      placeholder="Répondre au client..."
-                      className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <button
-                      onClick={envoyer}
-                      disabled={!reponse.trim() || sending}
-                      className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50 flex-shrink-0"
-                    >
-                      {sending ? '...' : 'Envoyer'}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+      {/* En-tête */}
+      <div>
+        <div className="eyebrow" style={{marginBottom:4}}>Communication</div>
+        <h1 className="page">Messagerie AMO</h1>
+        <div style={{color:'var(--ink-500)', fontSize:13, marginTop:6}}>
+          {dossiers.length} conversation(s) · uniquement les dossiers AMO
         </div>
+      </div>
+
+      {/* Layout deux colonnes */}
+      <div className="card" style={{padding:0, overflow:'hidden', display:'grid', gridTemplateColumns:'300px 1fr', minHeight:560}}>
+
+        {/* ── Liste des dossiers AMO ── */}
+        <div style={{borderRight:'1px solid var(--ink-200)', display:'flex', flexDirection:'column'}}>
+          {dossiers.length === 0 ? (
+            <div style={{padding:32, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+              Aucun chantier AMO
+            </div>
+          ) : (
+            dossiers.map(d => (
+              <button
+                key={d.id}
+                onClick={() => setDossierId(d.id)}
+                className={d.id !== dossierId ? 'row-hover' : ''}
+                style={{
+                  width:'100%', textAlign:'left', padding:'14px 16px',
+                  display:'flex', alignItems:'center', justifyContent:'space-between', gap:8,
+                  borderBottom:'1px solid var(--ink-100)', cursor:'pointer', border:0,
+                  background: d.id === dossierId ? 'var(--brand-50)' : 'transparent',
+                }}>
+                <div style={{minWidth:0}}>
+                  <div style={{fontWeight:700, color: d.id === dossierId ? 'var(--brand-800)' : 'var(--ink-900)', fontSize:13}} className="clip-1">
+                    {d.reference}
+                  </div>
+                  <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}} className="clip-1">
+                    {nomClient(d)}
+                  </div>
+                </div>
+                {d.nbNonLus > 0 && (
+                  <span style={{background:'var(--brand-500)', color:'#fff', borderRadius:99, padding:'1px 7px', fontSize:10, fontWeight:700, flexShrink:0}}>
+                    {d.nbNonLus}
+                  </span>
+                )}
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* ── Zone de conversation ── */}
+        <div style={{display:'flex', flexDirection:'column'}}>
+          {!dossierId ? (
+            <div style={{flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:48}}>
+              <div style={{color:'var(--ink-400)', fontSize:13}}>Sélectionnez un chantier</div>
+            </div>
+          ) : (
+            <>
+              {/* En-tête conversation */}
+              <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)', display:'flex', alignItems:'center', gap:12}}>
+                <div style={{
+                  width:38, height:38, borderRadius:12, flexShrink:0,
+                  background:'var(--brand-50)', color:'var(--brand-800)',
+                  display:'grid', placeItems:'center', fontSize:15, fontWeight:800,
+                }}>
+                  {(dossierActif ? nomClient(dossierActif) : '').charAt(0).toUpperCase()}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700, color:'var(--ink-900)'}}>{dossierActif ? nomClient(dossierActif) : ''}</div>
+                  <div className="mono" style={{fontSize:11.5, color:'var(--ink-500)'}}>{dossierActif?.reference}</div>
+                </div>
+                <button className="btn btn-ghost" style={{fontSize:12}} onClick={() => router.push(`/chantiers/${dossierId}`)}>
+                  Voir le dossier →
+                </button>
+              </div>
+
+              {/* Messages */}
+              <div style={{flex:1, overflowY:'auto', padding:'24px 22px', display:'flex', flexDirection:'column', gap:14, background:'var(--surface-2)'}}>
+                {messages.length === 0 ? (
+                  <div style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:32}}>
+                    Aucun message pour ce chantier
+                  </div>
+                ) : (
+                  messages.map(msg => {
+                    const isClient = msg.auteur_role === 'client'
+                    return (
+                      <div key={msg.id} style={{display:'flex', justifyContent: isClient ? 'flex-start' : 'flex-end'}}>
+                        <div style={{
+                          maxWidth:420, padding:'10px 14px', fontSize:13.5, lineHeight:1.5,
+                          background: isClient ? '#fff' : 'var(--brand-500)',
+                          color: isClient ? 'var(--ink-800)' : '#fff',
+                          borderRadius: isClient ? '12px 12px 12px 4px' : '12px 12px 4px 12px',
+                          boxShadow: isClient ? '0 1px 2px rgba(0,0,0,0.04)' : undefined,
+                        }}>
+                          <div style={{fontSize:11.5, fontWeight:600, marginBottom:4, color: isClient ? 'var(--ink-500)' : 'rgba(255,255,255,0.7)'}}>
+                            {isClient ? `${msg.auteur?.prenom || 'Client'} (client)` : `${msg.auteur?.prenom || 'Équipe'}`}
+                          </div>
+                          <div>{msg.contenu}</div>
+                          <div style={{fontSize:11, marginTop:4, opacity:0.6}}>
+                            {new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Champ de réponse */}
+              <div style={{padding:'14px 18px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:10, alignItems:'center'}}>
+                <input
+                  className="input"
+                  type="text"
+                  value={reponse}
+                  onChange={e => setReponse(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && envoyer()}
+                  placeholder="Répondre au client…"
+                  style={{flex:1, height:42}}
+                />
+                <button
+                  className="btn btn-primary"
+                  onClick={envoyer}
+                  disabled={!reponse.trim() || sending}
+                  style={{height:42, flexShrink:0}}>
+                  {sending ? '…' : 'Envoyer'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

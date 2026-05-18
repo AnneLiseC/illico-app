@@ -95,48 +95,77 @@ function CheckItem({ label, checked, date, onChange, onDateChange, alert, disabl
 const thL = (label) => <th key={label} className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</th>
 const thR = (label) => <th key={label} className="text-right px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</th>
 
+// ─── COMPOSANTS VISUELS ────────────────────────────────────────────────────────
+
+function FinKpiCard({ label, value, sub, tone }) {
+  const toneColor = {
+    brand: 'var(--brand-800)', ok: '#15803d',
+    warn: '#a16207', bad: '#b91c1c', mute: 'var(--ink-500)'
+  }[tone] || 'var(--brand-800)'
+  return (
+    <div className="card kpi">
+      <div className="eyebrow" style={{marginBottom:8}}>{label}</div>
+      <div className="tnum" style={{fontSize:26,fontWeight:800,color:toneColor,letterSpacing:'-0.02em',lineHeight:1}}>{value}</div>
+      {sub && <div style={{fontSize:12,color:'var(--ink-500)',marginTop:6}}>{sub}</div>}
+    </div>
+  )
+}
+
+function PillToggle({ options, active, onChange }) {
+  return (
+    <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9,width:'fit-content'}}>
+      {options.map(o => (
+        <button key={o.key} onClick={() => onChange(o.key)} style={{
+          padding:'6px 14px',fontSize:12.5,fontWeight:600,borderRadius:7,
+          background: active === o.key ? '#fff' : 'transparent',
+          color: active === o.key ? 'var(--brand-800)' : 'var(--ink-500)',
+          boxShadow: active === o.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+          transition:'all 150ms',border:0,cursor:'pointer'
+        }}>{o.label}</button>
+      ))}
+    </div>
+  )
+}
+
 function ObjectifBar({ label, reel, objectifMontant, cible, agenteId = null, canEdit, onSave }) {
   const [editing, setEditing] = useState(false)
   const [val, setVal] = useState(String(objectifMontant || ''))
   const pct = objectifMontant > 0 ? Math.min(100, Math.round((reel / objectifMontant) * 100)) : 0
-  const color = pct >= 100 ? 'bg-green-500' : pct >= 70 ? 'bg-blue-500' : pct >= 40 ? 'bg-amber-400' : 'bg-red-400'
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-gray-600">{label}</span>
+    <div className="card" style={{padding:'16px 20px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+        <span className="eyebrow">{label}</span>
         {canEdit && !editing && (
           <button onClick={() => { setVal(String(objectifMontant || '')); setEditing(true) }}
-            className="text-xs text-gray-400 hover:text-blue-600">
+            className="btn btn-ghost" style={{fontSize:11,padding:'3px 8px'}}>
             {objectifMontant > 0 ? 'Modifier' : '+ Objectif'}
           </button>
         )}
       </div>
-      <div className="flex items-baseline gap-2">
-        <span className="text-lg font-bold text-gray-800">{fmt(reel)}</span>
+      <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:objectifMontant > 0 ? 10 : 0}}>
+        <span className="tnum" style={{fontSize:22,fontWeight:800,color:'var(--brand-800)'}}>{fmt(reel)}</span>
         {objectifMontant > 0 && (
-          <span className="text-xs text-gray-400">/ {fmt(objectifMontant)} · {pct}%</span>
+          <span style={{fontSize:12,color:'var(--ink-400)'}}>/ {fmt(objectifMontant)} · {pct}%</span>
         )}
       </div>
       {objectifMontant > 0 && (
-        <div className="w-full bg-gray-100 rounded-full h-1.5">
-          <div className={`${color} h-1.5 rounded-full transition-all`} style={{ width: `${pct}%` }} />
-        </div>
+        <div className="progress"><span style={{width:`${pct}%`}}/></div>
       )}
       {editing && (
-        <div className="flex gap-2 items-center pt-1">
+        <div style={{display:'flex',gap:8,alignItems:'center',marginTop:10}}>
           <input
             type="number"
             value={val}
             onChange={e => setVal(e.target.value)}
             placeholder="Objectif annuel €"
-            className="flex-1 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400"
+            className="input" style={{height:30,fontSize:12,flex:1}}
           />
           <button onClick={() => { onSave(cible, agenteId, val); setEditing(false) }}
-            className="text-xs bg-blue-800 text-white px-2 py-1 rounded hover:bg-blue-900">
+            className="btn btn-dark" style={{fontSize:12,padding:'5px 12px'}}>
             OK
           </button>
-          <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+          <button onClick={() => setEditing(false)} style={{fontSize:13,color:'var(--ink-400)',cursor:'pointer'}}>✕</button>
         </div>
       )}
     </div>
@@ -751,23 +780,26 @@ export default function Finances() {
   // ─────────────────────────────────────────────────────────────────────────────
 
   const renderSousOnglets = () => (
-    <div className="flex gap-2">
-      {[{ key: 'chantier', label: 'Par chantier' }, { key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
-        <button key={key} onClick={() => setSousOnglet(key)}
-          className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-          {label}
-        </button>
-      ))}
-    </div>
+    <PillToggle
+      options={[{ key:'chantier', label:'Par chantier' }, { key:'mois', label:'Par mois' }, { key:'annee', label:'Par année' }]}
+      active={sousOnglet}
+      onChange={setSousOnglet}
+    />
   )
 
   const renderSélecteurAgente = () => agentes.length > 1 && (
-    <div className="flex items-center gap-3">
-      <span className="text-sm text-gray-500">Agente :</span>
-      <div className="flex gap-2 flex-wrap">
+    <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+      <div className="eyebrow">Agente :</div>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
         {agentes.map(a => (
-          <button key={a.id} onClick={() => setAgenteSelectionnee(a.id)}
-            className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${agenteSelectionnee === a.id ? 'bg-blue-800 text-white border-blue-800' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+          <button key={a.id} onClick={() => setAgenteSelectionnee(a.id)} style={{
+            display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:99,
+            border:'1px solid',
+            borderColor: agenteSelectionnee === a.id ? 'var(--brand-500)' : 'var(--ink-200)',
+            background: agenteSelectionnee === a.id ? 'var(--brand-50)' : '#fff',
+            color: agenteSelectionnee === a.id ? 'var(--brand-800)' : 'var(--ink-700)',
+            fontSize:12,fontWeight:600,cursor:'pointer'
+          }}>
             {a.prenom} {a.nom}
           </button>
         ))}
@@ -799,61 +831,61 @@ export default function Finances() {
         ].filter(Boolean).length
 
         return (
-          <div key={d.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div key={d.id} className="card">
             {/* En-tête */}
-            <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
+            <div className="row-hover" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 18px',cursor:'pointer'}}
               onClick={() => setDossierOuvert(isOpen ? null : d.id)}>
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-sm font-bold text-blue-900">{d.reference}</span>
-                <span className="text-sm text-gray-500">{d.client?.prenom} {d.client?.nom}</span>
-                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{d.typologie}</span>
+              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                <span className="mono" style={{fontSize:11.5,color:'var(--brand-800)',fontWeight:700}}>{d.reference}</span>
+                <span style={{fontSize:13,color:'var(--ink-700)'}}>{d.client?.prenom} {d.client?.nom}</span>
+                <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,background:'var(--ink-100)',color:'var(--ink-500)',fontWeight:600}}>{d.typologie}</span>
                 {showBadge && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${c.estChantierMarine ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                  <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,background: c.estChantierMarine ? 'rgba(147,51,234,0.1)' : 'rgba(0,148,212,0.1)',color: c.estChantierMarine ? '#7e22ce' : 'var(--brand-800)'}}>
                     {c.estChantierMarine ? nomFranchisee : nomReferente(d)}
                   </span>
                 )}
                 {d.statut === 'annule' && (
-                  <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">Annulé</span>
+                  <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,background:'rgba(220,38,38,0.1)',color:'#b91c1c',fontWeight:600}}>Annulé</span>
                 )}
                 {nbAlertes > 0 && (
-                  <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">⚠️ {nbAlertes}</span>
+                  <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,background:'rgba(220,38,38,0.1)',color:'#b91c1c',fontWeight:600}}>⚠️ {nbAlertes}</span>
                 )}
               </div>
-              <div className="flex items-center gap-4">
+              <div style={{display:'flex',alignItems:'center',gap:14}}>
                 {showBadge ? (
                   <>
-                    {!c.estChantierMarine && <span className="text-sm text-blue-700 font-medium">{nomReferente(d)} : {fmt(c.gainsAgentePrevi)}</span>}
-                    <span className="text-sm text-purple-700 font-medium">CTP : {fmt(c.gainsAdminPrevi)}</span>
+                    {!c.estChantierMarine && <span style={{fontSize:13,color:'var(--brand-800)',fontWeight:600}}>{nomReferente(d)} : {fmt(c.gainsAgentePrevi)}</span>}
+                    <span style={{fontSize:13,color:'#7e22ce',fontWeight:600}}>CTP : {fmt(c.gainsAdminPrevi)}</span>
                   </>
                 ) : (
-                  <span className="text-sm text-gray-700 font-medium">
+                  <span style={{fontSize:13,color:'var(--ink-700)',fontWeight:600}}>
                     {isMarine ? `CTP : ${fmt(c.gainsAdminPrevi)}` : `Net : ${fmt(c.gainsAgentePrevi)}`}
                   </span>
                 )}
-                <span className="text-gray-400 text-xs">{isOpen ? '▲' : '▼'}</span>
+                <span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span>
               </div>
             </div>
 
             {/* Contenu */}
             {isOpen && (
-              <div className="border-t border-gray-100 p-4 space-y-4">
+              <div style={{borderTop:'1px solid var(--ink-100)',padding:'16px 18px',display:'flex',flexDirection:'column',gap:14}}>
 
                 {/* Infos contrat */}
-                <div className="flex items-center gap-3 flex-wrap text-xs">
-                  <span className={`px-2 py-1 rounded-full font-medium ${d.contrat_signe ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                  <span style={{padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:600,background: d.contrat_signe ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)',color: d.contrat_signe ? '#15803d' : '#b91c1c'}}>
                     Contrat {d.contrat_signe ? `✅ ${d.date_signature_contrat ? new Date(d.date_signature_contrat).toLocaleDateString('fr-FR') : ''}` : '❌ non signé'}
                   </span>
-                  {d.date_demarrage_chantier && <span className="text-gray-400">Démarrage : {new Date(d.date_demarrage_chantier).toLocaleDateString('fr-FR')}</span>}
-                  {d.date_fin_chantier && <span className="text-gray-400">Fin : {new Date(d.date_fin_chantier).toLocaleDateString('fr-FR')}</span>}
-                  <span className="text-gray-400">Répartition : {Math.round(c.partAgenteRate * 100)} / {Math.round((1 - c.partAgenteRate) * 100)}</span>
+                  {d.date_demarrage_chantier && <span style={{fontSize:12,color:'var(--ink-400)'}}>Démarrage : {new Date(d.date_demarrage_chantier).toLocaleDateString('fr-FR')}</span>}
+                  {d.date_fin_chantier && <span style={{fontSize:12,color:'var(--ink-400)'}}>Fin : {new Date(d.date_fin_chantier).toLocaleDateString('fr-FR')}</span>}
+                  <span style={{fontSize:12,color:'var(--ink-400)'}}>Répartition : {Math.round(c.partAgenteRate * 100)} / {Math.round((1 - c.partAgenteRate) * 100)}</span>
                 </div>
 
                 {/* Frais de consultation */}
                 {d.frais_consultation > 0 && (
-                  <div className="border border-gray-100 rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold text-gray-600 uppercase">Frais de consultation</p>
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <div style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:8}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <p className="eyebrow">Frais de consultation</p>
+                      <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'var(--ink-500)'}}>
                         <span>{fmt(c.fraisHT)} HT</span>
                         <span className="text-red-400">- {fmt(c.fraisRoyalties)} royalties</span>
                         <span className="font-medium text-gray-700">= {fmt(c.fraisNet)} net</span>
@@ -898,8 +930,8 @@ export default function Finances() {
 
                 {/* Artisans */}
                 {c.devisActifs.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-gray-500 uppercase">Acomptes & Factures par artisan</p>
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    <p className="eyebrow">Acomptes & Factures par artisan</p>
                     {c.devisActifs.map(dv => {
                       const artId        = dv.artisan_id || dv.artisan?.id
                       const dvF          = c.devisFinanceMap.get(dv.id)
@@ -916,7 +948,7 @@ export default function Finances() {
                       const soldeCalc = (dv.montant_ttc || 0) - acompteCalc
 
                       return (
-                        <div key={dv.id} className="border border-gray-100 rounded-lg p-3 space-y-2">
+                        <div key={dv.id} style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:8}}>
                           {/* En-tête artisan */}
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-medium text-gray-800">🔨 {dv.artisan?.entreprise}</span>
@@ -1031,9 +1063,9 @@ export default function Finances() {
 
                 {/* Honoraires */}
                 {['courtage', 'amo'].includes(d.typologie) && c.honTotalTTC > 0 && (
-                  <div className="border border-gray-100 rounded-lg p-3 space-y-2">
-                    <p className="text-xs font-semibold text-gray-600 uppercase">Honoraires client</p>
-                    <div className="space-y-3">
+                  <div style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:10}}>
+                    <p className="eyebrow">Honoraires client</p>
+                    <div style={{display:'flex',flexDirection:'column',gap:12}}>
                       {/* Courtage */}
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
@@ -1085,8 +1117,8 @@ export default function Finances() {
 
                 {/* Apporteur client global (résumé) */}
                 {d.client?.apporteur_affaires && c.apporteurTotalHT > 0 && (
-                  <div className="border border-orange-100 rounded-lg p-3 bg-orange-50">
-                    <p className="text-xs font-medium text-orange-700">
+                  <div style={{border:'1px solid rgba(251,146,60,0.3)',borderRadius:10,padding:12,background:'rgba(251,146,60,0.06)'}}>
+                    <p style={{fontSize:12,fontWeight:600,color:'#c2410c'}}>
                       Apporteur {d.client.apporteur_nom} ({d.client.apporteur_pourcentage}%) — total {fmt(c.apporteurTotalHT)} HT
                       {!c.estChantierMarine && ` · part agente : ${fmt(c.apporteurAgente)}`}
                     </p>
@@ -1094,8 +1126,8 @@ export default function Finances() {
                 )}
 
                 {/* Total gain chantier */}
-                <div className="border-2 border-gray-200 rounded-lg p-3 bg-gray-50">
-                  <p className="text-xs font-bold text-gray-700 uppercase mb-3">Total gain chantier</p>
+                <div style={{border:'1px solid var(--ink-200)',borderRadius:10,padding:14,background:'var(--surface-2)'}}>
+                  <p className="eyebrow" style={{marginBottom:12}}>Total gain chantier</p>
                   <div className="grid grid-cols-2 gap-4 text-xs">
                     {/* Prévisionnel */}
                     <div className="space-y-1">
@@ -1152,7 +1184,7 @@ export default function Finances() {
                   </div>
                 </div>
 
-                <button onClick={() => router.push(`/chantiers/${d.id}`)} className="text-xs text-blue-600 hover:underline">
+                <button onClick={() => router.push(`/chantiers/${d.id}`)} className="btn btn-ghost" style={{fontSize:12,alignSelf:'flex-start'}}>
                   → Voir la fiche chantier
                 </button>
               </div>
@@ -1160,7 +1192,7 @@ export default function Finances() {
           </div>
         )
       })}
-      {listeDossiers.length === 0 && <p className="text-center text-gray-400 text-sm py-8">Aucun chantier</p>}
+      {listeDossiers.length === 0 && <p style={{textAlign:'center',color:'var(--ink-400)',fontSize:13,padding:'32px 0'}}>Aucun chantier</p>}
     </div>
   )
 
@@ -1169,10 +1201,13 @@ export default function Finances() {
   // ─────────────────────────────────────────────────────────────────────────────
 
   const renderTableauPeriode = (listeDossiers, rows, colLabel, colonnes, getMontant, getDossierMontant) => (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <div className="card" style={{overflow:'hidden'}}>
       <table className="w-full text-sm">
-        <thead className="bg-gray-50 border-b border-gray-200">
-          <tr>{thL(colLabel)}{colonnes.map(c => thR(c.label))}</tr>
+        <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
+          <tr>
+            <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',whiteSpace:'nowrap'}}>{colLabel}</th>
+            {colonnes.map(c => <th key={c.key} style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',whiteSpace:'nowrap'}}>{c.label}</th>)}
+          </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {rows.map(([key, agg]) => {
@@ -1315,7 +1350,7 @@ export default function Finances() {
     }, [labels, produitsData, chargesData, netData, chartId])
 
     return (
-      <div className="bg-white border  rounded-xl p-5">
+      <div className="card" style={{padding:20}}>
         <div className="flex gap-4 mb-4 flex-wrap">
           {[
             { color: '#3B7DD8', label: 'Gains encaissés' },
@@ -1460,12 +1495,12 @@ export default function Finances() {
       return (
         <div className="space-y-5">
           <ObjectifBar label={isCTP ? 'Objectif CA CTP (résultat net)' : 'Objectif CA agence (encaissements bruts)'} reel={reelNet} objectifMontant={getObjectif('agence')} cible="agence" canEdit={isMarine} onSave={sauvegarderObjectif} />
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
-              <span className="text-sm font-medium text-gray-700">Compte de résultat {isCTP ? 'CTP' : 'Agence'}</span>
-              <div className="flex items-center gap-3">
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">réel encaissé</span>
-                <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(parseInt(e.target.value))} className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400">
+          <div className="card" style={{overflow:'hidden'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
+              <span style={{fontSize:14,fontWeight:600,color:'var(--ink-700)'}}>Compte de résultat {isCTP ? 'CTP' : 'Agence'}</span>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,background:'rgba(22,163,74,0.1)',color:'#15803d',fontWeight:600}}>réel encaissé</span>
+                <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(parseInt(e.target.value))} className="input" style={{height:28,fontSize:12,padding:'0 8px'}}>
                   {annees.map(a => <option key={a} value={a}>{a}</option>)}
                 </select>
               </div>
@@ -1500,29 +1535,26 @@ export default function Finances() {
     }
 
     return (
-      <div className="space-y-5">
-        <div className="flex gap-2">
-          {[{ key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
-            <button key={key} onClick={() => setSfSousOnglet(key)}
-              className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sfSousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white text-gray-600 hover:border-gray-300'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+        <PillToggle
+          options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
+          active={sfSousOnglet}
+          onChange={setSfSousOnglet}
+        />
         {sfSousOnglet === 'mois' && (
           <div className="space-y-5">
             <ObjectifBar label={isCTP ? `Objectif mensuel CTP (${fmt(objectifMensuel)}/mois)` : `Objectif mensuel agence (${fmt(objectifMensuel)}/mois)`}
               reel={(() => { const moisCourant = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`; const r = rowsReel.find(([k]) => k === moisCourant)?.[1] || {}; const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === new Date().getFullYear() && rv.mois === new Date().getMonth() + 1).reduce((s, rv) => s + (rv.montant_ttc||540), 0); return getReelNet(r, redev) })()}
               objectifMontant={objectifMensuel} cible="agence" canEdit={isMarine} onSave={sauvegarderObjectif} />
             <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId={`chart_${mode}_mois`} />
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="card" style={{overflow:'hidden'}}>
               <table className="w-full text-xs">
-                <thead className="bg-gray-50 border-b border-gray-200">
+                <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
                   <tr>
-                    <th className="text-left px-4 py-2 text-xs font-medium text-gray-400 uppercase">Mois</th>
-                    <th className="text-right px-3 py-2 text-xs font-medium text-gray-400 uppercase">Réel encaissé</th>
-                    <th className="text-right px-3 py-2 text-xs font-medium text-gray-400 uppercase">Objectif mois</th>
-                    <th className="text-right px-4 py-2 text-xs font-medium text-gray-400 uppercase">vs Objectif</th>
+                    <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Mois</th>
+                    <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Réel encaissé</th>
+                    <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Objectif mois</th>
+                    <th style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>vs Objectif</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -1631,14 +1663,14 @@ export default function Finances() {
           }
 
           return (
-            <div key={key} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="flex justify-between items-center px-4 py-3 bg-gray-50 border-b border-gray-100">
-                <span className="font-semibold text-gray-800">{label}</span>
-                <span className={`font-bold text-sm ${net >= 0 ? 'text-green-700' : 'text-red-600'}`}>Net : {net >= 0 ? '+' : ''}{fmt(net)}</span>
+            <div key={key} className="card">
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 18px',background:'var(--surface-2)',borderBottom:'1px solid var(--ink-100)'}}>
+                <span style={{fontWeight:700,color:'var(--ink-900)',fontSize:14}}>{label}</span>
+                <span style={{fontWeight:700,fontSize:13,color: net >= 0 ? '#15803d' : '#b91c1c'}}>Net : {net >= 0 ? '+' : ''}{fmt(net)}</span>
               </div>
-              <div className="p-4 space-y-3">
+              <div style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
                 {/* Facture 1 — émettrice */}
-                <div className="border border-gray-100 rounded-lg p-3 space-y-2">
+                <div style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:8}}>
                   <div className="flex justify-between items-start">
                     <div>
                       <p className="text-xs font-semibold text-green-800">{nomAgente} doit facturer à {nomFranchisee}</p>                    </div>
@@ -1674,7 +1706,7 @@ export default function Finances() {
                 </div>
                 {/* Facture 2 — réceptrice */}
                 {montantF2 > 0 && (
-                  <div className="border border-gray-100 rounded-lg p-3 space-y-2">
+                  <div style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:8}}>
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="text-xs font-semibold text-red-800">{nomFranchisee} doit facturer à {nomAgente}</p>
@@ -1770,9 +1802,9 @@ export default function Finances() {
             </select>
           </div>                   
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="card" style={{overflow:'hidden'}}>
           <table className="w-full text-xs">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
               <tr>
                 {thL('Mois')}
                 {thR('F1 (je facture)')}
@@ -2000,13 +2032,13 @@ export default function Finances() {
               Objectif CA agence : <span className="font-bold">{fmt(objectifAgence)}</span>
             </div>
           )}
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
-              <span className="text-sm font-medium text-gray-700">Mon compte de résultat</span>
-              <div className="flex items-center gap-3">
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">réel encaissé</span>
+          <div className="card" style={{overflow:'hidden'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
+              <span style={{fontSize:14,fontWeight:600,color:'var(--ink-700)'}}>Mon compte de résultat</span>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,background:'rgba(22,163,74,0.1)',color:'#15803d',fontWeight:600}}>réel encaissé</span>
                 <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(parseInt(e.target.value))}
-                  className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400">
+                  className="input" style={{height:28,fontSize:12,padding:'0 8px'}}>
                   {annees.map(a => <option key={a} value={a}>{a}</option>)}
                 </select>
               </div>
@@ -2072,15 +2104,12 @@ export default function Finances() {
     }
 
     return (
-      <div className="space-y-5">
-        <div className="flex gap-2">
-          {[{ key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
-            <button key={key} onClick={() => setSfSousOnglet(key)}
-              className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sfSousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white text-gray-600 hover:border-gray-300'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+        <PillToggle
+          options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
+          active={sfSousOnglet}
+          onChange={setSfSousOnglet}
+        />
 
         {sfSousOnglet === 'mois' && (
           <div className="space-y-5">
@@ -2098,14 +2127,14 @@ export default function Finances() {
               </div>
             )}
             <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId="chart_agente_mois" />
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="card" style={{overflow:'hidden'}}>
               <table className="w-full text-xs">
-                <thead className="bg-gray-50 border-b border-gray-200">
+                <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
                   <tr>
-                    <th className="text-left px-4 py-2 text-xs font-medium text-gray-400 uppercase">Mois</th>
-                    <th className="text-right px-3 py-2 text-xs font-medium text-gray-400 uppercase">Réel net</th>
-                    <th className="text-right px-3 py-2 text-xs font-medium text-gray-400 uppercase">Objectif mois</th>
-                    <th className="text-right px-4 py-2 text-xs font-medium text-gray-400 uppercase">vs Objectif</th>
+                    <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Mois</th>
+                    <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Réel net</th>
+                    <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Objectif mois</th>
+                    <th style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>vs Objectif</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -2223,9 +2252,9 @@ export default function Finances() {
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="card" style={{overflow:'hidden'}}>
             <table className="w-full text-xs">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
                 <tr>
                   {thL('Mois')}
                   {thR('F2 (Marine facture)')}
@@ -2308,17 +2337,17 @@ export default function Finances() {
           }
 
           return (
-            <div key={key} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="flex justify-between items-center px-4 py-3 bg-gray-50 border-b border-gray-100">
-                <span className="font-semibold text-gray-800">{label}</span>
-                <span className={`text-sm font-bold ${net >= 0 ? 'text-blue-700' : 'text-amber-600'}`}>
+            <div key={key} className="card">
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 18px',background:'var(--surface-2)',borderBottom:'1px solid var(--ink-100)'}}>
+                <span style={{fontWeight:700,color:'var(--ink-900)',fontSize:14}}>{label}</span>
+                <span style={{fontWeight:700,fontSize:13,color: net >= 0 ? 'var(--brand-800)' : '#a16207'}}>
                   Net : {net >= 0 ? '+' : ''}{fmt(net)}
                 </span>
               </div>
-              <div className="p-4 space-y-3">
+              <div style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
           {/* F2 en premier — Marine émet, vert */}
           {duParAgente > 0 && (
-            <div className="border border-gray-100 rounded-lg p-3 space-y-2">
+            <div style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:8}}>
               <div className="flex justify-between items-start">
                 <p className="text-xs font-semibold text-green-800">{nomFranchisee} doit facturer à {nomAgente}</p>
                 <span className="text-sm font-bold text-green-700">{fmt(duParAgente)}</span>
@@ -2354,7 +2383,7 @@ export default function Finances() {
           )}
 
           {/* F1 en second — agente émet, rouge */}
-          <div className="border border-gray-100 rounded-lg p-3 space-y-2">
+          <div style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:8}}>
             <div className="flex justify-between items-start">
               <p className="text-xs font-semibold text-red-800">{nomAgente} doit facturer à {nomFranchisee}</p>
               <span className="text-sm font-bold text-red-700">{fmt(gains)}</span>
@@ -2409,148 +2438,123 @@ export default function Finances() {
   // ─────────────────────────────────────────────────────────────────────────────
 
   if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <p className="text-gray-400">Chargement...</p>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',paddingTop:96}}>
+      <p style={{color:'var(--ink-400)',fontSize:13}}>Chargement…</p>
     </div>
   )
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center gap-3">
-        <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-gray-600 text-sm">← Retour</button>
-        <h1 className="text-lg font-bold text-blue-900">Finances</h1>
-        {saving && <span className="text-xs text-gray-400 ml-auto">Enregistrement...</span>}
-      </header>
+    <div className="page-enter" style={{display:'flex',flexDirection:'column',gap:20,padding:'28px 32px',maxWidth:1400,margin:'0 auto'}}>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
-
-        {/* Cartes résumé */}
-        <div className={`grid gap-3 sm:gap-4 grid-cols-2 ${isMarine ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
-          {isMarine ? (
-            <>
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Net CTP (prévisionnel)</p>
-                <p className="text-xl font-bold text-purple-700">{fmt(totalNetCTP)}</p>
-              </div>
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Gains agentes (réel)</p>
-                <p className="text-xl font-bold text-blue-700">{fmt(totalGainsAgentesReels)}</p>
-              </div>
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Redevances reçues</p>
-                <p className="text-xl font-bold text-green-700">{fmt(totalRedevancesReglees)}</p>
-              </div>
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Chantiers</p>
-                <p className="text-xl font-bold text-gray-800">{chantiersAnneeEnCours}</p>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Gains prévisionnels</p>
-                <p className="text-xl font-bold text-gray-500">{fmt(mesDossiersGainsPrevi)}</p>
-              </div>
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Gains réels</p>
-                <p className="text-xl font-bold text-blue-700">{fmt(mesDossiersGainsReels)}</p>
-              </div>
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Mon net</p>
-                <p className={`text-xl font-bold ${monNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(monNet)}</p>
-              </div>
-            </>
-          )}
+      {/* En-tête page */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:16,flexWrap:'wrap'}}>
+        <div>
+          <button onClick={() => router.push('/dashboard')} style={{fontSize:12,color:'var(--ink-400)',marginBottom:6,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>← Retour</button>
+          <div className="eyebrow" style={{marginBottom:4}}>Pilotage financier</div>
+          <h1 className="page">Finances</h1>
+          <div style={{color:'var(--ink-500)',fontSize:13,marginTop:6}}>
+            Année <strong style={{color:'var(--ink-700)'}}>{anneeEnCours}</strong> · {dossiers.length} dossiers
+            {saving && <span style={{marginLeft:12,color:'var(--ink-400)',fontSize:12}}>Enregistrement…</span>}
+          </div>
         </div>
+      </div>
 
-        {/* Onglets */}
-        <div className="flex gap-1 border-b  overflow-x-auto">
-          {ongletsList.map(({ key, label }) => (
-            <button key={key} onClick={() => { 
+      {/* KPI strip */}
+      <div className="kpi-grid">
+        {isMarine ? (
+          <>
+            <FinKpiCard label="Net CTP (réel)" value={fmt(totalNetCTP)} sub={`${chantiersAnneeEnCours} chantiers actifs`} tone="brand"/>
+            <FinKpiCard label="Gains agentes (réel)" value={fmt(totalGainsAgentesReels)} tone="ok"/>
+            <FinKpiCard label="Redevances reçues" value={fmt(totalRedevancesReglees)} tone="warn"/>
+            <FinKpiCard label={`Chantiers ${anneeEnCours}`} value={String(chantiersAnneeEnCours)} tone="mute"/>
+          </>
+        ) : (
+          <>
+            <FinKpiCard label="Gains prévisionnels" value={fmt(mesDossiersGainsPrevi)} tone="mute"/>
+            <FinKpiCard label="Gains réels encaissés" value={fmt(mesDossiersGainsReels)} tone="ok"/>
+            <FinKpiCard label="Mon net" value={fmt(monNet)} tone={monNet >= 0 ? 'brand' : 'bad'} sub={`Prévi. ${fmt(mesDossiersGainsPrevi)}`}/>
+          </>
+        )}
+      </div>
+
+      {/* Onglets */}
+      <div className="tabs">
+        {ongletsList.map(({ key, label }) => (
+          <button key={key} className={`tab ${onglet === key ? 'active' : ''}`}
+            onClick={() => {
               setOnglet(key)
               setSousOnglet(key === 'suivi_financier' ? 'agence' : key === 'agentes' ? 'mois' : key === 'facturation' ? 'mois' : 'chantier')
-            }}
-              className={`px-4 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-all ${onglet === key ? 'border-blue-800 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-              {label}
-            </button>
-          ))}
+            }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── MES CHANTIERS ── */}
+      {onglet === 'mes_chantiers' && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {renderSousOnglets()}
+          {sousOnglet === 'chantier' && renderAccordeon(mesDossiers, false)}
+          {sousOnglet === 'mois'  && renderMesPeriode(mesDossiers, 'Mois', agrégerParPaiement(mesDossiers, false))}
+          {sousOnglet === 'annee' && renderMesPeriode(mesDossiers, 'Année', agrégerParPaiement(mesDossiers, true))}
         </div>
+      )}
 
-        {/* ── MES CHANTIERS ── */}
-        {onglet === 'mes_chantiers' && (
-          <div className="space-y-4">
-            {renderSousOnglets()}
-            {sousOnglet === 'chantier' && renderAccordeon(mesDossiers, false)}
-            {sousOnglet === 'mois'  && renderMesPeriode(mesDossiers, 'Mois', agrégerParPaiement(mesDossiers, false))}
-            {sousOnglet === 'annee' && renderMesPeriode(mesDossiers, 'Année', agrégerParPaiement(mesDossiers, true))}
-          </div>
-        )}
+      {/* ── TOUS LES CHANTIERS (admin) ── */}
+      {onglet === 'tous_chantiers' && isMarine && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {renderSousOnglets()}
+          {sousOnglet === 'chantier' && renderAccordeon(dossiers, true)}
+          {sousOnglet === 'mois'  && renderTousPeriode(dossiers, agrégerParPaiement(dossiers, false), 'Mois')}
+          {sousOnglet === 'annee' && renderTousPeriode(dossiers, agrégerParPaiement(dossiers, true), 'Année')}
+        </div>
+      )}
 
-        {/* ── TOUS LES CHANTIERS (admin) ── */}
-        {onglet === 'tous_chantiers' && isMarine && (
-          <div className="space-y-4">
-            {renderSousOnglets()}
-            {sousOnglet === 'chantier' && renderAccordeon(dossiers, true)}
-            {sousOnglet === 'mois'  && renderTousPeriode(dossiers, agrégerParPaiement(dossiers, false), 'Mois')}
-            {sousOnglet === 'annee' && renderTousPeriode(dossiers, agrégerParPaiement(dossiers, true), 'Année')}
-          </div>
-        )}
+      {/* ── SUIVI FINANCIER (admin) ── */}
+      {onglet === 'suivi_financier' && isMarine && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          <PillToggle
+            options={[{key:'agence',label:'Agence — Encaissements bruts'},{key:'ctp',label:'CTP — Résultat net (charges incluses)'}]}
+            active={sousOnglet}
+            onChange={setSousOnglet}
+          />
+          {(sousOnglet === 'agence' || sousOnglet === 'ctp') && renderSuiviFinancier(sousOnglet)}
+        </div>
+      )}
 
-        {/* ── SUIVI FINANCIER (admin) ── */}
-        {onglet === 'suivi_financier' && isMarine && (
-          <div className="space-y-5">
-            <div className="flex gap-2">
-              {[{ key: 'agence', label: 'Agence' }, { key: 'ctp', label: 'CTP' }].map(({ key, label }) => (
-                <button key={key} onClick={() => setSousOnglet(key)}
-                  className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white text-gray-600 hover:border-gray-300'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {(sousOnglet === 'agence' || sousOnglet === 'ctp') && renderSuiviFinancier(sousOnglet)}
-          </div>
-        )}
+      {/* ── AGENTES (admin) ── */}
+      {onglet === 'agentes' && isMarine && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {renderSélecteurAgente()}
+          <PillToggle
+            options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
+            active={sousOnglet}
+            onChange={setSousOnglet}
+          />
+          {(sousOnglet === 'mois' || sousOnglet === 'annee') && renderAgenteMoisAdmin()}
+        </div>
+      )}
 
-        {/* ── AGENTES (admin) ── */}
-        {onglet === 'agentes' && isMarine && (
-          <div className="space-y-4">
-            {renderSélecteurAgente()}
-            <div className="flex gap-2">
-              {[{ key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
-                <button key={key} onClick={() => setSousOnglet(key)}
-                  className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {(sousOnglet === 'mois' || sousOnglet === 'annee') && renderAgenteMoisAdmin()}
-          </div>
-        )}
+      {/* ── MON SUIVI FINANCIER (agente) ── */}
+      {onglet === 'financier' && !isMarine && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {renderSuiviAgenteFinancier()}
+        </div>
+      )}
 
-        {/* ── MON SUIVI FINANCIER (agente) ── */}
-        {onglet === 'financier' && !isMarine && (
-          <div className="space-y-4">
-            {renderSuiviAgenteFinancier()}
-          </div>
-        )}
+      {/* ── FACTURATION (agente) ── */}
+      {onglet === 'facturation' && !isMarine && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          <PillToggle
+            options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
+            active={sousOnglet}
+            onChange={setSousOnglet}
+          />
+          {sousOnglet === 'mois'  && renderFacturationMoisSuivi()}
+          {sousOnglet === 'annee' && renderFacturationAnneeAgente()}
+        </div>
+      )}
 
-        {/* ── FACTURATION (agente) ── */}
-        {onglet === 'facturation' && !isMarine && (
-          <div className="space-y-4">
-            <div className="flex gap-2">
-              {[{ key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
-                <button key={key} onClick={() => setSousOnglet(key)}
-                  className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {sousOnglet === 'mois'  && renderFacturationMoisSuivi()}
-            {sousOnglet === 'annee' && renderFacturationAnneeAgente()}
-          </div>
-        )}
-
-      </main>
     </div>
   )
 }

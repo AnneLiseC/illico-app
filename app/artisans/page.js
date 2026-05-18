@@ -1,4 +1,4 @@
-// /artisans/page.js : 
+// /artisans/page.js :
 'use client'
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
@@ -37,7 +37,7 @@ export default function Artisans() {
     if (!selectionnes.length) return
     if (!confirm(`Supprimer ${selectionnes.length} artisan(s) ? Cette action est irréversible.`)) return
     setSupprimant(true)
-    
+
     const erreurs = []
     for (const artisanId of selectionnes) {
       const artisan = artisans.find(a => a.id === artisanId)
@@ -63,7 +63,7 @@ export default function Artisans() {
       alert(`Impossible de supprimer : ${erreurs.join(', ')}\nCes artisans ont probablement des devis liés.`)
     }
   }
-  
+
   // Alertes décennale expirante dans moins de 30 jours
   const aujourdhui = new Date()
   const alertesDecennale = artisans.filter(a => {
@@ -73,211 +73,249 @@ export default function Artisans() {
     return diff <= 30
   })
 
+  // Helper badge décennale réutilisé mobile + desktop
+  const DecBadge = ({ a }) => {
+    if (!a.decennale_expiration) return <span style={{fontSize:11.5,color:'var(--ink-300)'}}>—</span>
+    const diff = Math.round((new Date(a.decennale_expiration) - aujourdhui) / 86400000)
+    if (diff < 0)
+      return <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',borderRadius:99,fontSize:11.5,fontWeight:700,background:'rgba(239,68,68,0.1)',color:'#b91c1c'}}>Expirée</span>
+    if (diff <= 30)
+      return <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',borderRadius:99,fontSize:11.5,fontWeight:700,background:'rgba(245,158,11,0.12)',color:'#a16207'}}>J-{diff}</span>
+    return <span style={{fontSize:11.5,color:'var(--ink-500)'}}>{new Date(a.decennale_expiration).toLocaleDateString('fr-FR')}</span>
+  }
+
   if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <p className="text-gray-400">Chargement...</p>
+    <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>
+      Chargement…
     </div>
   )
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="page-enter" style={{display:'flex', flexDirection:'column', gap:18}}>
 
-      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-gray-600 text-sm">
-            ← Retour
-          </button>
-          <h1 className="text-lg font-bold text-blue-900">Artisans</h1>
+      {/* En-tête */}
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:16, flexWrap:'wrap'}}>
+        <div>
+          <div className="eyebrow" style={{marginBottom:4}}>Contacts</div>
+          <h1 className="page">Artisans</h1>
+          <div style={{color:'var(--ink-500)', fontSize:13, marginTop:6}}>{artisansFiltres.length} artisan(s) partenaires</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div style={{display:'flex', gap:8}}>
           {modeSelection ? (
             <>
-              <span className="text-sm text-gray-500 hidden sm:inline">{selectionnes.length} sélectionné(s)</span>
+              <span style={{fontSize:13, color:'var(--ink-500)', alignSelf:'center'}}>{selectionnes.length} sélectionné(s)</span>
               <button onClick={supprimerSelectionnes} disabled={supprimant || !selectionnes.length}
-                className="border border-red-200 text-red-600 px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-red-50 disabled:opacity-50">
-                {supprimant ? '...' : '🗑'}
+                className="btn btn-ghost" style={{color:'#b91c1c', borderColor:'rgba(220,38,38,0.3)'}}>
+                {supprimant ? '…' : '🗑 Supprimer'}
               </button>
-              <button onClick={() => { setModeSelection(false); setSelectionnes([]) }}
-                className="border border-gray-300 text-gray-600 px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
+              <button className="btn btn-ghost" onClick={() => { setModeSelection(false); setSelectionnes([]) }}>
                 Annuler
               </button>
             </>
           ) : (
             <>
-              <button onClick={() => setModeSelection(true)}
-                className="border border-red-200 text-red-600 px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-red-50">
+              <button className="btn btn-ghost" style={{color:'#b91c1c', borderColor:'rgba(220,38,38,0.3)'}}
+                onClick={() => setModeSelection(true)}>
                 🗑
               </button>
-              <button onClick={() => router.push('/artisans/nouveau')}
-                className="bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-blue-900">
-                + <span className="hidden sm:inline">Nouvel </span>artisan
+              <button className="btn btn-primary" onClick={() => router.push('/artisans/nouveau')}>
+                + Nouvel artisan
               </button>
             </>
           )}
         </div>
-      </header>
+      </div>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
-
-        {/* Alertes décennale */}
-        {alertesDecennale.length > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
-            <p className="text-sm font-medium text-red-800">⚠️ Décennales expirantes dans moins de 30 jours</p>
-            {alertesDecennale.map(a => (
-              <div key={a.id}
-                onClick={() => router.push(`/artisans/${a.id}`)}
-                className="flex items-center justify-between bg-white border border-red-100 rounded-lg px-3 py-2 cursor-pointer hover:border-red-300"
-              >
-                <span className="text-sm text-gray-800">{a.entreprise}</span>
-                <span className="text-xs text-red-600">
-                  Expire le {new Date(a.decennale_expiration).toLocaleDateString('fr-FR')}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Filtres */}
-        <div className="flex gap-3 flex-wrap">
-          <input
-            type="text"
-            placeholder="Rechercher un artisan..."
-            value={recherche}
-            onChange={e => setRecherche(e.target.value)}
-            className="flex-1 min-w-48 border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <select value={filtreMetier} onChange={e => setFiltreMetier(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-            {metiers.map(m => (
-              <option key={m} value={m}>{m === 'tous' ? 'Tous les métiers' : m}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Compteur */}
-        <p className="text-sm text-gray-400">{artisansFiltres.length} artisan(s)</p>
-
-        {/* Liste */}
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          {artisansFiltres.length === 0 ? (
-            <div className="p-12 text-center text-gray-400">
-              <p className="text-4xl mb-3">🔨</p>
-              <p>Aucun artisan trouvé</p>
+      {/* Bannière alertes décennale */}
+      {alertesDecennale.length > 0 && (
+        <div className="card" style={{padding:16, background:'rgba(220,38,38,0.04)', borderColor:'rgba(220,38,38,0.2)'}}>
+          <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10}}>
+            <div style={{width:30, height:30, borderRadius:8, background:'rgba(220,38,38,0.1)', color:'#b91c1c', display:'grid', placeItems:'center', fontSize:15}}>
+              🛡
             </div>
-          ) : (
-            <>
-              {/* Vue carte — mobile uniquement */}
-              <div className="divide-y divide-gray-100 sm:hidden">
-                {artisansFiltres.map(a => {
-                  const decennaleExp = a.decennale_expiration ? new Date(a.decennale_expiration) : null
-                  const diff = decennaleExp ? (decennaleExp - aujourdhui) / (1000 * 60 * 60 * 24) : null
-                  const decennaleUrgent = diff !== null && diff <= 30
-                  const decennaleExpiree = diff !== null && diff < 0
-                  return (
-                    <button key={a.id}
-                      className={`w-full text-left px-4 py-4 hover:bg-gray-50 active:bg-gray-100 ${modeSelection && selectionnes.includes(a.id) ? 'bg-red-50' : ''}`}
-                      onClick={() => {
-                        if (modeSelection) setSelectionnes(prev => prev.includes(a.id) ? prev.filter(id => id !== a.id) : [...prev, a.id])
-                        else router.push(`/artisans/${a.id}`)
-                      }}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-start gap-3 flex-1 min-w-0">
-                          {modeSelection && (
-                            <input type="checkbox" checked={selectionnes.includes(a.id)} readOnly className="mt-0.5 w-4 h-4 accent-red-600 flex-shrink-0" />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-gray-800 text-sm truncate">{a.entreprise}</p>
-                            {a.nom && <p className="text-xs text-gray-400">{a.prenom ? a.prenom.charAt(0).toUpperCase() + a.prenom.slice(1).toLowerCase() : ''} {a.nom}</p>}
-                            <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                              <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{a.metier || '—'}</span>
-                              {decennaleExpiree ? (
-                                <span className="text-xs font-medium text-red-600">❌ Expirée</span>
-                              ) : decennaleUrgent ? (
-                                <span className="text-xs font-medium text-amber-600">⚠️ {decennaleExp.toLocaleDateString('fr-FR')}</span>
-                              ) : decennaleExp ? (
-                                <span className="text-xs text-green-600">✓ {decennaleExp.toLocaleDateString('fr-FR')}</span>
-                              ) : null}
-                            </div>
-                            {a.telephone && <p className="text-xs text-gray-500 mt-1">{a.telephone}</p>}
-                          </div>
-                        </div>
-                        {!modeSelection && <span className="text-blue-600 text-sm flex-shrink-0">→</span>}
-                      </div>
-                    </button>
-                  )
-                })}
+            <div>
+              <div style={{fontSize:13, fontWeight:700, color:'#b91c1c'}}>Décennales à surveiller</div>
+              <div style={{fontSize:11.5, color:'var(--ink-500)'}}>
+                {alertesDecennale.filter(a => (new Date(a.decennale_expiration) - aujourdhui) < 0).length} expirée(s) ·{' '}
+                {alertesDecennale.filter(a => { const d = (new Date(a.decennale_expiration) - aujourdhui) / 86400000; return d >= 0 && d <= 30 }).length} expire(nt) dans moins de 30 j
               </div>
-
-              {/* Vue tableau — desktop */}
-              <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      {modeSelection && <th className="px-4 py-3 w-10"></th>}
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Entreprise</th>
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Métier</th>
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Localisation</th>
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Téléphone</th>
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Décennale</th>
-                      <th className="px-6 py-3"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {artisansFiltres.map(a => {
-                      const decennaleExp = a.decennale_expiration ? new Date(a.decennale_expiration) : null
-                      const diff = decennaleExp ? (decennaleExp - aujourdhui) / (1000 * 60 * 60 * 24) : null
-                      const decennaleUrgent = diff !== null && diff <= 30
-                      const decennaleExpiree = diff !== null && diff < 0
-                      return (
-                        <tr key={a.id}
-                          className={`hover:bg-gray-50 cursor-pointer ${modeSelection && selectionnes.includes(a.id) ? 'bg-red-50' : ''}`}
-                          onClick={() => {
-                            if (modeSelection) setSelectionnes(prev => prev.includes(a.id) ? prev.filter(id => id !== a.id) : [...prev, a.id])
-                            else router.push(`/artisans/${a.id}`)
-                          }}>
-                          {modeSelection && (
-                            <td className="px-4 py-4">
-                              <input type="checkbox" checked={selectionnes.includes(a.id)} readOnly className="w-4 h-4 accent-red-600" />
-                            </td>
-                          )}
-                          <td className="px-6 py-4">
-                            <p className="font-medium text-gray-800 text-sm">{a.entreprise}</p>
-                            {a.nom && <p className="text-xs text-gray-400">
-                              {a.prenom ? a.prenom.charAt(0).toUpperCase() + a.prenom.slice(1).toLowerCase() : ''} {a.nom}
-                            </p>}
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full">{a.metier || '—'}</span>
-                          </td>
-                          <td className="px-6 py-4 text-sm text-gray-600">{a.code_postal} {a.ville}</td>
-                          <td className="px-6 py-4 text-sm text-gray-600">{a.telephone || '—'}</td>
-                          <td className="px-6 py-4">
-                            {decennaleExpiree ? (
-                              <span className="text-xs font-medium text-red-600">❌ Expirée</span>
-                            ) : decennaleUrgent ? (
-                              <span className="text-xs font-medium text-amber-600">⚠️ {decennaleExp.toLocaleDateString('fr-FR')}</span>
-                            ) : decennaleExp ? (
-                              <span className="text-xs text-green-600">✓ {decennaleExp.toLocaleDateString('fr-FR')}</span>
-                            ) : (
-                              <span className="text-xs text-gray-300">—</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4">
-                            {!modeSelection && (
-                              <button onClick={e => { e.stopPropagation(); router.push(`/artisans/${a.id}`) }}
-                                className="text-blue-600 text-sm hover:underline">Voir →</button>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+            </div>
+          </div>
+          <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
+            {alertesDecennale.map(a => {
+              const diff = Math.round((new Date(a.decennale_expiration) - aujourdhui) / 86400000)
+              return (
+                <div key={a.id} onClick={() => router.push(`/artisans/${a.id}`)}
+                  style={{
+                    background:'#fff', border:'1px solid',
+                    borderColor: diff < 0 ? 'rgba(220,38,38,0.3)' : 'rgba(245,158,11,0.3)',
+                    borderRadius:8, padding:'6px 10px', fontSize:11.5,
+                    display:'flex', gap:6, alignItems:'center', cursor:'pointer',
+                  }}>
+                  <strong style={{color:'var(--ink-900)'}}>{a.entreprise}</strong>
+                  <span style={{color: diff < 0 ? '#b91c1c' : '#a16207', fontWeight:600}}>
+                    {diff < 0 ? `expirée ${Math.abs(diff)}j` : `J-${diff}`}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         </div>
-      </main>
+      )}
+
+      {/* Filtres */}
+      <div className="card" style={{padding:'14px 16px', display:'flex', gap:10, flexWrap:'wrap'}}>
+        <input className="input" type="text" placeholder="Rechercher entreprise, métier, ville…"
+          value={recherche} onChange={e => setRecherche(e.target.value)}
+          style={{flex:1, minWidth:200, height:40}}/>
+        <select className="input" value={filtreMetier} onChange={e => setFiltreMetier(e.target.value)}
+          style={{height:40, minWidth:180}}>
+          {metiers.map(m => <option key={m} value={m}>{m === 'tous' ? 'Tous les métiers' : m}</option>)}
+        </select>
+      </div>
+
+      {/* Liste vide */}
+      {artisansFiltres.length === 0 ? (
+        <div className="card" style={{padding:48, textAlign:'center', color:'var(--ink-400)'}}>
+          <div style={{fontSize:32, marginBottom:12}}>🔨</div>
+          <div>Aucun artisan trouvé</div>
+        </div>
+      ) : (
+        <>
+          {/* ── Vue carte — mobile uniquement ── */}
+          <div className="sm:hidden" style={{display:'flex', flexDirection:'column', gap:10}}>
+            {artisansFiltres.map(a => {
+              const diff = a.decennale_expiration
+                ? Math.round((new Date(a.decennale_expiration) - aujourdhui) / 86400000)
+                : null
+              const selected = selectionnes.includes(a.id)
+              return (
+                <button key={a.id}
+                  className="card"
+                  style={{
+                    padding:16, border:0, textAlign:'left', cursor:'pointer', display:'flex', flexDirection:'column', gap:10,
+                    background: selected ? 'rgba(220,38,38,0.04)' : undefined,
+                    borderColor: selected ? 'rgba(220,38,38,0.2)' : undefined,
+                  }}
+                  onClick={() => {
+                    if (modeSelection) setSelectionnes(prev => prev.includes(a.id) ? prev.filter(id => id !== a.id) : [...prev, a.id])
+                    else router.push(`/artisans/${a.id}`)
+                  }}>
+                  <div style={{display:'flex', gap:12, alignItems:'flex-start'}}>
+                    {modeSelection && (
+                      <input type="checkbox" checked={selected} readOnly style={{accentColor:'#b91c1c', marginTop:2, flexShrink:0}}/>
+                    )}
+                    <div style={{width:36, height:36, borderRadius:8, background:'var(--brand-50)', color:'var(--brand-800)', display:'grid', placeItems:'center', fontSize:16, flexShrink:0}}>
+                      🔨
+                    </div>
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:14}} className="clip-1">{a.entreprise}</div>
+                      {a.nom && (
+                        <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}}>
+                          {a.prenom ? a.prenom.charAt(0).toUpperCase() + a.prenom.slice(1).toLowerCase() : ''} {a.nom}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
+                    <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',borderRadius:99,fontSize:11.5,fontWeight:700,background:'rgba(0,148,212,0.1)',color:'var(--brand-800)'}}>
+                      {a.metier || '—'}
+                    </span>
+                    <span style={{fontSize:12, color:'var(--ink-500)'}}>📍 {a.code_postal} {a.ville}</span>
+                    <DecBadge a={a}/>
+                  </div>
+                  {(a.kbis_url || a.qualification) && (
+                    <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+                      {a.kbis_url && <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',borderRadius:99,fontSize:11,fontWeight:700,background:'var(--brand-50)',color:'var(--brand-800)'}}>Kbis</span>}
+                      {a.qualification && <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',borderRadius:99,fontSize:11,fontWeight:700,background:'rgba(22,163,74,0.1)',color:'#15803d'}}>★ {a.qualification}</span>}
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* ── Vue tableau — desktop ── */}
+          <div className="card hidden sm:block" style={{padding:0, overflow:'hidden'}}>
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%', borderCollapse:'collapse', fontSize:13}}>
+                <thead style={{background:'var(--surface-2)'}}>
+                  <tr>
+                    {modeSelection && <Th style={{width:40}}></Th>}
+                    <Th>Entreprise</Th>
+                    <Th>Métier</Th>
+                    <Th>Ville</Th>
+                    <Th>Décennale</Th>
+                    <Th>Qualifications</Th>
+                    <Th></Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {artisansFiltres.map(a => {
+                    const selected = selectionnes.includes(a.id)
+                    return (
+                      <tr key={a.id} className="row-hover"
+                        style={{
+                          borderTop:'1px solid var(--ink-100)', cursor:'pointer',
+                          background: selected ? 'rgba(220,38,38,0.04)' : undefined,
+                        }}
+                        onClick={() => {
+                          if (modeSelection) setSelectionnes(prev => prev.includes(a.id) ? prev.filter(id => id !== a.id) : [...prev, a.id])
+                          else router.push(`/artisans/${a.id}`)
+                        }}>
+                        {modeSelection && (
+                          <td style={{padding:'14px 16px'}}>
+                            <input type="checkbox" checked={selected} readOnly style={{accentColor:'#b91c1c'}}/>
+                          </td>
+                        )}
+                        <td style={{padding:'14px 16px'}}>
+                          <div style={{display:'flex', gap:12, alignItems:'center'}}>
+                            <div style={{width:34, height:34, borderRadius:8, background:'var(--brand-50)', color:'var(--brand-800)', display:'grid', placeItems:'center', fontSize:15, flexShrink:0}}>
+                              🔨
+                            </div>
+                            <div>
+                              <div style={{fontWeight:700, color:'var(--ink-900)'}}>{a.entreprise}</div>
+                              {a.nom && (
+                                <div style={{fontSize:11.5, color:'var(--ink-500)'}}>
+                                  {a.prenom ? a.prenom.charAt(0).toUpperCase() + a.prenom.slice(1).toLowerCase() : ''} {a.nom}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{padding:'14px 16px', color:'var(--ink-500)'}}>{a.metier || '—'}</td>
+                        <td style={{padding:'14px 16px', color:'var(--ink-500)'}}>{a.code_postal} {a.ville}</td>
+                        <td style={{padding:'14px 16px'}}><DecBadge a={a}/></td>
+                        <td style={{padding:'14px 16px'}}>
+                          <div style={{display:'flex', gap:5, flexWrap:'wrap'}}>
+                            {a.kbis_url && <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',borderRadius:99,fontSize:11,fontWeight:700,background:'var(--brand-50)',color:'var(--brand-800)'}}>Kbis</span>}
+                            {a.qualification && <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',borderRadius:99,fontSize:11,fontWeight:700,background:'rgba(22,163,74,0.1)',color:'#15803d'}}>★ {a.qualification}</span>}
+                          </div>
+                        </td>
+                        <td style={{padding:'14px 16px'}}>
+                          {!modeSelection && (
+                            <button className="btn btn-ghost" style={{padding:'4px 8px'}}
+                              onClick={e => { e.stopPropagation(); router.push(`/artisans/${a.id}`) }}>→</button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </div>
+  )
+}
+
+function Th({ children, style }) {
+  return (
+    <th style={{textAlign:'left', padding:'12px 16px', fontSize:11, fontWeight:700,
+      color:'var(--ink-500)', letterSpacing:0.05, textTransform:'uppercase', ...style}}>
+      {children}
+    </th>
   )
 }
