@@ -133,6 +133,17 @@ export function KpiCard({ label, value, sub, tone = 'brand', icon, corner = true
   )
 }
 
+export function MiniKpi({ label, value, sub, tone = 'brand', progress }) {
+  return (
+    <div className="card" style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div className="eyebrow">{label}</div>
+      <div className="tnum" style={{ fontSize: 22, fontWeight: 800, color: 'var(--brand-800)', letterSpacing: -0.02, marginTop: 2 }}>{value}</div>
+      {progress != null && <Progress value={progress} height={4} />}
+      {sub && <div style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>{sub}</div>}
+    </div>
+  )
+}
+
 export function Progress({ value = 0, tone, height = 6, showLabel = false }) {
   const pct = Math.max(0, Math.min(100, value))
   const t = tone || (pct >= 100 ? 'ok' : pct >= 70 ? '' : pct >= 40 ? 'warn' : 'bad')
