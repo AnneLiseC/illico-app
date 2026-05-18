@@ -198,6 +198,46 @@ const fmt = (n) => {
   return int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + '.' + dec + ' €'
 }
 
+function StatutBadge({ statut }) {
+  const cfg = {
+    prospect:          { label:'Prospect',       bg:'var(--ink-100)',          color:'var(--ink-600)' },
+    devis_en_cours:    { label:'Devis en cours', bg:'rgba(245,158,11,0.12)',   color:'#b45309' },
+    devis_recu:        { label:'Devis reçu',     bg:'rgba(0,148,212,0.1)',     color:'var(--brand-800)' },
+    en_cours_chantier: { label:'En cours',       bg:'rgba(22,163,74,0.1)',     color:'#15803d' },
+    en_cours:          { label:'En cours',       bg:'rgba(22,163,74,0.1)',     color:'#15803d' },
+    termine:           { label:'Terminé',        bg:'var(--ink-100)',          color:'var(--ink-600)' },
+    annule:            { label:'Annulé',         bg:'rgba(239,68,68,0.1)',     color:'#b91c1c' },
+  }[statut] || { label: statut || '—', bg:'var(--ink-100)', color:'var(--ink-600)' }
+  return (
+    <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',
+      borderRadius:99,fontSize:11.5,fontWeight:700,background:cfg.bg,color:cfg.color}}>
+      {cfg.label}
+    </span>
+  )
+}
+
+function TypoBadge({ typo }) {
+  const labels = { courtage:'Courtage', amo:'AMO', estimo:'Estimo', merad:'MERAD',
+    audit_energetique:'Audit énergt.', studio_jardin:'Studio jardin' }
+  if (!typo) return null
+  return (
+    <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',
+      borderRadius:99,fontSize:11.5,fontWeight:700,background:'var(--brand-50)',color:'var(--brand-800)'}}>
+      {labels[typo] || typo}
+    </span>
+  )
+}
+
+function MiniKpiCard({ label, value, sub }) {
+  return (
+    <div className="card" style={{padding:'16px 18px',display:'flex',flexDirection:'column',gap:6}}>
+      <div className="eyebrow">{label}</div>
+      <div className="tnum" style={{fontSize:22,fontWeight:800,color:'var(--brand-800)',letterSpacing:-0.02,marginTop:2}}>{value}</div>
+      {sub && <div style={{fontSize:11.5,color:'var(--ink-500)'}}>{sub}</div>}
+    </div>
+  )
+}
+
 export default function FicheChantier({ params }) {
   const { id } = use(params)
   const [dossier, setDossier] = useState(null)
@@ -1012,7 +1052,7 @@ export default function FicheChantier({ params }) {
   }
 
   // ── MESSAGES AGENTE → CLIENT (schéma : messages avec auteur_role + lu_agence) ──
-  const [onglet, setOnglet] = useState('dossier')
+  const [onglet, setOnglet] = useState('apercu')
   const [reponseMsg, setReponseMsg] = useState('')
   const [sendingMsg, setSendingMsg] = useState(false)
   const envoyerReponse = async () => {
@@ -1206,8 +1246,8 @@ export default function FicheChantier({ params }) {
 
   const montantAcompte = (d) => (d.montant_ttc || 0) * ((d.acompte_pourcentage || 30) / 100)
 
-  if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-gray-400">Chargement...</p></div>
-  if (!dossier) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-gray-400">Chantier introuvable</p></div>
+  if (loading) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-400)'}}>Chargement...</div>
+  if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-400)'}}>Chantier introuvable</div>
 
   const nomComplet = client ? `${client.civilite} ${client.prenom} ${client.nom}${client.prenom2 ? ` & ${client.prenom2} ${client.nom2}` : ''}` : ''
   const s = statutConfig[dossier.statut] ?? { label: dossier.statut ?? '-', color: 'bg-gray-100 text-gray-600' }
@@ -1318,92 +1358,182 @@ export default function FicheChantier({ params }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3 min-w-0">
-            <button onClick={() => router.push(`/clients/${client?.id}`)} className="text-gray-400 hover:text-gray-600 text-sm flex-shrink-0 mt-0.5">← Retour</button>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-lg font-bold text-blue-900">{dossier.reference}</h1>
-                <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.color}`}>{s.label}</span>
-              </div>
-              <p className="text-xs text-gray-400 truncate">{nomComplet} - {typologieLabel(dossier.typologie)}</p>
+    <div className="page-enter" style={{display:'flex',flexDirection:'column',gap:18,paddingBottom:40}}>
+
+      {/* Breadcrumb */}
+      <div style={{display:'flex',alignItems:'center',gap:10,fontSize:13,color:'var(--ink-500)'}}>
+        <button onClick={() => router.push('/chantiers')} className="btn btn-ghost"
+          style={{padding:'4px 10px',fontSize:12}}>← Tous les chantiers</button>
+        <span style={{color:'var(--ink-300)'}}>/</span>
+        <span className="mono" style={{color:'var(--brand-800)',fontWeight:700}}>{dossier.reference}</span>
+        <span style={{color:'var(--ink-300)'}}>/</span>
+        <span style={{color:'var(--ink-700)',fontWeight:600}}>{nomComplet}</span>
+      </div>
+
+      {/* Hero card */}
+      <div className="card" style={{padding:0,overflow:'hidden',position:'relative'}}>
+        <div style={{position:'absolute',inset:0,pointerEvents:'none',
+          background:'radial-gradient(circle at 100% 0%, rgba(0,148,212,0.10), transparent 50%)'}}/>
+        <div style={{padding:'24px 28px',display:'flex',justifyContent:'space-between',
+          gap:16,alignItems:'flex-start',position:'relative'}}>
+          <div style={{minWidth:0,flex:1}}>
+            <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:8,flexWrap:'wrap'}}>
+              <span className="mono" style={{fontSize:13,color:'var(--brand-800)',fontWeight:800}}>
+                {dossier.reference}
+              </span>
+              <TypoBadge typo={dossier.typologie}/>
+              <StatutBadge statut={dossier.statut}/>
+              {dossier.contrat_signe && (
+                <span style={{display:'inline-flex',alignItems:'center',gap:4,
+                  fontSize:11.5,color:'#15803d',fontWeight:600}}>
+                  ✓ Contrat signé{dossier.date_signature_contrat
+                    ? ` · ${new Date(dossier.date_signature_contrat).toLocaleDateString('fr-FR')}`
+                    : ''}
+                </span>
+              )}
             </div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {mode === 'lecture' ? (
-              <>
-                {/* PDFs - cachés sur mobile */}
-                <div className="hidden sm:flex items-center gap-2">
-                  <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
-                    className="border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
-                    {generatingPDF === 'recapitulatif_prev' ? '⏳' : '📄 Récap. financier'}
-                  </button>
-                  <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
-                    className="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">
-                    {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Suivi financier'}
-                  </button>
-                  <button onClick={() => generatePDF('dossier_suivi')} disabled={!!generatingPDF}
-                    className="border border-orange-300 text-orange-700 px-3 py-2 rounded-lg text-sm hover:bg-orange-50 disabled:opacity-50">
-                    {generatingPDF === 'dossier_suivi' ? '⏳' : '📋 Dossier de suivi'}
-                  </button>
-                </div>
-                <button onClick={() => setMode('edition')} className="bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-blue-900">Modifier</button>
-              </>
-            ) : (
-              <>
-                <button onClick={() => setMode('lecture')} className="border border-gray-300 text-gray-700 px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
-                <button onClick={handleSave} disabled={saving} className="bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
-                  {saving ? '...' : 'Enregistrer'}
-                </button>
-              </>
+            <h1 className="page" style={{fontSize:28,letterSpacing:-0.02,lineHeight:1.15}}>
+              {nomComplet}
+            </h1>
+            {client?.adresse && (
+              <div style={{fontSize:13.5,color:'var(--ink-500)',marginTop:8}}>
+                📍 {client.adresse}
+              </div>
+            )}
+            {dossier.description && (
+              <p style={{fontSize:13.5,color:'var(--ink-700)',marginTop:14,
+                lineHeight:1.55,maxWidth:680,marginBottom:0}}>{dossier.description}</p>
             )}
           </div>
+          {dossier.referente && (
+            <div style={{display:'flex',flexDirection:'column',gap:8,alignItems:'flex-end',flexShrink:0}}>
+              <div style={{width:44,height:44,borderRadius:99,background:'var(--brand-50)',
+                color:'var(--brand-800)',display:'grid',placeItems:'center',
+                fontWeight:800,fontSize:16,border:'2px solid var(--brand-200)'}}>
+                {dossier.referente.prenom?.[0]}{dossier.referente.nom?.[0]}
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div className="eyebrow" style={{textAlign:'right'}}>Référente</div>
+                <div style={{fontSize:13,fontWeight:700,color:'var(--ink-900)',marginTop:2}}>
+                  {dossier.referente.prenom} {dossier.referente.nom}
+                </div>
+                <div style={{fontSize:11,color:'var(--ink-500)'}}>
+                  {dossier.referente.role === 'admin' ? 'Franchisée' : 'Agente'}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-        {/* PDF buttons - mobile uniquement */}
-        {mode === 'lecture' && (
-          <div className="flex gap-2 mt-3 sm:hidden overflow-x-auto scrollbar-none">
-            <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
-              className="border border-blue-300 text-blue-700 px-3 py-1.5 rounded-lg text-xs hover:bg-blue-50 disabled:opacity-50 flex-shrink-0">
-              {generatingPDF === 'recapitulatif_prev' ? '⏳' : '📄 Récap. financier'}
-            </button>
-            <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
-              className="border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-50 flex-shrink-0">
-              {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Suivi financier'}
-            </button>
-            <button onClick={() => generatePDF('dossier_suivi')} disabled={!!generatingPDF}
-              className="border border-orange-300 text-orange-700 px-3 py-1.5 rounded-lg text-xs hover:bg-orange-50 disabled:opacity-50 flex-shrink-0">
-              {generatingPDF === 'dossier_suivi' ? '⏳' : '📋 Dossier de suivi'}
-            </button>
-          </div>
-        )}
-      </header>
 
-      {/* Barre d'onglets */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 flex overflow-x-auto scrollbar-none">
-          <button
-            onClick={() => setOnglet('dossier')}
-            className={`flex-shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-all ${onglet === 'dossier' ? 'border-blue-800 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-          >
-            Dossier
-          </button>
-          {dossier?.typologie === 'amo' && (
-            <button
-              onClick={() => setOnglet('messages')}
-              className={`flex-shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-all ${onglet === 'messages' ? 'border-blue-800 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-            >
-              Messagerie{nbMsgNonLus > 0 && <span className="ml-1.5 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">{nbMsgNonLus}</span>}
-            </button>
+        {/* Action strip */}
+        <div style={{padding:'14px 28px',borderTop:'1px solid var(--ink-100)',
+          background:'var(--surface-2)',display:'flex',gap:8,flexWrap:'wrap'}}>
+          {mode === 'lecture' ? (
+            <>
+              <button onClick={() => setMode('edition')} className="btn btn-primary"
+                style={{fontSize:12.5}}>✏ Modifier</button>
+              {client?.tel && (
+                <a href={`tel:${client.tel}`} className="btn btn-ghost"
+                  style={{fontSize:12.5}}>📞 {client.tel}</a>
+              )}
+              {client?.email && (
+                <a href={`mailto:${client.email}`} className="btn btn-ghost"
+                  style={{fontSize:12.5}}>✉ Email</a>
+              )}
+              <div style={{flex:1}}/>
+              <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
+                className="btn btn-ghost" style={{fontSize:12.5}}>
+                {generatingPDF === 'recapitulatif_prev' ? '⏳' : '📄 Récap. financier'}
+              </button>
+              <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
+                className="btn btn-ghost" style={{fontSize:12.5}}>
+                {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Suivi financier'}
+              </button>
+              <button onClick={() => generatePDF('dossier_suivi')} disabled={!!generatingPDF}
+                className="btn btn-ghost" style={{fontSize:12.5}}>
+                {generatingPDF === 'dossier_suivi' ? '⏳' : '📋 Dossier de suivi'}
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={handleSave} disabled={saving} className="btn btn-primary"
+                style={{fontSize:12.5}}>
+                {saving ? '...' : '✓ Enregistrer'}
+              </button>
+              <button onClick={() => setMode('lecture')} className="btn btn-ghost"
+                style={{fontSize:12.5}}>Annuler</button>
+            </>
           )}
         </div>
       </div>
 
-      {onglet === 'dossier' && (
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
-        {succes && <p className="text-green-600 text-sm bg-green-50 border border-green-200 rounded-lg px-4 py-2">{succes}</p>}
-        {erreur && <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-2">{erreur}</p>}
+      {/* KPI strip */}
+      <div className="kpi-grid">
+        <MiniKpiCard
+          label="Montant chantier"
+          value={totalDevisTTCSignes > 0 ? fmt(totalDevisTTCSignes) : '—'}
+          sub={`${devisSignes.length} devis signés`}
+        />
+        <MiniKpiCard
+          label="Frais consultation"
+          value={fraisTTC > 0 ? fmt(fraisTTC) : 'Offerts'}
+          sub={f.label}
+        />
+        <MiniKpiCard
+          label="Devis artisans"
+          value={String(devis.length)}
+          sub={`${devisSignes.length} signés · ${devis.filter(d => d.statut === 'recu').length} reçus`}
+        />
+        <MiniKpiCard
+          label="Honoraires prévus"
+          value={['courtage','amo'].includes(dossier.typologie) ? fmt(honorairesCourtagePrev) : '—'}
+          sub={dossier.typologie === 'amo' ? `AMO total : ${fmt(honorairesAMOPrev)}` : ''}
+        />
+      </div>
+
+      {/* Notifications */}
+      {succes && (
+        <p style={{color:'var(--ok)',fontSize:13,background:'rgba(22,163,74,0.07)',
+          border:'1px solid rgba(22,163,74,0.2)',borderRadius:10,padding:'10px 16px'}}>
+          {succes}
+        </p>
+      )}
+      {erreur && (
+        <p style={{color:'var(--bad)',fontSize:13,background:'rgba(239,68,68,0.07)',
+          border:'1px solid rgba(239,68,68,0.2)',borderRadius:10,padding:'10px 16px'}}>
+          {erreur}
+        </p>
+      )}
+
+      {/* 8-tab bar */}
+      <div className="tabs" style={{overflowX:'auto'}}>
+        {[
+          { key:'apercu',    label:'Aperçu' },
+          { key:'devis',     label:'Devis & artisans', count: devis.length },
+          { key:'planning',  label:'Planning',         count: rdvsDossier.length + interventionsDossier.length },
+          { key:'photos',    label:'Photos',           count: photos.length },
+          { key:'cr',        label:'Comptes-rendus',   count: comptesRendus.length },
+          { key:'finance',   label:'Suivi financier' },
+          { key:'documents', label:'Documents',        count: documents.length },
+          ...(dossier.typologie === 'amo' ? [{ key:'messages', label:'Messages', count: nbMsgNonLus > 0 ? nbMsgNonLus : undefined }] : []),
+        ].map(t => (
+          <button key={t.key} className={`tab ${onglet === t.key ? 'active' : ''}`}
+            onClick={() => setOnglet(t.key)}>
+            {t.label}
+            {t.count != null && t.count > 0 && (
+              <span style={{
+                background: onglet === t.key ? 'var(--brand-800)' : 'var(--ink-200)',
+                color:      onglet === t.key ? '#fff' : 'var(--ink-600)',
+                fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:99, marginLeft:6
+              }}>{t.count}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* ── APERÇU ── */}
+      {onglet === 'apercu' && (
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
         {/* Infos générales */}
         <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 space-y-4">
@@ -1708,6 +1838,13 @@ export default function FicheChantier({ params }) {
               Supprimer le chantier
             </button>
         </div>
+
+      </div>
+      )}
+
+      {/* ── DEVIS & ARTISANS ── */}
+      {onglet === 'devis' && (
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
         {/* Frais de consultation */}
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
@@ -2316,6 +2453,13 @@ export default function FicheChantier({ params }) {
           </div>
         )}
 
+      </div>
+      )}
+
+      {/* ── SUIVI FINANCIER ── */}
+      {onglet === 'finance' && (
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+
         {/* Récapitulatif chantier */}
         {devis.length > 0 && (
           <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 space-y-3">
@@ -2449,6 +2593,13 @@ export default function FicheChantier({ params }) {
           </div>
         )}
 
+      </div>
+      )}
+
+      {/* ── PHOTOS ── */}
+      {onglet === 'photos' && (
+      <div>
+
         {/* Photos du chantier */}
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
           <h2 className="font-semibold text-gray-800">Photos du chantier</h2>
@@ -2510,6 +2661,13 @@ export default function FicheChantier({ params }) {
           )}
         </div>
 
+      </div>
+      )}
+
+      {/* ── DOCUMENTS ── */}
+      {onglet === 'documents' && (
+      <div>
+
         {/* Documents du chantier */}
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
           <div className="flex items-center justify-between">
@@ -2553,6 +2711,13 @@ export default function FicheChantier({ params }) {
             </div>
           )}
         </div>
+
+      </div>
+      )}
+
+      {/* ── PLANNING ── */}
+      {onglet === 'planning' && (
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
         {/* Planning du chantier */}
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
@@ -2699,8 +2864,11 @@ export default function FicheChantier({ params }) {
           </div>
         )}
 
-        {/* Modal Intervention */}
-        {modalInterventionOuvert && interventionEnEdition && (
+      </div>
+      )}
+
+      {/* Modal Intervention edit — global (fixed overlay) */}
+      {modalInterventionOuvert && interventionEnEdition && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => { setModalInterventionOuvert(false); setInterventionEnEdition(null) }}>
             <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
               <h2 className="font-semibold text-gray-800">Modifier l'intervention</h2>
@@ -2794,7 +2962,10 @@ export default function FicheChantier({ params }) {
           </div>
         )}
 
-        {/* ── COMPTES-RENDUS ── */}
+      {/* ── COMPTES-RENDUS ── */}
+      {onglet === 'cr' && (
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+
         <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">📝 Comptes-rendus ({comptesRendus.length})</h2>
@@ -3156,11 +3327,12 @@ export default function FicheChantier({ params }) {
         )}
 
 
-      </main>
+      </div>
       )}
 
+      {/* ── MESSAGES ── (AMO uniquement) */}
       {onglet === 'messages' && dossier?.typologie === 'amo' && (
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <div>
         <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">Messagerie client</h2>
@@ -3206,7 +3378,7 @@ export default function FicheChantier({ params }) {
             </button>
           </div>
         </div>
-      </main>
+      </div>
       )}
 
       {/* Modal Créer Intervention */}
