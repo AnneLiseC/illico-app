@@ -4,6 +4,31 @@
 import { useState, useEffect, use } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
+
+function Svg({ children, size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      {children}
+    </svg>
+  )
+}
+const EditIcon     = () => <Svg><path d="M12 20H5a1 1 0 0 1-1-1v-7"/><path d="m14.5 4 5 5L9 19.5l-5 .5.5-5z"/></Svg>
+const PhoneIcon    = () => <Svg><path d="M5 4h3l2 5-2 1a11 11 0 0 0 6 6l1-2 5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></Svg>
+const MailIcon     = () => <Svg><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/></Svg>
+const DlIcon       = () => <Svg><path d="M21 15v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3"/><path d="M12 3v13"/><path d="m7 11 5 5 5-5"/></Svg>
+const DocIcon      = () => <Svg><path d="M6 3.5h8l4 4V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z"/><path d="M14 3.5V8h4"/><path d="M8 12.5h8M8 16h6"/></Svg>
+const PinIcon      = () => <Svg><path d="M12 21s-7-6-7-12a7 7 0 0 1 14 0c0 6-7 12-7 12z"/><circle cx="12" cy="9.5" r="2.4"/></Svg>
+const CheckIcon    = () => <Svg><path d="m5 12 5 5L20 7"/></Svg>
+const EyeIcon      = () => <Svg><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></Svg>
+const HammerIcon   = () => <Svg><path d="M14.5 4.5l5 5-2 2-5-5z"/><path d="M12.5 6.5 3.5 15.5l3 3 9-9"/></Svg>
+const CalIcon      = () => <Svg><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></Svg>
+const CamIcon      = () => <Svg><path d="M3 8a2 2 0 0 1 2-2h3l1.5-2h5L16 6h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/></Svg>
+const WalletIcon   = () => <Svg><path d="M3.5 8a2 2 0 0 1 2-2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2z"/><path d="M16 13h2.5"/><path d="M3.5 9.5h13.6a1 1 0 0 1 1 1V14"/></Svg>
+const FolderIcon   = () => <Svg><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2H19.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></Svg>
+const MsgIcon      = () => <Svg><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4 3v-3h-.5A2.5 2.5 0 0 1 3 14.5z" transform="translate(0.5,0.5)"/></Svg>
+const MoreIcon     = () => <Svg><circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/></Svg>
 
 // ─── Visionneuse de document (PDF / image) ────────────────────────────────────
 function DocViewer({ url, nom, onClose }) {
@@ -198,45 +223,6 @@ const fmt = (n) => {
   return int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + '.' + dec + ' €'
 }
 
-function StatutBadge({ statut }) {
-  const cfg = {
-    prospect:          { label:'Prospect',       bg:'var(--ink-100)',          color:'var(--ink-600)' },
-    devis_en_cours:    { label:'Devis en cours', bg:'rgba(245,158,11,0.12)',   color:'#b45309' },
-    devis_recu:        { label:'Devis reçu',     bg:'rgba(0,148,212,0.1)',     color:'var(--brand-800)' },
-    en_cours_chantier: { label:'En cours',       bg:'rgba(22,163,74,0.1)',     color:'#15803d' },
-    en_cours:          { label:'En cours',       bg:'rgba(22,163,74,0.1)',     color:'#15803d' },
-    termine:           { label:'Terminé',        bg:'var(--ink-100)',          color:'var(--ink-600)' },
-    annule:            { label:'Annulé',         bg:'rgba(239,68,68,0.1)',     color:'#b91c1c' },
-  }[statut] || { label: statut || '—', bg:'var(--ink-100)', color:'var(--ink-600)' }
-  return (
-    <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',
-      borderRadius:99,fontSize:11.5,fontWeight:700,background:cfg.bg,color:cfg.color}}>
-      {cfg.label}
-    </span>
-  )
-}
-
-function TypoBadge({ typo }) {
-  const labels = { courtage:'Courtage', amo:'AMO', estimo:'Estimo', merad:'MERAD',
-    audit_energetique:'Audit énergt.', studio_jardin:'Studio jardin' }
-  if (!typo) return null
-  return (
-    <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',
-      borderRadius:99,fontSize:11.5,fontWeight:700,background:'var(--brand-50)',color:'var(--brand-800)'}}>
-      {labels[typo] || typo}
-    </span>
-  )
-}
-
-function MiniKpiCard({ label, value, sub }) {
-  return (
-    <div className="card" style={{padding:'16px 18px',display:'flex',flexDirection:'column',gap:6}}>
-      <div className="eyebrow">{label}</div>
-      <div className="tnum" style={{fontSize:22,fontWeight:800,color:'var(--brand-800)',letterSpacing:-0.02,marginTop:2}}>{value}</div>
-      {sub && <div style={{fontSize:11.5,color:'var(--ink-500)'}}>{sub}</div>}
-    </div>
-  )
-}
 
 export default function FicheChantier({ params }) {
   const { id } = use(params)
@@ -1373,7 +1359,7 @@ export default function FicheChantier({ params }) {
       {/* Hero card */}
       <div className="card" style={{padding:0,overflow:'hidden',position:'relative'}}>
         <div style={{position:'absolute',inset:0,pointerEvents:'none',
-          background:'radial-gradient(circle at 100% 0%, rgba(0,148,212,0.10), transparent 50%)'}}/>
+          background:'radial-gradient(circle at 100% 0%, rgba(0,148,212,0.10), transparent 50%), radial-gradient(circle at 0% 0%, rgba(0,87,142,0.04), transparent 40%)'}}/>
         <div style={{padding:'24px 28px',display:'flex',justifyContent:'space-between',
           gap:16,alignItems:'flex-start',position:'relative'}}>
           <div style={{minWidth:0,flex:1}}>
@@ -1386,7 +1372,7 @@ export default function FicheChantier({ params }) {
               {dossier.contrat_signe && (
                 <span style={{display:'inline-flex',alignItems:'center',gap:4,
                   fontSize:11.5,color:'#15803d',fontWeight:600}}>
-                  ✓ Contrat signé{dossier.date_signature_contrat
+                  <CheckIcon /> Contrat signé{dossier.date_signature_contrat
                     ? ` · ${new Date(dossier.date_signature_contrat).toLocaleDateString('fr-FR')}`
                     : ''}
                 </span>
@@ -1396,8 +1382,8 @@ export default function FicheChantier({ params }) {
               {nomComplet}
             </h1>
             {client?.adresse && (
-              <div style={{fontSize:13.5,color:'var(--ink-500)',marginTop:8}}>
-                📍 {client.adresse}
+              <div style={{fontSize:13.5,color:'var(--ink-500)',marginTop:8,display:'flex',alignItems:'center',gap:6}}>
+                <PinIcon /> {client.adresse}
               </div>
             )}
             {dossier.description && (
@@ -1407,11 +1393,7 @@ export default function FicheChantier({ params }) {
           </div>
           {dossier.referente && (
             <div style={{display:'flex',flexDirection:'column',gap:8,alignItems:'flex-end',flexShrink:0}}>
-              <div style={{width:44,height:44,borderRadius:99,background:'var(--brand-50)',
-                color:'var(--brand-800)',display:'grid',placeItems:'center',
-                fontWeight:800,fontSize:16,border:'2px solid var(--brand-200)'}}>
-                {dossier.referente.prenom?.[0]}{dossier.referente.nom?.[0]}
-              </div>
+              <Avatar name={`${dossier.referente.prenom} ${dossier.referente.nom}`} size={44} ring />
               <div style={{textAlign:'right'}}>
                 <div className="eyebrow" style={{textAlign:'right'}}>Référente</div>
                 <div style={{fontSize:13,fontWeight:700,color:'var(--ink-900)',marginTop:2}}>
@@ -1431,34 +1413,40 @@ export default function FicheChantier({ params }) {
           {mode === 'lecture' ? (
             <>
               <button onClick={() => setMode('edition')} className="btn btn-primary"
-                style={{fontSize:12.5}}>✏ Modifier</button>
+                style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+                <EditIcon /> Modifier
+              </button>
               {client?.tel && (
                 <a href={`tel:${client.tel}`} className="btn btn-ghost"
-                  style={{fontSize:12.5}}>📞 {client.tel}</a>
+                  style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+                  <PhoneIcon /> {client.tel}
+                </a>
               )}
               {client?.email && (
                 <a href={`mailto:${client.email}`} className="btn btn-ghost"
-                  style={{fontSize:12.5}}>✉ Email</a>
+                  style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+                  <MailIcon /> Email
+                </a>
               )}
               <div style={{flex:1}}/>
               <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
-                className="btn btn-ghost" style={{fontSize:12.5}}>
-                {generatingPDF === 'recapitulatif_prev' ? '⏳' : '📄 Récap. financier'}
+                className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+                <DlIcon /> {generatingPDF === 'recapitulatif_prev' ? '...' : 'Récap. financier'}
               </button>
               <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
-                className="btn btn-ghost" style={{fontSize:12.5}}>
-                {generatingPDF === 'recapitulatif' ? '⏳' : '📄 Suivi financier'}
+                className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+                <DlIcon /> {generatingPDF === 'recapitulatif' ? '...' : 'Suivi financier'}
               </button>
               <button onClick={() => generatePDF('dossier_suivi')} disabled={!!generatingPDF}
-                className="btn btn-ghost" style={{fontSize:12.5}}>
-                {generatingPDF === 'dossier_suivi' ? '⏳' : '📋 Dossier de suivi'}
+                className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+                <DocIcon /> {generatingPDF === 'dossier_suivi' ? '...' : 'Dossier de suivi'}
               </button>
             </>
           ) : (
             <>
               <button onClick={handleSave} disabled={saving} className="btn btn-primary"
-                style={{fontSize:12.5}}>
-                {saving ? '...' : '✓ Enregistrer'}
+                style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+                <CheckIcon /> {saving ? '...' : 'Enregistrer'}
               </button>
               <button onClick={() => setMode('lecture')} className="btn btn-ghost"
                 style={{fontSize:12.5}}>Annuler</button>
@@ -1469,25 +1457,29 @@ export default function FicheChantier({ params }) {
 
       {/* KPI strip */}
       <div className="kpi-grid">
-        <MiniKpiCard
+        <MiniKpi
           label="Montant chantier"
           value={totalDevisTTCSignes > 0 ? fmt(totalDevisTTCSignes) : '—'}
           sub={`${devisSignes.length} devis signés`}
+          tone="brand"
         />
-        <MiniKpiCard
+        <MiniKpi
           label="Frais consultation"
           value={fraisTTC > 0 ? fmt(fraisTTC) : 'Offerts'}
           sub={f.label}
+          tone="warn"
         />
-        <MiniKpiCard
+        <MiniKpi
           label="Devis artisans"
           value={String(devis.length)}
           sub={`${devisSignes.length} signés · ${devis.filter(d => d.statut === 'recu').length} reçus`}
+          tone="info"
         />
-        <MiniKpiCard
+        <MiniKpi
           label="Honoraires prévus"
           value={['courtage','amo'].includes(dossier.typologie) ? fmt(honorairesCourtagePrev) : '—'}
           sub={dossier.typologie === 'amo' ? `AMO total : ${fmt(honorairesAMOPrev)}` : ''}
+          tone="ok"
         />
       </div>
 
@@ -1508,25 +1500,27 @@ export default function FicheChantier({ params }) {
       {/* 8-tab bar */}
       <div className="tabs" style={{overflowX:'auto'}}>
         {[
-          { key:'apercu',    label:'Aperçu' },
-          { key:'devis',     label:'Devis & artisans', count: devis.length },
-          { key:'planning',  label:'Planning',         count: rdvsDossier.length + interventionsDossier.length },
-          { key:'photos',    label:'Photos',           count: photos.length },
-          { key:'cr',        label:'Comptes-rendus',   count: comptesRendus.length },
-          { key:'finance',   label:'Suivi financier' },
-          { key:'documents', label:'Documents',        count: documents.length },
-          ...(dossier.typologie === 'amo' ? [{ key:'messages', label:'Messages', count: nbMsgNonLus > 0 ? nbMsgNonLus : undefined }] : []),
+          { key:'apercu',    label:'Aperçu',           icon:<EyeIcon /> },
+          { key:'devis',     label:'Devis & artisans', icon:<HammerIcon />, count: devis.length },
+          { key:'planning',  label:'Planning',         icon:<CalIcon />,    count: rdvsDossier.length + interventionsDossier.length },
+          { key:'photos',    label:'Photos',           icon:<CamIcon />,    count: photos.length },
+          { key:'cr',        label:'Comptes-rendus',   icon:<DocIcon />,    count: comptesRendus.length },
+          { key:'finance',   label:'Suivi financier',  icon:<WalletIcon /> },
+          { key:'documents', label:'Documents',        icon:<FolderIcon />, count: documents.length },
+          ...(dossier.typologie === 'amo' ? [{ key:'messages', label:'Messages', icon:<MsgIcon />, count: nbMsgNonLus > 0 ? nbMsgNonLus : undefined }] : []),
         ].map(t => (
           <button key={t.key} className={`tab ${onglet === t.key ? 'active' : ''}`}
             onClick={() => setOnglet(t.key)}>
-            {t.label}
-            {t.count != null && t.count > 0 && (
-              <span style={{
-                background: onglet === t.key ? 'var(--brand-800)' : 'var(--ink-200)',
-                color:      onglet === t.key ? '#fff' : 'var(--ink-600)',
-                fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:99, marginLeft:6
-              }}>{t.count}</span>
-            )}
+            <span style={{display:'inline-flex',alignItems:'center',gap:6}}>
+              {t.icon} {t.label}
+              {t.count != null && t.count > 0 && (
+                <span style={{
+                  background: onglet === t.key ? 'var(--brand-800)' : 'var(--ink-200)',
+                  color:      onglet === t.key ? '#fff' : 'var(--ink-600)',
+                  fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:99
+                }}>{t.count}</span>
+              )}
+            </span>
           </button>
         ))}
       </div>
@@ -1536,7 +1530,7 @@ export default function FicheChantier({ params }) {
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
         {/* Infos générales */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 space-y-4">
+        <div className="card" style={{padding:22}}>
           <h2 className="font-semibold text-gray-800">Informations générales</h2>
           {mode === 'lecture' ? (
             <>
@@ -1847,7 +1841,7 @@ export default function FicheChantier({ params }) {
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
         {/* Frais de consultation */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+        <div className="card" style={{padding:22}}>
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">Frais de consultation</h2>
             <span className={`text-xs px-2 py-1 rounded-full font-medium ${f.color}`}>{f.label}</span>
@@ -1918,7 +1912,7 @@ export default function FicheChantier({ params }) {
         </div>
 
         {/* Devis artisans */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+        <div className="card" style={{padding:22}}>
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">Devis artisans ({devis.length})</h2>
             <button onClick={() => {
@@ -2330,7 +2324,7 @@ export default function FicheChantier({ params }) {
 
         {/* Honoraires client */}
         {['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCRecus > 0 && (
-          <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+          <div className="card" style={{padding:22}}>
             <h2 className="font-semibold text-gray-800">Honoraires client</h2>
             <p className="text-xs text-gray-400">
               Calculés sur {fmt(baseCourtageHTTCPrev)} TTC (devis reçus + signés
@@ -2462,7 +2456,7 @@ export default function FicheChantier({ params }) {
 
         {/* Récapitulatif chantier */}
         {devis.length > 0 && (
-          <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 space-y-3">
+          <div className="card" style={{padding:22}}>
             <p className="text-xs font-medium text-gray-600 uppercase">Récapitulatif chantier</p>
 
             {/* BLOC PRÉVISIONNEL */}
@@ -2601,7 +2595,7 @@ export default function FicheChantier({ params }) {
       <div>
 
         {/* Photos du chantier */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+        <div className="card" style={{padding:22}}>
           <h2 className="font-semibold text-gray-800">Photos du chantier</h2>
           <div className="flex gap-2 flex-wrap">
             {['avant', 'pendant', 'apres', 'maquette'].map(cat => (
@@ -2669,7 +2663,7 @@ export default function FicheChantier({ params }) {
       <div>
 
         {/* Documents du chantier */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+        <div className="card" style={{padding:22}}>
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">Documents ({documents.length})</h2>
             <label className={`cursor-pointer text-sm px-3 py-1.5 rounded-lg border transition-all ${uploadingDocChantier ? 'text-gray-400 border-gray-200' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}`}>
@@ -2720,7 +2714,7 @@ export default function FicheChantier({ params }) {
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
         {/* Planning du chantier */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+        <div className="card" style={{padding:22}}>
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">Planning</h2>
             <div className="flex gap-2">
@@ -2966,7 +2960,7 @@ export default function FicheChantier({ params }) {
       {onglet === 'cr' && (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+        <div className="card" style={{padding:22}}>
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">📝 Comptes-rendus ({comptesRendus.length})</h2>
             <div className="flex gap-2">
@@ -3333,7 +3327,7 @@ export default function FicheChantier({ params }) {
       {/* ── MESSAGES ── (AMO uniquement) */}
       {onglet === 'messages' && dossier?.typologie === 'amo' && (
       <div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6 space-y-4">
+        <div className="card" style={{padding:22}}>
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">Messagerie client</h2>
             {nbMsgNonLus > 0 && (
