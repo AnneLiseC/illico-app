@@ -817,98 +817,17 @@ export default function Finances() {
   // COMPOSANTS DE RENDU
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const renderSousOnglets = () => (
-    <PillToggle
-      options={[{ key:'chantier', label:'Par chantier' }, { key:'mois', label:'Par mois' }, { key:'annee', label:'Par année' }]}
-      active={sousOnglet}
-      onChange={setSousOnglet}
-    />
-  )
-
-  const renderSélecteurAgente = () => agentes.length > 1 && (
-    <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
-      <div className="eyebrow">Agente :</div>
-      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-        {agentes.map(a => (
-          <button key={a.id} onClick={() => setAgenteSelectionnee(a.id)} style={{
-            display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:99,
-            border:'1px solid',
-            borderColor: agenteSelectionnee === a.id ? 'var(--brand-500)' : 'var(--ink-200)',
-            background: agenteSelectionnee === a.id ? 'var(--brand-50)' : '#fff',
-            color: agenteSelectionnee === a.id ? 'var(--brand-800)' : 'var(--ink-700)',
-            fontSize:12,fontWeight:600,cursor:'pointer'
-          }}>
-            {a.prenom} {a.nom}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-
   // ─────────────────────────────────────────────────────────────────────────────
-  // ACCORDÉON
+  // DÉTAIL DOSSIER & TABLEAU FINANCE
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const renderAccordeon = (listeDossiers, showBadge = false) => (
-    <div className="space-y-2">
-      {listeDossiers.map(d => {
-        const c      = calculer(d)
-        const r      = calculerReel(d)
-        const isOpen = dossierOuvert === d.id
+  const renderDossierDetail = (d) => {
+    const c = calculer(d)
+    const r = calculerReel(d)
+    return (
+      <div style={{borderTop:'1px solid var(--ink-100)',padding:'16px 18px',display:'flex',flexDirection:'column',gap:14}}>
 
-        const nbAlertes = [
-          d.contrat_signe && d.frais_statut !== 'regle' && alerte48h(d.date_signature_contrat),
-          ...c.devisAcceptes.map(dv => {
-            const artId = dv.artisan_id || dv.artisan?.id
-            return dv.date_signature && alerte7j(dv.date_signature) &&
-              getSuivi(d, 'acompte_artisan', artId)?.statut_client !== 'regle'
-          }),
-          d.date_fin_chantier && d.typologie === 'amo' &&
-            alerte48h(d.date_fin_chantier) &&
-            getSuivi(d, 'solde_amo')?.statut_client !== 'regle',
-        ].filter(Boolean).length
-
-        return (
-          <div key={d.id} className="card">
-            {/* En-tête */}
-            <div className="row-hover" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 18px',cursor:'pointer'}}
-              onClick={() => setDossierOuvert(isOpen ? null : d.id)}>
-              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-                <span className="mono" style={{fontSize:11.5,color:'var(--brand-800)',fontWeight:700}}>{d.reference}</span>
-                <span style={{fontSize:13,color:'var(--ink-700)'}}>{d.client?.prenom} {d.client?.nom}</span>
-                <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,background:'var(--ink-100)',color:'var(--ink-500)',fontWeight:600}}>{d.typologie}</span>
-                {showBadge && (
-                  <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,background: c.estChantierMarine ? 'rgba(147,51,234,0.1)' : 'rgba(0,148,212,0.1)',color: c.estChantierMarine ? '#7e22ce' : 'var(--brand-800)'}}>
-                    {c.estChantierMarine ? nomFranchisee : nomReferente(d)}
-                  </span>
-                )}
-                {d.statut === 'annule' && (
-                  <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,background:'rgba(220,38,38,0.1)',color:'#b91c1c',fontWeight:600}}>Annulé</span>
-                )}
-                {nbAlertes > 0 && (
-                  <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,background:'rgba(220,38,38,0.1)',color:'#b91c1c',fontWeight:600}}>⚠️ {nbAlertes}</span>
-                )}
-              </div>
-              <div style={{display:'flex',alignItems:'center',gap:14}}>
-                {showBadge ? (
-                  <>
-                    {!c.estChantierMarine && <span style={{fontSize:13,color:'var(--brand-800)',fontWeight:600}}>{nomReferente(d)} : {fmt(c.gainsAgentePrevi)}</span>}
-                    <span style={{fontSize:13,color:'#7e22ce',fontWeight:600}}>CTP : {fmt(c.gainsAdminPrevi)}</span>
-                  </>
-                ) : (
-                  <span style={{fontSize:13,color:'var(--ink-700)',fontWeight:600}}>
-                    {isMarine ? `CTP : ${fmt(c.gainsAdminPrevi)}` : `Net : ${fmt(c.gainsAgentePrevi)}`}
-                  </span>
-                )}
-                <span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span>
-              </div>
-            </div>
-
-            {/* Contenu */}
-            {isOpen && (
-              <div style={{borderTop:'1px solid var(--ink-100)',padding:'16px 18px',display:'flex',flexDirection:'column',gap:14}}>
-
-                {/* Infos contrat */}
+        {/* Infos contrat */}
                 <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
                   <span style={{padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:600,background: d.contrat_signe ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)',color: d.contrat_signe ? '#15803d' : '#b91c1c'}}>
                     Contrat {d.contrat_signe ? `✅ ${d.date_signature_contrat ? new Date(d.date_signature_contrat).toLocaleDateString('fr-FR') : ''}` : '❌ non signé'}
@@ -1225,14 +1144,120 @@ export default function Finances() {
                 <button onClick={() => router.push(`/chantiers/${d.id}`)} className="btn btn-ghost" style={{fontSize:12,alignSelf:'flex-start'}}>
                   → Voir la fiche chantier
                 </button>
-              </div>
+      </div>
+    )
+  }
+
+  const renderFinanceTable = (listeDossiers, isReel) => {
+    const totals = listeDossiers.reduce((acc, d) => {
+      const c = calculer(d)
+      const r = calculerReel(d)
+      return {
+        fraisHT:   round2(acc.fraisHT   + c.fraisHT),
+        comHT:     round2(acc.comHT     + c.comHT),
+        royalties: round2(acc.royalties + c.royaltiesTotal),
+        net:       round2(acc.net + (isReel
+          ? (r.gainAdminReel + r.gainsAgenteReels)
+          : (c.gainsAdminPreviTotal + c.gainsAgentePreviTotal))),
+      }
+    }, { fraisHT: 0, comHT: 0, royalties: 0, net: 0 })
+
+    return (
+      <div className="card" style={{overflow:'hidden'}}>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead style={{position:'sticky',top:0,zIndex:1}}>
+            <tr style={{borderBottom:'1px solid var(--ink-200)'}}>
+              <Th>Dossier</Th>
+              <Th>Référente</Th>
+              <Th>Statut</Th>
+              <Th right>Frais HT</Th>
+              <Th right>Commissions HT</Th>
+              <Th right>Royalties</Th>
+              <Th right>Net {isReel ? 'réel' : 'prévisionnel'}</Th>
+              <Th right>Avancement</Th>
+              <Th right></Th>
+            </tr>
+          </thead>
+          <tbody>
+            {listeDossiers.map(d => {
+              const c       = calculer(d)
+              const r       = calculerReel(d)
+              const netPrevi = round2(c.gainsAdminPreviTotal + c.gainsAgentePreviTotal)
+              const netReel  = round2(r.gainAdminReel + r.gainsAgenteReels)
+              const net      = isReel ? netReel : netPrevi
+              const avancement = netPrevi > 0 ? Math.min(100, Math.round(netReel / netPrevi * 100)) : 0
+              const isOpen   = dossierOuvert === d.id
+              const nbAlertes = [
+                d.contrat_signe && d.frais_statut !== 'regle' && alerte48h(d.date_signature_contrat),
+                ...c.devisAcceptes.map(dv => {
+                  const artId = dv.artisan_id || dv.artisan?.id
+                  return dv.date_signature && alerte7j(dv.date_signature) && getSuivi(d, 'acompte_artisan', artId)?.statut_client !== 'regle'
+                }),
+                d.date_fin_chantier && d.typologie === 'amo' && alerte48h(d.date_fin_chantier) && getSuivi(d, 'solde_amo')?.statut_client !== 'regle',
+              ].filter(Boolean).length
+              return (
+                <React.Fragment key={d.id}>
+                  <tr onClick={() => setDossierOuvert(isOpen ? null : d.id)}
+                    style={{cursor:'pointer',borderTop:'1px solid var(--ink-100)',background:isOpen?'var(--brand-50)':'transparent'}}
+                    className="row-hover">
+                    <Td>
+                      <div style={{display:'flex',flexDirection:'column',gap:2}}>
+                        <span style={{fontSize:11.5,color:'var(--brand-800)',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{d.reference}</span>
+                        <span style={{fontSize:12,color:'var(--ink-600)'}}>{d.client?.prenom} {d.client?.nom}</span>
+                        <span style={{fontSize:10,padding:'1px 6px',borderRadius:99,background:'var(--ink-100)',color:'var(--ink-500)',fontWeight:600,alignSelf:'flex-start'}}>{d.typologie}</span>
+                      </div>
+                    </Td>
+                    <Td><span style={{fontSize:12,color:'var(--ink-600)'}}>{nomReferente(d)}</span></Td>
+                    <Td>
+                      <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,
+                        background:d.statut==='annule'?'rgba(220,38,38,0.1)':d.statut==='termine'?'rgba(22,163,74,0.1)':'rgba(0,87,142,0.1)',
+                        color:d.statut==='annule'?'#b91c1c':d.statut==='termine'?'#15803d':'var(--brand-700)'}}>
+                        {d.statut === 'annule' ? 'Annulé' : d.statut === 'termine' ? 'Terminé' : 'En cours'}
+                      </span>
+                      {nbAlertes > 0 && <span style={{fontSize:10,marginLeft:4,color:'#b91c1c'}}>⚠️ {nbAlertes}</span>}
+                    </Td>
+                    <Td right mono>{fmt(c.fraisHT)}</Td>
+                    <Td right mono>{fmt(c.comHT)}</Td>
+                    <Td right mono dim>{fmt(c.royaltiesTotal)}</Td>
+                    <Td right mono bold accent={net > 0}>{fmt(net)}</Td>
+                    <Td right>
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <div style={{width:60,height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden'}}>
+                          <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${avancement}%`}}/>
+                        </div>
+                        <span style={{fontSize:11,color:'var(--ink-400)',minWidth:28}}>{avancement}%</span>
+                      </div>
+                    </Td>
+                    <Td right><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></Td>
+                  </tr>
+                  {isOpen && (
+                    <tr><td colSpan={9} style={{padding:0,borderTop:'1px solid var(--ink-100)'}}>
+                      {renderDossierDetail(d)}
+                    </td></tr>
+                  )}
+                </React.Fragment>
+              )
+            })}
+            {listeDossiers.length === 0 && (
+              <tr><td colSpan={9} style={{textAlign:'center',color:'var(--ink-400)',fontSize:13,padding:'32px 0'}}>Aucun chantier</td></tr>
             )}
-          </div>
-        )
-      })}
-      {listeDossiers.length === 0 && <p style={{textAlign:'center',color:'var(--ink-400)',fontSize:13,padding:'32px 0'}}>Aucun chantier</p>}
-    </div>
-  )
+          </tbody>
+          {listeDossiers.length > 0 && (
+            <tfoot style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-200)'}}>
+              <tr>
+                <td colSpan={3} style={{padding:'12px 16px',fontSize:12,fontWeight:700,color:'var(--ink-600)'}}>Total ({listeDossiers.length})</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.fraisHT)}</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.comHT)}</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-400)'}}>{fmt(totals.royalties)}</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--brand-800)'}}>{fmt(totals.net)}</td>
+                <td colSpan={2}/>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    )
+  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // TABLEAUX PAR PÉRIODE
@@ -1902,8 +1927,8 @@ export default function Finances() {
     ])
     const cles = Array.from(allKeys).sort((a, b) => b.localeCompare(a))
 
-    const sfSousOnglet    = sfSousOngletAgente
-    const setSfSousOnglet = setSfSousOngletAgente
+    const sfSousOnglet    = agentePeriod
+    const setSfSousOnglet = setAgentePeriod
 
     const chartLabels = cles.map(cle => { const [a, m] = cle.split('-'); return `${MOIS[parseInt(m)].slice(0,3)}. ${a}` })
     const chartProduits = cles.map(cle => {
@@ -2222,10 +2247,230 @@ export default function Finances() {
     )
   }
 
+  // ── SYNTHESE VIEW ──────────────────────────────────────────────────────────
+
+  function SyntheseView() {
+    const chartId = 'synthese_monthly_chart'
+    const donutId = 'synthese_donut_chart'
+
+    const reelData = useMemo(() => Array.from({length:12}, (_, i) => {
+      const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
+      const agg = rowsReelAnneeEnCours.find(([k]) => k === key)?.[1] || {}
+      return round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [rowsReelAnneeEnCours])
+
+    const previData = useMemo(() => {
+      const map = {}
+      scopedDossiers.forEach(d => {
+        const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
+        if (!key || !key.startsWith(String(anneeEnCours))) return
+        if (!map[key]) map[key] = 0
+        const c = calculer(d)
+        map[key] = round2(map[key] + c.gainsAdminPreviTotal + c.gainsAgentePreviTotal)
+      })
+      return Array.from({length:12}, (_, i) => {
+        const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
+        return map[key] || 0
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scopedDossiers])
+
+    const leaderboard = useMemo(() => {
+      const map = {}
+      scopedDossiers.forEach(d => {
+        const id = d.referente?.id
+        if (!id) return
+        if (!map[id]) map[id] = { nom: nomReferente(d), reel: 0, previ: 0 }
+        map[id].reel  = round2(map[id].reel  + calculerReel(d).gainsAgenteReels)
+        map[id].previ = round2(map[id].previ + calculer(d).gainsAgentePreviTotal)
+      })
+      return Object.values(map).sort((a,b) => b.reel - a.reel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scopedDossiers])
+
+    useEffect(() => {
+      if (typeof window === 'undefined') return
+      const el = document.getElementById(chartId)
+      if (!el) return
+      if (el._chartInstance) el._chartInstance.destroy()
+      el._chartInstance = new Chart(el, {
+        data: {
+          labels: MOIS_LABELS,
+          datasets: [
+            { type: 'bar', label: 'Réel encaissé', data: reelData, backgroundColor: '#3B7DD8', borderRadius: 3, order: 2 },
+            { type: 'line', label: 'Prévisionnel', data: previData, borderColor: '#94a3b8', backgroundColor: 'transparent', borderWidth: 2, borderDash: [4,3], pointRadius: 3, pointBackgroundColor: '#94a3b8', tension: 0.3, order: 1 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => ctx.dataset.label + ' : ' + Math.abs(ctx.parsed.y).toLocaleString('fr-FR') + ' €' } }
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#888', maxRotation: 30 } },
+            y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 }, color: '#888', callback: v => Math.abs(v).toLocaleString('fr-FR') + ' €' } }
+          }
+        }
+      })
+      return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+    }, [reelData, previData])
+
+    useEffect(() => {
+      if (typeof window === 'undefined') return
+      const el = document.getElementById(donutId)
+      if (!el) return
+      if (el._chartInstance) el._chartInstance.destroy()
+      el._chartInstance = new Chart(el, {
+        type: 'doughnut',
+        data: {
+          labels: ['Commissions HT', 'Frais HT', 'Royalties'],
+          datasets: [{ data: [totComHT, totFraisHT, totRoyalties], backgroundColor: ['#00578e','#0094d4','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
+        },
+        options: {
+          cutout: '70%', responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => ctx.label + ' : ' + (ctx.parsed).toLocaleString('fr-FR') + ' €' } }
+          }
+        }
+      })
+      return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+    }, [totComHT, totFraisHT, totRoyalties])
+
+    const totalDonut = totComHT + totFraisHT + totRoyalties
+    const reelTotal  = reelData.reduce((s,v) => s+v, 0)
+
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:20}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+          {/* LEFT : bar+line chart + totaux */}
+          <div className="card" style={{padding:20}}>
+            <div className="eyebrow" style={{marginBottom:12}}>Gains par mois {anneeEnCours}</div>
+            <div style={{display:'flex',gap:16,marginBottom:12,flexWrap:'wrap'}}>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <div style={{width:10,height:10,borderRadius:2,background:'#3B7DD8'}}/>
+                <span style={{fontSize:11,color:'var(--ink-500)'}}>Réel</span>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <div style={{width:10,height:10,borderRadius:2,border:'2px dashed #94a3b8',background:'transparent'}}/>
+                <span style={{fontSize:11,color:'var(--ink-500)'}}>Prévisionnel</span>
+              </div>
+            </div>
+            <div style={{position:'relative',height:220}}>
+              <canvas id={chartId} role="img" aria-label="Gains mensuels" />
+            </div>
+            <div style={{marginTop:16,display:'flex',flexDirection:'column',gap:6}}>
+              <Row label="Total réel encaissé" value={fmt(reelTotal)} bold accent />
+              <Row label="Total prévisionnel" value={fmt(totPreviNet)} dim />
+              {pctObjectif > 0 && <Row label={`Objectif ${anneeEnCours} (${pctObjectif}%)`} value={fmt(objectifAnnuel)} dim />}
+            </div>
+          </div>
+          {/* RIGHT : donut + leaderboard */}
+          <div style={{display:'flex',flexDirection:'column',gap:16}}>
+            <div className="card" style={{padding:20}}>
+              <div className="eyebrow" style={{marginBottom:12}}>Répartition prévisionnel</div>
+              <div style={{position:'relative',height:160}}>
+                <canvas id={donutId} role="img" aria-label="Répartition" />
+              </div>
+              <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
+                <LegendRow color="#00578e" label="Commissions HT" value={fmt(totComHT)} pct={totalDonut>0?Math.round(totComHT/totalDonut*100):0} />
+                <LegendRow color="#0094d4" label="Frais HT"       value={fmt(totFraisHT)} pct={totalDonut>0?Math.round(totFraisHT/totalDonut*100):0} />
+                <LegendRow color="#94a3b8" label="Royalties"      value={fmt(totRoyalties)} pct={totalDonut>0?Math.round(totRoyalties/totalDonut*100):0} />
+              </div>
+            </div>
+            {leaderboard.length > 0 && (
+              <div className="card" style={{padding:20}}>
+                <div className="eyebrow" style={{marginBottom:12}}>Classement agentes</div>
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  {leaderboard.map((a, i) => (
+                    <div key={a.nom} style={{display:'flex',alignItems:'center',gap:10}}>
+                      <span style={{fontSize:11,color:'var(--ink-400)',minWidth:16}}>#{i+1}</span>
+                      <span style={{fontSize:13,color:'var(--ink-700)',flex:1}}>{a.nom}</span>
+                      <span style={{fontSize:13,fontWeight:600,color:'var(--brand-800)',fontVariantNumeric:'tabular-nums'}}>{fmt(a.reel)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── FACTURATION AGENTES (INNER COMPONENT) ────────────────────────────────
+
+  function FacturationAgentes() {
+    const rowsReelKpi          = agrégerParPaiement(dossiersAgente, false)
+    const totalGainsF1         = rowsReelKpi.reduce((s, [, agg]) => s + round2(agg.gainsAgenteReels||0), 0)
+    const totalRedevAgente     = redevancesAgente.reduce((s, r) => s + (r.montant_ttc||540), 0)
+    const totalApporteurAgente = rowsReelKpi.reduce((s, [, agg]) => s + round2(agg.apporteurRembourseNet||0), 0)
+    const totalF2              = round2(totalRedevAgente + totalApporteurAgente)
+    const redevancesReglees    = redevancesAgente.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc||540), 0)
+    const netAVirer            = round2(totalF2 - totalGainsF1)
+
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+        {/* Chip selector agente */}
+        <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+          {agentes.map(a => (
+            <button key={a.id}
+              onClick={() => setAgenteSelectionnee(a.id)}
+              style={{
+                padding:'6px 14px', borderRadius:99, fontSize:12, fontWeight:600, cursor:'pointer', border:'1.5px solid',
+                background:  agenteSelectionnee === a.id ? 'var(--brand-500)' : 'transparent',
+                color:       agenteSelectionnee === a.id ? '#fff' : 'var(--ink-600)',
+                borderColor: agenteSelectionnee === a.id ? 'var(--brand-500)' : 'var(--ink-200)',
+              }}>
+              {a.prenom} {a.nom}
+            </button>
+          ))}
+        </div>
+        {/* KPI strip */}
+        <div className="kpi-grid">
+          <FinKpiCard label="F1 — Gains agente (réel)"   value={fmt(totalGainsF1)}                                     tone="ok" />
+          <FinKpiCard label="F2 — Redev. + apporteur"    value={fmt(totalF2)}                                          tone="warn" />
+          <FinKpiCard label="Redevances réglées"          value={fmt(redevancesReglees)}                                tone="mute" />
+          <FinKpiCard label="Net à virer"                 value={(netAVirer >= 0 ? '+' : '') + fmt(Math.abs(netAVirer))} tone={netAVirer >= 0 ? 'brand' : 'bad'} />
+        </div>
+        {/* Redevances grid */}
+        {redevancesAgente.length > 0 && (
+          <div className="card" style={{padding:16}}>
+            <div className="eyebrow" style={{marginBottom:12}}>Redevances mensuelles</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+              {redevancesAgente.slice().sort((a,b) => b.annee - a.annee || b.mois - a.mois).map(r => (
+                <div key={`${r.annee}-${r.mois}`} style={{
+                  padding:'8px 12px', borderRadius:8, fontSize:11,
+                  background:  r.statut === 'regle' ? 'rgba(22,163,74,0.08)' : 'var(--surface-2)',
+                  border: '1px solid ' + (r.statut === 'regle' ? '#86efac' : 'var(--ink-100)'),
+                }}>
+                  <div style={{fontWeight:600,color:'var(--ink-700)'}}>{MOIS[r.mois]} {r.annee}</div>
+                  <div style={{color: r.statut === 'regle' ? '#15803d' : 'var(--ink-400)',fontSize:10,marginTop:2}}>
+                    {r.statut === 'regle' ? '✓ Réglée' : 'En attente'}
+                  </div>
+                  <div style={{fontWeight:600,color:'var(--ink-900)',marginTop:2}}>{fmt(r.montant_ttc||540)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {/* Period toggle + content */}
+        <PillToggle
+          options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
+          active={factPeriod}
+          onChange={setFactPeriod}
+        />
+        {renderAgenteMoisAdmin()}
+      </div>
+    )
+  }
+
   // ── AGENTE MOIS ADMIN ──────────────────────────────────────────────────────
 
   const renderAgenteMoisAdmin = () => {
-    const isAnnee = sousOnglet === 'annee'
+    const isAnnee = factPeriod === 'annee'
     const rowsReel = agrégerParPaiement(dossiersAgente, isAnnee)
 
     // Totaux annuels si vue année
@@ -2450,6 +2695,22 @@ export default function Finances() {
           )
         })}
         {rowsReel.length === 0 && <p className="text-center text-gray-400 text-sm py-8">Aucune donnée</p>}
+      </div>
+    )
+  }
+
+  // ── FACTURATION AGENTE PROPRE (INNER COMPONENT) ──────────────────────────
+
+  function FacturationAgentePropre() {
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+        <PillToggle
+          options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
+          active={factPeriod}
+          onChange={setFactPeriod}
+        />
+        {factPeriod === 'mois'  && renderFacturationMoisSuivi()}
+        {factPeriod === 'annee' && renderFacturationAnneeAgente()}
       </div>
     )
   }
