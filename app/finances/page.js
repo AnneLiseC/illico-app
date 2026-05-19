@@ -114,7 +114,7 @@ function LegendRow({ color, label, value, pct }) {
 
 // ─── COMPOSANTS VISUELS ────────────────────────────────────────────────────────
 
-function FinKpiCard({ label, value, sub, tone }) {
+function FinKpiCard({ label, value, sub, tone, children }) {
   const toneColor = {
     brand: 'var(--brand-800)', ok: '#15803d',
     warn: '#a16207', bad: '#b91c1c', mute: 'var(--ink-500)'
@@ -124,6 +124,7 @@ function FinKpiCard({ label, value, sub, tone }) {
       <div className="eyebrow" style={{marginBottom:8}}>{label}</div>
       <div className="tnum" style={{fontSize:26,fontWeight:800,color:toneColor,letterSpacing:'-0.02em',lineHeight:1}}>{value}</div>
       {sub && <div style={{fontSize:12,color:'var(--ink-500)',marginTop:6}}>{sub}</div>}
+      {children}
     </div>
   )
 }
@@ -1164,7 +1165,21 @@ export default function Finances() {
     }, { fraisHT: 0, comHT: 0, royalties: 0, net: 0 })
 
     return (
-      <div className="card" style={{overflow:'hidden'}}>
+      <div className="card" style={{padding:0,overflow:'hidden'}}>
+        <div style={{padding:'14px 22px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid var(--ink-200)'}}>
+          <div>
+            <div style={{fontSize:16,fontWeight:700,color:'var(--ink-900)'}}>
+              {isReel ? 'F2 — Encaissements réels' : 'F1 — Engagements prévisionnels'} · {listeDossiers.length} dossiers
+            </div>
+            <div className="eyebrow" style={{marginTop:4}}>
+              {period === 'chantier' ? 'Détail par chantier' : period === 'mois' ? 'Agrégation par mois de paiement' : 'Agrégation annuelle'}
+            </div>
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-ghost" style={{padding:'6px 10px',fontSize:12}}>▼</button>
+            <button className="btn btn-ghost" style={{padding:'6px 10px',fontSize:12}}>📄 CSV</button>
+          </div>
+        </div>
         <table style={{width:'100%',borderCollapse:'collapse'}}>
           <thead style={{position:'sticky',top:0,zIndex:1}}>
             <tr style={{borderBottom:'1px solid var(--ink-200)'}}>
@@ -2282,18 +2297,6 @@ export default function Finances() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scopedDossiers])
 
-    const leaderboard = useMemo(() => {
-      const map = {}
-      scopedDossiers.forEach(d => {
-        const id = d.referente?.id
-        if (!id) return
-        if (!map[id]) map[id] = { nom: nomReferente(d), reel: 0, previ: 0 }
-        map[id].reel  = round2(map[id].reel  + calculerReel(d).gainsAgenteReels)
-        map[id].previ = round2(map[id].previ + calculer(d).gainsAgentePreviTotal)
-      })
-      return Object.values(map).sort((a,b) => b.reel - a.reel)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [scopedDossiers])
 
     useEffect(() => {
       if (typeof window === 'undefined') return
@@ -2373,7 +2376,7 @@ export default function Finances() {
               {pctObjectif > 0 && <Row label={`Objectif ${anneeEnCours} (${pctObjectif}%)`} value={fmt(objectifAnnuel)} dim />}
             </div>
           </div>
-          {/* RIGHT : donut + leaderboard */}
+          {/* RIGHT : donut + répartition */}
           <div style={{display:'flex',flexDirection:'column',gap:16}}>
             <div className="card" style={{padding:20}}>
               <div className="eyebrow" style={{marginBottom:12}}>Répartition prévisionnel</div>
@@ -2386,20 +2389,6 @@ export default function Finances() {
                 <LegendRow color="#94a3b8" label="Royalties"      value={fmt(totRoyalties)} pct={totalDonut>0?Math.round(totRoyalties/totalDonut*100):0} />
               </div>
             </div>
-            {leaderboard.length > 0 && (
-              <div className="card" style={{padding:20}}>
-                <div className="eyebrow" style={{marginBottom:12}}>Classement agentes</div>
-                <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                  {leaderboard.map((a, i) => (
-                    <div key={a.nom} style={{display:'flex',alignItems:'center',gap:10}}>
-                      <span style={{fontSize:11,color:'var(--ink-400)',minWidth:16}}>#{i+1}</span>
-                      <span style={{fontSize:13,color:'var(--ink-700)',flex:1}}>{a.nom}</span>
-                      <span style={{fontSize:13,fontWeight:600,color:'var(--brand-800)',fontVariantNumeric:'tabular-nums'}}>{fmt(a.reel)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -2900,16 +2889,61 @@ export default function Finances() {
             {saving && <span style={{marginLeft:12,color:'var(--ink-400)',fontSize:12}}>Enregistrement…</span>}
           </div>
         </div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn btn-ghost">📄 Exporter le bilan</button>
+          <button className="btn btn-primary">💰 Saisir un règlement</button>
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div className="tabs">
+        <button className={`tab ${tab==='previsionnel'?'active':''}`} onClick={() => setTab('previsionnel')}>
+          <span style={{display:'inline-flex',gap:8,alignItems:'center'}}>
+            <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
+              background:tab==='previsionnel'?'var(--brand-800)':'var(--ink-100)',
+              color:tab==='previsionnel'?'#fff':'var(--ink-500)'}}>F1</span>
+            Prévisionnel
+          </span>
+        </button>
+        <button className={`tab ${tab==='reel'?'active':''}`} onClick={() => setTab('reel')}>
+          <span style={{display:'inline-flex',gap:8,alignItems:'center'}}>
+            <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
+              background:tab==='reel'?'var(--brand-800)':'var(--ink-100)',
+              color:tab==='reel'?'#fff':'var(--ink-500)'}}>F2</span>
+            Réel
+          </span>
+        </button>
+        <button className={`tab ${tab==='synthese'?'active':''}`} onClick={() => setTab('synthese')}>Synthèse</button>
+        <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => setTab('suivi')}>Suivi financier</button>
+        <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => setTab('facturation')}>Facturation agentes</button>
       </div>
 
       {/* KPI strip */}
       <div className="kpi-grid">
         {isMarine ? (
           <>
-            <FinKpiCard label="Net CTP (réel)"            value={fmt(totalNetCTP)}           sub={`${chantiersAnneeEnCours} chantiers actifs`} tone="brand"/>
-            <FinKpiCard label="Net prévi. (périmètre)"    value={fmt(totPreviNet)}            tone="mute"/>
-            <FinKpiCard label="Gains agentes (réel)"      value={fmt(totalGainsAgentesReels)} tone="ok"/>
-            <FinKpiCard label={`Objectif ${anneeEnCours} (${pctObjectif}%)`} value={fmt(objectifAnnuel)} tone="warn"/>
+            <FinKpiCard label={`CA réel net ${anneeEnCours}`} value={fmt(totalNetCTP)} tone="brand">
+              <div style={{marginTop:8}}>
+                <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
+                  <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
+                </div>
+                <div style={{fontSize:11,color:'var(--ink-500)'}}>
+                  Objectif <span style={{fontWeight:600,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(objectifAnnuel)}</span> · {pctObjectif}%
+                </div>
+              </div>
+            </FinKpiCard>
+            <FinKpiCard label="CA prévisionnel"
+              value={fmt(totPreviNet)}
+              sub={`${fmt(round2(totComHT+totFraisHT))} brut · ${fmt(totRoyalties)} royalties`}
+              tone="ok"/>
+            <FinKpiCard label="Commissions HT"
+              value={fmt(totComHT)}
+              sub={`Frais conso. ${fmt(totFraisHT)} HT`}
+              tone="warn"/>
+            <FinKpiCard label="Part franchisée"
+              value={fmt(round2(totalNetCTP-totalGainsAgentesReels))}
+              sub={`Part agentes ${fmt(totalGainsAgentesReels)}`}
+              tone="brand"/>
           </>
         ) : (
           <>
@@ -2918,15 +2952,6 @@ export default function Finances() {
             <FinKpiCard label="Mon net"               value={fmt(monNet)} tone={monNet >= 0 ? 'brand' : 'bad'} sub={`Prévi. ${fmt(mesDossiersGainsPrevi)}`}/>
           </>
         )}
-      </div>
-
-      {/* Tab bar */}
-      <div className="tabs">
-        {tabs.map(({ key, label }) => (
-          <button key={key} className={`tab ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>
-            {label}
-          </button>
-        ))}
       </div>
 
       {/* ── F1 PRÉVISIONNEL ── */}
