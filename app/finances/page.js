@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { calculateDossierFinance } from '../lib/finance'
+import { Avatar } from '../components/shared'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -1207,7 +1208,12 @@ export default function Finances() {
                         <span style={{fontSize:10,padding:'1px 6px',borderRadius:99,background:'var(--ink-100)',color:'var(--ink-500)',fontWeight:600,alignSelf:'flex-start'}}>{d.typologie}</span>
                       </div>
                     </Td>
-                    <Td><span style={{fontSize:12,color:'var(--ink-600)'}}>{nomReferente(d)}</span></Td>
+                    <Td>
+                      <div style={{display:'inline-flex',alignItems:'center',gap:6}}>
+                        <Avatar name={nomReferente(d)} size={22}/>
+                        <span style={{fontSize:12,color:'var(--ink-700)'}}>{d.referente?.prenom || nomReferente(d)}</span>
+                      </div>
+                    </Td>
                     <Td>
                       <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,
                         background:d.statut==='annule'?'rgba(220,38,38,0.1)':d.statut==='termine'?'rgba(22,163,74,0.1)':'rgba(0,87,142,0.1)',
@@ -2403,66 +2409,207 @@ export default function Finances() {
   // ── FACTURATION AGENTES (INNER COMPONENT) ────────────────────────────────
 
   function FacturationAgentes() {
-    const rowsReelKpi          = agrégerParPaiement(dossiersAgente, false)
-    const totalGainsF1         = rowsReelKpi.reduce((s, [, agg]) => s + round2(agg.gainsAgenteReels||0), 0)
-    const totalRedevAgente     = redevancesAgente.reduce((s, r) => s + (r.montant_ttc||540), 0)
-    const totalApporteurAgente = rowsReelKpi.reduce((s, [, agg]) => s + round2(agg.apporteurRembourseNet||0), 0)
-    const totalF2              = round2(totalRedevAgente + totalApporteurAgente)
-    const redevancesReglees    = redevancesAgente.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc||540), 0)
-    const netAVirer            = round2(totalF2 - totalGainsF1)
+    const facturesAg  = facturesAgente.filter(f => f.agente_id === agenteSelectionnee)
+    const redevAg     = redevancesAgente
+    const totalF1     = facturesAg.filter(f => f.type_facture === 'agente_vers_ctp').reduce((s, f) => s + (f.montant||0), 0)
+    const totalF1Paye = facturesAg.filter(f => f.type_facture === 'agente_vers_ctp' && f.statut === 'paye').reduce((s, f) => s + (f.montant||0), 0)
+    const totalF2     = facturesAg.filter(f => f.type_facture === 'ctp_vers_agente').reduce((s, f) => s + (f.montant||0), 0)
+    const totalF2Paye = facturesAg.filter(f => f.type_facture === 'ctp_vers_agente' && f.statut === 'paye').reduce((s, f) => s + (f.montant||0), 0)
+    const totalRedev  = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc||540), 0)
+    const net         = round2(totalF1 - totalF2)
+
+    const months = [...new Set(facturesAg.map(f => `${f.annee}-${String(f.mois).padStart(2,'0')}`))].sort((a, b) => b.localeCompare(a))
+
+    const uploadPdf = async (f, fichier) => {
+      const key = `${f.annee}-${f.mois}-${f.type_facture}`
+      setUploadingFactureAgente(key)
+      const ext = fichier.name.split('.').pop()
+      const chemin = `factures_agente/${agenteSelectionnee}/${f.annee}-${String(f.mois).padStart(2,'0')}-${f.type_facture}.${ext}`
+      const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+      if (!error) {
+        await upsertFactureMoisType(f.mois, f.annee, f.montant||0, f.type_facture, { facture_path: chemin, statut: 'facture' })
+        setSucces('Facture uploadée ✓')
+      } else { setErreur('Erreur upload : ' + error.message) }
+      setUploadingFactureAgente(null)
+    }
+
+    const FactureDetailCard = ({ title, subtitle, type, accent }) => {
+      const fs = facturesAg.filter(f => f.type_facture === type)
+      return (
+        <div className="card" style={{padding:0,overflow:'hidden'}}>
+          <div style={{padding:'14px 18px',borderBottom:'1px solid var(--ink-200)',borderLeft:`4px solid ${accent}`}}>
+            <div style={{fontSize:14,fontWeight:700,color:'var(--ink-900)'}}>{title}</div>
+            <div style={{fontSize:11.5,color:'var(--ink-500)',marginTop:4,lineHeight:1.4}}>{subtitle}</div>
+          </div>
+          <div>
+            {fs.map(f => (
+              <div key={f.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:12,alignItems:'center',padding:'12px 18px',borderTop:'1px solid var(--ink-100)'}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:'var(--ink-900)'}}>{MOIS[f.mois]} {f.annee}</div>
+                  <div style={{fontSize:11,color:'var(--ink-500)',marginTop:2}}>
+                    {f.facture_path
+                      ? <button onClick={async () => { const { data } = await supabase.storage.from('documents').createSignedUrl(f.facture_path, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }}
+                          style={{fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>
+                      : <span style={{color:'var(--ink-400)'}}>Pas de PDF déposé</span>}
+                  </div>
+                </div>
+                <div style={{fontWeight:700,color:'var(--ink-900)',fontVariantNumeric:'tabular-nums'}}>{fmt(f.montant||0)}</div>
+                <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                  <StatutFacture f={f}/>
+                  {!f.facture_path && (
+                    <label style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid var(--ink-200)',cursor:'pointer',color:'var(--ink-600)',background:'#fff'}}>
+                      📤 PDF
+                      <input type="file" accept=".pdf" className="hidden" onChange={e => e.target.files[0] && uploadPdf(f, e.target.files[0])}/>
+                    </label>
+                  )}
+                </div>
+              </div>
+            ))}
+            {fs.length === 0 && <div style={{padding:24,textAlign:'center',color:'var(--ink-400)',fontSize:13}}>Aucune facture</div>}
+          </div>
+        </div>
+      )
+    }
 
     return (
-      <div style={{display:'flex',flexDirection:'column',gap:16}}>
-        {/* Chip selector agente */}
-        <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-          {agentes.map(a => (
-            <button key={a.id}
-              onClick={() => setAgenteSelectionnee(a.id)}
-              style={{
-                padding:'6px 14px', borderRadius:99, fontSize:12, fontWeight:600, cursor:'pointer', border:'1.5px solid',
-                background:  agenteSelectionnee === a.id ? 'var(--brand-500)' : 'transparent',
-                color:       agenteSelectionnee === a.id ? '#fff' : 'var(--ink-600)',
-                borderColor: agenteSelectionnee === a.id ? 'var(--brand-500)' : 'var(--ink-200)',
+      <div style={{display:'flex',flexDirection:'column',gap:18}}>
+        {/* Sélecteur agente */}
+        <div className="card" style={{padding:'14px 18px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+          <div className="eyebrow">Agente :</div>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            {agentes.filter(a => a.role === 'agente').map(a => (
+              <button key={a.id} onClick={() => setAgenteSelectionnee(a.id)} style={{
+                display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:99,
+                border:'1px solid',borderColor: agenteSelectionnee === a.id ? 'var(--brand-500)' : 'var(--ink-200)',
+                background: agenteSelectionnee === a.id ? 'var(--brand-50)' : '#fff',
+                color: agenteSelectionnee === a.id ? 'var(--brand-800)' : 'var(--ink-700)',
+                fontSize:12,fontWeight:600,cursor:'pointer',
               }}>
-              {a.prenom} {a.nom}
-            </button>
-          ))}
+                <Avatar name={`${a.prenom} ${a.nom}`} size={20}/>
+                {a.prenom} {a.nom}
+              </button>
+            ))}
+          </div>
         </div>
+
         {/* KPI strip */}
         <div className="kpi-grid">
-          <FinKpiCard label="F1 — Gains agente (réel)"   value={fmt(totalGainsF1)}                                     tone="ok" />
-          <FinKpiCard label="F2 — Redev. + apporteur"    value={fmt(totalF2)}                                          tone="warn" />
-          <FinKpiCard label="Redevances réglées"          value={fmt(redevancesReglees)}                                tone="mute" />
-          <FinKpiCard label="Net à virer"                 value={(netAVirer >= 0 ? '+' : '') + fmt(Math.abs(netAVirer))} tone={netAVirer >= 0 ? 'brand' : 'bad'} />
+          <FinKpiCard label="F1 — Gains à facturer"       value={fmt(totalF1)}    sub={`Payé ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
+          <FinKpiCard label="F2 — Redevances + apporteur" value={fmt(totalF2)}    sub={`Payé ${fmt(totalF2Paye)}`}                                              tone="warn"/>
+          <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · 540 €/mois`}     tone="brand"/>
+          <FinKpiCard label="Net à virer à l'agente"       value={(net >= 0 ? '+' : '') + fmt(Math.abs(net))} sub={net >= 0 ? 'F1 − F2' : "L'agente doit à CTP"} tone={net >= 0 ? 'brand' : 'bad'}/>
         </div>
-        {/* Redevances grid */}
-        {redevancesAgente.length > 0 && (
-          <div className="card" style={{padding:16}}>
-            <div className="eyebrow" style={{marginBottom:12}}>Redevances mensuelles</div>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
-              {redevancesAgente.slice().sort((a,b) => b.annee - a.annee || b.mois - a.mois).map(r => (
-                <div key={`${r.annee}-${r.mois}`} style={{
-                  padding:'8px 12px', borderRadius:8, fontSize:11,
-                  background:  r.statut === 'regle' ? 'rgba(22,163,74,0.08)' : 'var(--surface-2)',
-                  border: '1px solid ' + (r.statut === 'regle' ? '#86efac' : 'var(--ink-100)'),
-                }}>
-                  <div style={{fontWeight:600,color:'var(--ink-700)'}}>{MOIS[r.mois]} {r.annee}</div>
-                  <div style={{color: r.statut === 'regle' ? '#15803d' : 'var(--ink-400)',fontSize:10,marginTop:2}}>
-                    {r.statut === 'regle' ? '✓ Réglée' : 'En attente'}
-                  </div>
-                  <div style={{fontWeight:600,color:'var(--ink-900)',marginTop:2}}>{fmt(r.montant_ttc||540)}</div>
-                </div>
-              ))}
+
+        {/* Tableau mensuel F1 / F2 */}
+        <div className="card" style={{padding:0,overflow:'hidden'}}>
+          <div style={{padding:'14px 22px',borderBottom:'1px solid var(--ink-200)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)'}}>
+                Facturation mensuelle · {agenteActuelle ? `${agenteActuelle.prenom} ${agenteActuelle.nom}` : '—'}
+              </div>
+              <div className="eyebrow" style={{marginTop:4}}>F1 = facture émise par l&apos;agente · F2 = facture émise par la franchisée</div>
             </div>
           </div>
-        )}
-        {/* Period toggle + content */}
-        <PillToggle
-          options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
-          active={factPeriod}
-          onChange={setFactPeriod}
-        />
-        {renderAgenteMoisAdmin()}
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead style={{background:'var(--surface-2)'}}>
+              <tr>
+                {thL('Mois')}
+                {thR('F1 (Agente → CTP)')}
+                <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F1</th>
+                {thR('F2 (CTP → Agente)')}
+                <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F2</th>
+                {thR('Net')}
+              </tr>
+            </thead>
+            <tbody>
+              {months.map(key => {
+                const [aStr, mStr] = key.split('-')
+                const mois = parseInt(mStr); const annee = parseInt(aStr)
+                const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
+                const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
+                const f1m = f1?.montant || 0
+                const f2m = f2?.montant || 0
+                const n   = round2(f1m - f2m)
+                return (
+                  <tr key={key} style={{borderTop:'1px solid var(--ink-100)'}} className="row-hover">
+                    <td style={{padding:'14px 16px',fontWeight:700,color:'var(--ink-900)'}}>{MOIS[mois]} {annee}</td>
+                    <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f1m>0?'#15803d':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
+                      {f1m > 0 ? fmt(f1m) : '—'}
+                    </td>
+                    <td style={{padding:'14px 16px',textAlign:'center'}}><StatutFacture f={f1}/></td>
+                    <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f2m>0?'#b91c1c':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
+                      {f2m > 0 ? fmt(f2m) : '—'}
+                    </td>
+                    <td style={{padding:'14px 16px',textAlign:'center'}}><StatutFacture f={f2}/></td>
+                    <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:n>=0?'var(--brand-800)':'#b91c1c',fontVariantNumeric:'tabular-nums'}}>
+                      {n >= 0 ? '+' : ''}{fmt(n)}
+                    </td>
+                  </tr>
+                )
+              })}
+              {months.length === 0 && (
+                <tr><td colSpan={6} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-400)'}}>Aucune facture enregistrée</td></tr>
+              )}
+            </tbody>
+            {months.length > 0 && (
+              <tfoot>
+                <tr style={{borderTop:'2px solid var(--ink-200)',background:'var(--surface-2)'}}>
+                  <td style={{padding:'14px 16px',fontWeight:800,color:'var(--ink-900)'}}>Total</td>
+                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#15803d',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF1)}</td>
+                  <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF1Paye)} payé</td>
+                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#b91c1c',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF2)}</td>
+                  <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF2Paye)} payé</td>
+                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,fontSize:15,fontVariantNumeric:'tabular-nums',color:net>=0?'var(--brand-800)':'#b91c1c'}}>
+                    {net >= 0 ? '+' : ''}{fmt(net)}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+
+        {/* Détail factures F1 + F2 côte à côte */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18}}>
+          <FactureDetailCard
+            title="F1 — Factures émises par l'agente"
+            subtitle="L'agente facture CTP pour ses gains du mois (frais + commissions + honoraires)"
+            type="agente_vers_ctp"
+            accent="#16a34a"
+          />
+          <FactureDetailCard
+            title="F2 — Factures émises par la franchisée"
+            subtitle="CTP facture l'agente pour la redevance + apporteur remboursé"
+            type="ctp_vers_agente"
+            accent="#dc2626"
+          />
+        </div>
+
+        {/* Redevances 12 mois */}
+        <div className="card" style={{padding:22}}>
+          <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)',marginBottom:14}}>Redevances mensuelles · 540 € TTC</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(12,1fr)',gap:6}}>
+            {MOIS_LABELS.map((mLabel, i) => {
+              const r = redevAg.find(rv => rv.mois === i+1 && rv.annee === anneeEnCours)
+              const isPast = new Date(anneeEnCours, i, 1) < new Date()
+              return (
+                <div key={i} style={{
+                  padding:'10px 6px',textAlign:'center',borderRadius:8,
+                  background:  r?.statut === 'regle' ? 'rgba(22,163,74,0.10)' : isPast ? 'rgba(245,158,11,0.13)' : 'var(--ink-50)',
+                  border:'1px solid',borderColor: r?.statut === 'regle' ? 'rgba(22,163,74,0.2)' : isPast ? 'rgba(245,158,11,0.3)' : 'var(--ink-200)',
+                }}>
+                  <div style={{fontSize:10,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>{mLabel.slice(0,3)}</div>
+                  <div style={{marginTop:6,fontSize:11.5,fontWeight:700,color:r?.statut==='regle'?'#15803d':isPast?'#a16207':'var(--ink-300)'}}>
+                    {r?.statut === 'regle' ? '✓' : isPast ? '⌛' : '—'}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{marginTop:14,fontSize:12.5,color:'var(--ink-500)'}}>
+            {redevAg.filter(r => r.statut === 'regle').length} mois réglés ·
+            <span style={{fontWeight:700,color:'var(--brand-800)',marginLeft:6,fontVariantNumeric:'tabular-nums'}}>{fmt(totalRedev)}</span> sur l&apos;année
+          </div>
+        </div>
       </div>
     )
   }
@@ -2785,15 +2932,36 @@ export default function Finances() {
       {/* ── F1 PRÉVISIONNEL ── */}
       {tab === 'previsionnel' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-            <PillToggle options={periodOptions} active={period} onChange={setPeriod} />
+          <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+            <div className="eyebrow">Vue</div>
+            <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9}}>
+              {periodOptions.map(p => (
+                <button key={p.key} onClick={() => setPeriod(p.key)} style={{
+                  padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
+                  background: period === p.key ? '#fff' : 'transparent',
+                  color:      period === p.key ? 'var(--brand-800)' : 'var(--ink-500)',
+                  boxShadow:  period === p.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}>{p.label}</button>
+              ))}
+            </div>
             {isMarine && (
-              <select value={scope} onChange={e => setScope(e.target.value)}
-                className="input" style={{height:32,fontSize:12,padding:'0 10px'}}>
-                <option value="tous">Toute l&apos;agence</option>
-                <option value="moi">Mes dossiers</option>
-                {agentes.map(a => <option key={a.id} value={a.id}>{a.prenom} {a.nom}</option>)}
-              </select>
+              <div style={{marginLeft:6,display:'flex',gap:4,alignItems:'center'}}>
+                <div className="eyebrow">Périmètre</div>
+                <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9,marginLeft:8}}>
+                  {[
+                    { key:'tous', label:'Tous' },
+                    { key:'moi', label: profile?.prenom || 'Marine' },
+                    ...agentes.map(a => ({ key: a.id, label: a.prenom })),
+                  ].map(s => (
+                    <button key={s.key} onClick={() => setScope(s.key)} style={{
+                      padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
+                      background: scope === s.key ? '#fff' : 'transparent',
+                      color:      scope === s.key ? 'var(--brand-800)' : 'var(--ink-500)',
+                      boxShadow:  scope === s.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                    }}>{s.label}</button>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
           {period === 'chantier' && renderFinanceTable(scopedDossiers, false)}
@@ -2811,15 +2979,36 @@ export default function Finances() {
       {/* ── F2 RÉEL ── */}
       {tab === 'reel' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-            <PillToggle options={periodOptions} active={period} onChange={setPeriod} />
+          <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+            <div className="eyebrow">Vue</div>
+            <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9}}>
+              {periodOptions.map(p => (
+                <button key={p.key} onClick={() => setPeriod(p.key)} style={{
+                  padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
+                  background: period === p.key ? '#fff' : 'transparent',
+                  color:      period === p.key ? 'var(--brand-800)' : 'var(--ink-500)',
+                  boxShadow:  period === p.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}>{p.label}</button>
+              ))}
+            </div>
             {isMarine && (
-              <select value={scope} onChange={e => setScope(e.target.value)}
-                className="input" style={{height:32,fontSize:12,padding:'0 10px'}}>
-                <option value="tous">Toute l&apos;agence</option>
-                <option value="moi">Mes dossiers</option>
-                {agentes.map(a => <option key={a.id} value={a.id}>{a.prenom} {a.nom}</option>)}
-              </select>
+              <div style={{marginLeft:6,display:'flex',gap:4,alignItems:'center'}}>
+                <div className="eyebrow">Périmètre</div>
+                <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9,marginLeft:8}}>
+                  {[
+                    { key:'tous', label:'Tous' },
+                    { key:'moi', label: profile?.prenom || 'Marine' },
+                    ...agentes.map(a => ({ key: a.id, label: a.prenom })),
+                  ].map(s => (
+                    <button key={s.key} onClick={() => setScope(s.key)} style={{
+                      padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
+                      background: scope === s.key ? '#fff' : 'transparent',
+                      color:      scope === s.key ? 'var(--brand-800)' : 'var(--ink-500)',
+                      boxShadow:  scope === s.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                    }}>{s.label}</button>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
           {period === 'chantier' && renderFinanceTable(scopedDossiers, true)}
