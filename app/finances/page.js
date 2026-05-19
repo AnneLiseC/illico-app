@@ -2716,25 +2716,22 @@ export default function Finances() {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // ONGLETS
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  const ongletsAdmin  = [
-    { key: 'mes_chantiers',   label: 'Mes chantiers'      },
-    { key: 'tous_chantiers',  label: 'Tous les chantiers' },
-    { key: 'suivi_financier', label: 'Suivi financier'    },
-    { key: 'agentes',         label: 'Agentes'            },
-  ]
-  const ongletsAgente = [
-    { key: 'mes_chantiers', label: 'Mes chantiers'       },
-    { key: 'financier',     label: 'Mon suivi financier' },
-    { key: 'facturation',   label: 'Facturation'         },
-  ]
-  const ongletsList = isMarine ? ongletsAdmin : ongletsAgente
-
-  // ─────────────────────────────────────────────────────────────────────────────
   // RENDU PRINCIPAL
   // ─────────────────────────────────────────────────────────────────────────────
+
+  const tabs = [
+    { key: 'previsionnel', label: 'F1 Prévisionnel' },
+    { key: 'reel',         label: 'F2 Réel'         },
+    { key: 'synthese',     label: 'Synthèse'         },
+    { key: 'suivi',        label: 'Suivi financier'  },
+    { key: 'facturation',  label: 'Facturation'      },
+  ]
+
+  const periodOptions = [
+    { key: 'chantier', label: 'Par chantier' },
+    { key: 'mois',     label: 'Par mois'     },
+    { key: 'annee',    label: 'Par année'    },
+  ]
 
   if (loading) return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',paddingTop:96}}>
@@ -2762,95 +2759,106 @@ export default function Finances() {
       <div className="kpi-grid">
         {isMarine ? (
           <>
-            <FinKpiCard label="Net CTP (réel)" value={fmt(totalNetCTP)} sub={`${chantiersAnneeEnCours} chantiers actifs`} tone="brand"/>
-            <FinKpiCard label="Gains agentes (réel)" value={fmt(totalGainsAgentesReels)} tone="ok"/>
-            <FinKpiCard label="Redevances reçues" value={fmt(totalRedevancesReglees)} tone="warn"/>
-            <FinKpiCard label={`Chantiers ${anneeEnCours}`} value={String(chantiersAnneeEnCours)} tone="mute"/>
+            <FinKpiCard label="Net CTP (réel)"            value={fmt(totalNetCTP)}           sub={`${chantiersAnneeEnCours} chantiers actifs`} tone="brand"/>
+            <FinKpiCard label="Net prévi. (périmètre)"    value={fmt(totPreviNet)}            tone="mute"/>
+            <FinKpiCard label="Gains agentes (réel)"      value={fmt(totalGainsAgentesReels)} tone="ok"/>
+            <FinKpiCard label={`Objectif ${anneeEnCours} (${pctObjectif}%)`} value={fmt(objectifAnnuel)} tone="warn"/>
           </>
         ) : (
           <>
-            <FinKpiCard label="Gains prévisionnels" value={fmt(mesDossiersGainsPrevi)} tone="mute"/>
-            <FinKpiCard label="Gains réels encaissés" value={fmt(mesDossiersGainsReels)} tone="ok"/>
-            <FinKpiCard label="Mon net" value={fmt(monNet)} tone={monNet >= 0 ? 'brand' : 'bad'} sub={`Prévi. ${fmt(mesDossiersGainsPrevi)}`}/>
+            <FinKpiCard label="Gains prévisionnels"   value={fmt(mesDossiersGainsPrevi)}                                    tone="mute"/>
+            <FinKpiCard label="Gains réels encaissés" value={fmt(mesDossiersGainsReels)}                                    tone="ok"/>
+            <FinKpiCard label="Mon net"               value={fmt(monNet)} tone={monNet >= 0 ? 'brand' : 'bad'} sub={`Prévi. ${fmt(mesDossiersGainsPrevi)}`}/>
           </>
         )}
       </div>
 
-      {/* Onglets */}
+      {/* Tab bar */}
       <div className="tabs">
-        {ongletsList.map(({ key, label }) => (
-          <button key={key} className={`tab ${onglet === key ? 'active' : ''}`}
-            onClick={() => {
-              setOnglet(key)
-              setSousOnglet(key === 'suivi_financier' ? 'agence' : key === 'agentes' ? 'mois' : key === 'facturation' ? 'mois' : 'chantier')
-            }}>
+        {tabs.map(({ key, label }) => (
+          <button key={key} className={`tab ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>
             {label}
           </button>
         ))}
       </div>
 
-      {/* ── MES CHANTIERS ── */}
-      {onglet === 'mes_chantiers' && (
+      {/* ── F1 PRÉVISIONNEL ── */}
+      {tab === 'previsionnel' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {renderSousOnglets()}
-          {sousOnglet === 'chantier' && renderAccordeon(mesDossiers, false)}
-          {sousOnglet === 'mois'  && renderMesPeriode(mesDossiers, 'Mois', agrégerParPaiement(mesDossiers, false))}
-          {sousOnglet === 'annee' && renderMesPeriode(mesDossiers, 'Année', agrégerParPaiement(mesDossiers, true))}
+          <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+            <PillToggle options={periodOptions} active={period} onChange={setPeriod} />
+            {isMarine && (
+              <select value={scope} onChange={e => setScope(e.target.value)}
+                className="input" style={{height:32,fontSize:12,padding:'0 10px'}}>
+                <option value="tous">Toute l&apos;agence</option>
+                <option value="moi">Mes dossiers</option>
+                {agentes.map(a => <option key={a.id} value={a.id}>{a.prenom} {a.nom}</option>)}
+              </select>
+            )}
+          </div>
+          {period === 'chantier' && renderFinanceTable(scopedDossiers, false)}
+          {period === 'mois'     && (isMarine
+            ? renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, false), 'Mois')
+            : renderMesPeriode(scopedDossiers, 'Mois', agrégerParPaiement(scopedDossiers, false))
+          )}
+          {period === 'annee'    && (isMarine
+            ? renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, true), 'Année')
+            : renderMesPeriode(scopedDossiers, 'Année', agrégerParPaiement(scopedDossiers, true))
+          )}
         </div>
       )}
 
-      {/* ── TOUS LES CHANTIERS (admin) ── */}
-      {onglet === 'tous_chantiers' && isMarine && (
+      {/* ── F2 RÉEL ── */}
+      {tab === 'reel' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {renderSousOnglets()}
-          {sousOnglet === 'chantier' && renderAccordeon(dossiers, true)}
-          {sousOnglet === 'mois'  && renderTousPeriode(dossiers, agrégerParPaiement(dossiers, false), 'Mois')}
-          {sousOnglet === 'annee' && renderTousPeriode(dossiers, agrégerParPaiement(dossiers, true), 'Année')}
+          <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+            <PillToggle options={periodOptions} active={period} onChange={setPeriod} />
+            {isMarine && (
+              <select value={scope} onChange={e => setScope(e.target.value)}
+                className="input" style={{height:32,fontSize:12,padding:'0 10px'}}>
+                <option value="tous">Toute l&apos;agence</option>
+                <option value="moi">Mes dossiers</option>
+                {agentes.map(a => <option key={a.id} value={a.id}>{a.prenom} {a.nom}</option>)}
+              </select>
+            )}
+          </div>
+          {period === 'chantier' && renderFinanceTable(scopedDossiers, true)}
+          {period === 'mois'     && (isMarine
+            ? renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, false), 'Mois')
+            : renderMesPeriode(scopedDossiers, 'Mois', agrégerParPaiement(scopedDossiers, false))
+          )}
+          {period === 'annee'    && (isMarine
+            ? renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, true), 'Année')
+            : renderMesPeriode(scopedDossiers, 'Année', agrégerParPaiement(scopedDossiers, true))
+          )}
         </div>
       )}
 
-      {/* ── SUIVI FINANCIER (admin) ── */}
-      {onglet === 'suivi_financier' && isMarine && (
+      {/* ── SYNTHÈSE ── */}
+      {tab === 'synthese' && <SyntheseView />}
+
+      {/* ── SUIVI FINANCIER ── */}
+      {tab === 'suivi' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <PillToggle
-            options={[{key:'agence',label:'Agence — Encaissements bruts'},{key:'ctp',label:'CTP — Résultat net (charges incluses)'}]}
-            active={sousOnglet}
-            onChange={setSousOnglet}
-          />
-          {(sousOnglet === 'agence' || sousOnglet === 'ctp') && renderSuiviFinancier(sousOnglet)}
+          {isMarine ? (
+            <>
+              <PillToggle
+                options={[{key:'agence',label:'Agence — Encaissements bruts'},{key:'ctp',label:'CTP — Résultat net (charges incluses)'}]}
+                active={suiviMode}
+                onChange={setSuiviMode}
+              />
+              {renderSuiviFinancier(suiviMode)}
+            </>
+          ) : (
+            renderSuiviAgenteFinancier()
+          )}
         </div>
       )}
 
-      {/* ── AGENTES (admin) ── */}
-      {onglet === 'agentes' && isMarine && (
+      {/* ── FACTURATION ── */}
+      {tab === 'facturation' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {renderSélecteurAgente()}
-          <PillToggle
-            options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
-            active={sousOnglet}
-            onChange={setSousOnglet}
-          />
-          {(sousOnglet === 'mois' || sousOnglet === 'annee') && renderAgenteMoisAdmin()}
-        </div>
-      )}
-
-      {/* ── MON SUIVI FINANCIER (agente) ── */}
-      {onglet === 'financier' && !isMarine && (
-        <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {renderSuiviAgenteFinancier()}
-        </div>
-      )}
-
-      {/* ── FACTURATION (agente) ── */}
-      {onglet === 'facturation' && !isMarine && (
-        <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <PillToggle
-            options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
-            active={sousOnglet}
-            onChange={setSousOnglet}
-          />
-          {sousOnglet === 'mois'  && renderFacturationMoisSuivi()}
-          {sousOnglet === 'annee' && renderFacturationAnneeAgente()}
+          {isMarine ? <FacturationAgentes /> : <FacturationAgentePropre />}
         </div>
       )}
 
