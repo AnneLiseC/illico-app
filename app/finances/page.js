@@ -1,9 +1,8 @@
 // app/finances/page.js
 'use client'
-import React from 'react'
-import { useState, useEffect, useRef } from 'react'
-import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, Tooltip, Legend, Filler } from 'chart.js'
-Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, Tooltip, Legend, Filler)
+import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, ArcElement, DoughnutController, Tooltip, Legend, Filler } from 'chart.js'
+Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, ArcElement, DoughnutController, Tooltip, Legend, Filler)
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
@@ -95,6 +94,23 @@ function CheckItem({ label, checked, date, onChange, onDateChange, alert, disabl
 const thL = (label) => <th key={label} className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</th>
 const thR = (label) => <th key={label} className="text-right px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</th>
 
+function Th({ children, right }) {
+  return <th style={{padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',textAlign:right?'right':'left',whiteSpace:'nowrap'}}>{children}</th>
+}
+function Td({ children, right, mono, dim, bold, accent }) {
+  return <td style={{padding:'14px 16px',fontSize:13,textAlign:right?'right':'left',color:accent?'var(--brand-800)':dim?'var(--ink-400)':'var(--ink-700)',fontWeight:bold?700:400,fontVariantNumeric:mono?'tabular-nums':undefined}}>{children}</td>
+}
+function StatutFacture({ f }) {
+  const s = f?.statut || 'a_facturer'
+  return <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,background:s==='paye'?'rgba(22,163,74,0.1)':s==='facture'?'rgba(0,87,142,0.1)':'var(--ink-100)',color:s==='paye'?'#15803d':s==='facture'?'var(--brand-700)':'var(--ink-500)'}}>{s==='paye'?'✅ Payé':s==='facture'?'📋 Facturé':'📋 À facturer'}</span>
+}
+function Row({ label, value, bold, dim, accent }) {
+  return <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8}}><span style={{fontSize:12,color:dim?'var(--ink-400)':'var(--ink-600)'}}>{label}</span><span style={{fontSize:13,fontWeight:bold?700:500,color:accent?'var(--brand-800)':'var(--ink-800)',fontVariantNumeric:'tabular-nums'}}>{value}</span></div>
+}
+function LegendRow({ color, label, value, pct }) {
+  return <div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:10,height:10,borderRadius:2,background:color,flexShrink:0}}/><span style={{fontSize:12,color:'var(--ink-600)',flex:1}}>{label}</span><span style={{fontSize:12,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{value}</span>{pct!==undefined&&<span style={{fontSize:11,color:'var(--ink-400)',minWidth:34,textAlign:'right'}}>{pct}%</span>}</div>
+}
+
 // ─── COMPOSANTS VISUELS ────────────────────────────────────────────────────────
 
 function FinKpiCard({ label, value, sub, tone }) {
@@ -185,8 +201,12 @@ export default function Finances() {
   const [saving, setSaving]                         = useState(false)
   const [erreur, setErreur]                         = useState('')
   const [succes, setSucces]                         = useState('')
-  const [onglet, setOnglet]                         = useState('mes_chantiers')
-  const [sousOnglet, setSousOnglet]                 = useState('chantier')
+  const [tab, setTab]                               = useState('synthese')
+  const [period, setPeriod]                         = useState('chantier')
+  const [scope, setScope]                           = useState('tous')
+  const [agentePeriod, setAgentePeriod]             = useState('mois')
+  const [factPeriod, setFactPeriod]                 = useState('mois')
+  const [suiviMode, setSuiviMode]                   = useState('ctp')
   const [dossierOuvert, setDossierOuvert]           = useState(null)
   const [dossiers, setDossiers]                     = useState([])
   const [redevances, setRedevances]                 = useState([])
@@ -195,12 +215,10 @@ export default function Finances() {
   const [nomFranchisee, setNomFranchisee]           = useState('CTP')
   const [facturesAgente, setFacturesAgente]         = useState([])
   const [uploadingFactureAgente, setUploadingFactureAgente] = useState(null)
-  const [objectifs, setObjectifs] = useState([])
-  const [anneeSelectionnee, setAnneeSelectionnee] = useState(new Date().getFullYear())
-  const [moisOuvert, setMoisOuvert] = useState(null)
-
+  const [objectifs, setObjectifs]                   = useState([])
+  const [anneeSelectionnee, setAnneeSelectionnee]   = useState(new Date().getFullYear())
+  const [moisOuvert, setMoisOuvert]                 = useState(null)
   const [sfSousOngletCTP, setSfSousOngletCTP]       = useState('mois')
-  const [sfSousOngletAgente, setSfSousOngletAgente] = useState('mois')
 
   const router = useRouter()
   const { user, profile, initialized } = useAuth()
@@ -774,7 +792,27 @@ export default function Finances() {
   const mesRedevancesReglees   = mesRedevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
   const monNet                 = mesDossiersGainsReels - mesRedevancesReglees - mesApporteurDu
 
-  
+  // ── PÉRIMÈTRE SCOPÉ ────────────────────────────────────────────────────────
+
+  const scopedDossiers = isMarine
+    ? (scope === 'tous' ? dossiers
+      : scope === 'moi'  ? mesDossiers
+      : dossiers.filter(d => d.referente?.id === scope))
+    : mesDossiers
+
+  const scopedKpi = useMemo(() => {
+    const totPreviNet  = scopedDossiers.reduce((s, d) => s + calculer(d).gainsAdminPreviTotal + calculer(d).gainsAgentePreviTotal, 0)
+    const totComHT     = scopedDossiers.reduce((s, d) => s + calculer(d).comHT, 0)
+    const totFraisHT   = scopedDossiers.reduce((s, d) => s + calculer(d).fraisHT, 0)
+    const totRoyalties = scopedDossiers.reduce((s, d) => s + calculer(d).royaltiesTotal, 0)
+    const objectifAnnuel = getObjectif('agence')
+    const pctObjectif    = objectifAnnuel > 0 ? Math.round(totalNetCTP / objectifAnnuel * 100) : 0
+    return { totPreviNet, totComHT, totFraisHT, totRoyalties, objectifAnnuel, pctObjectif }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedDossiers, objectifs])
+  const { totPreviNet, totComHT, totFraisHT, totRoyalties, objectifAnnuel, pctObjectif } = scopedKpi
+
+
   // ─────────────────────────────────────────────────────────────────────────────
   // COMPOSANTS DE RENDU
   // ─────────────────────────────────────────────────────────────────────────────
