@@ -14,7 +14,7 @@ import { Avatar } from '../components/shared'
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MOIS = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
-const MOIS_LABELS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+const MOIS_LABELS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc']
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILITAIRES PURS
@@ -2307,8 +2307,8 @@ export default function Finances() {
         data: {
           labels: MOIS_LABELS,
           datasets: [
-            { type: 'bar', label: 'Réel encaissé', data: reelData, backgroundColor: '#3B7DD8', borderRadius: 3, order: 2 },
-            { type: 'line', label: 'Prévisionnel', data: previData, borderColor: '#94a3b8', backgroundColor: 'transparent', borderWidth: 2, borderDash: [4,3], pointRadius: 3, pointBackgroundColor: '#94a3b8', tension: 0.3, order: 1 }
+            { type: 'bar', label: 'Réel', data: reelData, backgroundColor: 'rgba(0, 123, 255, 0.7)', borderColor: 'rgba(0, 123, 255, 1)', borderWidth: 1, barPercentage: 0.5,categoryPercentage: 0.5, yAxisID: 'y', },
+            { type: 'bar', label: 'Prévi', data: previData, backgroundColor: 'rgba(0, 123, 255, 0.1)',borderColor: 'rgba(0, 123, 255, 0.5)', borderDash: [5, 5], pointRadius: 0, yAxisID: 'y',}
           ]
         },
         options: {
@@ -2356,7 +2356,7 @@ export default function Finances() {
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
           {/* LEFT : bar+line chart + totaux */}
           <div className="card" style={{padding:20}}>
-            <div className="eyebrow" style={{marginBottom:12}}>Gains par mois {anneeEnCours}</div>
+            <div className="eyebrow" style={{marginBottom:12}}>Évolution mensuelle {anneeEnCours} \nCA RÉEL NET VS PRÉVISIONNEL </div>
             <div style={{display:'flex',gap:16,marginBottom:12,flexWrap:'wrap'}}>
               <div style={{display:'flex',alignItems:'center',gap:6}}>
                 <div style={{width:10,height:10,borderRadius:2,background:'#3B7DD8'}}/>
@@ -2364,15 +2364,15 @@ export default function Finances() {
               </div>
               <div style={{display:'flex',alignItems:'center',gap:6}}>
                 <div style={{width:10,height:10,borderRadius:2,border:'2px dashed #94a3b8',background:'transparent'}}/>
-                <span style={{fontSize:11,color:'var(--ink-500)'}}>Prévisionnel</span>
+                <span style={{fontSize:11,color:'var(--ink-500)'}}>Prévi</span>
               </div>
             </div>
             <div style={{position:'relative',height:220}}>
               <canvas id={chartId} role="img" aria-label="Gains mensuels" />
             </div>
             <div style={{marginTop:16,display:'flex',flexDirection:'column',gap:6}}>
-              <Row label="Total réel encaissé" value={fmt(reelTotal)} bold accent />
-              <Row label="Total prévisionnel" value={fmt(totPreviNet)} dim />
+              <Row label="Total réel" value={fmt(reelTotal)} bold accent />
+              <Row label="Total prévi" value={fmt(totPreviNet)} dim />
               {pctObjectif > 0 && <Row label={`Objectif ${anneeEnCours} (${pctObjectif}%)`} value={fmt(objectifAnnuel)} dim />}
             </div>
           </div>
@@ -2885,13 +2885,13 @@ export default function Finances() {
           <div className="eyebrow" style={{marginBottom:4}}>Pilotage financier</div>
           <h1 className="page">Finances</h1>
           <div style={{color:'var(--ink-500)',fontSize:13,marginTop:6}}>
-            Année <strong style={{color:'var(--ink-700)'}}>{anneeEnCours}</strong> · {dossiers.length} dossiers
+            Année <strong style={{color:'var(--ink-700)'}}>{anneeEnCours}</strong> · {dossiers.length} dossiers actifs
             {saving && <span style={{marginLeft:12,color:'var(--ink-400)',fontSize:12}}>Enregistrement…</span>}
           </div>
         </div>
         <div style={{display:'flex',gap:8}}>
           <button className="btn btn-ghost">📄 Exporter le bilan</button>
-          <button className="btn btn-primary">💰 Saisir un règlement</button>
+          <button className="btn btn-primary">🪙 Saisir un règlement</button>
         </div>
       </div>
 
@@ -2902,7 +2902,7 @@ export default function Finances() {
             <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
               background:tab==='previsionnel'?'var(--brand-800)':'var(--ink-100)',
               color:tab==='previsionnel'?'#fff':'var(--ink-500)'}}>F1</span>
-            Prévisionnel
+            F1 Prévisionnel
           </span>
         </button>
         <button className={`tab ${tab==='reel'?'active':''}`} onClick={() => setTab('reel')}>
@@ -2910,12 +2910,12 @@ export default function Finances() {
             <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
               background:tab==='reel'?'var(--brand-800)':'var(--ink-100)',
               color:tab==='reel'?'#fff':'var(--ink-500)'}}>F2</span>
-            Réel
+            F2 Réel
           </span>
         </button>
         <button className={`tab ${tab==='synthese'?'active':''}`} onClick={() => setTab('synthese')}>Synthèse</button>
-        <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => setTab('suivi')}>Suivi financier</button>
-        <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => setTab('facturation')}>Facturation agentes</button>
+        <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => setTab('suivi')}>📈Suivi financier</button>
+        <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => setTab('facturation')}>🗒️Facturation agentes</button>
       </div>
 
       {/* KPI strip */}
