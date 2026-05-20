@@ -180,10 +180,11 @@ const fmtEur = (n) =>
 /* ── Page ── */
 
 export default function Dashboard() {
-  const [erreur,    setErreur]    = useState('')
-  const [dossiers,  setDossiers]  = useState([])
-  const [objectifs, setObjectifs] = useState([])
-  const [loading,   setLoading]   = useState(true)
+  const [erreur,       setErreur]       = useState('')
+  const [dossiers,     setDossiers]     = useState([])
+  const [objectifs,    setObjectifs]    = useState([])
+  const [rdvAujourdhui, setRdvAujourdhui] = useState([])
+  const [loading,      setLoading]      = useState(true)
   const router = useRouter()
   const { user, profile, initialized, fetchProfile } = useAuth()
   const retriedRef = useRef(false)
@@ -206,7 +207,9 @@ export default function Dashboard() {
     if (!user) return
     const annee = new Date().getFullYear()
     async function loadData() {
-      const [{ data: dos }, { data: obj }] = await Promise.all([
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+      const tomorrowStart = new Date(todayStart); tomorrowStart.setDate(tomorrowStart.getDate() + 1)
+      const [{ data: dos }, { data: obj }, { data: rdv }] = await Promise.all([
         supabase.from('dossiers').select(`
           id, reference, statut, date_limite_devis, date_signature_contrat,
           frais_statut, frais_deduits, frais_consultation, part_agente, frais_part_agente,
@@ -217,9 +220,14 @@ export default function Dashboard() {
           suivi_financier(*)
         `).order('created_at', { ascending: false }),
         supabase.from('objectifs_ca').select('*').eq('annee', annee),
+        supabase.from('rendez_vous').select(`
+          id, titre, type_rdv, date_heure, duree_minutes, notes,
+          dossier:dossiers(reference, client:clients(prenom, nom))
+        `).gte('date_heure', todayStart.toISOString()).lt('date_heure', tomorrowStart.toISOString()).order('date_heure', { ascending: true }),
       ])
       if (dos) setDossiers(dos)
       if (obj) setObjectifs(obj)
+      if (rdv) setRdvAujourdhui(rdv)
       setLoading(false)
     }
     loadData()
@@ -252,6 +260,21 @@ export default function Dashboard() {
   const annee        = today.getFullYear()
   const moisCourant  = today.getMonth() + 1
   const todayLabel   = today.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const getWeekNumber = (d) => {
+    const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+    const dayNum = date.getUTCDay() || 7
+    date.setUTCDate(date.getUTCDate() + 4 - dayNum)
+    const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
+    return Math.ceil((((date - yearStart) / 86400000) + 1) / 7)
+  }
+  const semaine = getWeekNumber(today)
+  const relTime = (dateStr) => {
+    const diff = (Date.now() - new Date(dateStr)) / 1000
+    if (diff < 3600) return `il y a ${Math.round(diff / 60)} min`
+    if (diff < 86400) return `il y a ${Math.round(diff / 3600)}h`
+    if (diff < 86400 * 7) return `il y a ${Math.round(diff / 86400)}j`
+    return new Date(dateStr).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+  }
 
   const enCours    = dossiers.filter(d => d.statut === 'en_cours_chantier')
   const aRelancer  = dossiers.filter(d => {
@@ -293,12 +316,11 @@ export default function Dashboard() {
       {/* ── Welcome ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <div className="eyebrow" style={{ marginBottom: 6, textTransform: 'capitalize' }}>{todayLabel}</div>
+          <div className="eyebrow" style={{ marginBottom: 6, textTransform: 'capitalize' }}>{todayLabel} · semaine {semaine}</div>
           <h1 className="page" style={{ fontSize: 28 }}>Bonjour {profile.prenom} 👋</h1>
           <p style={{ color: 'var(--ink-500)', fontSize: 14, marginTop: 6 }}>
-            {aRelancer.length > 0
-              ? <>{`Tu as `}<strong style={{ color: 'var(--ink-700)' }}>{aRelancer.length} devis à relancer</strong> cette semaine.</>
-              : <>{roleLabel(profile.role)} · illiCO travaux Martigues</>}
+            Tu as <strong style={{ color: 'var(--ink-700)' }}>{aRelancer.length} devis à relancer</strong> cette semaine
+            {rdvAujourdhui.length > 0 && <> et <strong style={{ color: 'var(--ink-700)' }}>{rdvAujourdhui.length} rendez-vous</strong> programmés aujourd'hui</>}.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -413,6 +435,53 @@ export default function Dashboard() {
         {/* Colonne droite */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
 
+          {/* Aujourd'hui — agenda */}
+          <div className="card" style={{ padding: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div>
+                <h2 className="page" style={{ fontSize: 16 }}>Aujourd'hui</h2>
+                <div className="eyebrow" style={{ marginTop: 4 }}>
+                  {loading ? '…' : rdvAujourdhui.length === 0 ? 'Aucun rendez-vous' : `${rdvAujourdhui.length} rendez-vous`}
+                </div>
+              </div>
+              <button className="btn btn-ghost" onClick={() => router.push('/planning')}>Planning →</button>
+            </div>
+            {loading ? (
+              <div style={{ padding: '16px 0', textAlign: 'center' }}><span className="eyebrow">Chargement…</span></div>
+            ) : rdvAujourdhui.length === 0 ? (
+              <div style={{ padding: '16px 0', textAlign: 'center', color: 'var(--ink-400)', fontSize: 13 }}>
+                Aucun rendez-vous programmé aujourd'hui
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 0, position: 'relative' }}>
+                {rdvAujourdhui.map((a, i) => {
+                  const heure = new Date(a.date_heure).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+                  const tone = a.type_rdv === 'visite_technique_client' ? 'info' : a.type_rdv === 'visite_technique_artisan' ? 'ok' : a.type_rdv === 'presentation_devis' ? 'warn' : 'mute'
+                  const dotColor = tone === 'info' ? '#0094d4' : tone === 'ok' ? '#16a34a' : tone === 'warn' ? '#f59e0b' : '#94a3b8'
+                  const nomClient = a.dossier?.client ? `${a.dossier.client.prenom || ''} ${a.dossier.client.nom || ''}`.trim() : ''
+                  const label = a.titre || (a.type_rdv === 'visite_technique_client' ? 'Visite client' : a.type_rdv === 'visite_technique_artisan' ? 'Visite artisan' : a.type_rdv === 'presentation_devis' ? 'Présentation devis' : 'Rendez-vous')
+                  const sub = [a.dossier?.reference, nomClient].filter(Boolean).join(' · ')
+                  return (
+                    <div key={a.id} style={{ display: 'grid', gridTemplateColumns: '60px 12px 1fr', gap: 14, alignItems: 'flex-start', paddingBottom: 14, position: 'relative' }}>
+                      <div className="mono tnum" style={{ fontSize: 12, color: 'var(--ink-500)', fontWeight: 600, paddingTop: 2 }}>
+                        {heure}
+                        {a.duree_minutes && <div style={{ fontSize: 10, color: 'var(--ink-400)', fontWeight: 500, marginTop: 2 }}>{a.duree_minutes}min</div>}
+                      </div>
+                      <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
+                        <span style={{ width: 10, height: 10, borderRadius: 99, background: dotColor, marginTop: 6, boxShadow: '0 0 0 3px #fff, 0 0 0 4px rgba(0,148,212,0.18)', flexShrink: 0 }} />
+                        {i < rdvAujourdhui.length - 1 && <span style={{ position: 'absolute', top: 18, bottom: -4, width: 1, background: 'var(--ink-200)' }} />}
+                      </div>
+                      <div style={{ paddingBottom: 10 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink-900)' }}>{label}</div>
+                        {sub && <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>{sub}</div>}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Pipeline */}
           <div className="card" style={{ padding: 20 }}>
             <div style={{ marginBottom: 14 }}>
@@ -424,27 +493,30 @@ export default function Dashboard() {
               : <Pipeline dossiers={dossiers} />}
           </div>
 
-          {/* Chantiers récents */}
+          {/* Activité récente */}
           <div className="card" style={{ padding: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <div>
-                <h2 className="page" style={{ fontSize: 16 }}>Chantiers récents</h2>
-                <div className="eyebrow" style={{ marginTop: 4 }}>Derniers dossiers créés</div>
-              </div>
-              <button className="btn btn-ghost" onClick={() => router.push('/chantiers')}>Voir tout →</button>
+              <h2 className="page" style={{ fontSize: 16 }}>Activité récente</h2>
+              <button className="btn btn-ghost" style={{ padding: '4px 8px' }} onClick={() => router.push('/chantiers')}>Voir tout →</button>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {loading ? <span className="eyebrow">Chargement…</span> : dossiers.slice(0, 6).map(d => {
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {loading ? <span className="eyebrow">Chargement…</span> : dossiers.slice(0, 5).map(d => {
                 const nomClient = d.client ? `${d.client.prenom || ''} ${d.client.nom || ''}`.trim() : '—'
                 const s = STATUT_STYLE[d.statut] || { bg: 'var(--surface-2)', color: 'var(--ink-500)', label: d.statut }
+                const actionLabel = d.statut === 'en_cours_chantier' ? 'chantier démarré' : d.statut === 'termine' ? 'chantier terminé' : d.statut === 'devis_en_attente' || d.statut === 'devis_a_modifier' ? 'devis en cours' : 'dossier mis à jour'
                 return (
-                  <button key={d.id} onClick={() => router.push(`/chantiers/${d.id}`)} className="row-hover"
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 4px', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid var(--ink-100)', cursor: 'pointer', width: '100%' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <span className="mono" style={{ fontSize: 11, color: 'var(--brand-800)', fontWeight: 600, marginRight: 8 }}>{d.reference}</span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)' }}>{nomClient}</span>
+                  <button key={d.id} onClick={() => router.push(`/chantiers/${d.id}`)}
+                    style={{ display: 'flex', gap: 12, alignItems: 'flex-start', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, width: '100%' }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--brand-50)', color: 'var(--brand-800)', display: 'grid', placeItems: 'center', flex: '0 0 32px', fontSize: 14 }}>
+                      {d.statut === 'en_cours_chantier' ? '🔨' : d.statut === 'termine' ? '✅' : d.statut === 'devis_en_attente' || d.statut === 'devis_a_modifier' ? '📄' : '📁'}
                     </div>
-                    <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: s.bg, color: s.color, whiteSpace: 'nowrap' }}>{s.label}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.4 }}>
+                        <strong style={{ color: 'var(--ink-900)' }}>{nomClient}</strong> — {actionLabel}{' '}
+                        <span className="mono" style={{ color: 'var(--brand-800)' }}>{d.reference}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3 }}>{relTime(d.created_at)}</div>
+                    </div>
                   </button>
                 )
               })}
