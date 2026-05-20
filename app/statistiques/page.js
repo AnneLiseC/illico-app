@@ -14,7 +14,7 @@ const fmt = (n) => {
   return int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + '.' + dec + ' €'
 }
 const fmtPct = (n, dec = 1) => `${(n || 0).toFixed(dec)}%`
-const fmtDays = (n) => `${Math.round(n || 0)} j`
+const fmtDays = (n) => `${Math.round(n || 0)} j`
 const MOIS_SHORT = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc']
 const TYPO_LABELS = { courtage: 'Courtage', amo: 'AMO', consultation: 'Consultation', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio jardin' }
 const TYPO_COLORS = { courtage: '#2563EB', amo: '#7C3AED', consultation: '#059669', estimo: '#D97706', merad: '#34df16', audit_energetique: '#DB2777', studio_jardin: '#0891B2' }
@@ -136,6 +136,37 @@ function DoughnutChart({ labels, data, colors, height = 160 }) {
   return el
 }
 
+function PercentDonut({ value, label, color = '#059669' }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!ref.current) return
+    const el = ref.current
+    if (el._c) el._c.destroy()
+    el._c = new Chart(el, {
+      type: 'doughnut',
+      data: { labels: [label, ''], datasets: [{ data: [value, 100 - value], backgroundColor: [color, '#eef2f7'], borderWidth: 0 }] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: '72%', plugins: { legend: { display: false }, tooltip: { enabled: false } } },
+    })
+    return () => { if (el._c) { el._c.destroy(); el._c = null } }
+  }, [value, label, color])
+  return (
+    <div className="card" style={{padding:24, display:'flex', alignItems:'center', gap:18}}>
+      <div style={{position:'relative', width:120, height:120, flexShrink:0}}>
+        <canvas ref={ref} style={{width:'100%', height:'100%'}} />
+        <div style={{position:'absolute', inset:0, display:'grid', placeItems:'center', pointerEvents:'none'}}>
+          <span className="tnum" style={{fontSize:22, fontWeight:800, color:'var(--ink-900)'}}>{value}%</span>
+        </div>
+      </div>
+      <div>
+        <div className="eyebrow">{label}</div>
+        <div style={{fontSize:13, color:'var(--ink-500)', marginTop:6}}>
+          {value >= 60 ? 'Excellent' : value >= 40 ? 'Bon' : 'À améliorer'}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Dlt({ value, inverse = false }) {
   if (value === null || value === undefined || isNaN(value)) return <span style={{fontSize:11, color:'var(--ink-300)'}}>—</span>
   const isGood = inverse ? value < 0 : value > 0
@@ -152,6 +183,7 @@ function PBar({ value, max, color = '#2563EB', height = 6 }) {
 export default function Statistiques() {
   const [dossiers, setDossiers] = useState([])
   const [agentes, setAgentes] = useState([])
+  const [apporteurs, setApporteurs] = useState([])
   const [loading, setLoading] = useState(true)
   const [onglet, setOnglet] = useState('overview')
   const [annee, setAnnee] = useState(new Date().getFullYear())
@@ -165,9 +197,11 @@ export default function Statistiques() {
     Promise.all([
       supabase.from('dossiers').select(`*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), client:clients(id, prenom, nom, civilite), devis_artisans(*, artisan:artisans(id, entreprise, metier, sans_royalties)), suivi_financier(*)`).order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').in('role', ['admin', 'agente']).order('prenom'),
-    ]).then(([{ data: dossiersData }, { data: agentesData }]) => {
+      supabase.from('clients').select('id, prenom, nom, apporteur_affaires, apporteur_pourcentage, dossiers(id)').eq('apporteur_affaires', true).order('nom'),
+    ]).then(([{ data: dossiersData }, { data: agentesData }, { data: apporteursData }]) => {
       setDossiers(dossiersData || [])
       setAgentes(agentesData || [])
+      setApporteurs(apporteursData || [])
       setLoading(false)
     })
   }, [initialized, user?.id, profile?.id, router])
@@ -235,12 +269,6 @@ export default function Statistiques() {
     return Object.values(map).map(a => ({ ...a, nbChantiers: a.chantiers.size, tauxSign: a.nb > 0 ? (a.signes / a.nb) * 100 : 0 })).sort((a, b) => b.volumeHT - a.volumeHT).slice(0, 15)
   }, [dN])
 
-  const topClients = (() => {
-    const map = {}
-    dN.forEach(d => { const id = d.client?.id; if (!id) return; if (!map[id]) map[id] = { id, prenom: d.client?.prenom || '', nom: d.client?.nom || '', ca: 0, nb: 0, typologies: new Set() }; map[id].ca += d._s.montantTravauxHT; map[id].nb++; if (d.typologie) map[id].typologies.add(d.typologie) })
-    return Object.values(map).map(c => ({ ...c, typologies: [...c.typologies] })).sort((a, b) => b.ca - a.ca).slice(0, 15)
-  })()
-
   const filterAnnee = (list, y) => list.filter(d => { const dt = d.date_signature_contrat || d.created_at; return dt && new Date(dt).getFullYear() === y })
   const enrichir = (list) => list.map(d => ({ ...d, _s: calculerStats(d) }))
   const caParMois = (list) => { const arr = Array(12).fill(0); list.forEach(d => { const dt = d.date_signature_contrat || d.created_at; if (dt) arr[new Date(dt).getMonth()] += d._s.netTotal }); return arr }
@@ -253,13 +281,17 @@ export default function Statistiques() {
 
   const onglets = [
     { key: 'overview', label: "Vue d'ensemble" },
-    { key: 'commercial', label: 'Commercial' },
-    { key: 'financier', label: 'Financier' },
-    { key: 'operationnel', label: 'Opérationnel' },
-    ...(isMarine ? [{ key: 'equipe', label: 'Équipe' }] : []),
+    { key: 'finance',  label: 'Finance' },
+    { key: 'equipe',   label: 'Équipe' },
+    { key: 'sources',  label: "Sources d'apport" },
+    { key: 'compare',  label: 'Comparaison N/N-1' },
   ]
 
   if (loading) return <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>Chargement…</div>
+
+  const tauxTransfoRound = Math.round(mN.tauxTransfo)
+  const chantiersActifsPct = mN.nb > 0 ? Math.round(dN.filter(d => d.statut === 'en_cours_chantier').length / mN.nb * 100) : 0
+  const dossierSignesPct = mN.nb > 0 ? Math.round(mN.avecDevis / mN.nb * 100) : 0
 
   return (
     <div className="page-enter" style={{display:'flex', flexDirection:'column', gap:24}}>
@@ -289,125 +321,49 @@ export default function Statistiques() {
         ))}
       </div>
 
+      {/* ── Vue d'ensemble ── */}
       {onglet === 'overview' && (
         <div style={{display:'flex', flexDirection:'column', gap:18}}>
-          <div>
-            <ST sub={`${annee} vs ${annee - 1} — variation en %`}>Indicateurs clés de performance</ST>
-            <div className="kpi-grid" style={{marginBottom:6}}>
-              <KPICard label="Chantiers ouverts" value={mN.nb} sub={`${mN.avecDevis} avec devis signé`} delta={delta(mN.nb, mN1.nb)} />
-              <KPICard label="Volume travaux HT" value={fmt(mN.travaux)} sub={`N-1 : ${fmt(mN1.travaux)}`} delta={delta(mN.travaux, mN1.travaux)} color="#1D4ED8"/>
-              <KPICard label="Net agence" value={fmt(mN.netTotal)} sub={`Royalties : ${fmt(mN.royalties)}`} delta={delta(mN.netTotal, mN1.netTotal)} color="#7C3AED"/>
-              <KPICard label="Taux de transformation" value={fmtPct(mN.tauxTransfo)} sub={`N-1 : ${fmtPct(mN1.tauxTransfo)}`} delta={delta(mN.tauxTransfo, mN1.tauxTransfo)} color="#059669"  />
-            </div>
-          </div>
           <div className="kpi-grid">
-            <KPICard label="Panier actif" value={fmt(mN.pipeline)} sub={`${mN.parStatut.en_cours} dossier(s) en cours`} color="#0891B2" />
+            <KPICard label="Taux de transformation" value={fmtPct(mN.tauxTransfo)} sub={`N-1 : ${fmtPct(mN1.tauxTransfo)}`} delta={delta(mN.tauxTransfo, mN1.tauxTransfo)} color="#059669" />
+            <KPICard label="Volume travaux HT" value={fmt(mN.travaux)} sub={`N-1 : ${fmt(mN1.travaux)}`} delta={delta(mN.travaux, mN1.travaux)} color="#1D4ED8"/>
+            <KPICard label="Net agence" value={fmt(mN.netTotal)} sub={`Royalties : ${fmt(mN.royalties)}`} delta={delta(mN.netTotal, mN1.netTotal)} color="#7C3AED"/>
             <KPICard label="Panier moyen" value={fmt(mN.panierMoyen)} sub={`N-1 : ${fmt(mN1.panierMoyen)}`} delta={delta(mN.panierMoyen, mN1.panierMoyen)} />
-            <KPICard label="Durée moy. chantier" value={mN.dureeMoyenne !== null ? fmtDays(mN.dureeMoyenne) : '—'} sub="démarrage → fin" />
-            <KPICard label="Délai moy. encaissement" value={mN.delaiMoyen !== null ? fmtDays(mN.delaiMoyen) : '—'} sub="signature → paiement" />
           </div>
-          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:18}}>
+
+          <div style={{display:'grid', gridTemplateColumns:'1.4fr 1fr', gap:18}}>
             <div className="card" style={{padding:24}}>
-              <ST>Statuts des dossiers</ST>
-              <div style={{display:'flex', flexDirection:'column', gap:12}}>
-                {[{ key: 'en_cours', label: 'En cours', color: '#059669' }, { key: 'en_attente', label: 'En attente', color: '#D97706' }, { key: 'termine', label: 'Terminés', color: '#6B7280' }, { key: 'annule', label: 'Annulés', color: '#DC2626' }].map(({ key, label, color }) => (
-                  <div key={key} style={{display:'flex', alignItems:'center', gap:10}}>
-                    <span style={{fontSize:12, color:'var(--ink-500)', width:96, flexShrink:0}}>{label}</span>
-                    <PBar value={mN.parStatut[key]} max={mN.nb || 1} color={color} />
-                    <span className="tnum" style={{fontSize:13, fontWeight:700, color:'var(--ink-800)', width:24, textAlign:'right'}}>{mN.parStatut[key]}</span>
-                  </div>
-                ))}
-              </div>
+              <ST sub={`Comparaison mensuelle ${annee} vs ${annee - 1}`}>CA net mensuel</ST>
+              <BarChart labels={MOIS_SHORT} datasets={[{ label: String(annee), data: caParMoisN, backgroundColor: '#2563EB', borderRadius: 4 }, { label: String(annee - 1), data: caParMoisN1, backgroundColor: '#BFDBFE', borderRadius: 4 }]} />
             </div>
             <div className="card" style={{padding:24}}>
-              <ST>Répartition typologies</ST>
+              <ST>Typologies de dossier</ST>
               {typologies.length === 0 ? <p style={{fontSize:12, color:'var(--ink-400)', textAlign:'center', paddingTop:24}}>Aucune donnée</p> : (
-                <div style={{display:'flex', gap:20, alignItems:'center'}}>
-                  <div style={{ width: 150, flexShrink: 0 }}>
-                    <DoughnutChart labels={typologies.map(([, t]) => t.label)} data={typologies.map(([, t]) => t.nb)} colors={typologies.map(([, t]) => t.color)} height={150} />
-                  </div>
-                  <div style={{display:'flex', flexDirection:'column', gap:8, flex:1}}>
-                    {typologies.map(([key, t]) => (
-                      <div key={key} style={{display:'flex', alignItems:'center', gap:8}}>
-                        <div style={{width:8, height:8, borderRadius:99, flexShrink:0, backgroundColor:t.color}} />
-                        <span style={{fontSize:12, color:'var(--ink-600)', flex:1}}>{t.label}</span>
-                        <span className="tnum" style={{fontSize:12, fontWeight:700, color:'var(--ink-800)'}}>{t.nb}</span>
-                        <span style={{fontSize:12, color:'var(--ink-400)'}}>{fmtPct((t.nb / (mN.nb || 1)) * 100, 0)}</span>
+                <div style={{display:'flex', flexDirection:'column', gap:12}}>
+                  {typologies.map(([key, t]) => (
+                    <div key={key} style={{display:'flex', alignItems:'center', gap:10}}>
+                      <div style={{flex:'0 0 130px', fontSize:12.5, color:'var(--ink-700)'}}>{t.label}</div>
+                      <div style={{flex:1, height:14, background:'var(--ink-100)', borderRadius:6, overflow:'hidden'}}>
+                        <div style={{height:'100%', width:`${mN.nb > 0 ? (t.nb / mN.nb * 100) : 0}%`, backgroundColor: t.color, borderRadius:6}}/>
                       </div>
-                    ))}
-                  </div>
+                      <div style={{flex:'0 0 32px', textAlign:'right', fontWeight:700, color:'var(--ink-900)', fontSize:13}} className="tnum">{t.nb}</div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           </div>
-          <div className="card" style={{padding:24}}>
-            <ST sub={`Comparaison mensuelle ${annee} vs ${annee - 1}`}>CA net mensuel</ST>
-            <BarChart labels={MOIS_SHORT} datasets={[{ label: String(annee), data: caParMoisN, backgroundColor: '#2563EB', borderRadius: 4 }, { label: String(annee - 1), data: caParMoisN1, backgroundColor: '#BFDBFE', borderRadius: 4 }]} />
-          </div>
-          <div className="card" style={{padding:24}}>
-            <ST sub="CA net cumulé sur l'exercice">Progression cumulative</ST>
-            <LineChart labels={MOIS_SHORT} datasets={[{ label: String(annee), data: cumulatif(caParMoisN), borderColor: '#2563EB', backgroundColor: 'rgba(37,99,235,0.08)', tension: 0.4, fill: true, pointRadius: 4, pointBackgroundColor: '#2563EB' }, { label: String(annee - 1), data: cumulatif(caParMoisN1), borderColor: '#CBD5E1', backgroundColor: 'transparent', tension: 0.4, borderDash: [5, 4], pointRadius: 3 }]} />
+
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:18}}>
+            <PercentDonut value={tauxTransfoRound} label="Taux transfo" color="#16a34a"/>
+            <PercentDonut value={chantiersActifsPct} label="Chantiers actifs" color="#0094d4"/>
+            <PercentDonut value={dossierSignesPct} label="Dossiers signés" color="#7c3aed"/>
           </div>
         </div>
       )}
 
-      {onglet === 'commercial' && (
-        <div style={{display:'flex', flexDirection:'column', gap:18}}>
-          <div>
-            <ST sub="Pipeline, transformation, volume signé">Performance commerciale</ST>
-            <div className="kpi-grid">
-              <KPICard label="Taux de transformation" value={fmtPct(mN.tauxTransfo)} sub={`N-1 : ${fmtPct(mN1.tauxTransfo)}`} delta={delta(mN.tauxTransfo, mN1.tauxTransfo)} color="#059669" />
-              <KPICard label="Dossiers signés" value={mN.avecDevis} sub={`sur ${mN.nb} ouverts`} delta={delta(mN.avecDevis, mN1.avecDevis)} />
-              <KPICard label="Volume travaux HT" value={fmt(mN.travaux)} delta={delta(mN.travaux, mN1.travaux)} color="#1D4ED8"/>
-              <KPICard label="Panier moyen" value={fmt(mN.panierMoyen)} delta={delta(mN.panierMoyen, mN1.panierMoyen)} />
-            </div>
-          </div>
-          <div className="card" style={{padding:24}}>
-            <ST sub="Valeur des dossiers actifs avec devis non refusés">Pipeline actif — dossiers en cours</ST>
-            <div style={{display:'grid', gridTemplateColumns:'1fr 2fr', gap:24}}>
-              <div style={{display:'flex', flexDirection:'column', gap:10}}>
-                <div style={{padding:16, background:'rgba(37,99,235,0.06)', borderRadius:12, border:'1px solid rgba(37,99,235,0.15)'}}><p style={{fontSize:11, color:'#2563EB', fontWeight:600, marginBottom:4}}>Valeur totale</p><p className="tnum" style={{fontSize:22, fontWeight:800, color:'#1D4ED8'}}>{fmt(mN.pipeline)}</p><p style={{fontSize:11, color:'#60A5FA', marginTop:4}}>{mN.parStatut.en_cours} dossier(s)</p></div>
-                <div style={{padding:16, background:'rgba(124,58,237,0.06)', borderRadius:12, border:'1px solid rgba(124,58,237,0.15)'}}><p style={{fontSize:11, color:'#7C3AED', fontWeight:600, marginBottom:4}}>Commissions potentielles</p><p className="tnum" style={{fontSize:18, fontWeight:800, color:'#6D28D9'}}>{fmt(mN.comHT)}</p></div>
-                <div style={{padding:16, background:'rgba(5,150,105,0.06)', borderRadius:12, border:'1px solid rgba(5,150,105,0.15)'}}><p style={{fontSize:11, color:'#059669', fontWeight:600, marginBottom:4}}>Honoraires potentiels</p><p className="tnum" style={{fontSize:18, fontWeight:800, color:'#047857'}}>{fmt(mN.honNet)}</p></div>
-              </div>
-              <div style={{display:'flex', flexDirection:'column', gap:8}}>
-                <p style={{fontSize:11.5, fontWeight:600, color:'var(--ink-400)', marginBottom:4}}>Dossiers en cours — volume pipeline HT</p>
-                {dN.filter(d => d.statut === 'en_cours' && d._s.montantPipelineHT > 0).sort((a, b) => b._s.montantPipelineHT - a._s.montantPipelineHT).slice(0, 8).map(d => {
-                  const maxP = Math.max(...dN.filter(d => d.statut === 'en_cours').map(d => d._s.montantPipelineHT), 1)
-                  return (<div key={d.id} style={{display:'flex', alignItems:'center', gap:10}}><span style={{fontSize:11.5, color:'var(--ink-500)', width:112, flexShrink:0}} className="clip-1">{d.client?.prenom} {d.client?.nom}</span><PBar value={d._s.montantPipelineHT} max={maxP} color={TYPO_COLORS[d.typologie] || '#2563EB'} height={8} /><span className="tnum" style={{fontSize:11.5, fontWeight:700, color:'var(--ink-700)', width:96, textAlign:'right'}}>{fmt(d._s.montantPipelineHT)}</span></div>)
-                })}
-              </div>
-            </div>
-          </div>
-          <div className="card" style={{padding:24}}>
-            <ST sub="Volume et commissions par type de mission">Répartition par typologie</ST>
-            {typologies.length === 0 ? <p style={{fontSize:12, color:'var(--ink-400)', textAlign:'center', paddingTop:24}}>Aucune donnée</p> : (
-              <div style={{display:'flex', flexDirection:'column', gap:16}}>
-                <div style={{display:'flex', borderRadius:99, overflow:'hidden', height:10}}>{typologies.map(([key, t]) => <div key={key} style={{ flex: t.nb, backgroundColor: t.color }} />)}</div>
-                <table style={{width:'100%'}}>
-                  <thead style={{borderBottom:'1px solid var(--ink-100)'}}><tr>
-                    {['Typologie','Dossiers','CA HT','COM HT','Honoraires','Taux moy.'].map((h,i) => <th key={h} style={{textAlign:i===0?'left':'right',padding:'8px 0',fontSize:11,fontWeight:700,color:'var(--ink-400)',textTransform:'uppercase'}}>{h}</th>)}
-                  </tr></thead>
-                  <tbody>
-                    {typologies.map(([key, t]) => (
-                      <tr key={key} className="row-hover" style={{borderTop:'1px solid var(--ink-100)'}}>
-                        <td style={{padding:'12px 0'}}><div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:10,height:10,borderRadius:99,backgroundColor:t.color}}/><span style={{fontWeight:600,color:'var(--ink-800)'}}>{t.label}</span></div></td>
-                        <td className="tnum" style={{padding:'12px 0',textAlign:'right',color:'var(--ink-600)',fontWeight:600}}>{t.nb}</td>
-                        <td className="tnum" style={{padding:'12px 0',textAlign:'right',fontWeight:700,color:t.color}}>{fmt(t.ca)}</td>
-                        <td className="tnum" style={{padding:'12px 0',textAlign:'right',color:'var(--ink-600)'}}>{fmt(t.com)}</td>
-                        <td className="tnum" style={{padding:'12px 0',textAlign:'right',color:'var(--ink-600)'}}>{fmt(t.hon)}</td>
-                        <td className="tnum" style={{padding:'12px 0',textAlign:'right',color:'var(--ink-500)'}}>{t.ca > 0 ? fmtPct((t.com / t.ca) * 100) : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {onglet === 'financier' && (
+      {/* ── Finance ── */}
+      {onglet === 'finance' && (
         <div style={{display:'flex', flexDirection:'column', gap:18}}>
           <div>
             <ST sub={`Marges, royalties, répartition — ${annee} vs ${annee - 1}`}>Performance financière</ST>
@@ -455,34 +411,6 @@ export default function Statistiques() {
             <ST sub="Progression cumulée sur l'exercice">CA net cumulatif</ST>
             <LineChart labels={MOIS_SHORT} datasets={[{ label: String(annee), data: cumulatif(caParMoisN), borderColor: '#7C3AED', backgroundColor: 'rgba(124,58,237,0.07)', tension: 0.4, fill: true, pointRadius: 4, pointBackgroundColor: '#7C3AED' }, { label: String(annee - 1), data: cumulatif(caParMoisN1), borderColor: '#CBD5E1', backgroundColor: 'transparent', tension: 0.4, borderDash: [5, 4], pointRadius: 3 }]} />
           </div>
-        </div>
-      )}
-
-      {onglet === 'operationnel' && (
-        <div style={{display:'flex', flexDirection:'column', gap:18}}>
-          <div>
-            <ST sub="Durées, délais, fiabilité">Performance opérationnelle</ST>
-            <div className="kpi-grid">
-              <KPICard label="Durée moy. chantier" value={mN.dureeMoyenne !== null ? fmtDays(mN.dureeMoyenne) : '—'} sub="démarrage → fin" />
-              <KPICard label="Délai moy. encaissement" value={mN.delaiMoyen !== null ? fmtDays(mN.delaiMoyen) : '—'} sub="signature → paiement" />
-              <KPICard label="Chantiers terminés" value={mN.parStatut.termine} sub={`sur ${mN.nb} total`} color="#059669" />
-              <KPICard label="Taux complétion" value={mN.nb > 0 ? fmtPct((mN.parStatut.termine / mN.nb) * 100) : '—'} color="#0891B2" />
-            </div>
-          </div>
-          <div className="card" style={{padding:24}}>
-            <ST sub="Délai moyen entre signature contrat et paiements réglés">Délais d'encaissement par dossier</ST>
-            {dN.filter(d => d._s.delaiEncaissementJours !== null).length === 0 ? (
-              <p style={{fontSize:12,color:'var(--ink-400)',textAlign:'center',paddingTop:24}}>Aucune donnée de paiement disponible</p>
-            ) : (
-              <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                {dN.filter(d => d._s.delaiEncaissementJours !== null).sort((a, b) => b._s.delaiEncaissementJours - a._s.delaiEncaissementJours).map(d => {
-                  const maxD = Math.max(...dN.filter(d => d._s.delaiEncaissementJours !== null).map(d => d._s.delaiEncaissementJours), 1)
-                  const color = d._s.delaiEncaissementJours > 60 ? '#DC2626' : d._s.delaiEncaissementJours > 30 ? '#D97706' : '#059669'
-                  return (<div key={d.id} style={{display:'flex',alignItems:'center',gap:10}}><span style={{fontSize:11.5,color:'var(--ink-500)',width:144,flexShrink:0}} className="clip-1">{d.client?.prenom} {d.client?.nom}</span><span style={{fontSize:11.5,color:'var(--ink-400)',width:112,flexShrink:0}} className="clip-1">{d.reference}</span><PBar value={d._s.delaiEncaissementJours} max={maxD} color={color} height={6} /><span className="tnum" style={{fontSize:11.5,fontWeight:700,width:48,textAlign:'right',color}}>{fmtDays(d._s.delaiEncaissementJours)}</span></div>)
-                })}
-              </div>
-            )}
-          </div>
           <div className="card" style={{padding:0, overflow:'hidden'}}>
             <div style={{padding:'16px 24px', borderBottom:'1px solid var(--ink-100)', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
               <div><p style={{fontWeight:700,color:'var(--ink-900)',fontSize:14}}>Classement artisans — {annee}</p><p style={{fontSize:11.5,color:'var(--ink-400)'}}>{topArtisans.length} artisans · volume confié HT</p></div>
@@ -492,7 +420,7 @@ export default function Statistiques() {
               <thead style={{background:'var(--surface-2)', borderBottom:'1px solid var(--ink-100)'}}>
                 <tr>
                   {['#','Artisan','Chantiers','Devis signés','Volume HT','COM HT'].map((h,i) => (
-                    <th key={h} className={h==='Volume HT'?'hidden sm:table-cell':''} style={{textAlign:i<=1?'left':'right',padding:'10px 16px',fontSize:11,fontWeight:700,color:'var(--ink-400)',textTransform:'uppercase'}}>{h}</th>
+                    <th key={h} style={{textAlign:i<=1?'left':'right',padding:'10px 16px',fontSize:11,fontWeight:700,color:'var(--ink-400)',textTransform:'uppercase'}}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -503,7 +431,7 @@ export default function Statistiques() {
                     <td style={{padding:'12px 16px'}}><p style={{fontSize:13,fontWeight:600,color:'var(--ink-800)'}}>{a.entreprise}</p><p style={{fontSize:11.5,color:'var(--ink-400)'}}>{a.metier}</p></td>
                     <td className="tnum" style={{padding:'12px 16px',textAlign:'right',color:'var(--ink-600)'}}>{a.nbChantiers}</td>
                     <td style={{padding:'12px 16px',textAlign:'right'}}><span style={{fontSize:11.5,fontWeight:600}}>{a.signes}/{a.nb}</span><span style={{fontSize:11.5,color:'var(--ink-400)',marginLeft:4}}>({fmtPct(a.tauxSign, 0)})</span></td>
-                    <td className="tnum hidden sm:table-cell" style={{padding:'12px 16px',textAlign:'right',fontWeight:700,color:'#1D4ED8'}}>{fmt(a.volumeHT)}</td>
+                    <td className="tnum" style={{padding:'12px 16px',textAlign:'right',fontWeight:700,color:'#1D4ED8'}}>{fmt(a.volumeHT)}</td>
                     <td className="tnum" style={{padding:'12px 24px',textAlign:'right',color:'var(--ink-600)'}}>{fmt(a.comHT)}</td>
                   </tr>
                 ))}
@@ -514,63 +442,127 @@ export default function Statistiques() {
         </div>
       )}
 
-      {onglet === 'equipe' && isMarine && (
+      {/* ── Équipe ── */}
+      {onglet === 'equipe' && (
         <div style={{display:'flex', flexDirection:'column', gap:18}}>
-          <ST sub={`Performance individuelle — exercice ${annee} vs ${annee - 1}`}>Équipe</ST>
-          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(280px, 1fr))', gap:18}}>
-            {statsAgentes.map(({ agente, color, m, mP }) => (
-              <div key={agente.id} className="card" style={{padding:24, borderColor:color.border, display:'flex', flexDirection:'column', gap:16}}>
-                <div style={{display:'flex', alignItems:'center', gap:8}}>
-                  <div style={{width:12, height:12, borderRadius:99, backgroundColor:color.dot, flexShrink:0}} />
-                  <span style={{fontWeight:700, color:'var(--ink-900)', flex:1}}>{agente.prenom} {agente.nom}</span>
-                  <span style={{fontSize:11, padding:'2px 8px', borderRadius:99, color:'#fff', backgroundColor:color.dot}}>{agente.role === 'admin' ? 'Franchisée' : 'Agente'}</span>
-                </div>
-                <div style={{display:'flex', flexDirection:'column', gap:4}}>
-                  {[
-                    { label: 'Chantiers', vN: m.nb, vP: mP.nb, fmtFn: v => v },
-                    { label: 'Volume HT', vN: m.travaux, vP: mP.travaux, fmtFn: fmt },
-                    { label: 'Taux transfo', vN: m.tauxTransfo, vP: mP.tauxTransfo, fmtFn: fmtPct },
-                    { label: 'Net agence', vN: m.netTotal, vP: mP.netTotal, fmtFn: fmt },
-                    { label: 'Gains perso', vN: agente.role === 'admin' ? m.gainAdmin : m.gainAgente, vP: agente.role === 'admin' ? mP.gainAdmin : mP.gainAgente, fmtFn: fmt },
-                  ].map(({ label, vN, vP, fmtFn }) => (
-                    <div key={label} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid var(--ink-100)'}}>
-                      <span style={{fontSize:12, color:'var(--ink-500)'}}>{label}</span>
-                      <div style={{display:'flex', alignItems:'center', gap:8}}><span style={{fontSize:12, fontWeight:700, color:'var(--ink-800)'}}>{fmtFn(vN)}</span><Dlt value={delta(vN, vP)} /></div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-          {statsAgentes.length > 1 && (
-            <div className="card" style={{padding:24}}>
-              <ST sub="CA net mensuel par membre de l'équipe">CA mensuel comparé</ST>
-              <BarChart labels={MOIS_SHORT} datasets={statsAgentes.map(({ agente, color, caParMoisA }) => ({ label: `${agente.prenom} ${agente.nom}`, data: caParMoisA, backgroundColor: color.dot, borderRadius: 4 }))} />
-              <div style={{display:'flex', gap:16, marginTop:12, flexWrap:'wrap'}}>{statsAgentes.map(({ agente, color }) => (<div key={agente.id} style={{display:'flex', alignItems:'center', gap:6}}><div style={{width:10,height:10,borderRadius:3,backgroundColor:color.dot}}/><span style={{fontSize:12,color:'var(--ink-500)'}}>{agente.prenom} {agente.nom}</span></div>))}</div>
-            </div>
-          )}
+          <ST sub={`Performance individuelle — exercice ${annee}`}>Équipe</ST>
           <div className="card" style={{padding:0, overflow:'hidden'}}>
-            <div style={{padding:'16px 24px', borderBottom:'1px solid var(--ink-100)'}}><p style={{fontWeight:700,color:'var(--ink-900)',fontSize:14}}>Récapitulatif équipe — {annee}</p></div>
-            <table style={{width:'100%'}}>
+            <table style={{width:'100%', borderCollapse:'collapse', fontSize:13}}>
               <thead style={{background:'var(--surface-2)', borderBottom:'1px solid var(--ink-100)'}}>
-                <tr>{['Membre','Chantiers','Volume HT','Taux transfo','Net agence','Gains perso'].map((h,i) => <th key={h} style={{textAlign:i===0?'left':'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-400)',textTransform:'uppercase'}}>{h}</th>)}</tr>
+                <tr>
+                  {['Membre','Dossiers','Contrats signés','CA HT','Panier moyen','Taux transfo'].map((h,i) => (
+                    <th key={h} style={{textAlign:i===0?'left':'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-400)',textTransform:'uppercase'}}>{h}</th>
+                  ))}
+                </tr>
               </thead>
               <tbody>
-                {statsAgentes.map(({ agente, color, m }) => (
-                  <tr key={agente.id} className="row-hover" style={{borderTop:'1px solid var(--ink-100)'}}>
-                    <td style={{padding:'12px 16px'}}><div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:8,height:8,borderRadius:99,backgroundColor:color.dot}}/><span style={{fontWeight:600,color:'var(--ink-800)'}}>{agente.prenom} {agente.nom}</span><span style={{fontSize:11.5,color:'var(--ink-400)'}}>{agente.role === 'admin' ? 'Franchisée' : 'Agente'}</span></div></td>
-                    <td className="tnum" style={{padding:'12px 16px',textAlign:'right',color:'var(--ink-600)'}}>{m.nb}</td>
-                    <td className="tnum" style={{padding:'12px 16px',textAlign:'right',fontWeight:700,color:color.dot}}>{fmt(m.travaux)}</td>
-                    <td className="tnum" style={{padding:'12px 16px',textAlign:'right',color:'var(--ink-600)'}}>{fmtPct(m.tauxTransfo)}</td>
-                    <td className="tnum" style={{padding:'12px 16px',textAlign:'right',color:'var(--ink-600)'}}>{fmt(m.netTotal)}</td>
-                    <td className="tnum" style={{padding:'12px 24px',textAlign:'right',fontWeight:700,color:'var(--ink-900)'}}>{fmt(agente.role === 'admin' ? m.gainAdmin : m.gainAgente)}</td>
-                  </tr>
-                ))}
+                {statsAgentes.map(({ agente, color, m }) => {
+                  const tx = Math.round(m.tauxTransfo)
+                  const txColor = tx >= 60 ? '#15803d' : tx >= 30 ? '#a16207' : '#b91c1c'
+                  const txBar = tx >= 60 ? '#16a34a' : tx >= 30 ? '#f59e0b' : '#dc2626'
+                  return (
+                    <tr key={agente.id} className="row-hover" style={{borderTop:'1px solid var(--ink-100)'}}>
+                      <td style={{padding:'14px 16px'}}>
+                        <div style={{display:'flex', gap:10, alignItems:'center'}}>
+                          <div style={{width:36, height:36, borderRadius:99, flexShrink:0, background:color.dot, color:'#fff', display:'grid', placeItems:'center', fontSize:13, fontWeight:700}}>
+                            {(agente.prenom || '').charAt(0)}{(agente.nom || '').charAt(0)}
+                          </div>
+                          <div>
+                            <div style={{fontWeight:700, color:'var(--ink-900)'}}>{agente.prenom} {agente.nom}</div>
+                            <div style={{fontSize:11, color:'var(--ink-500)'}}>{agente.role === 'admin' ? 'Franchisée' : 'Agente'}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="tnum" style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:'var(--ink-600)'}}>{m.nb}</td>
+                      <td className="tnum" style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:'var(--ink-600)'}}>{m.avecDevis}</td>
+                      <td className="tnum" style={{padding:'14px 16px',textAlign:'right',fontWeight:700,color:'var(--brand-800)'}}>{fmt(m.travaux)}</td>
+                      <td className="tnum" style={{padding:'14px 16px',textAlign:'right'}}>{fmt(m.panierMoyen)}</td>
+                      <td style={{padding:'14px 16px',textAlign:'right'}}>
+                        <span style={{display:'inline-flex',alignItems:'center',gap:6}}>
+                          <span className="tnum" style={{fontWeight:700, color:txColor}}>{tx}%</span>
+                          <div style={{width:60, height:5, background:'var(--ink-100)', borderRadius:99, overflow:'hidden'}}>
+                            <div style={{width:`${tx}%`, height:'100%', background:txBar}}/>
+                          </div>
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+                {statsAgentes.length === 0 && (
+                  <tr><td colSpan={6} style={{padding:'32px 24px',textAlign:'center',color:'var(--ink-400)',fontSize:13}}>Aucune donnée</td></tr>
+                )}
               </tbody>
-              <tfoot style={{background:'var(--surface-2)', borderTop:'2px solid var(--ink-200)', fontWeight:700}}>
-                <tr><td style={{padding:'12px 16px',color:'var(--ink-700)'}}>Total</td><td className="tnum" style={{padding:'12px 16px',textAlign:'right',color:'var(--ink-700)'}}>{mN.nb}</td><td className="tnum" style={{padding:'12px 16px',textAlign:'right',color:'#1D4ED8'}}>{fmt(mN.travaux)}</td><td className="tnum" style={{padding:'12px 16px',textAlign:'right',color:'var(--ink-700)'}}>{fmtPct(mN.tauxTransfo)}</td><td className="tnum" style={{padding:'12px 16px',textAlign:'right',color:'var(--ink-700)'}}>{fmt(mN.netTotal)}</td><td className="tnum" style={{padding:'12px 24px',textAlign:'right',color:'var(--ink-700)'}}>{fmt(mN.gainAgente + mN.gainAdmin)}</td></tr>
-              </tfoot>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Sources d'apport ── */}
+      {onglet === 'sources' && (
+        <div style={{display:'flex', flexDirection:'column', gap:18}}>
+          <ST sub="Clients ayant apporté des affaires à l'agence">Apporteurs d'affaires</ST>
+          <div className="card" style={{padding:22}}>
+            {apporteurs.length === 0 ? (
+              <p style={{fontSize:13, color:'var(--ink-400)', textAlign:'center', paddingTop:24}}>Aucun apporteur d'affaires enregistré</p>
+            ) : (
+              <div style={{display:'flex', flexDirection:'column', gap:10}}>
+                {apporteurs.map(a => (
+                  <div key={a.id} style={{
+                    display:'flex', justifyContent:'space-between', alignItems:'center',
+                    padding:'12px 14px', borderRadius:10, border:'1px solid var(--ink-200)'
+                  }}>
+                    <div>
+                      <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)'}}>{a.prenom} {a.nom}</div>
+                      <div style={{fontSize:11, color:'var(--ink-500)', marginTop:2}}>
+                        {(a.dossiers || []).length} dossier{(a.dossiers || []).length !== 1 ? 's' : ''} · {a.apporteur_pourcentage || 0}% commission
+                      </div>
+                    </div>
+                    <span className="tnum" style={{fontSize:12, fontWeight:700, padding:'2px 10px', borderRadius:99, background:'rgba(22,163,74,0.1)', color:'#15803d'}}>
+                      ★ Apporteur
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Comparaison N/N-1 ── */}
+      {onglet === 'compare' && (
+        <div style={{display:'flex', flexDirection:'column', gap:18}}>
+          <ST sub={`${annee} vs ${annee - 1} — variation en %`}>Comparaison annuelle</ST>
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:18}}>
+            {[
+              { k: 'Dossiers',           n: mN.nb,                          n1: mN1.nb,                          unit: '' },
+              { k: 'Dossiers signés',    n: mN.avecDevis,                   n1: mN1.avecDevis,                   unit: '' },
+              { k: 'CA net',             n: mN.netTotal,                    n1: mN1.netTotal,                    eur: true },
+              { k: 'Panier moyen',       n: Math.round(mN.panierMoyen),     n1: Math.round(mN1.panierMoyen),     eur: true },
+              { k: 'Taux transfo',       n: Math.round(mN.tauxTransfo),     n1: Math.round(mN1.tauxTransfo),     unit: '%' },
+              { k: 'Délai encaissement', n: Math.round(mN.delaiMoyen || 0), n1: Math.round(mN1.delaiMoyen || 0), unit: ' j', inverse: true },
+            ].map(m => {
+              const evo = m.n1 > 0 ? Math.round((m.n - m.n1) / m.n1 * 100) : 0
+              const good = m.inverse ? evo < 0 : evo > 0
+              const neutral = evo === 0
+              return (
+                <div key={m.k} className="card" style={{padding:20}}>
+                  <div className="eyebrow">{m.k}</div>
+                  <div style={{display:'flex', alignItems:'baseline', gap:14, marginTop:8}}>
+                    <span className="tnum" style={{fontSize:30, fontWeight:800, color:'var(--ink-900)', letterSpacing:-0.02}}>
+                      {m.eur ? fmt(m.n) : `${m.n}${m.unit}`}
+                    </span>
+                    {!neutral && (
+                      <span style={{fontSize:13, fontWeight:700, color: good ? '#15803d' : '#b91c1c'}}>
+                        {evo > 0 ? '▲ +' : '▼ '}{evo}%
+                      </span>
+                    )}
+                  </div>
+                  <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:6}}>
+                    N-1 : <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{m.eur ? fmt(m.n1) : `${m.n1}${m.unit}`}</span>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
