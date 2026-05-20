@@ -108,7 +108,7 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
     if (data?.signedUrl) setViewer({ url: data.signedUrl, nom })
   }
 
-  if (loading) return <p className="text-xs text-gray-400 mt-2">Chargement...</p>
+  if (loading) return <div className="page-loading" />
   if (fiches.length === 0) return (
     <p className="text-xs text-gray-400 mt-2">
       Aucune fiche technique pour cet artisan
@@ -1243,7 +1243,7 @@ export default function FicheChantier({ params }) {
 
   const montantAcompte = (d) => (d.montant_ttc || 0) * ((d.acompte_pourcentage || 30) / 100)
 
-  if (loading) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-400)'}}>Chargement...</div>
+  if (loading) return <div className="page-loading" />
   if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-400)'}}>Chantier introuvable</div>
 
   const nomComplet = client ? `${client.civilite} ${client.prenom} ${client.nom}${client.prenom2 ? ` & ${client.prenom2} ${client.nom2}` : ''}` : ''

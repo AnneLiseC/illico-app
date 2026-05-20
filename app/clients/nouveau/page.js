@@ -106,7 +106,7 @@ export default function NouveauClient() {
   const estCouple = ['M. et Mme', 'Mme et Mme', 'M. et M.'].includes(form.civilite)
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="page-enter min-h-screen bg-gray-50">
 
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3">

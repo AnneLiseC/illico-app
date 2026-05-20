@@ -147,7 +147,7 @@ export default function FicheArtisan({ params }) {
     if (dv.dossier?.id) router.push(`/chantiers/${dv.dossier.id}`)
   }
 
-  if (loading) return <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>Chargement…</div>
+  if (loading) return <div className="page-loading" />
   if (!artisan) return <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>Artisan introuvable</div>
 
   const devisListe = artisan.devis_artisans || []

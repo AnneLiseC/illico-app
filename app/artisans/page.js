@@ -92,9 +92,7 @@ export default function Artisans() {
     return <span style={{fontSize:11.5,color:'var(--ink-500)'}}>{new Date(a.decennale_expiration).toLocaleDateString('fr-FR')}</span>
   }
 
-  if (loading) return (
-    <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>Chargement…</div>
-  )
+  if (loading) return <div className="page-loading" />
 
   return (
     <div className="page-enter" style={{padding:'28px 32px', display:'flex', flexDirection:'column', gap:18}}>

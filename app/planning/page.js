@@ -368,17 +368,13 @@ export default function Planning() {
     setSyncing(false)
   }
 
-  if (loading) return (
-    <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>
-      Chargement du planning…
-    </div>
-  )
+  if (loading) return <div className="page-loading" />
 
   const inputCls = "input"
   const labelCls = "eyebrow"
 
   return (
-    <div style={{ background: 'var(--bg)' }}>
+    <div className="page-enter" style={{ background: 'var(--bg)' }}>
 
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
       <header style={{ background: COLORS.navy, padding:'12px 24px', position:'sticky', top:0, zIndex:40 }}>

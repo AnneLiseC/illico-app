@@ -287,7 +287,7 @@ export default function Statistiques() {
     { key: 'compare',  label: 'Comparaison N/N-1' },
   ]
 
-  if (loading) return <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>Chargement…</div>
+  if (loading) return <div className="page-loading" />
 
   const tauxTransfoRound = Math.round(mN.tauxTransfo)
   const chantiersActifsPct = mN.nb > 0 ? Math.round(dN.filter(d => d.statut === 'en_cours_chantier').length / mN.nb * 100) : 0

@@ -181,7 +181,7 @@ export default function Parametres() {
 
   const fmtPct = (val) => { if (val === undefined || val === null) return '—'; const pct = Math.round(val * 100); return `${pct} / ${100 - pct}` }
 
-  if (loading) return <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>Chargement…</div>
+  if (loading) return <div className="page-loading" />
 
   const NAV = [
     { k:'profil',       l:'Profil franchisée' },

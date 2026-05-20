@@ -398,11 +398,7 @@ export default function Chantiers() {
     { key: 'tous', label: 'Tous' },
   ] : []
 
-  if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 96 }}>
-      <p className="eyebrow">Chargement…</p>
-    </div>
-  )
+  if (loading) return <div className="page-loading" />
 
   const panelHeight = isMobile ? 'calc(100vh - 200px)' : 'calc(100vh - 340px)'
 

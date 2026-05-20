@@ -86,9 +86,7 @@ export default function Clients() {
 
   const afficherReferente = isMarine && (onglet === 'tous' || agentes.some(a => a.id === onglet))
 
-  if (loading) return (
-    <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>Chargement…</div>
-  )
+  if (loading) return <div className="page-loading" />
 
   return (
     <div className="page-enter" style={{padding:'28px 32px', display:'flex', flexDirection:'column', gap:18}}>

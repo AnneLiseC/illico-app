@@ -164,9 +164,7 @@ export default function FicheClient({ params }) {
 
   const estCouple = ['M. et Mme', 'Mme et Mme', 'M. et M.'].includes(client?.civilite)
 
-  if (loading) return (
-    <div style={{ paddingTop: 96, textAlign: 'center', color: 'var(--ink-400)' }}>Chargement…</div>
-  )
+  if (loading) return <div className="page-loading" />
 
   if (!client) return (
     <div style={{ paddingTop: 96, textAlign: 'center', color: 'var(--ink-400)' }}>Client introuvable</div>
