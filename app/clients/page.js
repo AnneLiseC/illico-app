@@ -83,7 +83,7 @@ export default function Clients() {
   )
 
   return (
-    <div className="page-enter" style={{display:'flex', flexDirection:'column', gap:18}}>
+    <div className="page-enter" style={{padding:'28px 32px', display:'flex', flexDirection:'column', gap:18}}>
 
       {/* En-tête */}
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:16, flexWrap:'wrap'}}>
