@@ -828,6 +828,10 @@ export default function FicheChantier({ params }) {
     } else {
       await supabase.from('devis_artisans').update({ statut }).eq('id', devisId)
     }
+    if (statut === 'a_modifier') {
+      await supabase.from('dossiers').update({ statut: 'devis_a_modifier' }).eq('id', id)
+      setDossier(prev => prev ? { ...prev, statut: 'devis_a_modifier' } : prev)
+    }
     await chargerDevis()
   }
 
@@ -1074,9 +1078,10 @@ export default function FicheChantier({ params }) {
   }
   const statutDevisConfig = {
     en_attente: { label: 'En attente', color: 'bg-yellow-100 text-yellow-700' },
-    recu: { label: 'Reçu', color: 'bg-blue-100 text-blue-700' },
-    accepte: { label: 'Accepté', color: 'bg-green-100 text-green-700' },
-    refuse: { label: 'Refusé', color: 'bg-red-100 text-red-600' },
+    recu:       { label: 'Reçu',       color: 'bg-blue-100 text-blue-700' },
+    accepte:    { label: 'Accepté',    color: 'bg-green-100 text-green-700' },
+    refuse:     { label: 'Refusé',     color: 'bg-red-100 text-red-600' },
+    a_modifier: { label: 'À modifier', color: 'bg-orange-100 text-orange-700' },
   }
   const fraisStatutConfig = {
     offerts:    { label: 'Offerts',               color: 'bg-blue-100 text-blue-700' },
@@ -2112,8 +2117,8 @@ export default function FicheChantier({ params }) {
                       <EditDevis devis={d} isMarine={estChantierMarine} onSave={(updates) => modifierDevis(d.id, updates)} onCancel={() => setDevisEnEdition(null)} />
                     )}
 
-                    <div className="flex gap-2 pt-1 border-t border-gray-100">
-                      {['en_attente', 'recu', 'accepte', 'refuse'].map(st => (
+                    <div className="flex gap-2 pt-1 border-t border-gray-100 flex-wrap">
+                      {['en_attente', 'recu', 'accepte', 'refuse', 'a_modifier'].map(st => (
                         <button key={st} onClick={() => changerStatutDevis(d.id, st)}
                           className={`text-xs px-2 py-1 rounded-full border transition-all ${d.statut === st ? statutDevisConfig[st].color + ' border-transparent font-medium' : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
                           {statutDevisConfig[st].label}
