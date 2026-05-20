@@ -17,7 +17,7 @@ const NOTIFS = [
 ]
 
 export default function Parametres() {
-  const { profile: authProfile, initialized } = useAuth()
+  const { profile: authProfile, initialized, fetchProfile } = useAuth()
   const [profile, setProfile]             = useState(null)
   const [loading, setLoading]             = useState(true)
   const [agentes, setAgentes]             = useState([])
@@ -165,8 +165,8 @@ export default function Parametres() {
 
   const toggleNotif = async (key, currentValue) => {
     const newPrefs = { ...(profile.notif_prefs || {}), [key]: !currentValue }
-    const { error } = await supabase.from('profiles').update({ notif_prefs: newPrefs }).eq('id', profile.id)
-    if (!error) setProfile(p => ({ ...p, notif_prefs: newPrefs }))
+    await supabase.from('profiles').update({ notif_prefs: newPrefs }).eq('id', profile.id)
+    fetchProfile()
   }
 
   const changerMotDePasse = async () => {

@@ -293,7 +293,7 @@ export default function FicheArtisan({ params }) {
               return (
                 <div key={dv.id} className="row-hover"
                   style={{padding:'12px 20px', borderTop:'1px solid var(--ink-100)', display:'flex', alignItems:'center', gap:12, cursor: dv.dossier?.id ? 'pointer' : 'default'}}
-                  onClick={() => dv.dossier?.id && router.push(`/dossiers/${dv.dossier.id}`)}>
+                  onClick={() => dv.dossier?.id && router.push(`/chantiers/${dv.dossier.id}`)}>
                   <div style={{flex:1, minWidth:0}}>
                     <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)'}} className="clip-1">
                       {dv.dossier?.reference || clientNom || '—'}

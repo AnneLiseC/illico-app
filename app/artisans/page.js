@@ -313,7 +313,7 @@ export default function Artisans() {
                           {!modeSelection && (
                             <button className="btn btn-ghost" style={{padding:'4px 8px'}}
                               onClick={e => { e.stopPropagation(); router.push(`/artisans/${a.id}`) }}>
-                              <ArrowIcon size={12}/>
+                              <PencilIcon size={12}/>
                             </button>
                           )}
                         </td>
