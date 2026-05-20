@@ -204,7 +204,7 @@ export default function Dashboard() {
   }, [initialized, user?.id, profile, fetchProfile])
 
   useEffect(() => {
-    if (!user) return
+    if (!initialized || !user || !profile) return
     const annee = new Date().getFullYear()
     async function loadData() {
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
@@ -225,13 +225,13 @@ export default function Dashboard() {
           dossier:dossiers(reference, client:clients(prenom, nom))
         `).gte('date_heure', todayStart.toISOString()).lt('date_heure', tomorrowStart.toISOString()).order('date_heure', { ascending: true }),
       ])
-      if (dos) setDossiers(dos)
-      if (obj) setObjectifs(obj)
-      if (rdv) setRdvAujourdhui(rdv)
+      setDossiers(dos || [])
+      setObjectifs(obj || [])
+      setRdvAujourdhui(rdv || [])
       setLoading(false)
     }
     loadData()
-  }, [user?.id])
+  }, [initialized, user?.id, profile?.id])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
