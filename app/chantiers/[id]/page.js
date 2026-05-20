@@ -1888,6 +1888,30 @@ export default function FicheChantier({ params }) {
               style={{width:'100%', padding:'10px 12px', lineHeight:1.5, resize:'vertical'}}/>
           </div>
 
+          <div style={{paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
+            <label className="eyebrow" style={{display:'block', marginBottom:8}}>Frais de consultation</label>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+              <div>
+                <label style={{display:'block', fontSize:12, color:'var(--ink-500)', marginBottom:4}}>Statut</label>
+                <select className="input" value={dossier.frais_statut || 'offerts'} onChange={e => set('frais_statut', e.target.value)} style={{height:40, width:'100%'}}>
+                  <option value="offerts">Offerts</option>
+                  <option value="rembourse_apres_signature">Remboursé après signature</option>
+                  <option value="factures">Facturés (à régler)</option>
+                  <option value="regle">Facturés et réglés</option>
+                </select>
+              </div>
+              {dossier.frais_statut !== 'offerts' && (
+                <div>
+                  <label style={{display:'block', fontSize:12, color:'var(--ink-500)', marginBottom:4}}>Montant TTC (€)</label>
+                  <input type="number" step="0.01" min="0" className="input"
+                    value={dossier.frais_consultation || ''}
+                    onChange={e => set('frais_consultation', e.target.value === '' ? '' : parseFloat(e.target.value))}
+                    style={{height:40, width:'100%'}} />
+                </div>
+              )}
+            </div>
+          </div>
+
           {!estChantierMarine && profile?.parts_agente_disponibles?.length > 1 && (
             <div style={{paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
               <label className="eyebrow" style={{display:'block', marginBottom:8}}>Répartition commission (agente / CTP)</label>
@@ -1986,77 +2010,6 @@ export default function FicheChantier({ params }) {
       {/* ── DEVIS & ARTISANS ── */}
       {onglet === 'devis' && (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
-
-        {/* Frais de consultation */}
-        <div className="card" style={{padding:22}}>
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-800">Frais de consultation</h2>
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${f.color}`}>{f.label}</span>
-          </div>
-          {mode === 'lecture' ? (
-            <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
-              {dossier.frais_statut !== 'offerts' && (
-                <>
-                  <div className="flex justify-between">
-                    <span className="text-xs text-gray-400">Montant TTC</span>
-                    <span className="font-medium">{fmt(dossier.frais_consultation || 0)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-xs text-gray-400">Montant HT</span>
-                    <span className="font-medium">{fmt((dossier.frais_consultation || 0) / 1.2)}</span>
-                  </div>
-                  <div className="flex items-center gap-2 border-t border-gray-200 pt-2 mt-1">
-                    <input
-                      type="checkbox"
-                      checked={dossier.frais_deduits || false}
-                      onChange={async (e) => {
-                        const val = e.target.checked
-                        await supabase.from('dossiers').update({ frais_deduits: val }).eq('id', id)
-                        setDossier(d => ({ ...d, frais_deduits: val }))
-                        setSucces('Frais mis à jour ✓')
-                      }}
-                      className="w-4 h-4 accent-blue-700"
-                    />
-                    <span className={`text-xs font-medium ${dossier.frais_deduits ? 'text-purple-600' : 'text-gray-500'}`}>
-                      Remboursés - déduit du courtage
-                    </span>
-                    {dossier.frais_deduits && (
-                      <span className="text-xs text-purple-500 ml-auto">
-                        - {fmt((dossier.frais_consultation || 0) / 1.2)} € HT
-                      </span>
-                    )}
-                  </div>
-                </>
-              )}
-              {dossier.frais_statut === 'offerts' && (
-                <p className="text-xs text-gray-400">Offerts - 0 €</p>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
-                  <select value={dossier.frais_statut} onChange={e => set('frais_statut', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="offerts">Offerts</option>
-                    <option value="rembourse_apres_signature">Remboursé après signature</option>
-                    <option value="factures">Facturés (à régler)</option>
-                    <option value="regle">Facturés et réglés</option>
-                  </select>
-                </div>
-                {dossier.frais_statut !== 'offerts' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Montant TTC (€)</label>
-                    <input type="number" step="0.01" min="0" value={dossier.frais_consultation || ''}
-                      onChange={e => set('frais_consultation', e.target.value === '' ? '' : parseFloat(e.target.value))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
 
         {/* Devis artisans */}
         <div className="card" style={{padding:22}}>
