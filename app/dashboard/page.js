@@ -218,8 +218,8 @@ export default function Dashboard() {
           client:clients(prenom, nom, apporteur_pourcentage, apporteur_base),
           devis_artisans(id, montant_ht, montant_ttc, commission_pourcentage, statut, date_signature, artisan:artisans(id, entreprise, sans_royalties)),
           suivi_financier(*)
-        `).order('created_at', { ascending: false }),
-        supabase.from('objectifs_ca').select('*').eq('annee', annee),
+        `).eq('referente_id', profile.id).order('created_at', { ascending: false }),
+        supabase.from('objectifs_ca').select('*').eq('annee', annee).eq('agente_id', profile.id),
         supabase.from('rendez_vous').select(`
           id, titre, type_rdv, date_heure, duree_minutes, notes,
           dossier:dossiers(reference, client:clients(prenom, nom))
