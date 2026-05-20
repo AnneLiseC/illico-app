@@ -71,7 +71,6 @@ export default function FicheArtisan({ params }) {
         supabase.from('fiches_techniques').select('*').eq('artisan_id', id).order('nom'),
       ])
       setArtisan(data)
-      console.log('commission_pourcentage raw:', data?.devis_artisans?.map(dv => dv.commission_pourcentage))
       setFichesTechniques(fichesData || [])
       setLoading(false)
     }
@@ -316,7 +315,7 @@ export default function FicheArtisan({ params }) {
                     {st.label}
                   </span>
                   {dv.commission_pourcentage > 0 && (
-                    <span style={{fontSize:11.5, color:'var(--ink-400)', flexShrink:0}}>{dv.commission_pourcentage}%</span>
+                    <span style={{fontSize:11.5, color:'var(--ink-400)', flexShrink:0}}>{Math.round(dv.commission_pourcentage * 100)}%</span>
                   )}
                   <span className="tnum" style={{fontSize:13, fontWeight:700, color:'var(--brand-800)', flexShrink:0}}>
                     {dv.montant_ht ? fmtEur(dv.montant_ht) : '—'}
