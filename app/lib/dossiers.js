@@ -73,6 +73,26 @@ export function getAlertesDevis(dossiers, today = new Date()) {
   })
 }
 
+// 🔹 Avancement chantier (0-100) basé sur les encaissements reçus
+// Ratio : montants reçus / montants prévus × 100
+// Exclut apporteur_agente (sortie, pas un encaissement)
+export function calculerAvancement(dossier) {
+  const suivi = (dossier?.suivi_financier || [])
+    .filter(sf => sf.type_echeance !== 'apporteur_agente')
+
+  if (suivi.length === 0) return 0
+
+  const totalPrevu = suivi.reduce((s, sf) => s + (Number(sf.montant_ttc) || 0), 0)
+  if (totalPrevu === 0) return 0
+
+  const totalRecu = suivi
+    .filter(sf => sf.statut_illico === 'recu')
+    .reduce((s, sf) => s + (Number(sf.montant_ttc) || 0), 0)
+
+  const pct = Math.round((totalRecu / totalPrevu) * 100)
+  return Math.min(100, Math.max(0, pct))
+}
+
 // 🔹 Compteurs
 export function getCompteurs(dossiers) {
   return {
