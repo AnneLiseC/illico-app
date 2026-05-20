@@ -177,6 +177,190 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
   )
 }
 
+// ─── Modal d'ajout / édition d'un devis ───────────────────────────────────────
+function DevisModal({ open, devis, onClose, onSave, artisans, isMarine, partsAgenteDispo }) {
+  const isEdit = !!devis
+  const initForm = () => ({
+    artisan_id: devis?.artisan_id || '',
+    montant_ht: devis?.montant_ht ?? '',
+    montant_ttc: devis?.montant_ttc ?? '',
+    commission_pourcentage: devis?.commission_pourcentage != null ? (devis.commission_pourcentage * 100).toFixed(1) : '',
+    sans_commission: devis?.commission_pourcentage === 0,
+    part_agente: isMarine ? '0' : String(devis?.part_agente ?? 0.5),
+    date_reception: devis?.date_reception || '',
+    date_limite: devis?.date_limite || '',
+    notes: devis?.notes || '',
+    acompte_pourcentage: devis?.acompte_pourcentage ?? 30,
+    acompte_montant_fixe: devis?.acompte_montant_fixe ?? '',
+    fichier: null,
+  })
+  const [form, setForm] = useState(initForm)
+
+  useEffect(() => {
+    if (open) setForm(initForm())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, devis?.id])
+
+  const set = (champ, val) => setForm(f => ({ ...f, [champ]: val }))
+  if (!open) return null
+
+  const canSave = !!form.artisan_id && form.montant_ht !== ''
+
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:60,
+      display:'grid', placeItems:'center', padding:16,
+    }}>
+      <div onClick={e => e.stopPropagation()} className="card" style={{
+        width:'100%', maxWidth:600, padding:0, maxHeight:'90vh', display:'flex', flexDirection:'column',
+        boxShadow:'var(--shadow-pop)',
+      }}>
+        <div style={{padding:'18px 24px', borderBottom:'1px solid var(--ink-200)', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+          <h2 className="page" style={{fontSize:17}}>{isEdit ? 'Modifier le devis' : 'Nouveau devis'}</h2>
+          <button onClick={onClose} className="btn btn-ghost" style={{padding:'4px 10px', fontSize:16}}>✕</button>
+        </div>
+
+        <div style={{padding:24, overflow:'auto', display:'flex', flexDirection:'column', gap:14}}>
+          {!isEdit && (
+            <div>
+              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Artisan *</label>
+              <select className="input" value={form.artisan_id} onChange={e => set('artisan_id', e.target.value)} style={{height:40, width:'100%'}}>
+                <option value="">— Choisir un artisan —</option>
+                {artisans.map(a => (
+                  <option key={a.id} value={a.id}>{a.entreprise}{a.metier ? ` (${a.metier})` : ''}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+            <div>
+              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Montant HT (€)</label>
+              <input type="number" step="0.01" min="0" className="input"
+                value={form.montant_ht}
+                onChange={e => {
+                  const ht = e.target.value
+                  const ttcAuto = ht !== '' ? (parseFloat(ht) * 1.1).toFixed(2) : ''
+                  setForm(f => ({ ...f, montant_ht: ht, montant_ttc: ttcAuto }))
+                }}
+                style={{height:40, width:'100%'}} />
+            </div>
+            <div>
+              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Montant TTC (€) <span style={{color:'var(--ink-400)', fontWeight:400, textTransform:'none'}}>auto +10%</span></label>
+              <input type="number" step="0.01" min="0" className="input"
+                value={form.montant_ttc}
+                onChange={e => set('montant_ttc', e.target.value)}
+                style={{height:40, width:'100%'}} />
+            </div>
+          </div>
+
+          <div>
+            <label className="eyebrow" style={{display:'block', marginBottom:6}}>Commission (%)</label>
+            <input type="number" step="0.1" min="0" max="100" className="input"
+              value={form.sans_commission ? '0' : form.commission_pourcentage}
+              placeholder="ex: 15"
+              disabled={form.sans_commission}
+              onChange={e => set('commission_pourcentage', e.target.value)}
+              style={{height:40, width:'100%', opacity: form.sans_commission ? 0.5 : 1}} />
+            <label style={{display:'flex', alignItems:'center', gap:8, marginTop:8, cursor:'pointer'}}>
+              <input type="checkbox" checked={form.sans_commission}
+                onChange={e => set('sans_commission', e.target.checked)}
+                style={{width:14, height:14, accentColor:'var(--brand-700)'}} />
+              <span style={{fontSize:12, color:'var(--ink-500)'}}>Sans commission ni honoraires</span>
+            </label>
+          </div>
+
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+            <div>
+              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Date de réception</label>
+              <input type="date" className="input" value={form.date_reception} onChange={e => set('date_reception', e.target.value)} style={{height:40, width:'100%'}} />
+            </div>
+            <div>
+              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Date limite</label>
+              <input type="date" className="input" value={form.date_limite} onChange={e => set('date_limite', e.target.value)} style={{height:40, width:'100%'}} />
+            </div>
+          </div>
+
+          <div style={{paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
+            <label className="eyebrow" style={{display:'block', marginBottom:8}}>Acompte</label>
+            <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+              <select className="input" value={form.acompte_pourcentage}
+                onChange={e => set('acompte_pourcentage', parseFloat(e.target.value))}
+                style={{height:36, width:130}}>
+                <option value={30}>30 %</option>
+                <option value={40}>40 %</option>
+                <option value={-1}>Montant fixe</option>
+                <option value={0}>Sans acompte</option>
+              </select>
+              {form.acompte_pourcentage === -1 && (
+                <input type="number" step="0.01" min="0" className="input"
+                  placeholder="Montant TTC"
+                  value={form.acompte_montant_fixe}
+                  onChange={e => set('acompte_montant_fixe', e.target.value)}
+                  style={{height:36, width:140}} />
+              )}
+            </div>
+          </div>
+
+          {!isMarine && partsAgenteDispo?.length > 1 && (
+            <div style={{paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
+              <label className="eyebrow" style={{display:'block', marginBottom:8}}>Répartition commission (agente / CTP)</label>
+              <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+                {partsAgenteDispo.map(pct => {
+                  const pctFloat = parseFloat(pct)
+                  const active = Math.abs(parseFloat(form.part_agente) - pctFloat) < 0.001
+                  return (
+                    <button key={pct} type="button" onClick={() => set('part_agente', String(pctFloat))}
+                      style={{
+                        fontSize:12, padding:'6px 12px', borderRadius:99,
+                        border:'1px solid', borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
+                        background: active ? 'var(--brand-50)' : '#fff',
+                        color: active ? 'var(--brand-800)' : 'var(--ink-600)',
+                        fontWeight:600, cursor:'pointer',
+                      }}>
+                      {Math.round(pctFloat * 100)} / {Math.round((1 - pctFloat) * 100)}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="eyebrow" style={{display:'block', marginBottom:6}}>Description</label>
+            <textarea className="input" value={form.notes} onChange={e => set('notes', e.target.value)}
+              rows={3} placeholder="Description des travaux…"
+              style={{width:'100%', padding:'10px 12px', lineHeight:1.5, resize:'vertical'}} />
+          </div>
+
+          {!isEdit && (
+            <div>
+              <label className="eyebrow" style={{display:'block', marginBottom:6}}>PDF du devis (optionnel)</label>
+              <label className="btn btn-ghost" style={{cursor:'pointer', justifyContent:'center', borderStyle:'dashed', padding:'10px 14px'}}>
+                {form.fichier ? `✓ ${form.fichier.name}` : '📎 Choisir un PDF'}
+                <input type="file" accept=".pdf" style={{display:'none'}}
+                  onChange={e => set('fichier', e.target.files[0] || null)} />
+              </label>
+              {form.fichier && (
+                <button onClick={() => set('fichier', null)} className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px', marginTop:6, color:'#b91c1c'}}>
+                  Supprimer le fichier
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div style={{padding:'16px 24px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:8, justifyContent:'flex-end'}}>
+          <button onClick={onClose} className="btn btn-ghost">Annuler</button>
+          <button onClick={() => onSave(form)} className="btn btn-primary" disabled={!canSave}>
+            {isEdit ? 'Enregistrer' : 'Créer le devis'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function EditDevis({ devis, onSave, onCancel, isMarine }) {
   const [form, setForm] = useState({
     montant_ht: devis.montant_ht || '',
@@ -273,6 +457,13 @@ export default function FicheChantier({ params }) {
   const [devis, setDevis] = useState([])
   const [artisans, setArtisans] = useState([])
   const [ajouterDevis, setAjouterDevis] = useState(false)
+  const [devisModal, setDevisModal] = useState({ open: false, devis: null })
+  const [devisExpanded, setDevisExpanded] = useState(() => new Set())
+  const toggleDevisExpand = (id) => setDevisExpanded(s => {
+    const next = new Set(s)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
   const [savingDevis, setSavingDevis] = useState(false)
   const [devisEnEdition, setDevisEnEdition] = useState(null)
   const [photos, setPhotos] = useState([])
@@ -843,6 +1034,60 @@ export default function FicheChantier({ params }) {
     await chargerDevis()
     setDevisEnEdition(null)
     setSucces('Devis modifié ✓')
+  }
+
+  // Handler unique du DevisModal (create + edit, inclut acompte custom)
+  const saveDevisFromModal = async (form) => {
+    const partAgente = estChantierMarine ? 0 : parseFloat(form.part_agente)
+    const acomptePct = form.acompte_pourcentage === -1 || form.acompte_pourcentage === 0
+      ? form.acompte_pourcentage
+      : parseFloat(form.acompte_pourcentage)
+    const acompteMontant = form.acompte_pourcentage === -1
+      ? (form.acompte_montant_fixe !== '' ? parseFloat(form.acompte_montant_fixe) : null)
+      : null
+    const payload = {
+      montant_ht: form.montant_ht !== '' ? parseFloat(form.montant_ht) : null,
+      montant_ttc: form.montant_ttc !== '' ? parseFloat(form.montant_ttc) : null,
+      commission_pourcentage: form.sans_commission ? 0 : (form.commission_pourcentage ? parseFloat(form.commission_pourcentage) / 100 : null),
+      part_agente: partAgente,
+      date_reception: form.date_reception || null,
+      date_limite: form.date_limite || null,
+      notes: form.notes || null,
+      acompte_pourcentage: acomptePct,
+      acompte_montant_fixe: acompteMontant,
+    }
+    if (devisModal.devis) {
+      // Edit
+      await supabase.from('devis_artisans').update(payload).eq('id', devisModal.devis.id)
+      await chargerDevis()
+      setSucces('Devis modifié ✓')
+    } else {
+      // Create
+      if (!form.artisan_id) return
+      const prochainOrdre = devis.length > 0 ? Math.max(...devis.map(d => d.ordre ?? 0)) + 1 : 1
+      const { data: devisInsere, error } = await supabase.from('devis_artisans').insert({
+        ...payload,
+        dossier_id: id,
+        artisan_id: form.artisan_id,
+        statut: (form.date_reception || form.fichier) ? 'recu' : 'en_attente',
+        ordre: prochainOrdre,
+      }).select()
+      if (error) { setErreur('Erreur : ' + error.message); return }
+      if (form.fichier && devisInsere?.[0]) {
+        const ext = form.fichier.name.split('.').pop()
+        const cheminDevis = `chantiers/${id}/devis/${devisInsere[0].id}.${ext}`
+        await supabase.storage.from('documents').upload(cheminDevis, form.fichier)
+        await supabase.from('devis_artisans').update({ devis_pdf_path: cheminDevis }).eq('id', devisInsere[0].id)
+      }
+      if (!dossier.contrat_signe) {
+        const today = new Date().toISOString().slice(0, 10)
+        await supabase.from('dossiers').update({ contrat_signe: true, date_signature_contrat: today }).eq('id', id)
+        setDossier(d => ({ ...d, contrat_signe: true, date_signature_contrat: today }))
+      }
+      await chargerDevis()
+      setSucces('Devis ajouté ✓')
+    }
+    setDevisModal({ open: false, devis: null })
   }
 
   const parseDateFR = (str) => {
@@ -2013,96 +2258,17 @@ export default function FicheChantier({ params }) {
 
         {/* Devis artisans */}
         <div className="card" style={{padding:22}}>
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-800">Devis artisans ({devis.length})</h2>
-            <button onClick={() => {
-              setAjouterDevis(true)
-              setNouveauDevis(nd => ({ ...nd, part_agente: String(dossier.part_agente ?? 0.5) }))
-            }} className="...">+ Ajouter</button>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center', marginBottom:14}}>
+            <div>
+              <h2 className="page" style={{fontSize:16}}>Devis du chantier</h2>
+              <div className="eyebrow" style={{marginTop:4}}>{devis.length} devis · {devisSignes.length} signés</div>
+            </div>
+            <button onClick={() => setDevisModal({ open: true, devis: null })}
+              className="btn btn-primary" style={{fontSize:12.5}}>
+              + Ajouter un devis
+            </button>
           </div>
 
-          {ajouterDevis && (
-            <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
-              <p className="text-sm font-medium text-blue-800">Nouveau devis</p>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Artisan *</label>
-                <select value={nouveauDevis.artisan_id} onChange={e => setND('artisan_id', e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="">— Choisir un artisan —</option>
-                  {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}{a.metier ? ` (${a.metier})` : ''}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Montant HT (€)</label>
-                  <input type="number" step="0.01" min="0" value={nouveauDevis.montant_ht}
-                    onChange={e => {
-                      const ht = e.target.value
-                      const ttcAuto = ht !== '' ? (parseFloat(ht) * 1.1).toFixed(2) : ''
-                      setNouveauDevis(d => ({ ...d, montant_ht: ht, montant_ttc: ttcAuto }))
-                    }}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Montant TTC (€) <span className="text-gray-400 font-normal">auto 10%</span></label>
-                  <input type="number" step="0.01" min="0" value={nouveauDevis.montant_ttc} onChange={e => setND('montant_ttc', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-              <div className={`grid gap-3 ${estChantierMarine ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Commission (%)</label>
-                  <input type="number" step="0.1" min="0" max="100"
-                    value={nouveauDevis.sans_commission ? '0' : nouveauDevis.commission_pourcentage}
-                    placeholder="ex: 15"
-                    disabled={nouveauDevis.sans_commission}
-                    onChange={e => setND('commission_pourcentage', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400" />
-                  <label className="flex items-center gap-2 mt-1 cursor-pointer">
-                    <input type="checkbox" checked={nouveauDevis.sans_commission}
-                      onChange={e => setND('sans_commission', e.target.checked)}
-                      className="w-3.5 h-3.5 accent-blue-700" />
-                    <span className="text-xs text-gray-500">Sans commission ni honoraires</span>
-                  </label>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Date de réception</label>
-                  <input type="date" value={nouveauDevis.date_reception} onChange={e => setND('date_reception', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Date limite</label>
-                  <input type="date" value={nouveauDevis.date_limite} onChange={e => setND('date_limite', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
-                <textarea value={nouveauDevis.notes} onChange={e => setND('notes', e.target.value)} rows={2}
-                  placeholder="Description des travaux..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">PDF du devis (optionnel)</label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <span className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 text-gray-700">
-                    {nouveauDevis.fichier ? '✓ ' + nouveauDevis.fichier.name : '+ Choisir un PDF'}
-                  </span>
-                  {nouveauDevis.fichier && <button type="button" onClick={() => setND('fichier', null)} className="text-xs text-red-400 hover:text-red-600">Supprimer</button>}
-                  <input type="file" accept=".pdf" className="hidden" onChange={e => setND('fichier', e.target.files[0] || null)} />
-                </label>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => setAjouterDevis(false)} className="flex-1 border border-gray-300 text-gray-700 py-1.5 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
-                <button onClick={sauvegarderDevis} disabled={!nouveauDevis.artisan_id || savingDevis}
-                  className="flex-1 bg-blue-800 text-white py-1.5 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
-                  {savingDevis ? 'Enregistrement...' : 'Enregistrer'}
-                </button>
-              </div>
-            </div>
-          )}
 
           {devis.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-4">Aucun devis pour ce chantier</p>
@@ -2127,8 +2293,8 @@ export default function FicheChantier({ params }) {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={`text-xs px-2 py-1 rounded-full font-medium ${sd.color}`}>{sd.label}</span>
-                        <button onClick={() => setDevisEnEdition(d.id === devisEnEdition ? null : d.id)} className="text-blue-400 text-xs hover:text-blue-600">
-                          {devisEnEdition === d.id ? 'Fermer' : 'Modifier'}
+                        <button onClick={() => setDevisModal({ open: true, devis: d })} className="text-blue-400 text-xs hover:text-blue-600">
+                          Modifier
                         </button>
                         <button onClick={() => supprimerDevis(d.id)} className="text-red-400 text-xs hover:text-red-600">Supprimer</button>
                       </div>
@@ -2206,10 +2372,6 @@ export default function FicheChantier({ params }) {
                     </div>
                     {d.notes && (
                       <p className="text-xs text-gray-500 italic">{d.notes}</p>
-                    )}
-
-                    {devisEnEdition === d.id && (
-                      <EditDevis devis={d} isMarine={estChantierMarine} onSave={(updates) => modifierDevis(d.id, updates)} onCancel={() => setDevisEnEdition(null)} />
                     )}
 
                     <div className="flex gap-2 pt-1 border-t border-gray-100 flex-wrap">
@@ -3608,6 +3770,17 @@ export default function FicheChantier({ params }) {
       {docViewer && (
         <DocViewer url={docViewer.url} nom={docViewer.nom} onClose={() => setDocViewer(null)} />
       )}
+
+      {/* Modal d'ajout / édition de devis */}
+      <DevisModal
+        open={devisModal.open}
+        devis={devisModal.devis}
+        onClose={() => setDevisModal({ open: false, devis: null })}
+        onSave={saveDevisFromModal}
+        artisans={artisans}
+        isMarine={estChantierMarine}
+        partsAgenteDispo={profile?.parts_agente_disponibles}
+      />
     </div>
   )
 }
