@@ -431,11 +431,21 @@ export default function Finances() {
   const calculerReel = (d) => {
     const c = calculer(d)
 
+    // Acompte AMO — commun aux deux branches (Marine et non-Marine)
+    const acompteAmoSF = d.typologie === 'amo'
+      ? (d.suivi_financier || []).find(sf => sf.type_echeance === 'acompte_amo' && sf.statut_client === 'regle')
+      : null
+    const acompteAmoHT     = acompteAmoSF ? round2(Number(acompteAmoSF.montant_ttc || 0) / 1.1) : 0
+    const acompteAmoRoy    = round2(acompteAmoHT * 0.05)
+    const acompteAmoNet    = round2(acompteAmoHT - acompteAmoRoy)
+    const acompteAmoAgente = round2(acompteAmoNet * c.partAgenteRate)
+
     if (c.estChantierMarine) {
       const fraisReel = d.frais_statut === 'regle' ? c.fraisNet : 0
       const courtageRegle = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
       const amoRegle = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
-      const honReel = round2((courtageRegle ? c.courtNet : 0) + (amoRegle ? c.amoNet : 0))
+      const soldeAmoNetM = amoRegle ? round2(c.amoNet - acompteAmoNet) : 0
+      const honReel = round2((courtageRegle ? c.courtNet : 0) + acompteAmoNet + soldeAmoNetM)
       let comReelNet = 0
       for (const dv of c.devisAcceptes) {
         if (dv.artisan?.sans_royalties) continue
@@ -460,7 +470,7 @@ export default function Finances() {
       )
 
       const gainAdminReel = round2(fraisReel + honReel + comReelNet + comApporteursReel - apporteurRetire)
-      return { ...c, fraisReel, honReel, comReelNet, comApporteursReel, royaltiesReelTotal: 0, apporteurRembourse: apporteurRetire, gainAgenteReel: 0, gainAdminReel, gainsAgenteReels: 0 }
+      return { ...c, fraisReel, fraisAgenteReel: 0, honReel, comReelNet, comApporteursReel, royaltiesReelTotal: 0, apporteurRembourse: apporteurRetire, gainAgenteReel: 0, gainAdminReel, gainsAgenteReels: 0, acompteAmoNet, acompteAmoAgente, soldeAmoNet: soldeAmoNetM, soldeAmoAgente: 0 }
     }
 
     // Frais — HT net si réglé
@@ -470,18 +480,22 @@ export default function Finances() {
     const fraisAgenteReel    = fraisRegle ? c.fraisAgente : 0
 
     // Honoraires — HT net si réglé
-    const courtageRegle    = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
-    const amoRegle         = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
-    const honCourtageReel  = courtageRegle ? c.courtNet : 0
-    const honAMOReel       = amoRegle      ? c.amoNet   : 0
-    const honReel          = round2(honCourtageReel + honAMOReel)
+    const courtageRegle  = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
+    const amoRegle       = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
+    const honCourtageReel = courtageRegle ? c.courtNet : 0
+    const soldeAmoNet    = amoRegle ? round2(c.amoNet - acompteAmoNet) : 0
+    const soldeAmoAgente = amoRegle ? round2(c.amoAgente - acompteAmoAgente) : 0
+    const honAMOReel     = round2(acompteAmoNet + soldeAmoNet)
+    const honReel        = round2(honCourtageReel + honAMOReel)
     const royaltiesHonReel = round2(
       (courtageRegle ? c.courtRoyalties : 0) +
-      (amoRegle      ? c.amoRoyalties   : 0)
+      acompteAmoRoy +
+      (amoRegle ? round2(c.amoRoyalties - acompteAmoRoy) : 0)
     )
-    const honAgenteReel    = round2(
+    const honAgenteReel  = round2(
       (courtageRegle ? c.courtAgente : 0) +
-      (amoRegle      ? c.amoAgente   : 0)
+      acompteAmoAgente +
+      soldeAmoAgente
     )
 
     // Commissions — HT net si acompte illiCO débloqué (hors apporteurs artisans)
@@ -531,12 +545,17 @@ export default function Finances() {
     return {
       ...c,
       fraisReel,
+      fraisAgenteReel,
       honReel,
-      honAgenteReel,      
+      honAgenteReel,
+      acompteAmoNet,
+      acompteAmoAgente,
+      soldeAmoNet,
+      soldeAmoAgente,
       comReelNet,
-      comAgenteReel,      
+      comAgenteReel,
       comApporteursReel,
-      comApporteursAgente, 
+      comApporteursAgente,
       royaltiesReelTotal,
       apporteurRembourse,
       gainAgenteReel,
@@ -610,11 +629,13 @@ export default function Finances() {
 
     // Sync redevance quand Facture 2 change de statut
     if (type === 'ctp_vers_agente') {
+      const agenteProfile = agentes.find(a => a.id === agenteId)
+      const montantRedevance = agenteProfile?.redevance_mensuelle_ttc ?? 540
       await supabase.from('redevances').upsert({
         agente_id: agenteId,
         annee,
         mois,
-        montant_ttc: 540,
+        montant_ttc: montantRedevance,
         statut: updates.statut === 'paye' ? 'regle' : 'en_attente',
         date_paiement: updates.statut === 'paye' ? new Date().toISOString().split('T')[0] : null,
       }, { onConflict: 'agente_id,annee,mois' })
@@ -700,11 +721,20 @@ export default function Finances() {
 
       // Solde AMO
       const suiviAmo = suivi.find(s => s.type_echeance === 'solde_amo' && s.statut_client === 'regle')
-      if (c.amoNet > 0 && suiviAmo) {
+      if (c.soldeAmoNet > 0 && suiviAmo) {
         const dateAmo = suiviAmo?.date_paiement || d.date_fin_chantier
         const key = getKeyFromDate(dateAmo, isAnnee)
-        addToKey(key, 'amoNet', c.amoNet, d.id)
-        addToKey(key, 'honAgenteNet', c.courtAgente, d.id)
+        addToKey(key, 'amoNet', c.soldeAmoNet, d.id)
+        addToKey(key, 'honAgenteNet', c.soldeAmoAgente, d.id)
+      }
+
+      // Acompte AMO
+      const suiviAcompteAmo = suivi.find(s => s.type_echeance === 'acompte_amo' && s.statut_client === 'regle')
+      if (c.acompteAmoNet > 0 && suiviAcompteAmo) {
+        const dateAcompteAmo = suiviAcompteAmo?.date_paiement || d.date_fin_chantier
+        const key = getKeyFromDate(dateAcompteAmo, isAnnee)
+        addToKey(key, 'amoNet', c.acompteAmoNet, d.id)
+        addToKey(key, 'honAgenteNet', c.acompteAmoAgente, d.id)
       }
 
       // Commissions artisans normaux
@@ -1695,8 +1725,9 @@ export default function Finances() {
         await supabase.from('factures_agente').insert({ agente_id: agenteId, mois, annee, montant, type_facture: type, ...updates })
       }
       if (type === 'ctp_vers_agente') {
+        const montantRedevance = profile?.redevance_mensuelle_ttc ?? 540
         await supabase.from('redevances').upsert({
-          agente_id: agenteId, annee, mois, montant_ttc: 540,
+          agente_id: agenteId, annee, mois, montant_ttc: montantRedevance,
           statut: updates.statut === 'paye' ? 'regle' : 'en_attente',
           date_paiement: updates.statut === 'paye' ? new Date().toISOString().split('T')[0] : null,
         }, { onConflict: 'agente_id,annee,mois' })
@@ -1731,7 +1762,7 @@ export default function Finances() {
           const montantF1 = round2((agg.fraisAgenteNet||0) + (agg.comAgenteNet||0) + (agg.honAgenteNet||0) + (agg.comApporteursAgenteNet||0))
           const debutRedev = profile?.redevance_debut ? new Date(profile.redevance_debut) : null
           const moisConcerne = new Date(annee, mois - 1, 1)
-          const redevMois = debutRedev && moisConcerne >= debutRedev ? 540 : 0
+          const redevMois = debutRedev && moisConcerne >= debutRedev ? (profile?.redevance_mensuelle_ttc ?? 540) : 0
           const apporteurMois = round2(agg.apporteurRembourseNet||0)
           const montantF2 = round2(redevMois + apporteurMois)
           const net = round2(montantF1 - montantF2)
@@ -1843,7 +1874,7 @@ export default function Finances() {
       const montantF1 = round2((agg.fraisAgenteNet||0) + (agg.comAgenteNet||0) + (agg.honAgenteNet||0) + (agg.comApporteursAgenteNet||0))
       const debutRedev = profile?.redevance_debut ? new Date(profile.redevance_debut) : null
       const moisConcerne = new Date(anneeSelectionnee, mois - 1, 1)
-      const redev = debutRedev && moisConcerne >= debutRedev ? 540 : 0
+      const redev = debutRedev && moisConcerne >= debutRedev ? (profile?.redevance_mensuelle_ttc ?? 540) : 0
       const montantF2 = round2(redev + (agg.apporteurRembourseNet||0))
       const f1 = facturesAgente.find(f => f.mois === mois && f.annee === anneeSelectionnee && f.agente_id === profile?.id && f.type_facture === 'agente_vers_ctp')
       const f2 = facturesAgente.find(f => f.mois === mois && f.annee === anneeSelectionnee && f.agente_id === profile?.id && f.type_facture === 'ctp_vers_agente')
@@ -2485,7 +2516,7 @@ export default function Finances() {
         <div className="kpi-grid">
           <FinKpiCard label="F1 — Gains à facturer"       value={fmt(totalF1)}    sub={`Payé ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
           <FinKpiCard label="F2 — Redevances + apporteur" value={fmt(totalF2)}    sub={`Payé ${fmt(totalF2Paye)}`}                                              tone="warn"/>
-          <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · 540 €/mois`}     tone="brand"/>
+          <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ttc ?? 540} €/mois`}     tone="brand"/>
           <FinKpiCard label="Net à virer à l'agente"       value={(net >= 0 ? '+' : '') + fmt(Math.abs(net))} sub={net >= 0 ? 'F1 − F2' : "L'agente doit à CTP"} tone={net >= 0 ? 'brand' : 'bad'}/>
         </div>
 
@@ -2575,7 +2606,7 @@ export default function Finances() {
 
         {/* Redevances 12 mois */}
         <div className="card" style={{padding:22}}>
-          <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)',marginBottom:14}}>Redevances mensuelles · 540 € TTC</div>
+          <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)',marginBottom:14}}>Redevances mensuelles · {agenteActuelle?.redevance_mensuelle_ttc ?? 540} € TTC</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(12,1fr)',gap:6}}>
             {MOIS_LABELS.map((mLabel, i) => {
               const r = redevAg.find(rv => rv.mois === i+1 && rv.annee === anneeEnCours)
@@ -2626,7 +2657,7 @@ export default function Finances() {
         const gains = round2(agg.gainsAgenteReels||0)
         const debutRedev = agenteActuelle?.redevance_debut ? new Date(agenteActuelle.redevance_debut) : null
         const moisConcerne = new Date(anneeSelectionnee, mois - 1, 1)
-        const redev = debutRedev && moisConcerne >= debutRedev ? 540 : 0
+        const redev = debutRedev && moisConcerne >= debutRedev ? (agenteActuelle?.redevance_mensuelle_ttc ?? 540) : 0
         const apporteur = round2(agg.apporteurRembourseNet||0)
         const duParAgente = round2(redev + apporteur)
         const f1 = facturesAgente.find(f => f.mois === mois && f.annee === anneeSelectionnee && f.agente_id === agenteSelectionnee && f.type_facture === 'agente_vers_ctp')
@@ -2728,7 +2759,7 @@ export default function Finances() {
           const gains = round2(agg.gainsAgenteReels||0)
           const debutRedev = agenteActuelle?.redevance_debut ? new Date(agenteActuelle.redevance_debut) : null
           const moisConcerne = new Date(annee, mois - 1, 1)
-          const redev = debutRedev && moisConcerne >= debutRedev ? 540 : 0
+          const redev = debutRedev && moisConcerne >= debutRedev ? (agenteActuelle?.redevance_mensuelle_ttc ?? 540) : 0
           const apporteur = round2(agg.apporteurRembourseNet||0)
           const duParAgente = round2(redev + apporteur)
           const net = round2(duParAgente - gains)
