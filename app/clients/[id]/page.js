@@ -91,6 +91,7 @@ export default function FicheClient({ params }) {
   const [erreur, setErreur] = useState('')
   const [succes, setSucces] = useState('')
   const [mode, setMode] = useState('vue')
+  const [voirToutHistorique, setVoirToutHistorique] = useState(false)
   const router = useRouter()
   const { user, profile: authProfile, initialized } = useAuth()
 
@@ -214,7 +215,6 @@ export default function FicheClient({ params }) {
     ),
   ].sort((a, b) => new Date(b.date) - new Date(a.date))
 
-  const [voirToutHistorique, setVoirToutHistorique] = useState(false)
   const historiqueItems = historiqueRaw.slice(0, voirToutHistorique ? 10 : 5)
 
   const dernierRdvSub = dernierRdv
