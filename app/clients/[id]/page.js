@@ -103,7 +103,7 @@ export default function FicheClient({ params }) {
           .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role)')
           .eq('id', id).single(),
         supabase.from('dossiers')
-          .select('*, rendez_vous(id, type_rdv, date_heure), devis_artisans(id, statut, montant_ttc)')
+          .select('*, rendez_vous(id, type_rdv, titre, date_heure), devis_artisans(id, statut, montant_ttc), suivi_financier(type_echeance, date_reglement, statut_client, montant_ttc)')
           .eq('client_id', id)
           .order('created_at', { ascending: false }),
       ])
@@ -184,16 +184,38 @@ export default function FicheClient({ params }) {
   const allRdvs = dossiers.flatMap(d => (d.rendez_vous || []))
     .sort((a, b) => new Date(a.date_heure) - new Date(b.date_heure))
 
-  const premierRdv = allRdvs[0] || null
   const dernierRdv = allRdvs[allRdvs.length - 1] || null
 
   const signesCount = dossiers.filter(d => ['signe', 'en_cours'].includes(d.statut)).length
   const clientActif = dossiers.some(d => d.statut === 'en_cours')
 
-  const historiqueItems = [...allRdvs]
-    .sort((a, b) => new Date(b.date_heure) - new Date(a.date_heure))
-    .slice(0, 5)
-    .map(rdv => ({ text: rdv.type_rdv || 'Rendez-vous', date: fmtDate(rdv.date_heure) }))
+  const ECHEANCE_LABELS = {
+    acompte_amo:         'Acompte AMO reçu',
+    acompte_artisan:     'Acompte artisan réglé',
+    apporteur_agente:    'Commission apporteur réglée',
+    facture_finale:      'Facture finale réglée',
+    frais_consultation:  'Frais de consultation réglés',
+    honoraires_courtage: 'Honoraires courtage reçus',
+    solde_amo:           'Solde AMO reçu',
+  }
+
+  const historiqueRaw = [
+    ...allRdvs.map(rdv => ({
+      text: rdv.titre || rdv.type_rdv || 'Rendez-vous',
+      date: rdv.date_heure,
+    })),
+    ...dossiers.flatMap(d => (d.suivi_financier || [])
+      .filter(sf => sf.statut_client === 'regle' && sf.date_reglement)
+      .map(sf => ({
+        text: ECHEANCE_LABELS[sf.type_echeance] || sf.type_echeance,
+        date: sf.date_reglement,
+        montant: sf.montant_ttc,
+      }))
+    ),
+  ].sort((a, b) => new Date(b.date) - new Date(a.date))
+
+  const [voirToutHistorique, setVoirToutHistorique] = useState(false)
+  const historiqueItems = historiqueRaw.slice(0, voirToutHistorique ? 10 : 5)
 
   const dernierRdvSub = dernierRdv
     ? `${dernierRdv.type_rdv ? dernierRdv.type_rdv + ' · ' : ''}avec ${client.referente?.prenom || '—'}`
@@ -280,8 +302,8 @@ export default function FicheClient({ params }) {
           <MiniKpi label="Montant total" value={fmtEur(montantTotal)} sub="TTC tous chantiers" tone="ok"/>
           <MiniKpi
             label="Premier contact"
-            value={premierRdv ? fmtDate(premierRdv.date_heure) : '—'}
-            sub={premierRdv ? `il y a ${diffJours(premierRdv.date_heure)} jours` : 'Aucun rendez-vous'}
+            value={fmtDate(client.created_at)}
+            sub={`il y a ${diffJours(client.created_at)} jours`}
             tone="brand"
           />
           <MiniKpi
@@ -366,18 +388,27 @@ export default function FicheClient({ params }) {
             {/* Historique */}
             <div className="card" style={{ padding: 22 }}>
               <h2 className="page" style={{ fontSize: 15, marginBottom: 12 }}>Historique</h2>
-              {historiqueItems.length === 0 ? (
-                <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Aucun rendez-vous enregistré</div>
+              {historiqueRaw.length === 0 ? (
+                <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Aucun événement enregistré</div>
               ) : (
-                <div style={{ fontSize: 12, color: 'var(--ink-500)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {historiqueItems.map((e, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      <CalIcon size={13}/>
-                      <span style={{ flex: 1, color: 'var(--ink-700)' }}>{e.text}</span>
-                      <span className="tnum">{e.date}</span>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <div style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {historiqueItems.map((e, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <CalIcon size={13} style={{ color: 'var(--ink-400)', flexShrink: 0 }}/>
+                        <span style={{ flex: 1, color: 'var(--ink-700)' }}>{e.text}</span>
+                        <span className="tnum" style={{ color: 'var(--ink-400)', whiteSpace: 'nowrap' }}>{fmtDate(e.date)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {historiqueRaw.length > 5 && (
+                    <button className="btn btn-ghost"
+                      style={{ marginTop: 8, fontSize: 12, width: '100%', justifyContent: 'center' }}
+                      onClick={() => setVoirToutHistorique(v => !v)}>
+                      {voirToutHistorique ? 'Réduire' : `Voir tout (${Math.min(historiqueRaw.length, 10)})`}
+                    </button>
+                  )}
+                </>
               )}
             </div>
 
