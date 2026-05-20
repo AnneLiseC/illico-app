@@ -124,21 +124,19 @@ function ChantiersList({ items, selectedId, onSelect, aujourdhui }) {
                     ) : d.date_fin_chantier ? (
                       <MiniMeta icon={<CalendarIcon size={12} />}>Fin {fmtDate(d.date_fin_chantier)}</MiniMeta>
                     ) : null}
-                    {d.montant_chantier_ttc > 0 && (
-                      <MiniMeta icon={<EuroIcon size={12} />}>
-                        <span className="tnum" style={{ fontWeight: 600, color: 'var(--ink-700)' }}>{fmtEur(d.montant_chantier_ttc)}</span>
-                      </MiniMeta>
-                    )}
+                    {(() => {
+                      const ttc = (d.devis_artisans || []).filter(dv => dv.statut === 'accepte').reduce((s, dv) => s + (dv.montant_ttc || 0), 0)
+                      return ttc > 0 ? (
+                        <MiniMeta icon={<EuroIcon size={12} />}>
+                          <span className="tnum" style={{ fontWeight: 600, color: 'var(--ink-700)' }}>{fmtEur(ttc)}</span>
+                        </MiniMeta>
+                      ) : null
+                    })()}
                   </div>
                   {d.referente && (
                     <Avatar name={`${d.referente.prenom} ${d.referente.nom}`} size={24} />
                   )}
                 </div>
-                {d.avancement > 0 && (
-                  <div style={{ marginTop: 10 }}>
-                    <Progress value={d.avancement} height={4} />
-                  </div>
-                )}
               </button>
             )
           })}
@@ -194,7 +192,7 @@ function ChantierPreview({ d, onOpen, onBack }) {
             <EyeIcon size={14} /> Ouvrir dossier
           </button>
           {d.client?.telephone && (
-            <a href={`tel:${d.client.tel}`} className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 12px' }}>
+            <a href={`tel:${d.client.telephone}`} className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 12px' }}>
               <PhoneIcon size={14} /> Appeler
             </a>
           )}
@@ -261,8 +259,10 @@ function ChantierPreview({ d, onOpen, onBack }) {
                     {dv.montant_ttc > 0 && <div className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-900)' }}>{fmtEur(dv.montant_ttc)}</div>}
                     <div style={{ marginTop: 3 }}>
                       {dv.statut === 'accepte'    && <Badge tone="ok">Signé</Badge>}
+                      {dv.statut === 'recu'       && <Badge tone="info">Reçu</Badge>}
+                      {dv.statut === 'a_modifier' && <Badge tone="warn">À modifier</Badge>}
                       {dv.statut === 'refuse'     && <Badge tone="bad">Refusé</Badge>}
-                      {dv.statut === 'en_attente' && <Badge tone="warn">En attente</Badge>}
+                      {dv.statut === 'en_attente' && <Badge tone="mute">En attente</Badge>}
                     </div>
                   </div>
                 </div>
@@ -287,7 +287,7 @@ function ChantierPreview({ d, onOpen, onBack }) {
           {d.client?.telephone && (
             <FactRow label="Téléphone" mono value={
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <PhoneIcon size={13} />{d.client.tel}
+                <PhoneIcon size={13} />{d.client.telephone}
               </span>
             } />
           )}
