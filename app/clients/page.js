@@ -4,6 +4,26 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 
+/* ── Inline SVG icons ── */
+function Svg({ size = 16, children }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+}
+const SearchIcon = ({ size=16 }) => <Svg size={size}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></Svg>
+const PinIcon    = ({ size=16 }) => <Svg size={size}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></Svg>
+const PhoneIcon  = ({ size=16 }) => <Svg size={size}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.38 2 2 0 0 1 3.58 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.54a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></Svg>
+const MailIcon   = ({ size=16 }) => <Svg size={size}><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></Svg>
+const MoreIcon   = ({ size=16 }) => <Svg size={size}><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></Svg>
+const FilterIcon = ({ size=16 }) => <Svg size={size}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></Svg>
+
+/* ── Helpers ── */
+const fmtEur = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
+const villeFromAddr = (addr) => {
+  if (!addr) return '—'
+  const parts = addr.split(',')
+  return parts[parts.length - 1]?.trim() || addr
+}
+
 export default function Clients() {
   const [clients, setClients] = useState([])
   const [agentes, setAgentes] = useState([])
@@ -20,7 +40,7 @@ export default function Clients() {
 
     let query = supabase
       .from('clients')
-      .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role)')
+      .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role), dossiers(id, devis_artisans(id, statut, montant_ttc))')
       .order('created_at', { ascending: false })
     if (profile.role === 'agente') query = query.eq('referente', profile.id)
 
@@ -38,12 +58,10 @@ export default function Clients() {
 
   const isMarine = profile?.role === 'admin'
 
-  // Filtrage par onglet (Marine uniquement) — dynamique par ID d'agente
   const clientsFiltresOnglet = clients.filter(c => {
     if (!isMarine) return true
     if (onglet === 'tous') return true
     if (onglet === 'moi') return c.referente?.role === 'admin'
-    // Onglet dynamique par agente : clé = ID de l'agente
     return c.referente?.id === onglet
   })
 
@@ -52,20 +70,16 @@ export default function Clients() {
       .includes(recherche.toLowerCase())
   )
 
-  // Onglets dynamiques : "Mes clients" + une tab par agente + "Tous"
   const ongletsList = isMarine ? [
     { key: 'moi', label: 'Mes clients' },
     ...agentes.map(a => ({ key: a.id, label: `Clients ${a.prenom} ${a.nom}` })),
     { key: 'tous', label: 'Tous les clients' },
   ] : []
 
-  // Afficher la colonne référente si on est sur "tous" ou sur un onglet agente
   const afficherReferente = isMarine && (onglet === 'tous' || agentes.some(a => a.id === onglet))
 
   if (loading) return (
-    <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>
-      Chargement…
-    </div>
+    <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>Chargement…</div>
   )
 
   return (
@@ -76,14 +90,12 @@ export default function Clients() {
         <div>
           <div className="eyebrow" style={{marginBottom:4}}>Contacts</div>
           <h1 className="page">Clients</h1>
-          <div style={{color:'var(--ink-500)', fontSize:13, marginTop:6}}>{clientsFiltres.length} client(s)</div>
+          <div style={{color:'var(--ink-500)', fontSize:13, marginTop:6}}>{clientsFiltres.length} clients · base actualisée</div>
         </div>
-        <button className="btn btn-primary" onClick={() => router.push('/clients/nouveau')}>
-          + Nouveau client
-        </button>
+        <button className="btn btn-primary" onClick={() => router.push('/clients/nouveau')}>+ Nouveau client</button>
       </div>
 
-      {/* Onglets Marine uniquement — dynamiques */}
+      {/* Onglets (admin uniquement) */}
       {isMarine && (
         <div className="tabs" style={{overflowX:'auto'}}>
           {ongletsList.map(({ key, label }) => (
@@ -95,15 +107,16 @@ export default function Clients() {
       )}
 
       {/* Barre de recherche */}
-      <div className="card" style={{padding:'14px 16px'}}>
-        <input
-          className="input"
-          type="text"
-          placeholder="Rechercher un client (nom, ville, email)…"
-          value={recherche}
-          onChange={e => setRecherche(e.target.value)}
-          style={{width:'100%', height:40}}
-        />
+      <div className="card" style={{padding:'14px 16px', display:'flex', gap:10}}>
+        <div style={{position:'relative', flex:1}}>
+          <span style={{position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', pointerEvents:'none'}}>
+            <SearchIcon size={16}/>
+          </span>
+          <input className="input" placeholder="Rechercher un client (nom, ville, email)…"
+            value={recherche} onChange={e => setRecherche(e.target.value)}
+            style={{paddingLeft:36, width:'100%', height:40}}/>
+        </div>
+        <button className="btn btn-ghost" style={{height:40}}><FilterIcon size={14}/> Filtres</button>
       </div>
 
       {/* Grille de cartes */}
@@ -116,27 +129,31 @@ export default function Clients() {
           </button>
         </div>
       ) : (
-        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(300px, 1fr))', gap:14}}>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:14}}>
           {clientsFiltres.map(client => {
+            const dossierCount = (client.dossiers || []).length
+            const montantTotal = (client.dossiers || []).reduce((s, d) =>
+              s + (d.devis_artisans || []).filter(dv => dv.statut === 'accepte')
+                .reduce((s2, dv) => s2 + (dv.montant_ttc || 0), 0), 0)
             const initials = `${(client.prenom || '').charAt(0)}${(client.nom || '').charAt(0)}`.toUpperCase()
             const isPro = client.type_client === 'professionnel'
-            const avatarBg = isPro ? '#7c3aed' : 'var(--brand-700)'
             return (
               <button key={client.id} onClick={() => router.push(`/clients/${client.id}`)}
-                className="card" style={{padding:18, border:0, textAlign:'left', cursor:'pointer', display:'flex', flexDirection:'column', gap:0}}>
+                className="card" style={{padding:18, border:0, textAlign:'left', cursor:'pointer'}}>
                 <div style={{display:'flex', gap:12, alignItems:'flex-start'}}>
-                  {/* Avatar initiales */}
+                  {/* Avatar */}
                   <div style={{
                     width:42, height:42, borderRadius:12, flexShrink:0,
-                    background:avatarBg, color:'#fff',
-                    display:'grid', placeItems:'center',
-                    fontSize:15, fontWeight:800, letterSpacing:0.5,
+                    background: isPro ? '#7c3aed' : 'var(--brand-700)', color:'#fff',
+                    display:'grid', placeItems:'center', fontSize:15, fontWeight:800, letterSpacing:0.5,
                   }}>{initials}</div>
                   <div style={{flex:1, minWidth:0}}>
+                    {/* Nom */}
                     <div style={{fontSize:15, fontWeight:700, color:'var(--ink-900)'}} className="clip-1">
                       {client.civilite} {client.prenom} {client.nom}
                       {client.prenom2 && ` & ${client.prenom2} ${client.nom2}`}
                     </div>
+                    {/* Badges */}
                     <div style={{display:'flex', gap:6, marginTop:6, flexWrap:'wrap', alignItems:'center'}}>
                       <span style={{
                         display:'inline-flex', alignItems:'center', padding:'2px 10px',
@@ -161,19 +178,43 @@ export default function Clients() {
                         </span>
                       )}
                     </div>
-                    {client.adresse && (
-                      <div style={{fontSize:12, color:'var(--ink-500)', marginTop:8}}>
-                        📍 {client.adresse}
-                      </div>
-                    )}
+                    {/* Ville */}
+                    <div style={{fontSize:12, color:'var(--ink-500)', marginTop:8, display:'flex', alignItems:'center', gap:4}}>
+                      <PinIcon size={12}/>{villeFromAddr(client.adresse)}
+                    </div>
                   </div>
+                  {/* Bouton More */}
+                  <button className="btn btn-ghost" style={{padding:'4px 8px', flexShrink:0}}
+                    onClick={e => e.stopPropagation()}><MoreIcon size={14}/></button>
                 </div>
-                {(client.telephone || client.email) && (
-                  <div style={{marginTop:14, paddingTop:14, borderTop:'1px solid var(--ink-100)', display:'flex', gap:14, fontSize:11.5, color:'var(--ink-500)', flexWrap:'wrap'}}>
-                    {client.telephone && <span>{client.telephone}</span>}
-                    {client.email && <span className="clip-1">{client.email}</span>}
+
+                {/* Contacts */}
+                <div style={{marginTop:14, display:'flex', gap:14, fontSize:11.5, color:'var(--ink-500)'}}>
+                  {client.telephone && (
+                    <span style={{display:'inline-flex', gap:4, alignItems:'center'}}>
+                      <PhoneIcon size={11}/>{client.telephone}
+                    </span>
+                  )}
+                  {client.email && (
+                    <span style={{display:'inline-flex', gap:4, alignItems:'center'}} className="clip-1">
+                      <MailIcon size={11}/>{client.email}
+                    </span>
+                  )}
+                </div>
+
+                {/* Footer — Dossiers + Montant total */}
+                <div style={{marginTop:14, paddingTop:14, borderTop:'1px solid var(--ink-100)', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                  <div>
+                    <div className="eyebrow">Dossiers</div>
+                    <div className="tnum" style={{fontSize:18, fontWeight:800, color:'var(--ink-900)'}}>{dossierCount}</div>
                   </div>
-                )}
+                  {montantTotal > 0 && (
+                    <div style={{textAlign:'right'}}>
+                      <div className="eyebrow">Montant total</div>
+                      <div className="tnum" style={{fontSize:14, fontWeight:700, color:'var(--brand-800)'}}>{fmtEur(montantTotal)}</div>
+                    </div>
+                  )}
+                </div>
               </button>
             )
           })}
