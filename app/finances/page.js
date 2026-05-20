@@ -253,7 +253,7 @@ export default function Finances() {
     setRedevances(redevancesData || [])
     setFacturesAgente(facturesAgenteData || [])
     setAgentes(agentesData || [])
-    setAgenteSelectionnee(prev => prev || agentesData?.[0]?.id || null)
+    setAgenteSelectionnee(prev => prev || (profile?.role === 'agente' ? profile.id : agentesData?.[0]?.id) || null)
     if (adminData) setNomFranchisee(`${adminData.prenom} ${adminData.nom}`)
     setObjectifs(objectifsData || [])
   }
@@ -266,6 +266,11 @@ export default function Finances() {
     if (!profile) return
     chargerTout().then(() => setLoading(false))
   }, [initialized, user?.id, profile?.id, router])
+
+  // Agente : périmètre forcé sur ses propres données (pas de sélecteur scope)
+  useEffect(() => {
+    if (profile?.role === 'agente') setScope('moi')
+  }, [profile?.role])
 
   // ── HELPERS PROFIL ─────────────────────────────────────────────────────────
 
@@ -664,6 +669,13 @@ export default function Finances() {
     : redevances
   const mesRedevances    = profile?.id ? redevances.filter(r => r.agente_id === profile.id) : redevances
 
+  // ── PÉRIMÈTRE SCOPÉ (défini tôt pour pouvoir scoper les KPI) ──────────────
+  const scopedDossiers = isMarine
+    ? (scope === 'tous' ? dossiers
+      : scope === 'moi'  ? mesDossiers
+      : dossiers.filter(d => d.referente?.id === scope))
+    : mesDossiers
+
 // ── AGRÉGATION PAR PÉRIODE ─────────────────────────────────────────────────
 
   const getKeyFromDate = (dateStr, isAnnee = false) => {
@@ -794,6 +806,7 @@ export default function Finances() {
 
   const anneeEnCours = new Date().getFullYear()
   const rowsReelAnneeEnCours = agrégerParPaiement(dossiers, false)
+  const rowsReelScoped       = agrégerParPaiement(scopedDossiers, false)
   const chantiersAnneeEnCours = dossiers.filter(d => {
     const date = d.date_fin_chantier || d.date_demarrage_chantier || d.date_signature_contrat || d.created_at
     return date && new Date(date).getFullYear() === anneeEnCours
@@ -804,19 +817,19 @@ export default function Finances() {
     .reduce((s, r) => s + (r.montant_ttc || 540), 0)
 
   const totalGainsAgentesReels = (() => {
-    const keysAnnee = rowsReelAnneeEnCours
+    const keysAnnee = rowsReelScoped
       .filter(([k]) => k.startsWith(String(anneeEnCours)))
       .map(([, agg]) => agg)
     return round2(keysAnnee.reduce((s, agg) => s + (agg.gainsAgenteReels || 0), 0))
   })()
 
   const totalNetCTP = (() => {
-    const keysAnnee = rowsReelAnneeEnCours.filter(([k]) => k.startsWith(String(anneeEnCours)))
+    const keysAnnee = rowsReelScoped.filter(([k]) => k.startsWith(String(anneeEnCours)))
     const reelProduits = keysAnnee.reduce((s, [, agg]) => s + round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0)), 0)
-    const reelRedev = redevances.filter(r => r.statut === 'regle' && r.annee === anneeEnCours).reduce((s, r) => s + (r.montant_ttc || 540), 0)
+    const reelRedev = (isMarine ? redevances : mesRedevances).filter(r => r.statut === 'regle' && r.annee === anneeEnCours).reduce((s, r) => s + (r.montant_ttc || 540), 0)
     const reelCharges = keysAnnee.reduce((s, [, agg]) => s + (agg.gainsAgenteReels || 0), 0)
     return round2(reelProduits + reelRedev - reelCharges)
-  })()  
+  })()
 
   const mesDossiersGainsPrevi  = mesDossiers.reduce((s, d) => s + calculer(d).gainsAgentePrevi, 0)
   const mesDossiersGainsReels  = mesDossiers.reduce((s, d) => s + calculerReel(d).gainsAgenteReels, 0)
@@ -825,12 +838,7 @@ export default function Finances() {
   const monNet                 = mesDossiersGainsReels - mesRedevancesReglees - mesApporteurDu
 
   // ── PÉRIMÈTRE SCOPÉ ────────────────────────────────────────────────────────
-
-  const scopedDossiers = isMarine
-    ? (scope === 'tous' ? dossiers
-      : scope === 'moi'  ? mesDossiers
-      : dossiers.filter(d => d.referente?.id === scope))
-    : mesDossiers
+  // scopedDossiers est défini plus haut (avant les KPI réels)
 
   const scopedKpi = useMemo(() => {
     const totPreviNet  = scopedDossiers.reduce((s, d) => s + calculer(d).gainsAdminPreviTotal + calculer(d).gainsAgentePreviTotal, 0)
@@ -2493,24 +2501,26 @@ export default function Finances() {
 
     return (
       <div style={{display:'flex',flexDirection:'column',gap:18}}>
-        {/* Sélecteur agente */}
-        <div className="card" style={{padding:'14px 18px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
-          <div className="eyebrow">Agente :</div>
-          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-            {agentes.filter(a => a.role === 'agente').map(a => (
-              <button key={a.id} onClick={() => setAgenteSelectionnee(a.id)} style={{
-                display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:99,
-                border:'1px solid',borderColor: agenteSelectionnee === a.id ? 'var(--brand-500)' : 'var(--ink-200)',
-                background: agenteSelectionnee === a.id ? 'var(--brand-50)' : '#fff',
-                color: agenteSelectionnee === a.id ? 'var(--brand-800)' : 'var(--ink-700)',
-                fontSize:12,fontWeight:600,cursor:'pointer',
-              }}>
-                <Avatar name={`${a.prenom} ${a.nom}`} size={20}/>
-                {a.prenom} {a.nom}
-              </button>
-            ))}
+        {/* Sélecteur agente — admin uniquement (agente voit sa propre facturation) */}
+        {isMarine && (
+          <div className="card" style={{padding:'14px 18px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+            <div className="eyebrow">Agente :</div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              {agentes.filter(a => a.role === 'agente').map(a => (
+                <button key={a.id} onClick={() => setAgenteSelectionnee(a.id)} style={{
+                  display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:99,
+                  border:'1px solid',borderColor: agenteSelectionnee === a.id ? 'var(--brand-500)' : 'var(--ink-200)',
+                  background: agenteSelectionnee === a.id ? 'var(--brand-50)' : '#fff',
+                  color: agenteSelectionnee === a.id ? 'var(--brand-800)' : 'var(--ink-700)',
+                  fontSize:12,fontWeight:600,cursor:'pointer',
+                }}>
+                  <Avatar name={`${a.prenom} ${a.nom}`} size={20}/>
+                  {a.prenom} {a.nom}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* KPI strip */}
         <div className="kpi-grid">
@@ -2945,40 +2955,30 @@ export default function Finances() {
         <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => setTab('facturation')}>🗒️Facturation agentes</button>
       </div>
 
-      {/* KPI strip */}
+      {/* KPI strip — même layout pour admin et agente, données scopées */}
       <div className="kpi-grid">
-        {isMarine ? (
-          <>
-            <FinKpiCard label={`CA réel net ${anneeEnCours}`} value={fmt(totalNetCTP)} tone="brand">
-              <div style={{marginTop:8}}>
-                <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
-                  <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
-                </div>
-                <div style={{fontSize:11,color:'var(--ink-500)'}}>
-                  Objectif <span style={{fontWeight:600,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(objectifAnnuel)}</span> · {pctObjectif}%
-                </div>
-              </div>
-            </FinKpiCard>
-            <FinKpiCard label="CA prévisionnel"
-              value={fmt(totPreviNet)}
-              sub={`${fmt(round2(totComHT+totFraisHT))} brut · ${fmt(totRoyalties)} royalties`}
-              tone="ok"/>
-            <FinKpiCard label="Commissions HT"
-              value={fmt(totComHT)}
-              sub={`Frais conso. ${fmt(totFraisHT)} HT`}
-              tone="warn"/>
-            <FinKpiCard label="Part franchisée"
-              value={fmt(round2(totalNetCTP-totalGainsAgentesReels))}
-              sub={`Part agentes ${fmt(totalGainsAgentesReels)}`}
-              tone="brand"/>
-          </>
-        ) : (
-          <>
-            <FinKpiCard label="Gains prévisionnels"   value={fmt(mesDossiersGainsPrevi)}                                    tone="mute"/>
-            <FinKpiCard label="Gains réels encaissés" value={fmt(mesDossiersGainsReels)}                                    tone="ok"/>
-            <FinKpiCard label="Mon net"               value={fmt(monNet)} tone={monNet >= 0 ? 'brand' : 'bad'} sub={`Prévi. ${fmt(mesDossiersGainsPrevi)}`}/>
-          </>
-        )}
+        <FinKpiCard label={`CA réel net ${anneeEnCours}`} value={fmt(totalNetCTP)} tone="brand">
+          <div style={{marginTop:8}}>
+            <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
+              <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
+            </div>
+            <div style={{fontSize:11,color:'var(--ink-500)'}}>
+              Objectif <span style={{fontWeight:600,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(objectifAnnuel)}</span> · {pctObjectif}%
+            </div>
+          </div>
+        </FinKpiCard>
+        <FinKpiCard label="CA prévisionnel"
+          value={fmt(totPreviNet)}
+          sub={`${fmt(round2(totComHT+totFraisHT))} brut · ${fmt(totRoyalties)} royalties`}
+          tone="ok"/>
+        <FinKpiCard label="Commissions HT"
+          value={fmt(totComHT)}
+          sub={`Frais conso. ${fmt(totFraisHT)} HT`}
+          tone="warn"/>
+        <FinKpiCard label={isMarine ? "Part franchisée" : "Mes gains"}
+          value={fmt(isMarine ? round2(totalNetCTP-totalGainsAgentesReels) : totalGainsAgentesReels)}
+          sub={isMarine ? `Part agentes ${fmt(totalGainsAgentesReels)}` : 'Réels encaissés'}
+          tone="brand"/>
       </div>
 
       {/* ── F1 PRÉVISIONNEL ── */}
@@ -3017,14 +3017,8 @@ export default function Finances() {
             )}
           </div>
           {period === 'chantier' && renderFinanceTable(scopedDossiers, false)}
-          {period === 'mois'     && (isMarine
-            ? renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, false), 'Mois')
-            : renderMesPeriode(scopedDossiers, 'Mois', agrégerParPaiement(scopedDossiers, false))
-          )}
-          {period === 'annee'    && (isMarine
-            ? renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, true), 'Année')
-            : renderMesPeriode(scopedDossiers, 'Année', agrégerParPaiement(scopedDossiers, true))
-          )}
+          {period === 'mois'     && renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, false), 'Mois')}
+          {period === 'annee'    && renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, true), 'Année')}
         </div>
       )}
 
@@ -3064,42 +3058,30 @@ export default function Finances() {
             )}
           </div>
           {period === 'chantier' && renderFinanceTable(scopedDossiers, true)}
-          {period === 'mois'     && (isMarine
-            ? renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, false), 'Mois')
-            : renderMesPeriode(scopedDossiers, 'Mois', agrégerParPaiement(scopedDossiers, false))
-          )}
-          {period === 'annee'    && (isMarine
-            ? renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, true), 'Année')
-            : renderMesPeriode(scopedDossiers, 'Année', agrégerParPaiement(scopedDossiers, true))
-          )}
+          {period === 'mois'     && renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, false), 'Mois')}
+          {period === 'annee'    && renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, true), 'Année')}
         </div>
       )}
 
       {/* ── SYNTHÈSE ── */}
       {tab === 'synthese' && <SyntheseView />}
 
-      {/* ── SUIVI FINANCIER ── */}
+      {/* ── SUIVI FINANCIER — même layout admin/agente, données scopées ── */}
       {tab === 'suivi' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {isMarine ? (
-            <>
-              <PillToggle
-                options={[{key:'agence',label:'Agence — Encaissements bruts'},{key:'ctp',label:'CTP — Résultat net (charges incluses)'}]}
-                active={suiviMode}
-                onChange={setSuiviMode}
-              />
-              {renderSuiviFinancier(suiviMode)}
-            </>
-          ) : (
-            renderSuiviAgenteFinancier()
-          )}
+          <PillToggle
+            options={[{key:'agence',label:'Agence — Encaissements bruts'},{key:'ctp',label:'CTP — Résultat net (charges incluses)'}]}
+            active={suiviMode}
+            onChange={setSuiviMode}
+          />
+          {renderSuiviFinancier(suiviMode)}
         </div>
       )}
 
-      {/* ── FACTURATION ── */}
+      {/* ── FACTURATION — même composant, données filtrées sur agente connectée ── */}
       {tab === 'facturation' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {isMarine ? <FacturationAgentes /> : <FacturationAgentePropre />}
+          <FacturationAgentes />
         </div>
       )}
 
