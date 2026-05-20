@@ -1123,6 +1123,14 @@ export default function FicheChantier({ params }) {
   const suiviAcompteAMO = suiviFinancier.find(s => s.type_echeance === 'acompte_amo')
   const suiviSoldeAMO = suiviFinancier.find(s => s.type_echeance === 'solde_amo')
 
+  // Compteurs acomptes / factures (basés sur statut_illico='recu')
+  const acomptesTotal  = devisSignes.length
+  const acomptesRecus  = devisSignes.filter(dv => suiviFinancier.find(x =>
+    x.type_echeance === 'acompte_artisan' && x.artisan_id === dv.artisan_id && x.statut_illico === 'recu')).length
+  const facturesTotal  = devisSignes.length
+  const facturesPayees = devisSignes.filter(dv => suiviFinancier.find(x =>
+    x.type_echeance === 'facture_finale' && x.artisan_id === dv.artisan_id && x.statut_illico === 'recu')).length
+
   const majSuiviAvecArtisan = async (type, artisanId, champ, valeur) => {
     const { data: existing } = await supabase
       .from('suivi_financier').select('id')
@@ -1427,10 +1435,10 @@ export default function FicheChantier({ params }) {
                 style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
                 <EditIcon /> Modifier
               </button>
-              {client?.tel && (
-                <a href={`tel:${client.tel}`} className="btn btn-ghost"
+              {client?.telephone && (
+                <a href={`tel:${client.telephone}`} className="btn btn-ghost"
                   style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                  <PhoneIcon /> {client.tel}
+                  <PhoneIcon /> {client.telephone}
                 </a>
               )}
               {client?.email && (
@@ -1481,15 +1489,25 @@ export default function FicheChantier({ params }) {
           tone="warn"
         />
         <MiniKpi
-          label="Devis artisans"
-          value={String(devis.length)}
-          sub={`${devisSignes.length} signés · ${devis.filter(d => d.statut === 'recu').length} reçus`}
+          label="Acomptes reçus"
+          value={`${acomptesRecus} / ${acomptesTotal}`}
+          sub={`${facturesPayees} / ${facturesTotal} factures payées`}
           tone="info"
         />
         <MiniKpi
           label="Honoraires prévus"
-          value={['courtage','amo'].includes(dossier.typologie) ? fmt(honorairesCourtagePrev) : '—'}
-          sub={dossier.typologie === 'amo' ? `AMO total : ${fmt(honorairesAMOPrev)}` : ''}
+          value={
+            dossier.typologie === 'amo'      ? fmt(honorairesAMOPrev) :
+            dossier.typologie === 'courtage' ? fmt(honorairesCourtagePrev) :
+            '—'
+          }
+          sub={
+            dossier.typologie === 'amo'
+              ? `Acompte ${tauxCourtagePct}% + Solde ${tauxAmoPct}%`
+              : dossier.typologie === 'courtage'
+              ? `${tauxCourtagePct}% du chantier TTC`
+              : ''
+          }
           tone="ok"
         />
       </div>
