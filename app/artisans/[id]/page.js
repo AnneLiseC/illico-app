@@ -66,7 +66,7 @@ export default function FicheArtisan({ params }) {
 
       const [{ data }, { data: fichesData }] = await Promise.all([
         supabase.from('artisans')
-          .select('*, devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, devis_signe_url, dossier:dossiers(id, reference, client:clients(id, prenom, nom, civilite)))')
+          .select('*, devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, devis_signe_path, dossier:dossiers(id, reference, client:clients(id, prenom, nom, civilite)))')
           .eq('id', id).single(),
         supabase.from('fiches_techniques').select('*').eq('artisan_id', id).order('nom'),
       ])
@@ -140,8 +140,8 @@ export default function FicheArtisan({ params }) {
   }
 
   const ouvrirDevis = async (dv) => {
-    if (dv.devis_signe_url) {
-      const { data } = await supabase.storage.from('documents').createSignedUrl(dv.devis_signe_url, 3600)
+    if (dv.devis_signe_path) {
+      const { data } = await supabase.storage.from('documents').createSignedUrl(dv.devis_signe_path, 3600)
       if (data?.signedUrl) { window.open(data.signedUrl, '_blank'); return }
     }
     if (dv.dossier?.id) router.push(`/chantiers/${dv.dossier.id}`)
@@ -301,7 +301,7 @@ export default function FicheArtisan({ params }) {
               const clientNom = [dv.dossier?.client?.civilite, dv.dossier?.client?.prenom, dv.dossier?.client?.nom].filter(Boolean).join(' ')
               return (
                 <div key={dv.id} className="row-hover"
-                  style={{padding:'12px 20px', borderTop:'1px solid var(--ink-100)', display:'flex', alignItems:'center', gap:12, cursor: (dv.devis_signe_url || dv.dossier?.id) ? 'pointer' : 'default'}}
+                  style={{padding:'12px 20px', borderTop:'1px solid var(--ink-100)', display:'flex', alignItems:'center', gap:12, cursor: (dv.devis_signe_path || dv.dossier?.id) ? 'pointer' : 'default'}}
                   onClick={() => ouvrirDevis(dv)}>
                   <div style={{flex:1, minWidth:0}}>
                     <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)'}} className="clip-1">
@@ -320,7 +320,7 @@ export default function FicheArtisan({ params }) {
                   <span className="tnum" style={{fontSize:13, fontWeight:700, color:'var(--brand-800)', flexShrink:0}}>
                     {dv.montant_ht ? fmtEur(dv.montant_ht) : '—'}
                   </span>
-                  {(dv.devis_signe_url || dv.dossier?.id) && <ArrowIcon size={12}/>}
+                  {(dv.devis_signe_path || dv.dossier?.id) && <ArrowIcon size={12}/>}
                 </div>
               )
             })

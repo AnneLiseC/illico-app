@@ -27,11 +27,13 @@ const diffJours = (d) => {
 }
 
 const STATUTS = {
-  en_cours:   { label: 'En cours',   bg: 'rgba(22,163,74,0.1)',  color: '#15803d' },
-  en_attente: { label: 'En attente', bg: 'rgba(234,179,8,0.1)',  color: '#a16207' },
-  signe:      { label: 'Signé',      bg: 'rgba(0,148,212,0.1)', color: 'var(--brand-800)' },
-  termine:    { label: 'Terminé',    bg: 'var(--ink-100)',       color: 'var(--ink-500)' },
-  annule:     { label: 'Annulé',     bg: 'rgba(239,68,68,0.1)', color: '#dc2626' },
+  a_contacter:       { label: 'À contacter',    bg: 'rgba(234,179,8,0.1)',  color: '#a16207' },
+  a_relancer:        { label: 'À relancer',      bg: 'rgba(249,115,22,0.1)', color: '#c2410c' },
+  devis_en_attente:  { label: 'Devis en attente', bg: 'rgba(234,179,8,0.1)', color: '#a16207' },
+  devis_a_modifier:  { label: 'Devis à modifier', bg: 'rgba(249,115,22,0.1)', color: '#c2410c' },
+  en_cours_chantier: { label: 'En cours',        bg: 'rgba(22,163,74,0.1)', color: '#15803d' },
+  termine:           { label: 'Terminé',          bg: 'var(--ink-100)',      color: 'var(--ink-500)' },
+  annule:            { label: 'Annulé',           bg: 'rgba(239,68,68,0.1)', color: '#dc2626' },
 }
 
 const TYPOLOGIES = {
@@ -186,8 +188,8 @@ export default function FicheClient({ params }) {
 
   const dernierRdv = allRdvs[allRdvs.length - 1] || null
 
-  const signesCount = dossiers.filter(d => ['signe', 'en_cours'].includes(d.statut)).length
-  const clientActif = dossiers.some(d => d.statut === 'en_cours')
+  const signesCount = dossiers.filter(d => d.contrat_signe === true).length
+  const clientActif = dossiers.some(d => d.statut === 'en_cours_chantier')
 
   const ECHEANCE_LABELS = {
     acompte_amo:         'Acompte AMO reçu',
