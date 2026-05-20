@@ -159,10 +159,11 @@ function ChantierPreview({ d, onOpen, onBack }) {
     </div>
   )
 
-  const s             = calcStatut(d)
-  const devisArtisans = d.devis_artisans || []
-  const devisAcceptes = devisArtisans.filter(dv => dv.statut === 'accepte')
-  const totalCom      = devisAcceptes.reduce((sum, dv) => sum + ((dv.montant_ht || 0) * (dv.commission_pourcentage || 0) / 100), 0)
+  const s                  = calcStatut(d)
+  const devisArtisans      = d.devis_artisans || []
+  const devisAcceptes      = devisArtisans.filter(dv => dv.statut === 'accepte')
+  const totalDevisTTCSignes = devisAcceptes.reduce((sum, dv) => sum + (dv.montant_ttc || 0), 0)
+  const totalCom           = devisAcceptes.reduce((sum, dv) => sum + ((dv.montant_ht || 0) * (dv.commission_pourcentage || 0) / 100), 0)
 
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -192,7 +193,7 @@ function ChantierPreview({ d, onOpen, onBack }) {
           <button className="btn btn-primary" style={{ fontSize: 12, padding: '6px 12px' }} onClick={() => onOpen(d.id)}>
             <EyeIcon size={14} /> Ouvrir dossier
           </button>
-          {d.client?.tel && (
+          {d.client?.telephone && (
             <a href={`tel:${d.client.tel}`} className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 12px' }}>
               <PhoneIcon size={14} /> Appeler
             </a>
@@ -210,12 +211,14 @@ function ChantierPreview({ d, onOpen, onBack }) {
       <div style={{ flex: 1, overflowY: 'auto', padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 22 }}>
         {/* Quick facts */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          {d.surface > 0 && <FactRow label="Surface" value={`${d.surface} m²`} />}
-          {d.montant_chantier_ttc > 0 && <FactRow label="Montant chantier" value={fmtEur(d.montant_chantier_ttc)} highlight />}
+          {totalDevisTTCSignes > 0 && <FactRow label="Montant chantier" value={fmtEur(totalDevisTTCSignes)} highlight />}
           <FactRow label="Contrat signé" value={d.contrat_signe
             ? <span style={{ color: '#15803d', fontWeight: 600, display: 'inline-flex', gap: 5, alignItems: 'center' }}><CheckIcon size={14} /> {fmtDate(d.date_signature_contrat)}</span>
             : <span style={{ color: '#b91c1c' }}>Non signé</span>}
           />
+          {d.date_demarrage_chantier && <FactRow label="Démarrage" value={fmtDate(d.date_demarrage_chantier)} />}
+          {d.date_fin_chantier && <FactRow label="Fin prévue" value={fmtDate(d.date_fin_chantier)} />}
+          {d.date_limite_devis && <FactRow label="Limite devis" value={fmtDate(d.date_limite_devis)} />}
           {d.referente && (
             <FactRow label="Référente" value={
               <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
@@ -234,20 +237,6 @@ function ChantierPreview({ d, onOpen, onBack }) {
           </div>
         )}
 
-        {/* Avancement */}
-        {d.avancement > 0 && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <div className="eyebrow">Avancement</div>
-              <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--brand-800)' }}>{d.avancement}%</span>
-            </div>
-            <Progress value={d.avancement} height={8} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11.5, color: 'var(--ink-500)' }}>
-              {d.date_demarrage_chantier && <span>Démarrage : <strong>{fmtDate(d.date_demarrage_chantier)}</strong></span>}
-              {d.date_fin_chantier && <span>Fin prévue : <strong>{fmtDate(d.date_fin_chantier)}</strong></span>}
-            </div>
-          </div>
-        )}
 
         {/* Artisans */}
         {devisArtisans.length > 0 && (
@@ -295,7 +284,7 @@ function ChantierPreview({ d, onOpen, onBack }) {
 
         {/* Contact */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          {d.client?.tel && (
+          {d.client?.telephone && (
             <FactRow label="Téléphone" mono value={
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <PhoneIcon size={13} />{d.client.tel}
@@ -345,7 +334,7 @@ export default function Chantiers() {
 
     let query = supabase
       .from('dossiers')
-      .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse, tel, email), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, artisan:artisans(id, entreprise)), comptes_rendus(id, type_visite)')
+      .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse, telephone, email), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, artisan:artisans(id, entreprise, metier, ville)), comptes_rendus(id, type_visite)')
       .order('created_at', { ascending: false })
     if (profile.role === 'agente') query = query.eq('referente_id', profile.id)
 
