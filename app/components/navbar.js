@@ -4,43 +4,86 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth-context'
-import Image from 'next/image'
 
-function BellIcon({ count }) {
+/* ── Inline SVG icons ── */
+function Icon({ d, d2, children }) {
   return (
-    <Link href="/notifications" className="relative text-blue-200 hover:text-white p-1.5">
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-          d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-      </svg>
-      {count > 0 && (
-        <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5">
-          {count > 99 ? '99+' : count}
-        </span>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {d  && <path d={d}/>}
+      {d2 && <path d={d2}/>}
+      {children}
+    </svg>
+  )
+}
+const HomeIcon     = () => <Icon d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" d2="M9 22V12h6v10"/>
+const FolderIcon   = () => <Icon d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+const UsersIcon    = () => <Icon d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" d2="M23 21v-2a4 4 0 0 0-3-3.87"><circle cx="9" cy="7" r="4"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></Icon>
+const WrenchIcon   = () => <Icon d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+const CalendarIcon = () => <Icon><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></Icon>
+const WalletIcon   = () => <Icon><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></Icon>
+const MessageIcon  = () => <Icon d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+const ChartIcon    = () => <Icon><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></Icon>
+const SettingsIcon = () => <Icon d2="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"><circle cx="12" cy="12" r="3"/></Icon>
+const PinIcon      = () => <Icon><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17H19V13L17 7H7L5 13V17Z"/></Icon>
+const LogOutIcon   = () => <Icon d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" d2="M16 17l5-5-5-5"><line x1="21" y1="12" x2="9" y2="12"/></Icon>
+
+const NAV_GROUPS = [
+  {
+    label: 'Activité',
+    items: [
+      { href: '/dashboard',    label: 'Tableau de bord', Icon: HomeIcon },
+      { href: '/chantiers',    label: 'Chantiers',        Icon: FolderIcon, badge: null },
+    ],
+  },
+  {
+    label: 'Contacts',
+    items: [
+      { href: '/clients',      label: 'Clients',          Icon: UsersIcon },
+      { href: '/artisans',     label: 'Artisans',         Icon: WrenchIcon },
+    ],
+  },
+  {
+    label: 'Pilotage',
+    items: [
+      { href: '/planning',     label: 'Planning',         Icon: CalendarIcon },
+      { href: '/finances',     label: 'Finances',         Icon: WalletIcon },
+      { href: '/messagerie',   label: 'Messagerie',       Icon: MessageIcon },
+      { href: '/statistiques', label: 'Statistiques',     Icon: ChartIcon },
+    ],
+  },
+  {
+    label: 'Système',
+    items: [
+      { href: '/parametres',   label: 'Paramètres',       Icon: SettingsIcon, adminOnly: true },
+    ],
+  },
+]
+
+function NavItem({ href, label, Icon: ItemIcon, badge, active, open }) {
+  return (
+    <Link href={href} className={`nav-item${active ? ' active' : ''}`}>
+      <span className="nav-icon"><ItemIcon /></span>
+      <span className="nav-label">{label}</span>
+      {badge != null && (
+        open
+          ? <span className="nav-badge">{badge}</span>
+          : <span className="nav-badge-dot" />
       )}
     </Link>
   )
 }
 
-const NAV_LINKS = [
-  { href: '/chantiers', label: 'Chantiers', emoji: '🏗' },
-  { href: '/clients', label: 'Clients', emoji: '👤' },
-  { href: '/artisans', label: 'Artisans', emoji: '🔨' },
-  { href: '/messagerie', label: 'Messagerie', emoji: '💬' },
-  { href: '/planning', label: 'Planning', emoji: '📅' },
-  { href: '/finances', label: 'Finances', emoji: '💰' },
-  { href: '/statistiques', label: 'Stats', emoji: '📊' },
-  { href: '/parametres',   label: 'Paramètres',emoji: '⚙️', adminOnly: true },
-]
-
 export default function NavBar() {
   const router = useRouter()
   const pathname = usePathname()
-  const [menuOuvert, setMenuOuvert] = useState(false)
+  const [hover, setHover] = useState(false)
+  const [pinned, setPinned] = useState(false)
   const { profile, unreadCount } = useAuth()
 
-  // Masquer sur login, page d'accueil, espace-client
-  const hidden = ['/', '/login', '/espace-client'].some(p => pathname === p || pathname?.startsWith('/espace-client'))
+  const hidden = ['/', '/login', '/espace-client'].some(
+    p => pathname === p || pathname?.startsWith('/espace-client')
+  )
   if (hidden || !profile) return null
 
   const handleLogout = async () => {
@@ -49,78 +92,71 @@ export default function NavBar() {
   }
 
   const isActive = (href) => pathname?.startsWith(href)
+  const open = pinned || hover
 
-  const linkCls = (href) => `px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-    isActive(href) ? 'bg-white text-blue-900' : 'text-blue-100 hover:bg-blue-700 hover:text-white'
-  }`
+  const initials = `${profile.prenom?.[0] ?? ''}${profile.nom?.[0] ?? ''}`.toUpperCase()
+  const roleLabel = profile.role === 'admin' ? 'Franchisée' : profile.role === 'agente' ? 'Agente' : 'Membre'
 
   return (
-    <nav style={{ backgroundColor: '#00578e' }} className="sticky top-0 z-50 shadow-md">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="flex items-center justify-between h-14">
+    <aside
+      className={`sidebar${open ? ' open' : ''}${pinned ? ' pinned' : ''}`}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      <div className="sidebar-inner">
 
-          {/* Logo */}
-          <Link href="/dashboard" className="flex items-center">
-            <Image src="/logo.png" alt="illiCO travaux" width={120} height={32} className="h-8 w-auto" />
-          </Link>
-
-          {/* Nav desktop */}
-          <div className="hidden md:flex items-center gap-1">
-            {NAV_LINKS.filter(l => !l.adminOnly || profile?.role === 'admin').map(({ href, label, emoji }) => (
-              <Link key={href} href={href} className={linkCls(href)}>
-                <span className="mr-1">{emoji}</span>{label}
-              </Link>
-            ))}
+        {/* Logo */}
+        <div className="logo-block">
+          <div className="logo-mark">iC</div>
+          <div className="logo-text">
+            illiCO travaux
+            <span className="muted">Martigues · {profile.prenom}</span>
           </div>
-
-          {/* Droite : cloche + profil + déconnexion */}
-          <div className="hidden md:flex items-center gap-3">
-            <BellIcon count={unreadCount} />
-            <span className="text-blue-200 text-xs">{profile.prenom} {profile.nom}</span>
-            <button onClick={handleLogout}
-              className="text-blue-200 hover:text-white text-xs border border-blue-400 hover:border-white px-2 py-1 rounded transition-all">
-              Déconnexion
-            </button>
-          </div>
-
-          {/* Hamburger mobile */}
-          <div className="flex items-center gap-1 md:hidden">
-            <BellIcon count={unreadCount} />
-            <button onClick={() => setMenuOuvert(o => !o)} className="text-white p-2">
-              {menuOuvert ? (
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              ) : (
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              )}
-            </button>
-          </div>
-
         </div>
+
+        {/* Pin toggle */}
+        <button
+          className={`pin-btn${pinned ? ' active' : ''}`}
+          onClick={() => setPinned(p => !p)}
+          title={pinned ? 'Désépingler' : 'Épingler ouvert'}
+        >
+          <PinIcon />
+        </button>
+
+        {/* Nav */}
+        <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 0' }}>
+          {NAV_GROUPS.map(group => {
+            const visibleItems = group.items.filter(item => !item.adminOnly || profile?.role === 'admin')
+            if (visibleItems.length === 0) return null
+            return (
+              <div key={group.label}>
+                <div className="nav-section-label">{group.label}</div>
+                {visibleItems.map(item => (
+                  <NavItem
+                    key={item.href}
+                    {...item}
+                    active={isActive(item.href)}
+                    open={open}
+                  />
+                ))}
+              </div>
+            )
+          })}
+        </nav>
+
+        {/* User block */}
+        <div className="user-block">
+          <span className="user-avatar">{initials}</span>
+          <div className="user-meta">
+            <div className="name">{profile.prenom} {profile.nom}</div>
+            <div className="role">{roleLabel}</div>
+          </div>
+          <button className="logout-btn" onClick={handleLogout} title="Déconnexion">
+            <LogOutIcon />
+          </button>
+        </div>
+
       </div>
-
-      {/* Menu mobile déroulant */}
-      {menuOuvert && (
-        <div style={{ backgroundColor: '#004a78' }} className="md:hidden border-t border-blue-700 px-4 pb-4 pt-2 space-y-1">
-          {NAV_LINKS.filter(l => !l.adminOnly || profile?.role === 'admin').map(({ href, label, emoji }) => (
-            <Link key={href} href={href} onClick={() => setMenuOuvert(false)}
-              className={`w-full block px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                isActive(href) ? 'bg-white text-blue-900' : 'text-blue-100 hover:bg-blue-700 hover:text-white'
-              }`}>
-              <span className="mr-2">{emoji}</span>{label}
-            </Link>
-          ))}
-          <div className="border-t border-blue-700 pt-3 mt-2 flex items-center justify-between">
-            <span className="text-blue-300 text-xs">{profile.prenom} {profile.nom}</span>
-            <button onClick={handleLogout} className="text-blue-200 hover:text-white text-xs border border-blue-500 px-3 py-1 rounded">
-              Déconnexion
-            </button>
-          </div>
-        </div>
-      )}
-    </nav>
+    </aside>
   )
 }

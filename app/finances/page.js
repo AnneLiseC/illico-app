@@ -1,20 +1,20 @@
 // app/finances/page.js
 'use client'
-import React from 'react'
-import { useState, useEffect, useRef } from 'react'
-import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, Tooltip, Legend, Filler } from 'chart.js'
-Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, Tooltip, Legend, Filler)
+import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, ArcElement, DoughnutController, Tooltip, Legend, Filler } from 'chart.js'
+Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, ArcElement, DoughnutController, Tooltip, Legend, Filler)
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { calculateDossierFinance } from '../lib/finance'
+import { Avatar } from '../components/shared'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MOIS = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
-const MOIS_LABELS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+const MOIS_LABELS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc']
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILITAIRES PURS
@@ -95,48 +95,95 @@ function CheckItem({ label, checked, date, onChange, onDateChange, alert, disabl
 const thL = (label) => <th key={label} className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</th>
 const thR = (label) => <th key={label} className="text-right px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</th>
 
+function Th({ children, right }) {
+  return <th style={{padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',textAlign:right?'right':'left',whiteSpace:'nowrap'}}>{children}</th>
+}
+function Td({ children, right, mono, dim, bold, accent }) {
+  return <td style={{padding:'14px 16px',fontSize:13,textAlign:right?'right':'left',color:accent?'var(--brand-800)':dim?'var(--ink-400)':'var(--ink-700)',fontWeight:bold?700:400,fontVariantNumeric:mono?'tabular-nums':undefined}}>{children}</td>
+}
+function StatutFacture({ f }) {
+  const s = f?.statut || 'a_facturer'
+  return <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,background:s==='paye'?'rgba(22,163,74,0.1)':s==='facture'?'rgba(0,87,142,0.1)':'var(--ink-100)',color:s==='paye'?'#15803d':s==='facture'?'var(--brand-700)':'var(--ink-500)'}}>{s==='paye'?'✅ Payé':s==='facture'?'📋 Facturé':'📋 À facturer'}</span>
+}
+function Row({ label, value, bold, dim, accent }) {
+  return <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8}}><span style={{fontSize:12,color:dim?'var(--ink-400)':'var(--ink-600)'}}>{label}</span><span style={{fontSize:13,fontWeight:bold?700:500,color:accent?'var(--brand-800)':'var(--ink-800)',fontVariantNumeric:'tabular-nums'}}>{value}</span></div>
+}
+function LegendRow({ color, label, value, pct }) {
+  return <div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:10,height:10,borderRadius:2,background:color,flexShrink:0}}/><span style={{fontSize:12,color:'var(--ink-600)',flex:1}}>{label}</span><span style={{fontSize:12,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{value}</span>{pct!==undefined&&<span style={{fontSize:11,color:'var(--ink-400)',minWidth:34,textAlign:'right'}}>{pct}%</span>}</div>
+}
+
+// ─── COMPOSANTS VISUELS ────────────────────────────────────────────────────────
+
+function FinKpiCard({ label, value, sub, tone, children }) {
+  const toneColor = {
+    brand: 'var(--brand-800)', ok: '#15803d',
+    warn: '#a16207', bad: '#b91c1c', mute: 'var(--ink-500)'
+  }[tone] || 'var(--brand-800)'
+  return (
+    <div className="card kpi">
+      <div className="eyebrow" style={{marginBottom:8}}>{label}</div>
+      <div className="tnum" style={{fontSize:26,fontWeight:800,color:toneColor,letterSpacing:'-0.02em',lineHeight:1}}>{value}</div>
+      {sub && <div style={{fontSize:12,color:'var(--ink-500)',marginTop:6}}>{sub}</div>}
+      {children}
+    </div>
+  )
+}
+
+function PillToggle({ options, active, onChange }) {
+  return (
+    <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9,width:'fit-content'}}>
+      {options.map(o => (
+        <button key={o.key} onClick={() => onChange(o.key)} style={{
+          padding:'6px 14px',fontSize:12.5,fontWeight:600,borderRadius:7,
+          background: active === o.key ? '#fff' : 'transparent',
+          color: active === o.key ? 'var(--brand-800)' : 'var(--ink-500)',
+          boxShadow: active === o.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+          transition:'all 150ms',border:0,cursor:'pointer'
+        }}>{o.label}</button>
+      ))}
+    </div>
+  )
+}
+
 function ObjectifBar({ label, reel, objectifMontant, cible, agenteId = null, canEdit, onSave }) {
   const [editing, setEditing] = useState(false)
   const [val, setVal] = useState(String(objectifMontant || ''))
   const pct = objectifMontant > 0 ? Math.min(100, Math.round((reel / objectifMontant) * 100)) : 0
-  const color = pct >= 100 ? 'bg-green-500' : pct >= 70 ? 'bg-blue-500' : pct >= 40 ? 'bg-amber-400' : 'bg-red-400'
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-gray-600">{label}</span>
+    <div className="card" style={{padding:'16px 20px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+        <span className="eyebrow">{label}</span>
         {canEdit && !editing && (
           <button onClick={() => { setVal(String(objectifMontant || '')); setEditing(true) }}
-            className="text-xs text-gray-400 hover:text-blue-600">
+            className="btn btn-ghost" style={{fontSize:11,padding:'3px 8px'}}>
             {objectifMontant > 0 ? 'Modifier' : '+ Objectif'}
           </button>
         )}
       </div>
-      <div className="flex items-baseline gap-2">
-        <span className="text-lg font-bold text-gray-800">{fmt(reel)}</span>
+      <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:objectifMontant > 0 ? 10 : 0}}>
+        <span className="tnum" style={{fontSize:22,fontWeight:800,color:'var(--brand-800)'}}>{fmt(reel)}</span>
         {objectifMontant > 0 && (
-          <span className="text-xs text-gray-400">/ {fmt(objectifMontant)} · {pct}%</span>
+          <span style={{fontSize:12,color:'var(--ink-400)'}}>/ {fmt(objectifMontant)} · {pct}%</span>
         )}
       </div>
       {objectifMontant > 0 && (
-        <div className="w-full bg-gray-100 rounded-full h-1.5">
-          <div className={`${color} h-1.5 rounded-full transition-all`} style={{ width: `${pct}%` }} />
-        </div>
+        <div className="progress"><span style={{width:`${pct}%`}}/></div>
       )}
       {editing && (
-        <div className="flex gap-2 items-center pt-1">
+        <div style={{display:'flex',gap:8,alignItems:'center',marginTop:10}}>
           <input
             type="number"
             value={val}
             onChange={e => setVal(e.target.value)}
             placeholder="Objectif annuel €"
-            className="flex-1 border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400"
+            className="input" style={{height:30,fontSize:12,flex:1}}
           />
           <button onClick={() => { onSave(cible, agenteId, val); setEditing(false) }}
-            className="text-xs bg-blue-800 text-white px-2 py-1 rounded hover:bg-blue-900">
+            className="btn btn-dark" style={{fontSize:12,padding:'5px 12px'}}>
             OK
           </button>
-          <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+          <button onClick={() => setEditing(false)} style={{fontSize:13,color:'var(--ink-400)',cursor:'pointer'}}>✕</button>
         </div>
       )}
     </div>
@@ -156,8 +203,12 @@ export default function Finances() {
   const [saving, setSaving]                         = useState(false)
   const [erreur, setErreur]                         = useState('')
   const [succes, setSucces]                         = useState('')
-  const [onglet, setOnglet]                         = useState('mes_chantiers')
-  const [sousOnglet, setSousOnglet]                 = useState('chantier')
+  const [tab, setTab]                               = useState('synthese')
+  const [period, setPeriod]                         = useState('chantier')
+  const [scope, setScope]                           = useState('tous')
+  const [agentePeriod, setAgentePeriod]             = useState('mois')
+  const [factPeriod, setFactPeriod]                 = useState('mois')
+  const [suiviMode, setSuiviMode]                   = useState('ctp')
   const [dossierOuvert, setDossierOuvert]           = useState(null)
   const [dossiers, setDossiers]                     = useState([])
   const [redevances, setRedevances]                 = useState([])
@@ -166,12 +217,10 @@ export default function Finances() {
   const [nomFranchisee, setNomFranchisee]           = useState('CTP')
   const [facturesAgente, setFacturesAgente]         = useState([])
   const [uploadingFactureAgente, setUploadingFactureAgente] = useState(null)
-  const [objectifs, setObjectifs] = useState([])
-  const [anneeSelectionnee, setAnneeSelectionnee] = useState(new Date().getFullYear())
-  const [moisOuvert, setMoisOuvert] = useState(null)
-
+  const [objectifs, setObjectifs]                   = useState([])
+  const [anneeSelectionnee, setAnneeSelectionnee]   = useState(new Date().getFullYear())
+  const [moisOuvert, setMoisOuvert]                 = useState(null)
   const [sfSousOngletCTP, setSfSousOngletCTP]       = useState('mois')
-  const [sfSousOngletAgente, setSfSousOngletAgente] = useState('mois')
 
   const router = useRouter()
   const { user, profile, initialized } = useAuth()
@@ -745,115 +794,57 @@ export default function Finances() {
   const mesRedevancesReglees   = mesRedevances.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc || 540), 0)
   const monNet                 = mesDossiersGainsReels - mesRedevancesReglees - mesApporteurDu
 
-  
+  // ── PÉRIMÈTRE SCOPÉ ────────────────────────────────────────────────────────
+
+  const scopedDossiers = isMarine
+    ? (scope === 'tous' ? dossiers
+      : scope === 'moi'  ? mesDossiers
+      : dossiers.filter(d => d.referente?.id === scope))
+    : mesDossiers
+
+  const scopedKpi = useMemo(() => {
+    const totPreviNet  = scopedDossiers.reduce((s, d) => s + calculer(d).gainsAdminPreviTotal + calculer(d).gainsAgentePreviTotal, 0)
+    const totComHT     = scopedDossiers.reduce((s, d) => s + calculer(d).comHT, 0)
+    const totFraisHT   = scopedDossiers.reduce((s, d) => s + calculer(d).fraisHT, 0)
+    const totRoyalties = scopedDossiers.reduce((s, d) => s + calculer(d).royaltiesTotal, 0)
+    const objectifAnnuel = getObjectif('agence')
+    const pctObjectif    = objectifAnnuel > 0 ? Math.round(totalNetCTP / objectifAnnuel * 100) : 0
+    return { totPreviNet, totComHT, totFraisHT, totRoyalties, objectifAnnuel, pctObjectif }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedDossiers, objectifs])
+  const { totPreviNet, totComHT, totFraisHT, totRoyalties, objectifAnnuel, pctObjectif } = scopedKpi
+
+
   // ─────────────────────────────────────────────────────────────────────────────
   // COMPOSANTS DE RENDU
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const renderSousOnglets = () => (
-    <div className="flex gap-2">
-      {[{ key: 'chantier', label: 'Par chantier' }, { key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
-        <button key={key} onClick={() => setSousOnglet(key)}
-          className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-          {label}
-        </button>
-      ))}
-    </div>
-  )
-
-  const renderSélecteurAgente = () => agentes.length > 1 && (
-    <div className="flex items-center gap-3">
-      <span className="text-sm text-gray-500">Agente :</span>
-      <div className="flex gap-2 flex-wrap">
-        {agentes.map(a => (
-          <button key={a.id} onClick={() => setAgenteSelectionnee(a.id)}
-            className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${agenteSelectionnee === a.id ? 'bg-blue-800 text-white border-blue-800' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-            {a.prenom} {a.nom}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-
   // ─────────────────────────────────────────────────────────────────────────────
-  // ACCORDÉON
+  // DÉTAIL DOSSIER & TABLEAU FINANCE
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const renderAccordeon = (listeDossiers, showBadge = false) => (
-    <div className="space-y-2">
-      {listeDossiers.map(d => {
-        const c      = calculer(d)
-        const r      = calculerReel(d)
-        const isOpen = dossierOuvert === d.id
+  const renderDossierDetail = (d) => {
+    const c = calculer(d)
+    const r = calculerReel(d)
+    return (
+      <div style={{borderTop:'1px solid var(--ink-100)',padding:'16px 18px',display:'flex',flexDirection:'column',gap:14}}>
 
-        const nbAlertes = [
-          d.contrat_signe && d.frais_statut !== 'regle' && alerte48h(d.date_signature_contrat),
-          ...c.devisAcceptes.map(dv => {
-            const artId = dv.artisan_id || dv.artisan?.id
-            return dv.date_signature && alerte7j(dv.date_signature) &&
-              getSuivi(d, 'acompte_artisan', artId)?.statut_client !== 'regle'
-          }),
-          d.date_fin_chantier && d.typologie === 'amo' &&
-            alerte48h(d.date_fin_chantier) &&
-            getSuivi(d, 'solde_amo')?.statut_client !== 'regle',
-        ].filter(Boolean).length
-
-        return (
-          <div key={d.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            {/* En-tête */}
-            <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
-              onClick={() => setDossierOuvert(isOpen ? null : d.id)}>
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-sm font-bold text-blue-900">{d.reference}</span>
-                <span className="text-sm text-gray-500">{d.client?.prenom} {d.client?.nom}</span>
-                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{d.typologie}</span>
-                {showBadge && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${c.estChantierMarine ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                    {c.estChantierMarine ? nomFranchisee : nomReferente(d)}
-                  </span>
-                )}
-                {d.statut === 'annule' && (
-                  <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">Annulé</span>
-                )}
-                {nbAlertes > 0 && (
-                  <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">⚠️ {nbAlertes}</span>
-                )}
-              </div>
-              <div className="flex items-center gap-4">
-                {showBadge ? (
-                  <>
-                    {!c.estChantierMarine && <span className="text-sm text-blue-700 font-medium">{nomReferente(d)} : {fmt(c.gainsAgentePrevi)}</span>}
-                    <span className="text-sm text-purple-700 font-medium">CTP : {fmt(c.gainsAdminPrevi)}</span>
-                  </>
-                ) : (
-                  <span className="text-sm text-gray-700 font-medium">
-                    {isMarine ? `CTP : ${fmt(c.gainsAdminPrevi)}` : `Net : ${fmt(c.gainsAgentePrevi)}`}
-                  </span>
-                )}
-                <span className="text-gray-400 text-xs">{isOpen ? '▲' : '▼'}</span>
-              </div>
-            </div>
-
-            {/* Contenu */}
-            {isOpen && (
-              <div className="border-t border-gray-100 p-4 space-y-4">
-
-                {/* Infos contrat */}
-                <div className="flex items-center gap-3 flex-wrap text-xs">
-                  <span className={`px-2 py-1 rounded-full font-medium ${d.contrat_signe ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+        {/* Infos contrat */}
+                <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                  <span style={{padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:600,background: d.contrat_signe ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)',color: d.contrat_signe ? '#15803d' : '#b91c1c'}}>
                     Contrat {d.contrat_signe ? `✅ ${d.date_signature_contrat ? new Date(d.date_signature_contrat).toLocaleDateString('fr-FR') : ''}` : '❌ non signé'}
                   </span>
-                  {d.date_demarrage_chantier && <span className="text-gray-400">Démarrage : {new Date(d.date_demarrage_chantier).toLocaleDateString('fr-FR')}</span>}
-                  {d.date_fin_chantier && <span className="text-gray-400">Fin : {new Date(d.date_fin_chantier).toLocaleDateString('fr-FR')}</span>}
-                  <span className="text-gray-400">Répartition : {Math.round(c.partAgenteRate * 100)} / {Math.round((1 - c.partAgenteRate) * 100)}</span>
+                  {d.date_demarrage_chantier && <span style={{fontSize:12,color:'var(--ink-400)'}}>Démarrage : {new Date(d.date_demarrage_chantier).toLocaleDateString('fr-FR')}</span>}
+                  {d.date_fin_chantier && <span style={{fontSize:12,color:'var(--ink-400)'}}>Fin : {new Date(d.date_fin_chantier).toLocaleDateString('fr-FR')}</span>}
+                  <span style={{fontSize:12,color:'var(--ink-400)'}}>Répartition : {Math.round(c.partAgenteRate * 100)} / {Math.round((1 - c.partAgenteRate) * 100)}</span>
                 </div>
 
                 {/* Frais de consultation */}
                 {d.frais_consultation > 0 && (
-                  <div className="border border-gray-100 rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold text-gray-600 uppercase">Frais de consultation</p>
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <div style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:8}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <p className="eyebrow">Frais de consultation</p>
+                      <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'var(--ink-500)'}}>
                         <span>{fmt(c.fraisHT)} HT</span>
                         <span className="text-red-400">- {fmt(c.fraisRoyalties)} royalties</span>
                         <span className="font-medium text-gray-700">= {fmt(c.fraisNet)} net</span>
@@ -898,8 +889,8 @@ export default function Finances() {
 
                 {/* Artisans */}
                 {c.devisActifs.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-gray-500 uppercase">Acomptes & Factures par artisan</p>
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    <p className="eyebrow">Acomptes & Factures par artisan</p>
                     {c.devisActifs.map(dv => {
                       const artId        = dv.artisan_id || dv.artisan?.id
                       const dvF          = c.devisFinanceMap.get(dv.id)
@@ -916,7 +907,7 @@ export default function Finances() {
                       const soldeCalc = (dv.montant_ttc || 0) - acompteCalc
 
                       return (
-                        <div key={dv.id} className="border border-gray-100 rounded-lg p-3 space-y-2">
+                        <div key={dv.id} style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:8}}>
                           {/* En-tête artisan */}
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-medium text-gray-800">🔨 {dv.artisan?.entreprise}</span>
@@ -1031,9 +1022,9 @@ export default function Finances() {
 
                 {/* Honoraires */}
                 {['courtage', 'amo'].includes(d.typologie) && c.honTotalTTC > 0 && (
-                  <div className="border border-gray-100 rounded-lg p-3 space-y-2">
-                    <p className="text-xs font-semibold text-gray-600 uppercase">Honoraires client</p>
-                    <div className="space-y-3">
+                  <div style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:10}}>
+                    <p className="eyebrow">Honoraires client</p>
+                    <div style={{display:'flex',flexDirection:'column',gap:12}}>
                       {/* Courtage */}
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
@@ -1085,8 +1076,8 @@ export default function Finances() {
 
                 {/* Apporteur client global (résumé) */}
                 {d.client?.apporteur_affaires && c.apporteurTotalHT > 0 && (
-                  <div className="border border-orange-100 rounded-lg p-3 bg-orange-50">
-                    <p className="text-xs font-medium text-orange-700">
+                  <div style={{border:'1px solid rgba(251,146,60,0.3)',borderRadius:10,padding:12,background:'rgba(251,146,60,0.06)'}}>
+                    <p style={{fontSize:12,fontWeight:600,color:'#c2410c'}}>
                       Apporteur {d.client.apporteur_nom} ({d.client.apporteur_pourcentage}%) — total {fmt(c.apporteurTotalHT)} HT
                       {!c.estChantierMarine && ` · part agente : ${fmt(c.apporteurAgente)}`}
                     </p>
@@ -1094,8 +1085,8 @@ export default function Finances() {
                 )}
 
                 {/* Total gain chantier */}
-                <div className="border-2 border-gray-200 rounded-lg p-3 bg-gray-50">
-                  <p className="text-xs font-bold text-gray-700 uppercase mb-3">Total gain chantier</p>
+                <div style={{border:'1px solid var(--ink-200)',borderRadius:10,padding:14,background:'var(--surface-2)'}}>
+                  <p className="eyebrow" style={{marginBottom:12}}>Total gain chantier</p>
                   <div className="grid grid-cols-2 gap-4 text-xs">
                     {/* Prévisionnel */}
                     <div className="space-y-1">
@@ -1152,27 +1143,155 @@ export default function Finances() {
                   </div>
                 </div>
 
-                <button onClick={() => router.push(`/chantiers/${d.id}`)} className="text-xs text-blue-600 hover:underline">
+                <button onClick={() => router.push(`/chantiers/${d.id}`)} className="btn btn-ghost" style={{fontSize:12,alignSelf:'flex-start'}}>
                   → Voir la fiche chantier
                 </button>
-              </div>
-            )}
+      </div>
+    )
+  }
+
+  const renderFinanceTable = (listeDossiers, isReel) => {
+    const totals = listeDossiers.reduce((acc, d) => {
+      const c = calculer(d)
+      const r = calculerReel(d)
+      return {
+        fraisHT:   round2(acc.fraisHT   + c.fraisHT),
+        comHT:     round2(acc.comHT     + c.comHT),
+        royalties: round2(acc.royalties + c.royaltiesTotal),
+        net:       round2(acc.net + (isReel
+          ? (r.gainAdminReel + r.gainsAgenteReels)
+          : (c.gainsAdminPreviTotal + c.gainsAgentePreviTotal))),
+      }
+    }, { fraisHT: 0, comHT: 0, royalties: 0, net: 0 })
+
+    return (
+      <div className="card" style={{padding:0,overflow:'hidden'}}>
+        <div style={{padding:'14px 22px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid var(--ink-200)'}}>
+          <div>
+            <div style={{fontSize:16,fontWeight:700,color:'var(--ink-900)'}}>
+              {isReel ? 'F2 — Encaissements réels' : 'F1 — Engagements prévisionnels'} · {listeDossiers.length} dossiers
+            </div>
+            <div className="eyebrow" style={{marginTop:4}}>
+              {period === 'chantier' ? 'Détail par chantier' : period === 'mois' ? 'Agrégation par mois de paiement' : 'Agrégation annuelle'}
+            </div>
           </div>
-        )
-      })}
-      {listeDossiers.length === 0 && <p className="text-center text-gray-400 text-sm py-8">Aucun chantier</p>}
-    </div>
-  )
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-ghost" style={{padding:'6px 10px',fontSize:12}}>▼</button>
+            <button className="btn btn-ghost" style={{padding:'6px 10px',fontSize:12}}>📄 CSV</button>
+          </div>
+        </div>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead style={{position:'sticky',top:0,zIndex:1}}>
+            <tr style={{borderBottom:'1px solid var(--ink-200)'}}>
+              <Th>Dossier</Th>
+              <Th>Référente</Th>
+              <Th>Statut</Th>
+              <Th right>Frais HT</Th>
+              <Th right>Commissions HT</Th>
+              <Th right>Royalties</Th>
+              <Th right>Net {isReel ? 'réel' : 'prévisionnel'}</Th>
+              <Th right>Avancement</Th>
+              <Th right></Th>
+            </tr>
+          </thead>
+          <tbody>
+            {listeDossiers.map(d => {
+              const c       = calculer(d)
+              const r       = calculerReel(d)
+              const netPrevi = round2(c.gainsAdminPreviTotal + c.gainsAgentePreviTotal)
+              const netReel  = round2(r.gainAdminReel + r.gainsAgenteReels)
+              const net      = isReel ? netReel : netPrevi
+              const avancement = netPrevi > 0 ? Math.min(100, Math.round(netReel / netPrevi * 100)) : 0
+              const isOpen   = dossierOuvert === d.id
+              const nbAlertes = [
+                d.contrat_signe && d.frais_statut !== 'regle' && alerte48h(d.date_signature_contrat),
+                ...c.devisAcceptes.map(dv => {
+                  const artId = dv.artisan_id || dv.artisan?.id
+                  return dv.date_signature && alerte7j(dv.date_signature) && getSuivi(d, 'acompte_artisan', artId)?.statut_client !== 'regle'
+                }),
+                d.date_fin_chantier && d.typologie === 'amo' && alerte48h(d.date_fin_chantier) && getSuivi(d, 'solde_amo')?.statut_client !== 'regle',
+              ].filter(Boolean).length
+              return (
+                <React.Fragment key={d.id}>
+                  <tr onClick={() => setDossierOuvert(isOpen ? null : d.id)}
+                    style={{cursor:'pointer',borderTop:'1px solid var(--ink-100)',background:isOpen?'var(--brand-50)':'transparent'}}
+                    className="row-hover">
+                    <Td>
+                      <div style={{display:'flex',flexDirection:'column',gap:2}}>
+                        <span style={{fontSize:11.5,color:'var(--brand-800)',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{d.reference}</span>
+                        <span style={{fontSize:12,color:'var(--ink-600)'}}>{d.client?.prenom} {d.client?.nom}</span>
+                        <span style={{fontSize:10,padding:'1px 6px',borderRadius:99,background:'var(--ink-100)',color:'var(--ink-500)',fontWeight:600,alignSelf:'flex-start'}}>{d.typologie}</span>
+                      </div>
+                    </Td>
+                    <Td>
+                      <div style={{display:'inline-flex',alignItems:'center',gap:6}}>
+                        <Avatar name={nomReferente(d)} size={22}/>
+                        <span style={{fontSize:12,color:'var(--ink-700)'}}>{d.referente?.prenom || nomReferente(d)}</span>
+                      </div>
+                    </Td>
+                    <Td>
+                      <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,
+                        background:d.statut==='annule'?'rgba(220,38,38,0.1)':d.statut==='termine'?'rgba(22,163,74,0.1)':'rgba(0,87,142,0.1)',
+                        color:d.statut==='annule'?'#b91c1c':d.statut==='termine'?'#15803d':'var(--brand-700)'}}>
+                        {d.statut === 'annule' ? 'Annulé' : d.statut === 'termine' ? 'Terminé' : 'En cours'}
+                      </span>
+                      {nbAlertes > 0 && <span style={{fontSize:10,marginLeft:4,color:'#b91c1c'}}>⚠️ {nbAlertes}</span>}
+                    </Td>
+                    <Td right mono>{fmt(c.fraisHT)}</Td>
+                    <Td right mono>{fmt(c.comHT)}</Td>
+                    <Td right mono dim>{fmt(c.royaltiesTotal)}</Td>
+                    <Td right mono bold accent={net > 0}>{fmt(net)}</Td>
+                    <Td right>
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <div style={{width:60,height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden'}}>
+                          <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${avancement}%`}}/>
+                        </div>
+                        <span style={{fontSize:11,color:'var(--ink-400)',minWidth:28}}>{avancement}%</span>
+                      </div>
+                    </Td>
+                    <Td right><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></Td>
+                  </tr>
+                  {isOpen && (
+                    <tr><td colSpan={9} style={{padding:0,borderTop:'1px solid var(--ink-100)'}}>
+                      {renderDossierDetail(d)}
+                    </td></tr>
+                  )}
+                </React.Fragment>
+              )
+            })}
+            {listeDossiers.length === 0 && (
+              <tr><td colSpan={9} style={{textAlign:'center',color:'var(--ink-400)',fontSize:13,padding:'32px 0'}}>Aucun chantier</td></tr>
+            )}
+          </tbody>
+          {listeDossiers.length > 0 && (
+            <tfoot style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-200)'}}>
+              <tr>
+                <td colSpan={3} style={{padding:'12px 16px',fontSize:12,fontWeight:700,color:'var(--ink-600)'}}>Total ({listeDossiers.length})</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.fraisHT)}</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.comHT)}</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-400)'}}>{fmt(totals.royalties)}</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--brand-800)'}}>{fmt(totals.net)}</td>
+                <td colSpan={2}/>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    )
+  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // TABLEAUX PAR PÉRIODE
   // ─────────────────────────────────────────────────────────────────────────────
 
   const renderTableauPeriode = (listeDossiers, rows, colLabel, colonnes, getMontant, getDossierMontant) => (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <div className="card" style={{overflow:'hidden'}}>
       <table className="w-full text-sm">
-        <thead className="bg-gray-50 border-b border-gray-200">
-          <tr>{thL(colLabel)}{colonnes.map(c => thR(c.label))}</tr>
+        <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
+          <tr>
+            <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',whiteSpace:'nowrap'}}>{colLabel}</th>
+            {colonnes.map(c => <th key={c.key} style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',whiteSpace:'nowrap'}}>{c.label}</th>)}
+          </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {rows.map(([key, agg]) => {
@@ -1315,7 +1434,7 @@ export default function Finances() {
     }, [labels, produitsData, chargesData, netData, chartId])
 
     return (
-      <div className="bg-white border  rounded-xl p-5">
+      <div className="card" style={{padding:20}}>
         <div className="flex gap-4 mb-4 flex-wrap">
           {[
             { color: '#3B7DD8', label: 'Gains encaissés' },
@@ -1460,12 +1579,12 @@ export default function Finances() {
       return (
         <div className="space-y-5">
           <ObjectifBar label={isCTP ? 'Objectif CA CTP (résultat net)' : 'Objectif CA agence (encaissements bruts)'} reel={reelNet} objectifMontant={getObjectif('agence')} cible="agence" canEdit={isMarine} onSave={sauvegarderObjectif} />
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
-              <span className="text-sm font-medium text-gray-700">Compte de résultat {isCTP ? 'CTP' : 'Agence'}</span>
-              <div className="flex items-center gap-3">
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">réel encaissé</span>
-                <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(parseInt(e.target.value))} className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400">
+          <div className="card" style={{overflow:'hidden'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
+              <span style={{fontSize:14,fontWeight:600,color:'var(--ink-700)'}}>Compte de résultat {isCTP ? 'CTP' : 'Agence'}</span>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,background:'rgba(22,163,74,0.1)',color:'#15803d',fontWeight:600}}>réel encaissé</span>
+                <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(parseInt(e.target.value))} className="input" style={{height:28,fontSize:12,padding:'0 8px'}}>
                   {annees.map(a => <option key={a} value={a}>{a}</option>)}
                 </select>
               </div>
@@ -1500,29 +1619,26 @@ export default function Finances() {
     }
 
     return (
-      <div className="space-y-5">
-        <div className="flex gap-2">
-          {[{ key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
-            <button key={key} onClick={() => setSfSousOnglet(key)}
-              className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sfSousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white text-gray-600 hover:border-gray-300'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+        <PillToggle
+          options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
+          active={sfSousOnglet}
+          onChange={setSfSousOnglet}
+        />
         {sfSousOnglet === 'mois' && (
           <div className="space-y-5">
             <ObjectifBar label={isCTP ? `Objectif mensuel CTP (${fmt(objectifMensuel)}/mois)` : `Objectif mensuel agence (${fmt(objectifMensuel)}/mois)`}
               reel={(() => { const moisCourant = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`; const r = rowsReel.find(([k]) => k === moisCourant)?.[1] || {}; const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === new Date().getFullYear() && rv.mois === new Date().getMonth() + 1).reduce((s, rv) => s + (rv.montant_ttc||540), 0); return getReelNet(r, redev) })()}
               objectifMontant={objectifMensuel} cible="agence" canEdit={isMarine} onSave={sauvegarderObjectif} />
             <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId={`chart_${mode}_mois`} />
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="card" style={{overflow:'hidden'}}>
               <table className="w-full text-xs">
-                <thead className="bg-gray-50 border-b border-gray-200">
+                <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
                   <tr>
-                    <th className="text-left px-4 py-2 text-xs font-medium text-gray-400 uppercase">Mois</th>
-                    <th className="text-right px-3 py-2 text-xs font-medium text-gray-400 uppercase">Réel encaissé</th>
-                    <th className="text-right px-3 py-2 text-xs font-medium text-gray-400 uppercase">Objectif mois</th>
-                    <th className="text-right px-4 py-2 text-xs font-medium text-gray-400 uppercase">vs Objectif</th>
+                    <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Mois</th>
+                    <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Réel encaissé</th>
+                    <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Objectif mois</th>
+                    <th style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>vs Objectif</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -1631,14 +1747,14 @@ export default function Finances() {
           }
 
           return (
-            <div key={key} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="flex justify-between items-center px-4 py-3 bg-gray-50 border-b border-gray-100">
-                <span className="font-semibold text-gray-800">{label}</span>
-                <span className={`font-bold text-sm ${net >= 0 ? 'text-green-700' : 'text-red-600'}`}>Net : {net >= 0 ? '+' : ''}{fmt(net)}</span>
+            <div key={key} className="card">
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 18px',background:'var(--surface-2)',borderBottom:'1px solid var(--ink-100)'}}>
+                <span style={{fontWeight:700,color:'var(--ink-900)',fontSize:14}}>{label}</span>
+                <span style={{fontWeight:700,fontSize:13,color: net >= 0 ? '#15803d' : '#b91c1c'}}>Net : {net >= 0 ? '+' : ''}{fmt(net)}</span>
               </div>
-              <div className="p-4 space-y-3">
+              <div style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
                 {/* Facture 1 — émettrice */}
-                <div className="border border-gray-100 rounded-lg p-3 space-y-2">
+                <div style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:8}}>
                   <div className="flex justify-between items-start">
                     <div>
                       <p className="text-xs font-semibold text-green-800">{nomAgente} doit facturer à {nomFranchisee}</p>                    </div>
@@ -1674,7 +1790,7 @@ export default function Finances() {
                 </div>
                 {/* Facture 2 — réceptrice */}
                 {montantF2 > 0 && (
-                  <div className="border border-gray-100 rounded-lg p-3 space-y-2">
+                  <div style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:8}}>
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="text-xs font-semibold text-red-800">{nomFranchisee} doit facturer à {nomAgente}</p>
@@ -1770,9 +1886,9 @@ export default function Finances() {
             </select>
           </div>                   
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="card" style={{overflow:'hidden'}}>
           <table className="w-full text-xs">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
               <tr>
                 {thL('Mois')}
                 {thR('F1 (je facture)')}
@@ -1832,8 +1948,8 @@ export default function Finances() {
     ])
     const cles = Array.from(allKeys).sort((a, b) => b.localeCompare(a))
 
-    const sfSousOnglet    = sfSousOngletAgente
-    const setSfSousOnglet = setSfSousOngletAgente
+    const sfSousOnglet    = agentePeriod
+    const setSfSousOnglet = setAgentePeriod
 
     const chartLabels = cles.map(cle => { const [a, m] = cle.split('-'); return `${MOIS[parseInt(m)].slice(0,3)}. ${a}` })
     const chartProduits = cles.map(cle => {
@@ -2000,13 +2116,13 @@ export default function Finances() {
               Objectif CA agence : <span className="font-bold">{fmt(objectifAgence)}</span>
             </div>
           )}
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
-              <span className="text-sm font-medium text-gray-700">Mon compte de résultat</span>
-              <div className="flex items-center gap-3">
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">réel encaissé</span>
+          <div className="card" style={{overflow:'hidden'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
+              <span style={{fontSize:14,fontWeight:600,color:'var(--ink-700)'}}>Mon compte de résultat</span>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,background:'rgba(22,163,74,0.1)',color:'#15803d',fontWeight:600}}>réel encaissé</span>
                 <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(parseInt(e.target.value))}
-                  className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-400">
+                  className="input" style={{height:28,fontSize:12,padding:'0 8px'}}>
                   {annees.map(a => <option key={a} value={a}>{a}</option>)}
                 </select>
               </div>
@@ -2072,15 +2188,12 @@ export default function Finances() {
     }
 
     return (
-      <div className="space-y-5">
-        <div className="flex gap-2">
-          {[{ key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
-            <button key={key} onClick={() => setSfSousOnglet(key)}
-              className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sfSousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white text-gray-600 hover:border-gray-300'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+        <PillToggle
+          options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
+          active={sfSousOnglet}
+          onChange={setSfSousOnglet}
+        />
 
         {sfSousOnglet === 'mois' && (
           <div className="space-y-5">
@@ -2098,14 +2211,14 @@ export default function Finances() {
               </div>
             )}
             <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId="chart_agente_mois" />
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="card" style={{overflow:'hidden'}}>
               <table className="w-full text-xs">
-                <thead className="bg-gray-50 border-b border-gray-200">
+                <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
                   <tr>
-                    <th className="text-left px-4 py-2 text-xs font-medium text-gray-400 uppercase">Mois</th>
-                    <th className="text-right px-3 py-2 text-xs font-medium text-gray-400 uppercase">Réel net</th>
-                    <th className="text-right px-3 py-2 text-xs font-medium text-gray-400 uppercase">Objectif mois</th>
-                    <th className="text-right px-4 py-2 text-xs font-medium text-gray-400 uppercase">vs Objectif</th>
+                    <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Mois</th>
+                    <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Réel net</th>
+                    <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Objectif mois</th>
+                    <th style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>vs Objectif</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -2155,10 +2268,345 @@ export default function Finances() {
     )
   }
 
+  // ── SYNTHESE VIEW ──────────────────────────────────────────────────────────
+
+  function SyntheseView() {
+    const chartId = 'synthese_monthly_chart'
+    const donutId = 'synthese_donut_chart'
+
+    const reelData = useMemo(() => Array.from({length:12}, (_, i) => {
+      const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
+      const agg = rowsReelAnneeEnCours.find(([k]) => k === key)?.[1] || {}
+      return round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [rowsReelAnneeEnCours])
+
+    const previData = useMemo(() => {
+      const map = {}
+      scopedDossiers.forEach(d => {
+        const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
+        if (!key || !key.startsWith(String(anneeEnCours))) return
+        if (!map[key]) map[key] = 0
+        const c = calculer(d)
+        map[key] = round2(map[key] + c.gainsAdminPreviTotal + c.gainsAgentePreviTotal)
+      })
+      return Array.from({length:12}, (_, i) => {
+        const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
+        return map[key] || 0
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scopedDossiers])
+
+
+    useEffect(() => {
+      if (typeof window === 'undefined') return
+      const el = document.getElementById(chartId)
+      if (!el) return
+      if (el._chartInstance) el._chartInstance.destroy()
+      el._chartInstance = new Chart(el, {
+        data: {
+          labels: MOIS_LABELS,
+          datasets: [
+            { type: 'bar', label: 'Réel', data: reelData, backgroundColor: 'rgba(0, 123, 255, 0.7)', borderColor: 'rgba(0, 123, 255, 1)', borderWidth: 1, barPercentage: 0.5,categoryPercentage: 0.5, yAxisID: 'y', },
+            { type: 'bar', label: 'Prévi', data: previData, backgroundColor: 'rgba(0, 123, 255, 0.1)',borderColor: 'rgba(0, 123, 255, 0.5)', borderDash: [5, 5], pointRadius: 0, yAxisID: 'y',}
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => ctx.dataset.label + ' : ' + Math.abs(ctx.parsed.y).toLocaleString('fr-FR') + ' €' } }
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#888', maxRotation: 30 } },
+            y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 }, color: '#888', callback: v => Math.abs(v).toLocaleString('fr-FR') + ' €' } }
+          }
+        }
+      })
+      return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+    }, [reelData, previData])
+
+    useEffect(() => {
+      if (typeof window === 'undefined') return
+      const el = document.getElementById(donutId)
+      if (!el) return
+      if (el._chartInstance) el._chartInstance.destroy()
+      el._chartInstance = new Chart(el, {
+        type: 'doughnut',
+        data: {
+          labels: ['Commissions HT', 'Frais HT', 'Royalties'],
+          datasets: [{ data: [totComHT, totFraisHT, totRoyalties], backgroundColor: ['#00578e','#0094d4','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
+        },
+        options: {
+          cutout: '70%', responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => ctx.label + ' : ' + (ctx.parsed).toLocaleString('fr-FR') + ' €' } }
+          }
+        }
+      })
+      return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+    }, [totComHT, totFraisHT, totRoyalties])
+
+    const totalDonut = totComHT + totFraisHT + totRoyalties
+    const reelTotal  = reelData.reduce((s,v) => s+v, 0)
+
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:20}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+          {/* LEFT : bar+line chart + totaux */}
+          <div className="card" style={{padding:20}}>
+            <div className="eyebrow" style={{marginBottom:12}}>Évolution mensuelle {anneeEnCours} \nCA RÉEL NET VS PRÉVISIONNEL </div>
+            <div style={{display:'flex',gap:16,marginBottom:12,flexWrap:'wrap'}}>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <div style={{width:10,height:10,borderRadius:2,background:'#3B7DD8'}}/>
+                <span style={{fontSize:11,color:'var(--ink-500)'}}>Réel</span>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <div style={{width:10,height:10,borderRadius:2,border:'2px dashed #94a3b8',background:'transparent'}}/>
+                <span style={{fontSize:11,color:'var(--ink-500)'}}>Prévi</span>
+              </div>
+            </div>
+            <div style={{position:'relative',height:220}}>
+              <canvas id={chartId} role="img" aria-label="Gains mensuels" />
+            </div>
+            <div style={{marginTop:16,display:'flex',flexDirection:'column',gap:6}}>
+              <Row label="Total réel" value={fmt(reelTotal)} bold accent />
+              <Row label="Total prévi" value={fmt(totPreviNet)} dim />
+              {pctObjectif > 0 && <Row label={`Objectif ${anneeEnCours} (${pctObjectif}%)`} value={fmt(objectifAnnuel)} dim />}
+            </div>
+          </div>
+          {/* RIGHT : donut + répartition */}
+          <div style={{display:'flex',flexDirection:'column',gap:16}}>
+            <div className="card" style={{padding:20}}>
+              <div className="eyebrow" style={{marginBottom:12}}>Répartition prévisionnel</div>
+              <div style={{position:'relative',height:160}}>
+                <canvas id={donutId} role="img" aria-label="Répartition" />
+              </div>
+              <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
+                <LegendRow color="#00578e" label="Commissions HT" value={fmt(totComHT)} pct={totalDonut>0?Math.round(totComHT/totalDonut*100):0} />
+                <LegendRow color="#0094d4" label="Frais HT"       value={fmt(totFraisHT)} pct={totalDonut>0?Math.round(totFraisHT/totalDonut*100):0} />
+                <LegendRow color="#94a3b8" label="Royalties"      value={fmt(totRoyalties)} pct={totalDonut>0?Math.round(totRoyalties/totalDonut*100):0} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── FACTURATION AGENTES (INNER COMPONENT) ────────────────────────────────
+
+  function FacturationAgentes() {
+    const facturesAg  = facturesAgente.filter(f => f.agente_id === agenteSelectionnee)
+    const redevAg     = redevancesAgente
+    const totalF1     = facturesAg.filter(f => f.type_facture === 'agente_vers_ctp').reduce((s, f) => s + (f.montant||0), 0)
+    const totalF1Paye = facturesAg.filter(f => f.type_facture === 'agente_vers_ctp' && f.statut === 'paye').reduce((s, f) => s + (f.montant||0), 0)
+    const totalF2     = facturesAg.filter(f => f.type_facture === 'ctp_vers_agente').reduce((s, f) => s + (f.montant||0), 0)
+    const totalF2Paye = facturesAg.filter(f => f.type_facture === 'ctp_vers_agente' && f.statut === 'paye').reduce((s, f) => s + (f.montant||0), 0)
+    const totalRedev  = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc||540), 0)
+    const net         = round2(totalF1 - totalF2)
+
+    const months = [...new Set(facturesAg.map(f => `${f.annee}-${String(f.mois).padStart(2,'0')}`))].sort((a, b) => b.localeCompare(a))
+
+    const uploadPdf = async (f, fichier) => {
+      const key = `${f.annee}-${f.mois}-${f.type_facture}`
+      setUploadingFactureAgente(key)
+      const ext = fichier.name.split('.').pop()
+      const chemin = `factures_agente/${agenteSelectionnee}/${f.annee}-${String(f.mois).padStart(2,'0')}-${f.type_facture}.${ext}`
+      const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+      if (!error) {
+        await upsertFactureMoisType(f.mois, f.annee, f.montant||0, f.type_facture, { facture_path: chemin, statut: 'facture' })
+        setSucces('Facture uploadée ✓')
+      } else { setErreur('Erreur upload : ' + error.message) }
+      setUploadingFactureAgente(null)
+    }
+
+    const FactureDetailCard = ({ title, subtitle, type, accent }) => {
+      const fs = facturesAg.filter(f => f.type_facture === type)
+      return (
+        <div className="card" style={{padding:0,overflow:'hidden'}}>
+          <div style={{padding:'14px 18px',borderBottom:'1px solid var(--ink-200)',borderLeft:`4px solid ${accent}`}}>
+            <div style={{fontSize:14,fontWeight:700,color:'var(--ink-900)'}}>{title}</div>
+            <div style={{fontSize:11.5,color:'var(--ink-500)',marginTop:4,lineHeight:1.4}}>{subtitle}</div>
+          </div>
+          <div>
+            {fs.map(f => (
+              <div key={f.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:12,alignItems:'center',padding:'12px 18px',borderTop:'1px solid var(--ink-100)'}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:'var(--ink-900)'}}>{MOIS[f.mois]} {f.annee}</div>
+                  <div style={{fontSize:11,color:'var(--ink-500)',marginTop:2}}>
+                    {f.facture_path
+                      ? <button onClick={async () => { const { data } = await supabase.storage.from('documents').createSignedUrl(f.facture_path, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }}
+                          style={{fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>
+                      : <span style={{color:'var(--ink-400)'}}>Pas de PDF déposé</span>}
+                  </div>
+                </div>
+                <div style={{fontWeight:700,color:'var(--ink-900)',fontVariantNumeric:'tabular-nums'}}>{fmt(f.montant||0)}</div>
+                <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                  <StatutFacture f={f}/>
+                  {!f.facture_path && (
+                    <label style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid var(--ink-200)',cursor:'pointer',color:'var(--ink-600)',background:'#fff'}}>
+                      📤 PDF
+                      <input type="file" accept=".pdf" className="hidden" onChange={e => e.target.files[0] && uploadPdf(f, e.target.files[0])}/>
+                    </label>
+                  )}
+                </div>
+              </div>
+            ))}
+            {fs.length === 0 && <div style={{padding:24,textAlign:'center',color:'var(--ink-400)',fontSize:13}}>Aucune facture</div>}
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:18}}>
+        {/* Sélecteur agente */}
+        <div className="card" style={{padding:'14px 18px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+          <div className="eyebrow">Agente :</div>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            {agentes.filter(a => a.role === 'agente').map(a => (
+              <button key={a.id} onClick={() => setAgenteSelectionnee(a.id)} style={{
+                display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:99,
+                border:'1px solid',borderColor: agenteSelectionnee === a.id ? 'var(--brand-500)' : 'var(--ink-200)',
+                background: agenteSelectionnee === a.id ? 'var(--brand-50)' : '#fff',
+                color: agenteSelectionnee === a.id ? 'var(--brand-800)' : 'var(--ink-700)',
+                fontSize:12,fontWeight:600,cursor:'pointer',
+              }}>
+                <Avatar name={`${a.prenom} ${a.nom}`} size={20}/>
+                {a.prenom} {a.nom}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* KPI strip */}
+        <div className="kpi-grid">
+          <FinKpiCard label="F1 — Gains à facturer"       value={fmt(totalF1)}    sub={`Payé ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
+          <FinKpiCard label="F2 — Redevances + apporteur" value={fmt(totalF2)}    sub={`Payé ${fmt(totalF2Paye)}`}                                              tone="warn"/>
+          <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · 540 €/mois`}     tone="brand"/>
+          <FinKpiCard label="Net à virer à l'agente"       value={(net >= 0 ? '+' : '') + fmt(Math.abs(net))} sub={net >= 0 ? 'F1 − F2' : "L'agente doit à CTP"} tone={net >= 0 ? 'brand' : 'bad'}/>
+        </div>
+
+        {/* Tableau mensuel F1 / F2 */}
+        <div className="card" style={{padding:0,overflow:'hidden'}}>
+          <div style={{padding:'14px 22px',borderBottom:'1px solid var(--ink-200)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)'}}>
+                Facturation mensuelle · {agenteActuelle ? `${agenteActuelle.prenom} ${agenteActuelle.nom}` : '—'}
+              </div>
+              <div className="eyebrow" style={{marginTop:4}}>F1 = facture émise par l&apos;agente · F2 = facture émise par la franchisée</div>
+            </div>
+          </div>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead style={{background:'var(--surface-2)'}}>
+              <tr>
+                {thL('Mois')}
+                {thR('F1 (Agente → CTP)')}
+                <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F1</th>
+                {thR('F2 (CTP → Agente)')}
+                <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F2</th>
+                {thR('Net')}
+              </tr>
+            </thead>
+            <tbody>
+              {months.map(key => {
+                const [aStr, mStr] = key.split('-')
+                const mois = parseInt(mStr); const annee = parseInt(aStr)
+                const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
+                const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
+                const f1m = f1?.montant || 0
+                const f2m = f2?.montant || 0
+                const n   = round2(f1m - f2m)
+                return (
+                  <tr key={key} style={{borderTop:'1px solid var(--ink-100)'}} className="row-hover">
+                    <td style={{padding:'14px 16px',fontWeight:700,color:'var(--ink-900)'}}>{MOIS[mois]} {annee}</td>
+                    <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f1m>0?'#15803d':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
+                      {f1m > 0 ? fmt(f1m) : '—'}
+                    </td>
+                    <td style={{padding:'14px 16px',textAlign:'center'}}><StatutFacture f={f1}/></td>
+                    <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f2m>0?'#b91c1c':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
+                      {f2m > 0 ? fmt(f2m) : '—'}
+                    </td>
+                    <td style={{padding:'14px 16px',textAlign:'center'}}><StatutFacture f={f2}/></td>
+                    <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:n>=0?'var(--brand-800)':'#b91c1c',fontVariantNumeric:'tabular-nums'}}>
+                      {n >= 0 ? '+' : ''}{fmt(n)}
+                    </td>
+                  </tr>
+                )
+              })}
+              {months.length === 0 && (
+                <tr><td colSpan={6} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-400)'}}>Aucune facture enregistrée</td></tr>
+              )}
+            </tbody>
+            {months.length > 0 && (
+              <tfoot>
+                <tr style={{borderTop:'2px solid var(--ink-200)',background:'var(--surface-2)'}}>
+                  <td style={{padding:'14px 16px',fontWeight:800,color:'var(--ink-900)'}}>Total</td>
+                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#15803d',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF1)}</td>
+                  <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF1Paye)} payé</td>
+                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#b91c1c',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF2)}</td>
+                  <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF2Paye)} payé</td>
+                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,fontSize:15,fontVariantNumeric:'tabular-nums',color:net>=0?'var(--brand-800)':'#b91c1c'}}>
+                    {net >= 0 ? '+' : ''}{fmt(net)}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+
+        {/* Détail factures F1 + F2 côte à côte */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18}}>
+          <FactureDetailCard
+            title="F1 — Factures émises par l'agente"
+            subtitle="L'agente facture CTP pour ses gains du mois (frais + commissions + honoraires)"
+            type="agente_vers_ctp"
+            accent="#16a34a"
+          />
+          <FactureDetailCard
+            title="F2 — Factures émises par la franchisée"
+            subtitle="CTP facture l'agente pour la redevance + apporteur remboursé"
+            type="ctp_vers_agente"
+            accent="#dc2626"
+          />
+        </div>
+
+        {/* Redevances 12 mois */}
+        <div className="card" style={{padding:22}}>
+          <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)',marginBottom:14}}>Redevances mensuelles · 540 € TTC</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(12,1fr)',gap:6}}>
+            {MOIS_LABELS.map((mLabel, i) => {
+              const r = redevAg.find(rv => rv.mois === i+1 && rv.annee === anneeEnCours)
+              const isPast = new Date(anneeEnCours, i, 1) < new Date()
+              return (
+                <div key={i} style={{
+                  padding:'10px 6px',textAlign:'center',borderRadius:8,
+                  background:  r?.statut === 'regle' ? 'rgba(22,163,74,0.10)' : isPast ? 'rgba(245,158,11,0.13)' : 'var(--ink-50)',
+                  border:'1px solid',borderColor: r?.statut === 'regle' ? 'rgba(22,163,74,0.2)' : isPast ? 'rgba(245,158,11,0.3)' : 'var(--ink-200)',
+                }}>
+                  <div style={{fontSize:10,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>{mLabel.slice(0,3)}</div>
+                  <div style={{marginTop:6,fontSize:11.5,fontWeight:700,color:r?.statut==='regle'?'#15803d':isPast?'#a16207':'var(--ink-300)'}}>
+                    {r?.statut === 'regle' ? '✓' : isPast ? '⌛' : '—'}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{marginTop:14,fontSize:12.5,color:'var(--ink-500)'}}>
+            {redevAg.filter(r => r.statut === 'regle').length} mois réglés ·
+            <span style={{fontWeight:700,color:'var(--brand-800)',marginLeft:6,fontVariantNumeric:'tabular-nums'}}>{fmt(totalRedev)}</span> sur l&apos;année
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // ── AGENTE MOIS ADMIN ──────────────────────────────────────────────────────
 
   const renderAgenteMoisAdmin = () => {
-    const isAnnee = sousOnglet === 'annee'
+    const isAnnee = factPeriod === 'annee'
     const rowsReel = agrégerParPaiement(dossiersAgente, isAnnee)
 
     // Totaux annuels si vue année
@@ -2223,9 +2671,9 @@ export default function Finances() {
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="card" style={{overflow:'hidden'}}>
             <table className="w-full text-xs">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
                 <tr>
                   {thL('Mois')}
                   {thR('F2 (Marine facture)')}
@@ -2308,17 +2756,17 @@ export default function Finances() {
           }
 
           return (
-            <div key={key} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="flex justify-between items-center px-4 py-3 bg-gray-50 border-b border-gray-100">
-                <span className="font-semibold text-gray-800">{label}</span>
-                <span className={`text-sm font-bold ${net >= 0 ? 'text-blue-700' : 'text-amber-600'}`}>
+            <div key={key} className="card">
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 18px',background:'var(--surface-2)',borderBottom:'1px solid var(--ink-100)'}}>
+                <span style={{fontWeight:700,color:'var(--ink-900)',fontSize:14}}>{label}</span>
+                <span style={{fontWeight:700,fontSize:13,color: net >= 0 ? 'var(--brand-800)' : '#a16207'}}>
                   Net : {net >= 0 ? '+' : ''}{fmt(net)}
                 </span>
               </div>
-              <div className="p-4 space-y-3">
+              <div style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
           {/* F2 en premier — Marine émet, vert */}
           {duParAgente > 0 && (
-            <div className="border border-gray-100 rounded-lg p-3 space-y-2">
+            <div style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:8}}>
               <div className="flex justify-between items-start">
                 <p className="text-xs font-semibold text-green-800">{nomFranchisee} doit facturer à {nomAgente}</p>
                 <span className="text-sm font-bold text-green-700">{fmt(duParAgente)}</span>
@@ -2354,7 +2802,7 @@ export default function Finances() {
           )}
 
           {/* F1 en second — agente émet, rouge */}
-          <div className="border border-gray-100 rounded-lg p-3 space-y-2">
+          <div style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:8}}>
             <div className="flex justify-between items-start">
               <p className="text-xs font-semibold text-red-800">{nomAgente} doit facturer à {nomFranchisee}</p>
               <span className="text-sm font-bold text-red-700">{fmt(gains)}</span>
@@ -2387,170 +2835,247 @@ export default function Finances() {
     )
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // ONGLETS
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ── FACTURATION AGENTE PROPRE (INNER COMPONENT) ──────────────────────────
 
-  const ongletsAdmin  = [
-    { key: 'mes_chantiers',   label: 'Mes chantiers'      },
-    { key: 'tous_chantiers',  label: 'Tous les chantiers' },
-    { key: 'suivi_financier', label: 'Suivi financier'    },
-    { key: 'agentes',         label: 'Agentes'            },
-  ]
-  const ongletsAgente = [
-    { key: 'mes_chantiers', label: 'Mes chantiers'       },
-    { key: 'financier',     label: 'Mon suivi financier' },
-    { key: 'facturation',   label: 'Facturation'         },
-  ]
-  const ongletsList = isMarine ? ongletsAdmin : ongletsAgente
+  function FacturationAgentePropre() {
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+        <PillToggle
+          options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
+          active={factPeriod}
+          onChange={setFactPeriod}
+        />
+        {factPeriod === 'mois'  && renderFacturationMoisSuivi()}
+        {factPeriod === 'annee' && renderFacturationAnneeAgente()}
+      </div>
+    )
+  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // RENDU PRINCIPAL
   // ─────────────────────────────────────────────────────────────────────────────
 
+  const tabs = [
+    { key: 'previsionnel', label: 'F1 Prévisionnel' },
+    { key: 'reel',         label: 'F2 Réel'         },
+    { key: 'synthese',     label: 'Synthèse'         },
+    { key: 'suivi',        label: 'Suivi financier'  },
+    { key: 'facturation',  label: 'Facturation'      },
+  ]
+
+  const periodOptions = [
+    { key: 'chantier', label: 'Par chantier' },
+    { key: 'mois',     label: 'Par mois'     },
+    { key: 'annee',    label: 'Par année'    },
+  ]
+
   if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <p className="text-gray-400">Chargement...</p>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',paddingTop:96}}>
+      <p style={{color:'var(--ink-400)',fontSize:13}}>Chargement…</p>
     </div>
   )
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center gap-3">
-        <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-gray-600 text-sm">← Retour</button>
-        <h1 className="text-lg font-bold text-blue-900">Finances</h1>
-        {saving && <span className="text-xs text-gray-400 ml-auto">Enregistrement...</span>}
-      </header>
+    <div className="page-enter" style={{display:'flex',flexDirection:'column',gap:20,padding:'28px 32px',maxWidth:1400,margin:'0 auto'}}>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
+      {/* En-tête page */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:16,flexWrap:'wrap'}}>
+        <div>
+          <button onClick={() => router.push('/dashboard')} style={{fontSize:12,color:'var(--ink-400)',marginBottom:6,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>← Retour</button>
+          <div className="eyebrow" style={{marginBottom:4}}>Pilotage financier</div>
+          <h1 className="page">Finances</h1>
+          <div style={{color:'var(--ink-500)',fontSize:13,marginTop:6}}>
+            Année <strong style={{color:'var(--ink-700)'}}>{anneeEnCours}</strong> · {dossiers.length} dossiers actifs
+            {saving && <span style={{marginLeft:12,color:'var(--ink-400)',fontSize:12}}>Enregistrement…</span>}
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn btn-ghost">📄 Exporter le bilan</button>
+          <button className="btn btn-primary">🪙 Saisir un règlement</button>
+        </div>
+      </div>
 
-        {/* Cartes résumé */}
-        <div className={`grid gap-3 sm:gap-4 grid-cols-2 ${isMarine ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
-          {isMarine ? (
-            <>
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Net CTP (prévisionnel)</p>
-                <p className="text-xl font-bold text-purple-700">{fmt(totalNetCTP)}</p>
+      {/* Tab bar */}
+      <div className="tabs">
+        <button className={`tab ${tab==='previsionnel'?'active':''}`} onClick={() => setTab('previsionnel')}>
+          <span style={{display:'inline-flex',gap:8,alignItems:'center'}}>
+            <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
+              background:tab==='previsionnel'?'var(--brand-800)':'var(--ink-100)',
+              color:tab==='previsionnel'?'#fff':'var(--ink-500)'}}>F1</span>
+            F1 Prévisionnel
+          </span>
+        </button>
+        <button className={`tab ${tab==='reel'?'active':''}`} onClick={() => setTab('reel')}>
+          <span style={{display:'inline-flex',gap:8,alignItems:'center'}}>
+            <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
+              background:tab==='reel'?'var(--brand-800)':'var(--ink-100)',
+              color:tab==='reel'?'#fff':'var(--ink-500)'}}>F2</span>
+            F2 Réel
+          </span>
+        </button>
+        <button className={`tab ${tab==='synthese'?'active':''}`} onClick={() => setTab('synthese')}>Synthèse</button>
+        <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => setTab('suivi')}>📈Suivi financier</button>
+        <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => setTab('facturation')}>🗒️Facturation agentes</button>
+      </div>
+
+      {/* KPI strip */}
+      <div className="kpi-grid">
+        {isMarine ? (
+          <>
+            <FinKpiCard label={`CA réel net ${anneeEnCours}`} value={fmt(totalNetCTP)} tone="brand">
+              <div style={{marginTop:8}}>
+                <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
+                  <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
+                </div>
+                <div style={{fontSize:11,color:'var(--ink-500)'}}>
+                  Objectif <span style={{fontWeight:600,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(objectifAnnuel)}</span> · {pctObjectif}%
+                </div>
               </div>
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Gains agentes (réel)</p>
-                <p className="text-xl font-bold text-blue-700">{fmt(totalGainsAgentesReels)}</p>
+            </FinKpiCard>
+            <FinKpiCard label="CA prévisionnel"
+              value={fmt(totPreviNet)}
+              sub={`${fmt(round2(totComHT+totFraisHT))} brut · ${fmt(totRoyalties)} royalties`}
+              tone="ok"/>
+            <FinKpiCard label="Commissions HT"
+              value={fmt(totComHT)}
+              sub={`Frais conso. ${fmt(totFraisHT)} HT`}
+              tone="warn"/>
+            <FinKpiCard label="Part franchisée"
+              value={fmt(round2(totalNetCTP-totalGainsAgentesReels))}
+              sub={`Part agentes ${fmt(totalGainsAgentesReels)}`}
+              tone="brand"/>
+          </>
+        ) : (
+          <>
+            <FinKpiCard label="Gains prévisionnels"   value={fmt(mesDossiersGainsPrevi)}                                    tone="mute"/>
+            <FinKpiCard label="Gains réels encaissés" value={fmt(mesDossiersGainsReels)}                                    tone="ok"/>
+            <FinKpiCard label="Mon net"               value={fmt(monNet)} tone={monNet >= 0 ? 'brand' : 'bad'} sub={`Prévi. ${fmt(mesDossiersGainsPrevi)}`}/>
+          </>
+        )}
+      </div>
+
+      {/* ── F1 PRÉVISIONNEL ── */}
+      {tab === 'previsionnel' && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+            <div className="eyebrow">Vue</div>
+            <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9}}>
+              {periodOptions.map(p => (
+                <button key={p.key} onClick={() => setPeriod(p.key)} style={{
+                  padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
+                  background: period === p.key ? '#fff' : 'transparent',
+                  color:      period === p.key ? 'var(--brand-800)' : 'var(--ink-500)',
+                  boxShadow:  period === p.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}>{p.label}</button>
+              ))}
+            </div>
+            {isMarine && (
+              <div style={{marginLeft:6,display:'flex',gap:4,alignItems:'center'}}>
+                <div className="eyebrow">Périmètre</div>
+                <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9,marginLeft:8}}>
+                  {[
+                    { key:'tous', label:'Tous' },
+                    { key:'moi', label: profile?.prenom || 'Marine' },
+                    ...agentes.map(a => ({ key: a.id, label: a.prenom })),
+                  ].map(s => (
+                    <button key={s.key} onClick={() => setScope(s.key)} style={{
+                      padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
+                      background: scope === s.key ? '#fff' : 'transparent',
+                      color:      scope === s.key ? 'var(--brand-800)' : 'var(--ink-500)',
+                      boxShadow:  scope === s.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                    }}>{s.label}</button>
+                  ))}
+                </div>
               </div>
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Redevances reçues</p>
-                <p className="text-xl font-bold text-green-700">{fmt(totalRedevancesReglees)}</p>
-              </div>
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Chantiers</p>
-                <p className="text-xl font-bold text-gray-800">{chantiersAnneeEnCours}</p>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Gains prévisionnels</p>
-                <p className="text-xl font-bold text-gray-500">{fmt(mesDossiersGainsPrevi)}</p>
-              </div>
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Gains réels</p>
-                <p className="text-xl font-bold text-blue-700">{fmt(mesDossiersGainsReels)}</p>
-              </div>
-              <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-xs text-gray-400 mb-1">Mon net</p>
-                <p className={`text-xl font-bold ${monNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(monNet)}</p>
-              </div>
-            </>
+            )}
+          </div>
+          {period === 'chantier' && renderFinanceTable(scopedDossiers, false)}
+          {period === 'mois'     && (isMarine
+            ? renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, false), 'Mois')
+            : renderMesPeriode(scopedDossiers, 'Mois', agrégerParPaiement(scopedDossiers, false))
+          )}
+          {period === 'annee'    && (isMarine
+            ? renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, true), 'Année')
+            : renderMesPeriode(scopedDossiers, 'Année', agrégerParPaiement(scopedDossiers, true))
           )}
         </div>
+      )}
 
-        {/* Onglets */}
-        <div className="flex gap-1 border-b  overflow-x-auto">
-          {ongletsList.map(({ key, label }) => (
-            <button key={key} onClick={() => { 
-              setOnglet(key)
-              setSousOnglet(key === 'suivi_financier' ? 'agence' : key === 'agentes' ? 'mois' : key === 'facturation' ? 'mois' : 'chantier')
-            }}
-              className={`px-4 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-all ${onglet === key ? 'border-blue-800 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-              {label}
-            </button>
-          ))}
+      {/* ── F2 RÉEL ── */}
+      {tab === 'reel' && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+            <div className="eyebrow">Vue</div>
+            <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9}}>
+              {periodOptions.map(p => (
+                <button key={p.key} onClick={() => setPeriod(p.key)} style={{
+                  padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
+                  background: period === p.key ? '#fff' : 'transparent',
+                  color:      period === p.key ? 'var(--brand-800)' : 'var(--ink-500)',
+                  boxShadow:  period === p.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}>{p.label}</button>
+              ))}
+            </div>
+            {isMarine && (
+              <div style={{marginLeft:6,display:'flex',gap:4,alignItems:'center'}}>
+                <div className="eyebrow">Périmètre</div>
+                <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9,marginLeft:8}}>
+                  {[
+                    { key:'tous', label:'Tous' },
+                    { key:'moi', label: profile?.prenom || 'Marine' },
+                    ...agentes.map(a => ({ key: a.id, label: a.prenom })),
+                  ].map(s => (
+                    <button key={s.key} onClick={() => setScope(s.key)} style={{
+                      padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
+                      background: scope === s.key ? '#fff' : 'transparent',
+                      color:      scope === s.key ? 'var(--brand-800)' : 'var(--ink-500)',
+                      boxShadow:  scope === s.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                    }}>{s.label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          {period === 'chantier' && renderFinanceTable(scopedDossiers, true)}
+          {period === 'mois'     && (isMarine
+            ? renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, false), 'Mois')
+            : renderMesPeriode(scopedDossiers, 'Mois', agrégerParPaiement(scopedDossiers, false))
+          )}
+          {period === 'annee'    && (isMarine
+            ? renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, true), 'Année')
+            : renderMesPeriode(scopedDossiers, 'Année', agrégerParPaiement(scopedDossiers, true))
+          )}
         </div>
+      )}
 
-        {/* ── MES CHANTIERS ── */}
-        {onglet === 'mes_chantiers' && (
-          <div className="space-y-4">
-            {renderSousOnglets()}
-            {sousOnglet === 'chantier' && renderAccordeon(mesDossiers, false)}
-            {sousOnglet === 'mois'  && renderMesPeriode(mesDossiers, 'Mois', agrégerParPaiement(mesDossiers, false))}
-            {sousOnglet === 'annee' && renderMesPeriode(mesDossiers, 'Année', agrégerParPaiement(mesDossiers, true))}
-          </div>
-        )}
+      {/* ── SYNTHÈSE ── */}
+      {tab === 'synthese' && <SyntheseView />}
 
-        {/* ── TOUS LES CHANTIERS (admin) ── */}
-        {onglet === 'tous_chantiers' && isMarine && (
-          <div className="space-y-4">
-            {renderSousOnglets()}
-            {sousOnglet === 'chantier' && renderAccordeon(dossiers, true)}
-            {sousOnglet === 'mois'  && renderTousPeriode(dossiers, agrégerParPaiement(dossiers, false), 'Mois')}
-            {sousOnglet === 'annee' && renderTousPeriode(dossiers, agrégerParPaiement(dossiers, true), 'Année')}
-          </div>
-        )}
+      {/* ── SUIVI FINANCIER ── */}
+      {tab === 'suivi' && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {isMarine ? (
+            <>
+              <PillToggle
+                options={[{key:'agence',label:'Agence — Encaissements bruts'},{key:'ctp',label:'CTP — Résultat net (charges incluses)'}]}
+                active={suiviMode}
+                onChange={setSuiviMode}
+              />
+              {renderSuiviFinancier(suiviMode)}
+            </>
+          ) : (
+            renderSuiviAgenteFinancier()
+          )}
+        </div>
+      )}
 
-        {/* ── SUIVI FINANCIER (admin) ── */}
-        {onglet === 'suivi_financier' && isMarine && (
-          <div className="space-y-5">
-            <div className="flex gap-2">
-              {[{ key: 'agence', label: 'Agence' }, { key: 'ctp', label: 'CTP' }].map(({ key, label }) => (
-                <button key={key} onClick={() => setSousOnglet(key)}
-                  className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white text-gray-600 hover:border-gray-300'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {(sousOnglet === 'agence' || sousOnglet === 'ctp') && renderSuiviFinancier(sousOnglet)}
-          </div>
-        )}
+      {/* ── FACTURATION ── */}
+      {tab === 'facturation' && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {isMarine ? <FacturationAgentes /> : <FacturationAgentePropre />}
+        </div>
+      )}
 
-        {/* ── AGENTES (admin) ── */}
-        {onglet === 'agentes' && isMarine && (
-          <div className="space-y-4">
-            {renderSélecteurAgente()}
-            <div className="flex gap-2">
-              {[{ key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
-                <button key={key} onClick={() => setSousOnglet(key)}
-                  className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {(sousOnglet === 'mois' || sousOnglet === 'annee') && renderAgenteMoisAdmin()}
-          </div>
-        )}
-
-        {/* ── MON SUIVI FINANCIER (agente) ── */}
-        {onglet === 'financier' && !isMarine && (
-          <div className="space-y-4">
-            {renderSuiviAgenteFinancier()}
-          </div>
-        )}
-
-        {/* ── FACTURATION (agente) ── */}
-        {onglet === 'facturation' && !isMarine && (
-          <div className="space-y-4">
-            <div className="flex gap-2">
-              {[{ key: 'mois', label: 'Par mois' }, { key: 'annee', label: 'Par année' }].map(({ key, label }) => (
-                <button key={key} onClick={() => setSousOnglet(key)}
-                  className={`text-sm px-3 py-1.5 rounded-lg border transition-all ${sousOnglet === key ? 'bg-blue-800 text-white border-blue-800' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {sousOnglet === 'mois'  && renderFacturationMoisSuivi()}
-            {sousOnglet === 'annee' && renderFacturationAnneeAgente()}
-          </div>
-        )}
-
-      </main>
     </div>
   )
 }

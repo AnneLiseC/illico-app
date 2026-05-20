@@ -2,59 +2,122 @@
 import { useState, useEffect, use } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../../lib/auth-context'
+
+function Svg({ size = 16, children }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+}
+const ChevronLeft = ({ size=16 }) => <Svg size={size}><polyline points="15 18 9 12 15 6"/></Svg>
+const PinIcon     = ({ size=16 }) => <Svg size={size}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></Svg>
+const PhoneIcon   = ({ size=16 }) => <Svg size={size}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.38 2 2 0 0 1 3.58 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.54a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></Svg>
+const MailIcon    = ({ size=16 }) => <Svg size={size}><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></Svg>
+const EditIcon    = ({ size=16 }) => <Svg size={size}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></Svg>
+const PlusIcon    = ({ size=16 }) => <Svg size={size}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></Svg>
+const CalIcon     = ({ size=16 }) => <Svg size={size}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></Svg>
+
+const fmtEur  = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
+const fmtDate = (d) => {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+const diffJours = (d) => {
+  if (!d) return null
+  return Math.round((Date.now() - new Date(d)) / 86400000)
+}
+
+const STATUTS = {
+  en_cours:   { label: 'En cours',   bg: 'rgba(22,163,74,0.1)',  color: '#15803d' },
+  en_attente: { label: 'En attente', bg: 'rgba(234,179,8,0.1)',  color: '#a16207' },
+  signe:      { label: 'Signé',      bg: 'rgba(0,148,212,0.1)', color: 'var(--brand-800)' },
+  termine:    { label: 'Terminé',    bg: 'var(--ink-100)',       color: 'var(--ink-500)' },
+  annule:     { label: 'Annulé',     bg: 'rgba(239,68,68,0.1)', color: '#dc2626' },
+}
+
+const TYPOLOGIES = {
+  courtage:          { label: 'Courtage',           bg: 'rgba(0,148,212,0.1)',   color: 'var(--brand-800)' },
+  amo:               { label: 'AMO',                bg: 'rgba(124,58,237,0.1)', color: '#7c3aed' },
+  estimo:            { label: 'Estimo',             bg: 'rgba(234,179,8,0.1)',  color: '#a16207' },
+  merad:             { label: 'MERAD',              bg: 'rgba(249,115,22,0.1)', color: '#c2410c' },
+  audit_energetique: { label: 'Audit énergétique',  bg: 'rgba(22,163,74,0.1)', color: '#15803d' },
+  studio_jardin:     { label: 'Studio de jardin',   bg: 'rgba(236,72,153,0.1)', color: '#be185d' },
+}
+
+function StatutBadge({ statut }) {
+  const s = STATUTS[statut] || { label: statut, bg: 'var(--ink-100)', color: 'var(--ink-500)' }
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', padding: '2px 10px',
+      borderRadius: 99, fontSize: 11.5, fontWeight: 700,
+      background: s.bg, color: s.color, whiteSpace: 'nowrap',
+    }}>{s.label}</span>
+  )
+}
+
+function TypoBadge({ typo }) {
+  const t = TYPOLOGIES[typo] || { label: typo, bg: 'var(--ink-100)', color: 'var(--ink-500)' }
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', padding: '2px 8px',
+      borderRadius: 99, fontSize: 11, fontWeight: 700,
+      background: t.bg, color: t.color,
+    }}>{t.label}</span>
+  )
+}
+
+function MiniKpi({ label, value, sub, tone = 'brand' }) {
+  const color = tone === 'ok' ? '#15803d' : tone === 'info' ? '#0369a1' : 'var(--brand-800)'
+  return (
+    <div className="card" style={{ padding: '16px 20px' }}>
+      <div className="eyebrow" style={{ marginBottom: 6 }}>{label}</div>
+      <div className="tnum" style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1.1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4 }}>{sub}</div>}
+    </div>
+  )
+}
+
+const labelStyle = { display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 6 }
+const inputProps = { className: 'input', style: { width: '100%', height: 40 } }
 
 export default function FicheClient({ params }) {
   const { id } = use(params)
   const [client, setClient] = useState(null)
   const [profiles, setProfiles] = useState([])
-  const [profile, setProfile] = useState(null)
   const [dossiers, setDossiers] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [erreur, setErreur] = useState('')
   const [succes, setSucces] = useState('')
-  const [mode, setMode] = useState('lecture')
+  const [mode, setMode] = useState('vue')
   const router = useRouter()
+  const { user, profile: authProfile, initialized } = useAuth()
 
   useEffect(() => {
+    if (!initialized) return
+    if (!user) { router.push('/login'); return }
+
     const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
+      const [{ data: allProfiles }, { data: clientData }, { data: dossiersData }] = await Promise.all([
+        supabase.from('profiles').select('id, prenom, nom, role').in('role', ['admin', 'agente']),
+        supabase.from('clients')
+          .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role)')
+          .eq('id', id).single(),
+        supabase.from('dossiers')
+          .select('*, rendez_vous(id, type_rdv, titre, date_heure), devis_artisans(id, statut, montant_ttc), suivi_financier(type_echeance, date_reglement, statut_client, montant_ttc)')
+          .eq('client_id', id)
+          .order('created_at', { ascending: false }),
+      ])
 
-      const { data: profData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-      setProfile(profData)
-
-      const { data: allProfiles } = await supabase
-        .from('profiles')
-        .select('id, prenom, nom, role')
-        .in('role', ['admin', 'agente'])
       setProfiles(allProfiles || [])
 
-      const { data: clientData } = await supabase
-        .from('clients')
-        .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role)')
-        .eq('id', id)
-        .single()
       if (!clientData) { setLoading(false); return }
-      const sameAddress = !clientData.adresse_chantier ||
-        clientData.adresse_chantier === clientData.adresse
+      const sameAddress = !clientData.adresse_chantier || clientData.adresse_chantier === clientData.adresse
       setClient({ ...clientData, adresse_chantier_identique: sameAddress })
-      
-      const { data: dossiersData } = await supabase
-        .from('dossiers')
-        .select('*, rendez_vous(id, type_rdv, date_heure, duree_minutes)')
-        .eq('client_id', id)
-        .order('created_at', { ascending: false })
       setDossiers(dossiersData || [])
-
       setLoading(false)
     }
     init()
-  }, [id, router])
+  }, [initialized, user?.id, id, router])
 
   const set = (champ, valeur) => setClient(c => ({ ...c, [champ]: valeur }))
 
@@ -67,418 +130,467 @@ export default function FicheClient({ params }) {
       ? client.adresse || null
       : client.adresse_chantier || null
 
-    const { error } = await supabase
-      .from('clients')
-      .update({
-        civilite: client.civilite,
-        nom: client.nom,
-        prenom: client.prenom,
-        nom2: client.nom2 || null,
-        prenom2: client.prenom2 || null,
-        email: client.email || null,
-        email2: client.email2 || null,
-        telephone: client.telephone || null,
-        telephone2: client.telephone2 || null,
-        adresse: client.adresse || null,
-        adresse_chantier: adresseChantier,
-        type_client: client.type_client,
-        referente: client.referente?.id || client.referente || null,
-        apporteur_affaires: client.apporteur_affaires,
-        apporteur_nom: client.apporteur_affaires ? client.apporteur_nom : null,
-        apporteur_pourcentage: client.apporteur_affaires ? parseFloat(client.apporteur_pourcentage) : null,
-        apporteur_base: client.apporteur_affaires ? client.apporteur_base : null,
-        notes: client.notes || null,
-      })
-      .eq('id', id)
+    const { error } = await supabase.from('clients').update({
+      civilite:             client.civilite,
+      nom:                  client.nom,
+      prenom:               client.prenom,
+      nom2:                 client.nom2 || null,
+      prenom2:              client.prenom2 || null,
+      email:                client.email || null,
+      email2:               client.email2 || null,
+      telephone:            client.telephone || null,
+      telephone2:           client.telephone2 || null,
+      adresse:              client.adresse || null,
+      adresse_chantier:     adresseChantier,
+      type_client:          client.type_client,
+      referente:            client.referente?.id || client.referente || null,
+      apporteur_affaires:   client.apporteur_affaires,
+      apporteur_nom:        client.apporteur_affaires ? client.apporteur_nom : null,
+      apporteur_pourcentage: client.apporteur_affaires ? parseFloat(client.apporteur_pourcentage) : null,
+      apporteur_base:       client.apporteur_affaires ? client.apporteur_base : null,
+      notes:                client.notes || null,
+    }).eq('id', id)
 
     if (error) {
       setErreur('Erreur : ' + error.message)
     } else {
       setSucces('Modifications enregistrées ✓')
-      setMode('lecture')
+      setMode('vue')
     }
     setSaving(false)
-  }
-
-  const statutLabel = (statut) => {
-    const labels = {
-      'en_cours': { label: 'En cours', color: 'bg-green-100 text-green-700' },
-      'en_attente': { label: 'En attente', color: 'bg-yellow-100 text-yellow-700' },
-      'termine': { label: 'Terminé', color: 'bg-gray-100 text-gray-600' },
-      'annule': { label: 'Annulé', color: 'bg-red-100 text-red-600' },
-    }
-    return labels[statut] || { label: statut, color: 'bg-gray-100 text-gray-600' }
-  }
-
-  const typologieLabel = (t) => {
-    const labels = {
-      'courtage': 'Courtage',
-      'amo': 'AMO',
-      'estimo': 'Estimo',
-      'merad': 'MERAD',
-      'audit_energetique': 'Audit énergétique',
-      'studio_jardin': 'Studio de jardin',
-    }
-    return labels[t] || t
   }
 
   const estCouple = ['M. et Mme', 'Mme et Mme', 'M. et M.'].includes(client?.civilite)
 
   if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <p className="text-gray-400">Chargement...</p>
-    </div>
+    <div style={{ paddingTop: 96, textAlign: 'center', color: 'var(--ink-400)' }}>Chargement…</div>
   )
 
   if (!client) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <p className="text-gray-400">Client introuvable</p>
-    </div>
+    <div style={{ paddingTop: 96, textAlign: 'center', color: 'var(--ink-400)' }}>Client introuvable</div>
   )
 
-  const nomComplet = estCouple
-    ? `${client.civilite} ${client.prenom} ${client.nom} & ${client.prenom2} ${client.nom2}`
-    : `${client.civilite} ${client.prenom} ${client.nom}`
+  const isPro = client.type_client === 'professionnel'
+  const initials = `${(client.prenom || '').charAt(0)}${(client.nom || '').charAt(0)}`.toUpperCase()
 
-  return (
-    <div className="min-h-screen bg-gray-50">
+  const nomDisplay = estCouple
+    ? `${client.civilite} ${client.prenom} ${(client.nom || '').toUpperCase()} & ${client.prenom2 || ''} ${(client.nom2 || '').toUpperCase()}`.trim()
+    : `${client.civilite} ${client.prenom} ${(client.nom || '').toUpperCase()}`
 
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.push('/clients')} className="text-gray-400 hover:text-gray-600 text-sm">
-            ← Retour
+  const montantTotal = dossiers.reduce((s, d) =>
+    s + (d.devis_artisans || []).filter(dv => dv.statut === 'accepte')
+      .reduce((s2, dv) => s2 + (dv.montant_ttc || 0), 0), 0)
+
+  const allRdvs = dossiers.flatMap(d => (d.rendez_vous || []))
+    .sort((a, b) => new Date(a.date_heure) - new Date(b.date_heure))
+
+  const dernierRdv = allRdvs[allRdvs.length - 1] || null
+
+  const signesCount = dossiers.filter(d => ['signe', 'en_cours'].includes(d.statut)).length
+  const clientActif = dossiers.some(d => d.statut === 'en_cours')
+
+  const ECHEANCE_LABELS = {
+    acompte_amo:         'Acompte AMO reçu',
+    acompte_artisan:     'Acompte artisan réglé',
+    apporteur_agente:    'Commission apporteur réglée',
+    facture_finale:      'Facture finale réglée',
+    frais_consultation:  'Frais de consultation réglés',
+    honoraires_courtage: 'Honoraires courtage reçus',
+    solde_amo:           'Solde AMO reçu',
+  }
+
+  const historiqueRaw = [
+    ...allRdvs.map(rdv => ({
+      text: rdv.titre || rdv.type_rdv || 'Rendez-vous',
+      date: rdv.date_heure,
+    })),
+    ...dossiers.flatMap(d => (d.suivi_financier || [])
+      .filter(sf => sf.statut_client === 'regle' && sf.date_reglement)
+      .map(sf => ({
+        text: ECHEANCE_LABELS[sf.type_echeance] || sf.type_echeance,
+        date: sf.date_reglement,
+        montant: sf.montant_ttc,
+      }))
+    ),
+  ].sort((a, b) => new Date(b.date) - new Date(a.date))
+
+  const [voirToutHistorique, setVoirToutHistorique] = useState(false)
+  const historiqueItems = historiqueRaw.slice(0, voirToutHistorique ? 10 : 5)
+
+  const dernierRdvSub = dernierRdv
+    ? `${dernierRdv.type_rdv ? dernierRdv.type_rdv + ' · ' : ''}avec ${client.referente?.prenom || '—'}`
+    : null
+
+  // ── VUE ──────────────────────────────────────────────────────────────
+  if (mode === 'vue') {
+    return (
+      <div className="page-enter" style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+        {/* Breadcrumb */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--ink-500)' }}>
+          <button onClick={() => router.push('/clients')} className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }}>
+            <ChevronLeft size={14}/> Tous les clients
           </button>
-          <div>
-            <h1 className="text-lg font-bold text-blue-900">{nomComplet}</h1>
-            <p className="text-xs text-gray-400">{client.adresse}</p>
-          </div>
+          <span style={{ color: 'var(--ink-300)' }}>/</span>
+          <span style={{ color: 'var(--ink-700)', fontWeight: 600 }}>{nomDisplay}</span>
         </div>
-        <div className="flex items-center gap-3">
-          {mode === 'lecture' ? (
-            <button
-              onClick={() => setMode('edition')}
-              className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900"
-            >
-              Modifier
-            </button>
-          ) : (
-            <>
-              <button
-                onClick={() => setMode('lecture')}
-                className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50"
-              >
-                {saving ? 'Enregistrement...' : 'Enregistrer'}
-              </button>
-            </>
-          )}
-        </div>
-      </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+        {/* Hero card */}
+        <div className="card" style={{ padding: 28 }}>
+          <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div style={{
+              width: 72, height: 72, borderRadius: 14, flexShrink: 0,
+              background: isPro ? '#7c3aed' : 'var(--brand-700)', color: '#fff',
+              display: 'grid', placeItems: 'center', fontSize: 24, fontWeight: 800,
+            }}>{initials}</div>
 
-        {succes && <p className="text-green-600 text-sm bg-green-50 border border-green-200 rounded-lg px-4 py-2">{succes}</p>}
-        {erreur && <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-2">{erreur}</p>}
-
-        {/* Infos client */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
-          <h2 className="font-semibold text-gray-800">Informations</h2>
-
-          {mode === 'lecture' ? (
-            <div className="grid grid-cols-2 gap-4">
-              {[
-                ['Civilité', client.civilite],
-                ['Prénom / Nom', nomComplet.replace(`${client.civilite} `, '')],
-                ['Email 1', client.email || '—'],
-                ...(client.email2 ? [['Email 2', client.email2]] : []),
-                ['Tél 1', client.telephone || '—'],
-                ...(client.telephone2 ? [['Tél 2', client.telephone2]] : []),
-                ['Adresse client', client.adresse || '—'],
-                ['Adresse chantier', client.adresse_chantier || client.adresse || '—'],
-                ['Type', client.type_client === 'professionnel' ? 'Professionnel' : 'Particulier'],
-                ['Référente', client.referente ? `${client.referente.prenom} ${client.referente.nom}` : '—'],
-              ].map(([label, valeur]) => (
-                <div key={label}>
-                  <p className="text-xs text-gray-400 mb-1">{label}</p>
-                  <p className="text-sm font-medium text-gray-800">{valeur}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Civilité</label>
-                <select
-                  value={client.civilite}
-                  onChange={e => set('civilite', e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="M.">M.</option>
-                  <option value="Mme">Mme</option>
-                  <option value="M. et Mme">M. et Mme</option>
-                  <option value="Mme et Mme">Mme et Mme</option>
-                  <option value="M. et M.">M. et M.</option>
-                </select>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', padding: '2px 10px',
+                  borderRadius: 99, fontSize: 11.5, fontWeight: 700,
+                  background: isPro ? 'rgba(124,58,237,0.1)' : 'rgba(0,148,212,0.1)',
+                  color: isPro ? '#7c3aed' : 'var(--brand-800)',
+                }}>{isPro ? 'Pro' : 'Particulier'}</span>
+                {clientActif && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', padding: '2px 10px',
+                    borderRadius: 99, fontSize: 11.5, fontWeight: 700,
+                    background: 'rgba(22,163,74,0.1)', color: '#15803d',
+                  }}>Client actif</span>
+                )}
+                {client.apporteur_affaires && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', padding: '2px 10px',
+                    borderRadius: 99, fontSize: 11.5, fontWeight: 700,
+                    background: 'rgba(234,179,8,0.1)', color: '#a16207',
+                  }}>★ Apporteur {client.apporteur_pourcentage}%</span>
+                )}
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Prénom {estCouple ? '1' : ''}</label>
-                  <input type="text" value={client.prenom} onChange={e => set('prenom', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom {estCouple ? '1' : ''}</label>
-                  <input type="text" value={client.nom} onChange={e => set('nom', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-
-              {estCouple && (
-                <div className="grid grid-cols-2 gap-4 pt-3 border-t border-gray-100">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Prénom 2</label>
-                    <input type="text" value={client.prenom2 || ''} onChange={e => set('prenom2', e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nom 2</label>
-                    <input type="text" value={client.nom2 || ''} onChange={e => set('nom2', e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
+              <h1 className="page" style={{ fontSize: 26, letterSpacing: -0.02 }}>{nomDisplay}</h1>
+              {client.adresse && (
+                <div style={{ fontSize: 13, color: 'var(--ink-500)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <PinIcon size={14}/>{client.adresse}
                 </div>
               )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email 1</label>
-                  <input type="email" value={client.email || ''} onChange={e => set('email', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email 2 <span className="text-gray-400 font-normal">(optionnel)</span></label>
-                  <input type="email" value={client.email2 || ''} onChange={e => set('email2', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Tél 1</label>
-                  <input type="tel" value={client.telephone || ''} onChange={e => set('telephone', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Tél 2 <span className="text-gray-400 font-normal">(optionnel)</span></label>
-                  <input type="tel" value={client.telephone2 || ''} onChange={e => set('telephone2', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Adresse Client</label>
-                <input type="text" value={client.adresse || ''} onChange={e => set('adresse', e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-sm font-medium text-gray-700">Adresse chantier</label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={client.adresse_chantier_identique ?? true}
-                      onChange={e => set('adresse_chantier_identique', e.target.checked)}
-                      className="w-4 h-4 accent-blue-700"
-                    />
-                    <span className="text-xs text-gray-500">Identique à l'adresse client</span>
-                  </label>
-                </div>
-                {!(client.adresse_chantier_identique ?? true) && (
-                  <input type="text" value={client.adresse_chantier || ''} onChange={e => set('adresse_chantier', e.target.value)}
-                    placeholder="Adresse du chantier"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                )}
-                {(client.adresse_chantier_identique ?? true) && (
-                  <p className="text-xs text-gray-400 py-2">= {client.adresse || 'Adresse client non renseignée'}</p>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                  <select value={client.type_client ||''} onChange={e => set('type_client', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="particulier">Particulier</option>
-                    <option value="professionnel">Professionnel</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Référente</label>
-                  {profile?.role === 'admin' ? (
-                    <select
-                      value={client.referente?.id || client.referente || ''}
-                      onChange={e => set('referente', e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">— Choisir —</option>
-                      {profiles.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.prenom} {p.nom} ({p.role === 'admin' ? 'Franchisée' : 'Agente'})
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input type="text" disabled
-                      value={client.referente ? `${client.referente.prenom} ${client.referente.nom}` : ''}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-400" />
-                  )}
-                </div>
-              </div>
             </div>
-          )}
+
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+              <button className="btn btn-ghost" onClick={() => setMode('edition')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <EditIcon size={14}/> Modifier
+              </button>
+              {client.telephone && (
+                <a href={`tel:${client.telephone}`} className="btn btn-ghost" style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <PhoneIcon size={14}/>
+                </a>
+              )}
+              {client.email && (
+                <a href={`mailto:${client.email}`} className="btn btn-ghost" style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <MailIcon size={14}/>
+                </a>
+              )}
+              <button className="btn btn-primary" onClick={() => router.push(`/chantiers/nouveau?client=${id}`)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <PlusIcon size={14}/> Nouveau dossier
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* Apporteur d'affaires */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
-        <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-800">Apporteur d'affaires</h2>
-            {mode === 'edition' && (
-            <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                type="checkbox"
-                checked={client.apporteur_affaires || false}
-                onChange={e => set('apporteur_affaires', e.target.checked)}
-                className="w-4 h-4 accent-blue-700"
-                />
-                <span className="text-sm text-gray-600">Oui</span>
-            </label>
-            )}
+        {/* KPIs */}
+        <div className="kpi-grid">
+          <MiniKpi label="Dossiers" value={dossiers.length} sub={`${signesCount} signés`} tone="brand"/>
+          <MiniKpi label="Montant total" value={fmtEur(montantTotal)} sub="TTC tous chantiers" tone="ok"/>
+          <MiniKpi
+            label="Premier contact"
+            value={fmtDate(client.created_at)}
+            sub={`il y a ${diffJours(client.created_at)} jours`}
+            tone="brand"
+          />
+          <MiniKpi
+            label="Dernier RDV"
+            value={dernierRdv ? fmtDate(dernierRdv.date_heure) : '—'}
+            sub={dernierRdvSub || 'Aucun rendez-vous'}
+            tone="info"
+          />
         </div>
 
-        {/* Mode lecture */}
-        {mode === 'lecture' && client.apporteur_affaires && (
-            <div className="grid grid-cols-3 gap-4">
-            <div>
-                <p className="text-xs text-gray-400 mb-1">Nom</p>
-                <p className="text-sm font-medium text-gray-800">{client.apporteur_nom || '—'}</p>
-            </div>
-            <div>
-                <p className="text-xs text-gray-400 mb-1">Commission</p>
-                <p className="text-sm font-medium text-gray-800">{client.apporteur_pourcentage}%</p>
-            </div>
-            <div>
-                <p className="text-xs text-gray-400 mb-1">Calculé sur</p>
-                <p className="text-sm font-medium text-gray-800">
-                {client.apporteur_base === 'par_devis' ? 'Par devis signé' : 'Total du chantier HT'}
-                </p>
-            </div>
-            </div>
-        )}
+        {/* Two-column: dossiers + contact/historique */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 18, alignItems: 'start' }}>
 
-        {mode === 'lecture' && !client.apporteur_affaires && (
-            <p className="text-sm text-gray-400">Aucun apporteur d'affaires</p>
-        )}
-
-        {/* Mode édition */}
-        {mode === 'edition' && client.apporteur_affaires && (
-            <div className="space-y-4 pt-2 border-t border-gray-100">
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nom de l'apporteur</label>
-                <input
-                type="text"
-                value={client.apporteur_nom || ''}
-                onChange={e => set('apporteur_nom', e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+          {/* Dossiers */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 22px', borderBottom: '1px solid var(--ink-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 className="page" style={{ fontSize: 15 }}>Dossiers du client</h2>
+              <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => router.push(`/chantiers/nouveau?client=${id}`)}>
+                + Nouveau
+              </button>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-                <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Commission (%)</label>
-                <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    value={client.apporteur_pourcentage || ''}
-                    onChange={e => set('apporteur_pourcentage', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                </div>
-                <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Calculé sur</label>
-                <select
-                    value={client.apporteur_base || 'total_chantier'}
-                    onChange={e => set('apporteur_base', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                    <option value="total_chantier">Total du chantier HT</option>
-                    <option value="par_devis">Par devis signé</option>
-                </select>
-                </div>
-            </div>
-            </div>
-        )}
-        </div>
-
-        {/* Notes */}
-        {(mode === 'edition' || client.notes) && (
-          <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-3">
-            <h2 className="font-semibold text-gray-800">Notes</h2>
-            {mode === 'lecture' ? (
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{client.notes}</p>
+            {dossiers.length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-400)', fontSize: 13 }}>
+                Aucun dossier pour ce client
+              </div>
             ) : (
-              <textarea
-                value={client.notes || ''}
-                onChange={e => set('notes', e.target.value)}
-                rows={4}
-                placeholder="Informations complémentaires sur le client..."
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
-              />
-            )}
-          </div>
-        )}
-
-        {/* Dossiers chantiers */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-gray-800">Chantiers ({dossiers.length})</h2>
-            <button
-              onClick={() => router.push(`/chantiers/nouveau?client=${id}`)}
-              className="text-sm text-blue-600 hover:underline"
-            >
-              + Nouveau chantier
-            </button>
-          </div>
-
-          {dossiers.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-6">Aucun chantier pour ce client</p>
-          ) : (
-            <div className="space-y-2">
-              {dossiers.map(d => {
-                const s = statutLabel(d.statut)
-
+              dossiers.map(d => {
+                const montantDossier = (d.devis_artisans || [])
+                  .filter(dv => dv.statut === 'accepte')
+                  .reduce((s, dv) => s + (dv.montant_ttc || 0), 0)
                 return (
-                  <div key={d.id} onClick={() => router.push(`/chantiers/${d.id}`)}
-                    className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:border-blue-200 cursor-pointer">
+                  <div key={d.id} onClick={() => router.push(`/chantiers/${d.id}`)} className="row-hover"
+                    style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 14, padding: '14px 22px', borderTop: '1px solid var(--ink-100)', alignItems: 'center', cursor: 'pointer' }}>
                     <div>
-                      <p className="text-sm font-medium text-gray-800">{d.reference}</p>
-                      <p className="text-xs text-gray-400">{typologieLabel(d.typologie)}</p>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--brand-800)', fontWeight: 700 }}>{d.reference}</span>
+                        {d.typologie && <TypoBadge typo={d.typologie}/>}
+                      </div>
+                      {d.objet && (
+                        <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink-900)', marginTop: 4 }}>{d.objet}</div>
+                      )}
                     </div>
-                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${s.color}`}>{s.label}</span>
+                    {montantDossier > 0 && (
+                      <div className="tnum" style={{ fontWeight: 700, color: 'var(--ink-900)' }}>{fmtEur(montantDossier)}</div>
+                    )}
+                    <StatutBadge statut={d.statut}/>
                   </div>
                 )
-              })}
+              })
+            )}
+          </div>
+
+          {/* Right column */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+            {/* Contact */}
+            <div className="card" style={{ padding: 22 }}>
+              <h2 className="page" style={{ fontSize: 15, marginBottom: 12 }}>Contact</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {[
+                  { label: 'Téléphone',   value: client.telephone,  icon: <PhoneIcon size={14}/> },
+                  { label: 'Téléphone 2', value: client.telephone2, icon: <PhoneIcon size={14}/> },
+                  { label: 'Email',       value: client.email,      icon: <MailIcon size={14}/> },
+                  { label: 'Email 2',     value: client.email2,     icon: <MailIcon size={14}/> },
+                ].filter(row => row.value).map(row => (
+                  <div key={row.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--brand-50)', color: 'var(--brand-800)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                      {row.icon}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="eyebrow">{row.label}</div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }} className="clip-1">{row.value}</div>
+                    </div>
+                  </div>
+                ))}
+                {!client.telephone && !client.email && (
+                  <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Aucun contact renseigné</div>
+                )}
+              </div>
             </div>
+
+            {/* Historique */}
+            <div className="card" style={{ padding: 22 }}>
+              <h2 className="page" style={{ fontSize: 15, marginBottom: 12 }}>Historique</h2>
+              {historiqueRaw.length === 0 ? (
+                <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Aucun événement enregistré</div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {historiqueItems.map((e, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <CalIcon size={13} style={{ color: 'var(--ink-400)', flexShrink: 0 }}/>
+                        <span style={{ flex: 1, color: 'var(--ink-700)' }}>{e.text}</span>
+                        <span className="tnum" style={{ color: 'var(--ink-400)', whiteSpace: 'nowrap' }}>{fmtDate(e.date)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {historiqueRaw.length > 5 && (
+                    <button className="btn btn-ghost"
+                      style={{ marginTop: 8, fontSize: 12, width: '100%', justifyContent: 'center' }}
+                      onClick={() => setVoirToutHistorique(v => !v)}>
+                      {voirToutHistorique ? 'Réduire' : `Voir tout (${Math.min(historiqueRaw.length, 10)})`}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── ÉDITION ──────────────────────────────────────────────────────────
+  return (
+    <div className="page-enter" style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+      {/* Header édition */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16 }}>
+        <div>
+          <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 12, marginBottom: 6 }} onClick={() => setMode('vue')}>
+            <ChevronLeft size={14}/> Retour
+          </button>
+          <h1 className="page">Modifier le client</h1>
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn-ghost" onClick={() => setMode('vue')}>Annuler</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+        </div>
+      </div>
+
+      {succes && <div style={{ background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.3)', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: '#15803d' }}>{succes}</div>}
+      {erreur && <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: '#dc2626' }}>{erreur}</div>}
+
+      {/* Informations */}
+      <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="eyebrow">Informations client</div>
+
+        <div>
+          <label style={labelStyle}>Civilité</label>
+          <select {...inputProps} value={client.civilite} onChange={e => set('civilite', e.target.value)}>
+            <option value="M.">M.</option>
+            <option value="Mme">Mme</option>
+            <option value="M. et Mme">M. et Mme</option>
+            <option value="Mme et Mme">Mme et Mme</option>
+            <option value="M. et M.">M. et M.</option>
+          </select>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Prénom{estCouple ? ' 1' : ''}</label>
+            <input {...inputProps} type="text" value={client.prenom || ''} onChange={e => set('prenom', e.target.value)}/>
+          </div>
+          <div>
+            <label style={labelStyle}>Nom{estCouple ? ' 1' : ''}</label>
+            <input {...inputProps} type="text" value={client.nom || ''} onChange={e => set('nom', e.target.value)}/>
+          </div>
+        </div>
+
+        {estCouple && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, paddingTop: 12, borderTop: '1px solid var(--ink-100)' }}>
+            <div>
+              <label style={labelStyle}>Prénom 2</label>
+              <input {...inputProps} type="text" value={client.prenom2 || ''} onChange={e => set('prenom2', e.target.value)}/>
+            </div>
+            <div>
+              <label style={labelStyle}>Nom 2</label>
+              <input {...inputProps} type="text" value={client.nom2 || ''} onChange={e => set('nom2', e.target.value)}/>
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Email 1</label>
+            <input {...inputProps} type="email" value={client.email || ''} onChange={e => set('email', e.target.value)}/>
+          </div>
+          <div>
+            <label style={labelStyle}>Email 2 <span style={{ color: 'var(--ink-400)', fontWeight: 400 }}>(optionnel)</span></label>
+            <input {...inputProps} type="email" value={client.email2 || ''} onChange={e => set('email2', e.target.value)}/>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Téléphone 1</label>
+            <input {...inputProps} type="tel" value={client.telephone || ''} onChange={e => set('telephone', e.target.value)}/>
+          </div>
+          <div>
+            <label style={labelStyle}>Téléphone 2 <span style={{ color: 'var(--ink-400)', fontWeight: 400 }}>(optionnel)</span></label>
+            <input {...inputProps} type="tel" value={client.telephone2 || ''} onChange={e => set('telephone2', e.target.value)}/>
+          </div>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Adresse client</label>
+          <input {...inputProps} type="text" value={client.adresse || ''} onChange={e => set('adresse', e.target.value)}/>
+        </div>
+
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>Adresse chantier</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--ink-500)' }}>
+              <input type="checkbox" checked={client.adresse_chantier_identique ?? true} onChange={e => set('adresse_chantier_identique', e.target.checked)} style={{ width: 14, height: 14 }}/>
+              Identique à l'adresse client
+            </label>
+          </div>
+          {!(client.adresse_chantier_identique ?? true) ? (
+            <input {...inputProps} type="text" value={client.adresse_chantier || ''} onChange={e => set('adresse_chantier', e.target.value)} placeholder="Adresse du chantier"/>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--ink-400)', padding: '8px 0' }}>= {client.adresse || 'Adresse client non renseignée'}</div>
           )}
         </div>
-      </main>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Type</label>
+            <select {...inputProps} value={client.type_client || ''} onChange={e => set('type_client', e.target.value)}>
+              <option value="particulier">Particulier</option>
+              <option value="professionnel">Professionnel</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Référente</label>
+            {authProfile?.role === 'admin' ? (
+              <select {...inputProps} value={client.referente?.id || client.referente || ''} onChange={e => set('referente', e.target.value)}>
+                <option value="">— Choisir —</option>
+                {profiles.map(p => (
+                  <option key={p.id} value={p.id}>{p.prenom} {p.nom} ({p.role === 'admin' ? 'Franchisée' : 'Agente'})</option>
+                ))}
+              </select>
+            ) : (
+              <input {...inputProps} type="text" disabled
+                value={client.referente ? `${client.referente.prenom} ${client.referente.nom}` : ''}
+                style={{ ...inputProps.style, opacity: 0.6 }}/>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Apporteur d'affaires */}
+      <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="eyebrow">Apporteur d'affaires</div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+            <input type="checkbox" checked={client.apporteur_affaires || false} onChange={e => set('apporteur_affaires', e.target.checked)} style={{ width: 14, height: 14 }}/>
+            Activer
+          </label>
+        </div>
+        {client.apporteur_affaires ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 8, borderTop: '1px solid var(--ink-100)' }}>
+            <div>
+              <label style={labelStyle}>Nom de l'apporteur</label>
+              <input {...inputProps} type="text" value={client.apporteur_nom || ''} onChange={e => set('apporteur_nom', e.target.value)}/>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <label style={labelStyle}>Commission (%)</label>
+                <input {...inputProps} type="number" step="0.01" min="0" max="100"
+                  value={client.apporteur_pourcentage || ''} onChange={e => set('apporteur_pourcentage', e.target.value)}/>
+              </div>
+              <div>
+                <label style={labelStyle}>Calculé sur</label>
+                <select {...inputProps} value={client.apporteur_base || 'total_chantier'} onChange={e => set('apporteur_base', e.target.value)}>
+                  <option value="total_chantier">Total du chantier HT</option>
+                  <option value="par_devis">Par devis signé</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Aucun apporteur d'affaires</div>
+        )}
+      </div>
+
+      {/* Notes */}
+      <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="eyebrow">Notes</div>
+        <textarea className="input" value={client.notes || ''} onChange={e => set('notes', e.target.value)}
+          rows={4} placeholder="Informations complémentaires sur le client…"
+          style={{ width: '100%', resize: 'vertical', padding: '10px 12px', lineHeight: 1.5 }}/>
+      </div>
+
     </div>
   )
 }

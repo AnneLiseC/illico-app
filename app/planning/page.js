@@ -369,98 +369,99 @@ export default function Planning() {
   }
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: '#F1F5F9' }}>
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 rounded-full border-2 border-blue-200 border-t-blue-700 animate-spin" />
-        <p className="text-sm text-slate-400 tracking-wide">Chargement du planning…</p>
-      </div>
+    <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>
+      Chargement du planning…
     </div>
   )
 
-  const inputCls = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-  const labelCls = "block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5"
+  const inputCls = "input"
+  const labelCls = "eyebrow"
 
   return (
-    <div className="min-h-screen" style={{ background: '#F1F5F9' }}>
+    <div style={{ background: 'var(--bg)' }}>
 
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
-      <header style={{ background: COLORS.navy }} className="px-4 sm:px-6 py-3 sticky top-0 z-40">
-        <div className="max-w-screen-2xl mx-auto space-y-2">
+      <header style={{ background: COLORS.navy, padding:'12px 24px', position:'sticky', top:0, zIndex:40 }}>
+        <div style={{maxWidth:'100%', display:'flex', flexDirection:'column', gap:8}}>
 
           {/* Ligne 1 : nav + boutons */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 sm:gap-4">
+          <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+            <div style={{display:'flex', alignItems:'center', gap:16}}>
               {/* Bouton sidebar — mobile uniquement */}
               <button onClick={() => setSidebarOuverte(o => !o)}
-                className="sm:hidden text-blue-300 hover:text-white p-1">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                className="sm:hidden" style={{color:'#93c5fd', background:'none', border:'none', cursor:'pointer', padding:4}}>
+                <svg width={20} height={20} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </button>
-              <button onClick={() => router.push('/dashboard')} className="text-blue-300 hover:text-white text-sm transition-colors hidden sm:block">← Retour</button>
-              <div className="h-4 w-px bg-blue-800 hidden sm:block" />
-              <h1 className="text-white font-bold tracking-tight text-sm sm:text-base">Planning</h1>
+              <button onClick={() => router.push('/dashboard')}
+                className="hidden sm:block"
+                style={{color:'#93c5fd', fontSize:13, background:'none', border:'none', cursor:'pointer'}}>← Retour</button>
+              <div className="hidden sm:block" style={{width:1, height:16, background:'rgba(255,255,255,0.15)'}}/>
+              <h1 style={{color:'#fff', fontWeight:700, fontSize:15, letterSpacing:-0.02}}>Planning</h1>
             </div>
-            <div className="flex items-center gap-1.5 sm:gap-2">
+            <div style={{display:'flex', alignItems:'center', gap:8}}>
               {googleConnected ? (
                 <button onClick={syncGoogle} disabled={syncing}
-                  className="flex items-center gap-1.5 text-xs px-2 sm:px-3 py-1.5 rounded-lg border border-emerald-500 text-emerald-300 hover:bg-emerald-900 transition-all disabled:opacity-50">
-                  <span className={`w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 ${syncing ? 'animate-pulse' : ''}`} />
+                  style={{display:'flex', alignItems:'center', gap:6, fontSize:12, padding:'6px 12px', borderRadius:8, border:'1px solid #34d399', color:'#34d399', background:'transparent', cursor:'pointer', opacity: syncing ? 0.6 : 1}}>
+                  <span style={{width:6, height:6, borderRadius:'50%', background:'#34d399', flexShrink:0, animation: syncing ? 'pulse 1s infinite' : undefined}}/>
                   <span className="hidden sm:inline">{syncing ? 'Sync…' : 'Google Calendar'}</span>
                   <span className="sm:hidden">{syncing ? '…' : '📅'}</span>
                 </button>
               ) : (
                 <a href={`/api/auth/google?userId=${profile?.id}`}
-                  className="flex items-center gap-1.5 text-xs px-2 sm:px-3 py-1.5 rounded-lg border border-blue-600 text-blue-300 hover:bg-blue-800 transition-all">
+                  style={{display:'flex', alignItems:'center', gap:6, fontSize:12, padding:'6px 12px', borderRadius:8, border:'1px solid rgba(147,197,253,0.4)', color:'#93c5fd', textDecoration:'none'}}>
                   <span className="hidden sm:inline">📅 Google Calendar</span>
                   <span className="sm:hidden">📅</span>
                 </a>
               )}
-              <div className="h-4 w-px bg-blue-800 hidden sm:block" />
+              <div className="hidden sm:block" style={{width:1, height:16, background:'rgba(255,255,255,0.15)'}}/>
               <button onClick={() => { setModalType('intervention'); setElementSelectionne(null); setModeEdition(false); setModalOuvert(true) }}
-                className="text-xs px-2.5 sm:px-3 py-1.5 rounded-lg border border-blue-500 text-white hover:bg-blue-800 transition-all">
+                style={{fontSize:12, padding:'6px 12px', borderRadius:8, border:'1px solid rgba(255,255,255,0.25)', color:'#fff', background:'transparent', cursor:'pointer'}}>
                 + <span className="hidden sm:inline">Intervention</span><span className="sm:hidden">Int.</span>
               </button>
               <button onClick={() => { setModalType('rdv'); setElementSelectionne(null); setModeEdition(false); setModalOuvert(true) }}
-                className="text-xs px-3 sm:px-4 py-1.5 rounded-lg font-semibold text-white transition-all shadow-sm"
-                style={{ background: COLORS.blue }}>
+                style={{fontSize:12, padding:'6px 16px', borderRadius:8, fontWeight:600, color:'#fff', background:COLORS.blue, border:'none', cursor:'pointer'}}>
                 + RDV
               </button>
             </div>
           </div>
 
           {/* Ligne 2 : filtres */}
-          <div className="flex items-center gap-2 pb-0.5 overflow-x-auto scrollbar-none">
+          <div style={{display:'flex', alignItems:'center', gap:8, overflowX:'auto', paddingBottom:2}}>
 
             {/* Vue */}
-            <div className="flex gap-0.5 rounded-lg p-0.5" style={{ background: 'rgba(255,255,255,0.08)' }}>
+            <div style={{display:'flex', gap:2, borderRadius:8, padding:2, background:'rgba(255,255,255,0.08)', flexShrink:0}}>
               {[{ k: 'tous', l: 'Tous' }, { k: 'moi', l: 'Mes RDV' }, { k: 'artisan', l: 'Avec artisans' }].map(({ k, l }) => (
                 <button key={k} onClick={() => setVue(k)}
-                  className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${vue === k ? 'bg-blue-600 text-white shadow' : 'text-blue-300 hover:text-white'}`}>
+                  style={{padding:'4px 12px', borderRadius:6, fontSize:12, fontWeight:600, cursor:'pointer', border:'none',
+                    background: vue === k ? COLORS.blue : 'transparent',
+                    color: vue === k ? '#fff' : 'rgba(147,197,253,0.9)'}}>
                   {l}
                 </button>
               ))}
             </div>
 
-            <div className="h-4 w-px bg-blue-800" />
+            <div style={{width:1, height:16, background:'rgba(255,255,255,0.15)', flexShrink:0}}/>
 
             {/* Type RDV */}
-            <div className="flex gap-0.5 rounded-lg p-0.5" style={{ background: 'rgba(255,255,255,0.08)' }}>
+            <div style={{display:'flex', gap:2, borderRadius:8, padding:2, background:'rgba(255,255,255,0.08)', flexShrink:0}}>
               {[{ k: '', l: 'Tous types' }, { k: 'visite_technique_client', l: 'R1' }, { k: 'visite_technique_artisan', l: 'R2' }, { k: 'presentation_devis', l: 'R3' }, { k: 'autres', l: 'Autres' }].map(({ k, l }) => (
                 <button key={k} onClick={() => setTypeFiltre(k)}
-                  className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${typeFiltre === k ? 'bg-blue-600 text-white shadow' : 'text-blue-300 hover:text-white'}`}>
+                  style={{padding:'4px 12px', borderRadius:6, fontSize:12, fontWeight:600, cursor:'pointer', border:'none',
+                    background: typeFiltre === k ? COLORS.blue : 'transparent',
+                    color: typeFiltre === k ? '#fff' : 'rgba(147,197,253,0.9)'}}>
                   {l}
                 </button>
               ))}
             </div>
 
-            <div className="h-4 w-px bg-blue-800" />
+            <div style={{width:1, height:16, background:'rgba(255,255,255,0.15)', flexShrink:0}}/>
 
             {/* Filtre agente (admin seulement) */}
             {profile?.role === 'admin' && (
               <select value={agenteFiltre} onChange={e => setAgenteFiltre(e.target.value)}
-                className="text-xs rounded-lg px-3 py-1.5 focus:outline-none font-medium border-0 focus:ring-1 focus:ring-blue-400"
-                style={{ background: 'rgba(255,255,255,0.12)', color: '#93C5FD' }}>
+                style={{fontSize:12, borderRadius:8, padding:'6px 10px', border:'none', background:'rgba(255,255,255,0.12)', color:'#93c5fd', cursor:'pointer'}}>
                 <option value="" style={{ background: COLORS.navy }}>Toute l'agence</option>
                 {agentes.map(a => <option key={a.id} value={a.id} style={{ background: COLORS.navy }}>{a.prenom} {a.nom}</option>)}
               </select>
@@ -468,8 +469,7 @@ export default function Planning() {
 
             {/* Filtre artisan */}
             <select value={artisanFiltre} onChange={e => setArtisanFiltre(e.target.value)}
-              className="text-xs rounded-lg px-3 py-1.5 focus:outline-none font-medium border-0 focus:ring-1 focus:ring-blue-400"
-              style={{ background: 'rgba(255,255,255,0.12)', color: '#93C5FD' }}>
+              style={{fontSize:12, borderRadius:8, padding:'6px 10px', border:'none', background:'rgba(255,255,255,0.12)', color:'#93c5fd', cursor:'pointer'}}>
               <option value="" style={{ background: COLORS.navy }}>Tous les artisans</option>
               {artisans.map(a => <option key={a.id} value={a.id} style={{ background: COLORS.navy }}>{a.entreprise}</option>)}
             </select>
@@ -477,7 +477,7 @@ export default function Planning() {
             {/* Reset filtres */}
             {(typeFiltre || artisanFiltre || agenteFiltre || vue !== 'tous') && (
               <button onClick={() => { setTypeFiltre(''); setArtisanFiltre(''); setAgenteFiltre(''); setVue('tous') }}
-                className="text-xs text-blue-400 hover:text-white transition-colors underline underline-offset-2">
+                style={{fontSize:12, color:'rgba(147,197,253,0.8)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline', flexShrink:0}}>
                 Réinitialiser
               </button>
             )}
@@ -487,54 +487,59 @@ export default function Planning() {
 
       {/* ── SYNC MESSAGE ───────────────────────────────────────────────────── */}
       {syncMessage && (
-        <div className={`text-xs px-6 py-2.5 flex items-center justify-between border-b ${syncMessage.startsWith('✅') ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
-          <span className="font-medium">{syncMessage}</span>
-          <button onClick={() => setSyncMessage('')} className="ml-4 opacity-40 hover:opacity-100 text-lg leading-none">×</button>
+        <div style={{
+          fontSize:12, padding:'10px 24px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid',
+          background: syncMessage.startsWith('✅') ? 'rgba(22,163,74,0.06)' : 'rgba(239,68,68,0.06)',
+          color: syncMessage.startsWith('✅') ? '#15803d' : '#b91c1c',
+          borderColor: syncMessage.startsWith('✅') ? 'rgba(22,163,74,0.15)' : 'rgba(239,68,68,0.15)',
+        }}>
+          <span style={{fontWeight:600}}>{syncMessage}</span>
+          <button onClick={() => setSyncMessage('')} style={{marginLeft:16, opacity:0.5, background:'none', border:'none', cursor:'pointer', fontSize:18, lineHeight:1}}>×</button>
         </div>
       )}
 
       {/* ── LAYOUT ─────────────────────────────────────────────────────────── */}
-      <div className="max-w-screen-2xl mx-auto px-2 sm:px-4 py-4 sm:flex gap-4">
+      <div className="sm:flex" style={{gap:16, padding:'16px 16px', maxWidth:'100%'}}>
 
         {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
-        <aside className={`w-full sm:w-72 sm:flex-shrink-0 space-y-3 mb-4 sm:mb-0 ${sidebarOuverte ? 'block' : 'hidden'} sm:block`}>
+        <aside className={`sm:flex-shrink-0 ${sidebarOuverte ? 'block' : 'hidden'} sm:block`}
+          style={{width:288, display:'flex', flexDirection:'column', gap:12, marginBottom:16}}>
 
           {/* Recherche */}
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm select-none"></span>
+          <div style={{position:'relative'}}>
+            <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', fontSize:14, pointerEvents:'none'}}>🔍</span>
             <input value={recherche} onChange={e => setRecherche(e.target.value)}
-              placeholder="      Rechercher client, artisan…"
-              className="w-full pl-9 pr-9 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm" />
+              placeholder="Rechercher client, artisan…"
+              className="input" style={{paddingLeft:32, width:'100%'}}/>
             {recherche && (
               <button onClick={() => setRecherche('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-base leading-none">×</button>
+                style={{position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', background:'none', border:'none', cursor:'pointer', fontSize:16, lineHeight:1}}>×</button>
             )}
           </div>
 
           {/* Légende */}
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Légende</p>
-            <div className="space-y-2.5">
+          <div className="card" style={{padding:16}}>
+            <div className="eyebrow" style={{marginBottom:12}}>Légende</div>
+            <div style={{display:'flex', flexDirection:'column', gap:10}}>
               {Object.entries(TYPE_CONFIG).map(([, cfg]) => (
-                <div key={cfg.label} className="flex items-center gap-3">
-                  <div className="w-6 h-6 rounded flex-shrink-0 flex items-center justify-center text-white text-xs font-bold" style={{ background: cfg.color }}>
+                <div key={cfg.label} style={{display:'flex', alignItems:'center', gap:10}}>
+                  <div style={{width:24, height:24, borderRadius:6, flexShrink:0, display:'grid', placeItems:'center', color:'#fff', fontSize:11, fontWeight:700, background:cfg.color}}>
                     {cfg.short}
                   </div>
-                  <span className="text-xs text-slate-600">{cfg.label}</span>
+                  <span style={{fontSize:12, color:'var(--ink-600)'}}>{cfg.label}</span>
                 </div>
               ))}
-              <div className="border-t border-slate-100 pt-2.5 mt-1 space-y-2">
+              <div style={{borderTop:'1px solid var(--ink-100)', paddingTop:10, marginTop:2, display:'flex', flexDirection:'column', gap:8}}>
                 {[
                   { icon: '🔨', label: 'Intervention artisan', border: COLORS.violet, bg: COLORS.violet + '20', color: COLORS.violet },
                   { icon: '▶',  label: 'Démarrage chantier',  border: COLORS.mint,   bg: '#ECFDF5',           color: COLORS.mint },
                   { icon: '■',  label: 'Fin de chantier',      border: COLORS.amber,  bg: '#FFF7ED',           color: COLORS.amber },
                 ].map(({ icon, label, border, bg, color }) => (
-                  <div key={label} className="flex items-center gap-3">
-                    <div className="w-6 h-6 rounded flex-shrink-0 border-2 flex items-center justify-center text-xs font-bold"
-                      style={{ borderColor: border, background: bg, color }}>
+                  <div key={label} style={{display:'flex', alignItems:'center', gap:10}}>
+                    <div style={{width:24, height:24, borderRadius:6, flexShrink:0, border:`2px solid ${border}`, background:bg, color, display:'grid', placeItems:'center', fontSize:11, fontWeight:700}}>
                       {icon}
                     </div>
-                    <span className="text-xs text-slate-600">{label}</span>
+                    <span style={{fontSize:12, color:'var(--ink-600)'}}>{label}</span>
                   </div>
                 ))}
               </div>
@@ -542,28 +547,29 @@ export default function Planning() {
           </div>
 
           {/* Agenda À venir */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between" style={{ background: '#F8FAFC' }}>
-              <p className="text-xs font-bold text-slate-700 uppercase tracking-widest">À venir</p>
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: COLORS.blue + '15', color: COLORS.blue }}>
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'12px 16px', borderBottom:'1px solid var(--ink-100)', display:'flex', alignItems:'center', justifyContent:'space-between', background:'var(--surface-2)'}}>
+              <div className="eyebrow">À venir</div>
+              <span style={{fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:99, background: COLORS.blue + '15', color: COLORS.blue}}>
                 {agendaItems.length} évén.
               </span>
             </div>
-            <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto">
+            <div style={{maxHeight:320, overflowY:'auto'}}>
               {agendaItems.length === 0 && (
-                <div className="px-4 py-8 text-center">
-                  <p className="text-xs text-slate-400">{recherche ? 'Aucun résultat' : 'Aucun événement à venir'}</p>
+                <div style={{padding:'24px 16px', textAlign:'center'}}>
+                  <p style={{fontSize:12, color:'var(--ink-400)'}}>{recherche ? 'Aucun résultat' : 'Aucun événement à venir'}</p>
                 </div>
               )}
               {agendaItems.map(item => (
                 <button key={item.id + item.type} onClick={() => ouvrirSidebar(item)}
-                  className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors group">
-                  <div className="flex items-start gap-3">
-                    <div className="w-1 rounded-full mt-1 self-stretch flex-shrink-0" style={{ background: item.color, minHeight: 28 }} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-slate-800 truncate group-hover:text-blue-700 transition-colors">{item.titre}</p>
-                      <p className="text-xs text-slate-400 mt-0.5 truncate">{item.sous}</p>
-                      <p className="text-xs font-bold mt-1" style={{ color: item.color }}>{fmtDate(item.date)}</p>
+                  className="row-hover"
+                  style={{width:'100%', textAlign:'left', padding:'12px 16px', borderBottom:'1px solid var(--ink-50)', border:0, background:'transparent', cursor:'pointer', display:'block'}}>
+                  <div style={{display:'flex', alignItems:'flex-start', gap:10}}>
+                    <div style={{width:3, borderRadius:99, marginTop:2, alignSelf:'stretch', flexShrink:0, background:item.color, minHeight:28}}/>
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{fontSize:12, fontWeight:600, color:'var(--ink-800)'}} className="clip-1">{item.titre}</div>
+                      <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:2}} className="clip-1">{item.sous}</div>
+                      <div style={{fontSize:11.5, fontWeight:700, marginTop:4, color:item.color}}>{fmtDate(item.date)}</div>
                     </div>
                   </div>
                 </button>
@@ -572,24 +578,24 @@ export default function Planning() {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-2 gap-2">
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
             {[
               { label: 'RDV ce mois', value: rdvs.filter(r => { const d = new Date(r.date_heure), m = new Date(); return d.getMonth() === m.getMonth() && d.getFullYear() === m.getFullYear() }).length, color: COLORS.blue },
               { label: 'Interventions', value: interventions.length, color: COLORS.violet },
               { label: 'Chantiers actifs', value: dossiers.filter(d => d.date_demarrage_chantier && !d.date_fin_chantier).length, color: COLORS.mint},
               { label: 'À venir 30j', value: agendaItems.length, color: COLORS.amber },
             ].map(({ label, value, color }) => (
-              <div key={label} className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm text-center">
-                <p className="text-xl font-bold leading-none" style={{ color }}>{value}</p>
-                <p className="text-xs text-slate-400 mt-1 leading-tight">{label}</p>
+              <div key={label} className="card" style={{padding:12, textAlign:'center'}}>
+                <div className="tnum" style={{fontSize:20, fontWeight:800, color}}>{value}</div>
+                <div className="eyebrow" style={{marginTop:4}}>{label}</div>
               </div>
             ))}
           </div>
         </aside>
 
         {/* ── CALENDRIER ───────────────────────────────────────────────────── */}
-        <div className="flex-1 min-w-0 w-full">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div style={{flex:1, minWidth:0, width:'100%'}}>
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
             <style>{`
               .fc { font-family: system-ui, -apple-system, sans-serif; }
               .fc-toolbar { padding: 14px 18px !important; background: white; border-bottom: 1px solid #F1F5F9 !important; }
@@ -646,93 +652,93 @@ export default function Planning() {
 
       {/* ── MODAL ──────────────────────────────────────────────────────────── */}
       {modalOuvert && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(11,45,94,0.65)', backdropFilter: 'blur(6px)' }}
+        <div style={{position:'fixed', inset:0, zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(11,45,94,0.65)', backdropFilter:'blur(6px)'}}
           onClick={fermerModal}>
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto"
-            style={{ boxShadow: '0 25px 70px rgba(11,45,94,0.3)' }}
+          <div className="card" style={{width:'100%', maxWidth:448, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 25px 70px rgba(11,45,94,0.3)', padding:0}}
             onClick={e => e.stopPropagation()}>
 
             {/* Header modal */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between"
-              style={{ background: elementSelectionne?.type === 'rdv' ? (TYPE_CONFIG[elementSelectionne.data.type_rdv]?.bg || '#F8FAFC') : '#F8FAFC' }}>
+            <div style={{
+              padding:'16px 24px', borderBottom:'1px solid var(--ink-100)', display:'flex', alignItems:'center', justifyContent:'space-between',
+              background: elementSelectionne?.type === 'rdv' ? (TYPE_CONFIG[elementSelectionne.data.type_rdv]?.bg || 'var(--surface-2)') : 'var(--surface-2)',
+            }}>
               <div>
                 {elementSelectionne?.type === 'rdv' && !modeEdition && (() => {
                   const cfg = TYPE_CONFIG[elementSelectionne.data.type_rdv]
                   return <>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <div className="w-5 h-5 rounded flex items-center justify-center text-white text-xs font-bold" style={{ background: cfg?.color }}>{cfg?.short}</div>
-                      <p className="text-xs font-bold uppercase tracking-widest" style={{ color: cfg?.color }}>{cfg?.label}</p>
+                    <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:4}}>
+                      <div style={{width:20, height:20, borderRadius:6, display:'grid', placeItems:'center', color:'#fff', fontSize:11, fontWeight:700, background:cfg?.color}}>{cfg?.short}</div>
+                      <div className="eyebrow" style={{color:cfg?.color}}>{cfg?.label}</div>
                     </div>
-                    <h2 className="font-bold text-slate-800 text-base">
+                    <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:15}}>
                       {elementSelectionne.data.type_rdv === 'autres' && elementSelectionne.data.titre
                         ? elementSelectionne.data.titre
                         : `${elementSelectionne.data.dossier?.client?.prenom || ''} ${elementSelectionne.data.dossier?.client?.nom || ''}`.trim() || 'Autre RDV'}
-                    </h2>
+                    </div>
                   </>
                 })()}
                 {elementSelectionne?.type === 'intervention' && !modeEdition && <>
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-0.5">Intervention artisan</p>
-                  <h2 className="font-bold text-slate-800 text-base">{elementSelectionne.data.artisan?.entreprise}</h2>
+                  <div className="eyebrow" style={{marginBottom:4}}>Intervention artisan</div>
+                  <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:15}}>{elementSelectionne.data.artisan?.entreprise}</div>
                 </>}
                 {elementSelectionne?.type === 'date_cle' && <>
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-0.5">Dates chantier</p>
-                  <h2 className="font-bold text-slate-800 text-base">{elementSelectionne.data.reference}</h2>
+                  <div className="eyebrow" style={{marginBottom:4}}>Dates chantier</div>
+                  <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:15}}>{elementSelectionne.data.reference}</div>
                 </>}
-                {!elementSelectionne && modalType === 'rdv' && <h2 className="font-bold text-slate-800 text-base">Nouveau rendez-vous</h2>}
-                {!elementSelectionne && modalType === 'intervention' && <h2 className="font-bold text-slate-800 text-base">Nouvelle intervention artisan</h2>}
+                {!elementSelectionne && modalType === 'rdv' && <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:15}}>Nouveau rendez-vous</div>}
+                {!elementSelectionne && modalType === 'intervention' && <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:15}}>Nouvelle intervention artisan</div>}
               </div>
-              <button onClick={fermerModal} className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all text-xl leading-none">×</button>
+              <button onClick={fermerModal} style={{width:32, height:32, borderRadius:'50%', display:'grid', placeItems:'center', color:'var(--ink-400)', background:'none', border:'none', cursor:'pointer', fontSize:20, lineHeight:1}}>×</button>
             </div>
 
-            <div className="p-6 space-y-4">
-              {erreur && <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-3 py-2 rounded-lg">{erreur}</div>}
+            <div style={{padding:24, display:'flex', flexDirection:'column', gap:16}}>
+              {erreur && <div style={{background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)', color:'#b91c1c', fontSize:13, padding:'8px 12px', borderRadius:8}}>{erreur}</div>}
 
               {/* Détail RDV */}
               {elementSelectionne?.type === 'rdv' && !modeEdition && (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-slate-50 rounded-xl p-3"><p className={labelCls}>Chantier</p><p className="text-sm font-semibold text-slate-800">{elementSelectionne.data.dossier?.reference}</p></div>
-                    <div className="bg-slate-50 rounded-xl p-3"><p className={labelCls}>Durée</p><p className="text-sm font-semibold text-slate-800">{elementSelectionne.data.duree_minutes} min</p></div>
+                <div style={{display:'flex', flexDirection:'column', gap:12}}>
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+                    <div style={{background:'var(--surface-2)', borderRadius:10, padding:12}}><div className={labelCls}>Chantier</div><div style={{fontSize:13, fontWeight:600, color:'var(--ink-800)', marginTop:4}}>{elementSelectionne.data.dossier?.reference}</div></div>
+                    <div style={{background:'var(--surface-2)', borderRadius:10, padding:12}}><div className={labelCls}>Durée</div><div style={{fontSize:13, fontWeight:600, color:'var(--ink-800)', marginTop:4}}>{elementSelectionne.data.duree_minutes} min</div></div>
                   </div>
-                  <div className="bg-slate-50 rounded-xl p-3">
-                    <p className={labelCls}>Date & heure</p>
-                    <p className="text-sm font-semibold text-slate-800 capitalize">{fmtDateLong(elementSelectionne.data.date_heure)}</p>
-                    <p className="text-xs text-slate-500 mt-0.5 font-medium">{fmtHeure(elementSelectionne.data.date_heure)}</p>
+                  <div style={{background:'var(--surface-2)', borderRadius:10, padding:12}}>
+                    <div className={labelCls}>Date & heure</div>
+                    <div style={{fontSize:13, fontWeight:600, color:'var(--ink-800)', marginTop:4, textTransform:'capitalize'}}>{fmtDateLong(elementSelectionne.data.date_heure)}</div>
+                    <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}}>{fmtHeure(elementSelectionne.data.date_heure)}</div>
                   </div>
-                  {elementSelectionne.data.type_rdv === 'autres' && elementSelectionne.data.titre && <div className="bg-slate-50 rounded-xl p-3"><p className={labelCls}>Titre</p><p className="text-sm font-semibold text-slate-800">{elementSelectionne.data.titre}</p></div>}
-                  {elementSelectionne.data.artisan && <div className="bg-slate-50 rounded-xl p-3"><p className={labelCls}>Artisan présent</p><p className="text-sm font-semibold text-slate-800">{elementSelectionne.data.artisan.entreprise}</p></div>}
-                  {elementSelectionne.data.notes && <div className="bg-slate-50 rounded-xl p-3"><p className={labelCls}>Notes</p><p className="text-sm text-slate-700">{elementSelectionne.data.notes}</p></div>}
-                  <div className="flex gap-2 pt-1">
-                    <button onClick={() => setModeEdition(true)} className="flex-1 border border-slate-200 text-slate-700 py-2 rounded-xl text-sm font-medium hover:bg-slate-50 transition-all">Modifier</button>
-                    <button onClick={() => router.push(`/chantiers/${elementSelectionne.data.dossier_id}`)} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white transition-all" style={{ background: COLORS.blue }}>Voir le chantier →</button>
-                    <button onClick={supprimer} className="px-3 py-2 rounded-xl text-sm text-red-500 border border-red-100 hover:bg-red-50 transition-all">🗑</button>
+                  {elementSelectionne.data.type_rdv === 'autres' && elementSelectionne.data.titre && <div style={{background:'var(--surface-2)', borderRadius:10, padding:12}}><div className={labelCls}>Titre</div><div style={{fontSize:13, fontWeight:600, color:'var(--ink-800)', marginTop:4}}>{elementSelectionne.data.titre}</div></div>}
+                  {elementSelectionne.data.artisan && <div style={{background:'var(--surface-2)', borderRadius:10, padding:12}}><div className={labelCls}>Artisan présent</div><div style={{fontSize:13, fontWeight:600, color:'var(--ink-800)', marginTop:4}}>{elementSelectionne.data.artisan.entreprise}</div></div>}
+                  {elementSelectionne.data.notes && <div style={{background:'var(--surface-2)', borderRadius:10, padding:12}}><div className={labelCls}>Notes</div><div style={{fontSize:13, color:'var(--ink-700)', marginTop:4}}>{elementSelectionne.data.notes}</div></div>}
+                  <div style={{display:'flex', gap:8, paddingTop:4}}>
+                    <button onClick={() => setModeEdition(true)} className="btn btn-ghost" style={{flex:1}}>Modifier</button>
+                    <button onClick={() => router.push(`/chantiers/${elementSelectionne.data.dossier_id}`)} className="btn btn-primary" style={{flex:1}}>Voir le chantier →</button>
+                    <button onClick={supprimer} className="btn btn-ghost" style={{color:'#b91c1c', borderColor:'rgba(220,38,38,0.2)'}}>🗑</button>
                   </div>
                 </div>
               )}
 
               {/* Détail Intervention */}
               {elementSelectionne?.type === 'intervention' && !modeEdition && (
-                <div className="space-y-3">
-                  <div className="bg-slate-50 rounded-xl p-3"><p className={labelCls}>Chantier</p><p className="text-sm font-semibold text-slate-800">{elementSelectionne.data.dossier?.reference} — {elementSelectionne.data.dossier?.client?.prenom} {elementSelectionne.data.dossier?.client?.nom}</p></div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-slate-50 rounded-xl p-3"><p className={labelCls}>Type</p><p className="text-sm font-semibold text-slate-800">{elementSelectionne.data.type_intervention === 'periode' ? 'Période continue' : 'Jours spécifiques'}</p></div>
-                    <div className="bg-slate-50 rounded-xl p-3">
-                      {elementSelectionne.data.type_intervention === 'periode' ? (<><p className={labelCls}>Période</p><p className="text-xs font-semibold text-slate-800">{fmtDate(elementSelectionne.data.date_debut)} → {fmtDate(elementSelectionne.data.date_fin)}</p></>) : (<><p className={labelCls}>Jours</p><p className="text-sm font-semibold text-slate-800">{elementSelectionne.data.jours_specifiques?.length || 0} jour(s)</p></>)}
+                <div style={{display:'flex', flexDirection:'column', gap:12}}>
+                  <div style={{background:'var(--surface-2)', borderRadius:10, padding:12}}><div className={labelCls}>Chantier</div><div style={{fontSize:13, fontWeight:600, color:'var(--ink-800)', marginTop:4}}>{elementSelectionne.data.dossier?.reference} — {elementSelectionne.data.dossier?.client?.prenom} {elementSelectionne.data.dossier?.client?.nom}</div></div>
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+                    <div style={{background:'var(--surface-2)', borderRadius:10, padding:12}}><div className={labelCls}>Type</div><div style={{fontSize:13, fontWeight:600, color:'var(--ink-800)', marginTop:4}}>{elementSelectionne.data.type_intervention === 'periode' ? 'Période continue' : 'Jours spécifiques'}</div></div>
+                    <div style={{background:'var(--surface-2)', borderRadius:10, padding:12}}>
+                      {elementSelectionne.data.type_intervention === 'periode' ? (<><div className={labelCls}>Période</div><div style={{fontSize:12, fontWeight:600, color:'var(--ink-800)', marginTop:4}}>{fmtDate(elementSelectionne.data.date_debut)} → {fmtDate(elementSelectionne.data.date_fin)}</div></>) : (<><div className={labelCls}>Jours</div><div style={{fontSize:13, fontWeight:600, color:'var(--ink-800)', marginTop:4}}>{elementSelectionne.data.jours_specifiques?.length || 0} jour(s)</div></>)}
                     </div>
                   </div>
-                  {elementSelectionne.data.notes && <div className="bg-slate-50 rounded-xl p-3"><p className={labelCls}>Notes</p><p className="text-sm text-slate-700">{elementSelectionne.data.notes}</p></div>}
-                  <div className="flex gap-2 pt-1">
-                    <button onClick={() => setModeEdition(true)} className="flex-1 border border-slate-200 text-slate-700 py-2 rounded-xl text-sm font-medium hover:bg-slate-50">Modifier</button>
-                    <button onClick={() => router.push(`/chantiers/${elementSelectionne.data.dossier_id}`)} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: COLORS.blue }}>Voir le chantier →</button>
-                    <button onClick={supprimer} className="px-3 py-2 rounded-xl text-sm text-red-500 border border-red-100 hover:bg-red-50">🗑</button>
+                  {elementSelectionne.data.notes && <div style={{background:'var(--surface-2)', borderRadius:10, padding:12}}><div className={labelCls}>Notes</div><div style={{fontSize:13, color:'var(--ink-700)', marginTop:4}}>{elementSelectionne.data.notes}</div></div>}
+                  <div style={{display:'flex', gap:8, paddingTop:4}}>
+                    <button onClick={() => setModeEdition(true)} className="btn btn-ghost" style={{flex:1}}>Modifier</button>
+                    <button onClick={() => router.push(`/chantiers/${elementSelectionne.data.dossier_id}`)} className="btn btn-primary" style={{flex:1}}>Voir le chantier →</button>
+                    <button onClick={supprimer} className="btn btn-ghost" style={{color:'#b91c1c', borderColor:'rgba(220,38,38,0.2)'}}>🗑</button>
                   </div>
                 </div>
               )}
 
               {/* Formulaire RDV */}
               {(modalType === 'rdv' || (elementSelectionne?.type === 'rdv' && modeEdition)) && (!elementSelectionne || modeEdition) && (
-                <div className="space-y-4">
+                <div style={{display:'flex', flexDirection:'column', gap:16}}>
                   <div><label className={labelCls}>Type de rendez-vous</label>
                     <select value={formRdv.type_rdv} onChange={e => {
                       const newType = e.target.value
@@ -742,7 +748,7 @@ export default function Planning() {
                         titre: newType !== 'autres' ? '' : f.titre,
                         dossier_id: newType === 'autres' ? '' : (f.type_rdv === 'autres' ? '' : f.dossier_id),
                       }))
-                    }} className={inputCls}>
+                    }} className={inputCls} style={{marginTop:6}}>
                       <option value="visite_technique_client">R1 — Visite technique client</option>
                       <option value="visite_technique_artisan">R2 — Visite technique avec artisan</option>
                       <option value="presentation_devis">R3 — Présentation devis</option>
@@ -750,32 +756,32 @@ export default function Planning() {
                     </select>
                   </div>
                   {formRdv.type_rdv === 'autres' && <div><label className={labelCls}>Titre du rendez-vous *</label>
-                    <input type="text" value={formRdv.titre} onChange={e => setFormRdv(f => ({ ...f, titre: e.target.value }))} placeholder="Ex : Réunion de chantier, Appel fournisseur…" className={inputCls} />
+                    <input type="text" value={formRdv.titre} onChange={e => setFormRdv(f => ({ ...f, titre: e.target.value }))} placeholder="Ex : Réunion de chantier, Appel fournisseur…" className={inputCls} style={{marginTop:6}}/>
                   </div>}
                   {formRdv.type_rdv !== 'autres' && !formRdv.dossier_id && <div><label className={labelCls}>Chantier *</label>
-                    <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls}>
+                    <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir un chantier —</option>
                       {dossiers.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
                     </select>
                   </div>}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div><label className={labelCls}>Date et heure *</label><input type="datetime-local" value={formRdv.date_heure} onChange={e => setFormRdv(f => ({ ...f, date_heure: e.target.value }))} className={inputCls} /></div>
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+                    <div><label className={labelCls}>Date et heure *</label><input type="datetime-local" value={formRdv.date_heure} onChange={e => setFormRdv(f => ({ ...f, date_heure: e.target.value }))} className={inputCls} style={{marginTop:6}}/></div>
                     <div><label className={labelCls}>Durée</label>
-                      <select value={formRdv.duree_minutes} onChange={e => setFormRdv(f => ({ ...f, duree_minutes: e.target.value }))} className={inputCls}>
+                      <select value={formRdv.duree_minutes} onChange={e => setFormRdv(f => ({ ...f, duree_minutes: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                         <option value={30}>30 min</option><option value={60}>1h</option><option value={90}>1h30</option><option value={120}>2h</option><option value={180}>3h</option>
                       </select>
                     </div>
                   </div>
                   {formRdv.type_rdv === 'visite_technique_artisan' && <div><label className={labelCls}>Artisan</label>
-                    <select value={formRdv.artisan_id} onChange={e => setFormRdv(f => ({ ...f, artisan_id: e.target.value }))} className={inputCls}>
+                    <select value={formRdv.artisan_id} onChange={e => setFormRdv(f => ({ ...f, artisan_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir —</option>
                       {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
                     </select>
                   </div>}
-                  <div><label className={labelCls}>Notes</label><textarea value={formRdv.notes} onChange={e => setFormRdv(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} /></div>
-                  <div className="flex gap-2 pt-1">
-                    <button onClick={fermerModal} className="flex-1 border border-slate-200 text-slate-700 py-2 rounded-xl text-sm font-medium hover:bg-slate-50">Annuler</button>
-                    <button onClick={sauvegarderRdv} disabled={(!formRdv.dossier_id && formRdv.type_rdv !== 'autres') || !formRdv.date_heure || saving} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: COLORS.blue }}>
+                  <div><label className={labelCls}>Notes</label><textarea value={formRdv.notes} onChange={e => setFormRdv(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} style={{marginTop:6}}/></div>
+                  <div style={{display:'flex', gap:8, paddingTop:4}}>
+                    <button onClick={fermerModal} className="btn btn-ghost" style={{flex:1}}>Annuler</button>
+                    <button onClick={sauvegarderRdv} disabled={(!formRdv.dossier_id && formRdv.type_rdv !== 'autres') || !formRdv.date_heure || saving} className="btn btn-primary" style={{flex:1, opacity: ((!formRdv.dossier_id && formRdv.type_rdv !== 'autres') || !formRdv.date_heure || saving) ? 0.5 : 1}}>
                       {saving ? 'Enregistrement…' : modeEdition ? 'Enregistrer' : 'Créer le RDV'}
                     </button>
                   </div>
@@ -784,15 +790,15 @@ export default function Planning() {
 
               {/* Formulaire Intervention */}
               {(modalType === 'intervention' || (elementSelectionne?.type === 'intervention' && modeEdition)) && (!elementSelectionne || modeEdition) && (
-                <div className="space-y-4">
+                <div style={{display:'flex', flexDirection:'column', gap:16}}>
                   {!modeEdition && <div><label className={labelCls}>Chantier *</label>
-                    <select value={formIntervention.dossier_id} onChange={e => setFormIntervention(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls}>
+                    <select value={formIntervention.dossier_id} onChange={e => setFormIntervention(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir un chantier —</option>
                       {dossiers.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
                     </select>
                   </div>}
                   <div><label className={labelCls}>Artisan *</label>
-                    <select value={formIntervention.artisan_id} onChange={e => setFormIntervention(f => ({ ...f, artisan_id: e.target.value }))} className={inputCls}>
+                    <select value={formIntervention.artisan_id} onChange={e => setFormIntervention(f => ({ ...f, artisan_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir —</option>
                       {(formIntervention.dossier_id ? devis.filter(d => d.dossier_id === formIntervention.dossier_id).map(d => d.artisan).filter(Boolean) : artisans).map(a => (
                         <option key={a.id} value={a.id}>{a.entreprise}</option>
@@ -800,31 +806,31 @@ export default function Planning() {
                     </select>
                   </div>
                   <div><label className={labelCls}>Type d'intervention</label>
-                    <div className="flex gap-4">
+                    <div style={{display:'flex', gap:16, marginTop:8}}>
                       {[{ v: 'periode', l: 'Période continue' }, { v: 'jours_specifiques', l: 'Jours spécifiques' }].map(({ v, l }) => (
-                        <label key={v} className="flex items-center gap-2 cursor-pointer">
-                          <input type="radio" name="type_int" value={v} checked={formIntervention.type_intervention === v} onChange={e => setFormIntervention(f => ({ ...f, type_intervention: e.target.value, jours_specifiques: [] }))} className="accent-blue-700" />
-                          <span className="text-sm text-slate-700">{l}</span>
+                        <label key={v} style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer'}}>
+                          <input type="radio" name="type_int" value={v} checked={formIntervention.type_intervention === v} onChange={e => setFormIntervention(f => ({ ...f, type_intervention: e.target.value, jours_specifiques: [] }))} style={{accentColor:'var(--brand-700)'}}/>
+                          <span style={{fontSize:13, color:'var(--ink-700)'}}>{l}</span>
                         </label>
                       ))}
                     </div>
                   </div>
                   {formIntervention.type_intervention === 'periode' && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div><label className={labelCls}>Début</label><input type="date" value={formIntervention.date_debut} onChange={e => setFormIntervention(f => ({ ...f, date_debut: e.target.value }))} className={inputCls} /></div>
-                      <div><label className={labelCls}>Fin</label><input type="date" value={formIntervention.date_fin} onChange={e => setFormIntervention(f => ({ ...f, date_fin: e.target.value }))} className={inputCls} /></div>
+                    <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+                      <div><label className={labelCls}>Début</label><input type="date" value={formIntervention.date_debut} onChange={e => setFormIntervention(f => ({ ...f, date_debut: e.target.value }))} className={inputCls} style={{marginTop:6}}/></div>
+                      <div><label className={labelCls}>Fin</label><input type="date" value={formIntervention.date_fin} onChange={e => setFormIntervention(f => ({ ...f, date_fin: e.target.value }))} className={inputCls} style={{marginTop:6}}/></div>
                     </div>
                   )}
                   {formIntervention.type_intervention === 'jours_specifiques' && (
                     <div>
                       <label className={labelCls}>Ajouter des jours</label>
-                      <input type="date" className={inputCls} onChange={e => { const d = e.target.value; if (!d) return; setFormIntervention(f => ({ ...f, jours_specifiques: f.jours_specifiques.includes(d) ? f.jours_specifiques.filter(j => j !== d) : [...f.jours_specifiques, d].sort() })); e.target.value = '' }} />
+                      <input type="date" className={inputCls} style={{marginTop:6}} onChange={e => { const d = e.target.value; if (!d) return; setFormIntervention(f => ({ ...f, jours_specifiques: f.jours_specifiques.includes(d) ? f.jours_specifiques.filter(j => j !== d) : [...f.jours_specifiques, d].sort() })); e.target.value = '' }} />
                       {formIntervention.jours_specifiques.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-2">
+                        <div style={{display:'flex', flexWrap:'wrap', gap:6, marginTop:8}}>
                           {formIntervention.jours_specifiques.map(j => (
-                            <span key={j} className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg font-medium" style={{ background: COLORS.blue + '15', color: COLORS.blue }}>
+                            <span key={j} style={{display:'inline-flex', alignItems:'center', gap:4, fontSize:11.5, padding:'4px 10px', borderRadius:8, fontWeight:600, background: COLORS.blue + '15', color: COLORS.blue}}>
                               {fmtDate(j)}
-                              <button onClick={() => setFormIntervention(f => ({ ...f, jours_specifiques: f.jours_specifiques.filter(d => d !== j) }))} className="ml-0.5 opacity-50 hover:opacity-100">×</button>
+                              <button onClick={() => setFormIntervention(f => ({ ...f, jours_specifiques: f.jours_specifiques.filter(d => d !== j) }))} style={{opacity:0.5, background:'none', border:'none', cursor:'pointer', fontSize:14, lineHeight:1}}>×</button>
                             </span>
                           ))}
                         </div>
@@ -833,25 +839,26 @@ export default function Planning() {
                   )}
                   <div>
                     <label className={labelCls}>Horaire</label>
-                    <div className="flex items-center gap-2 mb-2">
-                      <input type="checkbox" id="int-journee" checked={!formIntervention.heure_debut} onChange={e => setFormIntervention(f => ({ ...f, heure_debut: e.target.checked ? '' : '08:00' }))} className="accent-blue-700" />
-                      <label htmlFor="int-journee" className="text-sm text-slate-700 cursor-pointer">Journée entière</label>
+                    <div style={{display:'flex', alignItems:'center', gap:8, marginTop:8, marginBottom:8}}>
+                      <input type="checkbox" id="int-journee" checked={!formIntervention.heure_debut} onChange={e => setFormIntervention(f => ({ ...f, heure_debut: e.target.checked ? '' : '08:00' }))} style={{accentColor:'var(--brand-700)'}}/>
+                      <label htmlFor="int-journee" style={{fontSize:13, color:'var(--ink-700)', cursor:'pointer'}}>Journée entière</label>
                     </div>
                     {formIntervention.heure_debut && (
-                      <div className="flex gap-2">
-                        <div className="flex-1"><label className={labelCls}>Heure de début</label><input type="time" value={formIntervention.heure_debut} onChange={e => setFormIntervention(f => ({ ...f, heure_debut: e.target.value }))} className={inputCls} /></div>
-                        <div className="flex-1"><label className={labelCls}>Durée</label>
-                          <select value={formIntervention.duree_minutes} onChange={e => setFormIntervention(f => ({ ...f, duree_minutes: Number(e.target.value) }))} className={inputCls}>
+                      <div style={{display:'flex', gap:8}}>
+                        <div style={{flex:1}}><label className={labelCls}>Heure de début</label><input type="time" value={formIntervention.heure_debut} onChange={e => setFormIntervention(f => ({ ...f, heure_debut: e.target.value }))} className={inputCls} style={{marginTop:6}}/></div>
+                        <div style={{flex:1}}><label className={labelCls}>Durée</label>
+                          <select value={formIntervention.duree_minutes} onChange={e => setFormIntervention(f => ({ ...f, duree_minutes: Number(e.target.value) }))} className={inputCls} style={{marginTop:6}}>
                             {[30,60,90,120,180,240,300,360,480].map(m => <option key={m} value={m}>{m < 60 ? `${m} min` : `${m/60}h${m%60 ? m%60 : ''}`}</option>)}
                           </select>
                         </div>
                       </div>
                     )}
                   </div>
-                  <div><label className={labelCls}>Notes</label><textarea value={formIntervention.notes} onChange={e => setFormIntervention(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} /></div>
-                  <div className="flex gap-2 pt-1">
-                    <button onClick={fermerModal} className="flex-1 border border-slate-200 text-slate-700 py-2 rounded-xl text-sm font-medium hover:bg-slate-50">Annuler</button>
-                    <button onClick={sauvegarderIntervention} disabled={(!formIntervention.dossier_id && !modeEdition) || !formIntervention.artisan_id || saving} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: COLORS.teal }}>
+                  <div><label className={labelCls}>Notes</label><textarea value={formIntervention.notes} onChange={e => setFormIntervention(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} style={{marginTop:6}}/></div>
+                  <div style={{display:'flex', gap:8, paddingTop:4}}>
+                    <button onClick={fermerModal} className="btn btn-ghost" style={{flex:1}}>Annuler</button>
+                    <button onClick={sauvegarderIntervention} disabled={(!formIntervention.dossier_id && !modeEdition) || !formIntervention.artisan_id || saving}
+                      style={{flex:1, padding:'8px 16px', borderRadius:8, fontSize:13, fontWeight:600, color:'#fff', background:COLORS.teal, border:'none', cursor:'pointer', opacity:((!formIntervention.dossier_id && !modeEdition) || !formIntervention.artisan_id || saving) ? 0.5 : 1}}>
                       {saving ? 'Enregistrement…' : modeEdition ? 'Enregistrer' : 'Planifier'}
                     </button>
                   </div>
@@ -860,13 +867,13 @@ export default function Planning() {
 
               {/* Dates clés */}
               {elementSelectionne?.type === 'date_cle' && (
-                <div className="space-y-4">
-                  <p className="text-sm text-slate-500">{elementSelectionne.data.client?.prenom} {elementSelectionne.data.client?.nom}</p>
-                  <div><label className={labelCls}>🏗 Démarrage</label><input type="date" value={formDateCle.date_demarrage_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_demarrage_chantier: e.target.value }))} className={inputCls} /></div>
-                  <div><label className={labelCls}>🏁 Fin</label><input type="date" value={formDateCle.date_fin_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_fin_chantier: e.target.value }))} className={inputCls} /></div>
-                  <div className="flex gap-2 pt-1">
-                    <button onClick={fermerModal} className="flex-1 border border-slate-200 text-slate-700 py-2 rounded-xl text-sm font-medium hover:bg-slate-50">Annuler</button>
-                    <button onClick={sauvegarderDateCle} disabled={saving} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: COLORS.blue }}>
+                <div style={{display:'flex', flexDirection:'column', gap:16}}>
+                  <div style={{fontSize:13, color:'var(--ink-500)'}}>{elementSelectionne.data.client?.prenom} {elementSelectionne.data.client?.nom}</div>
+                  <div><label className={labelCls}>🏗 Démarrage</label><input type="date" value={formDateCle.date_demarrage_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_demarrage_chantier: e.target.value }))} className={inputCls} style={{marginTop:6}}/></div>
+                  <div><label className={labelCls}>🏁 Fin</label><input type="date" value={formDateCle.date_fin_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_fin_chantier: e.target.value }))} className={inputCls} style={{marginTop:6}}/></div>
+                  <div style={{display:'flex', gap:8, paddingTop:4}}>
+                    <button onClick={fermerModal} className="btn btn-ghost" style={{flex:1}}>Annuler</button>
+                    <button onClick={sauvegarderDateCle} disabled={saving} className="btn btn-primary" style={{flex:1, opacity: saving ? 0.5 : 1}}>
                       {saving ? 'Enregistrement…' : 'Enregistrer'}
                     </button>
                   </div>
@@ -880,20 +887,21 @@ export default function Planning() {
       {/* ── QUICK MENU (clic sur une date) ─────────────────────────────────── */}
       {quickMenu && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setQuickMenu(null)} />
-          <div className="fixed z-50 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden"
-            style={{ top: quickMenu.y + 8, left: quickMenu.x, minWidth: 180 }}>
-            <p className="px-4 pt-3 pb-1.5 text-xs font-bold text-slate-400 uppercase tracking-widest">
+          <div style={{position:'fixed', inset:0, zIndex:40}} onClick={() => setQuickMenu(null)} />
+          <div className="card" style={{position:'fixed', zIndex:50, minWidth:180, overflow:'hidden', padding:0, top: quickMenu.y + 8, left: quickMenu.x}}>
+            <div className="eyebrow" style={{padding:'12px 16px 6px'}}>
               {new Date(quickMenu.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}
-            </p>
+            </div>
             <button onClick={() => ouvrirDepuisMenu('rdv')}
-              className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors">
-              <span className="w-5 h-5 rounded flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ background: COLORS.blue }}>R</span>
+              className="row-hover"
+              style={{width:'100%', textAlign:'left', padding:'10px 16px', fontSize:13, fontWeight:500, color:'var(--ink-700)', background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:10}}>
+              <span style={{width:20, height:20, borderRadius:6, display:'grid', placeItems:'center', color:'#fff', fontSize:11, fontWeight:700, background:COLORS.blue, flexShrink:0}}>R</span>
               Rendez-vous
             </button>
             <button onClick={() => ouvrirDepuisMenu('intervention')}
-              className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-teal-50 hover:text-teal-700 flex items-center gap-2.5 transition-colors border-t border-slate-100">
-              <span className="w-5 h-5 rounded flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ background: COLORS.teal }}>I</span>
+              className="row-hover"
+              style={{width:'100%', textAlign:'left', padding:'10px 16px', fontSize:13, fontWeight:500, color:'var(--ink-700)', background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:10, borderTop:'1px solid var(--ink-100)'}}>
+              <span style={{width:20, height:20, borderRadius:6, display:'grid', placeItems:'center', color:'#fff', fontSize:11, fontWeight:700, background:COLORS.teal, flexShrink:0}}>I</span>
               Intervention artisan
             </button>
           </div>

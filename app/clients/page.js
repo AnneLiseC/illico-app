@@ -4,14 +4,42 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 
+/* ── Inline SVG icons ── */
+function Svg({ size = 16, children }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+}
+const SearchIcon = ({ size=16 }) => <Svg size={size}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></Svg>
+const PinIcon    = ({ size=16 }) => <Svg size={size}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></Svg>
+const PhoneIcon  = ({ size=16 }) => <Svg size={size}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.38 2 2 0 0 1 3.58 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.54a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></Svg>
+const MailIcon   = ({ size=16 }) => <Svg size={size}><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></Svg>
+const MoreIcon   = ({ size=16 }) => <Svg size={size}><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></Svg>
+const FilterIcon = ({ size=16 }) => <Svg size={size}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></Svg>
+
+/* ── Helpers ── */
+const fmtEur = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
+const villeFromAddr = (addr) => {
+  if (!addr) return '—'
+  const parts = addr.split(',')
+  return parts[parts.length - 1]?.trim() || addr
+}
+
 export default function Clients() {
   const [clients, setClients] = useState([])
   const [agentes, setAgentes] = useState([])
   const [loading, setLoading] = useState(true)
   const [recherche, setRecherche] = useState('')
   const [onglet, setOnglet] = useState('moi')
+  const [menuOuvert, setMenuOuvert] = useState(null)
   const router = useRouter()
   const { user, profile, initialized } = useAuth()
+
+  useEffect(() => {
+    if (!menuOuvert) return
+    const close = () => setMenuOuvert(null)
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [menuOuvert])
 
   useEffect(() => {
     if (!initialized) return
@@ -20,7 +48,7 @@ export default function Clients() {
 
     let query = supabase
       .from('clients')
-      .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role)')
+      .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role), dossiers(id, devis_artisans(id, statut, montant_ttc))')
       .order('created_at', { ascending: false })
     if (profile.role === 'agente') query = query.eq('referente', profile.id)
 
@@ -38,12 +66,10 @@ export default function Clients() {
 
   const isMarine = profile?.role === 'admin'
 
-  // Filtrage par onglet (Marine uniquement) — dynamique par ID d'agente
   const clientsFiltresOnglet = clients.filter(c => {
     if (!isMarine) return true
     if (onglet === 'tous') return true
     if (onglet === 'moi') return c.referente?.role === 'admin'
-    // Onglet dynamique par agente : clé = ID de l'agente
     return c.referente?.id === onglet
   })
 
@@ -52,183 +78,181 @@ export default function Clients() {
       .includes(recherche.toLowerCase())
   )
 
-  // Onglets dynamiques : "Mes clients" + une tab par agente + "Tous"
   const ongletsList = isMarine ? [
     { key: 'moi', label: 'Mes clients' },
     ...agentes.map(a => ({ key: a.id, label: `Clients ${a.prenom} ${a.nom}` })),
     { key: 'tous', label: 'Tous les clients' },
   ] : []
 
-  // Afficher la colonne référente si on est sur "tous" ou sur un onglet agente
   const afficherReferente = isMarine && (onglet === 'tous' || agentes.some(a => a.id === onglet))
 
   if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <p className="text-gray-400">Chargement...</p>
-    </div>
+    <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>Chargement…</div>
   )
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.push('/dashboard')} className="text-gray-400 hover:text-gray-600 text-sm">
-            ← Retour
+    <div className="page-enter" style={{padding:'28px 32px', display:'flex', flexDirection:'column', gap:18}}>
+
+      {/* En-tête */}
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:16, flexWrap:'wrap'}}>
+        <div>
+          <div className="eyebrow" style={{marginBottom:4}}>Contacts</div>
+          <h1 className="page">Clients</h1>
+          <div style={{color:'var(--ink-500)', fontSize:13, marginTop:6}}>{clientsFiltres.length} clients · base actualisée</div>
+        </div>
+        <button className="btn btn-primary" onClick={() => router.push('/clients/nouveau')}>+ Nouveau client</button>
+      </div>
+
+      {/* Onglets (admin uniquement) */}
+      {isMarine && (
+        <div className="tabs" style={{overflowX:'auto'}}>
+          {ongletsList.map(({ key, label }) => (
+            <button key={key} className={`tab ${onglet === key ? 'active' : ''}`} onClick={() => setOnglet(key)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Barre de recherche */}
+      <div className="card" style={{padding:'14px 16px', display:'flex', gap:10}}>
+        <div style={{position:'relative', flex:1}}>
+          <span style={{position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', pointerEvents:'none'}}>
+            <SearchIcon size={16}/>
+          </span>
+          <input className="input" placeholder="Rechercher un client (nom, ville, email)…"
+            value={recherche} onChange={e => setRecherche(e.target.value)}
+            style={{paddingLeft:36, width:'100%', height:40}}/>
+        </div>
+        <button className="btn btn-ghost" style={{height:40}}><FilterIcon size={14}/> Filtres</button>
+      </div>
+
+      {/* Grille de cartes */}
+      {clientsFiltres.length === 0 ? (
+        <div className="card" style={{padding:48, textAlign:'center', color:'var(--ink-400)'}}>
+          <div style={{fontSize:32, marginBottom:12}}>👤</div>
+          <div>Aucun client pour le moment</div>
+          <button className="btn btn-ghost" style={{marginTop:16}} onClick={() => router.push('/clients/nouveau')}>
+            Ajouter le premier client
           </button>
-          <h1 className="text-lg font-bold text-blue-900">Clients</h1>
         </div>
-        <button
-          onClick={() => router.push('/clients/nouveau')}
-          className="bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg text-sm hover:bg-blue-900">
-          + <span className="hidden sm:inline">Nouveau </span>client
-        </button>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
-
-        {/* Onglets Marine uniquement — dynamiques */}
-        {isMarine && (
-          <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
-            {ongletsList.map(({ key, label }) => (
-              <button key={key} onClick={() => setOnglet(key)}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
-                  onglet === key ? 'border-blue-800 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Barre de recherche */}
-        <input
-          type="text"
-          placeholder="Rechercher un client..."
-          value={recherche}
-          onChange={e => setRecherche(e.target.value)}
-          className="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-
-        {/* Compteur */}
-        <p className="text-sm text-gray-400">{clientsFiltres.length} client(s)</p>
-
-        {/* Liste */}
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          {clientsFiltres.length === 0 ? (
-            <div className="p-12 text-center text-gray-400">
-              <p className="text-4xl mb-3">👤</p>
-              <p>Aucun client pour le moment</p>
-              <button
-                onClick={() => router.push('/clients/nouveau')}
-                className="mt-4 text-blue-600 text-sm hover:underline">
-                Ajouter le premier client
-              </button>
-            </div>
-          ) : (
-            <>
-              {/* Vue carte — mobile uniquement */}
-              <div className="divide-y divide-gray-100 sm:hidden">
-                {clientsFiltres.map(client => (
-                  <button key={client.id} onClick={() => router.push(`/clients/${client.id}`)}
-                    className="w-full text-left px-4 py-4 hover:bg-gray-50 active:bg-gray-100">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-800 text-sm truncate">
-                          {client.civilite} {client.prenom} {client.nom}
-                          {client.prenom2 && ` & ${client.prenom2} ${client.nom2}`}
-                        </p>
-                        {client.adresse && <p className="text-xs text-gray-400 mt-0.5 truncate">{client.adresse}</p>}
-                        <div className="flex items-center gap-2 mt-2 flex-wrap">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                            client.type_client === 'professionnel' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
-                          }`}>
-                            {client.type_client === 'professionnel' ? 'Pro' : 'Particulier'}
-                          </span>
-                          {client.apporteur_affaires && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
-                              Apporteur {client.apporteur_pourcentage}%
-                            </span>
-                          )}
-                          {afficherReferente && client.referente && (
-                            <span className="text-xs text-gray-500">{client.referente.prenom} {client.referente.nom}</span>
-                          )}
-                        </div>
-                        {client.telephone && <p className="text-xs text-gray-500 mt-1">{client.telephone}</p>}
-                      </div>
-                      <span className="text-blue-600 text-sm flex-shrink-0">→</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              {/* Vue tableau — desktop */}
-              <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Client</th>
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Contact</th>
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Type</th>
-                      {afficherReferente && (
-                        <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Référente</th>
+      ) : (
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:14}}>
+          {clientsFiltres.map(client => {
+            const dossierCount = (client.dossiers || []).length
+            const montantTotal = (client.dossiers || []).reduce((s, d) =>
+              s + (d.devis_artisans || []).filter(dv => dv.statut === 'accepte')
+                .reduce((s2, dv) => s2 + (dv.montant_ttc || 0), 0), 0)
+            const initials = `${(client.prenom || '').charAt(0)}${(client.nom || '').charAt(0)}`.toUpperCase()
+            const isPro = client.type_client === 'professionnel'
+            return (
+              <button key={client.id} onClick={() => router.push(`/clients/${client.id}`)}
+                className="card" style={{padding:18, border:0, textAlign:'left', cursor:'pointer'}}>
+                <div style={{display:'flex', gap:12, alignItems:'flex-start'}}>
+                  {/* Avatar */}
+                  <div style={{
+                    width:42, height:42, borderRadius:12, flexShrink:0,
+                    background: isPro ? '#7c3aed' : 'var(--brand-700)', color:'#fff',
+                    display:'grid', placeItems:'center', fontSize:15, fontWeight:800, letterSpacing:0.5,
+                  }}>{initials}</div>
+                  <div style={{flex:1, minWidth:0}}>
+                    {/* Nom */}
+                    <div style={{fontSize:15, fontWeight:700, color:'var(--ink-900)'}} className="clip-1">
+                      {(client.nom || '').toUpperCase()} {client.prenom}
+                      {client.prenom2 && (
+                        client.nom2 && client.nom2.toLowerCase() !== (client.nom || '').toLowerCase()
+                          ? ` & ${client.nom2.toUpperCase()} ${client.prenom2}`
+                          : ` & ${client.prenom2}`
                       )}
-                      <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Apporteur</th>
-                      <th className="px-6 py-3"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {clientsFiltres.map(client => (
-                      <tr key={client.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4">
-                          <p className="font-medium text-gray-800">
-                            {client.civilite} {client.prenom} {client.nom}
-                            {client.prenom2 && ` & ${client.prenom2} ${client.nom2}`}
-                          </p>
-                          <p className="text-xs text-gray-400">{client.adresse}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="text-sm text-gray-600">{client.email}</p>
-                          <p className="text-sm text-gray-400">{client.telephone}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                            client.type_client === 'professionnel'
-                              ? 'bg-purple-100 text-purple-700'
-                              : 'bg-blue-100 text-blue-700'
-                          }`}>
-                            {client.type_client === 'professionnel' ? 'Pro' : 'Particulier'}
-                          </span>
-                        </td>
-                        {afficherReferente && (
-                          <td className="px-6 py-4 text-sm text-gray-600">
-                            {client.referente ? `${client.referente.prenom} ${client.referente.nom}` : '—'}
-                          </td>
-                        )}
-                        <td className="px-6 py-4">
-                          {client.apporteur_affaires ? (
-                            <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 font-medium">
-                              Oui — {client.apporteur_pourcentage}%
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">Non</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <button
-                            onClick={() => router.push(`/clients/${client.id}`)}
-                            className="text-blue-600 text-sm hover:underline">
-                            Voir →
+                    </div>
+                    {/* Badges */}
+                    <div style={{display:'flex', gap:6, marginTop:6, flexWrap:'wrap', alignItems:'center'}}>
+                      <span style={{
+                        display:'inline-flex', alignItems:'center', padding:'2px 10px',
+                        borderRadius:99, fontSize:11.5, fontWeight:700,
+                        background: isPro ? 'rgba(124,58,237,0.1)' : 'rgba(0,148,212,0.1)',
+                        color: isPro ? '#7c3aed' : 'var(--brand-800)',
+                      }}>
+                        {isPro ? 'Pro' : 'Particulier'}
+                      </span>
+                      {client.apporteur_affaires && (
+                        <span style={{
+                          display:'inline-flex', alignItems:'center', padding:'2px 10px',
+                          borderRadius:99, fontSize:11.5, fontWeight:700,
+                          background:'rgba(22,163,74,0.1)', color:'#15803d',
+                        }}>
+                          ★ Apporteur {client.apporteur_pourcentage}%
+                        </span>
+                      )}
+                      {afficherReferente && client.referente && (
+                        <span style={{fontSize:11.5, color:'var(--ink-500)'}}>
+                          {client.referente.prenom} {client.referente.nom}
+                        </span>
+                      )}
+                    </div>
+                    {/* Ville */}
+                    <div style={{fontSize:12, color:'var(--ink-500)', marginTop:8, display:'flex', alignItems:'center', gap:4}}>
+                      <PinIcon size={12}/>{villeFromAddr(client.adresse)}
+                    </div>
+                  </div>
+                  {/* Bouton More */}
+                  <div style={{position:'relative', flexShrink:0}}>
+                    <button className="btn btn-ghost" style={{padding:'4px 8px'}}
+                      onClick={e => { e.stopPropagation(); setMenuOuvert(menuOuvert === client.id ? null : client.id) }}>
+                      <MoreIcon size={14}/>
+                    </button>
+                    {menuOuvert === client.id && (
+                      <div style={{position:'absolute', right:0, top:'100%', zIndex:50, background:'#fff', border:'1px solid var(--ink-200)', borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.1)', minWidth:180, overflow:'hidden'}}
+                        onClick={e => e.stopPropagation()}>
+                        {[
+                          { label:'Modifier',          action: () => router.push(`/clients/${client.id}/modifier`) },
+                          { label:'Appeler',           action: () => window.open(`tel:${client.telephone}`), hide: !client.telephone },
+                          { label:'Envoyer un email',  action: () => window.open(`mailto:${client.email}`), hide: !client.email },
+                          { label:'Voir les dossiers', action: () => router.push(`/chantiers?client=${client.id}`) },
+                        ].filter(item => !item.hide).map(item => (
+                          <button key={item.label} className="row-hover"
+                            style={{width:'100%', textAlign:'left', padding:'10px 14px', border:0, background:'transparent', fontSize:13, cursor:'pointer', color:'var(--ink-700)'}}
+                            onClick={() => { item.action(); setMenuOuvert(null) }}>
+                            {item.label}
                           </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Contacts */}
+                <div style={{marginTop:14, display:'flex', gap:14, fontSize:11.5, color:'var(--ink-500)'}}>
+                  {client.telephone && (
+                    <span style={{display:'inline-flex', gap:4, alignItems:'center'}}>
+                      <PhoneIcon size={11}/>{client.telephone}
+                    </span>
+                  )}
+                  {client.email && (
+                    <span style={{display:'inline-flex', gap:4, alignItems:'center'}} className="clip-1">
+                      <MailIcon size={11}/>{client.email}
+                    </span>
+                  )}
+                </div>
+
+                {/* Footer — Dossiers + Montant total */}
+                <div style={{marginTop:14, paddingTop:14, borderTop:'1px solid var(--ink-100)', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                  <div>
+                    <div className="eyebrow">Dossiers</div>
+                    <div className="tnum" style={{fontSize:18, fontWeight:800, color:'var(--ink-900)'}}>{dossierCount}</div>
+                  </div>
+                  {montantTotal > 0 && (
+                    <div style={{textAlign:'right'}}>
+                      <div className="eyebrow">Montant total</div>
+                      <div className="tnum" style={{fontSize:14, fontWeight:700, color:'var(--brand-800)'}}>{fmtEur(montantTotal)}</div>
+                    </div>
+                  )}
+                </div>
+              </button>
+            )
+          })}
         </div>
-      </main>
+      )}
     </div>
   )
 }
