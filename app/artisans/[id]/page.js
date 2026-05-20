@@ -56,6 +56,7 @@ export default function FicheArtisan({ params }) {
   const [savingFiche, setSavingFiche] = useState(false)
   const [nouvelleFiche, setNouvelleFiche] = useState({ nom: '', description: '', fichier: null })
   const [UploadEnCours, setUploadEnCours] = useState({})
+  const [fichesExpand, setFichesExpand] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -65,11 +66,12 @@ export default function FicheArtisan({ params }) {
 
       const [{ data }, { data: fichesData }] = await Promise.all([
         supabase.from('artisans')
-          .select('*, devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, dossier:dossiers(id, reference, client:clients(id, prenom, nom, civilite)))')
+          .select('*, devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, devis_signe_url, dossier:dossiers(id, reference, client:clients(id, prenom, nom, civilite)))')
           .eq('id', id).single(),
         supabase.from('fiches_techniques').select('*').eq('artisan_id', id).order('nom'),
       ])
       setArtisan(data)
+      console.log('commission_pourcentage raw:', data?.devis_artisans?.map(dv => dv.commission_pourcentage))
       setFichesTechniques(fichesData || [])
       setLoading(false)
     }
@@ -136,6 +138,14 @@ export default function FicheArtisan({ params }) {
     if (!chemin) return
     const { data } = await supabase.storage.from('documents').createSignedUrl(chemin, 3600)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  const ouvrirDevis = async (dv) => {
+    if (dv.devis_signe_url) {
+      const { data } = await supabase.storage.from('documents').createSignedUrl(dv.devis_signe_url, 3600)
+      if (data?.signedUrl) { window.open(data.signedUrl, '_blank'); return }
+    }
+    if (dv.dossier?.id) router.push(`/chantiers/${dv.dossier.id}`)
   }
 
   if (loading) return <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>Chargement…</div>
@@ -292,8 +302,8 @@ export default function FicheArtisan({ params }) {
               const clientNom = [dv.dossier?.client?.civilite, dv.dossier?.client?.prenom, dv.dossier?.client?.nom].filter(Boolean).join(' ')
               return (
                 <div key={dv.id} className="row-hover"
-                  style={{padding:'12px 20px', borderTop:'1px solid var(--ink-100)', display:'flex', alignItems:'center', gap:12, cursor: dv.dossier?.id ? 'pointer' : 'default'}}
-                  onClick={() => dv.dossier?.id && router.push(`/chantiers/${dv.dossier.id}`)}>
+                  style={{padding:'12px 20px', borderTop:'1px solid var(--ink-100)', display:'flex', alignItems:'center', gap:12, cursor: (dv.devis_signe_url || dv.dossier?.id) ? 'pointer' : 'default'}}
+                  onClick={() => ouvrirDevis(dv)}>
                   <div style={{flex:1, minWidth:0}}>
                     <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)'}} className="clip-1">
                       {dv.dossier?.reference || clientNom || '—'}
@@ -311,7 +321,7 @@ export default function FicheArtisan({ params }) {
                   <span className="tnum" style={{fontSize:13, fontWeight:700, color:'var(--brand-800)', flexShrink:0}}>
                     {dv.montant_ht ? fmtEur(dv.montant_ht) : '—'}
                   </span>
-                  {dv.dossier?.id && <ArrowIcon size={12}/>}
+                  {(dv.devis_signe_url || dv.dossier?.id) && <ArrowIcon size={12}/>}
                 </div>
               )
             })
@@ -386,23 +396,32 @@ export default function FicheArtisan({ params }) {
             {fichesTechniques.length === 0 && !ajouterFiche ? (
               <p style={{padding:24, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucune fiche technique</p>
             ) : (
-              fichesTechniques.map(f => (
-                <div key={f.id} className="row-hover"
-                  style={{padding:'12px 20px', borderTop:'1px solid var(--ink-100)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10}}>
-                  <div style={{minWidth:0}}>
-                    <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)'}} className="clip-1">{f.nom}</div>
-                    {f.description && <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:2}} className="clip-1">{f.description}</div>}
+              <>
+                {(fichesExpand ? fichesTechniques : fichesTechniques.slice(0, 3)).map(f => (
+                  <div key={f.id} className="row-hover"
+                    style={{padding:'12px 20px', borderTop:'1px solid var(--ink-100)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)'}} className="clip-1">{f.nom}</div>
+                      {f.description && <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:2}} className="clip-1">{f.description}</div>}
+                    </div>
+                    <div style={{display:'flex', gap:6, flexShrink:0}}>
+                      {f.url && (
+                        <button className="btn btn-ghost" style={{fontSize:11.5, padding:'3px 9px'}} onClick={() => ouvrirDocument(f.url)}>Voir</button>
+                      )}
+                      <button className="btn btn-ghost" style={{padding:'3px 8px', color:'var(--bad)'}} onClick={() => supprimerFiche(f.id)}>
+                        <TrashIcon size={12}/>
+                      </button>
+                    </div>
                   </div>
-                  <div style={{display:'flex', gap:6, flexShrink:0}}>
-                    {f.url && (
-                      <button className="btn btn-ghost" style={{fontSize:11.5, padding:'3px 9px'}} onClick={() => ouvrirDocument(f.url)}>Voir</button>
-                    )}
-                    <button className="btn btn-ghost" style={{padding:'3px 8px', color:'var(--bad)'}} onClick={() => supprimerFiche(f.id)}>
-                      <TrashIcon size={12}/>
-                    </button>
-                  </div>
-                </div>
-              ))
+                ))}
+                {fichesTechniques.length > 3 && (
+                  <button className="btn btn-ghost"
+                    style={{width:'100%', borderRadius:0, borderTop:'1px solid var(--ink-100)', fontSize:12, padding:'10px 0', color:'var(--ink-500)'}}
+                    onClick={() => setFichesExpand(e => !e)}>
+                    {fichesExpand ? 'Afficher moins' : `Afficher plus (${fichesTechniques.length - 3})`}
+                  </button>
+                )}
+              </>
             )}
           </div>
 

@@ -192,58 +192,7 @@ export default function Artisans() {
           <div>Aucun artisan trouvé</div>
         </div>
       ) : (
-        <>
-          {/* ── Vue carte — mobile ── */}
-          <div className="sm:hidden" style={{display:'flex', flexDirection:'column', gap:10}}>
-            {artisansFiltres.map(a => {
-              const selected = selectionnes.includes(a.id)
-              return (
-                <button key={a.id} className="card"
-                  style={{
-                    padding:16, border:0, textAlign:'left', cursor:'pointer', display:'flex', flexDirection:'column', gap:10,
-                    background: selected ? 'rgba(220,38,38,0.04)' : undefined,
-                    borderColor: selected ? 'rgba(220,38,38,0.2)' : undefined,
-                  }}
-                  onClick={() => {
-                    if (modeSelection) setSelectionnes(prev => prev.includes(a.id) ? prev.filter(id => id !== a.id) : [...prev, a.id])
-                    else router.push(`/artisans/${a.id}`)
-                  }}>
-                  <div style={{display:'flex', gap:12, alignItems:'flex-start'}}>
-                    {modeSelection && (
-                      <input type="checkbox" checked={selected} readOnly style={{accentColor:'#b91c1c', marginTop:2, flexShrink:0}}/>
-                    )}
-                    <div style={{width:36, height:36, borderRadius:8, background:'var(--brand-50)', color:'var(--brand-800)', display:'grid', placeItems:'center', flexShrink:0}}>
-                      <HammerIcon size={16}/>
-                    </div>
-                    <div style={{flex:1, minWidth:0}}>
-                      <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:14}} className="clip-1">{a.entreprise}</div>
-                      {a.nom && (
-                        <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}}>
-                          {a.prenom ? a.prenom.charAt(0).toUpperCase() + a.prenom.slice(1).toLowerCase() : ''} {a.nom}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
-                    <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',borderRadius:99,fontSize:11.5,fontWeight:700,background:'rgba(0,148,212,0.1)',color:'var(--brand-800)'}}>
-                      {a.metier || '—'}
-                    </span>
-                    <span style={{fontSize:12, color:'var(--ink-500)'}}>📍 {a.code_postal} {a.ville}</span>
-                    <DecBadge a={a}/>
-                  </div>
-                  {(a.kbis_url || a.qualification) && (
-                    <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
-                      {a.kbis_url && <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',borderRadius:99,fontSize:11,fontWeight:700,background:'var(--brand-50)',color:'var(--brand-800)'}}>Kbis</span>}
-                      {a.qualification && <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',borderRadius:99,fontSize:11,fontWeight:700,background:'rgba(22,163,74,0.1)',color:'#15803d'}}>★ {a.qualification}</span>}
-                    </div>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-
-          {/* ── Vue tableau — desktop ── */}
-          <div className="card hidden sm:block" style={{padding:0, overflow:'hidden'}}>
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
             <div style={{overflowX:'auto'}}>
               <table style={{width:'100%', borderCollapse:'collapse', fontSize:13}}>
                 <thead style={{background:'var(--surface-2)'}}>
@@ -324,7 +273,6 @@ export default function Artisans() {
               </table>
             </div>
           </div>
-        </>
       )}
     </div>
   )

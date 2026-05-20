@@ -30,8 +30,16 @@ export default function Clients() {
   const [loading, setLoading] = useState(true)
   const [recherche, setRecherche] = useState('')
   const [onglet, setOnglet] = useState('moi')
+  const [menuOuvert, setMenuOuvert] = useState(null)
   const router = useRouter()
   const { user, profile, initialized } = useAuth()
+
+  useEffect(() => {
+    if (!menuOuvert) return
+    const close = () => setMenuOuvert(null)
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [menuOuvert])
 
   useEffect(() => {
     if (!initialized) return
@@ -150,8 +158,12 @@ export default function Clients() {
                   <div style={{flex:1, minWidth:0}}>
                     {/* Nom */}
                     <div style={{fontSize:15, fontWeight:700, color:'var(--ink-900)'}} className="clip-1">
-                      {client.civilite} {client.prenom} {client.nom}
-                      {client.prenom2 && ` & ${client.prenom2} ${client.nom2}`}
+                      {(client.nom || '').toUpperCase()} {client.prenom}
+                      {client.prenom2 && (
+                        client.nom2 && client.nom2.toLowerCase() !== (client.nom || '').toLowerCase()
+                          ? ` & ${client.nom2.toUpperCase()} ${client.prenom2}`
+                          : ` & ${client.prenom2}`
+                      )}
                     </div>
                     {/* Badges */}
                     <div style={{display:'flex', gap:6, marginTop:6, flexWrap:'wrap', alignItems:'center'}}>
@@ -184,8 +196,29 @@ export default function Clients() {
                     </div>
                   </div>
                   {/* Bouton More */}
-                  <button className="btn btn-ghost" style={{padding:'4px 8px', flexShrink:0}}
-                    onClick={e => e.stopPropagation()}><MoreIcon size={14}/></button>
+                  <div style={{position:'relative', flexShrink:0}}>
+                    <button className="btn btn-ghost" style={{padding:'4px 8px'}}
+                      onClick={e => { e.stopPropagation(); setMenuOuvert(menuOuvert === client.id ? null : client.id) }}>
+                      <MoreIcon size={14}/>
+                    </button>
+                    {menuOuvert === client.id && (
+                      <div style={{position:'absolute', right:0, top:'100%', zIndex:50, background:'#fff', border:'1px solid var(--ink-200)', borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.1)', minWidth:180, overflow:'hidden'}}
+                        onClick={e => e.stopPropagation()}>
+                        {[
+                          { label:'Modifier',          action: () => router.push(`/clients/${client.id}/modifier`) },
+                          { label:'Appeler',           action: () => window.open(`tel:${client.telephone}`), hide: !client.telephone },
+                          { label:'Envoyer un email',  action: () => window.open(`mailto:${client.email}`), hide: !client.email },
+                          { label:'Voir les dossiers', action: () => router.push(`/chantiers?client=${client.id}`) },
+                        ].filter(item => !item.hide).map(item => (
+                          <button key={item.label} className="row-hover"
+                            style={{width:'100%', textAlign:'left', padding:'10px 14px', border:0, background:'transparent', fontSize:13, cursor:'pointer', color:'var(--ink-700)'}}
+                            onClick={() => { item.action(); setMenuOuvert(null) }}>
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Contacts */}

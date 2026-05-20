@@ -49,6 +49,7 @@ export default function Parametres() {
   const chargerAgentes = async () => {
     const { data } = await supabase.from('profiles').select('*').eq('role', 'agente').order('prenom')
     setAgentes(data || [])
+    data?.forEach(a => console.log('frais_part_agente_defaut raw:', a.id, a.frais_part_agente_defaut))
   }
 
   useEffect(() => {
