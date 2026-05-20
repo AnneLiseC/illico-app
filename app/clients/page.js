@@ -239,12 +239,12 @@ export default function Clients() {
                     <div className="eyebrow">Dossiers</div>
                     <div className="tnum" style={{fontSize:18, fontWeight:800, color:'var(--ink-900)'}}>{dossierCount}</div>
                   </div>
-                  {montantTotal > 0 && (
-                    <div style={{textAlign:'right'}}>
-                      <div className="eyebrow">Montant total</div>
-                      <div className="tnum" style={{fontSize:14, fontWeight:700, color:'var(--brand-800)'}}>{fmtEur(montantTotal)}</div>
+                  <div style={{textAlign:'right'}}>
+                    <div className="eyebrow">Montant total</div>
+                    <div className="tnum" style={{fontSize:14, fontWeight:700, color: montantTotal > 0 ? 'var(--brand-800)' : 'var(--ink-400)'}}>
+                      {montantTotal > 0 ? fmtEur(montantTotal) : '—'}
                     </div>
-                  )}
+                  </div>
                 </div>
               </button>
             )
