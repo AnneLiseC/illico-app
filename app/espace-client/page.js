@@ -117,7 +117,7 @@ export default function EspaceClient() {
       // Dossier AMO du client
       const { data: dossierData } = await supabase
         .from('dossiers')
-        .select('*, referente:profiles!dossiers_referente_id_fkey(prenom, nom), devis_artisans(id, statut, artisan:artisans(entreprise))')
+        .select('*, avancement, referente:profiles!dossiers_referente_id_fkey(prenom, nom), devis_artisans(id, statut, artisan:artisans(entreprise))')
         .eq('client_id', profData.client_id)
         .eq('typologie', 'amo')
         .order('created_at', { ascending: false })
@@ -328,6 +328,18 @@ export default function EspaceClient() {
                     })}
                   </div>
                 </div>
+                {(dossier.avancement ?? 0) > 0 && (
+                  <div className="mt-6 pt-4 border-t border-gray-100">
+                    <div className="flex justify-between items-center mb-2">
+                      <p className="text-sm font-medium text-gray-700">Progression des travaux</p>
+                      <span className="text-xl font-extrabold text-blue-800">{dossier.avancement}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                      <div className="h-3 rounded-full bg-blue-600 transition-all duration-500"
+                        style={{ width: `${dossier.avancement}%` }} />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

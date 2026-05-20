@@ -719,6 +719,7 @@ export default function FicheChantier({ params }) {
       description: dossier.description || null,
       part_agente: newPartAgente,
       frais_part_agente: dossier.frais_part_agente ?? null,
+      avancement: dossier.avancement ?? 0,
     }).eq('id', id)
 
     if (error) {
@@ -1559,6 +1560,15 @@ export default function FicheChantier({ params }) {
                   </div>
                 ))}
               </div>
+              {(dossier.avancement ?? 0) > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Avancement chantier</p>
+                    <span className="tnum" style={{ fontSize: 20, fontWeight: 800, color: 'var(--brand-800)' }}>{dossier.avancement}%</span>
+                  </div>
+                  <Progress value={dossier.avancement} height={8} />
+                </div>
+              )}
               {dossier.typologie === 'courtage' && (
                 <div className="mt-3 pt-3 border-t border-gray-100">
                   <button
@@ -1757,6 +1767,18 @@ export default function FicheChantier({ params }) {
                     />
                     <span className="text-sm text-gray-500">Marquer comme terminé</span>
                   </label>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Avancement chantier — <span className="text-blue-800 font-bold">{dossier.avancement ?? 0}%</span>
+                  </label>
+                  <input type="range" min="0" max="100" step="5"
+                    value={dossier.avancement ?? 0}
+                    onChange={e => set('avancement', parseInt(e.target.value))}
+                    className="w-full accent-blue-700" />
+                  <div className="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>0%</span><span>50%</span><span>100%</span>
+                  </div>
                 </div>
               </div>
               <div>

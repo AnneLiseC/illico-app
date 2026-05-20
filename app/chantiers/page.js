@@ -113,6 +113,15 @@ function ChantiersList({ items, selectedId, onSelect, aujourdhui }) {
                   </div>
                   <StatutBadge statut={s} />
                 </div>
+                {s === 'en_cours_chantier' && (d.avancement || 0) > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>Avancement</span>
+                      <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: 'var(--brand-800)' }}>{d.avancement}%</span>
+                    </div>
+                    <Progress value={d.avancement} height={4} />
+                  </div>
+                )}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, gap: 10 }}>
                   <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
                     {limite ? (
@@ -235,6 +244,17 @@ function ChantierPreview({ d, onOpen, onBack }) {
           </div>
         )}
 
+
+        {/* Avancement */}
+        {s === 'en_cours_chantier' && (d.avancement || 0) >= 0 && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div className="eyebrow">Avancement chantier</div>
+              <span className="tnum" style={{ fontSize: 18, fontWeight: 800, color: 'var(--brand-800)' }}>{d.avancement || 0}%</span>
+            </div>
+            <Progress value={d.avancement || 0} height={8} />
+          </div>
+        )}
 
         {/* Artisans */}
         {devisArtisans.length > 0 && (
