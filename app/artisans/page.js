@@ -246,7 +246,6 @@ export default function Artisans() {
                         <td style={{padding:'14px 16px'}}><DecBadge a={a}/></td>
                         <td style={{padding:'14px 16px'}}>
                           <div style={{display:'flex', gap:5, flexWrap:'wrap'}}>
-                            {a.kbis_url && <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',borderRadius:99,fontSize:11,fontWeight:700,background:'var(--brand-50)',color:'var(--brand-800)'}}>Kbis</span>}
                             {a.qualification && <span style={{display:'inline-flex',alignItems:'center',padding:'2px 10px',borderRadius:99,fontSize:11,fontWeight:700,background:'rgba(22,163,74,0.1)',color:'#15803d'}}>★ {a.qualification}</span>}
                           </div>
                         </td>
