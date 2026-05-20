@@ -783,6 +783,11 @@ export default function FicheChantier({ params }) {
       await supabase.from('devis_artisans').update({ devis_pdf_path: cheminDevis }).eq('id', devisInsere[0].id)
     }
     if (!error) {
+      if (!dossier.contrat_signe) {
+        const today = new Date().toISOString().slice(0, 10)
+        await supabase.from('dossiers').update({ contrat_signe: true, date_signature_contrat: today }).eq('id', id)
+        setDossier(d => ({ ...d, contrat_signe: true, date_signature_contrat: today }))
+      }
       await chargerDevis()
       setAjouterDevis(false)
       setNouveauDevis({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, part_agente: '0.5', date_reception: '', date_limite: '', notes: '', fichier: null })
