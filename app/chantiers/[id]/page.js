@@ -5,6 +5,7 @@ import { useState, useEffect, use } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
+import { calculerAvancement } from '../../lib/dossiers'
 
 function Svg({ children, size = 14 }) {
   return (
@@ -29,6 +30,39 @@ const WalletIcon   = () => <Svg><path d="M3.5 8a2 2 0 0 1 2-2H18a2 2 0 0 1 2 2v9
 const FolderIcon   = () => <Svg><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2H19.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></Svg>
 const MsgIcon      = () => <Svg><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4 3v-3h-.5A2.5 2.5 0 0 1 3 14.5z" transform="translate(0.5,0.5)"/></Svg>
 const MoreIcon     = () => <Svg><circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/></Svg>
+
+// ─── Helpers Aperçu ───────────────────────────────────────────────────────────
+function Fact({ label, value, highlight, mono }) {
+  return (
+    <div>
+      <div className="eyebrow" style={{marginBottom:4}}>{label}</div>
+      <div className={mono ? 'mono' : 'tnum'} style={{
+        fontSize: highlight ? 18 : 13.5,
+        fontWeight: highlight ? 800 : 600,
+        color: highlight ? 'var(--brand-800)' : 'var(--ink-900)',
+        letterSpacing: highlight ? -0.02 : 0,
+      }}>{value || '—'}</div>
+    </div>
+  )
+}
+
+function ContactRow({ icon, label, value, action }) {
+  if (!value) return null
+  const Inner = (
+    <>
+      <div style={{
+        width:32, height:32, borderRadius:8, background:'var(--brand-50)', color:'var(--brand-800)',
+        display:'grid', placeItems:'center', flex:'0 0 32px',
+      }}>{icon}</div>
+      <div style={{minWidth:0, flex:1}}>
+        <div className="eyebrow">{label}</div>
+        <div className="clip-1" style={{fontSize:13, color:'var(--ink-900)', fontWeight:600, marginTop:2}}>{value}</div>
+      </div>
+    </>
+  )
+  const style = {display:'flex', gap:10, alignItems:'center', minWidth:0, padding:'6px 0'}
+  return action ? <a href={action} style={{...style, color:'inherit', textDecoration:'none'}}>{Inner}</a> : <div style={style}>{Inner}</div>
+}
 
 // ─── Visionneuse de document (PDF / image) ────────────────────────────────────
 function DocViewer({ url, nom, onClose }) {
@@ -1123,6 +1157,9 @@ export default function FicheChantier({ params }) {
   const suiviAcompteAMO = suiviFinancier.find(s => s.type_echeance === 'acompte_amo')
   const suiviSoldeAMO = suiviFinancier.find(s => s.type_echeance === 'solde_amo')
 
+  // Avancement calculé depuis suivi_financier (source de vérité unique)
+  const avancement = calculerAvancement({ ...dossier, suivi_financier: suiviFinancier })
+
   // Compteurs acomptes / factures (basés sur statut_illico='recu')
   const acomptesTotal  = devisSignes.length
   const acomptesRecus  = devisSignes.filter(dv => suiviFinancier.find(x =>
@@ -1554,333 +1591,393 @@ export default function FicheChantier({ params }) {
         ))}
       </div>
 
+
       {/* ── APERÇU ── */}
-      {onglet === 'apercu' && (
-      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      {onglet === 'apercu' && mode === 'lecture' && (
+      <div style={{display:'grid', gridTemplateColumns:'1.4fr 1fr', gap:20}}>
 
-        {/* Infos générales */}
-        <div className="card" style={{padding:22}}>
-          <h2 className="font-semibold text-gray-800">Informations générales</h2>
-          {mode === 'lecture' ? (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {[
-                  ['Référence', dossier.reference],
-                  ['Référente', dossier.referente ? `${dossier.referente.prenom} ${dossier.referente.nom}` : '-'],
-                  ['Typologie', typologieLabel(dossier.typologie)],
-                  ['Date limite devis', dossier.date_limite_devis ? new Date(dossier.date_limite_devis).toLocaleDateString('fr-FR') : '-'],
-                  ['Démarrage chantier', dossier.date_demarrage_chantier ? new Date(dossier.date_demarrage_chantier).toLocaleDateString('fr-FR') : '-'],
-                  ['Fin de chantier', dossier.date_fin_chantier ? new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR') : '-'],
-                ].map(([label, valeur]) => (
-                  <div key={label}>
-                    <p className="text-xs text-gray-400 mb-1">{label}</p>
-                    <p className="text-sm font-medium text-gray-800">{valeur}</p>
-                  </div>
-                ))}
-              </div>
-              {(dossier.avancement ?? 0) > 0 && (
-                <div className="mt-4 pt-4 border-t border-gray-100">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Avancement chantier</p>
-                    <span className="tnum" style={{ fontSize: 20, fontWeight: 800, color: 'var(--brand-800)' }}>{dossier.avancement}%</span>
-                  </div>
-                  <Progress value={dossier.avancement} height={8} />
-                </div>
-              )}
-              {dossier.typologie === 'courtage' && (
-                <div className="mt-3 pt-3 border-t border-gray-100">
-                  <button
-                    onClick={convertirEnAMO}
-                    disabled={saving}
-                    className="text-sm border border-orange-300 text-orange-700 px-3 py-1.5 rounded-lg hover:bg-orange-50 disabled:opacity-50"
-                  >
-                    Convertir en AMO
-                  </button>
-                  <p className="text-xs text-gray-400 mt-1">Pour les chantiers Courtage qui deviennent AMO en cours de route.</p>
-                </div>
-              )}
-              {dossier.typologie === 'amo' && (
-                <div className="mt-3 pt-3 border-t border-gray-100">
-                  <button
-                    onClick={convertirEnCourtage}
-                    disabled={saving}
-                    className="text-sm border border-blue-300 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 disabled:opacity-50"
-                  >
-                    Convertir en Courtage
-                  </button>
-                  <p className="text-xs text-gray-400 mt-1">Pour les chantiers AMO qui repassent en Courtage.</p>
-                </div>
-              )}
+        {/* LEFT */}
+        <div style={{display:'flex',flexDirection:'column',gap:18, minWidth:0}}>
 
-                <div className="flex flex-wrap items-center gap-4 mt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={dossier.statut === 'termine'}
-                    onChange={async e => {
-                      const newStatut = e.target.checked ? 'termine' : 'en_cours_chantier'
-                      await supabase.from('dossiers').update({ statut: newStatut }).eq('id', id)
-                      setDossier(d => ({ ...d, statut: newStatut }))
-                      setSucces(e.target.checked ? 'Chantier marqué comme terminé ✓' : 'Statut mis à jour ✓')
-                    }}
-                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-700">Marquer comme terminé</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={dossier.statut === 'annule'}
-                    onChange={async e => {
-                      const newStatut = e.target.checked ? 'annule' : 'en_cours_chantier'
-                      await supabase.from('dossiers').update({ statut: newStatut }).eq('id', id)
-                      setDossier(d => ({ ...d, statut: newStatut }))
-                      setSucces(e.target.checked ? 'Chantier marqué comme annulé ✓' : 'Statut mis à jour ✓')
-                    }}
-                    className="w-4 h-4 rounded border-gray-300 text-red-500 focus:ring-red-400"
-                  />
-                  <span className="text-sm text-red-600">Chantier annulé</span>
-                </label>
+          {/* Card 1 — Informations clés */}
+          <div className="card" style={{padding:22}}>
+            <h2 className="page" style={{fontSize:15, marginBottom:14}}>Informations clés</h2>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', rowGap:14, columnGap:18}}>
+              <Fact label="Référence" value={dossier.reference} mono />
+              <Fact label="Typologie" value={typologieLabel(dossier.typologie)} />
+              <Fact label="Montant chantier" value={totalDevisTTCSignes > 0 ? fmt(totalDevisTTCSignes) : '—'} highlight />
+              <Fact label="Démarrage" value={dossier.date_demarrage_chantier ? new Date(dossier.date_demarrage_chantier).toLocaleDateString('fr-FR') : '—'} />
+              <Fact label="Fin prévue" value={dossier.date_fin_chantier ? new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR') : '—'} />
+              <Fact label="Limite devis" value={dossier.date_limite_devis ? new Date(dossier.date_limite_devis).toLocaleDateString('fr-FR') : '—'} />
+            </div>
+            {dossier.description && (
+              <div style={{marginTop:14, paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
+                <div className="eyebrow" style={{marginBottom:6}}>Descriptif</div>
+                <p style={{fontSize:13.5, color:'var(--ink-700)', lineHeight:1.55, margin:0}}>{dossier.description}</p>
               </div>
-              {dossier.description && (
-                <div className="border-t border-gray-100 pt-3">
-                  <p className="text-xs text-gray-400 mb-1">Description</p>
-                  <p className="text-sm text-gray-700 leading-relaxed">{dossier.description}</p>
+            )}
+            {dossier.resume_projet && (
+              <div style={{marginTop:14, paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
+                <div className="eyebrow" style={{marginBottom:6}}>Résumé du projet</div>
+                <p style={{fontSize:13.5, color:'var(--ink-700)', lineHeight:1.55, margin:0}}>{dossier.resume_projet}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Card 2 — Avancement + 5 étapes */}
+          <div className="card" style={{padding:22}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+              <h2 className="page" style={{fontSize:15}}>Avancement chantier</h2>
+              <span className="tnum" style={{fontSize:18, fontWeight:800, color:'var(--brand-800)'}}>{avancement}%</span>
+            </div>
+            <Progress value={avancement} height={10} />
+            <div style={{display:'grid', gridTemplateColumns:'repeat(5, 1fr)', marginTop:18, gap:10}}>
+              {[
+                { l:'Contact',   done: true },
+                { l:'Devis',     done: devis.length > 0 },
+                { l:'Signature', done: !!dossier.contrat_signe },
+                { l:'Chantier',  done: !!dossier.date_demarrage_chantier },
+                { l:'Livraison', done: avancement >= 100 },
+              ].map((s, i) => (
+                <div key={i} style={{textAlign:'center'}}>
+                  <div style={{
+                    width:28, height:28, borderRadius:99, margin:'0 auto',
+                    background: s.done ? 'var(--ok)' : 'var(--ink-100)',
+                    color: s.done ? '#fff' : 'var(--ink-400)',
+                    display:'grid', placeItems:'center', fontSize:13, fontWeight:700,
+                  }}>{s.done ? '✓' : i+1}</div>
+                  <div style={{fontSize:11, color:'var(--ink-500)', marginTop:6, fontWeight:600}}>{s.l}</div>
                 </div>
-              )}
-              {dossier.resume_projet && (
-                <div className="border-t border-gray-100 pt-3">
-                  <p className="text-xs text-gray-400 mb-1">Résumé du projet</p>
-                  <p className="text-sm text-gray-700 leading-relaxed">{dossier.resume_projet}</p>
-                </div>
-              )}
-              {!estChantierMarine && profile?.parts_agente_disponibles?.length > 1 && (
-                <div className="border-t border-gray-100 pt-4 flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-700">Répartition commission</p>
-                  <span className="text-sm font-medium text-gray-800">
-                    {`${Math.round((dossier.part_agente ?? 0.5) * 100)} / ${Math.round((1 - (dossier.part_agente ?? 0.5)) * 100)}`}
+              ))}
+            </div>
+          </div>
+
+          {/* Card 3 — Frais de consultation (déplacé depuis onglet Devis) */}
+          <div className="card" style={{padding:22}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <h2 className="page" style={{fontSize:15}}>Frais de consultation</h2>
+              {dossier.frais_statut === 'regle' && <Badge tone="ok">Réglés</Badge>}
+              {dossier.frais_statut === 'offerts' && <Badge tone="mute">Offerts</Badge>}
+              {dossier.frais_statut === 'factures' && <Badge tone="warn">Facturés</Badge>}
+              {dossier.frais_statut === 'rembourse_apres_signature' && <Badge tone="info">À rembourser</Badge>}
+            </div>
+            {dossier.frais_statut === 'offerts' ? (
+              <div style={{fontSize:13, color:'var(--ink-500)'}}>Frais offerts — 0 €</div>
+            ) : (
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+                <Fact label="Montant TTC" value={fmt(dossier.frais_consultation || 0)} highlight />
+                <Fact label="Montant HT" value={fmt((dossier.frais_consultation || 0) / 1.2)} />
+              </div>
+            )}
+            {dossier.frais_statut !== 'offerts' && (
+              <label style={{display:'flex',alignItems:'center',gap:8, marginTop:14, paddingTop:14, borderTop:'1px solid var(--ink-100)', cursor:'pointer'}}>
+                <input type="checkbox" checked={dossier.frais_deduits || false}
+                  onChange={async (e) => {
+                    const val = e.target.checked
+                    await supabase.from('dossiers').update({ frais_deduits: val }).eq('id', id)
+                    setDossier(d => ({ ...d, frais_deduits: val }))
+                    setSucces('Frais mis à jour ✓')
+                  }}
+                  style={{width:14, height:14, accentColor:'var(--brand-700)'}} />
+                <span style={{fontSize:12.5, fontWeight:600, color: dossier.frais_deduits ? '#7c3aed' : 'var(--ink-500)'}}>
+                  Remboursés — déduits du courtage
+                </span>
+                {dossier.frais_deduits && (
+                  <span className="tnum" style={{fontSize:12, color:'#7c3aed', marginLeft:'auto'}}>
+                    − {fmt((dossier.frais_consultation || 0) / 1.2)} HT
                   </span>
-                </div>
-              )}
-              <div className="border-t border-gray-100 pt-4 space-y-3">
-                {/* Ligne titre + statut signé */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-700">Contrat de prestation</p>
-                    {dossier.contrat_signe && dossier.date_signature_contrat && (
-                      <p className="text-xs text-gray-400">Signé le {new Date(dossier.date_signature_contrat).toLocaleDateString('fr-FR')}</p>
-                    )}
-                  </div>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={dossier.contrat_signe || false}
-                      onChange={async (e) => {
-                        const signe = e.target.checked
-                        let dateSignature = dossier.date_signature_contrat
-                        if (signe && !dateSignature) {
-                          const today = new Date().toISOString().slice(0, 10)
-                          const [annee, mois, jour] = today.split('-')
-                          const saisi = prompt('Date de signature du contrat (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
-                          const dateParsee = parseDateFR(saisi)
-                          if (saisi && dateParsee) {
-                            dateSignature = dateParsee
-                          }
-                        }
-                        await supabase.from('dossiers').update({ contrat_signe: signe, date_signature_contrat: signe ? dateSignature : null }).eq('id', id)
-                        setDossier(d => ({ ...d, contrat_signe: signe, date_signature_contrat: signe ? dateSignature : null }))
-                        setSucces('Contrat mis à jour ✓')
-                      }}
-                      className="w-4 h-4 accent-blue-700" />
-                    <span className={`text-sm font-medium ${dossier.contrat_signe ? 'text-green-600' : 'text-gray-500'}`}>
-                      {dossier.contrat_signe ? 'Signé' : 'Non signé'}
-                    </span>
-                  </label>
-                </div>
-
-                {/* Document contrat */}
-                {dossier.contrat_url ? (
-                  <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                    <span className="text-base">📄</span>
-                    <span className="text-xs text-gray-600 flex-1 truncate">
-                      {dossier.contrat_url.split('/').pop()}
-                    </span>
-                    <button onClick={ouvrirContrat}
-                      className="text-xs text-blue-600 hover:underline flex-shrink-0">
-                      Voir
-                    </button>
-                    <button onClick={supprimerContrat}
-                      className="text-xs text-red-400 hover:text-red-600 flex-shrink-0 ml-1">
-                      ✕
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    {uploadingContrat ? (
-                      <span className="text-xs text-gray-400">Envoi en cours...</span>
-                    ) : (
-                      <>
-                        {/* Desktop : bouton fichier classique */}
-                        <label className="hidden sm:flex items-center gap-1.5 cursor-pointer border border-dashed border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors">
-                          <span>📎</span>
-                          <span>Ajouter le contrat</span>
-                          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.heic" className="hidden"
-                            onChange={e => e.target.files[0] && uploadContrat(e.target.files[0])} />
-                        </label>
-
-                        {/* Mobile : bouton scanner (caméra) */}
-                        <label className="sm:hidden flex items-center gap-1.5 cursor-pointer bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700 hover:bg-blue-100 active:bg-blue-200 transition-colors">
-                          <span>📷</span>
-                          <span>Scanner</span>
-                          <input type="file" accept="image/*" capture="environment" className="hidden"
-                            onChange={e => e.target.files[0] && uploadContrat(e.target.files[0])} />
-                        </label>
-
-                        {/* Mobile : bouton fichier */}
-                        <label className="sm:hidden flex items-center gap-1.5 cursor-pointer border border-dashed border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors">
-                          <span>📁</span>
-                          <span>Fichier</span>
-                          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.heic" className="hidden"
-                            onChange={e => e.target.files[0] && uploadContrat(e.target.files[0])} />
-                        </label>
-                      </>
-                    )}
-                  </div>
                 )}
+              </label>
+            )}
+          </div>
+
+          {/* Card 4 — Photos preview */}
+          {photos.length > 0 && (
+            <div className="card" style={{padding:22}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                <h2 className="page" style={{fontSize:15}}>Photos récentes</h2>
+                <button className="btn btn-ghost" style={{fontSize:12, padding:'4px 10px'}}
+                  onClick={() => setOnglet('photos')}>Voir tout · {photos.length}</button>
               </div>
-            </>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Typologie</label>
-                  <select value={dossier.typologie} onChange={e => set('typologie', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="courtage">Courtage</option>
-                    <option value="amo">AMO</option>
-                    <option value="estimo">Estimo</option>
-                    <option value="merad">MERAD</option>
-                    <option value="audit_energetique">Audit énergétique</option>
-                    <option value="studio_jardin">Studio de jardin</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date limite devis</label>
-                  <input type="date" value={dossier.date_limite_devis || ''} onChange={e => set('date_limite_devis', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Démarrage chantier</label>
-                  <input type="date" value={dossier.date_demarrage_chantier || ''} onChange={e => set('date_demarrage_chantier', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Fin de chantier</label>
-                  <input type="date" value={dossier.date_fin_chantier || ''} onChange={e => set('date_fin_chantier', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <label className="flex items-center gap-2 cursor-pointer mt-2">
-                    <input
-                      type="checkbox"
-                      checked={dossier.statut === 'termine'}
-                      onChange={e => set('statut', e.target.checked ? 'termine' : 'en_cours')}
-                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-500">Marquer comme terminé</span>
-                  </label>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Avancement chantier — <span className="text-blue-800 font-bold">{dossier.avancement ?? 0}%</span>
-                  </label>
-                  <input type="range" min="0" max="100" step="5"
-                    value={dossier.avancement ?? 0}
-                    onChange={e => set('avancement', parseInt(e.target.value))}
-                    className="w-full accent-blue-700" />
-                  <div className="flex justify-between text-xs text-gray-400 mt-1">
-                    <span>0%</span><span>50%</span><span>100%</span>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
-                  value={dossier.description || ''}
-                  onChange={e => set('description', e.target.value)}
-                  rows={4}
-                  placeholder="Décrivez les travaux envisagés, le contexte du projet..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                />
-              </div>
-              {!estChantierMarine && profile?.parts_agente_disponibles?.length > 1 && (
-                <div className="border-t border-gray-100 pt-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Répartition commission (agente / CTP)</label>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1">
-                      <input
-                        type="number" min="0" max="100"
-                        value={Math.round((dossier.part_agente ?? 0.5) * 100)}
-                        onChange={e => set('part_agente', parseInt(e.target.value) / 100)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-center"
-                      />
-                      <p className="text-xs text-center text-gray-400 mt-1">Agente %</p>
-                    </div>
-                    <span className="text-gray-400 font-medium text-lg">/</span>
-                    <div className="flex-1">
-                      <input
-                        type="number"
-                        value={100 - Math.round((dossier.part_agente ?? 0.5) * 100)}
-                        disabled
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-center text-gray-500"
-                      />
-                      <p className="text-xs text-center text-gray-400 mt-1">CTP %</p>
-                    </div>
-                  </div>
-                  {profile?.parts_agente_disponibles?.length > 1 && (
-                    <div className="flex gap-2 mt-2">
-                      {profile.parts_agente_disponibles.map(pct => {
-                        const pctFloat = parseFloat(pct)
-                        return (
-                          <button
-                            key={pct}
-                            type="button"
-                            onClick={() => set('part_agente', pctFloat)}
-                            className={`text-xs px-3 py-1 rounded-full border transition-all ${
-                              Math.round((dossier.part_agente ?? 0.5) * 100) === Math.round(pctFloat * 100)
-                                ? 'bg-blue-800 text-white border-blue-800'
-                                : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                            }`}
-                          >
-                            {Math.round(pctFloat * 100)} / {Math.round((1 - pctFloat) * 100)}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="border-t border-gray-100 pt-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-gray-700">Contrat de prestation</p>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={dossier.contrat_signe || false} onChange={e => set('contrat_signe', e.target.checked)} className="w-4 h-4 accent-blue-700" />
-                    <span className="text-sm text-gray-600">Signé</span>
-                  </label>
-                </div>
-                {dossier.contrat_signe && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Date de signature</label>
-                    <input type="date" value={dossier.date_signature_contrat || ''} onChange={e => set('date_signature_contrat', e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                )}
+              <div style={{display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:8}}>
+                {photos.slice(0, 4).map(p => (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img key={p.id} src={p.url_signee} alt=""
+                    onClick={() => setOnglet('photos')}
+                    style={{aspectRatio:'1/1', width:'100%', objectFit:'cover', borderRadius:8, cursor:'pointer', display:'block'}} />
+                ))}
               </div>
             </div>
           )}
-          <button
-            onClick={supprimerChantier}
-            disabled={saving}
-            className="px-4 py-2 rounded-lg border border-red-200 text-res-600 hover:bg-red-50 text-sm font-medium disabled:opacity-50"
-            >
+
+          {/* Card 5 — CR récents */}
+          {comptesRendus.length > 0 && (
+            <div className="card" style={{padding:22}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                <h2 className="page" style={{fontSize:15}}>Derniers comptes-rendus</h2>
+                <button className="btn btn-ghost" style={{fontSize:12, padding:'4px 10px'}}
+                  onClick={() => setOnglet('cr')}>Voir tout · {comptesRendus.length}</button>
+              </div>
+              <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                {comptesRendus.slice(0, 3).map(c => {
+                  const typeColor = { r1:'#0094d4', r2:'#16a34a', r3:'#f59e0b', suivi:'#94a3b8', reception:'#16a34a' }[c.type_visite] || '#94a3b8'
+                  const typeLabel = { r1:'R1', r2:'R2', r3:'R3', suivi:'Suivi', reception:'Réception' }[c.type_visite] || (c.type_visite || 'CR')
+                  return (
+                    <button key={c.id} onClick={() => setOnglet('cr')} className="row-hover"
+                      style={{display:'grid', gridTemplateColumns:'auto 1fr', gap:12, alignItems:'flex-start',
+                        padding:'10px 12px', borderRadius:10, border:'1px solid var(--ink-200)',
+                        background:'none', textAlign:'left', cursor:'pointer', width:'100%'}}>
+                      <div style={{width:36, padding:'4px 0', borderRadius:6, background:typeColor, color:'#fff',
+                        textAlign:'center', fontSize:10, fontWeight:800, letterSpacing:0.05}}>{typeLabel}</div>
+                      <div style={{minWidth:0}}>
+                        <div style={{display:'flex',justifyContent:'space-between',gap:8}}>
+                          <div className="clip-1" style={{fontSize:13, fontWeight:700, color:'var(--ink-900)'}}>{c.titre || 'Compte-rendu'}</div>
+                          <span className="tnum" style={{fontSize:11, color:'var(--ink-400)', flexShrink:0}}>
+                            {c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR') : ''}
+                          </span>
+                        </div>
+                        {c.contenu && (
+                          <div style={{fontSize:12, color:'var(--ink-500)', marginTop:3, lineHeight:1.45,
+                            display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden'}}>{c.contenu}</div>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* RIGHT */}
+        <div style={{display:'flex',flexDirection:'column',gap:18, minWidth:0}}>
+
+          {/* Card 6 — Artisans signés */}
+          <div className="card" style={{padding:22}}>
+            <h2 className="page" style={{fontSize:15, marginBottom:12}}>Artisans · {devisSignes.length} signés</h2>
+            {devisSignes.length === 0 ? (
+              <div style={{textAlign:'center', padding:24, color:'var(--ink-400)', fontSize:13}}>Aucun devis signé</div>
+            ) : (
+              <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                {devisSignes.map(dv => (
+                  <div key={dv.id} style={{
+                    display:'grid', gridTemplateColumns:'auto 1fr auto', gap:10, alignItems:'center',
+                    padding:'10px 12px', borderRadius:10, border:'1px solid var(--ink-200)',
+                  }}>
+                    <div style={{width:32,height:32,borderRadius:8,background:'var(--brand-50)',color:'var(--brand-800)',display:'grid',placeItems:'center'}}>
+                      <HammerIcon/>
+                    </div>
+                    <div style={{minWidth:0}}>
+                      <div className="clip-1" style={{fontSize:12.5, fontWeight:600, color:'var(--ink-900)'}}>{dv.artisan?.entreprise || '—'}</div>
+                      {dv.artisan?.metier && <div style={{fontSize:11, color:'var(--ink-500)'}}>{dv.artisan.metier}</div>}
+                    </div>
+                    <div style={{textAlign:'right'}}>
+                      {dv.montant_ttc > 0 && <div className="tnum" style={{fontSize:12, fontWeight:700, color:'var(--ink-900)'}}>{fmt(dv.montant_ttc)}</div>}
+                      {dv.commission_pourcentage > 0 && (
+                        <div style={{fontSize:10, color:'var(--brand-800)', fontWeight:600, marginTop:1}}>
+                          {Math.round(dv.commission_pourcentage * 100)}% com.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Card 7 — Prochains RDV */}
+          <div className="card" style={{padding:22}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <h2 className="page" style={{fontSize:15}}>Prochains RDV</h2>
+              <button className="btn btn-ghost" style={{fontSize:12, padding:'4px 10px'}}
+                onClick={() => setOnglet('planning')}>Voir tout</button>
+            </div>
+            {(() => {
+              const now = new Date()
+              const next = (rdvsDossier || []).filter(r => new Date(r.date_heure) >= now)
+                .sort((a,b) => new Date(a.date_heure) - new Date(b.date_heure))
+                .slice(0, 3)
+              if (next.length === 0) return <div style={{textAlign:'center', padding:18, color:'var(--ink-400)', fontSize:13}}>Aucun RDV à venir</div>
+              return (
+                <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                  {next.map(r => {
+                    const dt = new Date(r.date_heure)
+                    const day = dt.toLocaleDateString('fr-FR', { day:'2-digit' })
+                    const month = dt.toLocaleDateString('fr-FR', { month:'short' }).replace('.','')
+                    const time = dt.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })
+                    const typeColor = {
+                      visite_technique_client: '#0094d4',
+                      visite_technique_artisan: '#16a34a',
+                      presentation_devis: '#f59e0b',
+                    }[r.type_rdv] || '#94a3b8'
+                    return (
+                      <div key={r.id} style={{display:'grid', gridTemplateColumns:'44px 4px 1fr', gap:10, alignItems:'center', padding:'8px 0'}}>
+                        <div style={{textAlign:'center'}}>
+                          <div className="tnum" style={{fontSize:16, fontWeight:800, color:'var(--ink-900)', lineHeight:1}}>{day}</div>
+                          <div style={{fontSize:9, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2}}>{month}</div>
+                        </div>
+                        <div style={{width:4, alignSelf:'stretch', borderRadius:99, background: typeColor}}/>
+                        <div style={{minWidth:0}}>
+                          <div className="clip-1" style={{fontSize:12.5, fontWeight:600, color:'var(--ink-900)'}}>{r.titre || r.type_rdv || 'Rendez-vous'}</div>
+                          <div style={{fontSize:11, color:'var(--ink-500)', marginTop:2}}>{time}{r.artisan?.entreprise ? ` · ${r.artisan.entreprise}` : ''}</div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+          </div>
+
+          {/* Card 8 — Contact */}
+          <div className="card" style={{padding:22}}>
+            <h2 className="page" style={{fontSize:15, marginBottom:12}}>Contact</h2>
+            <div style={{display:'flex',flexDirection:'column',gap:4}}>
+              <ContactRow icon={<PhoneIcon/>} label="Téléphone" value={client?.telephone} action={client?.telephone ? `tel:${client.telephone}` : null} />
+              <ContactRow icon={<MailIcon/>} label="Email" value={client?.email} action={client?.email ? `mailto:${client.email}` : null} />
+              <ContactRow icon={<PinIcon/>} label="Adresse" value={client?.adresse} />
+              {!client?.telephone && !client?.email && !client?.adresse && (
+                <div style={{fontSize:13, color:'var(--ink-400)'}}>Aucun contact renseigné</div>
+              )}
+            </div>
+          </div>
+
+        </div>
+      </div>
+      )}
+
+      {/* ── ÉDITION dossier (depuis bouton "Modifier" du hero) ── */}
+      {onglet === 'apercu' && mode === 'edition' && (
+      <div style={{display:'flex',flexDirection:'column',gap:18}}>
+
+        {/* Form principal */}
+        <div className="card" style={{padding:24, display:'flex',flexDirection:'column',gap:16}}>
+          <h2 className="page" style={{fontSize:15}}>Modifier le dossier</h2>
+
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+            <div>
+              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Typologie</label>
+              <select className="input" value={dossier.typologie || ''} onChange={e => set('typologie', e.target.value)} style={{height:40, width:'100%'}}>
+                <option value="courtage">Courtage</option>
+                <option value="amo">AMO</option>
+                <option value="estimo">Estimo</option>
+                <option value="merad">MERAD</option>
+                <option value="audit_energetique">Audit énergétique</option>
+                <option value="studio_jardin">Studio de jardin</option>
+              </select>
+            </div>
+            <div>
+              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Date limite devis</label>
+              <input type="date" className="input" value={dossier.date_limite_devis || ''} onChange={e => set('date_limite_devis', e.target.value)} style={{height:40, width:'100%'}}/>
+            </div>
+            <div>
+              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Démarrage chantier</label>
+              <input type="date" className="input" value={dossier.date_demarrage_chantier || ''} onChange={e => set('date_demarrage_chantier', e.target.value)} style={{height:40, width:'100%'}}/>
+            </div>
+            <div>
+              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Fin de chantier</label>
+              <input type="date" className="input" value={dossier.date_fin_chantier || ''} onChange={e => set('date_fin_chantier', e.target.value)} style={{height:40, width:'100%'}}/>
+            </div>
+          </div>
+
+          <div>
+            <label className="eyebrow" style={{display:'block', marginBottom:6}}>Description</label>
+            <textarea className="input" value={dossier.description || ''} onChange={e => set('description', e.target.value)}
+              rows={4} placeholder="Décrivez les travaux envisagés, le contexte du projet…"
+              style={{width:'100%', padding:'10px 12px', lineHeight:1.5, resize:'vertical'}}/>
+          </div>
+
+          {!estChantierMarine && profile?.parts_agente_disponibles?.length > 1 && (
+            <div style={{paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
+              <label className="eyebrow" style={{display:'block', marginBottom:8}}>Répartition commission (agente / CTP)</label>
+              <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+                {profile.parts_agente_disponibles.map(pct => {
+                  const pctFloat = parseFloat(pct)
+                  const active = Math.round((dossier.part_agente ?? 0.5) * 100) === Math.round(pctFloat * 100)
+                  return (
+                    <button key={pct} type="button" onClick={() => set('part_agente', pctFloat)}
+                      className="row-hover"
+                      style={{
+                        fontSize:12, padding:'6px 12px', borderRadius:99,
+                        border:'1px solid', borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
+                        background: active ? 'var(--brand-50)' : '#fff',
+                        color: active ? 'var(--brand-800)' : 'var(--ink-600)',
+                        fontWeight:600, cursor:'pointer',
+                      }}>
+                      {Math.round(pctFloat * 100)} / {Math.round((1 - pctFloat) * 100)}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Contrat de prestation */}
+        <div className="card" style={{padding:24}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+            <h2 className="page" style={{fontSize:15}}>Contrat de prestation</h2>
+            <label style={{display:'flex',alignItems:'center',gap:8, cursor:'pointer'}}>
+              <input type="checkbox" checked={dossier.contrat_signe || false} onChange={e => set('contrat_signe', e.target.checked)}
+                style={{width:14, height:14, accentColor:'var(--brand-700)'}}/>
+              <span style={{fontSize:13, fontWeight:600, color: dossier.contrat_signe ? '#15803d' : 'var(--ink-500)'}}>
+                {dossier.contrat_signe ? 'Signé' : 'Non signé'}
+              </span>
+            </label>
+          </div>
+          {dossier.contrat_signe && (
+            <div style={{marginBottom:12}}>
+              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Date de signature</label>
+              <input type="date" className="input" value={dossier.date_signature_contrat || ''} onChange={e => set('date_signature_contrat', e.target.value)} style={{height:40, width:'100%'}}/>
+            </div>
+          )}
+          {dossier.contrat_url ? (
+            <div style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, border:'1px solid var(--ink-200)', background:'var(--surface-2)'}}>
+              <DocIcon/>
+              <span className="clip-1" style={{fontSize:12, color:'var(--ink-700)', flex:1}}>{dossier.contrat_url.split('/').pop()}</span>
+              <button onClick={ouvrirContrat} className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}}>Voir</button>
+              <button onClick={supprimerContrat} className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px', color:'#b91c1c'}}>Supprimer</button>
+            </div>
+          ) : (
+            <label className="btn btn-ghost" style={{cursor:'pointer', borderStyle:'dashed', justifyContent:'center', padding:'10px 14px'}}>
+              {uploadingContrat ? 'Envoi en cours…' : '📎 Ajouter le contrat (PDF)'}
+              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.heic" style={{display:'none'}}
+                onChange={e => e.target.files[0] && uploadContrat(e.target.files[0])}/>
+            </label>
+          )}
+        </div>
+
+        {/* Convertir typologie */}
+        {(dossier.typologie === 'courtage' || dossier.typologie === 'amo') && (
+          <div className="card" style={{padding:24}}>
+            <h2 className="page" style={{fontSize:15, marginBottom:8}}>Convertir la typologie</h2>
+            <p style={{fontSize:12, color:'var(--ink-500)', marginTop:0, marginBottom:14, lineHeight:1.5}}>
+              {dossier.typologie === 'courtage'
+                ? "Convertir en AMO pour ajouter des honoraires AMO (acompte + solde) en plus du courtage."
+                : "Convertir en Courtage pour revenir à une facturation simple (honoraires de courtage uniquement)."}
+            </p>
+            <button onClick={dossier.typologie === 'courtage' ? convertirEnAMO : convertirEnCourtage}
+              disabled={saving} className="btn btn-ghost"
+              style={{fontSize:12.5, borderColor:'var(--warn)', color:'#a16207'}}>
+              {dossier.typologie === 'courtage' ? '→ Convertir en AMO' : '→ Convertir en Courtage'}
+            </button>
+          </div>
+        )}
+
+        {/* Zone dangereuse */}
+        <div className="card" style={{padding:24, borderColor:'rgba(239,68,68,0.2)'}}>
+          <h2 className="page" style={{fontSize:15, marginBottom:8, color:'#b91c1c'}}>Zone dangereuse</h2>
+          <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap'}}>
+            <div>
+              <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)', marginBottom:2}}>Supprimer définitivement ce chantier</div>
+              <div style={{fontSize:12, color:'var(--ink-500)'}}>Cette action est irréversible (dossier, devis, photos, CR, suivi financier).</div>
+            </div>
+            <button onClick={supprimerChantier} disabled={saving} className="btn btn-ghost"
+              style={{fontSize:12.5, color:'#b91c1c', borderColor:'rgba(239,68,68,0.3)'}}>
               Supprimer le chantier
             </button>
+          </div>
         </div>
 
       </div>
