@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { getDossiersByScope, getFilteredDossiers, getCompteurs, calcStatut, STATUT_CONFIG } from '../lib/dossiers'
+import { getDossiersByScope, getFilteredDossiers, getCompteurs, calcStatut, calculerAvancement, STATUT_CONFIG } from '../lib/dossiers'
+import { calculateDossierFinance } from '../lib/finance'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniMeta } from '../components/shared'
 
 /* ── Inline SVG icons ── */
@@ -113,15 +114,18 @@ function ChantiersList({ items, selectedId, onSelect, aujourdhui }) {
                   </div>
                   <StatutBadge statut={s} />
                 </div>
-                {s === 'en_cours_chantier' && (d.avancement || 0) > 0 && (
-                  <div style={{ marginTop: 10 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>Avancement</span>
-                      <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: 'var(--brand-800)' }}>{d.avancement}%</span>
+                {(() => {
+                  const av = calculerAvancement(d)
+                  return s === 'en_cours_chantier' && av > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>Avancement</span>
+                        <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: 'var(--brand-800)' }}>{av}%</span>
+                      </div>
+                      <Progress value={av} height={4} />
                     </div>
-                    <Progress value={d.avancement} height={4} />
-                  </div>
-                )}
+                  )
+                })()}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, gap: 10 }}>
                   <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
                     {limite ? (
@@ -170,7 +174,19 @@ function ChantierPreview({ d, onOpen, onBack }) {
   const devisArtisans      = d.devis_artisans || []
   const devisAcceptes      = devisArtisans.filter(dv => dv.statut === 'accepte')
   const totalDevisTTCSignes = devisAcceptes.reduce((sum, dv) => sum + (dv.montant_ttc || 0), 0)
-  const totalCom           = devisAcceptes.reduce((sum, dv) => sum + ((dv.montant_ht || 0) * (dv.commission_pourcentage || 0) / 100), 0)
+  const avancement         = calculerAvancement(d)
+  const sf                 = d.suivi_financier || []
+  const acomptesTotal      = devisAcceptes.length
+  const acomptesRecus      = devisAcceptes.filter(dv => sf.find(x =>
+    x.type_echeance === 'acompte_artisan' &&
+    x.artisan_id === (dv.artisan_id || dv.artisan?.id) &&
+    x.statut_illico === 'recu')).length
+  const facturesTotal      = devisAcceptes.length
+  const facturesPayees     = devisAcceptes.filter(dv => sf.find(x =>
+    x.type_echeance === 'facture_finale' &&
+    x.artisan_id === (dv.artisan_id || dv.artisan?.id) &&
+    x.statut_illico === 'recu')).length
+  const commissionsHT      = calculateDossierFinance(d).commissions.comHT
 
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -223,9 +239,6 @@ function ChantierPreview({ d, onOpen, onBack }) {
             ? <span style={{ color: '#15803d', fontWeight: 600, display: 'inline-flex', gap: 5, alignItems: 'center' }}><CheckIcon size={14} /> {fmtDate(d.date_signature_contrat)}</span>
             : <span style={{ color: '#b91c1c' }}>Non signé</span>}
           />
-          {d.date_demarrage_chantier && <FactRow label="Démarrage" value={fmtDate(d.date_demarrage_chantier)} />}
-          {d.date_fin_chantier && <FactRow label="Fin prévue" value={fmtDate(d.date_fin_chantier)} />}
-          {d.date_limite_devis && <FactRow label="Limite devis" value={fmtDate(d.date_limite_devis)} />}
           {d.referente && (
             <FactRow label="Référente" value={
               <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
@@ -245,14 +258,18 @@ function ChantierPreview({ d, onOpen, onBack }) {
         )}
 
 
-        {/* Avancement */}
-        {s === 'en_cours_chantier' && (d.avancement || 0) >= 0 && (
+        {/* Avancement + dates */}
+        {(d.date_demarrage_chantier || d.date_fin_chantier || s === 'en_cours_chantier') && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <div className="eyebrow">Avancement chantier</div>
-              <span className="tnum" style={{ fontSize: 18, fontWeight: 800, color: 'var(--brand-800)' }}>{d.avancement || 0}%</span>
+              <div className="eyebrow">Avancement</div>
+              <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--brand-800)' }}>{avancement}%</span>
             </div>
-            <Progress value={d.avancement || 0} height={8} />
+            <Progress value={avancement} height={8} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11.5, color: 'var(--ink-500)' }}>
+              <span>Démarrage : <span style={{ color: 'var(--ink-700)', fontWeight: 600 }}>{fmtDate(d.date_demarrage_chantier)}</span></span>
+              <span>Fin prévue : <span style={{ color: 'var(--ink-700)', fontWeight: 600 }}>{fmtDate(d.date_fin_chantier)}</span></span>
+            </div>
           </div>
         )}
 
@@ -296,8 +313,41 @@ function ChantierPreview({ d, onOpen, onBack }) {
           <div style={{ background: 'var(--surface-2)', border: '1px solid var(--ink-200)', borderRadius: 12, padding: 16 }}>
             <div className="eyebrow" style={{ marginBottom: 10 }}>Suivi financier</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <FactRow label="Frais consultation" value={d.frais_consultation > 0 ? fmtEur(d.frais_consultation) : '—'} />
-              <FactRow label="Commissions prévues" value={<span className="tnum" style={{ color: 'var(--brand-800)' }}>{fmtEur(totalCom)} HT</span>} />
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--ink-500)', marginBottom: 4 }}>Acomptes reçus</div>
+                <div className="tnum" style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink-900)' }}>{acomptesRecus} / {acomptesTotal}</div>
+                {acomptesTotal > 0 && (
+                  <div style={{ marginTop: 6 }}>
+                    <Progress value={acomptesRecus / acomptesTotal * 100} height={4} />
+                  </div>
+                )}
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--ink-500)', marginBottom: 4 }}>Factures payées</div>
+                <div className="tnum" style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink-900)' }}>{facturesPayees} / {facturesTotal}</div>
+                {facturesTotal > 0 && (
+                  <div style={{ marginTop: 6 }}>
+                    <Progress value={facturesPayees / facturesTotal * 100} height={4} />
+                  </div>
+                )}
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--ink-500)', marginBottom: 4 }}>Frais consultation</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-700)' }}>
+                  {d.frais_consultation > 0 ? (
+                    <>
+                      <span className="tnum">{fmtEur(d.frais_consultation)}</span>{' '}
+                      {d.frais_statut === 'regle'      && <Badge tone="ok">Réglé</Badge>}
+                      {d.frais_statut === 'en_attente' && <Badge tone="warn">En attente</Badge>}
+                      {d.frais_statut === 'offerts'    && <Badge tone="mute">Offerts</Badge>}
+                    </>
+                  ) : '—'}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--ink-500)', marginBottom: 4 }}>Commissions prévues</div>
+                <div className="tnum" style={{ fontSize: 14, fontWeight: 600, color: 'var(--brand-800)' }}>{fmtEur(commissionsHT)} HT</div>
+              </div>
             </div>
           </div>
         )}
@@ -354,7 +404,7 @@ export default function Chantiers() {
 
     let query = supabase
       .from('dossiers')
-      .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse, telephone, email), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, artisan:artisans(id, entreprise, metier, ville)), comptes_rendus(id, type_visite)')
+      .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse, telephone, email), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, artisan_id, artisan:artisans(id, entreprise, metier, ville)), comptes_rendus(id, type_visite), suivi_financier(type_echeance, montant_ttc, statut_illico, statut_client, artisan_id)')
       .order('created_at', { ascending: false })
     if (profile.role === 'agente') query = query.eq('referente_id', profile.id)
 
