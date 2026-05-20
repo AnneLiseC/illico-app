@@ -49,8 +49,7 @@ export default function Notifications() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
   const router = useRouter()
-  const { user, profile, initialized, markAllRead } = useAuth()
-  const [notifPrefs, setNotifPrefs] = useState(null)
+  const { user, profile, initialized, markAllRead, fetchProfile } = useAuth()
 
   useEffect(() => {
     if (!initialized) return
@@ -70,16 +69,18 @@ export default function Notifications() {
     markAllRead()
   }, [initialized, user?.id, router, markAllRead])
 
-  useEffect(() => {
-    if (profile) setNotifPrefs(profile.notif_prefs || {})
-  }, [profile])
-
   const toggleNotif = async (key) => {
     if (!profile) return
-    const current = (notifPrefs?.[key]) !== false
-    const newPrefs = { ...notifPrefs, [key]: !current }
-    setNotifPrefs(newPrefs)
+    const current = (profile.notif_prefs?.[key]) !== false
+    const newPrefs = { ...(profile.notif_prefs || {}), [key]: !current }
     await supabase.from('profiles').update({ notif_prefs: newPrefs }).eq('id', profile.id)
+    fetchProfile()
+  }
+
+  const toggleCanal = async (col) => {
+    if (!profile) return
+    await supabase.from('profiles').update({ [col]: !profile[col] }).eq('id', profile.id)
+    fetchProfile()
   }
 
   const goToDossier = (n) => {
@@ -184,7 +185,7 @@ export default function Notifications() {
               { k:'decennales',       l:'Décennales expirantes' },
               { k:'redevances',       l:'Redevances dues' },
             ].map(p => {
-              const active = (notifPrefs?.[p.k]) !== false
+              const active = (profile?.notif_prefs?.[p.k]) !== false
               return (
                 <label key={p.k} style={{display:'flex', alignItems:'center', gap:10, cursor:'pointer'}}>
                   <Toggle on={active} onClick={() => toggleNotif(p.k)} />
@@ -192,6 +193,22 @@ export default function Notifications() {
                 </label>
               )
             })}
+          </div>
+          <div style={{height:1, background:'var(--ink-100)', margin:'16px 0'}}/>
+          <div className="eyebrow" style={{marginBottom:10}}>Canaux</div>
+          <div style={{display:'flex', flexDirection:'column', gap:8, fontSize:12.5, color:'var(--ink-700)'}}>
+            <label style={{display:'flex', alignItems:'center', gap:8}}>
+              <Toggle on={profile?.notif_canal_inapp !== false} onClick={() => toggleCanal('notif_canal_inapp')} />
+              In-app
+            </label>
+            <label style={{display:'flex', alignItems:'center', gap:8}}>
+              <Toggle on={profile?.notif_canal_email !== false} onClick={() => toggleCanal('notif_canal_email')} />
+              Email
+            </label>
+            <label style={{display:'flex', alignItems:'center', gap:8}}>
+              <Toggle on={profile?.notif_canal_sms === true} onClick={() => toggleCanal('notif_canal_sms')} />
+              SMS
+            </label>
           </div>
         </div>
 
