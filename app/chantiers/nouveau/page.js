@@ -40,7 +40,7 @@ function NouveauChantierForm() {
       if (clientId) {
         const { data: clientData } = await supabase
           .from('clients')
-          .select('*, referente:profiles(prenom, nom)')
+          .select('*, referente_id:referente, referente:profiles!clients_referente_fkey(id, prenom, nom)')
           .eq('id', clientId)
           .single()
         setClient(clientData)
@@ -83,9 +83,9 @@ function NouveauChantierForm() {
       const { data, error } = await supabase.from('dossiers').insert({
         reference,
         client_id: clientId,
-        referente_id: profile?.id,
+        referente_id: client?.referente_id || profile?.id,
         typologie: form.typologie,
-        statut: 'en_cours',
+        statut: 'a_contacter',
         frais_consultation: form.frais_consultation ? parseFloat(form.frais_consultation) : null,
         description: form.description || null,
         frais_statut: form.frais_statut,
