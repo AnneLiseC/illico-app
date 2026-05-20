@@ -2,6 +2,7 @@
 import { useState, useEffect, use } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../../lib/auth-context'
 
 /* ── Inline SVG icons ── */
 function Svg({ size = 16, children }) {
@@ -58,15 +59,16 @@ export default function FicheArtisan({ params }) {
   const [UploadEnCours, setUploadEnCours] = useState({})
   const [fichesExpand, setFichesExpand] = useState(false)
   const router = useRouter()
+  const { user, profile, initialized } = useAuth()
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
+    if (!initialized) return
+    if (!user) { router.push('/login'); return }
 
+    const init = async () => {
       const [{ data }, { data: fichesData }] = await Promise.all([
         supabase.from('artisans')
-          .select('*, devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, devis_signe_path, dossier:dossiers(id, reference, client:clients(id, prenom, nom, civilite)))')
+          .select('*, devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, devis_signe_path, dossier:dossiers(id, reference, referente_id, client:clients(id, prenom, nom, civilite)))')
           .eq('id', id).single(),
         supabase.from('fiches_techniques').select('*').eq('artisan_id', id).order('nom'),
       ])
@@ -75,7 +77,7 @@ export default function FicheArtisan({ params }) {
       setLoading(false)
     }
     init()
-  }, [id, router])
+  }, [initialized, user?.id, id, router])
 
   const set = (champ, valeur) => setArtisan(a => ({ ...a, [champ]: valeur }))
 
@@ -150,12 +152,16 @@ export default function FicheArtisan({ params }) {
   if (loading) return <div className="page-loading" />
   if (!artisan) return <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>Artisan introuvable</div>
 
-  const devisListe = artisan.devis_artisans || []
+  const allDevis = artisan.devis_artisans || []
+  const devisListe = profile?.role === 'admin'
+    ? allDevis
+    : allDevis.filter(dv => dv.dossier?.referente_id === profile?.id)
   const nbDevis = devisListe.length
   const caHT = devisListe.reduce((s, dv) => s + (dv.montant_ht || 0), 0)
-  const devisAvecCom = devisListe.filter(dv => dv.commission_pourcentage)
+  const devisAvecCom = devisListe.filter(dv => dv.commission_pourcentage > 0)
   const comMoyenne = devisAvecCom.length > 0
-    ? devisAvecCom.reduce((s, dv) => s + dv.commission_pourcentage, 0) / devisAvecCom.length : 0
+    ? Math.round(devisAvecCom.reduce((s, dv) => s + dv.commission_pourcentage, 0) / devisAvecCom.length * 100)
+    : 0
   const diffDec = artisan.decennale_expiration
     ? Math.round((new Date(artisan.decennale_expiration) - new Date()) / 86400000) : null
   const decUrgente = diffDec !== null && diffDec <= 30 && diffDec >= 0
@@ -227,7 +233,7 @@ export default function FicheArtisan({ params }) {
       <div className="kpi-grid">
         <KpiCard label="Devis fournis" value={nbDevis} />
         <KpiCard label="CA cumulé HT" value={caHT > 0 ? fmtEur(caHT) : '—'} color="var(--brand-800)" />
-        <KpiCard label="Commission moyenne" value={comMoyenne > 0 ? `${comMoyenne.toFixed(1)} %` : '—'} />
+        <KpiCard label="Commission moyenne" value={comMoyenne > 0 ? `${comMoyenne} %` : '—'} />
         <KpiCard label="Décennale" value={<DecBadge artisan={artisan}/>} />
       </div>
 
@@ -291,7 +297,6 @@ export default function FicheArtisan({ params }) {
               <div style={{fontWeight:700, fontSize:14, color:'var(--ink-900)'}}>Devis par chantier</div>
               <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:2}}>{nbDevis} devis au total</div>
             </div>
-            {caHT > 0 && <span className="tnum" style={{fontSize:14, fontWeight:700, color:'var(--brand-800)'}}>{fmtEur(caHT)}</span>}
           </div>
           {nbDevis === 0 ? (
             <p style={{padding:32, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucun devis</p>
