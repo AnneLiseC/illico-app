@@ -76,10 +76,10 @@ function CABarChart({ data }) {
 
 function Pipeline({ dossiers }) {
   const buckets = [
-    { key: 'en_attente', label: 'En attente',  tone: '#f59e0b', match: s => s === 'en_attente' },
-    { key: 'en_cours',   label: 'En chantier', tone: '#16a34a', match: s => s === 'en_cours' },
-    { key: 'termine',    label: 'Terminés',    tone: '#94a3b8', match: s => s === 'termine' },
-    { key: 'annule',     label: 'Annulés',     tone: '#ef4444', match: s => s === 'annule' },
+    { key: 'a_traiter', label: 'À traiter',  tone: '#0094d4', match: s => ['a_contacter','a_relancer'].includes(s) },
+    { key: 'en_devis',  label: 'En devis',   tone: '#f59e0b', match: s => ['devis_en_attente','devis_a_modifier'].includes(s) },
+    { key: 'chantier',  label: 'En chantier',tone: '#16a34a', match: s => s === 'en_cours_chantier' },
+    { key: 'termine',   label: 'Terminés',   tone: '#94a3b8', match: s => s === 'termine' },
   ]
   const counts = buckets.map(b => dossiers.filter(d => b.match(d.statut)).length)
   const total  = counts.reduce((a, b) => a + b, 0) || 1
@@ -276,7 +276,7 @@ export default function Dashboard() {
     return new Date(dateStr).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
   }
 
-  const enCours    = dossiers.filter(d => d.statut === 'en_cours')
+  const enCours    = dossiers.filter(d => d.statut === 'en_cours_chantier')
   const aRelancer  = dossiers.filter(d => {
     if (!d.date_limite_devis) return false
     const diff = (new Date(d.date_limite_devis) - today) / 86400000
@@ -301,10 +301,13 @@ export default function Dashboard() {
   })).slice(-6)
 
   const STATUT_STYLE = {
-    'en_attente': { bg: 'rgba(245,158,11,0.10)',  color: '#a16207',  label: 'En attente' },
-    'en_cours':   { bg: 'rgba(22,163,74,0.08)',   color: '#15803d',  label: 'En chantier' },
-    'termine':    { bg: 'rgba(148,163,184,0.12)', color: '#64748b',  label: 'Terminé' },
-    'annule':     { bg: 'rgba(220,38,38,0.08)',   color: '#b91c1c',  label: 'Annulé' },
+    'a_contacter':       { bg: 'rgba(0,148,212,0.08)',   color: '#0094d4',  label: 'À contacter' },
+    'a_relancer':        { bg: 'rgba(0,148,212,0.08)',   color: '#0094d4',  label: 'À relancer' },
+    'devis_en_attente':  { bg: 'rgba(245,158,11,0.10)',  color: '#a16207',  label: 'En devis' },
+    'devis_a_modifier':  { bg: 'rgba(245,158,11,0.10)',  color: '#a16207',  label: 'Devis à revoir' },
+    'en_cours_chantier': { bg: 'rgba(22,163,74,0.08)',   color: '#15803d',  label: 'En chantier' },
+    'termine':           { bg: 'rgba(148,163,184,0.12)', color: '#64748b',  label: 'Terminé' },
+    'annule':            { bg: 'rgba(220,38,38,0.08)',   color: '#b91c1c',  label: 'Annulé' },
   }
 
   return (
@@ -329,7 +332,7 @@ export default function Dashboard() {
       {/* ── KPI Row ── */}
       <div className="kpi-grid">
         <DashKpiCard label="Chantiers en cours" value={loading ? '—' : enCours.length}
-          sub={`${dossiers.filter(d => d.statut === 'en_attente' || d.statut === 'en_cours').length} dossiers actifs`} tone="brand" />
+          sub={`${dossiers.filter(d => !['termine','annule'].includes(d.statut)).length} dossiers actifs`} tone="brand" />
         <DashKpiCard label="Devis à relancer <7j" value={loading ? '—' : aRelancer.length}
           sub={enRetardCount > 0 ? `${enRetardCount} en retard` : 'aucun en retard'}
           tone={aRelancer.length > 0 ? 'warn' : 'brand'} />
@@ -500,12 +503,12 @@ export default function Dashboard() {
               {loading ? <span className="eyebrow">Chargement…</span> : dossiers.slice(0, 5).map(d => {
                 const nomClient = d.client ? `${d.client.prenom || ''} ${d.client.nom || ''}`.trim() : '—'
                 const s = STATUT_STYLE[d.statut] || { bg: 'var(--surface-2)', color: 'var(--ink-500)', label: d.statut }
-                const actionLabel = d.statut === 'en_cours' ? 'chantier en cours' : d.statut === 'termine' ? 'chantier terminé' : d.statut === 'en_attente' ? 'en attente de devis' : 'dossier annulé'
+                const actionLabel = d.statut === 'en_cours_chantier' ? 'chantier en cours' : d.statut === 'termine' ? 'chantier terminé' : ['devis_en_attente','devis_a_modifier'].includes(d.statut) ? 'devis en attente' : d.statut === 'annule' ? 'dossier annulé' : 'à contacter'
                 return (
                   <button key={d.id} onClick={() => router.push(`/chantiers/${d.id}`)}
                     style={{ display: 'flex', gap: 12, alignItems: 'flex-start', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, width: '100%' }}>
                     <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--brand-50)', color: 'var(--brand-800)', display: 'grid', placeItems: 'center', flex: '0 0 32px', fontSize: 14 }}>
-                      {d.statut === 'en_cours' ? '🔨' : d.statut === 'termine' ? '✅' : d.statut === 'en_attente' ? '📄' : '📁'}
+                      {d.statut === 'en_cours_chantier' ? '🔨' : d.statut === 'termine' ? '✅' : ['devis_en_attente','devis_a_modifier'].includes(d.statut) ? '📄' : '📁'}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.4 }}>
