@@ -36,10 +36,9 @@ function Chip({ active, onClick, tone, children }) {
   )
 }
 
-function Toggle({ defaultOn = false }) {
-  const [on, setOn] = useState(defaultOn)
+function Toggle({ on, onClick }) {
   return (
-    <span onClick={() => setOn(!on)} style={{width:32, height:18, borderRadius:99, background: on ? 'var(--brand-500)' : 'var(--ink-200)', position:'relative', cursor:'pointer', display:'inline-block', flexShrink:0}}>
+    <span onClick={onClick} style={{width:32, height:18, borderRadius:99, background: on ? 'var(--brand-500)' : 'var(--ink-200)', position:'relative', cursor:'pointer', display:'inline-block', flexShrink:0}}>
       <span style={{position:'absolute', top:2, left: on ? 16 : 2, width:14, height:14, borderRadius:99, background:'#fff', transition:'left 150ms', boxShadow:'0 1px 3px rgba(0,0,0,0.15)'}}/>
     </span>
   )
@@ -50,7 +49,8 @@ export default function Notifications() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
   const router = useRouter()
-  const { user, initialized, markAllRead } = useAuth()
+  const { user, profile, initialized, markAllRead } = useAuth()
+  const [notifPrefs, setNotifPrefs] = useState(null)
 
   useEffect(() => {
     if (!initialized) return
@@ -70,6 +70,18 @@ export default function Notifications() {
     markAllRead()
   }, [initialized, user?.id, router, markAllRead])
 
+  useEffect(() => {
+    if (profile) setNotifPrefs(profile.notif_prefs || {})
+  }, [profile])
+
+  const toggleNotif = async (key) => {
+    if (!profile) return
+    const current = (notifPrefs?.[key]) !== false
+    const newPrefs = { ...notifPrefs, [key]: !current }
+    setNotifPrefs(newPrefs)
+    await supabase.from('profiles').update({ notif_prefs: newPrefs }).eq('id', profile.id)
+  }
+
   const goToDossier = (n) => {
     if (n.dossier_id) router.push(`/chantiers/${n.dossier_id}`)
   }
@@ -85,7 +97,7 @@ export default function Notifications() {
   })
 
   return (
-    <div className="page-enter" style={{display:'flex', flexDirection:'column', gap:18}}>
+    <div className="page-enter" style={{padding:'28px 32px', display:'flex', flexDirection:'column', gap:18}}>
 
       {/* En-tête */}
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:16, flexWrap:'wrap'}}>
@@ -165,25 +177,21 @@ export default function Notifications() {
           <div className="eyebrow" style={{marginBottom:12}}>Préférences</div>
           <div style={{display:'flex', flexDirection:'column', gap:12, fontSize:13}}>
             {[
-              { k:'deadline_devis',   l:'Échéances devis < 7 j' },
-              { k:'cr_depose',        l:'Comptes-rendus déposés' },
-              { k:'acompte_debloque', l:'Acomptes débloqués' },
-              { k:'msg_client',       l:'Messages clients' },
-              { k:'decennale_expire', l:'Décennales expirantes' },
-              { k:'redevance_due',    l:'Redevances dues' },
-            ].map((p, i) => (
-              <label key={p.k} style={{display:'flex', alignItems:'center', gap:10, cursor:'pointer'}}>
-                <Toggle defaultOn={i !== 5} />
-                <span style={{color:'var(--ink-700)'}}>{p.l}</span>
-              </label>
-            ))}
-          </div>
-          <div style={{height:1, background:'var(--ink-100)', margin:'16px 0'}}/>
-          <div className="eyebrow" style={{marginBottom:10}}>Canaux</div>
-          <div style={{display:'flex', flexDirection:'column', gap:8, fontSize:12.5, color:'var(--ink-700)'}}>
-            <label style={{display:'flex', alignItems:'center', gap:8}}><Toggle defaultOn /> In-app</label>
-            <label style={{display:'flex', alignItems:'center', gap:8}}><Toggle defaultOn /> Email</label>
-            <label style={{display:'flex', alignItems:'center', gap:8}}><Toggle /> SMS</label>
+              { k:'echeances_devis',  l:'Échéances devis < 7 j' },
+              { k:'comptes_rendus',   l:'Comptes-rendus déposés' },
+              { k:'acomptes_illico',  l:'Acomptes débloqués' },
+              { k:'messages_clients', l:'Messages clients' },
+              { k:'decennales',       l:'Décennales expirantes' },
+              { k:'redevances',       l:'Redevances dues' },
+            ].map(p => {
+              const active = (notifPrefs?.[p.k]) !== false
+              return (
+                <label key={p.k} style={{display:'flex', alignItems:'center', gap:10, cursor:'pointer'}}>
+                  <Toggle on={active} onClick={() => toggleNotif(p.k)} />
+                  <span style={{color:'var(--ink-700)'}}>{p.l}</span>
+                </label>
+              )
+            })}
           </div>
         </div>
 
