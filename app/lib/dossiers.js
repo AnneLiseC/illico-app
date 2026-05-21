@@ -16,8 +16,16 @@ export function calcStatut(dossier) {
   if (dossier.statut === 'annule') return 'annule'
   if (dossier.statut === 'termine') return 'termine'
 
-  // En cours de chantier = date démarrage renseignée
-  if (dossier.date_demarrage_chantier) return 'en_cours_chantier'
+  // En cours de chantier = date démarrage renseignée ET déjà passée (ou aujourd'hui)
+  if (dossier.date_demarrage_chantier) {
+    const demarrage = new Date(dossier.date_demarrage_chantier)
+    const aujourdhui = new Date()
+    // Comparaison sur les dates seules (00:00 UTC), ignore l'heure
+    demarrage.setHours(0, 0, 0, 0)
+    aujourdhui.setHours(0, 0, 0, 0)
+    if (demarrage <= aujourdhui) return 'en_cours_chantier'
+    // Sinon : démarrage prévu plus tard → on continue le calcul ci-dessous
+  }
 
   const comptes  = dossier.comptes_rendus || []
   const devis    = dossier.devis_artisans || []

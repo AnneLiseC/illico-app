@@ -1,11 +1,12 @@
 //chantier/[id]/page.js
 
 'use client'
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, useRef, use } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement } from '../../lib/dossiers'
+import { calculateDossierFinance } from '../../lib/finance'
 
 function Svg({ children, size = 14 }) {
   return (
@@ -30,6 +31,7 @@ const WalletIcon   = () => <Svg><path d="M3.5 8a2 2 0 0 1 2-2H18a2 2 0 0 1 2 2v9
 const FolderIcon   = () => <Svg><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2H19.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></Svg>
 const MsgIcon      = () => <Svg><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4 3v-3h-.5A2.5 2.5 0 0 1 3 14.5z" transform="translate(0.5,0.5)"/></Svg>
 const MoreIcon     = () => <Svg><circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/></Svg>
+const PlusIcon     = () => <Svg><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></Svg>
 
 // ─── Helpers Aperçu ───────────────────────────────────────────────────────────
 function Fact({ label, value, highlight, mono }) {
@@ -42,6 +44,177 @@ function Fact({ label, value, highlight, mono }) {
         color: highlight ? 'var(--brand-800)' : 'var(--ink-900)',
         letterSpacing: highlight ? -0.02 : 0,
       }}>{value || '—'}</div>
+    </div>
+  )
+}
+
+// Format euro court partagé (helpers module-level)
+const fmtEurShort = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
+
+function ModalShell({ title, subtitle, onClose, width = 580, children, footer }) {
+  // Ferme avec Échap
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose && onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+  return (
+    <div style={{
+      position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:200,
+      display:'grid', placeItems:'center', padding:20, overflow:'auto',
+    }} onClick={onClose}>
+      <div className="card" style={{
+        padding:0, maxWidth:width, width:'100%', maxHeight:'90vh',
+        overflow:'hidden', display:'flex', flexDirection:'column',
+      }} onClick={e => e.stopPropagation()}>
+        <div style={{
+          padding:'18px 24px', borderBottom:'1px solid var(--ink-200)',
+          display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:14,
+        }}>
+          <div style={{minWidth:0}}>
+            <h2 className="page" style={{fontSize:17}}>{title}</h2>
+            {subtitle && <div className="eyebrow" style={{marginTop:4}}>{subtitle}</div>}
+          </div>
+          <button className="btn btn-ghost" style={{padding:'6px 10px', fontSize:16, lineHeight:1}} onClick={onClose} aria-label="Fermer">×</button>
+        </div>
+        <div style={{flex:1, overflow:'auto'}}>{children}</div>
+        {footer && (
+          <div style={{padding:'14px 24px', borderTop:'1px solid var(--ink-200)', display:'flex', justifyContent:'flex-end', gap:8, flexWrap:'wrap'}}>
+            {footer}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ModalField({ label, children, required }) {
+  return (
+    <label style={{display:'flex', flexDirection:'column', gap:6, minWidth:0}}>
+      <span className="eyebrow">{label}{required && <span style={{color:'#dc2626', marginLeft:4}}>*</span>}</span>
+      {children}
+    </label>
+  )
+}
+
+function LieuPicker({ value, onChange }) {
+  const opts = [
+    { k: 'client', label: 'Adresse client', icon: '🏠' },
+    { k: 'agence',  label: 'Agence',         icon: '🏢' },
+  ]
+  return (
+    <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
+      {opts.map(o => {
+        const active = value === o.k
+        return (
+          <button key={o.k} type="button" onClick={() => onChange(o.k)}
+            style={{
+              padding:'10px 12px', borderRadius:10, border:'1px solid',
+              borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
+              background: active ? 'var(--brand-50)' : '#fff',
+              color: active ? 'var(--brand-800)' : 'var(--ink-700)',
+              cursor:'pointer', fontSize:13, fontWeight:600,
+              display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+              transition:'all 150ms',
+            }}>
+            <span style={{fontSize:16}}>{o.icon}</span>
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function EcheanceRow({ label, sub, statut, date, variant, onToggle, fmtDateFn }) {
+  const isRegle = statut === 'regle' || statut === 'recu'
+  const isIllico = variant === 'illico'
+  return (
+    <div style={{
+      display:'grid', gridTemplateColumns:'auto 1fr auto auto', gap:14, alignItems:'center',
+      padding:'10px 14px', borderRadius:10, border:'1px solid var(--ink-200)',
+      background: isRegle ? 'rgba(22,163,74,0.05)' : '#fff',
+    }}>
+      <label style={{display:'flex', alignItems:'center', gap:8, cursor: onToggle ? 'pointer' : 'default'}}>
+        <input type="checkbox" checked={isRegle} onChange={() => onToggle && onToggle()} readOnly={!onToggle}
+          style={{accentColor: isIllico ? '#6366f1' : 'var(--brand-500)', width:18, height:18, cursor: onToggle ? 'pointer' : 'default'}} />
+      </label>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:13, fontWeight:600, color: isIllico ? '#4f46e5' : 'var(--ink-900)'}}>{label}</div>
+        <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{sub}</div>
+      </div>
+      <div style={{textAlign:'right', minWidth:80}}>
+        {isRegle
+          ? <Badge tone="ok">Réglé</Badge>
+          : <Badge tone="warn">En attente</Badge>}
+      </div>
+      <div className="tnum" style={{fontSize:11.5, color:'var(--ink-400)', minWidth:60, textAlign:'right'}}>
+        {date ? (fmtDateFn ? fmtDateFn(date) : new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' })) : '—'}
+      </div>
+    </div>
+  )
+}
+
+function RecapRow({ label, value, strong, large, tone }) {
+  const color = tone === 'brand' ? 'var(--brand-700)' : 'var(--ink-700)'
+  return (
+    <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', padding:'3px 0', fontSize: large ? 14 : 13}}>
+      <span style={{color: strong ? 'var(--ink-900)' : 'var(--ink-500)', fontWeight: strong ? 700 : 400}}>{label}</span>
+      <span className="tnum" style={{color: strong ? (tone === 'brand' ? 'var(--brand-800)' : 'var(--ink-900)') : color, fontWeight: strong ? 800 : 600}}>{value}</span>
+    </div>
+  )
+}
+
+function FactureMiniLine({ title, fact, expected, onAdd, onTogglePaid, onView }) {
+  const fmtE = fmtEurShort
+  if (!fact) {
+    return (
+      <button onClick={onAdd} style={{
+        padding:'10px 12px', borderRadius:10, border:'1px dashed var(--ink-300)',
+        background:'transparent', display:'flex', justifyContent:'space-between', alignItems:'center',
+        textAlign:'left', cursor:'pointer', gap:8, transition:'all 150ms',
+      }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'var(--brand-50)'; e.currentTarget.style.borderColor = 'var(--brand-500)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'var(--ink-300)' }}
+      >
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:12, fontWeight:600, color:'var(--ink-700)'}}>{title}</div>
+          <div style={{fontSize:10.5, color:'var(--ink-400)', marginTop:2}}>
+            {expected > 0 ? `Prévu ${fmtE(expected)}` : 'Pas encore facturé'}
+          </div>
+        </div>
+        <span style={{fontSize:11, color:'var(--brand-800)', fontWeight:600, textDecoration:'underline', flexShrink:0}}>+ Facturer</span>
+      </button>
+    )
+  }
+  const paye = fact.statut === 'paye'
+  return (
+    <div style={{
+      padding:'10px 12px', borderRadius:10, border:'1px solid var(--ink-200)',
+      background:'#fff', display:'flex', justifyContent:'space-between', alignItems:'center', gap:8,
+    }}>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:12, fontWeight:600, color:'var(--ink-900)'}}>{title}</div>
+        <div style={{fontSize:10.5, color:'var(--ink-500)', marginTop:2}}>
+          {fact.date_paiement ? `Réglé ${new Date(fact.date_paiement).toLocaleDateString('fr-FR')}` : 'Pas encore daté'}
+        </div>
+      </div>
+      <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4, flexShrink:0}}>
+        <span className="tnum" style={{fontSize:12.5, fontWeight:700, color:'var(--ink-900)'}}>{fmtE(fact.montant_ttc)}</span>
+        <div style={{display:'flex', gap:4, alignItems:'center'}}>
+          {fact.pdf_path && (
+            <button onClick={onView} title="Voir PDF"
+              style={{padding:'2px 6px', fontSize:10, background:'transparent', color:'var(--brand-700)', border:'1px solid var(--ink-200)', borderRadius:6, cursor:'pointer'}}>📄</button>
+          )}
+          <button onClick={onTogglePaid} title={paye ? 'Marquer en attente' : 'Marquer payé'}
+            style={{
+              padding:'2px 8px', fontSize:10, fontWeight:700, borderRadius:99, cursor:'pointer',
+              background: paye ? 'rgba(22,163,74,0.12)' : 'rgba(245,158,11,0.13)',
+              color: paye ? '#15803d' : '#a16207',
+              border:'none',
+            }}>{paye ? 'Payé' : 'En attente'}</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -467,7 +640,7 @@ export default function FicheChantier({ params }) {
   const [savingDevis, setSavingDevis] = useState(false)
   const [devisEnEdition, setDevisEnEdition] = useState(null)
   const [photos, setPhotos] = useState([])
-  const [categorie, setCategorie] = useState('avant')
+  const [categorie, setCategorie] = useState('all')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photosAffichees, setPhotosAffichees] = useState(3)
   const [uploadingDoc, setUploadingDoc] = useState(null) // devisId en cours d'upload
@@ -509,10 +682,10 @@ export default function FicheChantier({ params }) {
   const [interventionEnEdition, setInterventionEnEdition] = useState(null)
   const [modalInterventionOuvert, setModalInterventionOuvert] = useState(false)
   const [interventionsDossier, setInterventionsDossier] = useState([])
-  const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '' })
+  const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client' })
   const [modalCreerIntervOuvert, setModalCreerIntervOuvert] = useState(false)
   const [nouvIntervArtisanId, setNouvIntervArtisanId] = useState(null)
-  const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60 })
+  const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client' })
   const [fichesTechChantier, setFichesTechChantier] = useState({})
   const [fichesPanelOuvert, setFichesPanelOuvert] = useState(null)
   const [documents, setDocuments] = useState([])
@@ -628,11 +801,12 @@ export default function FicheChantier({ params }) {
       dossier_id: id, type_rdv: nouveauRdvDossier.type_rdv, date_heure: nouveauRdvDossier.date_heure,
       duree_minutes: parseInt(nouveauRdvDossier.duree_minutes), artisan_id: nouveauRdvDossier.artisan_id || null, notes: nouveauRdvDossier.notes || null,
       titre: nouveauRdvDossier.type_rdv === 'autres' ? (nouveauRdvDossier.titre || null) : null,
+      lieu: nouveauRdvDossier.lieu || 'client',
     })
     if (!error) {
       await chargerRdvsDossier()
       setModalRdvOuvert(false)
-      setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '' })
+      setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client' })
       setSucces('RDV créé ✓')
     }
   }
@@ -664,6 +838,7 @@ export default function FicheChantier({ params }) {
       type_rdv: rdvEnEdition.type_rdv, date_heure: rdvEnEdition.date_heure,
       duree_minutes: parseInt(rdvEnEdition.duree_minutes), artisan_id: rdvEnEdition.artisan_id || null, notes: rdvEnEdition.notes || null,
       titre: rdvEnEdition.type_rdv === 'autres' ? (rdvEnEdition.titre || null) : null,
+      lieu: rdvEnEdition.lieu || 'client',
     }).eq('id', rdvEnEdition.id)
     await chargerRdvsDossier()
     setModalRdvOuvert(false)
@@ -686,6 +861,7 @@ export default function FicheChantier({ params }) {
         notes: nouvIntervForm.notes || null,
         heure_debut: nouvIntervForm.heure_debut || null,
         duree_minutes: nouvIntervForm.heure_debut ? (nouvIntervForm.duree_minutes || 60) : null,
+        lieu: nouvIntervForm.lieu || 'client',
       }
       const { data: intData, error: insertErr } = await supabase.from('interventions_artisans').insert(payload).select('*, artisan:artisans(id, entreprise)')
       if (insertErr) { setErreur('Erreur : ' + insertErr.message); return }
@@ -700,7 +876,7 @@ export default function FicheChantier({ params }) {
       await chargerRdvsDossier()
       setModalCreerIntervOuvert(false)
       setNouvIntervArtisanId(null)
-      setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60 })
+      setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client' })
       setSucces('Intervention planifiée ✓')
     } catch (err) {
       setErreur('Erreur inattendue : ' + err.message)
@@ -720,6 +896,7 @@ export default function FicheChantier({ params }) {
       notes: interventionEnEdition.notes || null,
       heure_debut: interventionEnEdition.heure_debut || null,
       duree_minutes: interventionEnEdition.heure_debut ? (interventionEnEdition.duree_minutes || 60) : null,
+      lieu: interventionEnEdition.lieu || 'client',
     }).eq('id', interventionEnEdition.id)
     if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerRdvsDossier()
@@ -1330,26 +1507,80 @@ export default function FicheChantier({ params }) {
   const [onglet, setOnglet] = useState('apercu')
   const [reponseMsg, setReponseMsg] = useState('')
   const [sendingMsg, setSendingMsg] = useState(false)
+  const messagesEndRef = useRef(null)
+
+  // Realtime : écoute les nouveaux messages sur ce dossier
+  useEffect(() => {
+    if (!id) return
+    const channel = supabase
+      .channel(`messages:${id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `dossier_id=eq.${id}` },
+        async () => {
+          const { data } = await supabase.from('messages')
+            .select('*, auteur:profiles(prenom, nom, role)')
+            .eq('dossier_id', id).order('created_at')
+          setMessages(data || [])
+          setNbMsgNonLus((data || []).filter(m => m.auteur_role === 'client' && !m.lu_agence).length)
+        })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [id])
+
+  // Auto-scroll quand un nouveau message arrive et qu'on est sur l'onglet messages
+  useEffect(() => {
+    if (onglet === 'messages') {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, onglet])
+
+  // Marquer comme lus à l'ouverture de l'onglet messages
+  useEffect(() => {
+    if (onglet !== 'messages' || !id) return
+    if (!messages.some(m => m.auteur_role === 'client' && !m.lu_agence)) return
+    ;(async () => {
+      await supabase.from('messages')
+        .update({ lu_agence: true })
+        .eq('dossier_id', id).eq('auteur_role', 'client').eq('lu_agence', false)
+      setMessages(prev => prev.map(m => m.auteur_role === 'client' ? { ...m, lu_agence: true } : m))
+      setNbMsgNonLus(0)
+    })()
+  }, [onglet, id, messages.length])
+
   const envoyerReponse = async () => {
     if (!reponseMsg.trim()) return
     setSendingMsg(true)
-    await supabase.from('messages').insert({
+    const contenu = reponseMsg.trim()
+    // Optimistic UI
+    const tempId = `tmp-${Date.now()}`
+    const optimistic = {
+      id: tempId, dossier_id: id, auteur_id: profile?.id,
+      auteur_role: profile?.role === 'admin' ? 'admin' : 'agente',
+      contenu, lu: false, lu_agence: true,
+      created_at: new Date().toISOString(),
+      auteur: { prenom: profile?.prenom, nom: profile?.nom, role: profile?.role },
+    }
+    setMessages(prev => [...prev, optimistic])
+    setReponseMsg('')
+
+    const { data: inserted, error } = await supabase.from('messages').insert({
       dossier_id: id,
       auteur_id: profile?.id,
       auteur_role: profile?.role === 'admin' ? 'admin' : 'agente',
-      contenu: reponseMsg.trim(),
-      lu: false,        // pas encore lu par le client
-      lu_agence: true,  // lu par l'agente (elle l'a écrit)
-    })
-    // Marquer les messages client comme lus par l'agence
+      contenu,
+      lu: false,
+      lu_agence: true,
+    }).select('*, auteur:profiles(prenom, nom, role)').single()
+
+    if (error) {
+      setMessages(prev => prev.filter(m => m.id !== tempId))
+      setErreur('Erreur envoi message : ' + error.message)
+    } else if (inserted) {
+      setMessages(prev => prev.map(m => m.id === tempId ? inserted : m))
+    }
+    // Marquer les messages client comme lus par l'agence (au cas où)
     await supabase.from('messages').update({ lu_agence: true })
-      .eq('dossier_id', id).eq('auteur_role', 'client')
-    const { data } = await supabase.from('messages')
-      .select('*, auteur:profiles(prenom, nom, role)')
-      .eq('dossier_id', id).order('created_at')
-    setMessages(data || [])
+      .eq('dossier_id', id).eq('auteur_role', 'client').eq('lu_agence', false)
     setNbMsgNonLus(0)
-    setReponseMsg('')
     setSendingMsg(false)
   }
 
@@ -1645,7 +1876,7 @@ export default function FicheChantier({ params }) {
   }
 
   return (
-    <div className="page-enter" style={{display:'flex',flexDirection:'column',gap:18,paddingBottom:40}}>
+    <div className="page-enter page-pad" style={{display:'flex',flexDirection:'column',gap:18}}>
 
       {/* Breadcrumb */}
       <div style={{display:'flex',alignItems:'center',gap:10,fontSize:13,color:'var(--ink-500)'}}>
@@ -2256,9 +2487,138 @@ export default function FicheChantier({ params }) {
       {onglet === 'devis' && (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
+        {/* Honoraires client (restylé tokens) */}
+        {['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCRecus > 0 && (
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
+              <h2 className="page" style={{fontSize:16}}>Honoraires client</h2>
+              <div className="eyebrow" style={{marginTop:4}}>
+                Calculés sur <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(baseCourtageHTTCPrev)}</span> TTC (devis reçus + signés{fraisHT > 0 && ' · frais déduits'})
+              </div>
+            </div>
+            <div style={{padding:16, display:'flex', flexDirection:'column', gap:12}}>
+
+              {/* Bloc Honoraires courtage */}
+              <div style={{border:'1px solid var(--ink-200)', borderRadius:10, padding:14}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:10, flexWrap:'wrap'}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>
+                      Honoraires courtage <span style={{color:'var(--brand-800)'}}>({tauxCourtagePct}%)</span>
+                    </div>
+                    <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:3}}>
+                      {tauxCourtagePct}% × <span className="tnum">{fmt(baseCourtageHTTCPrev)}</span> TTC · Échéance 48h après signature devis
+                    </div>
+                  </div>
+                  <span className="tnum" style={{fontSize:17, fontWeight:800, color:'var(--ink-900)', letterSpacing:-0.01}}>{fmt(honorairesCourtagePrev)}</span>
+                </div>
+                <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
+                  <div style={{display:'flex', alignItems:'center', gap:6}}>
+                    <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux courtage</label>
+                    <input
+                      type="number" step="0.1" min="0" max="20"
+                      value={(dossier.taux_courtage ?? 0.06) * 100}
+                      onChange={async e => {
+                        const taux = parseFloat(e.target.value || 0) / 100
+                        set('taux_courtage', taux)
+                        await supabase.from('dossiers').update({ taux_courtage: taux }).eq('id', id)
+                      }}
+                      className="input"
+                      style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
+                    />
+                    <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
+                  </div>
+                  <select
+                    value={suiviCourtage?.statut_client || 'en_attente'}
+                    onChange={e => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'statut_client', e.target.value)}
+                    className="input"
+                    style={{flex:1, minWidth:140, height:32, fontSize:12, cursor:'pointer'}}
+                  >
+                    <option value="en_attente">⏳ En attente</option>
+                    <option value="envoye">📤 Facturé</option>
+                    <option value="regle">✅ Réglé</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Bloc Honoraires AMO (typologie AMO uniquement) */}
+              {dossier.typologie === 'amo' && (
+                <div style={{border:'1px solid var(--brand-200)', borderRadius:10, padding:14, background:'rgba(0,148,212,0.04)'}}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:10, flexWrap:'wrap'}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:13.5, fontWeight:700, color:'var(--brand-900)'}}>
+                        Honoraires AMO <span style={{color:'var(--brand-700)'}}>({parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)</span>
+                      </div>
+                      <div style={{fontSize:11.5, color:'var(--brand-700)', marginTop:3}}>
+                        {tauxCourtagePct}% courtage + {tauxAmoPct}% AMO × <span className="tnum">{fmt(baseCourtageHTTCPrev)}</span> TTC
+                      </div>
+                    </div>
+                    <span className="tnum" style={{fontSize:17, fontWeight:800, color:'var(--brand-900)', letterSpacing:-0.01}}>{fmt(honorairesAMOPrev)}</span>
+                  </div>
+
+                  <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap', marginBottom:12}}>
+                    <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux AMO</label>
+                    <input
+                      type="number" step="0.1" min="0" max="20"
+                      value={dossier.honoraires_amo_taux ?? 9}
+                      onChange={async e => {
+                        const taux = parseFloat(e.target.value || 0)
+                        set('honoraires_amo_taux', taux)
+                        await supabase.from('dossiers').update({ honoraires_amo_taux: taux }).eq('id', id)
+                      }}
+                      className="input"
+                      style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
+                    />
+                    <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
+                  </div>
+
+                  <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                    <div style={{background:'#fff', borderRadius:8, padding:'10px 12px', border:'1px solid var(--brand-100)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:12, fontWeight:700, color:'var(--brand-800)'}}>
+                          Acompte AMO <span style={{color:'var(--brand-700)'}}>({tauxCourtagePct}%)</span> · <span className="tnum" style={{color:'var(--ink-900)'}}>{fmt(honorairesCourtagePrev)}</span>
+                        </div>
+                        <div style={{fontSize:10.5, color:'var(--brand-700)', marginTop:2}}>Signature devis</div>
+                      </div>
+                      <select
+                        value={suiviAcompteAMO?.statut_client || 'en_attente'}
+                        onChange={e => majSuiviChantier('acompte_amo', honorairesCourtagePrev, 'statut_client', e.target.value)}
+                        className="input"
+                        style={{height:30, fontSize:11.5, padding:'0 8px', minWidth:130}}
+                      >
+                        <option value="en_attente">⏳ En attente</option>
+                        <option value="envoye">📤 Facturé</option>
+                        <option value="regle">✅ Réglé</option>
+                      </select>
+                    </div>
+
+                    <div style={{background:'#fff', borderRadius:8, padding:'10px 12px', border:'1px solid var(--brand-100)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:12, fontWeight:700, color:'var(--brand-800)'}}>
+                          Solde AMO <span style={{color:'var(--brand-700)'}}>({tauxAmoPct}%)</span> · <span className="tnum" style={{color:'var(--ink-900)'}}>{fmt(honorairesAMOPrev - honorairesCourtagePrev)}</span>
+                        </div>
+                        <div style={{fontSize:10.5, color:'var(--brand-700)', marginTop:2}}>Fin de chantier</div>
+                      </div>
+                      <select
+                        value={suiviSoldeAMO?.statut_client || 'en_attente'}
+                        onChange={e => majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'statut_client', e.target.value)}
+                        className="input"
+                        style={{height:30, fontSize:11.5, padding:'0 8px', minWidth:130}}
+                      >
+                        <option value="en_attente">⏳ En attente</option>
+                        <option value="envoye">📤 Facturé</option>
+                        <option value="regle">✅ Réglé</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Devis artisans */}
-        <div className="card" style={{padding:22}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center', marginBottom:14}}>
+        <div className="card" style={{padding:0, overflow:'hidden'}}>
+          <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)', display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <div>
               <h2 className="page" style={{fontSize:16}}>Devis du chantier</h2>
               <div className="eyebrow" style={{marginTop:4}}>{devis.length} devis · {devisSignes.length} signés</div>
@@ -2271,36 +2631,117 @@ export default function FicheChantier({ params }) {
 
 
           {devis.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">Aucun devis pour ce chantier</p>
+            <div style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucun devis pour le moment</div>
           ) : (
-            <div className="space-y-3">
+            <div style={{display:'flex', flexDirection:'column'}}>
               {devis.map((d, idx) => {
                 const sd = statutDevisConfig[d.statut]
+                const expanded = devisExpanded.has(d.id)
+                const factDevis = factures.filter(f => f.devis_id === d.id)
+                const factAcompte = factDevis.find(f => (f.libelle || '').toLowerCase().includes('acompte'))
+                const factSolde = factDevis.find(f => (f.libelle || '').toLowerCase().includes('solde'))
+                const acompteExpected = d.acompte_pourcentage === -1 ? (d.acompte_montant_fixe || 0) : montantAcompte(d)
+                const soldeExpected = Math.max(0, (d.montant_ttc || 0) - (factAcompte?.montant_ttc ?? acompteExpected))
                 return (
-                  <div key={d.id} className="border border-gray-100 rounded-lg p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="flex flex-col">
-                          <button onClick={() => deplacerDevis(d.id, 'up')} disabled={idx === 0}
-                            className="text-gray-300 hover:text-gray-500 disabled:opacity-20 leading-none text-xs">▲</button>
-                          <button onClick={() => deplacerDevis(d.id, 'down')} disabled={idx === devis.length - 1}
-                            className="text-gray-300 hover:text-gray-500 disabled:opacity-20 leading-none text-xs">▼</button>
+                  <div key={d.id} style={{padding:'18px 22px', borderTop: idx === 0 ? 'none' : '1px solid var(--ink-100)'}}>
+
+                    {/* Header maquette : avatar | info+stats | badge | actions */}
+                    <div style={{display:'grid', gridTemplateColumns:'auto 1fr auto auto', gap:14, alignItems:'flex-start'}}>
+                      <div style={{width:40, height:40, borderRadius:10, background:'var(--brand-50)', color:'var(--brand-800)', display:'grid', placeItems:'center', flex:'0 0 40px'}}>
+                        <HammerIcon/>
+                      </div>
+                      <div style={{minWidth:0}}>
+                        <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+                          <span style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>{d.artisan?.entreprise || '—'}</span>
+                          {d.artisan?.metier && <span style={{fontSize:11.5, color:'var(--ink-500)'}}>· {d.artisan.metier}</span>}
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{d.artisan?.entreprise}</p>
-                          <p className="text-xs text-gray-400">{d.artisan?.metier}</p>
+                        <div style={{display:'flex', gap:14, marginTop:6, fontSize:12, color:'var(--ink-500)', flexWrap:'wrap'}}>
+                          {d.montant_ht > 0 && <span><span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(d.montant_ht)}</span> HT</span>}
+                          {d.montant_ttc > 0 && <span><span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(d.montant_ttc)}</span> TTC</span>}
+                          {d.commission_pourcentage > 0 && (
+                            <span>
+                              <strong style={{color:'var(--brand-800)'}}>Com. {(d.commission_pourcentage * 100).toFixed(1)}%</strong>
+                              {' → '}
+                              <span className="tnum">{fmt((d.montant_ht || 0) * d.commission_pourcentage)}</span> HT
+                            </span>
+                          )}
+                          {d.date_signature && d.statut === 'accepte' && (
+                            <span>Signé le {new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${sd.color}`}>{sd.label}</span>
-                        <button onClick={() => setDevisModal({ open: true, devis: d })} className="text-blue-400 text-xs hover:text-blue-600">
-                          Modifier
+                      <div style={{textAlign:'right'}}>
+                        {d.statut === 'accepte'    && <Badge tone="ok">Signé</Badge>}
+                        {d.statut === 'recu'       && <Badge tone="info">Reçu</Badge>}
+                        {d.statut === 'a_modifier' && <Badge tone="warn">À modifier</Badge>}
+                        {d.statut === 'refuse'     && <Badge tone="bad">Refusé</Badge>}
+                        {d.statut === 'en_attente' && <Badge tone="mute">En attente</Badge>}
+                      </div>
+                      <div style={{display:'flex', gap:4, alignItems:'center'}}>
+                        {d.devis_pdf_path && (
+                          <button onClick={() => ouvrirDocument(d.devis_pdf_path, `Devis ${d.artisan?.entreprise || ''}.pdf`)}
+                            className="btn btn-ghost" style={{padding:'4px 8px'}} title="Voir le PDF du devis">
+                            <DocIcon/>
+                          </button>
+                        )}
+                        <button onClick={() => setDevisModal({ open: true, devis: d })}
+                          className="btn btn-ghost" style={{padding:'4px 8px'}} title="Modifier le devis">
+                          <EditIcon/>
                         </button>
-                        <button onClick={() => supprimerDevis(d.id)} className="text-red-400 text-xs hover:text-red-600">Supprimer</button>
+                        <button onClick={() => toggleDevisExpand(d.id)}
+                          className="btn btn-ghost" style={{padding:'4px 8px'}} title={expanded ? 'Masquer les détails' : 'Voir les détails'}>
+                          <span style={{display:'inline-block', fontSize:10, lineHeight:1, transition:'transform 200ms', transform: expanded ? 'rotate(180deg)' : 'none'}}>▼</span>
+                        </button>
                       </div>
                     </div>
 
-                    {/* Infos client */}
+                    {/* FactureLines : Acompte + Solde (signés uniquement) */}
+                    {d.statut === 'accepte' && (
+                      <div style={{marginTop:14, marginLeft:54, display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
+                        <FactureMiniLine
+                          title={`Acompte ${d.acompte_pourcentage === -1 ? '(fixe)' : (d.acompte_pourcentage || 30) + '%'}`}
+                          fact={factAcompte} expected={acompteExpected}
+                          onAdd={() => {
+                            setAjouterFacture(d.id)
+                            setNouvelleFacture({ montant_ttc: acompteExpected > 0 ? acompteExpected.toFixed(2) : '', date_paiement: '', statut: 'en_attente', fichier: null, libelle: 'Facture acompte', libelle_autre: '' })
+                            if (!devisExpanded.has(d.id)) toggleDevisExpand(d.id)
+                          }}
+                          onTogglePaid={() => factAcompte && toggleStatutFacture(factAcompte.id, factAcompte.statut)}
+                          onView={() => factAcompte?.pdf_path && ouvrirDocument(factAcompte.pdf_path, `Facture acompte ${d.artisan?.entreprise || ''}.pdf`)}
+                        />
+                        <FactureMiniLine
+                          title="Solde"
+                          fact={factSolde} expected={soldeExpected}
+                          onAdd={() => {
+                            setAjouterFacture(d.id)
+                            setNouvelleFacture({ montant_ttc: soldeExpected > 0 ? soldeExpected.toFixed(2) : '', date_paiement: '', statut: 'en_attente', fichier: null, libelle: 'Facture solde', libelle_autre: '' })
+                            if (!devisExpanded.has(d.id)) toggleDevisExpand(d.id)
+                          }}
+                          onTogglePaid={() => factSolde && toggleStatutFacture(factSolde.id, factSolde.statut)}
+                          onView={() => factSolde?.pdf_path && ouvrirDocument(factSolde.pdf_path, `Facture solde ${d.artisan?.entreprise || ''}.pdf`)}
+                        />
+                      </div>
+                    )}
+
+                    {/* Détails dépliable */}
+                    {expanded && (
+                    <div style={{marginTop:14, padding:14, borderRadius:12, background:'var(--surface-2)', border:'1px solid var(--ink-200)', display:'flex', flexDirection:'column', gap:14}}>
+
+                    {/* Réorganiser + supprimer */}
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                      <div style={{display:'flex', alignItems:'center', gap:6, fontSize:11.5, color:'var(--ink-500)'}}>
+                        Ordre :
+                        <button onClick={() => deplacerDevis(d.id, 'up')} disabled={idx === 0}
+                          className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>▲</button>
+                        <button onClick={() => deplacerDevis(d.id, 'down')} disabled={idx === devis.length - 1}
+                          className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>▼</button>
+                      </div>
+                      <button onClick={() => supprimerDevis(d.id)} className="btn btn-ghost" style={{padding:'4px 10px', fontSize:11, color:'#b91c1c'}}>
+                        Supprimer ce devis
+                      </button>
+                    </div>
+
+                    {/* Infos détaillées + acompte custom */}
                     <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
                       <div className="flex justify-between">
                         <span className="text-xs text-gray-400">Montant HT</span>
@@ -2576,6 +3017,8 @@ export default function FicheChantier({ params }) {
                         ))}
                       </div>
                     )}
+                    </div>
+                    )}
                   </div>
                 )
               })}
@@ -2584,697 +3027,1019 @@ export default function FicheChantier({ params }) {
 
         </div>
 
-        {/* Honoraires client */}
-        {['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCRecus > 0 && (
-          <div className="card" style={{padding:22}}>
-            <h2 className="font-semibold text-gray-800">Honoraires client</h2>
-            <p className="text-xs text-gray-400">
-              Calculés sur {fmt(baseCourtageHTTCPrev)} TTC (devis reçus + signés
-              {fraisHT > 0 && <span className="text-purple-500"> - frais déduits</span>})
-            </p>
+        {/* Récapitulatif chantier (restylé tokens, déplacé depuis Finance) */}
+        {devis.length > 0 && (
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
+              <h2 className="page" style={{fontSize:16}}>Récapitulatif chantier</h2>
+              <div className="eyebrow" style={{marginTop:4}}>Totaux prévisionnel et signé · {devis.length} devis</div>
+            </div>
+            <div style={{padding:16, display:'flex', flexDirection:'column', gap:12}}>
 
-            <div className="border border-gray-100 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-gray-700">
-                  Honoraires courtage ({tauxCourtagePct}%)
-                </p>
-                <span className="text-sm font-bold text-gray-800">
-                  {fmt(honorairesCourtagePrev)}
-                </span>
-              </div>
-              <p className="text-xs text-gray-400 mb-3">
-                {tauxCourtagePct}% × {fmt(baseCourtageHTTCPrev)} € TTC - Échéance : 48h après signature devis
-              </p>
-              <div className="flex items-center gap-3">
-                <label className="text-xs font-medium text-blue-700">Taux courtage (%)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="20"
-                  value={(dossier.taux_courtage ?? 0.06) * 100}
-                  onChange={async e => {
-                    const taux = parseFloat(e.target.value || 0) / 100
-                    set('taux_courtage', taux)
-                    await supabase.from('dossiers').update({ taux_courtage: taux }).eq('id', id)
-                  }}
-                  className="w-24 border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>  
-              <div className="mt-3">
-                <select
-                  value={suiviCourtage?.statut_client || 'en_attente'}
-                  onChange={e => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'statut_client', e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer"
-                >
-                  <option value="en_attente">⏳ En attente</option>
-                  <option value="envoye">📤 Facturé</option>
-                  <option value="regle">✅ Réglé</option>
-                </select>
+              {/* Bloc prévisionnel */}
+              {devisRecus.length > 0 && (
+                <div style={{borderRadius:10, padding:14, background:'rgba(0,148,212,0.06)', border:'1px solid var(--brand-200)'}}>
+                  <div className="eyebrow" style={{color:'var(--brand-800)', marginBottom:8}}>
+                    Prévisionnel · {devisRecus.length} devis
+                  </div>
+                  <RecapRow label="Total HT" value={fmt(totalDevisHTRecus)} tone="brand" />
+                  <RecapRow label="Total TTC" value={fmt(totalDevisTTCRecus)} tone="brand" />
+                  {['courtage', 'amo'].includes(dossier?.typologie) && (
+                    <div style={{borderTop:'1px solid var(--brand-200)', marginTop:6, paddingTop:6}}>
+                      {dossier.typologie === 'courtage' && (
+                        <RecapRow label={`Honoraires (${tauxCourtagePct}%)`} value={fmt(honorairesCourtagePrev)} tone="brand" />
+                      )}
+                      {dossier.typologie === 'amo' && (<>
+                        <RecapRow label={`Honoraires courtage (${tauxCourtagePct}%)`} value={fmt(honorairesCourtagePrev)} tone="brand" />
+                        <RecapRow label="Honoraires AMO (9%)" value={fmt(baseCourtageHTTCPrev * 0.09)} tone="brand" />
+                        <RecapRow label="Total honoraires (15%)" value={fmt(baseCourtageHTTCPrev * (tauxCourtage + 0.09))} tone="brand" />
+                        {tauxAmoPct !== 9 && (<>
+                          <div style={{borderTop:'1px dashed var(--brand-200)', marginTop:4, paddingTop:4}} />
+                          <RecapRow label={`Honoraires AMO (${tauxAmoPct}%)`} value={fmt(honorairesAMOPrev - honorairesCourtagePrev)} tone="brand" />
+                          <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMOPrev)} tone="brand" strong />
+                        </>)}
+                      </>)}
+                      {fraisInclus && !dossier.frais_deduits && (
+                        <RecapRow label="Frais consultation" value={fmt(fraisTTC)} tone="brand" />
+                      )}
+                      <div style={{borderTop:'2px solid var(--brand-500)', marginTop:8, paddingTop:8}}>
+                        <RecapRow label="Total chantier prévisionnel" value={fmt(totalDevisTTCRecus + (dossier.typologie === 'amo' ? honorairesAMOPrev : honorairesCourtagePrev) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Bloc signé */}
+              {devisSignes.length > 0 && (
+                <div style={{borderRadius:10, padding:14, background:'var(--surface-2)', border:'1px solid var(--ink-200)'}}>
+                  <div className="eyebrow" style={{marginBottom:8}}>
+                    Signé · {devisSignes.length} devis
+                  </div>
+                  <RecapRow label="Total HT" value={fmt(totalDevisHTSignes)} />
+                  <RecapRow label="Total TTC" value={fmt(totalDevisTTCSignes)} />
+                  {['courtage', 'amo'].includes(dossier?.typologie) && (
+                    <div style={{borderTop:'1px solid var(--ink-200)', marginTop:6, paddingTop:6}}>
+                      {dossier.typologie === 'courtage' && (
+                        <RecapRow label={`Honoraires (${tauxCourtagePct}%)`} value={fmt(honorairesCourtage)} />
+                      )}
+                      {dossier.typologie === 'amo' && (<>
+                        <RecapRow label={`Honoraires courtage (${tauxCourtagePct}%)`} value={fmt(honorairesCourtage)} />
+                        <RecapRow label="Honoraires AMO (9%)" value={fmt(baseCourtageHTTC * 0.09)} />
+                        <RecapRow label="Total honoraires (15%)" value={fmt(baseCourtageHTTC * (tauxCourtage + 0.09))} />
+                        {tauxAmoPct !== 9 && (<>
+                          <div style={{borderTop:'1px dashed var(--ink-200)', marginTop:4, paddingTop:4}} />
+                          <RecapRow label={`Honoraires AMO (${tauxAmoPct}%)`} value={fmt(honorairesAMO - honorairesCourtage)} />
+                          <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMO)} strong />
+                        </>)}
+                      </>)}
+                      {fraisInclus && !dossier.frais_deduits && (
+                        <RecapRow label="Frais consultation" value={fmt(fraisTTC)} />
+                      )}
+                      {dossier.typologie === 'amo' && (
+                        <div style={{borderTop:'2px solid var(--brand-500)', marginTop:8, paddingTop:8}}>
+                          <RecapRow label="Total chantier signé" value={fmt(totalDevisTTCSignes + honorairesAMO + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+      </div>
+      )}
+
+      {/* ── SUIVI FINANCIER (maquette : KPI gains + Échéances) ── */}
+      {onglet === 'finance' && (() => {
+        const fin = calculateDossierFinance(dossier)
+        const fraisHTReal      = fin.frais.fraisHT
+        const fraisRoyalties   = fin.frais.royalties
+        const fraisNet         = fin.frais.net
+        const comHTReal        = fin.commissions.comHT
+        const comRoyalties     = fin.commissions.royaltiesType2
+        const comNet           = fin.commissions.netCom
+        const royaltiesTotal   = fin.royalties.total
+        const gainAgente       = fin.gains.nets.agente
+        const gainAdmin        = fin.gains.nets.admin
+        const totalNet         = gainAgente + gainAdmin
+        const partAgenteCfg    = fin.settings.partAgente
+        const isAdmin          = dossier?.referente?.role === 'admin'
+        const fmtD = (date) => date ? new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' }) : null
+
+        return (
+        <div style={{display:'flex',flexDirection:'column',gap:18}}>
+
+          {/* KPI grid : récap gains */}
+          <div className="kpi-grid">
+            <MiniKpi
+              label="Frais consult. HT"
+              value={fmt(fraisHTReal)}
+              sub={`net ${fmt(fraisNet)}`}
+              tone="brand"
+            />
+            <MiniKpi
+              label="Commissions HT"
+              value={fmt(comHTReal)}
+              sub={`net ${fmt(comNet)}`}
+              tone="brand"
+            />
+            <MiniKpi
+              label="Royalties (5%)"
+              value={fmt(royaltiesTotal)}
+              sub="prélevées par illiCO France"
+              tone="brand"
+            />
+            <MiniKpi
+              label={isAdmin ? 'Net franchisée' : 'Net total'}
+              value={fmt(totalNet)}
+              sub={partAgenteCfg > 0
+                ? `Agente ${fmt(gainAgente)} · CTP ${fmt(gainAdmin)}`
+                : 'tout pour la franchisée'}
+              tone="brand"
+            />
+          </div>
+
+          {/* Échéances */}
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
+              <h2 className="page" style={{fontSize:15}}>Échéances · suivi financier</h2>
+              <div className="eyebrow" style={{marginTop:4}}>
+                Coche au fur et à mesure des règlements et déclenchements illiCO
               </div>
             </div>
+            <div style={{padding:'14px 22px', display:'flex', flexDirection:'column', gap:12}}>
 
-            {dossier.typologie === 'amo' && (
-              <div className="border border-blue-100 rounded-lg p-4 bg-blue-50">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm font-medium text-blue-800">
-                    Honoraires AMO ({parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)
-                  </p>
-                  <span className="text-sm font-bold text-blue-900">
-                    {fmt(honorairesAMOPrev)}
-                  </span>
-                </div>
-                <p className="text-xs text-blue-500 mb-3">
-                  {tauxCourtagePct}% courtage + {tauxAmoPct}% AMO × {fmt(baseCourtageHTTCPrev)} TTC
-                </p>
+              {/* Frais de consultation */}
+              {(dossier.frais_consultation || 0) > 0 && (
+                <EcheanceRow
+                  label="Frais de consultation"
+                  sub={`${fmt(dossier.frais_consultation)} TTC`}
+                  statut={dossier.frais_statut === 'regle' || dossier.frais_statut === 'offerts' ? 'regle' : 'en_attente'}
+                  date={dossier.date_signature_contrat}
+                  fmtDateFn={fmtD}
+                />
+              )}
 
-                <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="flex items-center gap-3">
-                    <label className="text-xs font-medium text-blue-700">Taux AMO (%)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="20"
-                      value={dossier.honoraires_amo_taux ?? 9}
-                      onChange={async e => {
-                        const taux = parseFloat(e.target.value || 0)
-                        set('honoraires_amo_taux', taux)
-                        await supabase.from('dossiers').update({ honoraires_amo_taux: taux }).eq('id', id)
+              {/* Acompte client + illiCO débloqué (par devis signé) */}
+              {devisSignes.map(dv => {
+                const artId = dv.artisan_id || dv.artisan?.id
+                const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId)
+                const acompteMontant = dv.acompte_pourcentage === -1
+                  ? (dv.acompte_montant_fixe || 0)
+                  : (dv.montant_ttc || 0) * ((dv.acompte_pourcentage || 30) / 100)
+                const comDevisHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
+                return (
+                  <div key={`ech-${dv.id}`} style={{display:'flex', flexDirection:'column', gap:8}}>
+                    <EcheanceRow
+                      label={`Acompte client — ${dv.artisan?.entreprise || '—'}`}
+                      sub={`${dv.acompte_pourcentage === -1 ? 'fixe' : (dv.acompte_pourcentage || 30) + '%'} acompte · ${fmt(acompteMontant)} TTC`}
+                      statut={sf?.statut_client || 'en_attente'}
+                      date={sf?.date_reglement_client || null}
+                      onToggle={() => {
+                        const newStatut = sf?.statut_client === 'regle' ? 'en_attente' : 'regle'
+                        majSuiviAvecArtisan('acompte_artisan', artId, 'statut_client', newStatut)
                       }}
-                      className="w-24 border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      fmtDateFn={fmtD}
+                    />
+                    <EcheanceRow
+                      label="illiCO France — acompte débloqué"
+                      sub={`Commission ${fmt(comDevisHT)} HT · ${dv.artisan?.entreprise || ''}`}
+                      statut={sf?.statut_illico === 'recu' ? 'regle' : 'en_attente'}
+                      date={sf?.date_reglement_illico || null}
+                      onToggle={() => {
+                        const newStatut = sf?.statut_illico === 'recu' ? 'en_attente' : 'recu'
+                        majSuiviAvecArtisan('acompte_artisan', artId, 'statut_illico', newStatut)
+                      }}
+                      variant="illico"
+                      fmtDateFn={fmtD}
                     />
                   </div>
-                </div>
+                )
+              })}
 
-                <div className="space-y-3">
-                  <div className="bg-white rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-blue-700">
-                        Acompte AMO ({tauxCourtagePct}%) - {fmt(honorairesCourtagePrev)}
-                      </span>
-                      <span className="text-xs text-blue-400">Signature devis</span>
-                    </div>
-                    <select
-                      value={suiviAcompteAMO?.statut_client || 'en_attente'}
-                      onChange={e => majSuiviChantier('acompte_amo', honorairesCourtagePrev, 'statut_client', e.target.value)}
-                      className="border border-blue-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
-                    >
-                      <option value="en_attente">En attente</option>
-                      <option value="envoye">Facturé</option>
-                      <option value="regle">✅ Réglé</option>
-                    </select>
-                  </div>
+              {/* Honoraires courtage (toujours pour courtage/amo) */}
+              {['courtage', 'amo'].includes(dossier.typologie) && (
+                <EcheanceRow
+                  label="Honoraires courtage"
+                  sub={`${tauxCourtagePct}% travaux HT · ${fmt(honorairesCourtagePrev)}`}
+                  statut={suiviCourtage?.statut_client || 'en_attente'}
+                  date={dossier.date_signature_contrat}
+                  onToggle={() => {
+                    const newStatut = suiviCourtage?.statut_client === 'regle' ? 'en_attente' : 'regle'
+                    majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'statut_client', newStatut)
+                  }}
+                  fmtDateFn={fmtD}
+                />
+              )}
 
-                  <div className="bg-white rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-blue-700">
-                        Solde AMO ({tauxAmoPct}%) - {fmt(honorairesAMOPrev - honorairesCourtagePrev)}
-                      </span>
-                      <span className="text-xs text-blue-400">Fin de chantier</span>
-                    </div>
-                    <select
-                      value={suiviSoldeAMO?.statut_client || 'en_attente'}
-                      onChange={e => majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'statut_client', e.target.value)}
-                      className="border border-blue-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
-                    >
-                      <option value="en_attente">En attente</option>
-                      <option value="envoye">Facturé</option>
-                      <option value="regle">✅ Réglé</option>
-                    </select>
-                  </div>
+              {/* Honoraires AMO solde (typologie AMO uniquement) */}
+              {dossier.typologie === 'amo' && (
+                <EcheanceRow
+                  label="Honoraires AMO — solde"
+                  sub={`${tauxAmoPct}% travaux HT · ${fmt(honorairesAMOPrev - honorairesCourtagePrev)}`}
+                  statut={suiviSoldeAMO?.statut_client || 'en_attente'}
+                  date={dossier.date_fin_chantier}
+                  onToggle={() => {
+                    const newStatut = suiviSoldeAMO?.statut_client === 'regle' ? 'en_attente' : 'regle'
+                    majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'statut_client', newStatut)
+                  }}
+                  fmtDateFn={fmtD}
+                />
+              )}
+
+              {devisSignes.length === 0 && (dossier.frais_consultation || 0) === 0 && (
+                <div style={{padding:'24px 0', textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+                  Aucune échéance pour le moment
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        )}
 
-      </div>
-      )}
-
-      {/* ── SUIVI FINANCIER ── */}
-      {onglet === 'finance' && (
-      <div style={{display:'flex',flexDirection:'column',gap:16}}>
-
-        {/* Récapitulatif chantier */}
-        {devis.length > 0 && (
-          <div className="card" style={{padding:22}}>
-            <p className="text-xs font-medium text-gray-600 uppercase">Récapitulatif chantier</p>
-
-            {/* BLOC PRÉVISIONNEL */}
-            {devisRecus.length > 0 && (
-              <div className="border border-blue-200 rounded-lg p-3 space-y-1 bg-blue-50">
-                <p className="text-xs text-blue-600 font-semibold uppercase">Prévisionnel - {devisRecus.length} devis</p>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total HT</span>
-                  <span className="font-medium text-blue-700">{fmt(totalDevisHTRecus)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total TTC</span>
-                  <span className="font-medium text-blue-700">{fmt(totalDevisTTCRecus)}</span>
-                </div>
-                {['courtage', 'amo'].includes(dossier?.typologie) && (
-                  <div className="border-t border-blue-200 pt-1 mt-1 space-y-1">
-                    {dossier.typologie === 'courtage' && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Honoraires ({tauxCourtagePct}%)</span>
-                        <span className="font-medium text-blue-600">{fmt(honorairesCourtagePrev)}</span>
-                      </div>
-                    )}
-                    {dossier.typologie === 'amo' && (<>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Honoraires courtage ({tauxCourtagePct}%)</span>
-                        <span className="font-medium text-blue-600">{fmt(honorairesCourtagePrev)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Honoraires AMO (9%)</span>
-                        <span className="font-medium text-blue-600">{fmt(baseCourtageHTTCPrev * 0.09)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Total honoraires (15%)</span>
-                        <span className="font-medium text-blue-600">{fmt(baseCourtageHTTCPrev * (tauxCourtage + 0.09))}</span>
-                      </div>
-                      {tauxAmoPct !== 9 && (<>
-                        <div className="border-t border-blue-100 my-1" />
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-400">Honoraires AMO ({tauxAmoPct}%)</span>
-                          <span className="font-medium text-blue-600">{fmt(honorairesAMOPrev - honorairesCourtagePrev)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm font-semibold">
-                          <span className="text-gray-500">Total honoraires ({parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)</span>
-                          <span className="text-blue-700">{fmt(honorairesAMOPrev)}</span>
-                        </div>
-                      </>)}
-                    </>)}
-                    {fraisInclus && !dossier.frais_deduits && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Frais consultation</span>
-                        <span className="font-medium text-blue-600">{fmt(fraisTTC)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-sm border-t border-blue-300 pt-1 mt-1">
-                      <span className="font-bold text-blue-700">Total chantier prévisionnel</span>
-                      <span className="font-bold text-blue-700">
-                        {fmt(totalDevisTTCRecus + (dossier.typologie === 'amo' ? honorairesAMOPrev : honorairesCourtagePrev) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* BLOC SIGNÉ */}
-            {devisSignes.length > 0 && (
-              <div className="border border-gray-200 rounded-lg p-3 space-y-1 bg-white">
-                <p className="text-xs text-gray-500 font-semibold uppercase">Signé - {devisSignes.length} devis</p>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total HT</span>
-                  <span className="font-medium text-gray-800">{fmt(totalDevisHTSignes)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total TTC</span>
-                  <span className="font-medium text-gray-800">{fmt(totalDevisTTCSignes)}</span>
-                </div>
-                {['courtage', 'amo'].includes(dossier?.typologie) && (
-                  <div className="border-t border-gray-200 pt-1 mt-1 space-y-1">
-                    {dossier.typologie === 'courtage' && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Honoraires ({tauxCourtagePct}%)</span>
-                        <span className="font-medium text-gray-700">{fmt(honorairesCourtage)}</span>
-                      </div>
-                    )}
-                    {dossier.typologie === 'amo' && (<>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Honoraires courtage ({tauxCourtagePct}%)</span>
-                        <span className="font-medium text-gray-700">{fmt(honorairesCourtage)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Honoraires AMO (9%)</span>
-                        <span className="font-medium text-gray-700">{fmt(baseCourtageHTTC * 0.09)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Total honoraires (15%)</span>
-                        <span className="font-medium text-gray-700">{fmt(baseCourtageHTTC * (tauxCourtage + 0.09))}</span>
-                      </div>
-                      {tauxAmoPct !== 9 && (<>
-                        <div className="border-t border-gray-100 my-1" />
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-500">Honoraires AMO ({tauxAmoPct}%)</span>
-                          <span className="font-medium text-gray-700">{fmt(honorairesAMO - honorairesCourtage)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm font-semibold">
-                          <span className="text-gray-600">Total honoraires ({parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)</span>
-                          <span className="text-gray-800">{fmt(honorairesAMO)}</span>
-                        </div>
-                      </>)}
-                    </>)}
-                    {fraisInclus && !dossier.frais_deduits && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Frais consultation</span>
-                        <span className="font-medium text-gray-700">{fmt(fraisTTC)}</span>
-                      </div>
-                    )}
-                    {dossier.typologie === 'amo' && (
-                      <div className="flex justify-between text-sm border-t border-gray-200 pt-1 mt-1">
-                        <span className="font-bold text-gray-700">Total chantier signé</span>
-                        <span className="font-bold text-blue-800">
-                          {fmt(totalDevisTTCSignes + honorairesAMO + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-      </div>
-      )}
+        </div>
+        )
+      })()}
 
       {/* ── PHOTOS ── */}
-      {onglet === 'photos' && (
-      <div>
+      {onglet === 'photos' && (() => {
+        const CATS = [
+          { k: 'all',      l: 'Toutes' },
+          { k: 'avant',    l: 'Avant' },
+          { k: 'pendant',  l: 'Pendant' },
+          { k: 'apres',    l: 'Après' },
+          { k: 'maquette', l: 'Maquette' },
+        ]
+        const filtered = categorie === 'all' ? photos : photos.filter(p => p.categorie === categorie)
+        const filteredVisible = filtered.slice(0, photosAffichees)
+        return (
+        <div style={{display:'flex', flexDirection:'column', gap:14}}>
 
-        {/* Photos du chantier */}
-        <div className="card" style={{padding:22}}>
-          <h2 className="font-semibold text-gray-800">Photos du chantier</h2>
-          <div className="flex gap-2 flex-wrap">
-            {['avant', 'pendant', 'apres', 'maquette'].map(cat => (
-              <button key={cat} onClick={() => {setCategorie(cat); setPhotosAffichees(3); setPhotoOuverte(null)}}
-                className={`text-xs px-3 py-1.5 rounded-full border transition-all ${categorie === cat ? 'bg-blue-800 text-white border-blue-800' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                {cat === 'avant' ? 'Avant' : cat === 'pendant' ? 'Pendant' : cat === 'apres' ? 'Après' : 'Maquette'}
-                {photos.filter(p => p.categorie === cat).length > 0 && <span className="ml-1">({photos.filter(p => p.categorie === cat).length})</span>}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-3">
-            <label className={`cursor-pointer flex items-center gap-2 text-xs px-3 py-2 rounded-lg border transition-all ${uploadingPhoto ? 'bg-gray-100 text-gray-400' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}`}>
-              {uploadingPhoto ? 'Upload en cours...' : `+ Ajouter une photo (${categorie === 'avant' ? 'Avant' : categorie === 'pendant' ? 'Pendant' : categorie === 'apres' ? 'Après' :  'Maquette'})`}
-              <input type="file" accept="image/*" multiple className="hidden" disabled={uploadingPhoto} onChange={e => uploadPhotos(Array.from(e.target.files))} />
+          {/* Header : pills filtres + bouton upload */}
+          <div className="card" style={{padding:'14px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap'}}>
+            <div style={{display:'flex', gap:6, alignItems:'center', flexWrap:'wrap'}}>
+              {CATS.map(c => {
+                const n = c.k === 'all' ? photos.length : photos.filter(p => p.categorie === c.k).length
+                const active = categorie === c.k
+                return (
+                  <button key={c.k} onClick={() => { setCategorie(c.k); setPhotosAffichees(9); setPhotoOuverte(null) }}
+                    style={{
+                      padding:'6px 12px', borderRadius:99, fontSize:12, fontWeight:600,
+                      border:'1px solid', borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
+                      background: active ? 'var(--brand-50)' : '#fff',
+                      color: active ? 'var(--brand-800)' : 'var(--ink-700)',
+                      cursor:'pointer', transition:'all 150ms',
+                    }}>
+                    {c.l} <span style={{opacity:0.6}}>· {n}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingPhoto ? 'wait' : 'pointer', opacity: uploadingPhoto ? 0.6 : 1}}>
+              <CamIcon /> {uploadingPhoto
+                ? 'Upload en cours…'
+                : `Ajouter des photos${categorie !== 'all' ? ` (${CATS.find(c => c.k === categorie)?.l})` : ''}`}
+              <input type="file" accept="image/*" multiple style={{display:'none'}}
+                disabled={uploadingPhoto || categorie === 'all'}
+                onChange={e => uploadPhotos(Array.from(e.target.files))} />
             </label>
           </div>
-          {photos.filter(p => p.categorie === categorie).length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-6">Aucune photo dans cette catégorie</p>
+
+          {categorie === 'all' && (
+            <div style={{fontSize:11.5, color:'var(--ink-500)', padding:'0 4px'}}>
+              Choisis une catégorie (Avant, Pendant, Après, Maquette) pour uploader.
+            </div>
+          )}
+
+          {filtered.length === 0 ? (
+            <div className="card" style={{padding:60, textAlign:'center', color:'var(--ink-400)'}}>
+              <div style={{display:'grid', placeItems:'center', marginBottom:10}}><CamIcon /></div>
+              <div style={{fontSize:13}}>Aucune photo dans cette catégorie</div>
+            </div>
           ) : (
             <>
-              <div className="grid grid-cols-3 gap-3">
-                {photos.filter(p => p.categorie === categorie).slice(0, photosAffichees).map((photo, index) => (
-                  <div key={photo.id} className="relative group rounded-lg border border-gray-100 cursor-pointer bg-gray-100" onClick={() => setPhotoOuverte(index)}>
+              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:14}}>
+                {filteredVisible.map((photo, index) => (
+                  <div key={photo.id} style={{
+                    aspectRatio:'4/3', borderRadius:10, overflow:'hidden',
+                    background:'var(--ink-100)', position:'relative', cursor:'pointer',
+                    border:'1px solid var(--ink-200)',
+                  }}
+                    onClick={() => setPhotoOuverte(index)}
+                    onMouseEnter={e => { const b = e.currentTarget.querySelector('[data-actions]'); if (b) b.style.opacity = '1' }}
+                    onMouseLeave={e => { const b = e.currentTarget.querySelector('[data-actions]'); if (b) b.style.opacity = '0' }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={photo.url_signee} alt="" onError={e => e.target.style.border = '2px solid red'}
-                      style={{ width: '100%', height: '128px', objectFit: 'cover', display: 'block', borderRadius: '8px' }} />
-                    <div className="absolute inset-0 flex items-end justify-end p-1 opacity-0 group-hover:opacity-100">
+                    <img src={photo.url_signee} alt="" style={{width:'100%', height:'100%', objectFit:'cover', display:'block'}} />
+                    <span style={{
+                      position:'absolute', top:8, right:8,
+                      background:'rgba(0,0,0,0.55)', color:'#fff', fontSize:9.5, padding:'3px 8px',
+                      borderRadius:99, fontWeight:700, textTransform:'uppercase', letterSpacing:0.05,
+                      backdropFilter:'blur(4px)',
+                    }}>{photo.categorie}</span>
+                    <div data-actions style={{
+                      position:'absolute', bottom:8, right:8, opacity:0, transition:'opacity 150ms',
+                    }}>
                       <button onClick={e => { e.stopPropagation(); supprimerPhoto(photo.id, photo.url) }}
-                        className="bg-red-500 text-white text-xs px-2 py-1 rounded">Supprimer</button>
+                        style={{
+                          background:'rgba(220,38,38,0.95)', color:'#fff', border:'none', borderRadius:6,
+                          padding:'4px 10px', fontSize:11, fontWeight:700, cursor:'pointer',
+                        }}>
+                        Supprimer
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
-              {photos.filter(p => p.categorie === categorie).length > photosAffichees && (
+              {filtered.length > photosAffichees && (
                 <button onClick={() => setPhotosAffichees(n => n + 9)}
-                  className="w-full text-sm text-blue-600 border border-blue-200 rounded-lg py-2 hover:bg-blue-50 mt-2">
-                  Voir plus ({photos.filter(p => p.categorie === categorie).length - photosAffichees} restantes)
+                  className="btn btn-ghost" style={{alignSelf:'center', fontSize:12.5}}>
+                  Voir plus ({filtered.length - photosAffichees} restantes)
                 </button>
               )}
             </>
           )}
+
+          {/* Lightbox */}
           {photoOuverte !== null && (
-            <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center" onClick={() => setPhotoOuverte(null)}>
-              <button onClick={e => { e.stopPropagation(); setPhotoOuverte(i => i > 0 ? i - 1 : photos.filter(p => p.categorie === categorie).length - 1) }}
-                className="absolute left-4 text-white text-3xl px-4 py-2 hover:bg-white hover:bg-opacity-20 rounded">‹</button>
-              <div onClick={e => e.stopPropagation()} className="max-w-4xl max-h-screen p-4">
+            <div style={{
+              position:'fixed', inset:0, background:'rgba(0,0,0,0.92)', zIndex:200,
+              display:'flex', alignItems:'center', justifyContent:'center',
+            }} onClick={() => setPhotoOuverte(null)}>
+              <button onClick={e => { e.stopPropagation(); setPhotoOuverte(i => i > 0 ? i - 1 : filtered.length - 1) }}
+                style={{
+                  position:'absolute', left:16, top:'50%', transform:'translateY(-50%)',
+                  width:48, height:48, borderRadius:'50%', border:'none',
+                  background:'rgba(255,255,255,0.10)', color:'#fff', cursor:'pointer',
+                  fontSize:24, fontWeight:300,
+                }}>‹</button>
+              <div onClick={e => e.stopPropagation()} style={{maxWidth:'90vw', maxHeight:'90vh', padding:20}}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={photos.filter(p => p.categorie === categorie)[photoOuverte]?.url_signee} alt=""
-                  className="max-h-screen max-w-full object-contain rounded" />
-                <p className="text-white text-center text-sm mt-2 opacity-60">
-                  {photoOuverte + 1} / {photos.filter(p => p.categorie === categorie).length} - Clic en dehors pour fermer
-                </p>
-              </div>
-              <button onClick={e => { e.stopPropagation(); setPhotoOuverte(i => i < photos.filter(p => p.categorie === categorie).length - 1 ? i + 1 : 0) }}
-                className="absolute right-4 text-white text-3xl px-4 py-2 hover:bg-white hover:bg-opacity-20 rounded">›</button>
-            </div>
-          )}
-        </div>
-
-      </div>
-      )}
-
-      {/* ── DOCUMENTS ── */}
-      {onglet === 'documents' && (
-      <div>
-
-        {/* Documents du chantier */}
-        <div className="card" style={{padding:22}}>
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-800">Documents ({documents.length})</h2>
-            <label className={`cursor-pointer text-sm px-3 py-1.5 rounded-lg border transition-all ${uploadingDocChantier ? 'text-gray-400 border-gray-200' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}`}>
-              {uploadingDocChantier ? 'Upload...' : '+ Ajouter un document'}
-              <input type="file" className="hidden" multiple disabled={uploadingDocChantier}
-                onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files))} />
-            </label>
-          </div>
-          {documents.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">Aucun document - plans, courriers, notes...</p>
-          ) : (
-            <div className="space-y-2">
-              {documents.map(doc => (
-                <div key={doc.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:bg-gray-50">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <span className="text-lg flex-shrink-0">
-                      {doc.type_mime?.startsWith('image') ? '🖼' : doc.type_mime?.includes('pdf') ? '📄' : doc.type_mime?.includes('word') ? '📝' : '📎'}
-                    </span>
-                    <div className="min-w-0">
-                      <button onClick={() => ouvrirDocument(doc.path, doc.nom)}
-                        className="text-sm text-blue-600 hover:underline truncate block max-w-xs text-left">
-                        {doc.nom}
-                      </button>
-                      {doc.taille && <p className="text-xs text-gray-400">{(doc.taille / 1024).toFixed(0)} Ko</p>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={doc.dans_restitution || false}
-                        onChange={e => toggleDansRestitution(doc.id, e.target.checked)}
-                        className="accent-blue-700" />
-                      <span className="text-xs text-gray-500">Restitution</span>
-                    </label>
-                    <button onClick={() => supprimerDocumentChantier(doc.id, doc.path)}
-                      className="text-red-300 hover:text-red-500 text-xs">✕</button>
-                  </div>
+                <img src={filtered[photoOuverte]?.url_signee} alt=""
+                  style={{maxHeight:'80vh', maxWidth:'100%', objectFit:'contain', borderRadius:10, display:'block'}} />
+                <div style={{color:'rgba(255,255,255,0.7)', fontSize:12, textAlign:'center', marginTop:10}}>
+                  {photoOuverte + 1} / {filtered.length} · {filtered[photoOuverte]?.categorie} · clic en dehors pour fermer
                 </div>
-              ))}
+              </div>
+              <button onClick={e => { e.stopPropagation(); setPhotoOuverte(i => i < filtered.length - 1 ? i + 1 : 0) }}
+                style={{
+                  position:'absolute', right:16, top:'50%', transform:'translateY(-50%)',
+                  width:48, height:48, borderRadius:'50%', border:'none',
+                  background:'rgba(255,255,255,0.10)', color:'#fff', cursor:'pointer',
+                  fontSize:24, fontWeight:300,
+                }}>›</button>
+              <button onClick={e => { e.stopPropagation(); setPhotoOuverte(null) }}
+                style={{
+                  position:'absolute', top:16, right:16,
+                  width:40, height:40, borderRadius:'50%', border:'none',
+                  background:'rgba(255,255,255,0.10)', color:'#fff', cursor:'pointer',
+                  fontSize:18,
+                }}>×</button>
             </div>
           )}
+
         </div>
+        )
+      })()}
 
-      </div>
-      )}
-
-      {/* ── PLANNING ── */}
-      {onglet === 'planning' && (
-      <div style={{display:'flex',flexDirection:'column',gap:16}}>
-
-        {/* Planning du chantier */}
-        <div className="card" style={{padding:22}}>
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-800">Planning</h2>
-            <div className="flex gap-2">
-              <button onClick={() => { setNouvIntervArtisanId(null); setModalCreerIntervOuvert(true) }}
-                className="text-sm border border-green-300 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-50">+ Intervention</button>
-              <button onClick={() => setModalRdvOuvert(true)} className="text-sm bg-blue-800 text-white px-3 py-1.5 rounded-lg hover:bg-blue-900">+ RDV</button>
+      {/* ── DOCUMENTS (maquette) ── */}
+      {onglet === 'documents' && (() => {
+        const totalKo = documents.reduce((s, d) => s + (d.taille || 0) / 1024, 0)
+        const fmtSize = (ko) => ko < 1024 ? `${Math.round(ko)} Ko` : `${(ko/1024).toFixed(1)} Mo`
+        const typeOf = (doc) => {
+          const m = (doc.type_mime || '').toLowerCase()
+          const n = (doc.nom || '').toLowerCase()
+          if (m.startsWith('image') || /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(n)) return 'image'
+          if (m.includes('pdf') || n.endsWith('.pdf')) return 'pdf'
+          if (m.includes('word') || /\.(doc|docx)$/i.test(n)) return 'word'
+          if (m.includes('excel') || /\.(xls|xlsx)$/i.test(n)) return 'sheet'
+          return 'autre'
+        }
+        const typeMeta = {
+          image: { color: '#7c3aed', label: 'image' },
+          pdf:   { color: '#dc2626', label: 'pdf' },
+          word:  { color: '#0094d4', label: 'word' },
+          sheet: { color: '#16a34a', label: 'tableur' },
+          autre: { color: '#94a3b8', label: 'fichier' },
+        }
+        return (
+        <div style={{display:'flex', flexDirection:'column', gap:14}}>
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, borderBottom:'1px solid var(--ink-200)', flexWrap:'wrap'}}>
+              <div>
+                <h2 className="page" style={{fontSize:15}}>Documents du chantier</h2>
+                <div className="eyebrow" style={{marginTop:4}}>
+                  {documents.length} fichier{documents.length > 1 ? 's' : ''}{documents.length > 0 && ` · ${fmtSize(totalKo)}`}
+                </div>
+              </div>
+              <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingDocChantier ? 'wait' : 'pointer', opacity: uploadingDocChantier ? 0.6 : 1}}>
+                <DlIcon /> {uploadingDocChantier ? 'Upload…' : 'Ajouter un document'}
+                <input type="file" style={{display:'none'}} multiple disabled={uploadingDocChantier}
+                  onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files))} />
+              </label>
             </div>
-          </div>
-          {rdvsDossier.length > 0 && (
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase mb-2">Rendez-vous</p>
-              <div className="space-y-2">
-                {rdvsDossier.map(r => {
-                  const typeConfig = {
-                    visite_technique_client: { label: 'R1 - Visite technique client', color: 'bg-blue-100 text-blue-700' },
-                    visite_technique_artisan: { label: 'R2 - Visite technique avec artisan', color: 'bg-green-100 text-green-700' },
-                    presentation_devis: { label: 'R3 - Présentation devis', color: 'bg-amber-100 text-amber-700' },
-                    autres: { label: 'Autre RDV', color: 'bg-slate-100 text-slate-700' },
-                  }
-                  const tc = typeConfig[r.type_rdv] || typeConfig.autres
+            {documents.length === 0 ? (
+              <div style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+                Aucun document — plans, courriers, notes…
+              </div>
+            ) : (
+              <div style={{padding:'6px 16px'}}>
+                {documents.map(doc => {
+                  const t = typeOf(doc)
+                  const meta = typeMeta[t]
                   return (
-                    <div key={r.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
-                      <div>
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${tc.color}`}>{tc.label}</span>
-                        <p className="text-sm font-medium text-gray-800 mt-1">
-                          {new Date(r.date_heure).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
-                          {r.artisan && ` - ${r.artisan.entreprise}`}
-                        </p>
-                        {r.notes && <p className="text-xs text-gray-400">{r.notes}</p>}
+                    <div key={doc.id} className="row-hover" style={{
+                      display:'grid', gridTemplateColumns:'auto 1fr auto auto auto', gap:14, alignItems:'center',
+                      padding:'12px 8px', borderBottom:'1px solid var(--ink-100)',
+                    }}>
+                      <div style={{
+                        width:36, height:36, borderRadius:8,
+                        background:`${meta.color}1a`, color:meta.color,
+                        display:'grid', placeItems:'center', flex:'0 0 36px',
+                      }}>
+                        <DocIcon />
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => { setRdvEnEdition(r); setModalRdvOuvert(true) }} className="text-blue-400 text-xs hover:text-blue-600">Modifier</button>
-                        <button onClick={() => supprimerRdvDossier(r.id)} className="text-red-400 text-xs hover:text-red-600">Supprimer</button>
+                      <div style={{minWidth:0}}>
+                        <button onClick={() => ouvrirDocument(doc.path, doc.nom)}
+                          className="clip-1" style={{
+                            fontSize:13, fontWeight:600, color:'var(--ink-900)', background:'none', border:'none',
+                            cursor:'pointer', padding:0, textAlign:'left', display:'block', width:'100%',
+                          }}>
+                          {doc.nom}
+                        </button>
+                        <div style={{fontSize:11, color:'var(--ink-500)', marginTop:2, textTransform:'uppercase', letterSpacing:0.04}}>{meta.label}</div>
+                      </div>
+                      <label style={{display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:11, color:'var(--ink-500)'}}>
+                        <input type="checkbox" checked={doc.dans_restitution || false}
+                          onChange={e => toggleDansRestitution(doc.id, e.target.checked)}
+                          style={{accentColor:'var(--brand-500)'}} />
+                        Restitution
+                      </label>
+                      <div className="tnum" style={{fontSize:11.5, color:'var(--ink-500)', whiteSpace:'nowrap'}}>
+                        {doc.taille ? fmtSize(doc.taille / 1024) : '—'}
+                      </div>
+                      <div style={{display:'flex', gap:4}}>
+                        <button onClick={() => ouvrirDocument(doc.path, doc.nom)}
+                          className="btn btn-ghost" style={{padding:'4px 8px'}} title="Voir">
+                          <EyeIcon />
+                        </button>
+                        <button onClick={() => supprimerDocumentChantier(doc.id, doc.path)}
+                          className="btn btn-ghost" style={{padding:'4px 8px', color:'#b91c1c'}} title="Supprimer">
+                          <span style={{fontSize:14, lineHeight:1}}>×</span>
+                        </button>
                       </div>
                     </div>
                   )
                 })}
               </div>
+            )}
+          </div>
+        </div>
+        )
+      })()}
+
+      {/* ── PLANNING ── */}
+      {onglet === 'planning' && (
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+
+        {/* Planning : RDV + Interventions (maquette : 2 cards séparées) */}
+        <div className="grid-2c" style={{gap:18}}>
+
+          {/* Card RDV */}
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--ink-200)'}}>
+              <div>
+                <h2 className="page" style={{fontSize:15}}>Rendez-vous</h2>
+                <div className="eyebrow" style={{marginTop:4}}>{rdvsDossier.length} RDV planifié{rdvsDossier.length > 1 ? 's' : ''}</div>
+              </div>
+              <button onClick={() => setModalRdvOuvert(true)} className="btn btn-primary" style={{fontSize:12.5}}>
+                <PlusIcon /> Nouveau RDV
+              </button>
             </div>
-          )}
-          {interventionsDossier.length > 0 && (
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase mb-2">Interventions artisans</p>
-              <div className="space-y-2">
-                {interventionsDossier.map(i => (
-                  <div key={i.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">🔨 {i.artisan?.entreprise}</p>
-                      {i.type_intervention === 'periode' ? (
-                        <p className="text-xs text-gray-500">{new Date(i.date_debut).toLocaleDateString('fr-FR')} → {new Date(i.date_fin).toLocaleDateString('fr-FR')}</p>
-                      ) : (
-                        <p className="text-xs text-gray-500">{i.jours_specifiques?.length} jour(s) : {i.jours_specifiques?.slice(0, 3).map(j => new Date(j).toLocaleDateString('fr-FR')).join(', ')}{i.jours_specifiques?.length > 3 ? '...' : ''}</p>
-                      )}
-                      {i.notes && <p className="text-xs text-gray-400">{i.notes}</p>}
+            <div style={{padding:'4px 16px'}}>
+              {rdvsDossier.length === 0 ? (
+                <div style={{padding:30, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucun rendez-vous</div>
+              ) : rdvsDossier.map(r => {
+                const dt = new Date(r.date_heure)
+                const isPast = dt < new Date()
+                const day = dt.toLocaleDateString('fr-FR', { day:'2-digit' })
+                const month = dt.toLocaleDateString('fr-FR', { month:'short' }).replace('.','')
+                const time = dt.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })
+                const cfg = {
+                  visite_technique_client:  { label:'R1 — Visite client',         color:'#0094d4' },
+                  visite_technique_artisan: { label:'R2 — Visite artisan',        color:'#16a34a' },
+                  presentation_devis:       { label:'R3 — Présentation devis',    color:'#f59e0b' },
+                  autres:                   { label: r.titre || 'Autre RDV',      color:'#94a3b8' },
+                }[r.type_rdv] || { label:r.type_rdv, color:'#94a3b8' }
+                return (
+                  <div key={r.id} style={{
+                    display:'grid', gridTemplateColumns:'56px 4px 1fr auto', gap:14,
+                    padding:'12px 0', borderBottom:'1px solid var(--ink-100)', alignItems:'center',
+                    opacity: isPast ? 0.55 : 1,
+                  }}>
+                    <div style={{textAlign:'center'}}>
+                      <div className="tnum" style={{fontSize:18, fontWeight:800, color:'var(--ink-900)', lineHeight:1}}>{day}</div>
+                      <div style={{fontSize:9.5, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2, letterSpacing:0.04}}>{month}</div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => { setInterventionEnEdition(i); setModalInterventionOuvert(true) }} className="text-blue-400 text-xs hover:text-blue-600">Modifier</button>
-                      <button onClick={() => supprimerInterventionDossier(i.id)} className="text-red-400 text-xs hover:text-red-600">Supprimer</button>
+                    <div style={{width:4, alignSelf:'stretch', borderRadius:99, background: cfg.color}}/>
+                    <div style={{minWidth:0}}>
+                      <div className="clip-1" style={{fontSize:13, fontWeight:600, color:'var(--ink-900)'}}>{cfg.label}</div>
+                      <div className="clip-1" style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>
+                        {time} · {r.duree_minutes}min{r.artisan ? ` · ${r.artisan.entreprise}` : ''}
+                        {r.notes && ` · ${r.notes}`}
+                      </div>
+                    </div>
+                    <div style={{display:'flex', gap:4}}>
+                      <button onClick={() => { setRdvEnEdition(r); setModalRdvOuvert(true) }}
+                        className="btn btn-ghost" style={{padding:'4px 6px'}} title="Modifier">
+                        <EditIcon />
+                      </button>
+                      <button onClick={() => supprimerRdvDossier(r.id)}
+                        className="btn btn-ghost" style={{padding:'4px 6px', color:'#b91c1c'}} title="Supprimer">
+                        <span style={{fontSize:14, lineHeight:1}}>×</span>
+                      </button>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {rdvsDossier.length === 0 && interventionsDossier.length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-4">Aucun planning pour ce chantier</p>
-          )}
-        </div>
-
-        {/* Modal RDV */}
-        {modalRdvOuvert && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => { setModalRdvOuvert(false); setRdvEnEdition(null) }}>
-            <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
-              <h2 className="font-semibold text-gray-800">{rdvEnEdition ? 'Modifier le rendez-vous' : 'Nouveau rendez-vous'}</h2>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Type de RDV *</label>
-                <select value={rdvEnEdition ? rdvEnEdition.type_rdv : nouveauRdvDossier.type_rdv}
-                  onChange={e => rdvEnEdition ? setRdvEnEdition(r => ({ ...r, type_rdv: e.target.value })) : setNouveauRdvDossier(f => ({ ...f, type_rdv: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="visite_technique_client">R1 - Visite technique client</option>
-                  <option value="visite_technique_artisan">R2 - Visite technique avec artisan</option>
-                  <option value="presentation_devis">R3 - Présentation devis</option>
-                  <option value="autres">Autre rendez-vous</option>
-                </select>
-              </div>
-              {(rdvEnEdition ? rdvEnEdition.type_rdv : nouveauRdvDossier.type_rdv) === 'autres' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Titre du rendez-vous *</label>
-                  <input type="text"
-                    value={rdvEnEdition ? rdvEnEdition.titre || '' : nouveauRdvDossier.titre}
-                    onChange={e => rdvEnEdition ? setRdvEnEdition(r => ({ ...r, titre: e.target.value })) : setNouveauRdvDossier(f => ({ ...f, titre: e.target.value }))}
-                    placeholder="Ex : Réunion de chantier, Appel fournisseur…"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date et heure *</label>
-                  <input type="datetime-local" value={rdvEnEdition ? rdvEnEdition.date_heure?.slice(0, 16) : nouveauRdvDossier.date_heure}
-                    onChange={e => rdvEnEdition ? setRdvEnEdition(r => ({ ...r, date_heure: e.target.value })) : setNouveauRdvDossier(f => ({ ...f, date_heure: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Durée</label>
-                  <select value={rdvEnEdition ? rdvEnEdition.duree_minutes : nouveauRdvDossier.duree_minutes}
-                    onChange={e => rdvEnEdition ? setRdvEnEdition(r => ({ ...r, duree_minutes: e.target.value })) : setNouveauRdvDossier(f => ({ ...f, duree_minutes: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value={30}>30 min</option>
-                    <option value={60}>1h</option>
-                    <option value={90}>1h30</option>
-                    <option value={120}>2h</option>
-                    <option value={180}>3h</option>
-                  </select>
-                </div>
-              </div>
-              {(rdvEnEdition ? rdvEnEdition.type_rdv : nouveauRdvDossier.type_rdv) === 'visite_technique_artisan' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Artisan</label>
-                  <select value={rdvEnEdition ? rdvEnEdition.artisan_id || '' : nouveauRdvDossier.artisan_id}
-                    onChange={e => rdvEnEdition ? setRdvEnEdition(r => ({ ...r, artisan_id: e.target.value })) : setNouveauRdvDossier(f => ({ ...f, artisan_id: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="">— Choisir —</option>
-                    {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
-                  </select>
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                <textarea value={rdvEnEdition ? rdvEnEdition.notes || '' : nouveauRdvDossier.notes}
-                  onChange={e => rdvEnEdition ? setRdvEnEdition(r => ({ ...r, notes: e.target.value })) : setNouveauRdvDossier(f => ({ ...f, notes: e.target.value }))}
-                  rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => { setModalRdvOuvert(false); setRdvEnEdition(null) }} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
-                <button onClick={rdvEnEdition ? modifierRdvDossier : sauvegarderRdvDossier} disabled={!rdvEnEdition && !nouveauRdvDossier.date_heure}
-                  className="flex-1 bg-blue-800 text-white py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
-                  {rdvEnEdition ? 'Enregistrer' : 'Créer le RDV'}
-                </button>
-              </div>
+                )
+              })}
             </div>
           </div>
-        )}
+
+          {/* Card Interventions artisans */}
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--ink-200)'}}>
+              <div>
+                <h2 className="page" style={{fontSize:15}}>Interventions artisans</h2>
+                <div className="eyebrow" style={{marginTop:4}}>{interventionsDossier.length} planifiée{interventionsDossier.length > 1 ? 's' : ''}</div>
+              </div>
+              <button onClick={() => { setNouvIntervArtisanId(null); setModalCreerIntervOuvert(true) }}
+                className="btn btn-primary" style={{fontSize:12.5}}>
+                <PlusIcon /> Planifier
+              </button>
+            </div>
+            <div style={{padding:'4px 16px'}}>
+              {interventionsDossier.length === 0 ? (
+                <div style={{padding:30, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucune intervention planifiée</div>
+              ) : interventionsDossier.map(i => {
+                const fmtDate = (d) => new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' })
+                const sub = i.type_intervention === 'periode'
+                  ? (i.date_debut && i.date_fin ? `Du ${fmtDate(i.date_debut)} au ${fmtDate(i.date_fin)}` : 'Période')
+                  : `${(i.jours_specifiques || []).length} jour(s) spécifique(s)`
+                return (
+                  <div key={i.id} style={{
+                    display:'grid', gridTemplateColumns:'auto 1fr auto auto', gap:12,
+                    padding:'12px 0', borderBottom:'1px solid var(--ink-100)', alignItems:'center',
+                  }}>
+                    <div style={{
+                      width:36, height:36, borderRadius:8, background:'var(--brand-50)',
+                      color:'var(--brand-800)', display:'grid', placeItems:'center',
+                    }}>
+                      <HammerIcon />
+                    </div>
+                    <div style={{minWidth:0}}>
+                      <div className="clip-1" style={{fontSize:13, fontWeight:700, color:'var(--ink-900)'}}>{i.artisan?.entreprise || '—'}</div>
+                      <div className="clip-1" style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>
+                        {sub}{i.notes && ` · ${i.notes}`}
+                      </div>
+                    </div>
+                    <Badge tone="info">Planifié</Badge>
+                    <div style={{display:'flex', gap:4}}>
+                      <button onClick={() => { setInterventionEnEdition(i); setModalInterventionOuvert(true) }}
+                        className="btn btn-ghost" style={{padding:'4px 6px'}} title="Modifier">
+                        <EditIcon />
+                      </button>
+                      <button onClick={() => supprimerInterventionDossier(i.id)}
+                        className="btn btn-ghost" style={{padding:'4px 6px', color:'#b91c1c'}} title="Supprimer">
+                        <span style={{fontSize:14, lineHeight:1}}>×</span>
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+        </div>
+
+        {/* Modal RDV (maquette) */}
+        {modalRdvOuvert && (() => {
+          const edit = !!rdvEnEdition
+          const form = edit ? rdvEnEdition : nouveauRdvDossier
+          const setForm = edit
+            ? (patch) => setRdvEnEdition(r => ({ ...r, ...(typeof patch === 'function' ? patch(r) : patch) }))
+            : (patch) => setNouveauRdvDossier(f => ({ ...f, ...(typeof patch === 'function' ? patch(f) : patch) }))
+          const types = [
+            { k: 'visite_technique_client',  l: 'R1',    sub: 'Visite client',        color: '#0094d4' },
+            { k: 'visite_technique_artisan', l: 'R2',    sub: 'Visite artisan',       color: '#16a34a' },
+            { k: 'presentation_devis',       l: 'R3',    sub: 'Présentation devis',   color: '#f59e0b' },
+            { k: 'autres',                   l: 'Autre', sub: 'RDV libre',            color: '#94a3b8' },
+          ]
+          const dateOnly = (form.date_heure || '').slice(0, 10)
+          const timeOnly = (form.date_heure || '').slice(11, 16)
+          const setDateHeure = (date, heure) => {
+            const d = date || dateOnly
+            const h = heure || timeOnly || '09:00'
+            if (!d) return
+            setForm({ date_heure: `${d}T${h}` })
+          }
+          const closeModal = () => { setModalRdvOuvert(false); setRdvEnEdition(null) }
+          const valid = !!form.date_heure
+          return (
+            <ModalShell
+              title={edit ? 'Modifier le rendez-vous' : 'Nouveau rendez-vous'}
+              subtitle={`${dossier.reference} · ${nomComplet}`}
+              onClose={closeModal}
+              width={580}
+              footer={(<>
+                <button className="btn btn-ghost" onClick={closeModal}>Annuler</button>
+                <button className="btn btn-primary" disabled={!valid}
+                  onClick={edit ? modifierRdvDossier : sauvegarderRdvDossier}>
+                  <CalIcon /> {edit ? 'Enregistrer' : 'Créer le RDV'}
+                </button>
+              </>)}
+            >
+              <div style={{padding:24, display:'flex', flexDirection:'column', gap:14}}>
+                <ModalField label="Type de rendez-vous" required>
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:6}}>
+                    {types.map(t => {
+                      const active = form.type_rdv === t.k
+                      return (
+                        <button key={t.k} type="button" onClick={() => setForm({ type_rdv: t.k })}
+                          style={{
+                            padding:'10px 6px', borderRadius:8, border:'1px solid',
+                            borderColor: active ? t.color : 'var(--ink-200)',
+                            background: active ? `${t.color}15` : '#fff',
+                            color: active ? t.color : 'var(--ink-700)',
+                            cursor:'pointer', fontWeight:700, fontSize:13,
+                            display:'flex', flexDirection:'column', alignItems:'center', gap:2,
+                            transition:'all 150ms',
+                          }}>
+                          <span>{t.l}</span>
+                          <span style={{fontSize:10, fontWeight:600, opacity:0.85}}>{t.sub}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </ModalField>
+
+                {form.type_rdv === 'autres' && (
+                  <ModalField label="Titre du rendez-vous" required>
+                    <input className="input" type="text"
+                      value={form.titre || ''}
+                      onChange={e => setForm({ titre: e.target.value })}
+                      placeholder="Ex : Réunion de chantier, Appel fournisseur…"
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                  </ModalField>
+                )}
+
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+                  <ModalField label="Date" required>
+                    <input className="input" type="date"
+                      value={dateOnly}
+                      onChange={e => setDateHeure(e.target.value, null)}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                  </ModalField>
+                  <ModalField label="Heure">
+                    <input className="input" type="time"
+                      value={timeOnly}
+                      onChange={e => setDateHeure(null, e.target.value)}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                  </ModalField>
+                  <ModalField label="Durée">
+                    <select className="input"
+                      value={form.duree_minutes || 60}
+                      onChange={e => setForm({ duree_minutes: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}}>
+                      <option value={30}>30 min</option>
+                      <option value={60}>1h</option>
+                      <option value={90}>1h30</option>
+                      <option value={120}>2h</option>
+                      <option value={180}>3h</option>
+                    </select>
+                  </ModalField>
+                  <ModalField label="Lieu">
+                    <LieuPicker value={form.lieu || 'client'} onChange={v => setForm({ lieu: v })} />
+                  </ModalField>
+                </div>
+
+                {form.type_rdv === 'visite_technique_artisan' && (
+                  <ModalField label="Artisan présent">
+                    <select className="input"
+                      value={form.artisan_id || ''}
+                      onChange={e => setForm({ artisan_id: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}}>
+                      <option value="">— Choisir —</option>
+                      {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
+                    </select>
+                  </ModalField>
+                )}
+
+                <ModalField label="Notes">
+                  <textarea className="input"
+                    value={form.notes || ''}
+                    onChange={e => setForm({ notes: e.target.value })}
+                    rows={3} placeholder="Points à aborder, préparation…"
+                    style={{minHeight:80, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
+                </ModalField>
+              </div>
+            </ModalShell>
+          )
+        })()}
 
       </div>
       )}
 
       {/* Modal Intervention edit — global (fixed overlay) */}
-      {modalInterventionOuvert && interventionEnEdition && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => { setModalInterventionOuvert(false); setInterventionEnEdition(null) }}>
-            <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
-              <h2 className="font-semibold text-gray-800">Modifier l'intervention</h2>
-              <p className="text-sm text-blue-700 font-medium">🔨 {interventionEnEdition.artisan?.entreprise}</p>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Type d'intervention</label>
-                <div className="flex gap-3">
-                  {[{ value: 'periode', label: 'Période continue' }, { value: 'jours_specifiques', label: 'Jours spécifiques' }].map(({ value, label }) => (
-                    <label key={value} className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="type_int_edit" value={value}
-                        checked={interventionEnEdition.type_intervention === value}
-                        onChange={e => setInterventionEnEdition(i => ({ ...i, type_intervention: e.target.value, jours_specifiques: [] }))}
-                        className="accent-blue-700" />
-                      <span className="text-sm text-gray-700">{label}</span>
-                    </label>
-                  ))}
+      {modalInterventionOuvert && interventionEnEdition && (() => {
+        const i = interventionEnEdition
+        const setI = (patch) => setInterventionEnEdition(prev => ({ ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) }))
+        const closeModal = () => { setModalInterventionOuvert(false); setInterventionEnEdition(null) }
+        const valid = i.type_intervention === 'periode'
+          ? (!!i.date_debut && !!i.date_fin)
+          : (i.jours_specifiques || []).length > 0
+        return (
+          <ModalShell
+            title="Modifier l'intervention"
+            subtitle={i.artisan?.entreprise || ''}
+            onClose={closeModal}
+            width={580}
+            footer={(<>
+              <button className="btn btn-ghost" onClick={closeModal}>Annuler</button>
+              <button className="btn btn-primary" disabled={!valid} onClick={modifierInterventionDossier}>
+                <CalIcon /> Enregistrer
+              </button>
+            </>)}
+          >
+            <div style={{padding:24, display:'flex', flexDirection:'column', gap:14}}>
+
+              {/* Artisan (affichage) */}
+              <div style={{
+                display:'flex', alignItems:'center', gap:10, padding:'10px 14px',
+                border:'1px solid var(--brand-200)', borderRadius:10, background:'var(--brand-50)',
+              }}>
+                <div style={{
+                  width:32, height:32, borderRadius:8, background:'var(--brand-100)',
+                  color:'var(--brand-800)', display:'grid', placeItems:'center',
+                }}><HammerIcon /></div>
+                <div style={{flex:1, minWidth:0}}>
+                  <div style={{fontSize:13, fontWeight:700, color:'var(--brand-900)'}}>{i.artisan?.entreprise || '—'}</div>
                 </div>
               </div>
-              {interventionEnEdition.type_intervention === 'periode' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Date de début</label>
-                    <input type="date" value={interventionEnEdition.date_debut || ''} onChange={e => setInterventionEnEdition(i => ({ ...i, date_debut: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Date de fin</label>
-                    <input type="date" value={interventionEnEdition.date_fin || ''} onChange={e => setInterventionEnEdition(i => ({ ...i, date_fin: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
+
+              <ModalField label="Type d'intervention">
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+                  {[
+                    { v: 'periode',           l: 'Période continue', sub: 'du X au Y' },
+                    { v: 'jours_specifiques', l: 'Jours spécifiques', sub: 'liste de dates' },
+                  ].map(o => {
+                    const active = i.type_intervention === o.v
+                    return (
+                      <button key={o.v} type="button" onClick={() => setI({ type_intervention: o.v, jours_specifiques: [] })}
+                        style={{
+                          padding:'10px 12px', borderRadius:8, border:'1px solid',
+                          borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
+                          background: active ? 'var(--brand-50)' : '#fff',
+                          color: active ? 'var(--brand-800)' : 'var(--ink-700)',
+                          cursor:'pointer', fontWeight:700, fontSize:13,
+                          display:'flex', flexDirection:'column', gap:2, alignItems:'flex-start',
+                        }}>
+                        <span>{o.l}</span>
+                        <span style={{fontSize:10.5, fontWeight:500, opacity:0.8}}>{o.sub}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </ModalField>
+
+              {i.type_intervention === 'periode' && (
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+                  <ModalField label="Date de début" required>
+                    <input className="input" type="date" value={i.date_debut || ''}
+                      onChange={e => setI({ date_debut: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                  </ModalField>
+                  <ModalField label="Date de fin" required>
+                    <input className="input" type="date" value={i.date_fin || ''}
+                      onChange={e => setI({ date_fin: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                  </ModalField>
                 </div>
               )}
-              {interventionEnEdition.type_intervention === 'jours_specifiques' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Ajouter des jours</label>
-                  <input type="date"
+
+              {i.type_intervention === 'jours_specifiques' && (
+                <ModalField label="Ajouter des jours">
+                  <input className="input" type="date"
                     onChange={e => {
                       const date = e.target.value
                       if (!date) return
-                      setInterventionEnEdition(i => ({
-                        ...i,
-                        jours_specifiques: (i.jours_specifiques || []).includes(date)
-                          ? (i.jours_specifiques || []).filter(j => j !== date)
-                          : [...(i.jours_specifiques || []), date].sort()
+                      setI(prev => ({
+                        ...prev,
+                        jours_specifiques: (prev.jours_specifiques || []).includes(date)
+                          ? (prev.jours_specifiques || []).filter(j => j !== date)
+                          : [...(prev.jours_specifiques || []), date].sort(),
                       }))
                       e.target.value = ''
                     }}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2" />
-                  <div className="flex flex-wrap gap-1">
-                    {(interventionEnEdition.jours_specifiques || []).map(j => (
-                      <span key={j} className="flex items-center gap-1 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                        {new Date(j).toLocaleDateString('fr-FR')}
-                        <button onClick={() => setInterventionEnEdition(i => ({ ...i, jours_specifiques: i.jours_specifiques.filter(d => d !== j) }))}
-                          className="text-blue-400 hover:text-red-500 ml-1">×</button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Horaire</label>
-                <div className="flex items-center gap-2 mb-2">
-                  <input type="checkbox" id="int-edit-journee" checked={!interventionEnEdition.heure_debut} onChange={e => setInterventionEnEdition(i => ({ ...i, heure_debut: e.target.checked ? '' : '08:00' }))} className="accent-blue-700" />
-                  <label htmlFor="int-edit-journee" className="text-sm text-gray-700 cursor-pointer">Journée entière</label>
-                </div>
-                {interventionEnEdition.heure_debut && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Heure de début</label>
-                      <input type="time" value={interventionEnEdition.heure_debut} onChange={e => setInterventionEnEdition(i => ({ ...i, heure_debut: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Durée</label>
-                      <select value={interventionEnEdition.duree_minutes || 60} onChange={e => setInterventionEnEdition(i => ({ ...i, duree_minutes: Number(e.target.value) }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        {[30,60,90,120,180,240,300,360,480].map(m => <option key={m} value={m}>{m < 60 ? `${m} min` : `${m/60}h${m%60 ? m%60 : ''}`}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                <textarea value={interventionEnEdition.notes || ''} onChange={e => setInterventionEnEdition(i => ({ ...i, notes: e.target.value }))}
-                  rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => { setModalInterventionOuvert(false); setInterventionEnEdition(null) }} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
-                <button onClick={modifierInterventionDossier} className="flex-1 bg-blue-800 text-white py-2 rounded-lg text-sm hover:bg-blue-900">Enregistrer</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-      {/* ── COMPTES-RENDUS ── */}
-      {onglet === 'cr' && (
-      <div style={{display:'flex',flexDirection:'column',gap:16}}>
-
-        <div className="card" style={{padding:22}}>
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-800">📝 Comptes-rendus ({comptesRendus.length})</h2>
-            <div className="flex gap-2">
-              <button onClick={() => setCrManuelModal(true)}
-                className="text-sm border border-blue-300 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50">
-                + CR manuel
-              </button>
-              <button onClick={() => { setCrModal(true); setCrEtape(1) }}
-                className="text-sm bg-blue-800 text-white px-3 py-1.5 rounded-lg hover:bg-blue-900 flex items-center gap-1.5">
-                ✨ Nouveau CR avec IA
-              </button>
-            </div>
-          </div>
-
-          {comptesRendus.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">Aucun compte-rendu</p>
-          ) : (
-            <div className="space-y-3">
-              {comptesRendus.map(cr => (
-                <div key={cr.id} className={`border rounded-xl overflow-hidden ${cr.valide ? 'border-green-200' : 'border-gray-100'}`}>
-                  <div className={`flex items-center justify-between px-4 py-3 ${cr.valide ? 'bg-green-50' : 'bg-gray-50'}`}>
-                    <div>
-                      <span className="text-sm font-medium text-gray-800">
-                        {cr.type_visite === 'r1' ? 'R1 – Visite technique' : cr.type_visite === 'r2' ? 'R2 – Visite artisans' : cr.type_visite === 'r3' ? 'R3 – Présentation devis' : cr.type_visite === 'suivi' ? 'Suivi de chantier' : cr.type_visite === 'reception' ? 'Réception' : cr.type_visite}
-                      </span>
-                      {cr.date_visite && (
-                        <span className="text-xs text-gray-400 ml-2">- {new Date(cr.date_visite).toLocaleDateString('fr-FR')}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button onClick={() => toggleValide(cr.id, !cr.valide)}
-                        className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all ${cr.valide ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-                        {cr.valide ? '✓ Publié' : 'Brouillon'}
-                      </button>
-                      <button onClick={() => supprimerCR(cr.id)} className="text-red-300 hover:text-red-500 text-xs">✕</button>
-                    </div>
-                  </div>
-                  {cr.contenu_final && (
-                    <div className="px-4 py-3 border-t border-gray-100">
-                      <button
-                        onClick={() => generatePDF('cr', cr.id)}
-                        disabled={generatingPDF === `cr-${cr.id}`}
-                        className="text-xs text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 disabled:opacity-50">
-                        {generatingPDF === `cr-${cr.id}` ? '⏳ Génération...' : '📄 Télécharger le PDF'}
-                      </button>
+                    style={{height:38, padding:'0 12px', fontSize:13}} />
+                  {(i.jours_specifiques || []).length > 0 && (
+                    <div style={{display:'flex', flexWrap:'wrap', gap:6, marginTop:8}}>
+                      {(i.jours_specifiques || []).map(j => (
+                        <span key={j} style={{
+                          display:'inline-flex', alignItems:'center', gap:4,
+                          fontSize:11.5, fontWeight:600, background:'var(--brand-50)', color:'var(--brand-800)',
+                          padding:'4px 10px', borderRadius:99, border:'1px solid var(--brand-200)',
+                        }}>
+                          {new Date(j).toLocaleDateString('fr-FR')}
+                          <button onClick={() => setI(p => ({ ...p, jours_specifiques: p.jours_specifiques.filter(d => d !== j) }))}
+                            style={{border:'none', background:'transparent', color:'var(--brand-700)', cursor:'pointer', fontSize:14, lineHeight:1, padding:0, marginLeft:2}}>×</button>
+                        </span>
+                      ))}
                     </div>
                   )}
-                </div>
-              ))}
+                </ModalField>
+              )}
+
+              <ModalField label="Lieu">
+                <LieuPicker value={i.lieu || 'client'} onChange={v => setI({ lieu: v })} />
+              </ModalField>
+
+              <ModalField label="Horaire">
+                <label style={{
+                  display:'flex', alignItems:'center', gap:8, padding:'8px 12px',
+                  border:'1px solid var(--ink-200)', borderRadius:8, cursor:'pointer', fontSize:13,
+                }}>
+                  <input type="checkbox" checked={!i.heure_debut}
+                    onChange={e => setI({ heure_debut: e.target.checked ? '' : '08:00' })}
+                    style={{accentColor:'var(--brand-500)'}} />
+                  <span style={{color:'var(--ink-700)', fontWeight:500}}>Journée entière</span>
+                </label>
+                {i.heure_debut && (
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:8}}>
+                    <input className="input" type="time" value={i.heure_debut}
+                      onChange={e => setI({ heure_debut: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                    <select className="input" value={i.duree_minutes || 60}
+                      onChange={e => setI({ duree_minutes: Number(e.target.value) })}
+                      style={{height:38, padding:'0 12px', fontSize:13}}>
+                      {[30,60,90,120,180,240,300,360,480].map(m => (
+                        <option key={m} value={m}>{m < 60 ? `${m} min` : `${m/60}h${m%60 ? m%60 : ''}`}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </ModalField>
+
+              <ModalField label="Notes">
+                <textarea className="input" value={i.notes || ''}
+                  onChange={e => setI({ notes: e.target.value })}
+                  rows={3} placeholder="Précisions, accès chantier, contact site…"
+                  style={{minHeight:80, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
+              </ModalField>
+
             </div>
-          )}
+          </ModalShell>
+        )
+      })()}
+
+      {/* ── COMPTES-RENDUS (maquette : 2 cols liste + sidebar IA) ── */}
+      {onglet === 'cr' && (() => {
+        const typeMeta = {
+          r1:        { color: '#0094d4', label: 'R1', long: 'R1 — Visite technique' },
+          r2:        { color: '#16a34a', label: 'R2', long: 'R2 — Visite artisans' },
+          r3:        { color: '#f59e0b', label: 'R3', long: 'R3 — Présentation devis' },
+          suivi:     { color: '#94a3b8', label: 'Suivi', long: 'Suivi de chantier' },
+          reception: { color: '#16a34a', label: 'Récept.', long: 'Réception' },
+        }
+        return (
+        <div className="cr-grid" style={{display:'grid', gridTemplateColumns:'1fr 320px', gap:18}}>
+
+          {/* Liste CR */}
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--ink-200)', gap:8, flexWrap:'wrap'}}>
+              <div>
+                <h2 className="page" style={{fontSize:15}}>Comptes-rendus de visite</h2>
+                <div className="eyebrow" style={{marginTop:4}}>
+                  {comptesRendus.length} CR · les CR publiés sont visibles dans l'espace client
+                </div>
+              </div>
+              <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                <button onClick={() => setCrManuelModal(true)} className="btn btn-ghost" style={{fontSize:12.5}}>
+                  <PlusIcon /> CR manuel
+                </button>
+                <button onClick={() => { setCrModal(true); setCrEtape(1) }} className="btn btn-primary" style={{fontSize:12.5}}>
+                  ✨ Générer avec l'IA
+                </button>
+              </div>
+            </div>
+
+            <div style={{padding:'14px 22px', display:'flex', flexDirection:'column', gap:14}}>
+              {comptesRendus.length === 0 && (
+                <div style={{padding:30, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+                  Aucun compte-rendu pour le moment
+                </div>
+              )}
+              {comptesRendus.map(cr => {
+                const meta = typeMeta[cr.type_visite] || { color: '#94a3b8', label: cr.type_visite, long: cr.type_visite }
+                const fmtD = cr.date_visite ? new Date(cr.date_visite).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' }) : null
+                return (
+                  <div key={cr.id} style={{
+                    padding:16, border:'1px solid var(--ink-200)', borderRadius:12, background:'#fff', position:'relative',
+                  }}>
+                    <div style={{display:'flex', gap:10, alignItems:'center', marginBottom:10, flexWrap:'wrap'}}>
+                      <span style={{
+                        padding:'2px 8px', borderRadius:6, fontSize:11, fontWeight:800,
+                        background: meta.color, color:'#fff', letterSpacing:0.04,
+                      }}>{meta.label}</span>
+                      <span style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>{meta.long}</span>
+                      <div style={{flex:1}} />
+                      <button onClick={() => toggleValide(cr.id, !cr.valide)}
+                        style={{
+                          padding:'3px 10px', borderRadius:99, fontSize:11, fontWeight:700,
+                          border:'none', cursor:'pointer',
+                          background: cr.valide ? 'rgba(22,163,74,0.12)' : 'rgba(148,163,184,0.18)',
+                          color: cr.valide ? '#15803d' : 'var(--ink-600)',
+                        }}>
+                        {cr.valide ? '✓ Visible client' : 'Brouillon'}
+                      </button>
+                      {fmtD && (
+                        <span className="tnum" style={{fontSize:11.5, color:'var(--ink-400)'}}>{fmtD}</span>
+                      )}
+                    </div>
+                    {cr.contenu_final && (
+                      <p className="clip-2" style={{fontSize:13, color:'var(--ink-700)', lineHeight:1.55, margin:0}}>
+                        {cr.contenu_final.slice(0, 300)}{cr.contenu_final.length > 300 ? '…' : ''}
+                      </p>
+                    )}
+                    <div style={{
+                      display:'flex', gap:8, marginTop:12, paddingTop:10,
+                      borderTop:'1px solid var(--ink-100)', fontSize:11, color:'var(--ink-500)',
+                      alignItems:'center', flexWrap:'wrap',
+                    }}>
+                      <div style={{flex:1}} />
+                      {cr.contenu_final && (
+                        <button onClick={() => generatePDF('cr', cr.id)} disabled={generatingPDF === `cr-${cr.id}`}
+                          className="btn btn-ghost" style={{padding:'3px 10px', fontSize:11}}>
+                          <DlIcon /> {generatingPDF === `cr-${cr.id}` ? 'Génération…' : 'PDF'}
+                        </button>
+                      )}
+                      <button onClick={() => supprimerCR(cr.id)} className="btn btn-ghost" style={{padding:'3px 10px', fontSize:11, color:'#b91c1c'}}>
+                        × Supprimer
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Sidebar IA */}
+          <div style={{display:'flex', flexDirection:'column', gap:14}}>
+            <div className="card" style={{padding:18, background:'linear-gradient(135deg, rgba(0,148,212,0.06), rgba(0,87,142,0.02))'}}>
+              <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10}}>
+                <div style={{
+                  width:32, height:32, borderRadius:8, background:'var(--brand-500)', color:'#fff',
+                  display:'grid', placeItems:'center', fontSize:16,
+                }}>✨</div>
+                <span style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>CR généré par IA</span>
+              </div>
+              <ol style={{paddingLeft:20, fontSize:12.5, color:'var(--ink-700)', lineHeight:1.6, margin:0}}>
+                <li>Configure (type, date, intervenants)</li>
+                <li>Dépose tes notes + photos + vocal</li>
+                <li>Relis et valide le rendu structuré</li>
+              </ol>
+              <button onClick={() => { setCrModal(true); setCrEtape(1) }} className="btn btn-primary" style={{marginTop:14, width:'100%', justifyContent:'center'}}>
+                ✨ Démarrer
+              </button>
+            </div>
+
+            <div className="card" style={{padding:18}}>
+              <div className="eyebrow" style={{marginBottom:10}}>Documents joignables au CR</div>
+              {documents.length === 0 ? (
+                <div style={{fontSize:12, color:'var(--ink-400)'}}>Aucun document — ajoute des fichiers dans l'onglet Documents.</div>
+              ) : (
+                <div style={{display:'flex', flexDirection:'column', gap:8, fontSize:12.5, color:'var(--ink-700)'}}>
+                  {documents.slice(0, 6).map(doc => (
+                    <label key={doc.id} style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer'}}>
+                      <input type="checkbox" checked={doc.dans_restitution || false}
+                        onChange={e => toggleDansRestitution(doc.id, e.target.checked)}
+                        style={{accentColor:'var(--brand-500)'}} />
+                      <DocIcon />
+                      <span className="clip-1" style={{flex:1, minWidth:0}}>{doc.nom}</span>
+                    </label>
+                  ))}
+                  {documents.length > 6 && (
+                    <button onClick={() => setOnglet('documents')} className="btn btn-ghost" style={{fontSize:11, padding:'4px 8px', alignSelf:'flex-start'}}>
+                      Voir les {documents.length - 6} autres
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
         </div>
+        )
+      })()}
 
         {/* ── MODAL CR SANS IA ── */}
         {crManuelModal && (
@@ -3582,190 +4347,266 @@ export default function FicheChantier({ params }) {
           </div>
         )}
 
-
-      </div>
-      )}
-
-      {/* ── MESSAGES ── (AMO uniquement) */}
+      {/* ── MESSAGES (maquette : conversation client AMO) ── */}
       {onglet === 'messages' && dossier?.typologie === 'amo' && (
-      <div>
-        <div className="card" style={{padding:22}}>
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-800">Messagerie client</h2>
-            {nbMsgNonLus > 0 && (
-              <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full font-medium">
-                {nbMsgNonLus} message{nbMsgNonLus > 1 ? 's' : ''} non lu{nbMsgNonLus > 1 ? 's' : ''}
-              </span>
-            )}
+      <div className="card" style={{padding:0, overflow:'hidden', display:'flex', flexDirection:'column', minHeight:520}}>
+        {/* Header */}
+        <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--ink-200)', gap:8, flexWrap:'wrap'}}>
+          <div>
+            <h2 className="page" style={{fontSize:15}}>Conversation client</h2>
+            <div className="eyebrow" style={{marginTop:4}}>Visible dans l'espace client AMO · {messages.length} message{messages.length > 1 ? 's' : ''}</div>
           </div>
+          <div style={{display:'flex', gap:8, alignItems:'center'}}>
+            {nbMsgNonLus > 0 && (
+              <Badge tone="bad">{nbMsgNonLus} non lu{nbMsgNonLus > 1 ? 's' : ''}</Badge>
+            )}
+            <Badge tone="ok">● Temps réel</Badge>
+          </div>
+        </div>
 
-          <div className="border border-gray-100 rounded-xl p-3 max-h-[60vh] overflow-y-auto space-y-3 bg-gray-50">
-            {messages.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">Aucun message pour ce chantier</p>
-            ) : (
-              messages.map(msg => {
-                const isClient = msg.auteur_role === 'client'
-                return (
-                  <div key={msg.id} className={`flex ${isClient ? 'justify-start' : 'justify-end'}`}>
-                    <div className={`max-w-xs sm:max-w-sm rounded-2xl px-3 py-2 ${isClient ? 'bg-white border border-gray-200' : 'bg-blue-800'}`}>
-                      <p className={`text-xs font-medium mb-0.5 ${isClient ? 'text-gray-500' : 'text-blue-200'}`}>
-                        {isClient ? `${msg.auteur?.prenom || 'Client'} (client)` : `${msg.auteur?.prenom || 'Équipe'}`}
-                      </p>
-                      <p className={`text-sm ${isClient ? 'text-gray-800' : 'text-white'}`}>{msg.contenu}</p>
-                      <p className={`text-xs mt-1 opacity-60 ${isClient ? 'text-gray-500' : 'text-white'}`}>
-                        {new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      </p>
+        {/* Fil des messages */}
+        <div style={{
+          flex:1, padding:'24px 22px', background:'var(--surface-2)',
+          display:'flex', flexDirection:'column', gap:14, overflowY:'auto',
+          maxHeight:'min(70vh, 640px)',
+        }}>
+          {messages.length === 0 ? (
+            <div style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:32}}>
+              Aucun message pour le moment — démarre la conversation.
+            </div>
+          ) : (
+            messages.map(msg => {
+              const isClient = msg.auteur_role === 'client'
+              const who = isClient
+                ? (msg.auteur?.prenom ? `${msg.auteur.prenom}${msg.auteur.nom ? ' ' + msg.auteur.nom : ''}` : (client ? `${client.prenom || ''} ${client.nom || ''}`.trim() : 'Client'))
+                : (msg.auteur?.prenom ? `${msg.auteur.prenom}${msg.auteur.nom ? ' ' + msg.auteur.nom[0] + '.' : ''}` : 'Équipe')
+              const when = new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+              return (
+                <div key={msg.id} style={{display:'flex', gap:10, justifyContent: isClient ? 'flex-start' : 'flex-end'}}>
+                  {isClient && <Avatar name={who} color="#0094d4" size={28} />}
+                  <div style={{maxWidth:'min(70%, 420px)', minWidth:0}}>
+                    <div style={{
+                      background: isClient ? '#fff' : 'var(--brand-500)',
+                      color: isClient ? 'var(--ink-800)' : '#fff',
+                      padding: '10px 14px',
+                      borderRadius: isClient ? '12px 12px 12px 4px' : '12px 12px 4px 12px',
+                      fontSize: 13.5, lineHeight: 1.5,
+                      boxShadow: isClient ? '0 1px 2px rgba(0,0,0,0.04)' : 'none',
+                      wordBreak: 'break-word',
+                      opacity: String(msg.id).startsWith('tmp-') ? 0.7 : 1,
+                    }}>
+                      {msg.contenu}
+                    </div>
+                    <div style={{fontSize:10.5, color:'var(--ink-400)', marginTop:4, textAlign: isClient ? 'left' : 'right'}}>
+                      {who} · {when}
                     </div>
                   </div>
-                )
-              })
-            )}
-          </div>
+                  {!isClient && <Avatar name={who} color="#00578e" size={28} />}
+                </div>
+              )
+            })
+          )}
+          <div ref={messagesEndRef} />
+        </div>
 
-          <div className="flex gap-2">
-            <input type="text" value={reponseMsg}
-              onChange={e => setReponseMsg(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && envoyerReponse()}
-              placeholder="Répondre au client..."
-              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <button onClick={envoyerReponse} disabled={!reponseMsg.trim() || sendingMsg}
-              className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
-              {sendingMsg ? '...' : 'Envoyer'}
-            </button>
-          </div>
+        {/* Champ d'envoi */}
+        <div style={{padding:'14px 18px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:10, alignItems:'center'}}>
+          <input className="input" type="text"
+            value={reponseMsg}
+            onChange={e => setReponseMsg(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); envoyerReponse() } }}
+            placeholder="Écrire un message au client…"
+            disabled={sendingMsg}
+            style={{flex:1, height:42}} />
+          <button onClick={envoyerReponse} disabled={!reponseMsg.trim() || sendingMsg}
+            className="btn btn-primary" style={{height:42, flexShrink:0}}>
+            {sendingMsg ? '…' : '➤ Envoyer'}
+          </button>
         </div>
       </div>
       )}
 
-      {/* Modal Créer Intervention */}
-      {modalCreerIntervOuvert && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
-          onClick={() => setModalCreerIntervOuvert(false)}>
-          <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
-            <h2 className="font-semibold text-gray-800">Planifier une intervention</h2>
+      {/* Modal Créer Intervention (maquette) */}
+      {modalCreerIntervOuvert && (() => {
+        const f = nouvIntervForm
+        const setF = (patch) => setNouvIntervForm(prev => ({ ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) }))
+        const closeModal = () => { setModalCreerIntervOuvert(false); setNouvIntervArtisanId(null) }
+        const valid = !!nouvIntervArtisanId && (
+          f.type_intervention === 'periode'
+            ? (!!f.date_debut && !!f.date_fin)
+            : (f.jours_specifiques || []).length > 0
+        )
+        const artisanSelected = devis.find(d => d.artisan_id === nouvIntervArtisanId)?.artisan
+        return (
+          <ModalShell
+            title="Planifier une intervention"
+            subtitle={`${dossier.reference} · ${nomComplet}`}
+            onClose={closeModal}
+            width={580}
+            footer={(<>
+              <button className="btn btn-ghost" onClick={closeModal}>Annuler</button>
+              <button className="btn btn-primary" disabled={!valid || saving} onClick={creerInterventionDossier}>
+                <CalIcon /> {saving ? 'Enregistrement…' : 'Planifier'}
+              </button>
+            </>)}
+          >
+            <div style={{padding:24, display:'flex', flexDirection:'column', gap:14}}>
 
-            {/* Sélecteur artisan (si pas pré-sélectionné depuis un devis) */}
-            {!nouvIntervArtisanId && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Artisan *</label>
-                <select
-                  value={nouvIntervArtisanId || ''}
-                  onChange={e => setNouvIntervArtisanId(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="">— Choisir un artisan —</option>
-                  {devis.filter(d => d.statut === 'accepte').map(d => (
-                    <option key={d.artisan_id} value={d.artisan_id}>{d.artisan?.entreprise}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {nouvIntervArtisanId && (
-              <p className="text-sm font-medium text-green-700">
-                🔨 {devis.find(d => d.artisan_id === nouvIntervArtisanId)?.artisan?.entreprise}
-              </p>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Type d&apos;intervention</label>
-              <div className="flex gap-3">
-                {[{ value: 'periode', label: 'Période continue' }, { value: 'jours_specifiques', label: 'Jours spécifiques' }].map(({ value, label }) => (
-                  <label key={value} className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="nouv_type_int" value={value}
-                      checked={nouvIntervForm.type_intervention === value}
-                      onChange={e => setNouvIntervForm(f => ({ ...f, type_intervention: e.target.value, jours_specifiques: [] }))}
-                      className="accent-blue-700" />
-                    <span className="text-sm text-gray-700">{label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {nouvIntervForm.type_intervention === 'periode' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date de début *</label>
-                  <input type="date" value={nouvIntervForm.date_debut}
-                    onChange={e => setNouvIntervForm(f => ({ ...f, date_debut: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date de fin *</label>
-                  <input type="date" value={nouvIntervForm.date_fin}
-                    onChange={e => setNouvIntervForm(f => ({ ...f, date_fin: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-            )}
-
-            {nouvIntervForm.type_intervention === 'jours_specifiques' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ajouter des jours</label>
-                <input type="date"
-                  onChange={e => {
-                    const date = e.target.value
-                    if (!date) return
-                    setNouvIntervForm(f => ({
-                      ...f,
-                      jours_specifiques: f.jours_specifiques.includes(date)
-                        ? f.jours_specifiques.filter(j => j !== date)
-                        : [...f.jours_specifiques, date].sort()
-                    }))
-                    e.target.value = ''
-                  }}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2" />
-                <div className="flex flex-wrap gap-1">
-                  {nouvIntervForm.jours_specifiques.map(j => (
-                    <span key={j} className="flex items-center gap-1 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                      {new Date(j).toLocaleDateString('fr-FR')}
-                      <button onClick={() => setNouvIntervForm(f => ({ ...f, jours_specifiques: f.jours_specifiques.filter(d => d !== j) }))}>×</button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Horaire</label>
-              <div className="flex items-center gap-2 mb-2">
-                <input type="checkbox" id="int-new-journee" checked={!nouvIntervForm.heure_debut} onChange={e => setNouvIntervForm(f => ({ ...f, heure_debut: e.target.checked ? '' : '08:00' }))} className="accent-blue-700" />
-                <label htmlFor="int-new-journee" className="text-sm text-gray-700 cursor-pointer">Journée entière</label>
-              </div>
-              {nouvIntervForm.heure_debut && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Heure de début</label>
-                    <input type="time" value={nouvIntervForm.heure_debut} onChange={e => setNouvIntervForm(f => ({ ...f, heure_debut: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              {/* Artisan */}
+              <ModalField label="Artisan" required>
+                {artisanSelected ? (
+                  <div style={{
+                    display:'flex', alignItems:'center', gap:10, padding:'10px 14px',
+                    border:'1px solid var(--brand-200)', borderRadius:10, background:'var(--brand-50)',
+                  }}>
+                    <div style={{
+                      width:32, height:32, borderRadius:8, background:'var(--brand-100)',
+                      color:'var(--brand-800)', display:'grid', placeItems:'center',
+                    }}>
+                      <HammerIcon />
+                    </div>
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{fontSize:13, fontWeight:700, color:'var(--brand-900)'}}>{artisanSelected.entreprise}</div>
+                      {artisanSelected.metier && <div style={{fontSize:11, color:'var(--brand-700)', marginTop:2}}>{artisanSelected.metier}</div>}
+                    </div>
+                    <button onClick={() => setNouvIntervArtisanId(null)} className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>Changer</button>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Durée</label>
-                    <select value={nouvIntervForm.duree_minutes} onChange={e => setNouvIntervForm(f => ({ ...f, duree_minutes: Number(e.target.value) }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      {[30,60,90,120,180,240,300,360,480].map(m => <option key={m} value={m}>{m < 60 ? `${m} min` : `${m/60}h${m%60 ? m%60 : ''}`}</option>)}
-                    </select>
-                  </div>
+                ) : (
+                  <select className="input"
+                    value={nouvIntervArtisanId || ''}
+                    onChange={e => setNouvIntervArtisanId(e.target.value)}
+                    style={{height:38, padding:'0 12px', fontSize:13}}>
+                    <option value="">— Choisir un artisan (devis signé) —</option>
+                    {devis.filter(d => d.statut === 'accepte').map(d => (
+                      <option key={d.artisan_id} value={d.artisan_id}>
+                        {d.artisan?.entreprise}{d.artisan?.metier ? ` · ${d.artisan.metier}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </ModalField>
+
+              {/* Type d'intervention (segmented) */}
+              <ModalField label="Type d'intervention">
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+                  {[
+                    { v: 'periode',            l: 'Période continue', sub: 'du X au Y'   },
+                    { v: 'jours_specifiques',  l: 'Jours spécifiques', sub: 'liste de dates' },
+                  ].map(o => {
+                    const active = f.type_intervention === o.v
+                    return (
+                      <button key={o.v} type="button" onClick={() => setF({ type_intervention: o.v, jours_specifiques: [] })}
+                        style={{
+                          padding:'10px 12px', borderRadius:8, border:'1px solid',
+                          borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
+                          background: active ? 'var(--brand-50)' : '#fff',
+                          color: active ? 'var(--brand-800)' : 'var(--ink-700)',
+                          cursor:'pointer', fontWeight:700, fontSize:13,
+                          display:'flex', flexDirection:'column', gap:2, alignItems:'flex-start',
+                        }}>
+                        <span>{o.l}</span>
+                        <span style={{fontSize:10.5, fontWeight:500, opacity:0.8}}>{o.sub}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </ModalField>
+
+              {/* Dates période */}
+              {f.type_intervention === 'periode' && (
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+                  <ModalField label="Date de début" required>
+                    <input className="input" type="date" value={f.date_debut}
+                      onChange={e => setF({ date_debut: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                  </ModalField>
+                  <ModalField label="Date de fin" required>
+                    <input className="input" type="date" value={f.date_fin}
+                      onChange={e => setF({ date_fin: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                  </ModalField>
                 </div>
               )}
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-              <textarea value={nouvIntervForm.notes}
-                onChange={e => setNouvIntervForm(f => ({ ...f, notes: e.target.value }))}
-                rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            </div>
+              {/* Jours spécifiques */}
+              {f.type_intervention === 'jours_specifiques' && (
+                <ModalField label="Ajouter des jours">
+                  <input className="input" type="date"
+                    onChange={e => {
+                      const date = e.target.value
+                      if (!date) return
+                      setF(prev => ({
+                        ...prev,
+                        jours_specifiques: prev.jours_specifiques.includes(date)
+                          ? prev.jours_specifiques.filter(j => j !== date)
+                          : [...prev.jours_specifiques, date].sort(),
+                      }))
+                      e.target.value = ''
+                    }}
+                    style={{height:38, padding:'0 12px', fontSize:13}} />
+                  {f.jours_specifiques.length > 0 && (
+                    <div style={{display:'flex', flexWrap:'wrap', gap:6, marginTop:8}}>
+                      {f.jours_specifiques.map(j => (
+                        <span key={j} style={{
+                          display:'inline-flex', alignItems:'center', gap:4,
+                          fontSize:11.5, fontWeight:600, background:'var(--brand-50)', color:'var(--brand-800)',
+                          padding:'4px 10px', borderRadius:99, border:'1px solid var(--brand-200)',
+                        }}>
+                          {new Date(j).toLocaleDateString('fr-FR')}
+                          <button onClick={() => setF(p => ({ ...p, jours_specifiques: p.jours_specifiques.filter(d => d !== j) }))}
+                            style={{border:'none', background:'transparent', color:'var(--brand-700)', cursor:'pointer', fontSize:14, lineHeight:1, padding:0, marginLeft:2}}>×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </ModalField>
+              )}
 
-            <div className="flex gap-2">
-              <button onClick={() => { setModalCreerIntervOuvert(false); setNouvIntervArtisanId(null) }}
-                className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
-              <button onClick={creerInterventionDossier}
-                disabled={!nouvIntervArtisanId || saving || (nouvIntervForm.type_intervention === 'periode' && (!nouvIntervForm.date_debut || !nouvIntervForm.date_fin))}
-                className="flex-1 bg-green-700 text-white py-2 rounded-lg text-sm hover:bg-green-800 disabled:opacity-50">
-                {saving ? 'Enregistrement...' : 'Planifier'}
-              </button>
+              {/* Lieu */}
+              <ModalField label="Lieu">
+                <LieuPicker value={f.lieu || 'client'} onChange={v => setF({ lieu: v })} />
+              </ModalField>
+
+              {/* Horaire */}
+              <ModalField label="Horaire">
+                <label style={{
+                  display:'flex', alignItems:'center', gap:8, padding:'8px 12px',
+                  border:'1px solid var(--ink-200)', borderRadius:8, cursor:'pointer', fontSize:13,
+                }}>
+                  <input type="checkbox" checked={!f.heure_debut}
+                    onChange={e => setF({ heure_debut: e.target.checked ? '' : '08:00' })}
+                    style={{accentColor:'var(--brand-500)'}} />
+                  <span style={{color:'var(--ink-700)', fontWeight:500}}>Journée entière</span>
+                </label>
+                {f.heure_debut && (
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:8}}>
+                    <input className="input" type="time" value={f.heure_debut}
+                      onChange={e => setF({ heure_debut: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                    <select className="input" value={f.duree_minutes}
+                      onChange={e => setF({ duree_minutes: Number(e.target.value) })}
+                      style={{height:38, padding:'0 12px', fontSize:13}}>
+                      {[30,60,90,120,180,240,300,360,480].map(m => (
+                        <option key={m} value={m}>{m < 60 ? `${m} min` : `${m/60}h${m%60 ? m%60 : ''}`}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </ModalField>
+
+              {/* Notes */}
+              <ModalField label="Notes">
+                <textarea className="input" value={f.notes}
+                  onChange={e => setF({ notes: e.target.value })}
+                  rows={3} placeholder="Précisions, accès chantier, contact site…"
+                  style={{minHeight:80, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
+              </ModalField>
+
             </div>
-          </div>
-        </div>
-      )}
-      
+          </ModalShell>
+        )
+      })()}
+
       {/* Visionneuse de document */}
       {docViewer && (
         <DocViewer url={docViewer.url} nom={docViewer.nom} onClose={() => setDocViewer(null)} />

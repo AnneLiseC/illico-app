@@ -168,7 +168,7 @@ export default function FicheArtisan({ params }) {
   const decExpiree = diffDec !== null && diffDec < 0
 
   return (
-    <div className="page-enter" style={{padding:'28px 32px', display:'flex', flexDirection:'column', gap:18}}>
+    <div className="page-enter page-pad" style={{display:'flex', flexDirection:'column', gap:18}}>
 
       {/* Retour */}
       <button className="btn btn-ghost" style={{alignSelf:'flex-start', fontSize:13}}

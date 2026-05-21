@@ -294,7 +294,7 @@ export default function Statistiques() {
   const dossierSignesPct = mN.nb > 0 ? Math.round(mN.avecDevis / mN.nb * 100) : 0
 
   return (
-    <div className="page-enter" style={{display:'flex', flexDirection:'column', gap:24}}>
+    <div className="page-enter page-pad" style={{display:'flex', flexDirection:'column', gap:24}}>
 
       {/* En-tête */}
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:16, flexWrap:'wrap'}}>
