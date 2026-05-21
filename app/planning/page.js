@@ -62,7 +62,6 @@ export default function Planning() {
   const [googleConnected, setGoogleConnected] = useState(false)
   const [syncing, setSyncing]                 = useState(false)
   const [syncMessage, setSyncMessage]         = useState('')
-  const [sidebarOuverte, setSidebarOuverte]   = useState(false)
   const [calendarView, setCalendarView]       = useState('timeGridWeek')
   const [quickMenu, setQuickMenu]             = useState(null) // { date, x, y }
 
@@ -373,118 +372,54 @@ export default function Planning() {
   const inputCls = "input"
   const labelCls = "eyebrow"
 
+  const rdvCeMois = rdvs.filter(r => {
+    const d = new Date(r.date_heure), m = new Date()
+    return d.getMonth() === m.getMonth() && d.getFullYear() === m.getFullYear()
+  }).length
+
   return (
-    <div className="page-enter" style={{ background: 'var(--bg)' }}>
+    <div className="page-enter page-pad" style={{ display:'flex', flexDirection:'column', gap:18, maxWidth:1400, margin:'0 auto' }}>
 
-      {/* ── HEADER ─────────────────────────────────────────────────────────── */}
-      <header style={{ background: COLORS.navy, padding:'12px 24px', position:'sticky', top:0, zIndex:40 }}>
-        <div style={{maxWidth:'100%', display:'flex', flexDirection:'column', gap:8}}>
-
-          {/* Ligne 1 : nav + boutons */}
-          <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
-            <div style={{display:'flex', alignItems:'center', gap:16}}>
-              {/* Bouton sidebar — mobile uniquement */}
-              <button onClick={() => setSidebarOuverte(o => !o)}
-                className="sm:hidden" style={{color:'#93c5fd', background:'none', border:'none', cursor:'pointer', padding:4}}>
-                <svg width={20} height={20} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-              <button onClick={() => router.push('/dashboard')}
-                className="hidden sm:block"
-                style={{color:'#93c5fd', fontSize:13, background:'none', border:'none', cursor:'pointer'}}>← Retour</button>
-              <div className="hidden sm:block" style={{width:1, height:16, background:'rgba(255,255,255,0.15)'}}/>
-              <h1 style={{color:'#fff', fontWeight:700, fontSize:15, letterSpacing:-0.02}}>Planning</h1>
-            </div>
-            <div style={{display:'flex', alignItems:'center', gap:8}}>
-              {googleConnected ? (
-                <button onClick={syncGoogle} disabled={syncing}
-                  style={{display:'flex', alignItems:'center', gap:6, fontSize:12, padding:'6px 12px', borderRadius:8, border:'1px solid #34d399', color:'#34d399', background:'transparent', cursor:'pointer', opacity: syncing ? 0.6 : 1}}>
-                  <span style={{width:6, height:6, borderRadius:'50%', background:'#34d399', flexShrink:0, animation: syncing ? 'pulse 1s infinite' : undefined}}/>
-                  <span className="hidden sm:inline">{syncing ? 'Sync…' : 'Google Calendar'}</span>
-                  <span className="sm:hidden">{syncing ? '…' : '📅'}</span>
-                </button>
-              ) : (
-                <a href={`/api/auth/google?userId=${profile?.id}`}
-                  style={{display:'flex', alignItems:'center', gap:6, fontSize:12, padding:'6px 12px', borderRadius:8, border:'1px solid rgba(147,197,253,0.4)', color:'#93c5fd', textDecoration:'none'}}>
-                  <span className="hidden sm:inline">📅 Google Calendar</span>
-                  <span className="sm:hidden">📅</span>
-                </a>
-              )}
-              <div className="hidden sm:block" style={{width:1, height:16, background:'rgba(255,255,255,0.15)'}}/>
-              <button onClick={() => { setModalType('intervention'); setElementSelectionne(null); setModeEdition(false); setModalOuvert(true) }}
-                style={{fontSize:12, padding:'6px 12px', borderRadius:8, border:'1px solid rgba(255,255,255,0.25)', color:'#fff', background:'transparent', cursor:'pointer'}}>
-                + <span className="hidden sm:inline">Intervention</span><span className="sm:hidden">Int.</span>
-              </button>
-              <button onClick={() => { setModalType('rdv'); setElementSelectionne(null); setModeEdition(false); setModalOuvert(true) }}
-                style={{fontSize:12, padding:'6px 16px', borderRadius:8, fontWeight:600, color:'#fff', background:COLORS.blue, border:'none', cursor:'pointer'}}>
-                + RDV
-              </button>
-            </div>
-          </div>
-
-          {/* Ligne 2 : filtres */}
-          <div style={{display:'flex', alignItems:'center', gap:8, overflowX:'auto', paddingBottom:2}}>
-
-            {/* Vue */}
-            <div style={{display:'flex', gap:2, borderRadius:8, padding:2, background:'rgba(255,255,255,0.08)', flexShrink:0}}>
-              {[{ k: 'tous', l: 'Tous' }, { k: 'moi', l: 'Mes RDV' }, { k: 'artisan', l: 'Avec artisans' }].map(({ k, l }) => (
-                <button key={k} onClick={() => setVue(k)}
-                  style={{padding:'4px 12px', borderRadius:6, fontSize:12, fontWeight:600, cursor:'pointer', border:'none',
-                    background: vue === k ? COLORS.blue : 'transparent',
-                    color: vue === k ? '#fff' : 'rgba(147,197,253,0.9)'}}>
-                  {l}
-                </button>
-              ))}
-            </div>
-
-            <div style={{width:1, height:16, background:'rgba(255,255,255,0.15)', flexShrink:0}}/>
-
-            {/* Type RDV */}
-            <div style={{display:'flex', gap:2, borderRadius:8, padding:2, background:'rgba(255,255,255,0.08)', flexShrink:0}}>
-              {[{ k: '', l: 'Tous types' }, { k: 'visite_technique_client', l: 'R1' }, { k: 'visite_technique_artisan', l: 'R2' }, { k: 'presentation_devis', l: 'R3' }, { k: 'autres', l: 'Autres' }].map(({ k, l }) => (
-                <button key={k} onClick={() => setTypeFiltre(k)}
-                  style={{padding:'4px 12px', borderRadius:6, fontSize:12, fontWeight:600, cursor:'pointer', border:'none',
-                    background: typeFiltre === k ? COLORS.blue : 'transparent',
-                    color: typeFiltre === k ? '#fff' : 'rgba(147,197,253,0.9)'}}>
-                  {l}
-                </button>
-              ))}
-            </div>
-
-            <div style={{width:1, height:16, background:'rgba(255,255,255,0.15)', flexShrink:0}}/>
-
-            {/* Filtre agente (admin seulement) */}
-            {profile?.role === 'admin' && (
-              <select value={agenteFiltre} onChange={e => setAgenteFiltre(e.target.value)}
-                style={{fontSize:12, borderRadius:8, padding:'6px 10px', border:'none', background:'rgba(255,255,255,0.12)', color:'#93c5fd', cursor:'pointer'}}>
-                <option value="" style={{ background: COLORS.navy }}>Toute l'agence</option>
-                {agentes.map(a => <option key={a.id} value={a.id} style={{ background: COLORS.navy }}>{a.prenom} {a.nom}</option>)}
-              </select>
-            )}
-
-            {/* Filtre artisan */}
-            <select value={artisanFiltre} onChange={e => setArtisanFiltre(e.target.value)}
-              style={{fontSize:12, borderRadius:8, padding:'6px 10px', border:'none', background:'rgba(255,255,255,0.12)', color:'#93c5fd', cursor:'pointer'}}>
-              <option value="" style={{ background: COLORS.navy }}>Tous les artisans</option>
-              {artisans.map(a => <option key={a.id} value={a.id} style={{ background: COLORS.navy }}>{a.entreprise}</option>)}
-            </select>
-
-            {/* Reset filtres */}
-            {(typeFiltre || artisanFiltre || agenteFiltre || vue !== 'tous') && (
-              <button onClick={() => { setTypeFiltre(''); setArtisanFiltre(''); setAgenteFiltre(''); setVue('tous') }}
-                style={{fontSize:12, color:'rgba(147,197,253,0.8)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline', flexShrink:0}}>
-                Réinitialiser
-              </button>
-            )}
+      {/* ── HEADER (style maquette) ─────────────────────────────────────── */}
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:16, flexWrap:'wrap'}}>
+        <div>
+          <div className="eyebrow" style={{marginBottom:4}}>Pilotage</div>
+          <h1 className="page" style={{fontSize:28}}>Planning</h1>
+          <div style={{color:'var(--ink-500)', fontSize:13, marginTop:6}}>
+            <strong style={{color:'var(--ink-700)'}}>{rdvCeMois}</strong> RDV ce mois ·{' '}
+            <strong style={{color:'var(--ink-700)'}}>{interventions.length}</strong> interventions ·{' '}
+            <strong style={{color:'var(--ink-700)'}}>{agendaItems.length}</strong> à venir 30j
           </div>
         </div>
-      </header>
+        <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
+          {googleConnected ? (
+            <button onClick={syncGoogle} disabled={syncing} className="btn btn-ghost"
+              style={{display:'inline-flex', alignItems:'center', gap:6, opacity: syncing ? 0.6 : 1}}>
+              <span style={{width:6, height:6, borderRadius:'50%', background:'#15803d', flexShrink:0, animation: syncing ? 'pulse 1s infinite' : undefined}}/>
+              Google {syncing ? 'Sync…' : <span style={{color:'#15803d'}}>● Connecté</span>}
+            </button>
+          ) : (
+            <a href={`/api/auth/google?userId=${profile?.id}`} className="btn btn-ghost"
+              style={{display:'inline-flex', alignItems:'center', gap:6, textDecoration:'none'}}>
+              📅 Google Calendar
+            </a>
+          )}
+          <button className="btn btn-ghost"
+            onClick={() => { setModalType('intervention'); setElementSelectionne(null); setModeEdition(false); setModalOuvert(true) }}>
+            + Intervention
+          </button>
+          <button className="btn btn-primary"
+            onClick={() => { setModalType('rdv'); setElementSelectionne(null); setModeEdition(false); setModalOuvert(true) }}>
+            + Nouveau RDV
+          </button>
+        </div>
+      </div>
 
-      {/* ── SYNC MESSAGE ───────────────────────────────────────────────────── */}
+      {/* ── SYNC MESSAGE ─────────────────────────────────────────────── */}
       {syncMessage && (
         <div style={{
-          fontSize:12, padding:'10px 24px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid',
+          fontSize:12, padding:'10px 14px', borderRadius:10, border:'1px solid',
+          display:'flex', alignItems:'center', justifyContent:'space-between',
           background: syncMessage.startsWith('✅') ? 'rgba(22,163,74,0.06)' : 'rgba(239,68,68,0.06)',
           color: syncMessage.startsWith('✅') ? '#15803d' : '#b91c1c',
           borderColor: syncMessage.startsWith('✅') ? 'rgba(22,163,74,0.15)' : 'rgba(239,68,68,0.15)',
@@ -494,103 +429,67 @@ export default function Planning() {
         </div>
       )}
 
-      {/* ── LAYOUT ─────────────────────────────────────────────────────────── */}
-      <div className="sm:flex" style={{gap:16, padding:'16px 16px', maxWidth:'100%'}}>
+      {/* ── BARRE FILTRES (carte blanche) ─────────────────────────────── */}
+      <div className="card" style={{padding:'12px 16px', display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
 
-        {/* ── SIDEBAR ──────────────────────────────────────────────────────── */}
-        <aside className={`sm:flex-shrink-0 ${sidebarOuverte ? 'block' : 'hidden'} sm:block`}
-          style={{width:288, display:'flex', flexDirection:'column', gap:12, marginBottom:16}}>
+        {/* Vue (segmented) */}
+        <div style={{display:'flex', gap:4, background:'var(--ink-100)', padding:3, borderRadius:9}}>
+          {[{ k: 'tous', l: 'Tous' }, { k: 'moi', l: 'Mes RDV' }, { k: 'artisan', l: 'Avec artisans' }].map(({ k, l }) => (
+            <button key={k} onClick={() => setVue(k)} style={{
+              padding:'6px 14px', fontSize:12.5, fontWeight:600, borderRadius:7, cursor:'pointer', border:0,
+              background: vue === k ? '#fff' : 'transparent',
+              color: vue === k ? 'var(--brand-800)' : 'var(--ink-500)',
+              boxShadow: vue === k ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+            }}>{l}</button>
+          ))}
+        </div>
 
-          {/* Recherche */}
-          <div style={{position:'relative'}}>
-            <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', fontSize:14, pointerEvents:'none'}}>🔍</span>
-            <input value={recherche} onChange={e => setRecherche(e.target.value)}
-              placeholder="Rechercher client, artisan…"
-              className="input" style={{paddingLeft:32, width:'100%'}}/>
-            {recherche && (
-              <button onClick={() => setRecherche('')}
-                style={{position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', background:'none', border:'none', cursor:'pointer', fontSize:16, lineHeight:1}}>×</button>
-            )}
-          </div>
+        {/* Type RDV */}
+        <select className="input" value={typeFiltre} onChange={e => setTypeFiltre(e.target.value)} style={{height:34, minWidth:140}}>
+          <option value="">Tous les types</option>
+          <option value="visite_technique_client">R1 — Visite client</option>
+          <option value="visite_technique_artisan">R2 — Visite artisan</option>
+          <option value="presentation_devis">R3 — Devis</option>
+          <option value="autres">Autres</option>
+        </select>
 
-          {/* Légende */}
-          <div className="card" style={{padding:16}}>
-            <div className="eyebrow" style={{marginBottom:12}}>Légende</div>
-            <div style={{display:'flex', flexDirection:'column', gap:10}}>
-              {Object.entries(TYPE_CONFIG).map(([, cfg]) => (
-                <div key={cfg.label} style={{display:'flex', alignItems:'center', gap:10}}>
-                  <div style={{width:24, height:24, borderRadius:6, flexShrink:0, display:'grid', placeItems:'center', color:'#fff', fontSize:11, fontWeight:700, background:cfg.color}}>
-                    {cfg.short}
-                  </div>
-                  <span style={{fontSize:12, color:'var(--ink-600)'}}>{cfg.label}</span>
-                </div>
-              ))}
-              <div style={{borderTop:'1px solid var(--ink-100)', paddingTop:10, marginTop:2, display:'flex', flexDirection:'column', gap:8}}>
-                {[
-                  { icon: '🔨', label: 'Intervention artisan', border: COLORS.violet, bg: COLORS.violet + '20', color: COLORS.violet },
-                  { icon: '▶',  label: 'Démarrage chantier',  border: COLORS.mint,   bg: '#ECFDF5',           color: COLORS.mint },
-                  { icon: '■',  label: 'Fin de chantier',      border: COLORS.amber,  bg: '#FFF7ED',           color: COLORS.amber },
-                ].map(({ icon, label, border, bg, color }) => (
-                  <div key={label} style={{display:'flex', alignItems:'center', gap:10}}>
-                    <div style={{width:24, height:24, borderRadius:6, flexShrink:0, border:`2px solid ${border}`, background:bg, color, display:'grid', placeItems:'center', fontSize:11, fontWeight:700}}>
-                      {icon}
-                    </div>
-                    <span style={{fontSize:12, color:'var(--ink-600)'}}>{label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+        <select className="input" value={artisanFiltre} onChange={e => setArtisanFiltre(e.target.value)} style={{height:34, minWidth:140}}>
+          <option value="">Tous artisans</option>
+          {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
+        </select>
 
-          {/* Agenda À venir */}
-          <div className="card" style={{padding:0, overflow:'hidden'}}>
-            <div style={{padding:'12px 16px', borderBottom:'1px solid var(--ink-100)', display:'flex', alignItems:'center', justifyContent:'space-between', background:'var(--surface-2)'}}>
-              <div className="eyebrow">À venir</div>
-              <span style={{fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:99, background: COLORS.blue + '15', color: COLORS.blue}}>
-                {agendaItems.length} évén.
-              </span>
-            </div>
-            <div style={{maxHeight:320, overflowY:'auto'}}>
-              {agendaItems.length === 0 && (
-                <div style={{padding:'24px 16px', textAlign:'center'}}>
-                  <p style={{fontSize:12, color:'var(--ink-400)'}}>{recherche ? 'Aucun résultat' : 'Aucun événement à venir'}</p>
-                </div>
-              )}
-              {agendaItems.map(item => (
-                <button key={item.id + item.type} onClick={() => ouvrirSidebar(item)}
-                  className="row-hover"
-                  style={{width:'100%', textAlign:'left', padding:'12px 16px', borderBottom:'1px solid var(--ink-50)', border:0, background:'transparent', cursor:'pointer', display:'block'}}>
-                  <div style={{display:'flex', alignItems:'flex-start', gap:10}}>
-                    <div style={{width:3, borderRadius:99, marginTop:2, alignSelf:'stretch', flexShrink:0, background:item.color, minHeight:28}}/>
-                    <div style={{flex:1, minWidth:0}}>
-                      <div style={{fontSize:12, fontWeight:600, color:'var(--ink-800)'}} className="clip-1">{item.titre}</div>
-                      <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:2}} className="clip-1">{item.sous}</div>
-                      <div style={{fontSize:11.5, fontWeight:700, marginTop:4, color:item.color}}>{fmtDate(item.date)}</div>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
+        {profile?.role === 'admin' && (
+          <select className="input" value={agenteFiltre} onChange={e => setAgenteFiltre(e.target.value)} style={{height:34, minWidth:140}}>
+            <option value="">Toutes les agentes</option>
+            {agentes.map(a => <option key={a.id} value={a.id}>{a.prenom} {a.nom}</option>)}
+          </select>
+        )}
 
-          {/* Stats */}
-          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
-            {[
-              { label: 'RDV ce mois', value: rdvs.filter(r => { const d = new Date(r.date_heure), m = new Date(); return d.getMonth() === m.getMonth() && d.getFullYear() === m.getFullYear() }).length, color: COLORS.blue },
-              { label: 'Interventions', value: interventions.length, color: COLORS.violet },
-              { label: 'Chantiers actifs', value: dossiers.filter(d => d.date_demarrage_chantier && !d.date_fin_chantier).length, color: COLORS.mint},
-              { label: 'À venir 30j', value: agendaItems.length, color: COLORS.amber },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="card" style={{padding:12, textAlign:'center'}}>
-                <div className="tnum" style={{fontSize:20, fontWeight:800, color}}>{value}</div>
-                <div className="eyebrow" style={{marginTop:4}}>{label}</div>
-              </div>
-            ))}
-          </div>
-        </aside>
+        {(typeFiltre || artisanFiltre || agenteFiltre || vue !== 'tous') && (
+          <button onClick={() => { setTypeFiltre(''); setArtisanFiltre(''); setAgenteFiltre(''); setVue('tous') }}
+            className="btn btn-ghost" style={{fontSize:12}}>
+            Réinitialiser
+          </button>
+        )}
 
-        {/* ── CALENDRIER ───────────────────────────────────────────────────── */}
-        <div style={{flex:1, minWidth:0, width:'100%'}}>
+        {/* Légende */}
+        <div style={{marginLeft:'auto', display:'flex', gap:14, fontSize:11.5, color:'var(--ink-500)', flexWrap:'wrap'}}>
+          {Object.entries(TYPE_CONFIG).map(([, cfg]) => (
+            <span key={cfg.label} style={{display:'inline-flex', gap:5, alignItems:'center'}}>
+              <span style={{width:10, height:10, background:cfg.color, borderRadius:3}}/>{cfg.short}
+            </span>
+          ))}
+          <span style={{display:'inline-flex', gap:5, alignItems:'center'}}>
+            <span style={{width:10, height:10, background:`${COLORS.violet}26`, border:`1px solid ${COLORS.violet}`, borderRadius:3}}/>Intervention
+          </span>
+        </div>
+      </div>
+
+      {/* ── LAYOUT 2 colonnes (calendrier · sidebar à droite) ─────────── */}
+      <div className="sm:grid" style={{display:'grid', gridTemplateColumns:'1fr 320px', gap:18, minHeight:0}}>
+
+        {/* ── CALENDRIER ───────────────────────────────────────────── */}
+        <div style={{minWidth:0}}>
           <div className="card" style={{padding:0, overflow:'hidden'}}>
             <style>{`
               .fc { font-family: system-ui, -apple-system, sans-serif; }
@@ -644,6 +543,96 @@ export default function Planning() {
             />
           </div>
         </div>
+
+        {/* ── SIDEBAR (à droite, style maquette) ─────────────────────── */}
+        <aside style={{display:'flex', flexDirection:'column', gap:14, minWidth:0}}>
+
+          {/* Recherche */}
+          <div style={{position:'relative'}}>
+            <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', fontSize:14, pointerEvents:'none'}}>🔍</span>
+            <input value={recherche} onChange={e => setRecherche(e.target.value)}
+              placeholder="Rechercher client, artisan…"
+              className="input" style={{paddingLeft:32, width:'100%'}}/>
+            {recherche && (
+              <button onClick={() => setRecherche('')}
+                style={{position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', background:'none', border:'none', cursor:'pointer', fontSize:16, lineHeight:1}}>×</button>
+            )}
+          </div>
+
+          {/* Prochains événements · 30 jours */}
+          <div className="card" style={{padding:18}}>
+            <div className="eyebrow" style={{marginBottom:12}}>Prochains événements · 30 jours</div>
+            <div style={{display:'flex', flexDirection:'column', gap:10, maxHeight:480, overflow:'auto'}}>
+              {agendaItems.length === 0 && (
+                <div style={{padding:20, textAlign:'center', color:'var(--ink-400)', fontSize:12}}>
+                  {recherche ? 'Aucun résultat' : "Pas d'événement prévu"}
+                </div>
+              )}
+              {agendaItems.map(item => {
+                const dt = new Date(item.date)
+                return (
+                  <button key={item.id + item.type} onClick={() => ouvrirSidebar(item)}
+                    style={{display:'grid', gridTemplateColumns:'auto 1fr', gap:10, alignItems:'flex-start',
+                      background:'transparent', border:0, padding:0, cursor:'pointer', textAlign:'left'}}>
+                    <div style={{
+                      width:48, padding:'6px 0', background:'var(--surface-2)', borderRadius:8,
+                      textAlign:'center', borderLeft:`3px solid ${item.color}`
+                    }}>
+                      <div className="tnum" style={{fontSize:16, fontWeight:800, color:'var(--ink-900)', lineHeight:1}}>{dt.toLocaleDateString('fr-FR',{day:'2-digit'})}</div>
+                      <div style={{fontSize:8.5, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2}}>{dt.toLocaleDateString('fr-FR',{month:'short'}).replace('.','')}</div>
+                    </div>
+                    <div style={{minWidth:0}}>
+                      <div className="clip-1" style={{fontSize:12, fontWeight:600, color:'var(--ink-900)'}}>{item.titre}</div>
+                      <div className="clip-1" style={{fontSize:10.5, color:'var(--ink-500)', marginTop:2}}>{item.sous}</div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Filtres rapides (agentes) — admin seulement */}
+          {profile?.role === 'admin' && agentes.length > 0 && (
+            <div className="card" style={{padding:18}}>
+              <div className="eyebrow" style={{marginBottom:10}}>Filtres rapides</div>
+              <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                {agentes.map(a => {
+                  const active = agenteFiltre === a.id
+                  const initials = `${a.prenom?.[0] || ''}${a.nom?.[0] || ''}`.toUpperCase()
+                  return (
+                    <button key={a.id} onClick={() => setAgenteFiltre(active ? '' : a.id)} style={{
+                      display:'flex', alignItems:'center', gap:8, padding:'8px 10px', borderRadius:8,
+                      border:'1px solid', borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
+                      background: active ? 'var(--brand-50)' : '#fff',
+                      cursor:'pointer', fontSize:12, fontWeight:600, color:'var(--ink-700)', textAlign:'left',
+                    }}>
+                      <span style={{
+                        width:22, height:22, borderRadius:'50%', background:'var(--brand-500)', color:'#fff',
+                        fontSize:10, fontWeight:700, display:'grid', placeItems:'center', flexShrink:0,
+                      }}>{initials}</span>
+                      <span>{a.prenom} {a.nom}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Stats compactes */}
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
+            {[
+              { label: 'RDV ce mois', value: rdvCeMois, color: COLORS.blue },
+              { label: 'Interventions', value: interventions.length, color: COLORS.violet },
+              { label: 'Chantiers actifs', value: dossiers.filter(d => d.date_demarrage_chantier && !d.date_fin_chantier).length, color: COLORS.mint},
+              { label: 'À venir 30j', value: agendaItems.length, color: COLORS.amber },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="card" style={{padding:12, textAlign:'center'}}>
+                <div className="tnum" style={{fontSize:20, fontWeight:800, color}}>{value}</div>
+                <div className="eyebrow" style={{marginTop:4}}>{label}</div>
+              </div>
+            ))}
+          </div>
+        </aside>
       </div>
 
       {/* ── MODAL ──────────────────────────────────────────────────────────── */}
