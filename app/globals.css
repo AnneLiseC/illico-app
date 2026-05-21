@@ -823,6 +823,10 @@ select.input { padding-right: 32px; }
   .page-pad { padding: 16px 14px 80px !important; }
 }
 
+/* CR tab : grid 1fr 320px desktop, 1col mobile */
+.cr-grid { grid-template-columns: 1fr 320px !important; }
+@media (max-width: 900px) { .cr-grid { grid-template-columns: 1fr !important; } }
+
 /* Common responsive grid utility (use class instead of inline grid-template) */
 .grid-2c { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 600px) { .grid-2c { grid-template-columns: 1fr; gap: 10px; } }

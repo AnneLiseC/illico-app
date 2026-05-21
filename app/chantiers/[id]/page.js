@@ -640,7 +640,7 @@ export default function FicheChantier({ params }) {
   const [savingDevis, setSavingDevis] = useState(false)
   const [devisEnEdition, setDevisEnEdition] = useState(null)
   const [photos, setPhotos] = useState([])
-  const [categorie, setCategorie] = useState('avant')
+  const [categorie, setCategorie] = useState('all')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photosAffichees, setPhotosAffichees] = useState(3)
   const [uploadingDoc, setUploadingDoc] = useState(null) // devisId en cours d'upload
@@ -3209,123 +3209,240 @@ export default function FicheChantier({ params }) {
       })()}
 
       {/* ── PHOTOS ── */}
-      {onglet === 'photos' && (
-      <div>
+      {onglet === 'photos' && (() => {
+        const CATS = [
+          { k: 'all',      l: 'Toutes' },
+          { k: 'avant',    l: 'Avant' },
+          { k: 'pendant',  l: 'Pendant' },
+          { k: 'apres',    l: 'Après' },
+          { k: 'maquette', l: 'Maquette' },
+        ]
+        const filtered = categorie === 'all' ? photos : photos.filter(p => p.categorie === categorie)
+        const filteredVisible = filtered.slice(0, photosAffichees)
+        return (
+        <div style={{display:'flex', flexDirection:'column', gap:14}}>
 
-        {/* Photos du chantier */}
-        <div className="card" style={{padding:22}}>
-          <h2 className="font-semibold text-gray-800">Photos du chantier</h2>
-          <div className="flex gap-2 flex-wrap">
-            {['avant', 'pendant', 'apres', 'maquette'].map(cat => (
-              <button key={cat} onClick={() => {setCategorie(cat); setPhotosAffichees(3); setPhotoOuverte(null)}}
-                className={`text-xs px-3 py-1.5 rounded-full border transition-all ${categorie === cat ? 'bg-blue-800 text-white border-blue-800' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                {cat === 'avant' ? 'Avant' : cat === 'pendant' ? 'Pendant' : cat === 'apres' ? 'Après' : 'Maquette'}
-                {photos.filter(p => p.categorie === cat).length > 0 && <span className="ml-1">({photos.filter(p => p.categorie === cat).length})</span>}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-3">
-            <label className={`cursor-pointer flex items-center gap-2 text-xs px-3 py-2 rounded-lg border transition-all ${uploadingPhoto ? 'bg-gray-100 text-gray-400' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}`}>
-              {uploadingPhoto ? 'Upload en cours...' : `+ Ajouter une photo (${categorie === 'avant' ? 'Avant' : categorie === 'pendant' ? 'Pendant' : categorie === 'apres' ? 'Après' :  'Maquette'})`}
-              <input type="file" accept="image/*" multiple className="hidden" disabled={uploadingPhoto} onChange={e => uploadPhotos(Array.from(e.target.files))} />
+          {/* Header : pills filtres + bouton upload */}
+          <div className="card" style={{padding:'14px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap'}}>
+            <div style={{display:'flex', gap:6, alignItems:'center', flexWrap:'wrap'}}>
+              {CATS.map(c => {
+                const n = c.k === 'all' ? photos.length : photos.filter(p => p.categorie === c.k).length
+                const active = categorie === c.k
+                return (
+                  <button key={c.k} onClick={() => { setCategorie(c.k); setPhotosAffichees(9); setPhotoOuverte(null) }}
+                    style={{
+                      padding:'6px 12px', borderRadius:99, fontSize:12, fontWeight:600,
+                      border:'1px solid', borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
+                      background: active ? 'var(--brand-50)' : '#fff',
+                      color: active ? 'var(--brand-800)' : 'var(--ink-700)',
+                      cursor:'pointer', transition:'all 150ms',
+                    }}>
+                    {c.l} <span style={{opacity:0.6}}>· {n}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingPhoto ? 'wait' : 'pointer', opacity: uploadingPhoto ? 0.6 : 1}}>
+              <CamIcon /> {uploadingPhoto
+                ? 'Upload en cours…'
+                : `Ajouter des photos${categorie !== 'all' ? ` (${CATS.find(c => c.k === categorie)?.l})` : ''}`}
+              <input type="file" accept="image/*" multiple style={{display:'none'}}
+                disabled={uploadingPhoto || categorie === 'all'}
+                onChange={e => uploadPhotos(Array.from(e.target.files))} />
             </label>
           </div>
-          {photos.filter(p => p.categorie === categorie).length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-6">Aucune photo dans cette catégorie</p>
+
+          {categorie === 'all' && (
+            <div style={{fontSize:11.5, color:'var(--ink-500)', padding:'0 4px'}}>
+              Choisis une catégorie (Avant, Pendant, Après, Maquette) pour uploader.
+            </div>
+          )}
+
+          {filtered.length === 0 ? (
+            <div className="card" style={{padding:60, textAlign:'center', color:'var(--ink-400)'}}>
+              <div style={{display:'grid', placeItems:'center', marginBottom:10}}><CamIcon /></div>
+              <div style={{fontSize:13}}>Aucune photo dans cette catégorie</div>
+            </div>
           ) : (
             <>
-              <div className="grid grid-cols-3 gap-3">
-                {photos.filter(p => p.categorie === categorie).slice(0, photosAffichees).map((photo, index) => (
-                  <div key={photo.id} className="relative group rounded-lg border border-gray-100 cursor-pointer bg-gray-100" onClick={() => setPhotoOuverte(index)}>
+              <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:14}}>
+                {filteredVisible.map((photo, index) => (
+                  <div key={photo.id} style={{
+                    aspectRatio:'4/3', borderRadius:10, overflow:'hidden',
+                    background:'var(--ink-100)', position:'relative', cursor:'pointer',
+                    border:'1px solid var(--ink-200)',
+                  }}
+                    onClick={() => setPhotoOuverte(index)}
+                    onMouseEnter={e => { const b = e.currentTarget.querySelector('[data-actions]'); if (b) b.style.opacity = '1' }}
+                    onMouseLeave={e => { const b = e.currentTarget.querySelector('[data-actions]'); if (b) b.style.opacity = '0' }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={photo.url_signee} alt="" onError={e => e.target.style.border = '2px solid red'}
-                      style={{ width: '100%', height: '128px', objectFit: 'cover', display: 'block', borderRadius: '8px' }} />
-                    <div className="absolute inset-0 flex items-end justify-end p-1 opacity-0 group-hover:opacity-100">
+                    <img src={photo.url_signee} alt="" style={{width:'100%', height:'100%', objectFit:'cover', display:'block'}} />
+                    <span style={{
+                      position:'absolute', top:8, right:8,
+                      background:'rgba(0,0,0,0.55)', color:'#fff', fontSize:9.5, padding:'3px 8px',
+                      borderRadius:99, fontWeight:700, textTransform:'uppercase', letterSpacing:0.05,
+                      backdropFilter:'blur(4px)',
+                    }}>{photo.categorie}</span>
+                    <div data-actions style={{
+                      position:'absolute', bottom:8, right:8, opacity:0, transition:'opacity 150ms',
+                    }}>
                       <button onClick={e => { e.stopPropagation(); supprimerPhoto(photo.id, photo.url) }}
-                        className="bg-red-500 text-white text-xs px-2 py-1 rounded">Supprimer</button>
+                        style={{
+                          background:'rgba(220,38,38,0.95)', color:'#fff', border:'none', borderRadius:6,
+                          padding:'4px 10px', fontSize:11, fontWeight:700, cursor:'pointer',
+                        }}>
+                        Supprimer
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
-              {photos.filter(p => p.categorie === categorie).length > photosAffichees && (
+              {filtered.length > photosAffichees && (
                 <button onClick={() => setPhotosAffichees(n => n + 9)}
-                  className="w-full text-sm text-blue-600 border border-blue-200 rounded-lg py-2 hover:bg-blue-50 mt-2">
-                  Voir plus ({photos.filter(p => p.categorie === categorie).length - photosAffichees} restantes)
+                  className="btn btn-ghost" style={{alignSelf:'center', fontSize:12.5}}>
+                  Voir plus ({filtered.length - photosAffichees} restantes)
                 </button>
               )}
             </>
           )}
+
+          {/* Lightbox */}
           {photoOuverte !== null && (
-            <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center" onClick={() => setPhotoOuverte(null)}>
-              <button onClick={e => { e.stopPropagation(); setPhotoOuverte(i => i > 0 ? i - 1 : photos.filter(p => p.categorie === categorie).length - 1) }}
-                className="absolute left-4 text-white text-3xl px-4 py-2 hover:bg-white hover:bg-opacity-20 rounded">‹</button>
-              <div onClick={e => e.stopPropagation()} className="max-w-4xl max-h-screen p-4">
+            <div style={{
+              position:'fixed', inset:0, background:'rgba(0,0,0,0.92)', zIndex:200,
+              display:'flex', alignItems:'center', justifyContent:'center',
+            }} onClick={() => setPhotoOuverte(null)}>
+              <button onClick={e => { e.stopPropagation(); setPhotoOuverte(i => i > 0 ? i - 1 : filtered.length - 1) }}
+                style={{
+                  position:'absolute', left:16, top:'50%', transform:'translateY(-50%)',
+                  width:48, height:48, borderRadius:'50%', border:'none',
+                  background:'rgba(255,255,255,0.10)', color:'#fff', cursor:'pointer',
+                  fontSize:24, fontWeight:300,
+                }}>‹</button>
+              <div onClick={e => e.stopPropagation()} style={{maxWidth:'90vw', maxHeight:'90vh', padding:20}}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={photos.filter(p => p.categorie === categorie)[photoOuverte]?.url_signee} alt=""
-                  className="max-h-screen max-w-full object-contain rounded" />
-                <p className="text-white text-center text-sm mt-2 opacity-60">
-                  {photoOuverte + 1} / {photos.filter(p => p.categorie === categorie).length} - Clic en dehors pour fermer
-                </p>
-              </div>
-              <button onClick={e => { e.stopPropagation(); setPhotoOuverte(i => i < photos.filter(p => p.categorie === categorie).length - 1 ? i + 1 : 0) }}
-                className="absolute right-4 text-white text-3xl px-4 py-2 hover:bg-white hover:bg-opacity-20 rounded">›</button>
-            </div>
-          )}
-        </div>
-
-      </div>
-      )}
-
-      {/* ── DOCUMENTS ── */}
-      {onglet === 'documents' && (
-      <div>
-
-        {/* Documents du chantier */}
-        <div className="card" style={{padding:22}}>
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-800">Documents ({documents.length})</h2>
-            <label className={`cursor-pointer text-sm px-3 py-1.5 rounded-lg border transition-all ${uploadingDocChantier ? 'text-gray-400 border-gray-200' : 'border-blue-300 text-blue-700 hover:bg-blue-50'}`}>
-              {uploadingDocChantier ? 'Upload...' : '+ Ajouter un document'}
-              <input type="file" className="hidden" multiple disabled={uploadingDocChantier}
-                onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files))} />
-            </label>
-          </div>
-          {documents.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">Aucun document - plans, courriers, notes...</p>
-          ) : (
-            <div className="space-y-2">
-              {documents.map(doc => (
-                <div key={doc.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:bg-gray-50">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <span className="text-lg flex-shrink-0">
-                      {doc.type_mime?.startsWith('image') ? '🖼' : doc.type_mime?.includes('pdf') ? '📄' : doc.type_mime?.includes('word') ? '📝' : '📎'}
-                    </span>
-                    <div className="min-w-0">
-                      <button onClick={() => ouvrirDocument(doc.path, doc.nom)}
-                        className="text-sm text-blue-600 hover:underline truncate block max-w-xs text-left">
-                        {doc.nom}
-                      </button>
-                      {doc.taille && <p className="text-xs text-gray-400">{(doc.taille / 1024).toFixed(0)} Ko</p>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="checkbox" checked={doc.dans_restitution || false}
-                        onChange={e => toggleDansRestitution(doc.id, e.target.checked)}
-                        className="accent-blue-700" />
-                      <span className="text-xs text-gray-500">Restitution</span>
-                    </label>
-                    <button onClick={() => supprimerDocumentChantier(doc.id, doc.path)}
-                      className="text-red-300 hover:text-red-500 text-xs">✕</button>
-                  </div>
+                <img src={filtered[photoOuverte]?.url_signee} alt=""
+                  style={{maxHeight:'80vh', maxWidth:'100%', objectFit:'contain', borderRadius:10, display:'block'}} />
+                <div style={{color:'rgba(255,255,255,0.7)', fontSize:12, textAlign:'center', marginTop:10}}>
+                  {photoOuverte + 1} / {filtered.length} · {filtered[photoOuverte]?.categorie} · clic en dehors pour fermer
                 </div>
-              ))}
+              </div>
+              <button onClick={e => { e.stopPropagation(); setPhotoOuverte(i => i < filtered.length - 1 ? i + 1 : 0) }}
+                style={{
+                  position:'absolute', right:16, top:'50%', transform:'translateY(-50%)',
+                  width:48, height:48, borderRadius:'50%', border:'none',
+                  background:'rgba(255,255,255,0.10)', color:'#fff', cursor:'pointer',
+                  fontSize:24, fontWeight:300,
+                }}>›</button>
+              <button onClick={e => { e.stopPropagation(); setPhotoOuverte(null) }}
+                style={{
+                  position:'absolute', top:16, right:16,
+                  width:40, height:40, borderRadius:'50%', border:'none',
+                  background:'rgba(255,255,255,0.10)', color:'#fff', cursor:'pointer',
+                  fontSize:18,
+                }}>×</button>
             </div>
           )}
-        </div>
 
-      </div>
-      )}
+        </div>
+        )
+      })()}
+
+      {/* ── DOCUMENTS (maquette) ── */}
+      {onglet === 'documents' && (() => {
+        const totalKo = documents.reduce((s, d) => s + (d.taille || 0) / 1024, 0)
+        const fmtSize = (ko) => ko < 1024 ? `${Math.round(ko)} Ko` : `${(ko/1024).toFixed(1)} Mo`
+        const typeOf = (doc) => {
+          const m = (doc.type_mime || '').toLowerCase()
+          const n = (doc.nom || '').toLowerCase()
+          if (m.startsWith('image') || /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(n)) return 'image'
+          if (m.includes('pdf') || n.endsWith('.pdf')) return 'pdf'
+          if (m.includes('word') || /\.(doc|docx)$/i.test(n)) return 'word'
+          if (m.includes('excel') || /\.(xls|xlsx)$/i.test(n)) return 'sheet'
+          return 'autre'
+        }
+        const typeMeta = {
+          image: { color: '#7c3aed', label: 'image' },
+          pdf:   { color: '#dc2626', label: 'pdf' },
+          word:  { color: '#0094d4', label: 'word' },
+          sheet: { color: '#16a34a', label: 'tableur' },
+          autre: { color: '#94a3b8', label: 'fichier' },
+        }
+        return (
+        <div style={{display:'flex', flexDirection:'column', gap:14}}>
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, borderBottom:'1px solid var(--ink-200)', flexWrap:'wrap'}}>
+              <div>
+                <h2 className="page" style={{fontSize:15}}>Documents du chantier</h2>
+                <div className="eyebrow" style={{marginTop:4}}>
+                  {documents.length} fichier{documents.length > 1 ? 's' : ''}{documents.length > 0 && ` · ${fmtSize(totalKo)}`}
+                </div>
+              </div>
+              <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingDocChantier ? 'wait' : 'pointer', opacity: uploadingDocChantier ? 0.6 : 1}}>
+                <DlIcon /> {uploadingDocChantier ? 'Upload…' : 'Ajouter un document'}
+                <input type="file" style={{display:'none'}} multiple disabled={uploadingDocChantier}
+                  onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files))} />
+              </label>
+            </div>
+            {documents.length === 0 ? (
+              <div style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+                Aucun document — plans, courriers, notes…
+              </div>
+            ) : (
+              <div style={{padding:'6px 16px'}}>
+                {documents.map(doc => {
+                  const t = typeOf(doc)
+                  const meta = typeMeta[t]
+                  return (
+                    <div key={doc.id} className="row-hover" style={{
+                      display:'grid', gridTemplateColumns:'auto 1fr auto auto auto', gap:14, alignItems:'center',
+                      padding:'12px 8px', borderBottom:'1px solid var(--ink-100)',
+                    }}>
+                      <div style={{
+                        width:36, height:36, borderRadius:8,
+                        background:`${meta.color}1a`, color:meta.color,
+                        display:'grid', placeItems:'center', flex:'0 0 36px',
+                      }}>
+                        <DocIcon />
+                      </div>
+                      <div style={{minWidth:0}}>
+                        <button onClick={() => ouvrirDocument(doc.path, doc.nom)}
+                          className="clip-1" style={{
+                            fontSize:13, fontWeight:600, color:'var(--ink-900)', background:'none', border:'none',
+                            cursor:'pointer', padding:0, textAlign:'left', display:'block', width:'100%',
+                          }}>
+                          {doc.nom}
+                        </button>
+                        <div style={{fontSize:11, color:'var(--ink-500)', marginTop:2, textTransform:'uppercase', letterSpacing:0.04}}>{meta.label}</div>
+                      </div>
+                      <label style={{display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:11, color:'var(--ink-500)'}}>
+                        <input type="checkbox" checked={doc.dans_restitution || false}
+                          onChange={e => toggleDansRestitution(doc.id, e.target.checked)}
+                          style={{accentColor:'var(--brand-500)'}} />
+                        Restitution
+                      </label>
+                      <div className="tnum" style={{fontSize:11.5, color:'var(--ink-500)', whiteSpace:'nowrap'}}>
+                        {doc.taille ? fmtSize(doc.taille / 1024) : '—'}
+                      </div>
+                      <div style={{display:'flex', gap:4}}>
+                        <button onClick={() => ouvrirDocument(doc.path, doc.nom)}
+                          className="btn btn-ghost" style={{padding:'4px 8px'}} title="Voir">
+                          <EyeIcon />
+                        </button>
+                        <button onClick={() => supprimerDocumentChantier(doc.id, doc.path)}
+                          className="btn btn-ghost" style={{padding:'4px 8px', color:'#b91c1c'}} title="Supprimer">
+                          <span style={{fontSize:14, lineHeight:1}}>×</span>
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+        )
+      })()}
 
       {/* ── PLANNING ── */}
       {onglet === 'planning' && (
@@ -3730,63 +3847,145 @@ export default function FicheChantier({ params }) {
         )
       })()}
 
-      {/* ── COMPTES-RENDUS ── */}
-      {onglet === 'cr' && (
-      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      {/* ── COMPTES-RENDUS (maquette : 2 cols liste + sidebar IA) ── */}
+      {onglet === 'cr' && (() => {
+        const typeMeta = {
+          r1:        { color: '#0094d4', label: 'R1', long: 'R1 — Visite technique' },
+          r2:        { color: '#16a34a', label: 'R2', long: 'R2 — Visite artisans' },
+          r3:        { color: '#f59e0b', label: 'R3', long: 'R3 — Présentation devis' },
+          suivi:     { color: '#94a3b8', label: 'Suivi', long: 'Suivi de chantier' },
+          reception: { color: '#16a34a', label: 'Récept.', long: 'Réception' },
+        }
+        return (
+        <div className="cr-grid" style={{display:'grid', gridTemplateColumns:'1fr 320px', gap:18}}>
 
-        <div className="card" style={{padding:22}}>
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-800">📝 Comptes-rendus ({comptesRendus.length})</h2>
-            <div className="flex gap-2">
-              <button onClick={() => setCrManuelModal(true)}
-                className="text-sm border border-blue-300 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50">
-                + CR manuel
-              </button>
-              <button onClick={() => { setCrModal(true); setCrEtape(1) }}
-                className="text-sm bg-blue-800 text-white px-3 py-1.5 rounded-lg hover:bg-blue-900 flex items-center gap-1.5">
-                ✨ Nouveau CR avec IA
-              </button>
+          {/* Liste CR */}
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--ink-200)', gap:8, flexWrap:'wrap'}}>
+              <div>
+                <h2 className="page" style={{fontSize:15}}>Comptes-rendus de visite</h2>
+                <div className="eyebrow" style={{marginTop:4}}>
+                  {comptesRendus.length} CR · les CR publiés sont visibles dans l'espace client
+                </div>
+              </div>
+              <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                <button onClick={() => setCrManuelModal(true)} className="btn btn-ghost" style={{fontSize:12.5}}>
+                  <PlusIcon /> CR manuel
+                </button>
+                <button onClick={() => { setCrModal(true); setCrEtape(1) }} className="btn btn-primary" style={{fontSize:12.5}}>
+                  ✨ Générer avec l'IA
+                </button>
+              </div>
+            </div>
+
+            <div style={{padding:'14px 22px', display:'flex', flexDirection:'column', gap:14}}>
+              {comptesRendus.length === 0 && (
+                <div style={{padding:30, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+                  Aucun compte-rendu pour le moment
+                </div>
+              )}
+              {comptesRendus.map(cr => {
+                const meta = typeMeta[cr.type_visite] || { color: '#94a3b8', label: cr.type_visite, long: cr.type_visite }
+                const fmtD = cr.date_visite ? new Date(cr.date_visite).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' }) : null
+                return (
+                  <div key={cr.id} style={{
+                    padding:16, border:'1px solid var(--ink-200)', borderRadius:12, background:'#fff', position:'relative',
+                  }}>
+                    <div style={{display:'flex', gap:10, alignItems:'center', marginBottom:10, flexWrap:'wrap'}}>
+                      <span style={{
+                        padding:'2px 8px', borderRadius:6, fontSize:11, fontWeight:800,
+                        background: meta.color, color:'#fff', letterSpacing:0.04,
+                      }}>{meta.label}</span>
+                      <span style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>{meta.long}</span>
+                      <div style={{flex:1}} />
+                      <button onClick={() => toggleValide(cr.id, !cr.valide)}
+                        style={{
+                          padding:'3px 10px', borderRadius:99, fontSize:11, fontWeight:700,
+                          border:'none', cursor:'pointer',
+                          background: cr.valide ? 'rgba(22,163,74,0.12)' : 'rgba(148,163,184,0.18)',
+                          color: cr.valide ? '#15803d' : 'var(--ink-600)',
+                        }}>
+                        {cr.valide ? '✓ Visible client' : 'Brouillon'}
+                      </button>
+                      {fmtD && (
+                        <span className="tnum" style={{fontSize:11.5, color:'var(--ink-400)'}}>{fmtD}</span>
+                      )}
+                    </div>
+                    {cr.contenu_final && (
+                      <p className="clip-2" style={{fontSize:13, color:'var(--ink-700)', lineHeight:1.55, margin:0}}>
+                        {cr.contenu_final.slice(0, 300)}{cr.contenu_final.length > 300 ? '…' : ''}
+                      </p>
+                    )}
+                    <div style={{
+                      display:'flex', gap:8, marginTop:12, paddingTop:10,
+                      borderTop:'1px solid var(--ink-100)', fontSize:11, color:'var(--ink-500)',
+                      alignItems:'center', flexWrap:'wrap',
+                    }}>
+                      <div style={{flex:1}} />
+                      {cr.contenu_final && (
+                        <button onClick={() => generatePDF('cr', cr.id)} disabled={generatingPDF === `cr-${cr.id}`}
+                          className="btn btn-ghost" style={{padding:'3px 10px', fontSize:11}}>
+                          <DlIcon /> {generatingPDF === `cr-${cr.id}` ? 'Génération…' : 'PDF'}
+                        </button>
+                      )}
+                      <button onClick={() => supprimerCR(cr.id)} className="btn btn-ghost" style={{padding:'3px 10px', fontSize:11, color:'#b91c1c'}}>
+                        × Supprimer
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
 
-          {comptesRendus.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">Aucun compte-rendu</p>
-          ) : (
-            <div className="space-y-3">
-              {comptesRendus.map(cr => (
-                <div key={cr.id} className={`border rounded-xl overflow-hidden ${cr.valide ? 'border-green-200' : 'border-gray-100'}`}>
-                  <div className={`flex items-center justify-between px-4 py-3 ${cr.valide ? 'bg-green-50' : 'bg-gray-50'}`}>
-                    <div>
-                      <span className="text-sm font-medium text-gray-800">
-                        {cr.type_visite === 'r1' ? 'R1 – Visite technique' : cr.type_visite === 'r2' ? 'R2 – Visite artisans' : cr.type_visite === 'r3' ? 'R3 – Présentation devis' : cr.type_visite === 'suivi' ? 'Suivi de chantier' : cr.type_visite === 'reception' ? 'Réception' : cr.type_visite}
-                      </span>
-                      {cr.date_visite && (
-                        <span className="text-xs text-gray-400 ml-2">- {new Date(cr.date_visite).toLocaleDateString('fr-FR')}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button onClick={() => toggleValide(cr.id, !cr.valide)}
-                        className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all ${cr.valide ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-                        {cr.valide ? '✓ Publié' : 'Brouillon'}
-                      </button>
-                      <button onClick={() => supprimerCR(cr.id)} className="text-red-300 hover:text-red-500 text-xs">✕</button>
-                    </div>
-                  </div>
-                  {cr.contenu_final && (
-                    <div className="px-4 py-3 border-t border-gray-100">
-                      <button
-                        onClick={() => generatePDF('cr', cr.id)}
-                        disabled={generatingPDF === `cr-${cr.id}`}
-                        className="text-xs text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 disabled:opacity-50">
-                        {generatingPDF === `cr-${cr.id}` ? '⏳ Génération...' : '📄 Télécharger le PDF'}
-                      </button>
-                    </div>
+          {/* Sidebar IA */}
+          <div style={{display:'flex', flexDirection:'column', gap:14}}>
+            <div className="card" style={{padding:18, background:'linear-gradient(135deg, rgba(0,148,212,0.06), rgba(0,87,142,0.02))'}}>
+              <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10}}>
+                <div style={{
+                  width:32, height:32, borderRadius:8, background:'var(--brand-500)', color:'#fff',
+                  display:'grid', placeItems:'center', fontSize:16,
+                }}>✨</div>
+                <span style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>CR généré par IA</span>
+              </div>
+              <ol style={{paddingLeft:20, fontSize:12.5, color:'var(--ink-700)', lineHeight:1.6, margin:0}}>
+                <li>Configure (type, date, intervenants)</li>
+                <li>Dépose tes notes + photos + vocal</li>
+                <li>Relis et valide le rendu structuré</li>
+              </ol>
+              <button onClick={() => { setCrModal(true); setCrEtape(1) }} className="btn btn-primary" style={{marginTop:14, width:'100%', justifyContent:'center'}}>
+                ✨ Démarrer
+              </button>
+            </div>
+
+            <div className="card" style={{padding:18}}>
+              <div className="eyebrow" style={{marginBottom:10}}>Documents joignables au CR</div>
+              {documents.length === 0 ? (
+                <div style={{fontSize:12, color:'var(--ink-400)'}}>Aucun document — ajoute des fichiers dans l'onglet Documents.</div>
+              ) : (
+                <div style={{display:'flex', flexDirection:'column', gap:8, fontSize:12.5, color:'var(--ink-700)'}}>
+                  {documents.slice(0, 6).map(doc => (
+                    <label key={doc.id} style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer'}}>
+                      <input type="checkbox" checked={doc.dans_restitution || false}
+                        onChange={e => toggleDansRestitution(doc.id, e.target.checked)}
+                        style={{accentColor:'var(--brand-500)'}} />
+                      <DocIcon />
+                      <span className="clip-1" style={{flex:1, minWidth:0}}>{doc.nom}</span>
+                    </label>
+                  ))}
+                  {documents.length > 6 && (
+                    <button onClick={() => setOnglet('documents')} className="btn btn-ghost" style={{fontSize:11, padding:'4px 8px', alignSelf:'flex-start'}}>
+                      Voir les {documents.length - 6} autres
+                    </button>
                   )}
                 </div>
-              ))}
+              )}
             </div>
-          )}
+          </div>
+
         </div>
+        )
+      })()}
 
         {/* ── MODAL CR SANS IA ── */}
         {crManuelModal && (
@@ -4093,10 +4292,6 @@ export default function FicheChantier({ params }) {
             </div>
           </div>
         )}
-
-
-      </div>
-      )}
 
       {/* ── MESSAGES ── (AMO uniquement) */}
       {onglet === 'messages' && dossier?.typologie === 'amo' && (
