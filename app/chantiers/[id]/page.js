@@ -4034,311 +4034,372 @@ export default function FicheChantier({ params }) {
         )
       })()}
 
-        {/* ── MODAL CR SANS IA ── */}
-        {crManuelModal && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-xl space-y-4 p-6" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-gray-800">📝 Nouveau CR sans IA</p>
-                <button onClick={() => setCrManuelModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Type de visite</label>
-                  <select value={crManuelForm.type_visite} onChange={e => setCrManuelForm(f => ({ ...f, type_visite: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="">— Sélectionner —</option>
-                    <option value="r1">R1 - Visite technique</option>
-                    <option value="r2">R2 - Visite artisans</option>
-                    <option value="r3">R3 - Présentation devis</option>
-                    <option value="suivi">Suivi de chantier</option>
-                    <option value="reception">Réception</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Date de visite</label>
-                  <input type="date" value={crManuelForm.date_visite} onChange={e => setCrManuelForm(f => ({ ...f, date_visite: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Contenu du CR *</label>
-                <textarea value={crManuelForm.contenu} onChange={e => setCrManuelForm(f => ({ ...f, contenu: e.target.value }))}
-                  rows={10} placeholder="Rédigez ou collez le contenu du compte-rendu..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Document PDF (optionnel)</label>
-                <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-600 border border-gray-300 rounded px-3 py-2 hover:bg-gray-50 w-fit">
-                  {crManuelForm.fichier ? `✓ ${crManuelForm.fichier.name}` : '+ Joindre un PDF'}
-                  <input type="file" accept=".pdf" className="hidden"
-                    onChange={e => setCrManuelForm(f => ({ ...f, fichier: e.target.files[0] || null }))} />
-                </label>
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button onClick={() => setCrManuelModal(false)} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
-                <button onClick={() => sauvegarderCRManuel(false)} disabled={crManuelSaving || !crManuelForm.contenu.trim()}
-                  className="flex-1 border border-blue-300 text-blue-700 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
-                  {crManuelSaving ? 'Enregistrement...' : 'Sauvegarder brouillon'}
-                </button>
-                <button onClick={() => sauvegarderCRManuel(true)} disabled={crManuelSaving || !crManuelForm.contenu.trim()}
-                  className="flex-1 bg-blue-800 text-white py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
-                  {crManuelSaving ? '...' : 'Publier au client'}
-                </button>
-              </div>
+      {/* ── MODAL CR SANS IA ── */}
+      {crManuelModal && (
+        <ModalShell
+          title="📝 Nouveau CR sans IA"
+          subtitle={`${dossier.reference} · saisie manuelle`}
+          onClose={() => setCrManuelModal(false)}
+          width={640}
+          footer={(<>
+            <button onClick={() => setCrManuelModal(false)} className="btn btn-ghost">Annuler</button>
+            <button onClick={() => sauvegarderCRManuel(false)} disabled={crManuelSaving || !crManuelForm.contenu.trim()}
+              className="btn btn-ghost" style={{borderColor:'var(--brand-200)', color:'var(--brand-700)'}}>
+              {crManuelSaving ? 'Enregistrement…' : 'Sauvegarder brouillon'}
+            </button>
+            <button onClick={() => sauvegarderCRManuel(true)} disabled={crManuelSaving || !crManuelForm.contenu.trim()}
+              className="btn btn-primary">
+              {crManuelSaving ? '…' : 'Publier au client'}
+            </button>
+          </>)}
+        >
+          <div style={{padding:24, display:'flex', flexDirection:'column', gap:14}}>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+              <ModalField label="Type de visite">
+                <select value={crManuelForm.type_visite}
+                  onChange={e => setCrManuelForm(f => ({ ...f, type_visite: e.target.value }))}
+                  className="input" style={{height:38, padding:'0 12px', fontSize:13}}>
+                  <option value="">— Sélectionner —</option>
+                  <option value="r1">R1 — Visite technique</option>
+                  <option value="r2">R2 — Visite artisans</option>
+                  <option value="r3">R3 — Présentation devis</option>
+                  <option value="suivi">Suivi de chantier</option>
+                  <option value="reception">Réception</option>
+                </select>
+              </ModalField>
+              <ModalField label="Date de visite">
+                <input type="date" value={crManuelForm.date_visite}
+                  onChange={e => setCrManuelForm(f => ({ ...f, date_visite: e.target.value }))}
+                  className="input" style={{height:38, padding:'0 12px', fontSize:13}} />
+              </ModalField>
             </div>
+
+            <ModalField label="Contenu du CR" required>
+              <textarea value={crManuelForm.contenu}
+                onChange={e => setCrManuelForm(f => ({ ...f, contenu: e.target.value }))}
+                rows={10} placeholder="Rédigez ou collez le contenu du compte-rendu…"
+                className="input" style={{minHeight:200, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
+            </ModalField>
+
+            <ModalField label="Document PDF (optionnel)">
+              <label style={{
+                display:'inline-flex', alignItems:'center', gap:8, fontSize:12, color:'var(--ink-600)',
+                border:'1px solid var(--ink-200)', borderRadius:8, padding:'8px 12px',
+                cursor:'pointer', alignSelf:'flex-start', background:'#fff',
+              }}>
+                {crManuelForm.fichier ? `✓ ${crManuelForm.fichier.name}` : '+ Joindre un PDF'}
+                <input type="file" accept=".pdf" style={{display:'none'}}
+                  onChange={e => setCrManuelForm(f => ({ ...f, fichier: e.target.files[0] || null }))} />
+              </label>
+            </ModalField>
           </div>
-        )}
-        
-        {/* ── MODAL CR AVEC IA ── */}
-        {crModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4"
-            onClick={() => setCrModal(false)}>
-            <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        </ModalShell>
+      )}
 
-              {/* Header modal */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10">
-                <div>
-                  <p className="font-semibold text-gray-800">✨ Nouveau CR avec IA</p>
-                  <div className="flex gap-1 mt-1.5">
-                    {[1,2,3].map(n => (
-                      <div key={n} className={`h-1.5 rounded-full transition-all ${n <= crEtape ? 'bg-blue-800 w-8' : 'bg-gray-200 w-8'}`} />
-                    ))}
-                    <span className="text-xs text-gray-400 ml-2">Étape {crEtape}/3</span>
-                  </div>
-                </div>
-                <button onClick={() => setCrModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+      {/* ── MODAL CR AVEC IA (wizard 3 étapes) ── */}
+      {crModal && (() => {
+        const TYPES_CR = [
+          { value: 'r1',        label: 'R1 — Visite technique',  emoji: '🔍' },
+          { value: 'r2',        label: 'R2 — Visite artisans',    emoji: '🔨' },
+          { value: 'r3',        label: 'R3 — Présentation devis', emoji: '📋' },
+          { value: 'suivi',     label: 'Suivi de chantier',       emoji: '📊' },
+          { value: 'reception', label: 'Réception',               emoji: '✓' },
+        ]
+        const intervenantsDispo = devis.filter(d => ['recu', 'accepte'].includes(d.statut))
+        return (
+          <ModalShell
+            title={<>✨ Nouveau CR avec IA <span style={{fontSize:12, color:'var(--ink-400)', fontWeight:400, marginLeft:8}}>· Étape {crEtape}/3</span></>}
+            subtitle={(
+              <div style={{display:'flex', gap:6, marginTop:6}}>
+                {[1,2,3].map(n => (
+                  <div key={n} style={{
+                    height:4, width:60, borderRadius:99,
+                    background: n <= crEtape ? 'var(--brand-700)' : 'var(--ink-200)',
+                    transition:'background 200ms',
+                  }} />
+                ))}
               </div>
+            )}
+            onClose={() => setCrModal(false)}
+            width={720}
+          >
+            <div style={{padding:24, display:'flex', flexDirection:'column', gap:16}}>
 
-              <div className="p-6 space-y-5">
+              {/* ── ÉTAPE 1 : Configuration ── */}
+              {crEtape === 1 && (
+                <div style={{display:'flex', flexDirection:'column', gap:14}}>
+                  <div style={{fontSize:13.5, fontWeight:600, color:'var(--ink-700)'}}>Configuration de la visite</div>
 
-                {/* ── ÉTAPE 1 : Configuration ── */}
-                {crEtape === 1 && (
-                  <div className="space-y-4">
-                    <p className="text-sm font-medium text-gray-700">Configuration de la visite</p>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Type de visite *</label>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {[
-                          { value: 'r1', label: 'R1 – Visite technique', emoji: '🔍' },
-                          { value: 'r2', label: 'R2 – Visite artisans', emoji: '🔨' },
-                          { value: 'r3', label: 'R3 – Présentation devis', emoji: '📋' },
-                          { value: 'suivi', label: 'Suivi de chantier', emoji: '📊' },
-                          { value: 'reception', label: 'Réception', emoji: '✅' },
-                        ].map(({ value, label, emoji }) => (
+                  <ModalField label="Type de visite" required>
+                    <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+                      {TYPES_CR.map(({ value, label, emoji }) => {
+                        const active = crForm.type_visite === value
+                        return (
                           <button key={value} onClick={() => setCrForm(f => ({ ...f, type_visite: value }))}
-                            className={`text-left px-3 py-2.5 rounded-xl border text-sm transition-all ${crForm.type_visite === value ? 'border-blue-800 bg-blue-50 text-blue-800 font-medium' : 'border-gray-200 hover:border-gray-300'}`}>
+                            style={{
+                              textAlign:'left', padding:'10px 14px', borderRadius:10,
+                              border:'1px solid', cursor:'pointer', fontSize:13, transition:'all 150ms',
+                              borderColor: active ? 'var(--brand-700)' : 'var(--ink-200)',
+                              background: active ? 'var(--brand-50)' : '#fff',
+                              color: active ? 'var(--brand-800)' : 'var(--ink-700)',
+                              fontWeight: active ? 600 : 500,
+                            }}>
                             {emoji} {label}
                           </button>
-                        ))}
-                      </div>
+                        )
+                      })}
                     </div>
+                  </ModalField>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Date de la visite</label>
-                        <input type="date" value={crForm.date_visite}
-                          onChange={e => setCrForm(f => ({ ...f, date_visite: e.target.value }))}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Intervenants présents</label>
-                        {devis.filter(d => ['recu', 'accepte'].includes(d.statut)).length > 0 ? (
-                          <div className="space-y-1 border border-gray-200 rounded-lg p-2">
-                             {devis.filter(d => ['recu', 'accepte'].includes(d.statut)).map(d => {
-                              const selected = (crForm.intervenants || '').split(',').map(s => s.trim()).filter(Boolean).includes(d.artisan?.entreprise)
-                              return (
-                                <label key={d.id} className="flex items-center gap-2 cursor-pointer px-2 py-1 rounded hover:bg-gray-50">
-                                  <input type="checkbox" checked={selected}
-                                    onChange={() => {
-                                      const current = (crForm.intervenants || '').split(',').map(s => s.trim()).filter(Boolean)
-                                      const updated = selected
-                                        ? current.filter(n => n !== d.artisan?.entreprise)
-                                        : [...current, d.artisan?.entreprise]
-                                      setCrForm(f => ({ ...f, intervenants: updated.join(', ') }))
-                                    }}
-                                    className="accent-blue-700" />
-                                  <span className="text-sm text-gray-700">{d.artisan?.entreprise}</span>
-                                  <span className="text-xs text-gray-400">{d.artisan?.metier}</span>
-                                  <span className={`text-xs px-1.5 py-0.5 rounded-full ml-auto ${d.statut === 'accepte' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
-                                      {d.statut === 'accepte' ? 'Signé' : 'Reçu'}
-                                    </span>
-                                </label>
-                              )
-                            })}
-                          </div>
-                        ) : (
-                          <input type="text" value={crForm.intervenants}
-                            onChange={e => setCrForm(f => ({ ...f, intervenants: e.target.value }))}
-                            placeholder="Plaquiste, Électricien…"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                        )}
-                      </div>
-                    </div>
-
-                    <button onClick={() => crForm.type_visite && setCrEtape(2)}
-                      disabled={!crForm.type_visite}
-                      className="w-full bg-blue-800 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-blue-900 disabled:opacity-40 mt-2">
-                      Suivant →
-                    </button>
-                  </div>
-                )}
-
-                {/* ── ÉTAPE 2 : Notes brutes ── */}
-                {crEtape === 2 && (
-                  <div className="space-y-4">
-                    <p className="text-sm font-medium text-gray-700">Saisie des notes brutes</p>
-                    <p className="text-xs text-gray-400">Combinez plusieurs sources - l'IA synthétise tout</p>
-
-                    {/* Texte */}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">📝 Texte (copier-coller depuis OneNote, Outlook…)</label>
-                      <textarea value={crNotes} onChange={e => setCrNotes(e.target.value)}
-                        rows={5} placeholder="Coller vos notes brutes ici - bullet points, phrases incomplètes, tout est ok..."
-                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-                    </div>
-
-                    {/* Vocal */}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">🎤 Vocal (dictée dans l'app)</label>
-                      <div className="flex gap-2 items-start">
-                        <button onClick={crVocal ? arreterVocal : demarrerVocal}
-                          className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all ${crVocal ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-                          {crVocal ? '⏹ Arrêter' : '🎙 Dicter'}
-                        </button>
-                        {crVocalTexte && (
-                          <div className="flex-1 text-xs text-gray-600 bg-gray-50 rounded-xl p-2.5 min-h-[40px]">
-                            {crVocalTexte}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Photos */}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">📷 Photos (cahier, capture d'écran, document)</label>
-                      <div className="flex flex-wrap gap-2">
-                        {crImages.map((img, i) => (
-                          <div key={i} className="relative">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={img} alt="" className="w-20 h-20 object-cover rounded-lg border border-gray-200" />
-                            <button onClick={() => setCrImages(imgs => imgs.filter((_, j) => j !== i))}
-                              className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-xs flex items-center justify-center">✕</button>
-                          </div>
-                        ))}
-                        <label className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-blue-400 transition-colors">
-                          <span className="text-2xl text-gray-300">+</span>
-                          <input type="file" accept="image/*" multiple className="hidden"
-                            onChange={e => {
-                              Array.from(e.target.files || []).forEach(file => {
-                                const reader = new FileReader()
-                                reader.onload = ev => setCrImages(imgs => [...imgs, ev.target.result])
-                                reader.readAsDataURL(file)
-                              })
-                            }} />
-                        </label>
-                      </div>
-                    </div>
-                    {documents.length > 0 && (
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">📎 Documents du chantier (contexte IA)</label>
-                        <div className="border border-gray-200 rounded-xl p-2 space-y-1 max-h-36 overflow-y-auto">
-                          {documents.map(doc => {
-                            const selected = crDocsSelectionnes.some(d => d.id === doc.id)
-                            const supporté = doc.type_mime?.includes('pdf') || doc.type_mime?.startsWith('image')
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+                    <ModalField label="Date de la visite">
+                      <input type="date" value={crForm.date_visite}
+                        onChange={e => setCrForm(f => ({ ...f, date_visite: e.target.value }))}
+                        className="input" style={{height:38, padding:'0 12px', fontSize:13}} />
+                    </ModalField>
+                    <ModalField label="Intervenants présents">
+                      {intervenantsDispo.length > 0 ? (
+                        <div style={{border:'1px solid var(--ink-200)', borderRadius:10, padding:6, display:'flex', flexDirection:'column', gap:2}}>
+                          {intervenantsDispo.map(d => {
+                            const selected = (crForm.intervenants || '').split(',').map(s => s.trim()).filter(Boolean).includes(d.artisan?.entreprise)
                             return (
-                              <label key={doc.id} className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer ${supporté ? 'hover:bg-gray-50' : 'opacity-40 cursor-not-allowed'}`}>
-                                <input type="checkbox" checked={selected} disabled={!supporté}
+                              <label key={d.id} style={{
+                                display:'flex', alignItems:'center', gap:8, cursor:'pointer',
+                                padding:'4px 8px', borderRadius:6, transition:'background 150ms',
+                              }}
+                                onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-2)' }}
+                                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+                                <input type="checkbox" checked={selected}
                                   onChange={() => {
-                                    if (!supporté) return
-                                    setCrDocsSelectionnes(prev =>
-                                      selected ? prev.filter(d => d.id !== doc.id) : [...prev, doc]
-                                    )
+                                    const current = (crForm.intervenants || '').split(',').map(s => s.trim()).filter(Boolean)
+                                    const updated = selected
+                                      ? current.filter(n => n !== d.artisan?.entreprise)
+                                      : [...current, d.artisan?.entreprise]
+                                    setCrForm(f => ({ ...f, intervenants: updated.join(', ') }))
                                   }}
-                                  className="accent-blue-700" />
-                                <span className="text-xs text-gray-700 truncate">{doc.nom}</span>
-                                {!supporté && <span className="text-xs text-gray-400 ml-auto">non supporté</span>}
+                                  style={{accentColor:'var(--brand-500)'}} />
+                                <span style={{fontSize:13, color:'var(--ink-700)'}}>{d.artisan?.entreprise}</span>
+                                <span style={{fontSize:11, color:'var(--ink-400)'}}>{d.artisan?.metier}</span>
+                                <span style={{
+                                  fontSize:10.5, padding:'2px 8px', borderRadius:99, marginLeft:'auto', fontWeight:700,
+                                  background: d.statut === 'accepte' ? TONE_BG.ok : TONE_BG.info,
+                                  color: d.statut === 'accepte' ? TONE_FG.ok : TONE_FG.info,
+                                }}>
+                                  {d.statut === 'accepte' ? 'Signé' : 'Reçu'}
+                                </span>
                               </label>
                             )
                           })}
                         </div>
-                      </div>
-                    )}
-                    <div className="flex gap-3 pt-2">
-                      <button onClick={() => setCrEtape(1)} className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-xl text-sm hover:bg-gray-50">
-                        ← Retour
-                      </button>
-                      <button onClick={genererCRAvecIA}
-                        disabled={crGenerating || (!crNotes.trim() && !crVocalTexte.trim() && crImages.length === 0)}
-                        className="flex-1 bg-blue-800 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-blue-900 disabled:opacity-40">
-                        {crGenerating ? (
-                          <span className="flex items-center justify-center gap-2">
-                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                            Génération en cours…
-                          </span>
-                        ) : '✨ Générer le CR'}
-                      </button>
-                    </div>
+                      ) : (
+                        <input type="text" value={crForm.intervenants}
+                          onChange={e => setCrForm(f => ({ ...f, intervenants: e.target.value }))}
+                          placeholder="Plaquiste, Électricien…"
+                          className="input" style={{height:38, padding:'0 12px', fontSize:13}} />
+                      )}
+                    </ModalField>
                   </div>
-                )}
 
-                {/* ── ÉTAPE 3 : Relecture ── */}
-                {crEtape === 3 && crGenere && (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-gray-800">{crGenere.titre}</p>
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Généré ✓</span>
+                  <button onClick={() => crForm.type_visite && setCrEtape(2)}
+                    disabled={!crForm.type_visite}
+                    className="btn btn-primary"
+                    style={{justifyContent:'center', height:42, fontSize:13, marginTop:4}}>
+                    Suivant →
+                  </button>
+                </div>
+              )}
+
+              {/* ── ÉTAPE 2 : Notes brutes ── */}
+              {crEtape === 2 && (
+                <div style={{display:'flex', flexDirection:'column', gap:14}}>
+                  <div>
+                    <div style={{fontSize:13.5, fontWeight:600, color:'var(--ink-700)'}}>Saisie des notes brutes</div>
+                    <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:2}}>Combinez plusieurs sources — l'IA synthétise tout</div>
+                  </div>
+
+                  <ModalField label="📝 Texte (copier-coller depuis OneNote, Outlook…)">
+                    <textarea value={crNotes} onChange={e => setCrNotes(e.target.value)}
+                      rows={5} placeholder="Coller vos notes brutes ici — bullet points, phrases incomplètes, tout est ok…"
+                      className="input" style={{minHeight:120, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
+                  </ModalField>
+
+                  <ModalField label="🎤 Vocal (dictée dans l'app)">
+                    <div style={{display:'flex', gap:8, alignItems:'flex-start'}}>
+                      <button onClick={crVocal ? arreterVocal : demarrerVocal}
+                        style={{
+                          flexShrink:0, padding:'8px 16px', borderRadius:10,
+                          fontSize:13, fontWeight:600, border:'none', cursor:'pointer', transition:'all 150ms',
+                          background: crVocal ? 'rgba(220,38,38,0.12)' : 'var(--surface-2)',
+                          color: crVocal ? '#b91c1c' : 'var(--ink-700)',
+                          animation: crVocal ? 'fadeIn 1s ease-in-out infinite alternate' : 'none',
+                        }}>
+                        {crVocal ? '⏹ Arrêter' : '🎙 Dicter'}
+                      </button>
+                      {crVocalTexte && (
+                        <div style={{
+                          flex:1, fontSize:12, color:'var(--ink-700)', background:'var(--surface-2)',
+                          borderRadius:10, padding:10, minHeight:40,
+                        }}>
+                          {crVocalTexte}
+                        </div>
+                      )}
                     </div>
+                  </ModalField>
 
-                    <div className="space-y-4">
-                      {crSectionsEditees.map((section, idx) => (
-                        <div key={idx} className={`border rounded-xl overflow-hidden ${section.important ? 'border-orange-200' : 'border-gray-100'}`}>
-                          <div className={`px-4 py-2 flex items-center gap-2 ${section.important ? 'bg-orange-50' : 'bg-gray-50'}`}>
-                            <span className="text-xs font-bold text-gray-500">{section.numero}.</span>
-                            <input
-                              type="text"
-                              value={section.titre}
-                              onChange={e => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, titre: e.target.value } : s))}
-                              className="flex-1 text-sm font-medium bg-transparent focus:outline-none" />
-                            <button onClick={() => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, important: !s.important } : s))}
-                              className={`text-xs px-2 py-0.5 rounded ${section.important ? 'text-orange-600' : 'text-gray-300 hover:text-orange-400'}`}>
-                              ⚠
-                            </button>
-                          </div>
-                          <textarea
-                            value={section.contenu}
-                            onChange={e => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, contenu: e.target.value } : s))}
-                            rows={Math.max(3, Math.ceil(section.contenu.length / 80))}
-                            className="w-full px-4 py-3 text-xs text-gray-700 resize-none focus:outline-none focus:bg-blue-50 transition-colors leading-relaxed" />
+                  <ModalField label="📷 Photos (cahier, capture d'écran, document)">
+                    <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
+                      {crImages.map((img, i) => (
+                        <div key={i} style={{position:'relative'}}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={img} alt="" style={{width:80, height:80, objectFit:'cover', borderRadius:8, border:'1px solid var(--ink-200)'}} />
+                          <button onClick={() => setCrImages(imgs => imgs.filter((_, j) => j !== i))}
+                            style={{
+                              position:'absolute', top:-6, right:-6,
+                              width:18, height:18, borderRadius:'50%',
+                              background:'#dc2626', color:'#fff', border:'none', cursor:'pointer',
+                              fontSize:10, display:'grid', placeItems:'center',
+                            }}>✕</button>
                         </div>
                       ))}
+                      <label style={{
+                        width:80, height:80, borderRadius:8,
+                        border:'2px dashed var(--ink-300)', display:'grid', placeItems:'center',
+                        cursor:'pointer', transition:'border-color 150ms',
+                      }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--brand-500)' }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--ink-300)' }}>
+                        <span style={{fontSize:24, color:'var(--ink-300)', lineHeight:1}}>+</span>
+                        <input type="file" accept="image/*" multiple style={{display:'none'}}
+                          onChange={e => {
+                            Array.from(e.target.files || []).forEach(file => {
+                              const reader = new FileReader()
+                              reader.onload = ev => setCrImages(imgs => [...imgs, ev.target.result])
+                              reader.readAsDataURL(file)
+                            })
+                          }} />
+                      </label>
                     </div>
+                  </ModalField>
 
-                    <div className="flex gap-3 pt-2">
-                      <button onClick={() => setCrEtape(2)} className="border border-gray-300 text-gray-700 px-4 py-2.5 rounded-xl text-sm hover:bg-gray-50">
-                        ← Retravailler
-                      </button>
-                      <button onClick={() => sauvegarderCRGenere(false)} disabled={crSavingFinal}
-                        className="flex-1 border border-blue-800 text-blue-800 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-50 disabled:opacity-40">
-                        Sauvegarder brouillon
-                      </button>
-                      <button onClick={() => sauvegarderCRGenere(true)} disabled={crSavingFinal}
-                        className="flex-1 bg-green-700 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-green-800 disabled:opacity-40">
-                        ✓ Publier au client
-                      </button>
-                    </div>
+                  {documents.length > 0 && (
+                    <ModalField label="📎 Documents du chantier (contexte IA)">
+                      <div style={{border:'1px solid var(--ink-200)', borderRadius:10, padding:6, display:'flex', flexDirection:'column', gap:2, maxHeight:144, overflowY:'auto'}}>
+                        {documents.map(doc => {
+                          const selected = crDocsSelectionnes.some(d => d.id === doc.id)
+                          const supported = doc.type_mime?.includes('pdf') || doc.type_mime?.startsWith('image')
+                          return (
+                            <label key={doc.id} style={{
+                              display:'flex', alignItems:'center', gap:8,
+                              padding:'4px 8px', borderRadius:6, cursor: supported ? 'pointer' : 'not-allowed',
+                              opacity: supported ? 1 : 0.4, transition:'background 150ms',
+                            }}
+                              onMouseEnter={e => { if (supported) e.currentTarget.style.background = 'var(--surface-2)' }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+                              <input type="checkbox" checked={selected} disabled={!supported}
+                                onChange={() => {
+                                  if (!supported) return
+                                  setCrDocsSelectionnes(prev =>
+                                    selected ? prev.filter(d => d.id !== doc.id) : [...prev, doc]
+                                  )
+                                }}
+                                style={{accentColor:'var(--brand-500)'}} />
+                              <span className="clip-1" style={{fontSize:12, color:'var(--ink-700)', flex:1, minWidth:0}}>{doc.nom}</span>
+                              {!supported && <span style={{fontSize:10.5, color:'var(--ink-400)'}}>non supporté</span>}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </ModalField>
+                  )}
+
+                  <div style={{display:'flex', gap:10, paddingTop:6}}>
+                    <button onClick={() => setCrEtape(1)} className="btn btn-ghost" style={{flex:1, justifyContent:'center', height:42}}>
+                      ← Retour
+                    </button>
+                    <button onClick={genererCRAvecIA}
+                      disabled={crGenerating || (!crNotes.trim() && !crVocalTexte.trim() && crImages.length === 0)}
+                      className="btn btn-primary" style={{flex:2, justifyContent:'center', height:42, fontSize:13}}>
+                      {crGenerating ? (
+                        <span style={{display:'inline-flex', alignItems:'center', gap:8}}>
+                          <span style={{
+                            width:14, height:14, borderRadius:'50%',
+                            border:'2px solid rgba(255,255,255,0.4)', borderTopColor:'#fff',
+                            animation:'spin 0.65s linear infinite',
+                          }} />
+                          Génération en cours…
+                        </span>
+                      ) : '✨ Générer le CR'}
+                    </button>
                   </div>
-                )}
+                </div>
+              )}
 
-              </div>
+              {/* ── ÉTAPE 3 : Relecture ── */}
+              {crEtape === 3 && crGenere && (
+                <div style={{display:'flex', flexDirection:'column', gap:14}}>
+                  <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                    <span style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>{crGenere.titre}</span>
+                    <Badge tone="ok">Généré ✓</Badge>
+                  </div>
+
+                  <div style={{display:'flex', flexDirection:'column', gap:12}}>
+                    {crSectionsEditees.map((section, idx) => (
+                      <div key={idx} style={{
+                        border:'1px solid', borderRadius:10, overflow:'hidden',
+                        borderColor: section.important ? 'rgba(245,158,11,0.4)' : 'var(--ink-200)',
+                      }}>
+                        <div style={{
+                          padding:'8px 14px', display:'flex', alignItems:'center', gap:8,
+                          background: section.important ? 'rgba(245,158,11,0.10)' : 'var(--surface-2)',
+                        }}>
+                          <span style={{fontSize:11, fontWeight:800, color:'var(--ink-500)'}}>{section.numero}.</span>
+                          <input
+                            type="text"
+                            value={section.titre}
+                            onChange={e => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, titre: e.target.value } : s))}
+                            style={{flex:1, fontSize:13, fontWeight:600, background:'transparent', border:'none', outline:'none', color:'var(--ink-900)'}} />
+                          <button onClick={() => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, important: !s.important } : s))}
+                            style={{
+                              fontSize:13, padding:'2px 8px', borderRadius:6,
+                              background:'transparent', border:'none', cursor:'pointer',
+                              color: section.important ? '#a16207' : 'var(--ink-300)',
+                            }}>⚠</button>
+                        </div>
+                        <textarea
+                          value={section.contenu}
+                          onChange={e => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, contenu: e.target.value } : s))}
+                          rows={Math.max(3, Math.ceil(section.contenu.length / 80))}
+                          style={{
+                            width:'100%', padding:'10px 14px', fontSize:12, color:'var(--ink-700)',
+                            border:'none', outline:'none', resize:'vertical', lineHeight:1.55,
+                            transition:'background 150ms', fontFamily:'inherit',
+                          }}
+                          onFocus={e => { e.target.style.background = 'var(--brand-50)' }}
+                          onBlur={e => { e.target.style.background = 'transparent' }} />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{display:'flex', gap:10, paddingTop:6, flexWrap:'wrap'}}>
+                    <button onClick={() => setCrEtape(2)} className="btn btn-ghost" style={{justifyContent:'center', height:42}}>
+                      ← Retravailler
+                    </button>
+                    <button onClick={() => sauvegarderCRGenere(false)} disabled={crSavingFinal}
+                      className="btn btn-ghost" style={{flex:1, justifyContent:'center', height:42, borderColor:'var(--brand-700)', color:'var(--brand-800)'}}>
+                      Sauvegarder brouillon
+                    </button>
+                    <button onClick={() => sauvegarderCRGenere(true)} disabled={crSavingFinal}
+                      className="btn btn-primary" style={{flex:1, justifyContent:'center', height:42, background:'#15803d', borderColor:'#15803d'}}>
+                      ✓ Publier au client
+                    </button>
+                  </div>
+                </div>
+              )}
+
             </div>
-          </div>
-        )}
+          </ModalShell>
+        )
+      })()}
 
       {/* ── MESSAGES (maquette : conversation client AMO) ── */}
       {onglet === 'messages' && dossier?.typologie === 'amo' && (
