@@ -51,6 +51,81 @@ function Fact({ label, value, highlight, mono }) {
 // Format euro court partagé (helpers module-level)
 const fmtEurShort = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
 
+function ModalShell({ title, subtitle, onClose, width = 580, children, footer }) {
+  // Ferme avec Échap
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose && onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+  return (
+    <div style={{
+      position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:200,
+      display:'grid', placeItems:'center', padding:20, overflow:'auto',
+    }} onClick={onClose}>
+      <div className="card" style={{
+        padding:0, maxWidth:width, width:'100%', maxHeight:'90vh',
+        overflow:'hidden', display:'flex', flexDirection:'column',
+      }} onClick={e => e.stopPropagation()}>
+        <div style={{
+          padding:'18px 24px', borderBottom:'1px solid var(--ink-200)',
+          display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:14,
+        }}>
+          <div style={{minWidth:0}}>
+            <h2 className="page" style={{fontSize:17}}>{title}</h2>
+            {subtitle && <div className="eyebrow" style={{marginTop:4}}>{subtitle}</div>}
+          </div>
+          <button className="btn btn-ghost" style={{padding:'6px 10px', fontSize:16, lineHeight:1}} onClick={onClose} aria-label="Fermer">×</button>
+        </div>
+        <div style={{flex:1, overflow:'auto'}}>{children}</div>
+        {footer && (
+          <div style={{padding:'14px 24px', borderTop:'1px solid var(--ink-200)', display:'flex', justifyContent:'flex-end', gap:8, flexWrap:'wrap'}}>
+            {footer}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ModalField({ label, children, required }) {
+  return (
+    <label style={{display:'flex', flexDirection:'column', gap:6, minWidth:0}}>
+      <span className="eyebrow">{label}{required && <span style={{color:'#dc2626', marginLeft:4}}>*</span>}</span>
+      {children}
+    </label>
+  )
+}
+
+function LieuPicker({ value, onChange }) {
+  const opts = [
+    { k: 'client', label: 'Adresse client', icon: '🏠' },
+    { k: 'agence',  label: 'Agence',         icon: '🏢' },
+  ]
+  return (
+    <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
+      {opts.map(o => {
+        const active = value === o.k
+        return (
+          <button key={o.k} type="button" onClick={() => onChange(o.k)}
+            style={{
+              padding:'10px 12px', borderRadius:10, border:'1px solid',
+              borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
+              background: active ? 'var(--brand-50)' : '#fff',
+              color: active ? 'var(--brand-800)' : 'var(--ink-700)',
+              cursor:'pointer', fontSize:13, fontWeight:600,
+              display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+              transition:'all 150ms',
+            }}>
+            <span style={{fontSize:16}}>{o.icon}</span>
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function EcheanceRow({ label, sub, statut, date, variant, onToggle, fmtDateFn }) {
   const isRegle = statut === 'regle' || statut === 'recu'
   const isIllico = variant === 'illico'
@@ -607,10 +682,10 @@ export default function FicheChantier({ params }) {
   const [interventionEnEdition, setInterventionEnEdition] = useState(null)
   const [modalInterventionOuvert, setModalInterventionOuvert] = useState(false)
   const [interventionsDossier, setInterventionsDossier] = useState([])
-  const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '' })
+  const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client' })
   const [modalCreerIntervOuvert, setModalCreerIntervOuvert] = useState(false)
   const [nouvIntervArtisanId, setNouvIntervArtisanId] = useState(null)
-  const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60 })
+  const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client' })
   const [fichesTechChantier, setFichesTechChantier] = useState({})
   const [fichesPanelOuvert, setFichesPanelOuvert] = useState(null)
   const [documents, setDocuments] = useState([])
@@ -726,11 +801,12 @@ export default function FicheChantier({ params }) {
       dossier_id: id, type_rdv: nouveauRdvDossier.type_rdv, date_heure: nouveauRdvDossier.date_heure,
       duree_minutes: parseInt(nouveauRdvDossier.duree_minutes), artisan_id: nouveauRdvDossier.artisan_id || null, notes: nouveauRdvDossier.notes || null,
       titre: nouveauRdvDossier.type_rdv === 'autres' ? (nouveauRdvDossier.titre || null) : null,
+      lieu: nouveauRdvDossier.lieu || 'client',
     })
     if (!error) {
       await chargerRdvsDossier()
       setModalRdvOuvert(false)
-      setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '' })
+      setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client' })
       setSucces('RDV créé ✓')
     }
   }
@@ -762,6 +838,7 @@ export default function FicheChantier({ params }) {
       type_rdv: rdvEnEdition.type_rdv, date_heure: rdvEnEdition.date_heure,
       duree_minutes: parseInt(rdvEnEdition.duree_minutes), artisan_id: rdvEnEdition.artisan_id || null, notes: rdvEnEdition.notes || null,
       titre: rdvEnEdition.type_rdv === 'autres' ? (rdvEnEdition.titre || null) : null,
+      lieu: rdvEnEdition.lieu || 'client',
     }).eq('id', rdvEnEdition.id)
     await chargerRdvsDossier()
     setModalRdvOuvert(false)
@@ -784,6 +861,7 @@ export default function FicheChantier({ params }) {
         notes: nouvIntervForm.notes || null,
         heure_debut: nouvIntervForm.heure_debut || null,
         duree_minutes: nouvIntervForm.heure_debut ? (nouvIntervForm.duree_minutes || 60) : null,
+        lieu: nouvIntervForm.lieu || 'client',
       }
       const { data: intData, error: insertErr } = await supabase.from('interventions_artisans').insert(payload).select('*, artisan:artisans(id, entreprise)')
       if (insertErr) { setErreur('Erreur : ' + insertErr.message); return }
@@ -798,7 +876,7 @@ export default function FicheChantier({ params }) {
       await chargerRdvsDossier()
       setModalCreerIntervOuvert(false)
       setNouvIntervArtisanId(null)
-      setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60 })
+      setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client' })
       setSucces('Intervention planifiée ✓')
     } catch (err) {
       setErreur('Erreur inattendue : ' + err.message)
@@ -818,6 +896,7 @@ export default function FicheChantier({ params }) {
       notes: interventionEnEdition.notes || null,
       heure_debut: interventionEnEdition.heure_debut || null,
       duree_minutes: interventionEnEdition.heure_debut ? (interventionEnEdition.duree_minutes || 60) : null,
+      lieu: interventionEnEdition.lieu || 'client',
     }).eq('id', interventionEnEdition.id)
     if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerRdvsDossier()
@@ -3371,177 +3450,285 @@ export default function FicheChantier({ params }) {
 
         </div>
 
-        {/* Modal RDV */}
-        {modalRdvOuvert && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => { setModalRdvOuvert(false); setRdvEnEdition(null) }}>
-            <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
-              <h2 className="font-semibold text-gray-800">{rdvEnEdition ? 'Modifier le rendez-vous' : 'Nouveau rendez-vous'}</h2>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Type de RDV *</label>
-                <select value={rdvEnEdition ? rdvEnEdition.type_rdv : nouveauRdvDossier.type_rdv}
-                  onChange={e => rdvEnEdition ? setRdvEnEdition(r => ({ ...r, type_rdv: e.target.value })) : setNouveauRdvDossier(f => ({ ...f, type_rdv: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="visite_technique_client">R1 - Visite technique client</option>
-                  <option value="visite_technique_artisan">R2 - Visite technique avec artisan</option>
-                  <option value="presentation_devis">R3 - Présentation devis</option>
-                  <option value="autres">Autre rendez-vous</option>
-                </select>
-              </div>
-              {(rdvEnEdition ? rdvEnEdition.type_rdv : nouveauRdvDossier.type_rdv) === 'autres' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Titre du rendez-vous *</label>
-                  <input type="text"
-                    value={rdvEnEdition ? rdvEnEdition.titre || '' : nouveauRdvDossier.titre}
-                    onChange={e => rdvEnEdition ? setRdvEnEdition(r => ({ ...r, titre: e.target.value })) : setNouveauRdvDossier(f => ({ ...f, titre: e.target.value }))}
-                    placeholder="Ex : Réunion de chantier, Appel fournisseur…"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date et heure *</label>
-                  <input type="datetime-local" value={rdvEnEdition ? rdvEnEdition.date_heure?.slice(0, 16) : nouveauRdvDossier.date_heure}
-                    onChange={e => rdvEnEdition ? setRdvEnEdition(r => ({ ...r, date_heure: e.target.value })) : setNouveauRdvDossier(f => ({ ...f, date_heure: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Durée</label>
-                  <select value={rdvEnEdition ? rdvEnEdition.duree_minutes : nouveauRdvDossier.duree_minutes}
-                    onChange={e => rdvEnEdition ? setRdvEnEdition(r => ({ ...r, duree_minutes: e.target.value })) : setNouveauRdvDossier(f => ({ ...f, duree_minutes: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value={30}>30 min</option>
-                    <option value={60}>1h</option>
-                    <option value={90}>1h30</option>
-                    <option value={120}>2h</option>
-                    <option value={180}>3h</option>
-                  </select>
-                </div>
-              </div>
-              {(rdvEnEdition ? rdvEnEdition.type_rdv : nouveauRdvDossier.type_rdv) === 'visite_technique_artisan' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Artisan</label>
-                  <select value={rdvEnEdition ? rdvEnEdition.artisan_id || '' : nouveauRdvDossier.artisan_id}
-                    onChange={e => rdvEnEdition ? setRdvEnEdition(r => ({ ...r, artisan_id: e.target.value })) : setNouveauRdvDossier(f => ({ ...f, artisan_id: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="">— Choisir —</option>
-                    {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
-                  </select>
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                <textarea value={rdvEnEdition ? rdvEnEdition.notes || '' : nouveauRdvDossier.notes}
-                  onChange={e => rdvEnEdition ? setRdvEnEdition(r => ({ ...r, notes: e.target.value })) : setNouveauRdvDossier(f => ({ ...f, notes: e.target.value }))}
-                  rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => { setModalRdvOuvert(false); setRdvEnEdition(null) }} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
-                <button onClick={rdvEnEdition ? modifierRdvDossier : sauvegarderRdvDossier} disabled={!rdvEnEdition && !nouveauRdvDossier.date_heure}
-                  className="flex-1 bg-blue-800 text-white py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
-                  {rdvEnEdition ? 'Enregistrer' : 'Créer le RDV'}
+        {/* Modal RDV (maquette) */}
+        {modalRdvOuvert && (() => {
+          const edit = !!rdvEnEdition
+          const form = edit ? rdvEnEdition : nouveauRdvDossier
+          const setForm = edit
+            ? (patch) => setRdvEnEdition(r => ({ ...r, ...(typeof patch === 'function' ? patch(r) : patch) }))
+            : (patch) => setNouveauRdvDossier(f => ({ ...f, ...(typeof patch === 'function' ? patch(f) : patch) }))
+          const types = [
+            { k: 'visite_technique_client',  l: 'R1',    sub: 'Visite client',        color: '#0094d4' },
+            { k: 'visite_technique_artisan', l: 'R2',    sub: 'Visite artisan',       color: '#16a34a' },
+            { k: 'presentation_devis',       l: 'R3',    sub: 'Présentation devis',   color: '#f59e0b' },
+            { k: 'autres',                   l: 'Autre', sub: 'RDV libre',            color: '#94a3b8' },
+          ]
+          const dateOnly = (form.date_heure || '').slice(0, 10)
+          const timeOnly = (form.date_heure || '').slice(11, 16)
+          const setDateHeure = (date, heure) => {
+            const d = date || dateOnly
+            const h = heure || timeOnly || '09:00'
+            if (!d) return
+            setForm({ date_heure: `${d}T${h}` })
+          }
+          const closeModal = () => { setModalRdvOuvert(false); setRdvEnEdition(null) }
+          const valid = !!form.date_heure
+          return (
+            <ModalShell
+              title={edit ? 'Modifier le rendez-vous' : 'Nouveau rendez-vous'}
+              subtitle={`${dossier.reference} · ${nomComplet}`}
+              onClose={closeModal}
+              width={580}
+              footer={(<>
+                <button className="btn btn-ghost" onClick={closeModal}>Annuler</button>
+                <button className="btn btn-primary" disabled={!valid}
+                  onClick={edit ? modifierRdvDossier : sauvegarderRdvDossier}>
+                  <CalIcon /> {edit ? 'Enregistrer' : 'Créer le RDV'}
                 </button>
+              </>)}
+            >
+              <div style={{padding:24, display:'flex', flexDirection:'column', gap:14}}>
+                <ModalField label="Type de rendez-vous" required>
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:6}}>
+                    {types.map(t => {
+                      const active = form.type_rdv === t.k
+                      return (
+                        <button key={t.k} type="button" onClick={() => setForm({ type_rdv: t.k })}
+                          style={{
+                            padding:'10px 6px', borderRadius:8, border:'1px solid',
+                            borderColor: active ? t.color : 'var(--ink-200)',
+                            background: active ? `${t.color}15` : '#fff',
+                            color: active ? t.color : 'var(--ink-700)',
+                            cursor:'pointer', fontWeight:700, fontSize:13,
+                            display:'flex', flexDirection:'column', alignItems:'center', gap:2,
+                            transition:'all 150ms',
+                          }}>
+                          <span>{t.l}</span>
+                          <span style={{fontSize:10, fontWeight:600, opacity:0.85}}>{t.sub}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </ModalField>
+
+                {form.type_rdv === 'autres' && (
+                  <ModalField label="Titre du rendez-vous" required>
+                    <input className="input" type="text"
+                      value={form.titre || ''}
+                      onChange={e => setForm({ titre: e.target.value })}
+                      placeholder="Ex : Réunion de chantier, Appel fournisseur…"
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                  </ModalField>
+                )}
+
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+                  <ModalField label="Date" required>
+                    <input className="input" type="date"
+                      value={dateOnly}
+                      onChange={e => setDateHeure(e.target.value, null)}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                  </ModalField>
+                  <ModalField label="Heure">
+                    <input className="input" type="time"
+                      value={timeOnly}
+                      onChange={e => setDateHeure(null, e.target.value)}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                  </ModalField>
+                  <ModalField label="Durée">
+                    <select className="input"
+                      value={form.duree_minutes || 60}
+                      onChange={e => setForm({ duree_minutes: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}}>
+                      <option value={30}>30 min</option>
+                      <option value={60}>1h</option>
+                      <option value={90}>1h30</option>
+                      <option value={120}>2h</option>
+                      <option value={180}>3h</option>
+                    </select>
+                  </ModalField>
+                  <ModalField label="Lieu">
+                    <LieuPicker value={form.lieu || 'client'} onChange={v => setForm({ lieu: v })} />
+                  </ModalField>
+                </div>
+
+                {form.type_rdv === 'visite_technique_artisan' && (
+                  <ModalField label="Artisan présent">
+                    <select className="input"
+                      value={form.artisan_id || ''}
+                      onChange={e => setForm({ artisan_id: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}}>
+                      <option value="">— Choisir —</option>
+                      {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
+                    </select>
+                  </ModalField>
+                )}
+
+                <ModalField label="Notes">
+                  <textarea className="input"
+                    value={form.notes || ''}
+                    onChange={e => setForm({ notes: e.target.value })}
+                    rows={3} placeholder="Points à aborder, préparation…"
+                    style={{minHeight:80, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
+                </ModalField>
               </div>
-            </div>
-          </div>
-        )}
+            </ModalShell>
+          )
+        })()}
 
       </div>
       )}
 
       {/* Modal Intervention edit — global (fixed overlay) */}
-      {modalInterventionOuvert && interventionEnEdition && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => { setModalInterventionOuvert(false); setInterventionEnEdition(null) }}>
-            <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
-              <h2 className="font-semibold text-gray-800">Modifier l'intervention</h2>
-              <p className="text-sm text-blue-700 font-medium">🔨 {interventionEnEdition.artisan?.entreprise}</p>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Type d'intervention</label>
-                <div className="flex gap-3">
-                  {[{ value: 'periode', label: 'Période continue' }, { value: 'jours_specifiques', label: 'Jours spécifiques' }].map(({ value, label }) => (
-                    <label key={value} className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="type_int_edit" value={value}
-                        checked={interventionEnEdition.type_intervention === value}
-                        onChange={e => setInterventionEnEdition(i => ({ ...i, type_intervention: e.target.value, jours_specifiques: [] }))}
-                        className="accent-blue-700" />
-                      <span className="text-sm text-gray-700">{label}</span>
-                    </label>
-                  ))}
+      {modalInterventionOuvert && interventionEnEdition && (() => {
+        const i = interventionEnEdition
+        const setI = (patch) => setInterventionEnEdition(prev => ({ ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) }))
+        const closeModal = () => { setModalInterventionOuvert(false); setInterventionEnEdition(null) }
+        const valid = i.type_intervention === 'periode'
+          ? (!!i.date_debut && !!i.date_fin)
+          : (i.jours_specifiques || []).length > 0
+        return (
+          <ModalShell
+            title="Modifier l'intervention"
+            subtitle={i.artisan?.entreprise || ''}
+            onClose={closeModal}
+            width={580}
+            footer={(<>
+              <button className="btn btn-ghost" onClick={closeModal}>Annuler</button>
+              <button className="btn btn-primary" disabled={!valid} onClick={modifierInterventionDossier}>
+                <CalIcon /> Enregistrer
+              </button>
+            </>)}
+          >
+            <div style={{padding:24, display:'flex', flexDirection:'column', gap:14}}>
+
+              {/* Artisan (affichage) */}
+              <div style={{
+                display:'flex', alignItems:'center', gap:10, padding:'10px 14px',
+                border:'1px solid var(--brand-200)', borderRadius:10, background:'var(--brand-50)',
+              }}>
+                <div style={{
+                  width:32, height:32, borderRadius:8, background:'var(--brand-100)',
+                  color:'var(--brand-800)', display:'grid', placeItems:'center',
+                }}><HammerIcon /></div>
+                <div style={{flex:1, minWidth:0}}>
+                  <div style={{fontSize:13, fontWeight:700, color:'var(--brand-900)'}}>{i.artisan?.entreprise || '—'}</div>
                 </div>
               </div>
-              {interventionEnEdition.type_intervention === 'periode' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Date de début</label>
-                    <input type="date" value={interventionEnEdition.date_debut || ''} onChange={e => setInterventionEnEdition(i => ({ ...i, date_debut: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Date de fin</label>
-                    <input type="date" value={interventionEnEdition.date_fin || ''} onChange={e => setInterventionEnEdition(i => ({ ...i, date_fin: e.target.value }))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
+
+              <ModalField label="Type d'intervention">
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+                  {[
+                    { v: 'periode',           l: 'Période continue', sub: 'du X au Y' },
+                    { v: 'jours_specifiques', l: 'Jours spécifiques', sub: 'liste de dates' },
+                  ].map(o => {
+                    const active = i.type_intervention === o.v
+                    return (
+                      <button key={o.v} type="button" onClick={() => setI({ type_intervention: o.v, jours_specifiques: [] })}
+                        style={{
+                          padding:'10px 12px', borderRadius:8, border:'1px solid',
+                          borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
+                          background: active ? 'var(--brand-50)' : '#fff',
+                          color: active ? 'var(--brand-800)' : 'var(--ink-700)',
+                          cursor:'pointer', fontWeight:700, fontSize:13,
+                          display:'flex', flexDirection:'column', gap:2, alignItems:'flex-start',
+                        }}>
+                        <span>{o.l}</span>
+                        <span style={{fontSize:10.5, fontWeight:500, opacity:0.8}}>{o.sub}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </ModalField>
+
+              {i.type_intervention === 'periode' && (
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+                  <ModalField label="Date de début" required>
+                    <input className="input" type="date" value={i.date_debut || ''}
+                      onChange={e => setI({ date_debut: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                  </ModalField>
+                  <ModalField label="Date de fin" required>
+                    <input className="input" type="date" value={i.date_fin || ''}
+                      onChange={e => setI({ date_fin: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                  </ModalField>
                 </div>
               )}
-              {interventionEnEdition.type_intervention === 'jours_specifiques' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Ajouter des jours</label>
-                  <input type="date"
+
+              {i.type_intervention === 'jours_specifiques' && (
+                <ModalField label="Ajouter des jours">
+                  <input className="input" type="date"
                     onChange={e => {
                       const date = e.target.value
                       if (!date) return
-                      setInterventionEnEdition(i => ({
-                        ...i,
-                        jours_specifiques: (i.jours_specifiques || []).includes(date)
-                          ? (i.jours_specifiques || []).filter(j => j !== date)
-                          : [...(i.jours_specifiques || []), date].sort()
+                      setI(prev => ({
+                        ...prev,
+                        jours_specifiques: (prev.jours_specifiques || []).includes(date)
+                          ? (prev.jours_specifiques || []).filter(j => j !== date)
+                          : [...(prev.jours_specifiques || []), date].sort(),
                       }))
                       e.target.value = ''
                     }}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2" />
-                  <div className="flex flex-wrap gap-1">
-                    {(interventionEnEdition.jours_specifiques || []).map(j => (
-                      <span key={j} className="flex items-center gap-1 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                        {new Date(j).toLocaleDateString('fr-FR')}
-                        <button onClick={() => setInterventionEnEdition(i => ({ ...i, jours_specifiques: i.jours_specifiques.filter(d => d !== j) }))}
-                          className="text-blue-400 hover:text-red-500 ml-1">×</button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
+                    style={{height:38, padding:'0 12px', fontSize:13}} />
+                  {(i.jours_specifiques || []).length > 0 && (
+                    <div style={{display:'flex', flexWrap:'wrap', gap:6, marginTop:8}}>
+                      {(i.jours_specifiques || []).map(j => (
+                        <span key={j} style={{
+                          display:'inline-flex', alignItems:'center', gap:4,
+                          fontSize:11.5, fontWeight:600, background:'var(--brand-50)', color:'var(--brand-800)',
+                          padding:'4px 10px', borderRadius:99, border:'1px solid var(--brand-200)',
+                        }}>
+                          {new Date(j).toLocaleDateString('fr-FR')}
+                          <button onClick={() => setI(p => ({ ...p, jours_specifiques: p.jours_specifiques.filter(d => d !== j) }))}
+                            style={{border:'none', background:'transparent', color:'var(--brand-700)', cursor:'pointer', fontSize:14, lineHeight:1, padding:0, marginLeft:2}}>×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </ModalField>
               )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Horaire</label>
-                <div className="flex items-center gap-2 mb-2">
-                  <input type="checkbox" id="int-edit-journee" checked={!interventionEnEdition.heure_debut} onChange={e => setInterventionEnEdition(i => ({ ...i, heure_debut: e.target.checked ? '' : '08:00' }))} className="accent-blue-700" />
-                  <label htmlFor="int-edit-journee" className="text-sm text-gray-700 cursor-pointer">Journée entière</label>
-                </div>
-                {interventionEnEdition.heure_debut && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Heure de début</label>
-                      <input type="time" value={interventionEnEdition.heure_debut} onChange={e => setInterventionEnEdition(i => ({ ...i, heure_debut: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Durée</label>
-                      <select value={interventionEnEdition.duree_minutes || 60} onChange={e => setInterventionEnEdition(i => ({ ...i, duree_minutes: Number(e.target.value) }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        {[30,60,90,120,180,240,300,360,480].map(m => <option key={m} value={m}>{m < 60 ? `${m} min` : `${m/60}h${m%60 ? m%60 : ''}`}</option>)}
-                      </select>
-                    </div>
+
+              <ModalField label="Lieu">
+                <LieuPicker value={i.lieu || 'client'} onChange={v => setI({ lieu: v })} />
+              </ModalField>
+
+              <ModalField label="Horaire">
+                <label style={{
+                  display:'flex', alignItems:'center', gap:8, padding:'8px 12px',
+                  border:'1px solid var(--ink-200)', borderRadius:8, cursor:'pointer', fontSize:13,
+                }}>
+                  <input type="checkbox" checked={!i.heure_debut}
+                    onChange={e => setI({ heure_debut: e.target.checked ? '' : '08:00' })}
+                    style={{accentColor:'var(--brand-500)'}} />
+                  <span style={{color:'var(--ink-700)', fontWeight:500}}>Journée entière</span>
+                </label>
+                {i.heure_debut && (
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:8}}>
+                    <input className="input" type="time" value={i.heure_debut}
+                      onChange={e => setI({ heure_debut: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                    <select className="input" value={i.duree_minutes || 60}
+                      onChange={e => setI({ duree_minutes: Number(e.target.value) })}
+                      style={{height:38, padding:'0 12px', fontSize:13}}>
+                      {[30,60,90,120,180,240,300,360,480].map(m => (
+                        <option key={m} value={m}>{m < 60 ? `${m} min` : `${m/60}h${m%60 ? m%60 : ''}`}</option>
+                      ))}
+                    </select>
                   </div>
                 )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                <textarea value={interventionEnEdition.notes || ''} onChange={e => setInterventionEnEdition(i => ({ ...i, notes: e.target.value }))}
-                  rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => { setModalInterventionOuvert(false); setInterventionEnEdition(null) }} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
-                <button onClick={modifierInterventionDossier} className="flex-1 bg-blue-800 text-white py-2 rounded-lg text-sm hover:bg-blue-900">Enregistrer</button>
-              </div>
+              </ModalField>
+
+              <ModalField label="Notes">
+                <textarea className="input" value={i.notes || ''}
+                  onChange={e => setI({ notes: e.target.value })}
+                  rows={3} placeholder="Précisions, accès chantier, contact site…"
+                  style={{minHeight:80, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
+              </ModalField>
+
             </div>
-          </div>
-        )}
+          </ModalShell>
+        )
+      })()}
 
       {/* ── COMPTES-RENDUS ── */}
       {onglet === 'cr' && (
@@ -3962,135 +4149,187 @@ export default function FicheChantier({ params }) {
       </div>
       )}
 
-      {/* Modal Créer Intervention */}
-      {modalCreerIntervOuvert && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
-          onClick={() => setModalCreerIntervOuvert(false)}>
-          <div className="bg-white rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
-            <h2 className="font-semibold text-gray-800">Planifier une intervention</h2>
+      {/* Modal Créer Intervention (maquette) */}
+      {modalCreerIntervOuvert && (() => {
+        const f = nouvIntervForm
+        const setF = (patch) => setNouvIntervForm(prev => ({ ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) }))
+        const closeModal = () => { setModalCreerIntervOuvert(false); setNouvIntervArtisanId(null) }
+        const valid = !!nouvIntervArtisanId && (
+          f.type_intervention === 'periode'
+            ? (!!f.date_debut && !!f.date_fin)
+            : (f.jours_specifiques || []).length > 0
+        )
+        const artisanSelected = devis.find(d => d.artisan_id === nouvIntervArtisanId)?.artisan
+        return (
+          <ModalShell
+            title="Planifier une intervention"
+            subtitle={`${dossier.reference} · ${nomComplet}`}
+            onClose={closeModal}
+            width={580}
+            footer={(<>
+              <button className="btn btn-ghost" onClick={closeModal}>Annuler</button>
+              <button className="btn btn-primary" disabled={!valid || saving} onClick={creerInterventionDossier}>
+                <CalIcon /> {saving ? 'Enregistrement…' : 'Planifier'}
+              </button>
+            </>)}
+          >
+            <div style={{padding:24, display:'flex', flexDirection:'column', gap:14}}>
 
-            {/* Sélecteur artisan (si pas pré-sélectionné depuis un devis) */}
-            {!nouvIntervArtisanId && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Artisan *</label>
-                <select
-                  value={nouvIntervArtisanId || ''}
-                  onChange={e => setNouvIntervArtisanId(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="">— Choisir un artisan —</option>
-                  {devis.filter(d => d.statut === 'accepte').map(d => (
-                    <option key={d.artisan_id} value={d.artisan_id}>{d.artisan?.entreprise}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {nouvIntervArtisanId && (
-              <p className="text-sm font-medium text-green-700">
-                🔨 {devis.find(d => d.artisan_id === nouvIntervArtisanId)?.artisan?.entreprise}
-              </p>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Type d&apos;intervention</label>
-              <div className="flex gap-3">
-                {[{ value: 'periode', label: 'Période continue' }, { value: 'jours_specifiques', label: 'Jours spécifiques' }].map(({ value, label }) => (
-                  <label key={value} className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="nouv_type_int" value={value}
-                      checked={nouvIntervForm.type_intervention === value}
-                      onChange={e => setNouvIntervForm(f => ({ ...f, type_intervention: e.target.value, jours_specifiques: [] }))}
-                      className="accent-blue-700" />
-                    <span className="text-sm text-gray-700">{label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {nouvIntervForm.type_intervention === 'periode' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date de début *</label>
-                  <input type="date" value={nouvIntervForm.date_debut}
-                    onChange={e => setNouvIntervForm(f => ({ ...f, date_debut: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date de fin *</label>
-                  <input type="date" value={nouvIntervForm.date_fin}
-                    onChange={e => setNouvIntervForm(f => ({ ...f, date_fin: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-            )}
-
-            {nouvIntervForm.type_intervention === 'jours_specifiques' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ajouter des jours</label>
-                <input type="date"
-                  onChange={e => {
-                    const date = e.target.value
-                    if (!date) return
-                    setNouvIntervForm(f => ({
-                      ...f,
-                      jours_specifiques: f.jours_specifiques.includes(date)
-                        ? f.jours_specifiques.filter(j => j !== date)
-                        : [...f.jours_specifiques, date].sort()
-                    }))
-                    e.target.value = ''
-                  }}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2" />
-                <div className="flex flex-wrap gap-1">
-                  {nouvIntervForm.jours_specifiques.map(j => (
-                    <span key={j} className="flex items-center gap-1 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                      {new Date(j).toLocaleDateString('fr-FR')}
-                      <button onClick={() => setNouvIntervForm(f => ({ ...f, jours_specifiques: f.jours_specifiques.filter(d => d !== j) }))}>×</button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Horaire</label>
-              <div className="flex items-center gap-2 mb-2">
-                <input type="checkbox" id="int-new-journee" checked={!nouvIntervForm.heure_debut} onChange={e => setNouvIntervForm(f => ({ ...f, heure_debut: e.target.checked ? '' : '08:00' }))} className="accent-blue-700" />
-                <label htmlFor="int-new-journee" className="text-sm text-gray-700 cursor-pointer">Journée entière</label>
-              </div>
-              {nouvIntervForm.heure_debut && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Heure de début</label>
-                    <input type="time" value={nouvIntervForm.heure_debut} onChange={e => setNouvIntervForm(f => ({ ...f, heure_debut: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              {/* Artisan */}
+              <ModalField label="Artisan" required>
+                {artisanSelected ? (
+                  <div style={{
+                    display:'flex', alignItems:'center', gap:10, padding:'10px 14px',
+                    border:'1px solid var(--brand-200)', borderRadius:10, background:'var(--brand-50)',
+                  }}>
+                    <div style={{
+                      width:32, height:32, borderRadius:8, background:'var(--brand-100)',
+                      color:'var(--brand-800)', display:'grid', placeItems:'center',
+                    }}>
+                      <HammerIcon />
+                    </div>
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{fontSize:13, fontWeight:700, color:'var(--brand-900)'}}>{artisanSelected.entreprise}</div>
+                      {artisanSelected.metier && <div style={{fontSize:11, color:'var(--brand-700)', marginTop:2}}>{artisanSelected.metier}</div>}
+                    </div>
+                    <button onClick={() => setNouvIntervArtisanId(null)} className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>Changer</button>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Durée</label>
-                    <select value={nouvIntervForm.duree_minutes} onChange={e => setNouvIntervForm(f => ({ ...f, duree_minutes: Number(e.target.value) }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      {[30,60,90,120,180,240,300,360,480].map(m => <option key={m} value={m}>{m < 60 ? `${m} min` : `${m/60}h${m%60 ? m%60 : ''}`}</option>)}
-                    </select>
-                  </div>
+                ) : (
+                  <select className="input"
+                    value={nouvIntervArtisanId || ''}
+                    onChange={e => setNouvIntervArtisanId(e.target.value)}
+                    style={{height:38, padding:'0 12px', fontSize:13}}>
+                    <option value="">— Choisir un artisan (devis signé) —</option>
+                    {devis.filter(d => d.statut === 'accepte').map(d => (
+                      <option key={d.artisan_id} value={d.artisan_id}>
+                        {d.artisan?.entreprise}{d.artisan?.metier ? ` · ${d.artisan.metier}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </ModalField>
+
+              {/* Type d'intervention (segmented) */}
+              <ModalField label="Type d'intervention">
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+                  {[
+                    { v: 'periode',            l: 'Période continue', sub: 'du X au Y'   },
+                    { v: 'jours_specifiques',  l: 'Jours spécifiques', sub: 'liste de dates' },
+                  ].map(o => {
+                    const active = f.type_intervention === o.v
+                    return (
+                      <button key={o.v} type="button" onClick={() => setF({ type_intervention: o.v, jours_specifiques: [] })}
+                        style={{
+                          padding:'10px 12px', borderRadius:8, border:'1px solid',
+                          borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
+                          background: active ? 'var(--brand-50)' : '#fff',
+                          color: active ? 'var(--brand-800)' : 'var(--ink-700)',
+                          cursor:'pointer', fontWeight:700, fontSize:13,
+                          display:'flex', flexDirection:'column', gap:2, alignItems:'flex-start',
+                        }}>
+                        <span>{o.l}</span>
+                        <span style={{fontSize:10.5, fontWeight:500, opacity:0.8}}>{o.sub}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </ModalField>
+
+              {/* Dates période */}
+              {f.type_intervention === 'periode' && (
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+                  <ModalField label="Date de début" required>
+                    <input className="input" type="date" value={f.date_debut}
+                      onChange={e => setF({ date_debut: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                  </ModalField>
+                  <ModalField label="Date de fin" required>
+                    <input className="input" type="date" value={f.date_fin}
+                      onChange={e => setF({ date_fin: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                  </ModalField>
                 </div>
               )}
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-              <textarea value={nouvIntervForm.notes}
-                onChange={e => setNouvIntervForm(f => ({ ...f, notes: e.target.value }))}
-                rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            </div>
+              {/* Jours spécifiques */}
+              {f.type_intervention === 'jours_specifiques' && (
+                <ModalField label="Ajouter des jours">
+                  <input className="input" type="date"
+                    onChange={e => {
+                      const date = e.target.value
+                      if (!date) return
+                      setF(prev => ({
+                        ...prev,
+                        jours_specifiques: prev.jours_specifiques.includes(date)
+                          ? prev.jours_specifiques.filter(j => j !== date)
+                          : [...prev.jours_specifiques, date].sort(),
+                      }))
+                      e.target.value = ''
+                    }}
+                    style={{height:38, padding:'0 12px', fontSize:13}} />
+                  {f.jours_specifiques.length > 0 && (
+                    <div style={{display:'flex', flexWrap:'wrap', gap:6, marginTop:8}}>
+                      {f.jours_specifiques.map(j => (
+                        <span key={j} style={{
+                          display:'inline-flex', alignItems:'center', gap:4,
+                          fontSize:11.5, fontWeight:600, background:'var(--brand-50)', color:'var(--brand-800)',
+                          padding:'4px 10px', borderRadius:99, border:'1px solid var(--brand-200)',
+                        }}>
+                          {new Date(j).toLocaleDateString('fr-FR')}
+                          <button onClick={() => setF(p => ({ ...p, jours_specifiques: p.jours_specifiques.filter(d => d !== j) }))}
+                            style={{border:'none', background:'transparent', color:'var(--brand-700)', cursor:'pointer', fontSize:14, lineHeight:1, padding:0, marginLeft:2}}>×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </ModalField>
+              )}
 
-            <div className="flex gap-2">
-              <button onClick={() => { setModalCreerIntervOuvert(false); setNouvIntervArtisanId(null) }}
-                className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
-              <button onClick={creerInterventionDossier}
-                disabled={!nouvIntervArtisanId || saving || (nouvIntervForm.type_intervention === 'periode' && (!nouvIntervForm.date_debut || !nouvIntervForm.date_fin))}
-                className="flex-1 bg-green-700 text-white py-2 rounded-lg text-sm hover:bg-green-800 disabled:opacity-50">
-                {saving ? 'Enregistrement...' : 'Planifier'}
-              </button>
+              {/* Lieu */}
+              <ModalField label="Lieu">
+                <LieuPicker value={f.lieu || 'client'} onChange={v => setF({ lieu: v })} />
+              </ModalField>
+
+              {/* Horaire */}
+              <ModalField label="Horaire">
+                <label style={{
+                  display:'flex', alignItems:'center', gap:8, padding:'8px 12px',
+                  border:'1px solid var(--ink-200)', borderRadius:8, cursor:'pointer', fontSize:13,
+                }}>
+                  <input type="checkbox" checked={!f.heure_debut}
+                    onChange={e => setF({ heure_debut: e.target.checked ? '' : '08:00' })}
+                    style={{accentColor:'var(--brand-500)'}} />
+                  <span style={{color:'var(--ink-700)', fontWeight:500}}>Journée entière</span>
+                </label>
+                {f.heure_debut && (
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:8}}>
+                    <input className="input" type="time" value={f.heure_debut}
+                      onChange={e => setF({ heure_debut: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}} />
+                    <select className="input" value={f.duree_minutes}
+                      onChange={e => setF({ duree_minutes: Number(e.target.value) })}
+                      style={{height:38, padding:'0 12px', fontSize:13}}>
+                      {[30,60,90,120,180,240,300,360,480].map(m => (
+                        <option key={m} value={m}>{m < 60 ? `${m} min` : `${m/60}h${m%60 ? m%60 : ''}`}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </ModalField>
+
+              {/* Notes */}
+              <ModalField label="Notes">
+                <textarea className="input" value={f.notes}
+                  onChange={e => setF({ notes: e.target.value })}
+                  rows={3} placeholder="Précisions, accès chantier, contact site…"
+                  style={{minHeight:80, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
+              </ModalField>
+
             </div>
-          </div>
-        </div>
-      )}
-      
+          </ModalShell>
+        )
+      })()}
+
       {/* Visionneuse de document */}
       {docViewer && (
         <DocViewer url={docViewer.url} nom={docViewer.nom} onClose={() => setDocViewer(null)} />
