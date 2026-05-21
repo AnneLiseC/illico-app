@@ -224,7 +224,7 @@ export default function FicheClient({ params }) {
   // ── VUE ──────────────────────────────────────────────────────────────
   if (mode === 'vue') {
     return (
-      <div className="page-enter" style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div className="page-enter page-pad" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
         {/* Breadcrumb */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--ink-500)' }}>
@@ -420,7 +420,7 @@ export default function FicheClient({ params }) {
 
   // ── ÉDITION ──────────────────────────────────────────────────────────
   return (
-    <div className="page-enter" style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+    <div className="page-enter page-pad" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
       {/* Header édition */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16 }}>

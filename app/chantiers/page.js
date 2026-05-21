@@ -453,7 +453,7 @@ export default function Chantiers() {
   const panelHeight = isMobile ? 'calc(100vh - 200px)' : 'calc(100vh - 340px)'
 
   return (
-    <div className="page-enter" style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: isMobile ? '16px' : '28px 32px 60px', maxWidth: 1400, margin: '0 auto' }}>
+    <div className="page-enter page-pad" style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 1400, margin: '0 auto' }}>
 
       {/* Header row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>

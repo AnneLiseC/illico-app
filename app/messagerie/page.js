@@ -111,7 +111,7 @@ export default function MessageriePage() {
   const dossierActif = dossiers.find(d => d.id === dossierId)
 
   return (
-    <div className="page-enter" style={{display:'flex', flexDirection:'column', gap:18}}>
+    <div className="page-enter page-pad" style={{display:'flex', flexDirection:'column', gap:18}}>
 
       {/* En-tête */}
       <div>

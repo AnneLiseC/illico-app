@@ -195,7 +195,7 @@ export default function Parametres() {
   ]
 
   return (
-    <div className="page-enter" style={{padding:'28px 32px', display:'flex', flexDirection:'column', gap:18}}>
+    <div className="page-enter page-pad" style={{display:'flex', flexDirection:'column', gap:18}}>
 
       <div>
         <div className="eyebrow" style={{marginBottom:4}}>Système</div>

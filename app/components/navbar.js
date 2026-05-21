@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '../lib/supabase'
@@ -27,6 +27,8 @@ const ChartIcon    = () => <Icon><line x1="18" y1="20" x2="18" y2="10"/><line x1
 const SettingsIcon = () => <Icon d2="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"><circle cx="12" cy="12" r="3"/></Icon>
 const PinIcon      = () => <Icon><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17H19V13L17 7H7L5 13V17Z"/></Icon>
 const LogOutIcon   = () => <Icon d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" d2="M16 17l5-5-5-5"><line x1="21" y1="12" x2="9" y2="12"/></Icon>
+const MenuIcon     = () => <Icon><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></Icon>
+const CloseIcon    = () => <Icon><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></Icon>
 
 const NAV_GROUPS = [
   {
@@ -79,7 +81,20 @@ export default function NavBar() {
   const pathname = usePathname()
   const [hover, setHover] = useState(false)
   const [pinned, setPinned] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
   const { profile, unreadCount } = useAuth()
+
+  // Close mobile drawer on route change
+  useEffect(() => { setMobileOpen(false) }, [pathname])
+
+  // Prevent body scroll when mobile drawer is open
+  useEffect(() => {
+    if (mobileOpen) {
+      const prev = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+      return () => { document.body.style.overflow = prev }
+    }
+  }, [mobileOpen])
 
   const hidden = ['/', '/login', '/espace-client'].some(
     p => pathname === p || pathname?.startsWith('/espace-client')
@@ -92,71 +107,100 @@ export default function NavBar() {
   }
 
   const isActive = (href) => pathname?.startsWith(href)
-  const open = pinned || hover
+  const open = pinned || hover || mobileOpen
 
   const initials = `${profile.prenom?.[0] ?? ''}${profile.nom?.[0] ?? ''}`.toUpperCase()
   const roleLabel = profile.role === 'admin' ? 'Franchisée' : profile.role === 'agente' ? 'Agente' : 'Membre'
 
   return (
-    <aside
-      className={`sidebar${open ? ' open' : ''}${pinned ? ' pinned' : ''}`}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-    >
-      <div className="sidebar-inner">
-
-        {/* Logo */}
-        <div className="logo-block">
-          <div className="logo-mark">iC</div>
-          <div className="logo-text">
-            illiCO travaux
-            <span className="muted">Martigues · {profile.prenom}</span>
-          </div>
-        </div>
-
-        {/* Pin toggle */}
+    <>
+      {/* Mobile top bar (hidden ≥768px) */}
+      <header className="mobile-topbar">
         <button
-          className={`pin-btn${pinned ? ' active' : ''}`}
-          onClick={() => setPinned(p => !p)}
-          title={pinned ? 'Désépingler' : 'Épingler ouvert'}
+          className="mobile-menu-btn"
+          onClick={() => setMobileOpen(true)}
+          aria-label="Ouvrir le menu"
         >
-          <PinIcon />
+          <MenuIcon />
         </button>
-
-        {/* Nav */}
-        <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 0' }}>
-          {NAV_GROUPS.map(group => {
-            const visibleItems = group.items.filter(item => !item.adminOnly || profile?.role === 'admin')
-            if (visibleItems.length === 0) return null
-            return (
-              <div key={group.label}>
-                <div className="nav-section-label">{group.label}</div>
-                {visibleItems.map(item => (
-                  <NavItem
-                    key={item.href}
-                    {...item}
-                    active={isActive(item.href)}
-                    open={open}
-                  />
-                ))}
-              </div>
-            )
-          })}
-        </nav>
-
-        {/* User block */}
-        <div className="user-block">
-          <span className="user-avatar">{initials}</span>
-          <div className="user-meta">
-            <div className="name">{profile.prenom} {profile.nom}</div>
-            <div className="role">{roleLabel}</div>
-          </div>
-          <button className="logout-btn" onClick={handleLogout} title="Déconnexion">
-            <LogOutIcon />
-          </button>
+        <div className="mobile-topbar-brand">
+          <div className="logo-mark" style={{ width: 28, height: 28, fontSize: 12 }}>iC</div>
+          <span>illiCO travaux</span>
         </div>
+      </header>
 
-      </div>
-    </aside>
+      {/* Backdrop for mobile drawer */}
+      {mobileOpen && (
+        <div className="sidebar-backdrop" onClick={() => setMobileOpen(false)} />
+      )}
+
+      <aside
+        className={`sidebar${open ? ' open' : ''}${pinned ? ' pinned' : ''}${mobileOpen ? ' mobile-open' : ''}`}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+      >
+        <div className="sidebar-inner">
+
+          {/* Logo */}
+          <div className="logo-block">
+            <div className="logo-mark">iC</div>
+            <div className="logo-text">
+              illiCO travaux
+              <span className="muted">Martigues · {profile.prenom}</span>
+            </div>
+            <button
+              className="mobile-close-btn"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Fermer le menu"
+            >
+              <CloseIcon />
+            </button>
+          </div>
+
+          {/* Pin toggle (desktop only) */}
+          <button
+            className={`pin-btn${pinned ? ' active' : ''}`}
+            onClick={() => setPinned(p => !p)}
+            title={pinned ? 'Désépingler' : 'Épingler ouvert'}
+          >
+            <PinIcon />
+          </button>
+
+          {/* Nav */}
+          <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 0' }}>
+            {NAV_GROUPS.map(group => {
+              const visibleItems = group.items.filter(item => !item.adminOnly || profile?.role === 'admin')
+              if (visibleItems.length === 0) return null
+              return (
+                <div key={group.label}>
+                  <div className="nav-section-label">{group.label}</div>
+                  {visibleItems.map(item => (
+                    <NavItem
+                      key={item.href}
+                      {...item}
+                      active={isActive(item.href)}
+                      open={open}
+                    />
+                  ))}
+                </div>
+              )
+            })}
+          </nav>
+
+          {/* User block */}
+          <div className="user-block">
+            <span className="user-avatar">{initials}</span>
+            <div className="user-meta">
+              <div className="name">{profile.prenom} {profile.nom}</div>
+              <div className="role">{roleLabel}</div>
+            </div>
+            <button className="logout-btn" onClick={handleLogout} title="Déconnexion">
+              <LogOutIcon />
+            </button>
+          </div>
+
+        </div>
+      </aside>
+    </>
   )
 }

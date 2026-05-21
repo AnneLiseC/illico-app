@@ -311,7 +311,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="page-enter" style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: '28px 32px', maxWidth: 1400, margin: '0 auto' }}>
+    <div className="page-enter page-pad" style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 1400, margin: '0 auto' }}>
 
       {/* ── Welcome ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>

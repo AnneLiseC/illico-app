@@ -256,7 +256,11 @@ select.input { padding-right: 32px; }
   display: flex;
   gap: 4px;
   border-bottom: 1px solid var(--ink-200);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.tabs::-webkit-scrollbar { display: none; }
 .tab {
   padding: 10px 14px;
   font-size: 13px;
@@ -522,6 +526,110 @@ select.input { padding-right: 32px; }
 .logout-btn:hover { background: rgba(255,255,255,0.20); color: #fff; }
 
 /* ─────────────────────────────────────────────────────────────────
+   App shell
+   ───────────────────────────────────────────────────────────────── */
+
+.app-shell {
+  padding-left: var(--sidebar-w);
+  min-height: 100vh;
+}
+@media (max-width: 767px) {
+  .app-shell { padding-left: 0; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Mobile drawer + top bar
+   ───────────────────────────────────────────────────────────────── */
+
+.mobile-topbar { display: none; }
+.mobile-close-btn { display: none; }
+.sidebar-backdrop { display: none; }
+
+@media (max-width: 767px) {
+  /* Top bar mobile */
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 56px;
+    padding: 0 14px;
+    background: var(--brand-800);
+    color: #fff;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+  .mobile-menu-btn {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .mobile-menu-btn:hover { background: rgba(255,255,255,0.16); }
+  .mobile-topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: #fff;
+  }
+
+  /* Sidebar: hidden off-screen by default on mobile */
+  .sidebar {
+    transform: translateX(-100%);
+    width: 280px !important;
+    z-index: 60;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.18);
+    transition: transform 280ms cubic-bezier(.2,.7,.2,1);
+  }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .sidebar-inner { width: 280px !important; }
+
+  /* Hide pin button on mobile (always full-open in drawer) */
+  .sidebar .pin-btn { display: none !important; }
+
+  /* Force labels visible in drawer */
+  .sidebar.mobile-open .logo-text,
+  .sidebar.mobile-open .nav-section-label,
+  .sidebar.mobile-open .nav-label,
+  .sidebar.mobile-open .user-meta,
+  .sidebar.mobile-open .logout-btn { opacity: 1; }
+  .sidebar.mobile-open .nav-label { transform: none; }
+
+  /* Mobile close button */
+  .mobile-close-btn {
+    display: grid;
+    place-items: center;
+    margin-left: auto;
+    width: 32px;
+    height: 32px;
+    background: rgba(255,255,255,0.10);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .mobile-close-btn:hover { background: rgba(255,255,255,0.20); }
+
+  /* Backdrop */
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 55;
+    animation: fadeIn 180ms ease both;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────
    Header
    ───────────────────────────────────────────────────────────────── */
 
@@ -689,6 +797,40 @@ select.input { padding-right: 32px; }
   display: flex;
   flex-direction: column;
 }
+
+@media (max-width: 767px) {
+  .page-content { padding: 16px 14px 80px; min-height: calc(100vh - 56px); }
+  .app-header { padding: 0 14px; gap: 10px; }
+}
+
+/* Responsive utilities */
+@media (max-width: 767px) {
+  .hide-mobile { display: none !important; }
+  .stack-mobile { flex-direction: column !important; align-items: stretch !important; }
+  .full-mobile { width: 100% !important; }
+  h1.page, .page-h1 { font-size: 20px; }
+  h2.page, .page-h2 { font-size: 16px; }
+  .card { border-radius: 12px; }
+  .kpi { padding: 16px; }
+}
+
+/* Tables : scroll horizontal on mobile */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* Page-level responsive padding (overrides inline) */
+.page-pad { padding: 28px 32px 60px !important; }
+@media (max-width: 767px) {
+  .page-pad { padding: 16px 14px 80px !important; }
+}
+
+/* Common responsive grid utility (use class instead of inline grid-template) */
+.grid-2c { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 600px) { .grid-2c { grid-template-columns: 1fr; gap: 10px; } }
+.grid-3c { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 900px) { .grid-3c { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .grid-3c { grid-template-columns: 1fr; } }
+.grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+@media (max-width: 600px) { .grid-cards { grid-template-columns: 1fr; gap: 12px; } }
 
 /* ─────────────────────────────────────────────────────────────────
    Settings nav

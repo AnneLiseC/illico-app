@@ -30,8 +30,8 @@ export default function RootLayout({ children }) {
       <body className="min-h-full">
         <AuthProvider>
           <NavBar />
-          {/* pl-[72px] : offset de la sidebar fixe 72px collapsed */}
-          <div className="pl-[72px] min-h-screen">
+          {/* app-shell : pl-72px sur desktop, 0 sur mobile (drawer overlay) */}
+          <div className="app-shell">
             {children}
           </div>
         </AuthProvider>
