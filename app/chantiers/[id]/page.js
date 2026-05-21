@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement } from '../../lib/dossiers'
+import { calculateDossierFinance } from '../../lib/finance'
 
 function Svg({ children, size = 14 }) {
   return (
@@ -48,6 +49,35 @@ function Fact({ label, value, highlight, mono }) {
 
 // Format euro court partagé (helpers module-level)
 const fmtEurShort = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
+
+function EcheanceRow({ label, sub, statut, date, variant, onToggle, fmtDateFn }) {
+  const isRegle = statut === 'regle' || statut === 'recu'
+  const isIllico = variant === 'illico'
+  return (
+    <div style={{
+      display:'grid', gridTemplateColumns:'auto 1fr auto auto', gap:14, alignItems:'center',
+      padding:'10px 14px', borderRadius:10, border:'1px solid var(--ink-200)',
+      background: isRegle ? 'rgba(22,163,74,0.05)' : '#fff',
+    }}>
+      <label style={{display:'flex', alignItems:'center', gap:8, cursor: onToggle ? 'pointer' : 'default'}}>
+        <input type="checkbox" checked={isRegle} onChange={() => onToggle && onToggle()} readOnly={!onToggle}
+          style={{accentColor: isIllico ? '#6366f1' : 'var(--brand-500)', width:18, height:18, cursor: onToggle ? 'pointer' : 'default'}} />
+      </label>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:13, fontWeight:600, color: isIllico ? '#4f46e5' : 'var(--ink-900)'}}>{label}</div>
+        <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{sub}</div>
+      </div>
+      <div style={{textAlign:'right', minWidth:80}}>
+        {isRegle
+          ? <Badge tone="ok">Réglé</Badge>
+          : <Badge tone="warn">En attente</Badge>}
+      </div>
+      <div className="tnum" style={{fontSize:11.5, color:'var(--ink-400)', minWidth:60, textAlign:'right'}}>
+        {date ? (fmtDateFn ? fmtDateFn(date) : new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' })) : '—'}
+      </div>
+    </div>
+  )
+}
 
 function RecapRow({ label, value, strong, large, tone }) {
   const color = tone === 'brand' ? 'var(--brand-700)' : 'var(--ink-700)'
@@ -2948,24 +2978,155 @@ export default function FicheChantier({ params }) {
       </div>
       )}
 
-      {/* ── SUIVI FINANCIER ── */}
-      {onglet === 'finance' && (
-      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      {/* ── SUIVI FINANCIER (maquette : KPI gains + Échéances) ── */}
+      {onglet === 'finance' && (() => {
+        const fin = calculateDossierFinance(dossier)
+        const fraisHTReal      = fin.frais.fraisHT
+        const fraisRoyalties   = fin.frais.royalties
+        const fraisNet         = fin.frais.net
+        const comHTReal        = fin.commissions.comHT
+        const comRoyalties     = fin.commissions.royaltiesType2
+        const comNet           = fin.commissions.netCom
+        const royaltiesTotal   = fin.royalties.total
+        const gainAgente       = fin.gains.nets.agente
+        const gainAdmin        = fin.gains.nets.admin
+        const totalNet         = gainAgente + gainAdmin
+        const partAgenteCfg    = fin.settings.partAgente
+        const isAdmin          = dossier?.referente?.role === 'admin'
+        const fmtD = (date) => date ? new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' }) : null
 
-        {/* Le Récapitulatif chantier est désormais dans l'onglet Devis & artisans (en bas) */}
-        <div className="card" style={{padding:32, textAlign:'center'}}>
-          <div className="eyebrow" style={{marginBottom:6}}>Suivi financier</div>
-          <div style={{fontSize:14, color:'var(--ink-600)', maxWidth:480, margin:'0 auto'}}>
-            Le récapitulatif chantier (totaux prévisionnel et signé) est maintenant disponible dans l'onglet{' '}
-            <button onClick={() => setOnglet('devis')} className="btn btn-ghost" style={{fontSize:12.5, padding:'2px 8px', color:'var(--brand-700)', fontWeight:700, display:'inline'}}>
-              Devis &amp; artisans
-            </button>
-            , en bas de la page.
+        return (
+        <div style={{display:'flex',flexDirection:'column',gap:18}}>
+
+          {/* KPI grid : récap gains */}
+          <div className="kpi-grid">
+            <MiniKpi
+              label="Frais consult. HT"
+              value={fmt(fraisHTReal)}
+              sub={`net ${fmt(fraisNet)}`}
+              tone="brand"
+            />
+            <MiniKpi
+              label="Commissions HT"
+              value={fmt(comHTReal)}
+              sub={`net ${fmt(comNet)}`}
+              tone="brand"
+            />
+            <MiniKpi
+              label="Royalties (5%)"
+              value={fmt(royaltiesTotal)}
+              sub="prélevées par illiCO France"
+              tone="brand"
+            />
+            <MiniKpi
+              label={isAdmin ? 'Net franchisée' : 'Net total'}
+              value={fmt(totalNet)}
+              sub={partAgenteCfg > 0
+                ? `Agente ${fmt(gainAgente)} · CTP ${fmt(gainAdmin)}`
+                : 'tout pour la franchisée'}
+              tone="brand"
+            />
           </div>
-        </div>
 
-      </div>
-      )}
+          {/* Échéances */}
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
+              <h2 className="page" style={{fontSize:15}}>Échéances · suivi financier</h2>
+              <div className="eyebrow" style={{marginTop:4}}>
+                Coche au fur et à mesure des règlements et déclenchements illiCO
+              </div>
+            </div>
+            <div style={{padding:'14px 22px', display:'flex', flexDirection:'column', gap:12}}>
+
+              {/* Frais de consultation */}
+              {(dossier.frais_consultation || 0) > 0 && (
+                <EcheanceRow
+                  label="Frais de consultation"
+                  sub={`${fmt(dossier.frais_consultation)} TTC`}
+                  statut={dossier.frais_statut === 'regle' || dossier.frais_statut === 'offerts' ? 'regle' : 'en_attente'}
+                  date={dossier.date_signature_contrat}
+                  fmtDateFn={fmtD}
+                />
+              )}
+
+              {/* Acompte client + illiCO débloqué (par devis signé) */}
+              {devisSignes.map(dv => {
+                const artId = dv.artisan_id || dv.artisan?.id
+                const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId)
+                const acompteMontant = dv.acompte_pourcentage === -1
+                  ? (dv.acompte_montant_fixe || 0)
+                  : (dv.montant_ttc || 0) * ((dv.acompte_pourcentage || 30) / 100)
+                const comDevisHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
+                return (
+                  <div key={`ech-${dv.id}`} style={{display:'flex', flexDirection:'column', gap:8}}>
+                    <EcheanceRow
+                      label={`Acompte client — ${dv.artisan?.entreprise || '—'}`}
+                      sub={`${dv.acompte_pourcentage === -1 ? 'fixe' : (dv.acompte_pourcentage || 30) + '%'} acompte · ${fmt(acompteMontant)} TTC`}
+                      statut={sf?.statut_client || 'en_attente'}
+                      date={sf?.date_reglement_client || null}
+                      onToggle={() => {
+                        const newStatut = sf?.statut_client === 'regle' ? 'en_attente' : 'regle'
+                        majSuiviAvecArtisan('acompte_artisan', artId, 'statut_client', newStatut)
+                      }}
+                      fmtDateFn={fmtD}
+                    />
+                    <EcheanceRow
+                      label="illiCO France — acompte débloqué"
+                      sub={`Commission ${fmt(comDevisHT)} HT · ${dv.artisan?.entreprise || ''}`}
+                      statut={sf?.statut_illico === 'recu' ? 'regle' : 'en_attente'}
+                      date={sf?.date_reglement_illico || null}
+                      onToggle={() => {
+                        const newStatut = sf?.statut_illico === 'recu' ? 'en_attente' : 'recu'
+                        majSuiviAvecArtisan('acompte_artisan', artId, 'statut_illico', newStatut)
+                      }}
+                      variant="illico"
+                      fmtDateFn={fmtD}
+                    />
+                  </div>
+                )
+              })}
+
+              {/* Honoraires courtage (toujours pour courtage/amo) */}
+              {['courtage', 'amo'].includes(dossier.typologie) && (
+                <EcheanceRow
+                  label="Honoraires courtage"
+                  sub={`${tauxCourtagePct}% travaux HT · ${fmt(honorairesCourtagePrev)}`}
+                  statut={suiviCourtage?.statut_client || 'en_attente'}
+                  date={dossier.date_signature_contrat}
+                  onToggle={() => {
+                    const newStatut = suiviCourtage?.statut_client === 'regle' ? 'en_attente' : 'regle'
+                    majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'statut_client', newStatut)
+                  }}
+                  fmtDateFn={fmtD}
+                />
+              )}
+
+              {/* Honoraires AMO solde (typologie AMO uniquement) */}
+              {dossier.typologie === 'amo' && (
+                <EcheanceRow
+                  label="Honoraires AMO — solde"
+                  sub={`${tauxAmoPct}% travaux HT · ${fmt(honorairesAMOPrev - honorairesCourtagePrev)}`}
+                  statut={suiviSoldeAMO?.statut_client || 'en_attente'}
+                  date={dossier.date_fin_chantier}
+                  onToggle={() => {
+                    const newStatut = suiviSoldeAMO?.statut_client === 'regle' ? 'en_attente' : 'regle'
+                    majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'statut_client', newStatut)
+                  }}
+                  fmtDateFn={fmtD}
+                />
+              )}
+
+              {devisSignes.length === 0 && (dossier.frais_consultation || 0) === 0 && (
+                <div style={{padding:'24px 0', textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+                  Aucune échéance pour le moment
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+        )
+      })()}
 
       {/* ── PHOTOS ── */}
       {onglet === 'photos' && (
