@@ -3268,6 +3268,83 @@ export default function FicheChantier({ params }) {
                 />
               )}
 
+              {/* ── Apporteur d'affaires — règlements dus ── */}
+              {fin.apporteur?.enabled && fin.apporteur.totalHT > 0 && (() => {
+                const nomApp = dossier?.client?.apporteur_nom || 'Apporteur'
+                const pctApp = parseFloat((fin.apporteur.tauxApporteur * 100).toFixed(2))
+                const totalDu = fin.apporteur.totalHT
+                const lignes = fin.apporteur.lines || []
+                const totalPaye = lignes.reduce((s, l) => {
+                  if (fin.apporteur.mode === 'total_chantier_ht') {
+                    const sf = suiviFinancier.find(x => x.type_echeance === 'apporteur_agente' && x.artisan_id === null)
+                    return sf?.statut_client === 'regle' ? s + l.totalHT : s
+                  }
+                  const dv = devis.find(x => x.id === l.devisId)
+                  const artId = dv?.artisan_id || dv?.artisan?.id
+                  const sf = suiviFinancier.find(x => x.type_echeance === 'apporteur_agente' && x.artisan_id === artId)
+                  return sf?.statut_client === 'regle' ? s + l.totalHT : s
+                }, 0)
+                const reste = Math.max(0, totalDu - totalPaye)
+
+                return (
+                  <div style={{marginTop:6, paddingTop:14, borderTop:'1px dashed var(--ink-200)', display:'flex', flexDirection:'column', gap:10}}>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:10, flexWrap:'wrap'}}>
+                      <div>
+                        <div style={{fontSize:13, fontWeight:700, color:'#c2410c'}}>★ Apporteur d&apos;affaires — {nomApp}</div>
+                        <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>
+                          {pctApp}% · {fin.apporteur.mode === 'total_chantier_ht' ? 'sur total chantier HT' : 'par devis signé'}
+                        </div>
+                      </div>
+                      <div style={{textAlign:'right'}}>
+                        <div style={{fontSize:11, color:'var(--ink-400)'}}>
+                          Total dû <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(totalDu)}</span>
+                        </div>
+                        <div style={{fontSize:11, color: reste > 0 ? '#c2410c' : '#15803d', marginTop:2, fontWeight:600}}>
+                          {reste > 0 ? `Reste à régler : ${fmt(reste)}` : '✓ Soldé'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {lignes.map((l, idx) => {
+                      const dv = l.devisId ? devis.find(x => x.id === l.devisId) : null
+                      const artId = dv?.artisan_id || dv?.artisan?.id || null
+                      const sf = suiviFinancier.find(x =>
+                        x.type_echeance === 'apporteur_agente' &&
+                        (artId === null ? x.artisan_id === null : x.artisan_id === artId)
+                      )
+                      const paye = sf?.statut_client === 'regle'
+                      const labelLigne = fin.apporteur.mode === 'total_chantier_ht'
+                        ? 'Règlement apporteur (total)'
+                        : `Devis ${l.label || dv?.artisan?.entreprise || ''}`
+                      return (
+                        <EcheanceRow
+                          key={l.devisId || idx}
+                          label={labelLigne}
+                          sub={`${pctApp}% × ${fmt(l.baseHT)} HT · ${fmt(l.totalHT)}`}
+                          statut={paye ? 'regle' : 'en_attente'}
+                          date={sf?.date_reglement_client || sf?.date_paiement || null}
+                          onToggle={async () => {
+                            const newStatut = paye ? 'en_attente' : 'regle'
+                            if (artId === null) {
+                              await majSuiviChantier('apporteur_agente', l.totalHT, 'statut_client', newStatut)
+                              if (newStatut === 'regle') {
+                                await majSuiviChantier('apporteur_agente', l.totalHT, 'date_reglement_client', new Date().toISOString().slice(0,10))
+                              }
+                            } else {
+                              await majSuiviAvecArtisan('apporteur_agente', artId, 'statut_client', newStatut)
+                              if (newStatut === 'regle') {
+                                await majSuiviAvecArtisan('apporteur_agente', artId, 'date_reglement_client', new Date().toISOString().slice(0,10))
+                              }
+                            }
+                          }}
+                          fmtDateFn={fmtD}
+                        />
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+
               {devisSignes.length === 0 && (dossier.frais_consultation || 0) === 0 && (
                 <div style={{padding:'24px 0', textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
                   Aucune échéance pour le moment
