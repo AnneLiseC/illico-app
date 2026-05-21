@@ -1576,7 +1576,7 @@ export default function FicheChantier({ params }) {
   const totalDevisTTCSignes = devisSignes.reduce((s, d) => s + (d.montant_ttc || 0), 0)
   const totalDevisHTSignes  = devisSignes.reduce((s, d) => s + (d.montant_ht  || 0), 0)
     // Devis reçus = recu + accepte (vue prévisionnelle complète)
-  const devisRecus = devis.filter(d => ['recu', 'accepte'].includes(d.statut) && d.montant_ttc)
+  const devisRecus = devis.filter(d => d.statut !== 'refuse' && d.montant_ttc)
   const totalDevisTTCRecus = devisRecus.reduce((s, d) => s + (d.montant_ttc || 0), 0)
   const totalDevisHTRecus  = devisRecus.reduce((s, d) => s + (d.montant_ht  || 0), 0)
   const fraisTTC = dossier?.frais_consultation || 0
@@ -1990,8 +1990,8 @@ export default function FicheChantier({ params }) {
           tone="brand"
         />
         <MiniKpi
-          label="Frais consultation"
-          value={fraisTTC > 0 ? fmt(fraisTTC) : 'Offerts'}
+          label="Frais consultation TTC"
+          value={fraisTTC > 0 ? `${fmt(fraisTTC)} TTC` : 'Offerts'}
           sub={f.label}
           tone="warn"
         />
@@ -3126,12 +3126,22 @@ export default function FicheChantier({ params }) {
         const fraisHTReal      = fin.frais.fraisHT
         const fraisRoyalties   = fin.frais.royalties
         const fraisNet         = fin.frais.net
-        const comHTReal        = fin.commissions.comHT
-        const comRoyalties     = fin.commissions.royaltiesType2
-        const comNet           = fin.commissions.netCom
-        const royaltiesTotal   = fin.royalties.total
-        const gainAgente       = fin.gains.nets.agente
-        const gainAdmin        = fin.gains.nets.admin
+        // Commissions — uniquement comptées si l'acompte illiCO est débloqué (statut_illico='recu'),
+        // sauf apporteurs artisans (sans_royalties) qui se déclenchent dès la signature
+        const comDebloque = (fin.commissions?.devis || []).filter(dv => {
+          if (dv.refused) return false
+          if (dv.isApporteur) return dv.signed
+          const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === (devis.find(x => x.id === dv.id)?.artisan_id))
+          return sf?.statut_illico === 'recu'
+        })
+        const comHTReal        = comDebloque.reduce((s, d) => s + d.comHT, 0)
+        const comRoyalties     = comDebloque.reduce((s, d) => s + d.royaltiesType2, 0)
+        const comNet           = comDebloque.reduce((s, d) => s + d.netCom, 0)
+        const comAgente        = comDebloque.reduce((s, d) => s + d.parts.agente, 0)
+        const comAdmin         = comDebloque.reduce((s, d) => s + d.parts.admin, 0)
+        const royaltiesTotal   = fin.royalties.frais + fin.royalties.honoraires + comRoyalties
+        const gainAgente       = fin.frais.parts.agente + fin.honoraires.parts.agente + comAgente - fin.apporteur.parts.agente
+        const gainAdmin        = fin.frais.parts.admin  + fin.honoraires.parts.admin  + comAdmin  - fin.apporteur.parts.admin
         const totalNet         = gainAgente + gainAdmin
         const partAgenteCfg    = fin.settings.partAgente
         const isAdmin          = dossier?.referente?.role === 'admin'
