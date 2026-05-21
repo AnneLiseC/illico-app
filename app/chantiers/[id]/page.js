@@ -1,7 +1,7 @@
 //chantier/[id]/page.js
 
 'use client'
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, useRef, use } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
@@ -1507,26 +1507,80 @@ export default function FicheChantier({ params }) {
   const [onglet, setOnglet] = useState('apercu')
   const [reponseMsg, setReponseMsg] = useState('')
   const [sendingMsg, setSendingMsg] = useState(false)
+  const messagesEndRef = useRef(null)
+
+  // Realtime : écoute les nouveaux messages sur ce dossier
+  useEffect(() => {
+    if (!id) return
+    const channel = supabase
+      .channel(`messages:${id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `dossier_id=eq.${id}` },
+        async () => {
+          const { data } = await supabase.from('messages')
+            .select('*, auteur:profiles(prenom, nom, role)')
+            .eq('dossier_id', id).order('created_at')
+          setMessages(data || [])
+          setNbMsgNonLus((data || []).filter(m => m.auteur_role === 'client' && !m.lu_agence).length)
+        })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [id])
+
+  // Auto-scroll quand un nouveau message arrive et qu'on est sur l'onglet messages
+  useEffect(() => {
+    if (onglet === 'messages') {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, onglet])
+
+  // Marquer comme lus à l'ouverture de l'onglet messages
+  useEffect(() => {
+    if (onglet !== 'messages' || !id) return
+    if (!messages.some(m => m.auteur_role === 'client' && !m.lu_agence)) return
+    ;(async () => {
+      await supabase.from('messages')
+        .update({ lu_agence: true })
+        .eq('dossier_id', id).eq('auteur_role', 'client').eq('lu_agence', false)
+      setMessages(prev => prev.map(m => m.auteur_role === 'client' ? { ...m, lu_agence: true } : m))
+      setNbMsgNonLus(0)
+    })()
+  }, [onglet, id, messages.length])
+
   const envoyerReponse = async () => {
     if (!reponseMsg.trim()) return
     setSendingMsg(true)
-    await supabase.from('messages').insert({
+    const contenu = reponseMsg.trim()
+    // Optimistic UI
+    const tempId = `tmp-${Date.now()}`
+    const optimistic = {
+      id: tempId, dossier_id: id, auteur_id: profile?.id,
+      auteur_role: profile?.role === 'admin' ? 'admin' : 'agente',
+      contenu, lu: false, lu_agence: true,
+      created_at: new Date().toISOString(),
+      auteur: { prenom: profile?.prenom, nom: profile?.nom, role: profile?.role },
+    }
+    setMessages(prev => [...prev, optimistic])
+    setReponseMsg('')
+
+    const { data: inserted, error } = await supabase.from('messages').insert({
       dossier_id: id,
       auteur_id: profile?.id,
       auteur_role: profile?.role === 'admin' ? 'admin' : 'agente',
-      contenu: reponseMsg.trim(),
-      lu: false,        // pas encore lu par le client
-      lu_agence: true,  // lu par l'agente (elle l'a écrit)
-    })
-    // Marquer les messages client comme lus par l'agence
+      contenu,
+      lu: false,
+      lu_agence: true,
+    }).select('*, auteur:profiles(prenom, nom, role)').single()
+
+    if (error) {
+      setMessages(prev => prev.filter(m => m.id !== tempId))
+      setErreur('Erreur envoi message : ' + error.message)
+    } else if (inserted) {
+      setMessages(prev => prev.map(m => m.id === tempId ? inserted : m))
+    }
+    // Marquer les messages client comme lus par l'agence (au cas où)
     await supabase.from('messages').update({ lu_agence: true })
-      .eq('dossier_id', id).eq('auteur_role', 'client')
-    const { data } = await supabase.from('messages')
-      .select('*, auteur:profiles(prenom, nom, role)')
-      .eq('dossier_id', id).order('created_at')
-    setMessages(data || [])
+      .eq('dossier_id', id).eq('auteur_role', 'client').eq('lu_agence', false)
     setNbMsgNonLus(0)
-    setReponseMsg('')
     setSendingMsg(false)
   }
 
@@ -4293,53 +4347,81 @@ export default function FicheChantier({ params }) {
           </div>
         )}
 
-      {/* ── MESSAGES ── (AMO uniquement) */}
+      {/* ── MESSAGES (maquette : conversation client AMO) ── */}
       {onglet === 'messages' && dossier?.typologie === 'amo' && (
-      <div>
-        <div className="card" style={{padding:22}}>
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-800">Messagerie client</h2>
-            {nbMsgNonLus > 0 && (
-              <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full font-medium">
-                {nbMsgNonLus} message{nbMsgNonLus > 1 ? 's' : ''} non lu{nbMsgNonLus > 1 ? 's' : ''}
-              </span>
-            )}
+      <div className="card" style={{padding:0, overflow:'hidden', display:'flex', flexDirection:'column', minHeight:520}}>
+        {/* Header */}
+        <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--ink-200)', gap:8, flexWrap:'wrap'}}>
+          <div>
+            <h2 className="page" style={{fontSize:15}}>Conversation client</h2>
+            <div className="eyebrow" style={{marginTop:4}}>Visible dans l'espace client AMO · {messages.length} message{messages.length > 1 ? 's' : ''}</div>
           </div>
+          <div style={{display:'flex', gap:8, alignItems:'center'}}>
+            {nbMsgNonLus > 0 && (
+              <Badge tone="bad">{nbMsgNonLus} non lu{nbMsgNonLus > 1 ? 's' : ''}</Badge>
+            )}
+            <Badge tone="ok">● Temps réel</Badge>
+          </div>
+        </div>
 
-          <div className="border border-gray-100 rounded-xl p-3 max-h-[60vh] overflow-y-auto space-y-3 bg-gray-50">
-            {messages.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">Aucun message pour ce chantier</p>
-            ) : (
-              messages.map(msg => {
-                const isClient = msg.auteur_role === 'client'
-                return (
-                  <div key={msg.id} className={`flex ${isClient ? 'justify-start' : 'justify-end'}`}>
-                    <div className={`max-w-xs sm:max-w-sm rounded-2xl px-3 py-2 ${isClient ? 'bg-white border border-gray-200' : 'bg-blue-800'}`}>
-                      <p className={`text-xs font-medium mb-0.5 ${isClient ? 'text-gray-500' : 'text-blue-200'}`}>
-                        {isClient ? `${msg.auteur?.prenom || 'Client'} (client)` : `${msg.auteur?.prenom || 'Équipe'}`}
-                      </p>
-                      <p className={`text-sm ${isClient ? 'text-gray-800' : 'text-white'}`}>{msg.contenu}</p>
-                      <p className={`text-xs mt-1 opacity-60 ${isClient ? 'text-gray-500' : 'text-white'}`}>
-                        {new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      </p>
+        {/* Fil des messages */}
+        <div style={{
+          flex:1, padding:'24px 22px', background:'var(--surface-2)',
+          display:'flex', flexDirection:'column', gap:14, overflowY:'auto',
+          maxHeight:'min(70vh, 640px)',
+        }}>
+          {messages.length === 0 ? (
+            <div style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:32}}>
+              Aucun message pour le moment — démarre la conversation.
+            </div>
+          ) : (
+            messages.map(msg => {
+              const isClient = msg.auteur_role === 'client'
+              const who = isClient
+                ? (msg.auteur?.prenom ? `${msg.auteur.prenom}${msg.auteur.nom ? ' ' + msg.auteur.nom : ''}` : (client ? `${client.prenom || ''} ${client.nom || ''}`.trim() : 'Client'))
+                : (msg.auteur?.prenom ? `${msg.auteur.prenom}${msg.auteur.nom ? ' ' + msg.auteur.nom[0] + '.' : ''}` : 'Équipe')
+              const when = new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+              return (
+                <div key={msg.id} style={{display:'flex', gap:10, justifyContent: isClient ? 'flex-start' : 'flex-end'}}>
+                  {isClient && <Avatar name={who} color="#0094d4" size={28} />}
+                  <div style={{maxWidth:'min(70%, 420px)', minWidth:0}}>
+                    <div style={{
+                      background: isClient ? '#fff' : 'var(--brand-500)',
+                      color: isClient ? 'var(--ink-800)' : '#fff',
+                      padding: '10px 14px',
+                      borderRadius: isClient ? '12px 12px 12px 4px' : '12px 12px 4px 12px',
+                      fontSize: 13.5, lineHeight: 1.5,
+                      boxShadow: isClient ? '0 1px 2px rgba(0,0,0,0.04)' : 'none',
+                      wordBreak: 'break-word',
+                      opacity: String(msg.id).startsWith('tmp-') ? 0.7 : 1,
+                    }}>
+                      {msg.contenu}
+                    </div>
+                    <div style={{fontSize:10.5, color:'var(--ink-400)', marginTop:4, textAlign: isClient ? 'left' : 'right'}}>
+                      {who} · {when}
                     </div>
                   </div>
-                )
-              })
-            )}
-          </div>
+                  {!isClient && <Avatar name={who} color="#00578e" size={28} />}
+                </div>
+              )
+            })
+          )}
+          <div ref={messagesEndRef} />
+        </div>
 
-          <div className="flex gap-2">
-            <input type="text" value={reponseMsg}
-              onChange={e => setReponseMsg(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && envoyerReponse()}
-              placeholder="Répondre au client..."
-              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <button onClick={envoyerReponse} disabled={!reponseMsg.trim() || sendingMsg}
-              className="bg-blue-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
-              {sendingMsg ? '...' : 'Envoyer'}
-            </button>
-          </div>
+        {/* Champ d'envoi */}
+        <div style={{padding:'14px 18px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:10, alignItems:'center'}}>
+          <input className="input" type="text"
+            value={reponseMsg}
+            onChange={e => setReponseMsg(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); envoyerReponse() } }}
+            placeholder="Écrire un message au client…"
+            disabled={sendingMsg}
+            style={{flex:1, height:42}} />
+          <button onClick={envoyerReponse} disabled={!reponseMsg.trim() || sendingMsg}
+            className="btn btn-primary" style={{height:42, flexShrink:0}}>
+            {sendingMsg ? '…' : '➤ Envoyer'}
+          </button>
         </div>
       </div>
       )}

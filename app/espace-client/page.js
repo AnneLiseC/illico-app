@@ -137,6 +137,17 @@ export default function EspaceClient() {
     init()
   }, [router])
 
+  // Realtime : nouveaux messages côté client (réponse de l'agence)
+  useEffect(() => {
+    if (!dossier?.id || !profile?.id) return
+    const channel = supabase
+      .channel(`espace-client:${dossier.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `dossier_id=eq.${dossier.id}` },
+        () => chargerMessages(dossier.id, profile.id))
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [dossier?.id, profile?.id])
+
 
 
   const envoyerMessage = async () => {

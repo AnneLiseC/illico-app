@@ -49,7 +49,7 @@ export default function MessageriePage() {
     chargerDossiers()
   }, [initialized, user?.id, profile?.id, router])
 
-  // Charger messages quand dossier change
+  // Charger messages quand dossier change + realtime
   useEffect(() => {
     if (!dossierId) return
     const charger = async () => {
@@ -69,7 +69,34 @@ export default function MessageriePage() {
       setDossiers(prev => prev.map(d => d.id === dossierId ? { ...d, nbNonLus: 0 } : d))
     }
     charger()
+
+    // Realtime : nouveaux messages sur ce dossier
+    const channel = supabase
+      .channel(`messagerie:${dossierId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `dossier_id=eq.${dossierId}` },
+        () => charger())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
   }, [dossierId])
+
+  // Realtime global : MAJ compteur de non-lus dans la sidebar
+  useEffect(() => {
+    if (!profile) return
+    const channel = supabase
+      .channel('messagerie-global')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: 'auteur_role=eq.client' },
+        (payload) => {
+          const newMsg = payload.new
+          if (!newMsg) return
+          setDossiers(prev => prev.map(d =>
+            d.id === newMsg.dossier_id && d.id !== dossierId
+              ? { ...d, nbNonLus: (d.nbNonLus || 0) + 1 }
+              : d
+          ))
+        })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [profile?.id, dossierId])
 
   // Scroll en bas à chaque nouveau message
   useEffect(() => {
