@@ -221,6 +221,15 @@ export default function Finances() {
   const [anneeSelectionnee, setAnneeSelectionnee]   = useState(new Date().getFullYear())
   const [moisOuvert, setMoisOuvert]                 = useState(null)
   const [sfSousOngletCTP, setSfSousOngletCTP]       = useState('mois')
+  const [isMobile, setIsMobile]                     = useState(false)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const handler = (e) => setIsMobile(e.matches)
+    setIsMobile(mq.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
 
   const router = useRouter()
   const { user, profile, initialized } = useAuth()
@@ -1078,7 +1087,7 @@ export default function Finances() {
                     </Td>
                     <Td right><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></Td>
                   </tr>
-                  {isOpen && (
+                  {isOpen && !isMobile && (
                     <tr><td colSpan={9} style={{padding:0,borderTop:'1px solid var(--ink-100)'}}>
                       {renderDossierDetail(d, isReel)}
                     </td></tr>
@@ -1104,6 +1113,18 @@ export default function Finances() {
           )}
         </table>
         </div>
+        {/* Sur mobile, on rend le détail du dossier ouvert HORS du tableau
+            scrollable, en pleine largeur viewport, pour que la "Répartition"
+            soit entièrement lisible sans scroll horizontal interne. */}
+        {isMobile && (() => {
+          const d = listeDossiers.find(d => d.id === dossierOuvert)
+          if (!d) return null
+          return (
+            <div style={{borderTop:'1px solid var(--ink-200)'}}>
+              {renderDossierDetail(d, isReel)}
+            </div>
+          )
+        })()}
       </div>
     )
   }

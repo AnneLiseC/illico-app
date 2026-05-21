@@ -1061,16 +1061,14 @@ img, svg, video, canvas { max-width: 100%; }
   table { min-width: max-content; }
   .card { max-width: 100%; }
 
-  /* Detail expansion inside a scrollable table — pin it to the visible
-     viewport instead of inheriting the table's full width, so values
-     on the right side don't get cut off when the user reads the
-     expanded panel. */
+  /* Detail expansion — on mobile, Finances renders the detail outside
+     the scrolling table (see renderFinanceTable). Keep the block
+     constrained to viewport width so RÉPARTITION reads naturally. */
   .detail-expansion {
-    position: sticky;
-    left: 0;
-    width: calc(100vw - 28px);
-    max-width: calc(100vw - 28px);
+    width: 100%;
+    max-width: 100%;
     box-sizing: border-box;
+    padding: 14px 14px 18px !important;
   }
 }
 

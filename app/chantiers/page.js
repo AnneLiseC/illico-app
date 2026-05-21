@@ -67,9 +67,9 @@ function FactRow({ label, value, highlight, mono }) {
 }
 
 /* ── Colonne liste ── */
-function ChantiersList({ items, selectedId, onSelect, aujourdhui }) {
+function ChantiersList({ items, selectedId, onSelect, aujourdhui, isMobile }) {
   return (
-    <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: isMobile ? 'auto' : '100%' }}>
       <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--ink-200)', flexShrink: 0 }}>
         <div className="eyebrow">{items.length} résultats</div>
         <div style={{ display: 'flex', gap: 6, fontSize: 11, color: 'var(--ink-500)', alignItems: 'center' }}>
@@ -77,7 +77,7 @@ function ChantiersList({ items, selectedId, onSelect, aujourdhui }) {
           <ChevronDown size={12} />
         </div>
       </div>
-      <div style={{ overflowY: 'auto', flex: 1, padding: '8px 12px' }}>
+      <div style={{ overflowY: isMobile ? 'visible' : 'auto', flex: 1, padding: '8px 12px' }}>
         {items.length === 0 && (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-400)', fontSize: 13 }}>Aucun dossier</div>
         )}
@@ -108,8 +108,9 @@ function ChantiersList({ items, selectedId, onSelect, aujourdhui }) {
                     <div className="clip-1" style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)', letterSpacing: -0.01 }}>
                       {nomClient(d.client)}
                     </div>
-                    <div className="clip-1" style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <PinIcon size={12} />{villeFromAddr(d.client?.adresse)}
+                    <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                      <PinIcon size={12} />
+                      <span className="clip-1" style={{ minWidth: 0 }}>{villeFromAddr(d.client?.adresse)}</span>
                     </div>
                   </div>
                   <StatutBadge statut={s} />
@@ -160,7 +161,7 @@ function ChantiersList({ items, selectedId, onSelect, aujourdhui }) {
 }
 
 /* ── Aperçu latéral ── */
-function ChantierPreview({ d, onOpen, onBack }) {
+function ChantierPreview({ d, onOpen, onBack, isMobile }) {
   if (!d) return (
     <div className="card" style={{ display: 'grid', placeItems: 'center', textAlign: 'center', color: 'var(--ink-400)' }}>
       <div>
@@ -189,7 +190,7 @@ function ChantierPreview({ d, onOpen, onBack }) {
   const commissionsHT      = calculateDossierFinance(d).commissions.comHT
 
   return (
-    <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: isMobile ? 'auto' : '100%' }}>
       {onBack && (
         <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--ink-200)', flexShrink: 0 }}>
           <button className="btn btn-ghost" onClick={onBack} style={{ fontSize: 12, padding: '4px 10px' }}>← Retour à la liste</button>
@@ -231,7 +232,7 @@ function ChantierPreview({ d, onOpen, onBack }) {
       </div>
 
       {/* Body scrollable */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+      <div style={{ flex: 1, overflowY: isMobile ? 'visible' : 'auto', padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 22 }}>
         {/* Quick facts */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           {totalDevisTTCSignes > 0 && <FactRow label="Montant chantier" value={fmtEur(totalDevisTTCSignes)} highlight />}
@@ -450,7 +451,7 @@ export default function Chantiers() {
 
   if (loading) return <div className="page-loading" />
 
-  const panelHeight = isMobile ? 'calc(100vh - 200px)' : 'calc(100vh - 340px)'
+  const panelHeight = 'calc(100vh - 340px)' /* desktop only — mobile uses natural page flow */
 
   return (
     <div className="page-enter page-pad" style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 1400, margin: '0 auto' }}>
@@ -537,10 +538,10 @@ export default function Chantiers() {
 
       {/* Grille liste + aperçu */}
       {isMobile ? (
-        <div style={{ height: panelHeight }}>
+        <div>
           {!showPreview
-            ? <ChantiersList items={dossiersFiltres} selectedId={selected?.id} onSelect={handleSelect} aujourdhui={aujourdhui} />
-            : <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} onBack={() => setShowPreview(false)} />
+            ? <ChantiersList items={dossiersFiltres} selectedId={selected?.id} onSelect={handleSelect} aujourdhui={aujourdhui} isMobile />
+            : <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} onBack={() => setShowPreview(false)} isMobile />
           }
         </div>
       ) : (
