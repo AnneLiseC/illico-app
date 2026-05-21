@@ -249,27 +249,47 @@ function DocViewer({ url, nom, onClose }) {
   const estImage = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(nomFichier)
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-black/95" onClick={onClose}>
+    <div style={{
+      position:'fixed', inset:0, zIndex:300,
+      display:'flex', flexDirection:'column', background:'rgba(0,0,0,0.95)',
+    }} onClick={onClose}>
       {/* Barre haute */}
       <div
-        className="flex items-center justify-between px-4 py-3 bg-gray-900 flex-shrink-0 gap-4"
+        style={{
+          display:'flex', alignItems:'center', justifyContent:'space-between',
+          padding:'12px 18px', background:'rgba(15,23,42,0.95)', gap:14,
+          flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.08)',
+        }}
         onClick={e => e.stopPropagation()}
       >
-        <span className="text-white text-sm font-medium truncate">{nomFichier}</span>
-        <div className="flex items-center gap-4 flex-shrink-0">
+        <span className="clip-1" style={{color:'#fff', fontSize:13, fontWeight:600}}>{nomFichier}</span>
+        <div style={{display:'flex', alignItems:'center', gap:8, flexShrink:0}}>
           <a
             href={url}
             download={nomFichier}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center gap-1.5 text-sm text-blue-300 hover:text-white transition-colors"
+            style={{
+              display:'inline-flex', alignItems:'center', gap:6, fontSize:12, fontWeight:600,
+              color:'#cbd5e1', padding:'6px 12px', borderRadius:8,
+              background:'rgba(255,255,255,0.08)', textDecoration:'none', transition:'all 150ms',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.18)'; e.currentTarget.style.color = '#fff' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = '#cbd5e1' }}
             onClick={e => e.stopPropagation()}
           >
             ⬇ Télécharger
           </a>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center"
+            style={{
+              width:34, height:34, display:'grid', placeItems:'center',
+              fontSize:18, lineHeight:1, color:'rgba(255,255,255,0.7)',
+              border:'none', background:'rgba(255,255,255,0.08)', borderRadius:8, cursor:'pointer',
+              transition:'all 150ms',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.18)'; e.currentTarget.style.color = '#fff' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)' }}
           >
             ✕
           </button>
@@ -277,16 +297,16 @@ function DocViewer({ url, nom, onClose }) {
       </div>
 
       {/* Corps */}
-      <div className="flex-1 overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div style={{flex:1, overflow:'hidden'}} onClick={e => e.stopPropagation()}>
         {estImage ? (
-          <div className="w-full h-full flex items-center justify-center p-4">
+          <div style={{width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={url} alt={nomFichier} className="max-w-full max-h-full object-contain rounded shadow-lg" />
+            <img src={url} alt={nomFichier} style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain', borderRadius:8, boxShadow:'0 20px 60px rgba(0,0,0,0.5)'}} />
           </div>
         ) : (
           <iframe
             src={url}
-            className="w-full h-full border-0"
+            style={{width:'100%', height:'100%', border:0}}
             title={nomFichier}
           />
         )}
@@ -317,28 +337,35 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
 
   if (loading) return <div className="page-loading" />
   if (fiches.length === 0) return (
-    <p className="text-xs text-gray-400 mt-2">
+    <p style={{fontSize:11.5, color:'var(--ink-400)', marginTop:8}}>
       Aucune fiche technique pour cet artisan
-      <a href={`/artisans/${artisanId}`} target="_blank" className="text-blue-500 hover:underline ml-1">En ajouter →</a>
+      <a href={`/artisans/${artisanId}`} target="_blank" style={{color:'var(--brand-700)', textDecoration:'underline', marginLeft:6}}>En ajouter →</a>
     </p>
   )
   return (
     <>
       {viewer && <DocViewer url={viewer.url} nom={viewer.nom} onClose={() => setViewer(null)} />}
-      <div className="mt-2 space-y-1.5 bg-gray-50 rounded-lg p-3">
+      <div style={{marginTop:8, padding:12, background:'var(--surface-2)', border:'1px solid var(--ink-200)', borderRadius:10, display:'flex', flexDirection:'column', gap:6}}>
         {fiches.map(fiche => {
           const cochee = fichesCochees.some(f => f.fiche_technique_id === fiche.id)
           return (
-            <div key={fiche.id} className="flex items-center gap-2">
-              <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
-                <input type="checkbox" checked={cochee} onChange={() => onToggle(fiche.id, artisanId)} className="w-4 h-4 accent-blue-700 flex-shrink-0" />
-                <span className="text-xs text-gray-700 truncate">{fiche.nom}</span>
-                {fiche.description && <span className="text-xs text-gray-400 truncate">- {fiche.description}</span>}
+            <div key={fiche.id} style={{display:'flex', alignItems:'center', gap:8}}>
+              <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', flex:1, minWidth:0}}>
+                <input type="checkbox" checked={cochee} onChange={() => onToggle(fiche.id, artisanId)}
+                  style={{width:16, height:16, accentColor:'var(--brand-500)', flexShrink:0}} />
+                <span className="clip-1" style={{fontSize:11.5, color:'var(--ink-700)'}}>{fiche.nom}</span>
+                {fiche.description && <span className="clip-1" style={{fontSize:11.5, color:'var(--ink-400)'}}>— {fiche.description}</span>}
               </label>
               {fiche.url && (
                 <button
                   onClick={() => ouvrirFiche(fiche.url, fiche.nom)}
-                  className="flex-shrink-0 text-xs text-blue-600 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-50">
+                  style={{
+                    flexShrink:0, fontSize:11, color:'var(--brand-700)',
+                    border:'1px solid var(--brand-200)', padding:'2px 10px', borderRadius:6,
+                    background:'transparent', cursor:'pointer', transition:'all 150ms',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--brand-50)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
                   📄 Voir
                 </button>
               )}
@@ -529,80 +556,6 @@ function DevisModal({ open, devis, onClose, onSave, artisans, isMarine, partsAge
             {isEdit ? 'Enregistrer' : 'Créer le devis'}
           </button>
         </div>
-      </div>
-    </div>
-  )
-}
-
-function EditDevis({ devis, onSave, onCancel, isMarine }) {
-  const [form, setForm] = useState({
-    montant_ht: devis.montant_ht || '',
-    montant_ttc: devis.montant_ttc || '',
-    commission_pourcentage: devis.commission_pourcentage ? (devis.commission_pourcentage * 100).toFixed(1) : '',
-    sans_commission: devis.commission_pourcentage === 0,
-    part_agente: isMarine ? '0' : (devis.part_agente || '0.5'),
-    date_reception: devis.date_reception || '',
-    date_limite: devis.date_limite || '',
-    notes: devis.notes || '',
-  })
-  const set = (champ, val) => setForm(f => ({ ...f, [champ]: val }))
-  return (
-    <div className="border border-blue-100 bg-blue-50 rounded-lg p-3 space-y-3 mt-2">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Montant HT (€)</label>
-          <input type="number" step="0.01" value={form.montant_ht}
-            onChange={e => {
-              const ht = e.target.value
-              const ttcAuto = ht !== '' ? (parseFloat(ht) * 1.1).toFixed(2) : ''
-              setForm(f => ({ ...f, montant_ht: ht, montant_ttc: ttcAuto }))
-            }}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Montant TTC (€) <span className="text-gray-400 font-normal">auto 10%</span></label>
-          <input type="number" step="0.01" value={form.montant_ttc} onChange={e => set('montant_ttc', e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Commission (%)</label>
-          <input type="number" step="0.1" min="0" max="100"
-            value={form.sans_commission ? '0' : form.commission_pourcentage}
-            placeholder="ex: 15"
-            disabled={form.sans_commission}
-            onChange={e => set('commission_pourcentage', e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400" />
-          <label className="flex items-center gap-2 mt-1 cursor-pointer">
-            <input type="checkbox" checked={form.sans_commission}
-              onChange={e => set('sans_commission', e.target.checked)}
-              className="w-3.5 h-3.5 accent-blue-700" />
-            <span className="text-xs text-gray-500">Sans commission ni honoraires</span>
-          </label>
-        </div>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Date réception</label>
-          <input type="date" value={form.date_reception} onChange={e => set('date_reception', e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Date limite</label>
-          <input type="date" value={form.date_limite} onChange={e => set('date_limite', e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
-      </div>
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
-        <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2}
-          placeholder="Description des travaux..."
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-      </div>
-      <div className="flex gap-2">
-        <button onClick={onCancel} className="flex-1 border border-gray-300 text-gray-700 py-1.5 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
-        <button onClick={() => onSave(form)} className="flex-1 bg-blue-800 text-white py-1.5 rounded-lg text-sm hover:bg-blue-900">Enregistrer</button>
       </div>
     </div>
   )
@@ -1586,26 +1539,23 @@ export default function FicheChantier({ params }) {
 
   const typologieLabel = (t) => ({ courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' })[t] || t
 
-  const statutConfig = {
-    en_cours: { label: 'En cours', color: 'bg-green-100 text-green-700' },
-    en_attente: { label: 'En attente', color: 'bg-yellow-100 text-yellow-700' },
-    termine: { label: 'Terminé', color: 'bg-gray-100 text-gray-600' },
-    annule: { label: 'Annulé', color: 'bg-red-100 text-red-600' },
-  }
   const statutDevisConfig = {
-    en_attente: { label: 'En attente', color: 'bg-yellow-100 text-yellow-700' },
-    recu:       { label: 'Reçu',       color: 'bg-blue-100 text-blue-700' },
-    accepte:    { label: 'Accepté',    color: 'bg-green-100 text-green-700' },
-    refuse:     { label: 'Refusé',     color: 'bg-red-100 text-red-600' },
-    a_modifier: { label: 'À modifier', color: 'bg-orange-100 text-orange-700' },
+    en_attente: { label: 'En attente', tone: 'warn' },
+    recu:       { label: 'Reçu',       tone: 'info' },
+    accepte:    { label: 'Accepté',    tone: 'ok'   },
+    refuse:     { label: 'Refusé',     tone: 'bad'  },
+    a_modifier: { label: 'À modifier', tone: 'warn' },
   }
   const fraisStatutConfig = {
-    offerts:    { label: 'Offerts',               color: 'bg-blue-100 text-blue-700' },
-    rembourse_apres_signature: { label: 'Remboursé après signature', color: 'bg-purple-100 text-purple-700' },
-    factures:   { label: 'Facturés — en attente', color: 'bg-amber-100 text-amber-700' },
-    regle:      { label: 'Réglés',                color: 'bg-green-100 text-green-700' },
-    rembourse:  { label: 'Remboursé',             color: 'bg-purple-100 text-purple-700' },
+    offerts:                   { label: 'Offerts' },
+    rembourse_apres_signature: { label: 'Remboursé après signature' },
+    factures:                  { label: 'Facturés — en attente' },
+    regle:                     { label: 'Réglés' },
+    rembourse:                 { label: 'Remboursé' },
   }
+  // Couleurs tone → classes badge (pour les boutons quick statut)
+  const TONE_BG = { ok: 'rgba(22,163,74,0.12)', warn: 'rgba(245,158,11,0.13)', bad: 'rgba(220,38,38,0.10)', info: 'rgba(0,148,212,0.12)', mute: 'rgba(148,163,184,0.15)' }
+  const TONE_FG = { ok: '#15803d', warn: '#a16207', bad: '#b91c1c', info: '#0078ad', mute: '#475569' }
 
   const devisSignes = devis.filter(d => d.statut === 'accepte' && d.montant_ttc)
   const totalDevisTTCSignes = devisSignes.reduce((s, d) => s + (d.montant_ttc || 0), 0)
@@ -1768,8 +1718,7 @@ export default function FicheChantier({ params }) {
   if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-400)'}}>Chantier introuvable</div>
 
   const nomComplet = client ? `${client.civilite} ${client.prenom} ${client.nom}${client.prenom2 ? ` & ${client.prenom2} ${client.nom2}` : ''}` : ''
-  const s = statutConfig[dossier.statut] ?? { label: dossier.statut ?? '-', color: 'bg-gray-100 text-gray-600' }
-  const f = fraisStatutConfig[dossier.frais_statut] ?? { label: dossier.frais_statut ?? '-', color: 'bg-gray-100 text-gray-600' }
+  const f = fraisStatutConfig[dossier.frais_statut] ?? { label: dossier.frais_statut ?? '—' }
 
   const supprimerChantier = async () => {
     const ok = confirm(
@@ -2635,7 +2584,6 @@ export default function FicheChantier({ params }) {
           ) : (
             <div style={{display:'flex', flexDirection:'column'}}>
               {devis.map((d, idx) => {
-                const sd = statutDevisConfig[d.statut]
                 const expanded = devisExpanded.has(d.id)
                 const factDevis = factures.filter(f => f.devis_id === d.id)
                 const factAcompte = factDevis.find(f => (f.libelle || '').toLowerCase().includes('acompte'))
@@ -2742,24 +2690,27 @@ export default function FicheChantier({ params }) {
                     </div>
 
                     {/* Infos détaillées + acompte custom */}
-                    <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-xs text-gray-400">Montant HT</span>
-                        <span className="font-medium">{d.montant_ht ? fmt(d.montant_ht) : '-'}</span>
+                    <div style={{
+                      background:'var(--surface-2)', borderRadius:10, padding:12,
+                      display:'flex', flexDirection:'column', gap:6, fontSize:13,
+                    }}>
+                      <div style={{display:'flex', justifyContent:'space-between'}}>
+                        <span style={{fontSize:11, color:'var(--ink-400)'}}>Montant HT</span>
+                        <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.montant_ht ? fmt(d.montant_ht) : '—'}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-xs text-gray-400">Montant TTC</span>
-                       <span className="font-medium">{d.montant_ttc ? fmt(d.montant_ttc) : '-'}</span>
+                      <div style={{display:'flex', justifyContent:'space-between'}}>
+                        <span style={{fontSize:11, color:'var(--ink-400)'}}>Montant TTC</span>
+                        <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.montant_ttc ? fmt(d.montant_ttc) : '—'}</span>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-400">Acompte</span>
-                        <div className="flex items-center gap-2">
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                        <span style={{fontSize:11, color:'var(--ink-400)'}}>Acompte</span>
+                        <div style={{display:'flex', alignItems:'center', gap:8}}>
                           <select value={d.acompte_pourcentage || 30}
                             onChange={async e => {
                               await supabase.from('devis_artisans').update({ acompte_pourcentage: parseFloat(e.target.value) }).eq('id', d.id)
                               await chargerDevis()
                             }}
-                            className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none">
+                            className="input" style={{height:26, fontSize:11, padding:'0 6px', minWidth:80}}>
                             <option value={30}>30%</option>
                             <option value={40}>40%</option>
                             <option value={-1}>Montant</option>
@@ -2770,81 +2721,103 @@ export default function FicheChantier({ params }) {
                                 await supabase.from('devis_artisans').update({ acompte_montant_fixe: parseFloat(e.target.value) }).eq('id', d.id)
                                 await chargerDevis()
                               }}
-                              className="w-24 border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none" />
+                              className="input" style={{width:96, height:26, fontSize:11, padding:'0 6px'}} />
                           )}
-                          <span className="text-xs font-medium">
+                          <span className="tnum" style={{fontSize:11, fontWeight:600, color:'var(--ink-900)'}}>
                             {fmt((d.acompte_pourcentage === -1 ? (d.acompte_montant_fixe || 0) : montantAcompte(d)))} TTC
                           </span>
                         </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-xs text-gray-400">Commission</span>
-                        <span className="font-medium">{d.commission_pourcentage ? `${(d.commission_pourcentage * 100).toFixed(1)} %` : '-'}</span>
+                      <div style={{display:'flex', justifyContent:'space-between'}}>
+                        <span style={{fontSize:11, color:'var(--ink-400)'}}>Commission</span>
+                        <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.commission_pourcentage ? `${(d.commission_pourcentage * 100).toFixed(1)} %` : '—'}</span>
                       </div>
                       {!estChantierMarine && (
-                        <div className="flex justify-between">
-                          <span className="text-xs text-gray-400">Répartition</span>
-                          <span className="font-medium">{`${Math.round((d.part_agente ?? 0.5) * 100)} / ${Math.round((1 - (d.part_agente ?? 0.5)) * 100)}`}</span>
+                        <div style={{display:'flex', justifyContent:'space-between'}}>
+                          <span style={{fontSize:11, color:'var(--ink-400)'}}>Répartition</span>
+                          <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{`${Math.round((d.part_agente ?? 0.5) * 100)} / ${Math.round((1 - (d.part_agente ?? 0.5)) * 100)}`}</span>
                         </div>
                       )}
                       {d.date_signature && d.statut === 'accepte' && (
-                        <div className="flex justify-between">
-                          <span className="text-xs text-green-500">Signé le</span>
-                          <span className="font-medium text-green-700">{new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
+                        <div style={{display:'flex', justifyContent:'space-between'}}>
+                          <span style={{fontSize:11, color:'#15803d'}}>Signé le</span>
+                          <span style={{fontWeight:600, color:'#15803d'}}>{new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
                         </div>
                       )}
                       {d.statut === 'accepte' && (() => {
                         const suiviAcompte = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && (s.artisan_id === d.artisan_id || s.artisan_id === d.artisan?.id))
                         const acomptePaye = suiviAcompte?.statut_client === 'regle'
                         return (
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-400">Acompte client</span>
+                          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                            <span style={{fontSize:11, color:'var(--ink-400)'}}>Acompte client</span>
                             <button onClick={async () => {
                               const artId = d.artisan_id || d.artisan?.id
                               const newStatut = acomptePaye ? 'en_attente' : 'regle'
                               await majSuiviAvecArtisan('acompte_artisan', artId, 'statut_client', newStatut)
                             }}
-                              className={`text-xs px-2 py-0.5 rounded-full font-medium ${acomptePaye ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                              {acomptePaye ? '✅ Payé' : '⏳ En attente'}
+                              style={{
+                                fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
+                                background: acomptePaye ? TONE_BG.ok : TONE_BG.warn,
+                                color: acomptePaye ? TONE_FG.ok : TONE_FG.warn,
+                              }}>
+                              {acomptePaye ? '✓ Payé' : '⏳ En attente'}
                             </button>
                           </div>
                         )
                       })()}
                     </div>
                     {d.notes && (
-                      <p className="text-xs text-gray-500 italic">{d.notes}</p>
+                      <p style={{fontSize:11.5, color:'var(--ink-500)', fontStyle:'italic', margin:0}}>{d.notes}</p>
                     )}
 
-                    <div className="flex gap-2 pt-1 border-t border-gray-100 flex-wrap">
-                      {['en_attente', 'recu', 'accepte', 'refuse', 'a_modifier'].map(st => (
-                        <button key={st} onClick={() => changerStatutDevis(d.id, st)}
-                          className={`text-xs px-2 py-1 rounded-full border transition-all ${d.statut === st ? statutDevisConfig[st].color + ' border-transparent font-medium' : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
-                          {statutDevisConfig[st].label}
-                        </button>
-                      ))}
+                    <div style={{display:'flex', gap:6, flexWrap:'wrap', paddingTop:8, borderTop:'1px solid var(--ink-100)'}}>
+                      {['en_attente', 'recu', 'accepte', 'refuse', 'a_modifier'].map(st => {
+                        const cfg = statutDevisConfig[st]
+                        const active = d.statut === st
+                        return (
+                          <button key={st} onClick={() => changerStatutDevis(d.id, st)}
+                            style={{
+                              fontSize:11, fontWeight: active ? 700 : 600, padding:'4px 10px', borderRadius:99,
+                              border:'1px solid', cursor:'pointer', transition:'all 150ms',
+                              borderColor: active ? 'transparent' : 'var(--ink-200)',
+                              background: active ? TONE_BG[cfg.tone] : 'transparent',
+                              color: active ? TONE_FG[cfg.tone] : 'var(--ink-400)',
+                            }}
+                            onMouseEnter={e => { if (!active) e.currentTarget.style.borderColor = 'var(--ink-300)' }}
+                            onMouseLeave={e => { if (!active) e.currentTarget.style.borderColor = 'var(--ink-200)' }}>
+                            {cfg.label}
+                          </button>
+                        )
+                      })}
                     </div>
 
                     {/* ── DOCUMENTS : Devis signé + Facture ── */}
-                    <div className="pt-2 border-t border-gray-100 space-y-2">
-                      {/* Devis */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-500 font-medium">📄 Devis artisan</span>
-                        <div className="flex items-center gap-2">
+                    <div style={{paddingTop:8, borderTop:'1px solid var(--ink-100)', display:'flex', flexDirection:'column', gap:10}}>
+                      {/* Devis artisan */}
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                        <span style={{fontSize:11, color:'var(--ink-500)', fontWeight:600}}>📄 Devis artisan</span>
+                        <div style={{display:'flex', alignItems:'center', gap:8}}>
                           {d.devis_pdf_path ? (
                             <>
                               <button onClick={() => ouvrirDocument(d.devis_pdf_path, `Devis ${d.artisan?.entreprise || ''}.pdf`)}
-                                className="text-xs text-blue-600 hover:underline">Voir PDF</button>
+                                style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>Voir PDF</button>
                               <button onClick={async () => {
                                 if (!confirm('Supprimer le PDF du devis ?')) return
                                 await supabase.storage.from('documents').remove([d.devis_pdf_path])
                                 await supabase.from('devis_artisans').update({ devis_pdf_path: null }).eq('id', d.id)
                                 await chargerDevis()
-                              }} className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
+                              }} style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
                             </>
                           ) : (
-                            <label className={`text-xs cursor-pointer px-2 py-1 rounded border transition-all ${uploadingDoc === d.id + '_devis' ? 'text-gray-400 border-gray-200' : 'text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
-                              {uploadingDoc === d.id + '_devis' ? 'Upload...' : '+ Uploader'}
-                              <input type="file" accept=".pdf" className="hidden" disabled={uploadingDoc === d.id + '_devis'}
+                            <label style={{
+                              fontSize:11, cursor: uploadingDoc === d.id + '_devis' ? 'wait' : 'pointer',
+                              padding:'3px 10px', borderRadius:6, border:'1px solid',
+                              color: uploadingDoc === d.id + '_devis' ? 'var(--ink-400)' : 'var(--brand-700)',
+                              borderColor: uploadingDoc === d.id + '_devis' ? 'var(--ink-200)' : 'var(--brand-200)',
+                              transition:'all 150ms',
+                            }}>
+                              {uploadingDoc === d.id + '_devis' ? 'Upload…' : '+ Uploader'}
+                              <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id + '_devis'}
                                 onChange={async e => {
                                   const fichier = e.target.files[0]
                                   if (!fichier) return
@@ -2864,60 +2837,78 @@ export default function FicheChantier({ params }) {
                         </div>
                       </div>
                       {/* Devis signé client */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-500 font-medium">📄 Devis signé client</span>
-                        <div className="flex items-center gap-2">
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                        <span style={{fontSize:11, color:'var(--ink-500)', fontWeight:600}}>📄 Devis signé client</span>
+                        <div style={{display:'flex', alignItems:'center', gap:8}}>
                           {d.devis_signe_path ? (
                             <>
                               <button onClick={() => ouvrirDocument(d.devis_signe_path, `Devis signé ${d.artisan?.entreprise || ''}.pdf`)}
-                                className="text-xs text-blue-600 hover:underline">Voir PDF</button>
+                                style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>Voir PDF</button>
                               <button onClick={() => supprimerDevisSigne(d.id, d.devis_signe_path)}
-                                className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
+                                style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
                             </>
                           ) : (
-                            <label className={`text-xs cursor-pointer px-2 py-1 rounded border transition-all ${uploadingDoc === d.id ? 'text-gray-400 border-gray-200' : 'text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
-                              {uploadingDoc === d.id ? 'Upload...' : '+ Uploader'}
-                              <input type="file" accept=".pdf" className="hidden" disabled={uploadingDoc === d.id}
+                            <label style={{
+                              fontSize:11, cursor: uploadingDoc === d.id ? 'wait' : 'pointer',
+                              padding:'3px 10px', borderRadius:6, border:'1px solid',
+                              color: uploadingDoc === d.id ? 'var(--ink-400)' : 'var(--brand-700)',
+                              borderColor: uploadingDoc === d.id ? 'var(--ink-200)' : 'var(--brand-200)',
+                            }}>
+                              {uploadingDoc === d.id ? 'Upload…' : '+ Uploader'}
+                              <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id}
                                 onChange={e => e.target.files[0] && uploadDevisSigne(d.id, e.target.files[0])} />
                             </label>
                           )}
                         </div>
                       </div>
                       {/* Factures artisan */}
-                      <div className="pt-2 border-t border-gray-100 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-500 font-medium">🧾 Factures artisan</span>
+                      <div style={{paddingTop:8, borderTop:'1px solid var(--ink-100)', display:'flex', flexDirection:'column', gap:6}}>
+                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                          <span style={{fontSize:11, color:'var(--ink-500)', fontWeight:600}}>🧾 Factures artisan</span>
                           <button onClick={() => {
                             const acompteMontant = d.acompte_pourcentage === -1 ? (d.acompte_montant_fixe || 0) : montantAcompte(d)
                             setAjouterFacture(d.id)
                             setNouvelleFacture({ montant_ttc: acompteMontant > 0 ? acompteMontant.toFixed(2) : '', date_paiement: '', statut: 'en_attente', fichier: null, libelle: 'Facture acompte', libelle_autre: '' })
                           }}
-                            className="text-xs text-green-600 border border-green-200 px-2 py-0.5 rounded hover:bg-green-50">
+                            style={{fontSize:11, color:'#15803d', border:'1px solid rgba(22,163,74,0.3)', padding:'2px 10px', borderRadius:6, background:'transparent', cursor:'pointer'}}>
                             + Ajouter
                           </button>
                         </div>
                         {factures.filter(f => f.devis_id === d.id).map(f => (
-                          <div key={f.id} className="bg-gray-50 rounded-lg p-2 space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-medium text-gray-700">
-                                {f.libelle || 'Facture'} - {fmt(f.montant_ttc || 0)} TTC
+                          <div key={f.id} style={{background:'var(--surface-2)', borderRadius:8, padding:8, display:'flex', flexDirection:'column', gap:6}}>
+                            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                              <span style={{fontSize:11, fontWeight:600, color:'var(--ink-700)'}}>
+                                {f.libelle || 'Facture'} — <span className="tnum">{fmt(f.montant_ttc || 0)}</span> TTC
                               </span>
-                              <div className="flex items-center gap-2">
-                                {f.date_paiement && <span className="text-xs text-gray-400">{new Date(f.date_paiement).toLocaleDateString('fr-FR')}</span>}
+                              <div style={{display:'flex', alignItems:'center', gap:8}}>
+                                {f.date_paiement && <span className="tnum" style={{fontSize:11, color:'var(--ink-400)'}}>{new Date(f.date_paiement).toLocaleDateString('fr-FR')}</span>}
                                 <button onClick={() => toggleStatutFacture(f.id, f.statut)}
-                                  className={`text-xs px-2 py-0.5 rounded-full font-medium ${f.statut === 'paye' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                                  {f.statut === 'paye' ? '✅ Payé' : '⏳ En attente'}
+                                  style={{
+                                    fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
+                                    background: f.statut === 'paye' ? TONE_BG.ok : TONE_BG.warn,
+                                    color: f.statut === 'paye' ? TONE_FG.ok : TONE_FG.warn,
+                                  }}>
+                                  {f.statut === 'paye' ? '✓ Payé' : '⏳ En attente'}
                                 </button>
-                                <button onClick={() => supprimerFactureArtisan(f.id, f.pdf_path)} className="text-red-300 hover:text-red-500 text-xs">✕</button>
+                                <button onClick={() => supprimerFactureArtisan(f.id, f.pdf_path)}
+                                  style={{fontSize:13, color:'var(--ink-400)', background:'none', border:'none', cursor:'pointer', padding:'0 4px'}}
+                                  onMouseEnter={e => { e.currentTarget.style.color = '#b91c1c' }}
+                                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-400)' }}>✕</button>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div style={{display:'flex', alignItems:'center', gap:8}}>
                               {f.pdf_path ? (
-                                <button onClick={() => ouvrirDocument(f.pdf_path, `Facture ${f.libelle || ''}.pdf`)} className="text-xs text-blue-600 hover:underline">📄 Voir PDF</button>
+                                <button onClick={() => ouvrirDocument(f.pdf_path, `Facture ${f.libelle || ''}.pdf`)}
+                                  style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>📄 Voir PDF</button>
                               ) : (
-                                <label className={`text-xs cursor-pointer px-2 py-0.5 rounded border ${uploadingFacturePdf === f.id ? 'text-gray-400 border-gray-200' : 'text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
-                                  {uploadingFacturePdf === f.id ? 'Upload...' : '+ PDF'}
-                                  <input type="file" accept=".pdf" className="hidden" disabled={uploadingFacturePdf === f.id}
+                                <label style={{
+                                  fontSize:11, cursor: uploadingFacturePdf === f.id ? 'wait' : 'pointer',
+                                  padding:'2px 8px', borderRadius:6, border:'1px solid',
+                                  color: uploadingFacturePdf === f.id ? 'var(--ink-400)' : 'var(--brand-700)',
+                                  borderColor: uploadingFacturePdf === f.id ? 'var(--ink-200)' : 'var(--brand-200)',
+                                }}>
+                                  {uploadingFacturePdf === f.id ? 'Upload…' : '+ PDF'}
+                                  <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingFacturePdf === f.id}
                                     onChange={e => e.target.files[0] && uploadFacturePdf(f.id, e.target.files[0])} />
                                 </label>
                               )}
@@ -2925,23 +2916,20 @@ export default function FicheChantier({ params }) {
                           </div>
                         ))}
                         {ajouterFacture === d.id && (
-                          <div className="border border-green-100 bg-green-50 rounded-lg p-3 space-y-2">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Montant TTC (€) *</label>
-                                <input type="number" step="0.01" value={nouvelleFacture.montant_ttc}
+                          <div style={{border:'1px solid rgba(22,163,74,0.2)', background:'rgba(22,163,74,0.05)', borderRadius:10, padding:12, display:'flex', flexDirection:'column', gap:8}}>
+                            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
+                              <ModalField label="Montant TTC (€)" required>
+                                <input type="number" step="0.01" className="input" value={nouvelleFacture.montant_ttc}
                                   onChange={e => setNouvelleFacture(f => ({ ...f, montant_ttc: e.target.value }))}
-                                  className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500" />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">Date de paiement</label>
-                                <input type="date" value={nouvelleFacture.date_paiement}
+                                  style={{height:32, padding:'0 10px', fontSize:12}} />
+                              </ModalField>
+                              <ModalField label="Date de paiement">
+                                <input type="date" className="input" value={nouvelleFacture.date_paiement}
                                   onChange={e => setNouvelleFacture(f => ({ ...f, date_paiement: e.target.value }))}
-                                  className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500" />
-                              </div>
+                                  style={{height:32, padding:'0 10px', fontSize:12}} />
+                              </ModalField>
                             </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Libellé</label>
+                            <ModalField label="Libellé">
                               <select value={nouvelleFacture.libelle}
                                 onChange={e => {
                                   const libelle = e.target.value
@@ -2954,7 +2942,7 @@ export default function FicheChantier({ params }) {
                                     return next
                                   })
                                 }}
-                                className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500">
+                                className="input" style={{height:32, padding:'0 10px', fontSize:12}}>
                                 <option value="Facture acompte">Facture acompte</option>
                                 <option value="Facture de situation">Facture de situation</option>
                                 <option value="Facture solde">Facture solde</option>
@@ -2964,33 +2952,38 @@ export default function FicheChantier({ params }) {
                                 <input type="text" placeholder="Préciser le libellé"
                                   value={nouvelleFacture.libelle_autre}
                                   onChange={e => setNouvelleFacture(f => ({ ...f, libelle_autre: e.target.value }))}
-                                  className="w-full border border-gray-300 rounded px-2 py-1 text-xs mt-1 focus:outline-none focus:ring-1 focus:ring-green-500" />
+                                  className="input" style={{height:32, padding:'0 10px', fontSize:12, marginTop:6}} />
                               )}
-                            </div>
+                            </ModalField>
                             <select value={nouvelleFacture.statut}
                               onChange={e => setNouvelleFacture(f => ({ ...f, statut: e.target.value }))}
-                              className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none">
+                              className="input" style={{height:32, padding:'0 10px', fontSize:12}}>
                               <option value="en_attente">⏳ En attente</option>
-                              <option value="paye">✅ Payé</option>
+                              <option value="paye">✓ Payé</option>
                             </select>
-                            <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-600 border border-gray-300 rounded px-2 py-1 hover:bg-gray-50 w-fit">
+                            <label style={{
+                              display:'inline-flex', alignItems:'center', gap:8, fontSize:11, color:'var(--ink-600)',
+                              border:'1px solid var(--ink-200)', borderRadius:8, padding:'6px 10px',
+                              cursor:'pointer', alignSelf:'flex-start', background:'#fff',
+                            }}>
                               {nouvelleFacture.fichier ? `✓ ${nouvelleFacture.fichier.name}` : '+ PDF facture (optionnel)'}
-                              <input type="file" accept=".pdf" className="hidden"
+                              <input type="file" accept=".pdf" style={{display:'none'}}
                                 onChange={e => setNouvelleFacture(f => ({ ...f, fichier: e.target.files[0] || null }))} />
                             </label>
-                            <div className="flex gap-2">
-                              <button onClick={() => setAjouterFacture(null)} className="flex-1 border border-gray-300 text-gray-600 py-1 rounded text-xs hover:bg-gray-50">Annuler</button>
+                            <div style={{display:'flex', gap:8}}>
+                              <button onClick={() => setAjouterFacture(null)} className="btn btn-ghost" style={{flex:1, fontSize:12, justifyContent:'center'}}>Annuler</button>
                               <button onClick={() => ajouterFactureArtisan(d.id, d.artisan_id)}
                                 disabled={!nouvelleFacture.montant_ttc}
-                                className="flex-1 bg-green-700 text-white py-1 rounded text-xs hover:bg-green-800 disabled:opacity-50">Enregistrer</button>
+                                className="btn btn-primary" style={{flex:1, fontSize:12, justifyContent:'center', background:'#15803d', borderColor:'#15803d'}}>Enregistrer</button>
                             </div>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-gray-50">
-                      <button onClick={() => setFichesPanelOuvert(fichesPanelOuvert === d.id ? null : d.id)} className="text-xs text-blue-600 hover:underline">
+                    <div style={{paddingTop:8, borderTop:'1px solid var(--ink-100)'}}>
+                      <button onClick={() => setFichesPanelOuvert(fichesPanelOuvert === d.id ? null : d.id)}
+                        style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>
                         🗂 Fiches techniques ({fichesTechChantier[d.artisan_id]?.length || 0})
                       </button>
                       {fichesPanelOuvert === d.id && (
@@ -2999,20 +2992,20 @@ export default function FicheChantier({ params }) {
                     </div>
                     {/* Bouton intervention rapide sur devis accepté */}
                     {d.statut === 'accepte' && (
-                      <div className="pt-2 border-t border-gray-50">
+                      <div style={{paddingTop:8, borderTop:'1px solid var(--ink-100)'}}>
                         <button
                           onClick={() => { setNouvIntervArtisanId(d.artisan_id); setModalCreerIntervOuvert(true) }}
-                          className="text-xs text-green-700 border border-green-200 px-2 py-1 rounded hover:bg-green-50">
+                          style={{fontSize:11, color:'#15803d', border:'1px solid rgba(22,163,74,0.3)', padding:'4px 10px', borderRadius:6, background:'transparent', cursor:'pointer'}}>
                           📅 Planifier une intervention
                         </button>
                         {/* Interventions existantes pour cet artisan */}
                         {interventionsDossier.filter(i => i.artisan_id === d.artisan_id).map(i => (
-                          <div key={i.id} className="mt-1 text-xs text-gray-500 flex items-center gap-2">
+                          <div key={i.id} style={{marginTop:4, fontSize:11, color:'var(--ink-500)', display:'flex', alignItems:'center', gap:8}}>
                             <span>🔨</span>
                             {i.type_intervention === 'periode'
                               ? `${new Date(i.date_debut).toLocaleDateString('fr-FR')} → ${new Date(i.date_fin).toLocaleDateString('fr-FR')}`
                               : `${i.jours_specifiques?.length} jour(s)`}
-                            {i.notes && <span className="text-gray-400">- {i.notes}</span>}
+                            {i.notes && <span style={{color:'var(--ink-400)'}}>— {i.notes}</span>}
                           </div>
                         ))}
                       </div>
@@ -4041,311 +4034,372 @@ export default function FicheChantier({ params }) {
         )
       })()}
 
-        {/* ── MODAL CR SANS IA ── */}
-        {crManuelModal && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-xl space-y-4 p-6" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-gray-800">📝 Nouveau CR sans IA</p>
-                <button onClick={() => setCrManuelModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Type de visite</label>
-                  <select value={crManuelForm.type_visite} onChange={e => setCrManuelForm(f => ({ ...f, type_visite: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="">— Sélectionner —</option>
-                    <option value="r1">R1 - Visite technique</option>
-                    <option value="r2">R2 - Visite artisans</option>
-                    <option value="r3">R3 - Présentation devis</option>
-                    <option value="suivi">Suivi de chantier</option>
-                    <option value="reception">Réception</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Date de visite</label>
-                  <input type="date" value={crManuelForm.date_visite} onChange={e => setCrManuelForm(f => ({ ...f, date_visite: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Contenu du CR *</label>
-                <textarea value={crManuelForm.contenu} onChange={e => setCrManuelForm(f => ({ ...f, contenu: e.target.value }))}
-                  rows={10} placeholder="Rédigez ou collez le contenu du compte-rendu..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Document PDF (optionnel)</label>
-                <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-600 border border-gray-300 rounded px-3 py-2 hover:bg-gray-50 w-fit">
-                  {crManuelForm.fichier ? `✓ ${crManuelForm.fichier.name}` : '+ Joindre un PDF'}
-                  <input type="file" accept=".pdf" className="hidden"
-                    onChange={e => setCrManuelForm(f => ({ ...f, fichier: e.target.files[0] || null }))} />
-                </label>
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button onClick={() => setCrManuelModal(false)} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
-                <button onClick={() => sauvegarderCRManuel(false)} disabled={crManuelSaving || !crManuelForm.contenu.trim()}
-                  className="flex-1 border border-blue-300 text-blue-700 py-2 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
-                  {crManuelSaving ? 'Enregistrement...' : 'Sauvegarder brouillon'}
-                </button>
-                <button onClick={() => sauvegarderCRManuel(true)} disabled={crManuelSaving || !crManuelForm.contenu.trim()}
-                  className="flex-1 bg-blue-800 text-white py-2 rounded-lg text-sm hover:bg-blue-900 disabled:opacity-50">
-                  {crManuelSaving ? '...' : 'Publier au client'}
-                </button>
-              </div>
+      {/* ── MODAL CR SANS IA ── */}
+      {crManuelModal && (
+        <ModalShell
+          title="📝 Nouveau CR sans IA"
+          subtitle={`${dossier.reference} · saisie manuelle`}
+          onClose={() => setCrManuelModal(false)}
+          width={640}
+          footer={(<>
+            <button onClick={() => setCrManuelModal(false)} className="btn btn-ghost">Annuler</button>
+            <button onClick={() => sauvegarderCRManuel(false)} disabled={crManuelSaving || !crManuelForm.contenu.trim()}
+              className="btn btn-ghost" style={{borderColor:'var(--brand-200)', color:'var(--brand-700)'}}>
+              {crManuelSaving ? 'Enregistrement…' : 'Sauvegarder brouillon'}
+            </button>
+            <button onClick={() => sauvegarderCRManuel(true)} disabled={crManuelSaving || !crManuelForm.contenu.trim()}
+              className="btn btn-primary">
+              {crManuelSaving ? '…' : 'Publier au client'}
+            </button>
+          </>)}
+        >
+          <div style={{padding:24, display:'flex', flexDirection:'column', gap:14}}>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+              <ModalField label="Type de visite">
+                <select value={crManuelForm.type_visite}
+                  onChange={e => setCrManuelForm(f => ({ ...f, type_visite: e.target.value }))}
+                  className="input" style={{height:38, padding:'0 12px', fontSize:13}}>
+                  <option value="">— Sélectionner —</option>
+                  <option value="r1">R1 — Visite technique</option>
+                  <option value="r2">R2 — Visite artisans</option>
+                  <option value="r3">R3 — Présentation devis</option>
+                  <option value="suivi">Suivi de chantier</option>
+                  <option value="reception">Réception</option>
+                </select>
+              </ModalField>
+              <ModalField label="Date de visite">
+                <input type="date" value={crManuelForm.date_visite}
+                  onChange={e => setCrManuelForm(f => ({ ...f, date_visite: e.target.value }))}
+                  className="input" style={{height:38, padding:'0 12px', fontSize:13}} />
+              </ModalField>
             </div>
+
+            <ModalField label="Contenu du CR" required>
+              <textarea value={crManuelForm.contenu}
+                onChange={e => setCrManuelForm(f => ({ ...f, contenu: e.target.value }))}
+                rows={10} placeholder="Rédigez ou collez le contenu du compte-rendu…"
+                className="input" style={{minHeight:200, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
+            </ModalField>
+
+            <ModalField label="Document PDF (optionnel)">
+              <label style={{
+                display:'inline-flex', alignItems:'center', gap:8, fontSize:12, color:'var(--ink-600)',
+                border:'1px solid var(--ink-200)', borderRadius:8, padding:'8px 12px',
+                cursor:'pointer', alignSelf:'flex-start', background:'#fff',
+              }}>
+                {crManuelForm.fichier ? `✓ ${crManuelForm.fichier.name}` : '+ Joindre un PDF'}
+                <input type="file" accept=".pdf" style={{display:'none'}}
+                  onChange={e => setCrManuelForm(f => ({ ...f, fichier: e.target.files[0] || null }))} />
+              </label>
+            </ModalField>
           </div>
-        )}
-        
-        {/* ── MODAL CR AVEC IA ── */}
-        {crModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4"
-            onClick={() => setCrModal(false)}>
-            <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        </ModalShell>
+      )}
 
-              {/* Header modal */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10">
-                <div>
-                  <p className="font-semibold text-gray-800">✨ Nouveau CR avec IA</p>
-                  <div className="flex gap-1 mt-1.5">
-                    {[1,2,3].map(n => (
-                      <div key={n} className={`h-1.5 rounded-full transition-all ${n <= crEtape ? 'bg-blue-800 w-8' : 'bg-gray-200 w-8'}`} />
-                    ))}
-                    <span className="text-xs text-gray-400 ml-2">Étape {crEtape}/3</span>
-                  </div>
-                </div>
-                <button onClick={() => setCrModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+      {/* ── MODAL CR AVEC IA (wizard 3 étapes) ── */}
+      {crModal && (() => {
+        const TYPES_CR = [
+          { value: 'r1',        label: 'R1 — Visite technique',  emoji: '🔍' },
+          { value: 'r2',        label: 'R2 — Visite artisans',    emoji: '🔨' },
+          { value: 'r3',        label: 'R3 — Présentation devis', emoji: '📋' },
+          { value: 'suivi',     label: 'Suivi de chantier',       emoji: '📊' },
+          { value: 'reception', label: 'Réception',               emoji: '✓' },
+        ]
+        const intervenantsDispo = devis.filter(d => ['recu', 'accepte'].includes(d.statut))
+        return (
+          <ModalShell
+            title={<>✨ Nouveau CR avec IA <span style={{fontSize:12, color:'var(--ink-400)', fontWeight:400, marginLeft:8}}>· Étape {crEtape}/3</span></>}
+            subtitle={(
+              <div style={{display:'flex', gap:6, marginTop:6}}>
+                {[1,2,3].map(n => (
+                  <div key={n} style={{
+                    height:4, width:60, borderRadius:99,
+                    background: n <= crEtape ? 'var(--brand-700)' : 'var(--ink-200)',
+                    transition:'background 200ms',
+                  }} />
+                ))}
               </div>
+            )}
+            onClose={() => setCrModal(false)}
+            width={720}
+          >
+            <div style={{padding:24, display:'flex', flexDirection:'column', gap:16}}>
 
-              <div className="p-6 space-y-5">
+              {/* ── ÉTAPE 1 : Configuration ── */}
+              {crEtape === 1 && (
+                <div style={{display:'flex', flexDirection:'column', gap:14}}>
+                  <div style={{fontSize:13.5, fontWeight:600, color:'var(--ink-700)'}}>Configuration de la visite</div>
 
-                {/* ── ÉTAPE 1 : Configuration ── */}
-                {crEtape === 1 && (
-                  <div className="space-y-4">
-                    <p className="text-sm font-medium text-gray-700">Configuration de la visite</p>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Type de visite *</label>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {[
-                          { value: 'r1', label: 'R1 – Visite technique', emoji: '🔍' },
-                          { value: 'r2', label: 'R2 – Visite artisans', emoji: '🔨' },
-                          { value: 'r3', label: 'R3 – Présentation devis', emoji: '📋' },
-                          { value: 'suivi', label: 'Suivi de chantier', emoji: '📊' },
-                          { value: 'reception', label: 'Réception', emoji: '✅' },
-                        ].map(({ value, label, emoji }) => (
+                  <ModalField label="Type de visite" required>
+                    <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
+                      {TYPES_CR.map(({ value, label, emoji }) => {
+                        const active = crForm.type_visite === value
+                        return (
                           <button key={value} onClick={() => setCrForm(f => ({ ...f, type_visite: value }))}
-                            className={`text-left px-3 py-2.5 rounded-xl border text-sm transition-all ${crForm.type_visite === value ? 'border-blue-800 bg-blue-50 text-blue-800 font-medium' : 'border-gray-200 hover:border-gray-300'}`}>
+                            style={{
+                              textAlign:'left', padding:'10px 14px', borderRadius:10,
+                              border:'1px solid', cursor:'pointer', fontSize:13, transition:'all 150ms',
+                              borderColor: active ? 'var(--brand-700)' : 'var(--ink-200)',
+                              background: active ? 'var(--brand-50)' : '#fff',
+                              color: active ? 'var(--brand-800)' : 'var(--ink-700)',
+                              fontWeight: active ? 600 : 500,
+                            }}>
                             {emoji} {label}
                           </button>
-                        ))}
-                      </div>
+                        )
+                      })}
                     </div>
+                  </ModalField>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Date de la visite</label>
-                        <input type="date" value={crForm.date_visite}
-                          onChange={e => setCrForm(f => ({ ...f, date_visite: e.target.value }))}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Intervenants présents</label>
-                        {devis.filter(d => ['recu', 'accepte'].includes(d.statut)).length > 0 ? (
-                          <div className="space-y-1 border border-gray-200 rounded-lg p-2">
-                             {devis.filter(d => ['recu', 'accepte'].includes(d.statut)).map(d => {
-                              const selected = (crForm.intervenants || '').split(',').map(s => s.trim()).filter(Boolean).includes(d.artisan?.entreprise)
-                              return (
-                                <label key={d.id} className="flex items-center gap-2 cursor-pointer px-2 py-1 rounded hover:bg-gray-50">
-                                  <input type="checkbox" checked={selected}
-                                    onChange={() => {
-                                      const current = (crForm.intervenants || '').split(',').map(s => s.trim()).filter(Boolean)
-                                      const updated = selected
-                                        ? current.filter(n => n !== d.artisan?.entreprise)
-                                        : [...current, d.artisan?.entreprise]
-                                      setCrForm(f => ({ ...f, intervenants: updated.join(', ') }))
-                                    }}
-                                    className="accent-blue-700" />
-                                  <span className="text-sm text-gray-700">{d.artisan?.entreprise}</span>
-                                  <span className="text-xs text-gray-400">{d.artisan?.metier}</span>
-                                  <span className={`text-xs px-1.5 py-0.5 rounded-full ml-auto ${d.statut === 'accepte' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
-                                      {d.statut === 'accepte' ? 'Signé' : 'Reçu'}
-                                    </span>
-                                </label>
-                              )
-                            })}
-                          </div>
-                        ) : (
-                          <input type="text" value={crForm.intervenants}
-                            onChange={e => setCrForm(f => ({ ...f, intervenants: e.target.value }))}
-                            placeholder="Plaquiste, Électricien…"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                        )}
-                      </div>
-                    </div>
-
-                    <button onClick={() => crForm.type_visite && setCrEtape(2)}
-                      disabled={!crForm.type_visite}
-                      className="w-full bg-blue-800 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-blue-900 disabled:opacity-40 mt-2">
-                      Suivant →
-                    </button>
-                  </div>
-                )}
-
-                {/* ── ÉTAPE 2 : Notes brutes ── */}
-                {crEtape === 2 && (
-                  <div className="space-y-4">
-                    <p className="text-sm font-medium text-gray-700">Saisie des notes brutes</p>
-                    <p className="text-xs text-gray-400">Combinez plusieurs sources - l'IA synthétise tout</p>
-
-                    {/* Texte */}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">📝 Texte (copier-coller depuis OneNote, Outlook…)</label>
-                      <textarea value={crNotes} onChange={e => setCrNotes(e.target.value)}
-                        rows={5} placeholder="Coller vos notes brutes ici - bullet points, phrases incomplètes, tout est ok..."
-                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-                    </div>
-
-                    {/* Vocal */}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">🎤 Vocal (dictée dans l'app)</label>
-                      <div className="flex gap-2 items-start">
-                        <button onClick={crVocal ? arreterVocal : demarrerVocal}
-                          className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all ${crVocal ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-                          {crVocal ? '⏹ Arrêter' : '🎙 Dicter'}
-                        </button>
-                        {crVocalTexte && (
-                          <div className="flex-1 text-xs text-gray-600 bg-gray-50 rounded-xl p-2.5 min-h-[40px]">
-                            {crVocalTexte}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Photos */}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">📷 Photos (cahier, capture d'écran, document)</label>
-                      <div className="flex flex-wrap gap-2">
-                        {crImages.map((img, i) => (
-                          <div key={i} className="relative">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={img} alt="" className="w-20 h-20 object-cover rounded-lg border border-gray-200" />
-                            <button onClick={() => setCrImages(imgs => imgs.filter((_, j) => j !== i))}
-                              className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-xs flex items-center justify-center">✕</button>
-                          </div>
-                        ))}
-                        <label className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-blue-400 transition-colors">
-                          <span className="text-2xl text-gray-300">+</span>
-                          <input type="file" accept="image/*" multiple className="hidden"
-                            onChange={e => {
-                              Array.from(e.target.files || []).forEach(file => {
-                                const reader = new FileReader()
-                                reader.onload = ev => setCrImages(imgs => [...imgs, ev.target.result])
-                                reader.readAsDataURL(file)
-                              })
-                            }} />
-                        </label>
-                      </div>
-                    </div>
-                    {documents.length > 0 && (
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">📎 Documents du chantier (contexte IA)</label>
-                        <div className="border border-gray-200 rounded-xl p-2 space-y-1 max-h-36 overflow-y-auto">
-                          {documents.map(doc => {
-                            const selected = crDocsSelectionnes.some(d => d.id === doc.id)
-                            const supporté = doc.type_mime?.includes('pdf') || doc.type_mime?.startsWith('image')
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+                    <ModalField label="Date de la visite">
+                      <input type="date" value={crForm.date_visite}
+                        onChange={e => setCrForm(f => ({ ...f, date_visite: e.target.value }))}
+                        className="input" style={{height:38, padding:'0 12px', fontSize:13}} />
+                    </ModalField>
+                    <ModalField label="Intervenants présents">
+                      {intervenantsDispo.length > 0 ? (
+                        <div style={{border:'1px solid var(--ink-200)', borderRadius:10, padding:6, display:'flex', flexDirection:'column', gap:2}}>
+                          {intervenantsDispo.map(d => {
+                            const selected = (crForm.intervenants || '').split(',').map(s => s.trim()).filter(Boolean).includes(d.artisan?.entreprise)
                             return (
-                              <label key={doc.id} className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer ${supporté ? 'hover:bg-gray-50' : 'opacity-40 cursor-not-allowed'}`}>
-                                <input type="checkbox" checked={selected} disabled={!supporté}
+                              <label key={d.id} style={{
+                                display:'flex', alignItems:'center', gap:8, cursor:'pointer',
+                                padding:'4px 8px', borderRadius:6, transition:'background 150ms',
+                              }}
+                                onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-2)' }}
+                                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+                                <input type="checkbox" checked={selected}
                                   onChange={() => {
-                                    if (!supporté) return
-                                    setCrDocsSelectionnes(prev =>
-                                      selected ? prev.filter(d => d.id !== doc.id) : [...prev, doc]
-                                    )
+                                    const current = (crForm.intervenants || '').split(',').map(s => s.trim()).filter(Boolean)
+                                    const updated = selected
+                                      ? current.filter(n => n !== d.artisan?.entreprise)
+                                      : [...current, d.artisan?.entreprise]
+                                    setCrForm(f => ({ ...f, intervenants: updated.join(', ') }))
                                   }}
-                                  className="accent-blue-700" />
-                                <span className="text-xs text-gray-700 truncate">{doc.nom}</span>
-                                {!supporté && <span className="text-xs text-gray-400 ml-auto">non supporté</span>}
+                                  style={{accentColor:'var(--brand-500)'}} />
+                                <span style={{fontSize:13, color:'var(--ink-700)'}}>{d.artisan?.entreprise}</span>
+                                <span style={{fontSize:11, color:'var(--ink-400)'}}>{d.artisan?.metier}</span>
+                                <span style={{
+                                  fontSize:10.5, padding:'2px 8px', borderRadius:99, marginLeft:'auto', fontWeight:700,
+                                  background: d.statut === 'accepte' ? TONE_BG.ok : TONE_BG.info,
+                                  color: d.statut === 'accepte' ? TONE_FG.ok : TONE_FG.info,
+                                }}>
+                                  {d.statut === 'accepte' ? 'Signé' : 'Reçu'}
+                                </span>
                               </label>
                             )
                           })}
                         </div>
-                      </div>
-                    )}
-                    <div className="flex gap-3 pt-2">
-                      <button onClick={() => setCrEtape(1)} className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-xl text-sm hover:bg-gray-50">
-                        ← Retour
-                      </button>
-                      <button onClick={genererCRAvecIA}
-                        disabled={crGenerating || (!crNotes.trim() && !crVocalTexte.trim() && crImages.length === 0)}
-                        className="flex-1 bg-blue-800 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-blue-900 disabled:opacity-40">
-                        {crGenerating ? (
-                          <span className="flex items-center justify-center gap-2">
-                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                            Génération en cours…
-                          </span>
-                        ) : '✨ Générer le CR'}
-                      </button>
-                    </div>
+                      ) : (
+                        <input type="text" value={crForm.intervenants}
+                          onChange={e => setCrForm(f => ({ ...f, intervenants: e.target.value }))}
+                          placeholder="Plaquiste, Électricien…"
+                          className="input" style={{height:38, padding:'0 12px', fontSize:13}} />
+                      )}
+                    </ModalField>
                   </div>
-                )}
 
-                {/* ── ÉTAPE 3 : Relecture ── */}
-                {crEtape === 3 && crGenere && (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-gray-800">{crGenere.titre}</p>
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Généré ✓</span>
+                  <button onClick={() => crForm.type_visite && setCrEtape(2)}
+                    disabled={!crForm.type_visite}
+                    className="btn btn-primary"
+                    style={{justifyContent:'center', height:42, fontSize:13, marginTop:4}}>
+                    Suivant →
+                  </button>
+                </div>
+              )}
+
+              {/* ── ÉTAPE 2 : Notes brutes ── */}
+              {crEtape === 2 && (
+                <div style={{display:'flex', flexDirection:'column', gap:14}}>
+                  <div>
+                    <div style={{fontSize:13.5, fontWeight:600, color:'var(--ink-700)'}}>Saisie des notes brutes</div>
+                    <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:2}}>Combinez plusieurs sources — l'IA synthétise tout</div>
+                  </div>
+
+                  <ModalField label="📝 Texte (copier-coller depuis OneNote, Outlook…)">
+                    <textarea value={crNotes} onChange={e => setCrNotes(e.target.value)}
+                      rows={5} placeholder="Coller vos notes brutes ici — bullet points, phrases incomplètes, tout est ok…"
+                      className="input" style={{minHeight:120, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
+                  </ModalField>
+
+                  <ModalField label="🎤 Vocal (dictée dans l'app)">
+                    <div style={{display:'flex', gap:8, alignItems:'flex-start'}}>
+                      <button onClick={crVocal ? arreterVocal : demarrerVocal}
+                        style={{
+                          flexShrink:0, padding:'8px 16px', borderRadius:10,
+                          fontSize:13, fontWeight:600, border:'none', cursor:'pointer', transition:'all 150ms',
+                          background: crVocal ? 'rgba(220,38,38,0.12)' : 'var(--surface-2)',
+                          color: crVocal ? '#b91c1c' : 'var(--ink-700)',
+                          animation: crVocal ? 'fadeIn 1s ease-in-out infinite alternate' : 'none',
+                        }}>
+                        {crVocal ? '⏹ Arrêter' : '🎙 Dicter'}
+                      </button>
+                      {crVocalTexte && (
+                        <div style={{
+                          flex:1, fontSize:12, color:'var(--ink-700)', background:'var(--surface-2)',
+                          borderRadius:10, padding:10, minHeight:40,
+                        }}>
+                          {crVocalTexte}
+                        </div>
+                      )}
                     </div>
+                  </ModalField>
 
-                    <div className="space-y-4">
-                      {crSectionsEditees.map((section, idx) => (
-                        <div key={idx} className={`border rounded-xl overflow-hidden ${section.important ? 'border-orange-200' : 'border-gray-100'}`}>
-                          <div className={`px-4 py-2 flex items-center gap-2 ${section.important ? 'bg-orange-50' : 'bg-gray-50'}`}>
-                            <span className="text-xs font-bold text-gray-500">{section.numero}.</span>
-                            <input
-                              type="text"
-                              value={section.titre}
-                              onChange={e => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, titre: e.target.value } : s))}
-                              className="flex-1 text-sm font-medium bg-transparent focus:outline-none" />
-                            <button onClick={() => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, important: !s.important } : s))}
-                              className={`text-xs px-2 py-0.5 rounded ${section.important ? 'text-orange-600' : 'text-gray-300 hover:text-orange-400'}`}>
-                              ⚠
-                            </button>
-                          </div>
-                          <textarea
-                            value={section.contenu}
-                            onChange={e => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, contenu: e.target.value } : s))}
-                            rows={Math.max(3, Math.ceil(section.contenu.length / 80))}
-                            className="w-full px-4 py-3 text-xs text-gray-700 resize-none focus:outline-none focus:bg-blue-50 transition-colors leading-relaxed" />
+                  <ModalField label="📷 Photos (cahier, capture d'écran, document)">
+                    <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
+                      {crImages.map((img, i) => (
+                        <div key={i} style={{position:'relative'}}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={img} alt="" style={{width:80, height:80, objectFit:'cover', borderRadius:8, border:'1px solid var(--ink-200)'}} />
+                          <button onClick={() => setCrImages(imgs => imgs.filter((_, j) => j !== i))}
+                            style={{
+                              position:'absolute', top:-6, right:-6,
+                              width:18, height:18, borderRadius:'50%',
+                              background:'#dc2626', color:'#fff', border:'none', cursor:'pointer',
+                              fontSize:10, display:'grid', placeItems:'center',
+                            }}>✕</button>
                         </div>
                       ))}
+                      <label style={{
+                        width:80, height:80, borderRadius:8,
+                        border:'2px dashed var(--ink-300)', display:'grid', placeItems:'center',
+                        cursor:'pointer', transition:'border-color 150ms',
+                      }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--brand-500)' }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--ink-300)' }}>
+                        <span style={{fontSize:24, color:'var(--ink-300)', lineHeight:1}}>+</span>
+                        <input type="file" accept="image/*" multiple style={{display:'none'}}
+                          onChange={e => {
+                            Array.from(e.target.files || []).forEach(file => {
+                              const reader = new FileReader()
+                              reader.onload = ev => setCrImages(imgs => [...imgs, ev.target.result])
+                              reader.readAsDataURL(file)
+                            })
+                          }} />
+                      </label>
                     </div>
+                  </ModalField>
 
-                    <div className="flex gap-3 pt-2">
-                      <button onClick={() => setCrEtape(2)} className="border border-gray-300 text-gray-700 px-4 py-2.5 rounded-xl text-sm hover:bg-gray-50">
-                        ← Retravailler
-                      </button>
-                      <button onClick={() => sauvegarderCRGenere(false)} disabled={crSavingFinal}
-                        className="flex-1 border border-blue-800 text-blue-800 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-50 disabled:opacity-40">
-                        Sauvegarder brouillon
-                      </button>
-                      <button onClick={() => sauvegarderCRGenere(true)} disabled={crSavingFinal}
-                        className="flex-1 bg-green-700 text-white py-2.5 rounded-xl text-sm font-medium hover:bg-green-800 disabled:opacity-40">
-                        ✓ Publier au client
-                      </button>
-                    </div>
+                  {documents.length > 0 && (
+                    <ModalField label="📎 Documents du chantier (contexte IA)">
+                      <div style={{border:'1px solid var(--ink-200)', borderRadius:10, padding:6, display:'flex', flexDirection:'column', gap:2, maxHeight:144, overflowY:'auto'}}>
+                        {documents.map(doc => {
+                          const selected = crDocsSelectionnes.some(d => d.id === doc.id)
+                          const supported = doc.type_mime?.includes('pdf') || doc.type_mime?.startsWith('image')
+                          return (
+                            <label key={doc.id} style={{
+                              display:'flex', alignItems:'center', gap:8,
+                              padding:'4px 8px', borderRadius:6, cursor: supported ? 'pointer' : 'not-allowed',
+                              opacity: supported ? 1 : 0.4, transition:'background 150ms',
+                            }}
+                              onMouseEnter={e => { if (supported) e.currentTarget.style.background = 'var(--surface-2)' }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+                              <input type="checkbox" checked={selected} disabled={!supported}
+                                onChange={() => {
+                                  if (!supported) return
+                                  setCrDocsSelectionnes(prev =>
+                                    selected ? prev.filter(d => d.id !== doc.id) : [...prev, doc]
+                                  )
+                                }}
+                                style={{accentColor:'var(--brand-500)'}} />
+                              <span className="clip-1" style={{fontSize:12, color:'var(--ink-700)', flex:1, minWidth:0}}>{doc.nom}</span>
+                              {!supported && <span style={{fontSize:10.5, color:'var(--ink-400)'}}>non supporté</span>}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </ModalField>
+                  )}
+
+                  <div style={{display:'flex', gap:10, paddingTop:6}}>
+                    <button onClick={() => setCrEtape(1)} className="btn btn-ghost" style={{flex:1, justifyContent:'center', height:42}}>
+                      ← Retour
+                    </button>
+                    <button onClick={genererCRAvecIA}
+                      disabled={crGenerating || (!crNotes.trim() && !crVocalTexte.trim() && crImages.length === 0)}
+                      className="btn btn-primary" style={{flex:2, justifyContent:'center', height:42, fontSize:13}}>
+                      {crGenerating ? (
+                        <span style={{display:'inline-flex', alignItems:'center', gap:8}}>
+                          <span style={{
+                            width:14, height:14, borderRadius:'50%',
+                            border:'2px solid rgba(255,255,255,0.4)', borderTopColor:'#fff',
+                            animation:'spin 0.65s linear infinite',
+                          }} />
+                          Génération en cours…
+                        </span>
+                      ) : '✨ Générer le CR'}
+                    </button>
                   </div>
-                )}
+                </div>
+              )}
 
-              </div>
+              {/* ── ÉTAPE 3 : Relecture ── */}
+              {crEtape === 3 && crGenere && (
+                <div style={{display:'flex', flexDirection:'column', gap:14}}>
+                  <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                    <span style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>{crGenere.titre}</span>
+                    <Badge tone="ok">Généré ✓</Badge>
+                  </div>
+
+                  <div style={{display:'flex', flexDirection:'column', gap:12}}>
+                    {crSectionsEditees.map((section, idx) => (
+                      <div key={idx} style={{
+                        border:'1px solid', borderRadius:10, overflow:'hidden',
+                        borderColor: section.important ? 'rgba(245,158,11,0.4)' : 'var(--ink-200)',
+                      }}>
+                        <div style={{
+                          padding:'8px 14px', display:'flex', alignItems:'center', gap:8,
+                          background: section.important ? 'rgba(245,158,11,0.10)' : 'var(--surface-2)',
+                        }}>
+                          <span style={{fontSize:11, fontWeight:800, color:'var(--ink-500)'}}>{section.numero}.</span>
+                          <input
+                            type="text"
+                            value={section.titre}
+                            onChange={e => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, titre: e.target.value } : s))}
+                            style={{flex:1, fontSize:13, fontWeight:600, background:'transparent', border:'none', outline:'none', color:'var(--ink-900)'}} />
+                          <button onClick={() => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, important: !s.important } : s))}
+                            style={{
+                              fontSize:13, padding:'2px 8px', borderRadius:6,
+                              background:'transparent', border:'none', cursor:'pointer',
+                              color: section.important ? '#a16207' : 'var(--ink-300)',
+                            }}>⚠</button>
+                        </div>
+                        <textarea
+                          value={section.contenu}
+                          onChange={e => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, contenu: e.target.value } : s))}
+                          rows={Math.max(3, Math.ceil(section.contenu.length / 80))}
+                          style={{
+                            width:'100%', padding:'10px 14px', fontSize:12, color:'var(--ink-700)',
+                            border:'none', outline:'none', resize:'vertical', lineHeight:1.55,
+                            transition:'background 150ms', fontFamily:'inherit',
+                          }}
+                          onFocus={e => { e.target.style.background = 'var(--brand-50)' }}
+                          onBlur={e => { e.target.style.background = 'transparent' }} />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{display:'flex', gap:10, paddingTop:6, flexWrap:'wrap'}}>
+                    <button onClick={() => setCrEtape(2)} className="btn btn-ghost" style={{justifyContent:'center', height:42}}>
+                      ← Retravailler
+                    </button>
+                    <button onClick={() => sauvegarderCRGenere(false)} disabled={crSavingFinal}
+                      className="btn btn-ghost" style={{flex:1, justifyContent:'center', height:42, borderColor:'var(--brand-700)', color:'var(--brand-800)'}}>
+                      Sauvegarder brouillon
+                    </button>
+                    <button onClick={() => sauvegarderCRGenere(true)} disabled={crSavingFinal}
+                      className="btn btn-primary" style={{flex:1, justifyContent:'center', height:42, background:'#15803d', borderColor:'#15803d'}}>
+                      ✓ Publier au client
+                    </button>
+                  </div>
+                </div>
+              )}
+
             </div>
-          </div>
-        )}
+          </ModalShell>
+        )
+      })()}
 
       {/* ── MESSAGES (maquette : conversation client AMO) ── */}
       {onglet === 'messages' && dossier?.typologie === 'amo' && (
