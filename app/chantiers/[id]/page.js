@@ -46,6 +46,61 @@ function Fact({ label, value, highlight, mono }) {
   )
 }
 
+function FactureMiniLine({ title, fact, expected, onAdd, onTogglePaid, onView }) {
+  // Format euro court (sans dépendance)
+  const fmtE = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
+  if (!fact) {
+    return (
+      <button onClick={onAdd} style={{
+        padding:'10px 12px', borderRadius:10, border:'1px dashed var(--ink-300)',
+        background:'transparent', display:'flex', justifyContent:'space-between', alignItems:'center',
+        textAlign:'left', cursor:'pointer', gap:8, transition:'all 150ms',
+      }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'var(--brand-50)'; e.currentTarget.style.borderColor = 'var(--brand-500)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'var(--ink-300)' }}
+      >
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:12, fontWeight:600, color:'var(--ink-700)'}}>{title}</div>
+          <div style={{fontSize:10.5, color:'var(--ink-400)', marginTop:2}}>
+            {expected > 0 ? `Prévu ${fmtE(expected)}` : 'Pas encore facturé'}
+          </div>
+        </div>
+        <span style={{fontSize:11, color:'var(--brand-800)', fontWeight:600, textDecoration:'underline', flexShrink:0}}>+ Facturer</span>
+      </button>
+    )
+  }
+  const paye = fact.statut === 'paye'
+  return (
+    <div style={{
+      padding:'10px 12px', borderRadius:10, border:'1px solid var(--ink-200)',
+      background:'#fff', display:'flex', justifyContent:'space-between', alignItems:'center', gap:8,
+    }}>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:12, fontWeight:600, color:'var(--ink-900)'}}>{title}</div>
+        <div style={{fontSize:10.5, color:'var(--ink-500)', marginTop:2}}>
+          {fact.date_paiement ? `Réglé ${new Date(fact.date_paiement).toLocaleDateString('fr-FR')}` : 'Pas encore daté'}
+        </div>
+      </div>
+      <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4, flexShrink:0}}>
+        <span className="tnum" style={{fontSize:12.5, fontWeight:700, color:'var(--ink-900)'}}>{fmtE(fact.montant_ttc)}</span>
+        <div style={{display:'flex', gap:4, alignItems:'center'}}>
+          {fact.pdf_path && (
+            <button onClick={onView} title="Voir PDF"
+              style={{padding:'2px 6px', fontSize:10, background:'transparent', color:'var(--brand-700)', border:'1px solid var(--ink-200)', borderRadius:6, cursor:'pointer'}}>📄</button>
+          )}
+          <button onClick={onTogglePaid} title={paye ? 'Marquer en attente' : 'Marquer payé'}
+            style={{
+              padding:'2px 8px', fontSize:10, fontWeight:700, borderRadius:99, cursor:'pointer',
+              background: paye ? 'rgba(22,163,74,0.12)' : 'rgba(245,158,11,0.13)',
+              color: paye ? '#15803d' : '#a16207',
+              border:'none',
+            }}>{paye ? 'Payé' : 'En attente'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ContactRow({ icon, label, value, action }) {
   if (!value) return null
   const Inner = (
@@ -2257,8 +2312,8 @@ export default function FicheChantier({ params }) {
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
         {/* Devis artisans */}
-        <div className="card" style={{padding:22}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center', marginBottom:14}}>
+        <div className="card" style={{padding:0, overflow:'hidden'}}>
+          <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)', display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <div>
               <h2 className="page" style={{fontSize:16}}>Devis du chantier</h2>
               <div className="eyebrow" style={{marginTop:4}}>{devis.length} devis · {devisSignes.length} signés</div>
@@ -2271,36 +2326,117 @@ export default function FicheChantier({ params }) {
 
 
           {devis.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">Aucun devis pour ce chantier</p>
+            <div style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucun devis pour le moment</div>
           ) : (
-            <div className="space-y-3">
+            <div style={{display:'flex', flexDirection:'column'}}>
               {devis.map((d, idx) => {
                 const sd = statutDevisConfig[d.statut]
+                const expanded = devisExpanded.has(d.id)
+                const factDevis = factures.filter(f => f.devis_id === d.id)
+                const factAcompte = factDevis.find(f => (f.libelle || '').toLowerCase().includes('acompte'))
+                const factSolde = factDevis.find(f => (f.libelle || '').toLowerCase().includes('solde'))
+                const acompteExpected = d.acompte_pourcentage === -1 ? (d.acompte_montant_fixe || 0) : montantAcompte(d)
+                const soldeExpected = Math.max(0, (d.montant_ttc || 0) - (factAcompte?.montant_ttc ?? acompteExpected))
                 return (
-                  <div key={d.id} className="border border-gray-100 rounded-lg p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="flex flex-col">
-                          <button onClick={() => deplacerDevis(d.id, 'up')} disabled={idx === 0}
-                            className="text-gray-300 hover:text-gray-500 disabled:opacity-20 leading-none text-xs">▲</button>
-                          <button onClick={() => deplacerDevis(d.id, 'down')} disabled={idx === devis.length - 1}
-                            className="text-gray-300 hover:text-gray-500 disabled:opacity-20 leading-none text-xs">▼</button>
+                  <div key={d.id} style={{padding:'18px 22px', borderTop: idx === 0 ? 'none' : '1px solid var(--ink-100)'}}>
+
+                    {/* Header maquette : avatar | info+stats | badge | actions */}
+                    <div style={{display:'grid', gridTemplateColumns:'auto 1fr auto auto', gap:14, alignItems:'flex-start'}}>
+                      <div style={{width:40, height:40, borderRadius:10, background:'var(--brand-50)', color:'var(--brand-800)', display:'grid', placeItems:'center', flex:'0 0 40px'}}>
+                        <HammerIcon/>
+                      </div>
+                      <div style={{minWidth:0}}>
+                        <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+                          <span style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>{d.artisan?.entreprise || '—'}</span>
+                          {d.artisan?.metier && <span style={{fontSize:11.5, color:'var(--ink-500)'}}>· {d.artisan.metier}</span>}
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{d.artisan?.entreprise}</p>
-                          <p className="text-xs text-gray-400">{d.artisan?.metier}</p>
+                        <div style={{display:'flex', gap:14, marginTop:6, fontSize:12, color:'var(--ink-500)', flexWrap:'wrap'}}>
+                          {d.montant_ht > 0 && <span><span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(d.montant_ht)}</span> HT</span>}
+                          {d.montant_ttc > 0 && <span><span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(d.montant_ttc)}</span> TTC</span>}
+                          {d.commission_pourcentage > 0 && (
+                            <span>
+                              <strong style={{color:'var(--brand-800)'}}>Com. {(d.commission_pourcentage * 100).toFixed(1)}%</strong>
+                              {' → '}
+                              <span className="tnum">{fmt((d.montant_ht || 0) * d.commission_pourcentage)}</span> HT
+                            </span>
+                          )}
+                          {d.date_signature && d.statut === 'accepte' && (
+                            <span>Signé le {new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
+                          )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${sd.color}`}>{sd.label}</span>
-                        <button onClick={() => setDevisModal({ open: true, devis: d })} className="text-blue-400 text-xs hover:text-blue-600">
-                          Modifier
+                      <div style={{textAlign:'right'}}>
+                        {d.statut === 'accepte'    && <Badge tone="ok">Signé</Badge>}
+                        {d.statut === 'recu'       && <Badge tone="info">Reçu</Badge>}
+                        {d.statut === 'a_modifier' && <Badge tone="warn">À modifier</Badge>}
+                        {d.statut === 'refuse'     && <Badge tone="bad">Refusé</Badge>}
+                        {d.statut === 'en_attente' && <Badge tone="mute">En attente</Badge>}
+                      </div>
+                      <div style={{display:'flex', gap:4, alignItems:'center'}}>
+                        {d.devis_pdf_path && (
+                          <button onClick={() => ouvrirDocument(d.devis_pdf_path, `Devis ${d.artisan?.entreprise || ''}.pdf`)}
+                            className="btn btn-ghost" style={{padding:'4px 8px'}} title="Voir le PDF du devis">
+                            <DocIcon/>
+                          </button>
+                        )}
+                        <button onClick={() => setDevisModal({ open: true, devis: d })}
+                          className="btn btn-ghost" style={{padding:'4px 8px'}} title="Modifier le devis">
+                          <EditIcon/>
                         </button>
-                        <button onClick={() => supprimerDevis(d.id)} className="text-red-400 text-xs hover:text-red-600">Supprimer</button>
+                        <button onClick={() => toggleDevisExpand(d.id)}
+                          className="btn btn-ghost" style={{padding:'4px 8px'}} title={expanded ? 'Masquer les détails' : 'Voir les détails'}>
+                          <span style={{display:'inline-block', fontSize:10, lineHeight:1, transition:'transform 200ms', transform: expanded ? 'rotate(180deg)' : 'none'}}>▼</span>
+                        </button>
                       </div>
                     </div>
 
-                    {/* Infos client */}
+                    {/* FactureLines : Acompte + Solde (signés uniquement) */}
+                    {d.statut === 'accepte' && (
+                      <div style={{marginTop:14, marginLeft:54, display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
+                        <FactureMiniLine
+                          title={`Acompte ${d.acompte_pourcentage === -1 ? '(fixe)' : (d.acompte_pourcentage || 30) + '%'}`}
+                          fact={factAcompte} expected={acompteExpected}
+                          onAdd={() => {
+                            setAjouterFacture(d.id)
+                            setNouvelleFacture({ montant_ttc: acompteExpected > 0 ? acompteExpected.toFixed(2) : '', date_paiement: '', statut: 'en_attente', fichier: null, libelle: 'Facture acompte', libelle_autre: '' })
+                            if (!devisExpanded.has(d.id)) toggleDevisExpand(d.id)
+                          }}
+                          onTogglePaid={() => factAcompte && toggleStatutFacture(factAcompte.id, factAcompte.statut)}
+                          onView={() => factAcompte?.pdf_path && ouvrirDocument(factAcompte.pdf_path, `Facture acompte ${d.artisan?.entreprise || ''}.pdf`)}
+                        />
+                        <FactureMiniLine
+                          title="Solde"
+                          fact={factSolde} expected={soldeExpected}
+                          onAdd={() => {
+                            setAjouterFacture(d.id)
+                            setNouvelleFacture({ montant_ttc: soldeExpected > 0 ? soldeExpected.toFixed(2) : '', date_paiement: '', statut: 'en_attente', fichier: null, libelle: 'Facture solde', libelle_autre: '' })
+                            if (!devisExpanded.has(d.id)) toggleDevisExpand(d.id)
+                          }}
+                          onTogglePaid={() => factSolde && toggleStatutFacture(factSolde.id, factSolde.statut)}
+                          onView={() => factSolde?.pdf_path && ouvrirDocument(factSolde.pdf_path, `Facture solde ${d.artisan?.entreprise || ''}.pdf`)}
+                        />
+                      </div>
+                    )}
+
+                    {/* Détails dépliable */}
+                    {expanded && (
+                    <div style={{marginTop:14, padding:14, borderRadius:12, background:'var(--surface-2)', border:'1px solid var(--ink-200)', display:'flex', flexDirection:'column', gap:14}}>
+
+                    {/* Réorganiser + supprimer */}
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                      <div style={{display:'flex', alignItems:'center', gap:6, fontSize:11.5, color:'var(--ink-500)'}}>
+                        Ordre :
+                        <button onClick={() => deplacerDevis(d.id, 'up')} disabled={idx === 0}
+                          className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>▲</button>
+                        <button onClick={() => deplacerDevis(d.id, 'down')} disabled={idx === devis.length - 1}
+                          className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>▼</button>
+                      </div>
+                      <button onClick={() => supprimerDevis(d.id)} className="btn btn-ghost" style={{padding:'4px 10px', fontSize:11, color:'#b91c1c'}}>
+                        Supprimer ce devis
+                      </button>
+                    </div>
+
+                    {/* Infos détaillées + acompte custom */}
                     <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
                       <div className="flex justify-between">
                         <span className="text-xs text-gray-400">Montant HT</span>
@@ -2575,6 +2711,8 @@ export default function FicheChantier({ params }) {
                           </div>
                         ))}
                       </div>
+                    )}
+                    </div>
                     )}
                   </div>
                 )
