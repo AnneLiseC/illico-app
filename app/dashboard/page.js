@@ -4,30 +4,20 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { calculateDossierFinance, calculateDevisFinance } from '../lib/finance'
+import { KpiCard, Progress } from '../components/shared'
 
-/* ── Composants visuels ── */
+/* ── Icônes KPI ── */
 
-function DashKpiCard({ label, value, sub, tone, children }) {
-  const colors = { brand: 'var(--brand-800)', ok: '#15803d', warn: '#a16207', bad: '#b91c1c' }
-  return (
-    <div className="card kpi">
-      <div className="eyebrow" style={{ marginBottom: 8 }}>{label}</div>
-      <div className="tnum" style={{ fontSize: 26, fontWeight: 800, color: colors[tone] || colors.brand, letterSpacing: '-0.02em', lineHeight: 1 }}>
-        {value}
-      </div>
-      {sub && <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 6 }}>{sub}</div>}
-      {children}
-    </div>
-  )
-}
-
-function ProgressBar({ value }) {
-  return (
-    <div className="progress" style={{ marginTop: 10 }}>
-      <span style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
-    </div>
-  )
-}
+const KpiIcon = ({ children, size = 20 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    {children}
+  </svg>
+)
+const BuildingIcon = () => <KpiIcon><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></KpiIcon>
+const AlertIcon    = () => <KpiIcon><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></KpiIcon>
+const EuroKpiIcon  = () => <KpiIcon><path d="M14 2H10a8 8 0 0 0 0 16h4"/><line x1="3" y1="9" x2="15" y2="9"/><line x1="3" y1="15" x2="15" y2="15"/></KpiIcon>
+const TrendUpIcon  = () => <KpiIcon><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></KpiIcon>
 
 function CABarChart({ data }) {
   const MOIS_COURT = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
@@ -102,33 +92,6 @@ function Pipeline({ dossiers }) {
     </div>
   )
 }
-
-/* ── Icônes quick-nav (inchangées) ── */
-function CardIcon({ children }) {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      {children}
-    </svg>
-  )
-}
-const Icons = {
-  chantiers:    <CardIcon><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></CardIcon>,
-  clients:      <CardIcon><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></CardIcon>,
-  artisans:     <CardIcon><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></CardIcon>,
-  planning:     <CardIcon><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></CardIcon>,
-  finances:     <CardIcon><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></CardIcon>,
-  statistiques: <CardIcon><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></CardIcon>,
-}
-
-const QUICK_LINKS = [
-  { key: 'chantiers',    label: 'Chantiers',    href: '/chantiers',    desc: 'Gérer les dossiers' },
-  { key: 'clients',      label: 'Clients',      href: '/clients',      desc: 'Fiches clients' },
-  { key: 'artisans',     label: 'Artisans',     href: '/artisans',     desc: 'Partenaires & contacts' },
-  { key: 'planning',     label: 'Planning',     href: '/planning',     desc: 'Rendez-vous' },
-  { key: 'finances',     label: 'Finances',     href: '/finances',     desc: 'Suivi financier' },
-  { key: 'statistiques', label: 'Statistiques', href: '/statistiques', desc: 'Tableaux de bord' },
-]
 
 /* ── Helpers finance (dashboard) ── */
 
@@ -293,12 +256,12 @@ export default function Dashboard() {
   const caAnneeObj     = objectifs.reduce((s, o) => s + (o.montant || 0), 0)
   const caAnneePct     = caAnneeObj > 0 ? Math.round(caAnneeReel / caAnneeObj * 100) : 0
 
-  const chartData = Array.from({ length: moisCourant }, (_, i) => ({
+  const chartData = Array.from({ length: 12 }, (_, i) => ({
     mois:       i + 1,
     reel:       caParMois[i + 1] || 0,
     objectif:   objectifs.find(o => o.mois === i + 1)?.montant || 0,
     inProgress: i + 1 === moisCourant,
-  })).slice(-6)
+  }))
 
   const STATUT_STYLE = {
     'a_contacter':       { bg: 'rgba(0,148,212,0.08)',   color: '#0094d4',  label: 'À contacter' },
@@ -331,27 +294,33 @@ export default function Dashboard() {
 
       {/* ── KPI Row ── */}
       <div className="kpi-grid">
-        <DashKpiCard label="Chantiers en cours" value={loading ? '—' : enCours.length}
-          sub={`${dossiers.filter(d => !['termine','annule'].includes(d.statut)).length} dossiers actifs`} tone="brand" />
-        <DashKpiCard label="Devis à relancer <7j" value={loading ? '—' : aRelancer.length}
+        <KpiCard label="Chantiers en cours" value={loading ? '—' : enCours.length}
+          sub={`${dossiers.filter(d => !['termine','annule'].includes(d.statut)).length} dossiers actifs`}
+          icon={<BuildingIcon />} tone="brand" />
+        <KpiCard label="Devis à relancer <7j" value={loading ? '—' : aRelancer.length}
           sub={enRetardCount > 0 ? `${enRetardCount} en retard` : 'aucun en retard'}
+          icon={<AlertIcon />}
           tone={aRelancer.length > 0 ? 'warn' : 'brand'} />
-        <DashKpiCard label="CA du mois (réel)" value={loading ? '—' : fmtEur(caMoisReel)} tone="ok">
-          {!loading && caMoisObjectif > 0 && <>
-            <ProgressBar value={caMoisPct} />
-            <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 6 }}>
-              Objectif : <span className="tnum" style={{ fontWeight: 600, color: 'var(--ink-700)' }}>{fmtEur(caMoisObjectif)}</span>
+        <KpiCard label="CA du mois (réel)" value={loading ? '—' : fmtEur(caMoisReel)} icon={<EuroKpiIcon />} tone="ok">
+          {!loading && caMoisObjectif > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <Progress value={caMoisPct} showLabel />
+              <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 6 }}>
+                Objectif : <span className="tnum" style={{ fontWeight: 600, color: 'var(--ink-700)' }}>{fmtEur(caMoisObjectif)}</span>
+              </div>
             </div>
-          </>}
-        </DashKpiCard>
-        <DashKpiCard label={`CA cumulé ${annee}`} value={loading ? '—' : fmtEur(caAnneeReel)} tone="brand">
-          {!loading && caAnneeObj > 0 && <>
-            <ProgressBar value={caAnneePct} />
-            <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 6 }}>
-              Objectif annuel : <span className="tnum" style={{ fontWeight: 600, color: 'var(--ink-700)' }}>{fmtEur(caAnneeObj)}</span>
+          )}
+        </KpiCard>
+        <KpiCard label={`CA cumulé ${annee}`} value={loading ? '—' : fmtEur(caAnneeReel)} icon={<TrendUpIcon />} tone="brand">
+          {!loading && caAnneeObj > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <Progress value={caAnneePct} showLabel />
+              <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 6 }}>
+                Objectif annuel : <span className="tnum" style={{ fontWeight: 600, color: 'var(--ink-700)' }}>{fmtEur(caAnneeObj)}</span>
+              </div>
             </div>
-          </>}
-        </DashKpiCard>
+          )}
+        </KpiCard>
       </div>
 
       {/* ── Grille principale ── */}
@@ -522,25 +491,6 @@ export default function Dashboard() {
               })}
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* ── Raccourcis (pleine largeur) ── */}
-      <div>
-        <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink-900)', letterSpacing: '-0.01em', marginBottom: 16 }}>Raccourcis</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14 }}>
-          {QUICK_LINKS.map(item => (
-            <button key={item.key} onClick={() => router.push(item.href)} className="card"
-              style={{ padding: '20px 18px', textAlign: 'left', cursor: 'pointer', transition: 'border-color 150ms, box-shadow 150ms, transform 100ms', background: '#fff' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--brand-300)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(0,87,142,0.10)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--ink-200)'; e.currentTarget.style.boxShadow = '0 1px 4px rgba(15,23,42,0.06)'; e.currentTarget.style.transform = 'none' }}>
-              <div style={{ width: 36, height: 36, background: 'var(--brand-50)', borderRadius: 10, display: 'grid', placeItems: 'center', color: 'var(--brand-700)', marginBottom: 12 }}>
-                {Icons[item.key]}
-              </div>
-              <div style={{ fontWeight: 600, color: 'var(--ink-800)', fontSize: 13.5 }}>{item.label}</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4 }}>{item.desc}</div>
-            </button>
-          ))}
         </div>
       </div>
 

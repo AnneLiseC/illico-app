@@ -91,7 +91,6 @@ export default function FicheClient({ params }) {
   const [erreur, setErreur] = useState('')
   const [succes, setSucces] = useState('')
   const [mode, setMode] = useState('vue')
-  const [voirToutHistorique, setVoirToutHistorique] = useState(false)
   const router = useRouter()
   const { user, profile: authProfile, initialized } = useAuth()
 
@@ -200,9 +199,16 @@ export default function FicheClient({ params }) {
     solde_amo:           'Solde AMO reçu',
   }
 
+  const RDV_LABELS = {
+    visite_technique_client:  'R1',
+    visite_technique_artisan: 'R2',
+    presentation_devis:       'R3',
+  }
+  const labelRdv = (rdv) => RDV_LABELS[rdv?.type_rdv] || rdv?.titre || rdv?.type_rdv || 'Rendez-vous'
+
   const historiqueRaw = [
     ...allRdvs.map(rdv => ({
-      text: rdv.titre || rdv.type_rdv || 'Rendez-vous',
+      text: labelRdv(rdv),
       date: rdv.date_heure,
     })),
     ...dossiers.flatMap(d => (d.suivi_financier || [])
@@ -215,10 +221,10 @@ export default function FicheClient({ params }) {
     ),
   ].sort((a, b) => new Date(b.date) - new Date(a.date))
 
-  const historiqueItems = historiqueRaw.slice(0, voirToutHistorique ? 10 : 5)
+  const historiqueItems = historiqueRaw.slice(0, 4)
 
   const dernierRdvSub = dernierRdv
-    ? `${dernierRdv.type_rdv ? dernierRdv.type_rdv + ' · ' : ''}avec ${client.referente?.prenom || '—'}`
+    ? `${labelRdv(dernierRdv)} · avec ${client.referente?.prenom || '—'}`
     : null
 
   // ── VUE ──────────────────────────────────────────────────────────────
@@ -337,13 +343,16 @@ export default function FicheClient({ params }) {
                 return (
                   <div key={d.id} onClick={() => router.push(`/chantiers/${d.id}`)} className="row-hover"
                     style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 14, padding: '14px 22px', borderTop: '1px solid var(--ink-100)', alignItems: 'center', cursor: 'pointer' }}>
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--brand-800)', fontWeight: 700 }}>{d.reference}</span>
                         {d.typologie && <TypoBadge typo={d.typologie}/>}
                       </div>
                       {d.objet && (
                         <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink-900)', marginTop: 4 }}>{d.objet}</div>
+                      )}
+                      {d.description && (
+                        <div className="clip-1" style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 3, lineHeight: 1.4 }}>{d.description}</div>
                       )}
                     </div>
                     {montantDossier > 0 && (
@@ -391,24 +400,15 @@ export default function FicheClient({ params }) {
               {historiqueRaw.length === 0 ? (
                 <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Aucun événement enregistré</div>
               ) : (
-                <>
-                  <div style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {historiqueItems.map((e, i) => (
-                      <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                        <CalIcon size={13} style={{ color: 'var(--ink-400)', flexShrink: 0 }}/>
-                        <span style={{ flex: 1, color: 'var(--ink-700)' }}>{e.text}</span>
-                        <span className="tnum" style={{ color: 'var(--ink-400)', whiteSpace: 'nowrap' }}>{fmtDate(e.date)}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {historiqueRaw.length > 5 && (
-                    <button className="btn btn-ghost"
-                      style={{ marginTop: 8, fontSize: 12, width: '100%', justifyContent: 'center' }}
-                      onClick={() => setVoirToutHistorique(v => !v)}>
-                      {voirToutHistorique ? 'Réduire' : `Voir tout (${Math.min(historiqueRaw.length, 10)})`}
-                    </button>
-                  )}
-                </>
+                <div style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {historiqueItems.map((e, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <CalIcon size={13} style={{ color: 'var(--ink-400)', flexShrink: 0 }}/>
+                      <span style={{ flex: 1, color: 'var(--ink-700)' }}>{e.text}</span>
+                      <span className="tnum" style={{ color: 'var(--ink-400)', whiteSpace: 'nowrap' }}>{fmtDate(e.date)}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 

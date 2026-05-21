@@ -49,7 +49,7 @@ export default function Clients() {
     let query = supabase
       .from('clients')
       .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role), dossiers(id, devis_artisans(id, statut, montant_ttc))')
-      .order('created_at', { ascending: false })
+      .order('nom', { ascending: true })
     if (profile.role === 'agente') query = query.eq('referente', profile.id)
 
     Promise.all([
@@ -58,7 +58,10 @@ export default function Clients() {
         ? supabase.from('profiles').select('id, prenom, nom').eq('role', 'agente').order('prenom')
         : Promise.resolve({ data: [] }),
     ]).then(([{ data }, { data: agentesData }]) => {
-      setClients(data || [])
+      const sorted = (data || []).slice().sort((a, b) =>
+        (a.nom || '').localeCompare(b.nom || '', 'fr', { sensitivity: 'base' })
+      )
+      setClients(sorted)
       setAgentes(agentesData || [])
       setLoading(false)
     })

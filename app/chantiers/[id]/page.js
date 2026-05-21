@@ -1005,8 +1005,13 @@ export default function FicheChantier({ params }) {
       }
       // E5 — synchro suivi_financier si payé à la création
       if (nouvelleFacture.statut === 'paye') {
-        await majSuiviAvecArtisan('facture_finale', artisanId, 'statut_client', 'regle')
-        if (nouvelleFacture.date_paiement) await majSuiviAvecArtisan('facture_finale', artisanId, 'date_paiement', nouvelleFacture.date_paiement)
+        const libelleNorm = (nouvelleFacture.libelle === 'Autre' ? nouvelleFacture.libelle_autre : nouvelleFacture.libelle || '').toLowerCase()
+        const typeEch = libelleNorm.includes('acompte') ? 'acompte_artisan' : 'facture_finale'
+        await majSuiviAvecArtisan(typeEch, artisanId, 'statut_client', 'regle')
+        if (nouvelleFacture.date_paiement) {
+          await majSuiviAvecArtisan(typeEch, artisanId, 'date_paiement', nouvelleFacture.date_paiement)
+          await majSuiviAvecArtisan(typeEch, artisanId, 'date_reglement_client', nouvelleFacture.date_paiement)
+        }
       }
     }
 
@@ -1032,13 +1037,23 @@ export default function FicheChantier({ params }) {
 
   const toggleStatutFacture = async (factureId, statut) => {
     const newStatut = statut === 'paye' ? 'en_attente' : 'paye'
-    await supabase.from('factures_artisans').update({ statut: newStatut }).eq('id', factureId)
-    setFactures(prev => prev.map(f => f.id === factureId ? { ...f, statut: newStatut } : f))
-    // E5 — synchro suivi_financier
     const facture = factures.find(f => f.id === factureId)
+    const datePaye = facture?.date_paiement || (newStatut === 'paye' ? new Date().toISOString().slice(0, 10) : null)
+    await supabase.from('factures_artisans').update({
+      statut: newStatut,
+      date_paiement: newStatut === 'paye' ? datePaye : null,
+    }).eq('id', factureId)
+    setFactures(prev => prev.map(f => f.id === factureId ? { ...f, statut: newStatut, date_paiement: newStatut === 'paye' ? datePaye : null } : f))
+    // E5 — synchro suivi_financier (acompte_artisan si libellé 'acompte', sinon facture_finale)
     if (facture?.artisan_id) {
+      const libelle = (facture.libelle || '').toLowerCase()
+      const typeEch = libelle.includes('acompte') ? 'acompte_artisan' : 'facture_finale'
       const statutSuivi = newStatut === 'paye' ? 'regle' : 'en_attente'
-      await majSuiviAvecArtisan('facture_finale', facture.artisan_id, 'statut_client', statutSuivi)
+      await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'statut_client', statutSuivi)
+      if (newStatut === 'paye' && datePaye) {
+        await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'date_reglement_client', datePaye)
+        await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'date_paiement', datePaye)
+      }
     }
   }
 
@@ -1561,7 +1576,7 @@ export default function FicheChantier({ params }) {
   const totalDevisTTCSignes = devisSignes.reduce((s, d) => s + (d.montant_ttc || 0), 0)
   const totalDevisHTSignes  = devisSignes.reduce((s, d) => s + (d.montant_ht  || 0), 0)
     // Devis reçus = recu + accepte (vue prévisionnelle complète)
-  const devisRecus = devis.filter(d => ['recu', 'accepte'].includes(d.statut) && d.montant_ttc)
+  const devisRecus = devis.filter(d => d.statut !== 'refuse' && d.montant_ttc)
   const totalDevisTTCRecus = devisRecus.reduce((s, d) => s + (d.montant_ttc || 0), 0)
   const totalDevisHTRecus  = devisRecus.reduce((s, d) => s + (d.montant_ht  || 0), 0)
   const fraisTTC = dossier?.frais_consultation || 0
@@ -1607,6 +1622,36 @@ export default function FicheChantier({ params }) {
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
+
+  // Quand acompte_artisan est togglé côté suivi, propager aux factures_artisans acompte de cet artisan
+  const setAcompteArtisanPaye = async (artisanId, paye, date) => {
+    const datePaye = paye ? (date || new Date().toISOString().slice(0, 10)) : null
+    const statutSuivi = paye ? 'regle' : 'en_attente'
+    await majSuiviAvecArtisan('acompte_artisan', artisanId, 'statut_client', statutSuivi)
+    if (paye && datePaye) {
+      await majSuiviAvecArtisan('acompte_artisan', artisanId, 'date_reglement_client', datePaye)
+      await majSuiviAvecArtisan('acompte_artisan', artisanId, 'date_paiement', datePaye)
+    }
+    // Synchroniser les factures_artisans dont le libellé contient "acompte" pour ce devis
+    const facturesAcompte = factures.filter(f =>
+      f.artisan_id === artisanId &&
+      (f.libelle || '').toLowerCase().includes('acompte')
+    )
+    for (const f of facturesAcompte) {
+      await supabase.from('factures_artisans').update({
+        statut: paye ? 'paye' : 'en_attente',
+        date_paiement: paye ? datePaye : null,
+      }).eq('id', f.id)
+    }
+    if (facturesAcompte.length > 0) {
+      setFactures(prev => prev.map(f =>
+        facturesAcompte.find(fa => fa.id === f.id)
+          ? { ...f, statut: paye ? 'paye' : 'en_attente', date_paiement: paye ? datePaye : null }
+          : f
+      ))
+    }
+  }
+
   const majSuiviChantier = async (type, montant, champ, valeur) => {
     const upsertOne = async (t, m) => {
       // Interroger la BDD directement (pas le state) pour éviter les problèmes de double appel
@@ -1945,8 +1990,8 @@ export default function FicheChantier({ params }) {
           tone="brand"
         />
         <MiniKpi
-          label="Frais consultation"
-          value={fraisTTC > 0 ? fmt(fraisTTC) : 'Offerts'}
+          label="Frais consultation TTC"
+          value={fraisTTC > 0 ? `${fmt(fraisTTC)} TTC` : 'Offerts'}
           sub={f.label}
           tone="warn"
         />
@@ -2028,9 +2073,8 @@ export default function FicheChantier({ params }) {
           <div className="card" style={{padding:22}}>
             <h2 className="page" style={{fontSize:15, marginBottom:14}}>Informations clés</h2>
             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', rowGap:14, columnGap:18}}>
-              <Fact label="Référence" value={dossier.reference} mono />
-              <Fact label="Typologie" value={typologieLabel(dossier.typologie)} />
               <Fact label="Montant chantier" value={totalDevisTTCSignes > 0 ? fmt(totalDevisTTCSignes) : '—'} highlight />
+              <Fact label="Commission prévue HT" value={fmt(devis.filter(d => d.statut !== 'refuse').reduce((s, d) => s + (Number(d.montant_ht) || 0) * (Number(d.commission_pourcentage) || 0), 0))} highlight />
               <Fact label="Démarrage" value={dossier.date_demarrage_chantier ? new Date(dossier.date_demarrage_chantier).toLocaleDateString('fr-FR') : '—'} />
               <Fact label="Fin prévue" value={dossier.date_fin_chantier ? new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR') : '—'} />
               <Fact label="Limite devis" value={dossier.date_limite_devis ? new Date(dossier.date_limite_devis).toLocaleDateString('fr-FR') : '—'} />
@@ -2476,16 +2520,6 @@ export default function FicheChantier({ params }) {
                     />
                     <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
                   </div>
-                  <select
-                    value={suiviCourtage?.statut_client || 'en_attente'}
-                    onChange={e => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'statut_client', e.target.value)}
-                    className="input"
-                    style={{flex:1, minWidth:140, height:32, fontSize:12, cursor:'pointer'}}
-                  >
-                    <option value="en_attente">⏳ En attente</option>
-                    <option value="envoye">📤 Facturé</option>
-                    <option value="regle">✅ Réglé</option>
-                  </select>
                 </div>
               </div>
 
@@ -2521,42 +2555,18 @@ export default function FicheChantier({ params }) {
                   </div>
 
                   <div style={{display:'flex', flexDirection:'column', gap:8}}>
-                    <div style={{background:'#fff', borderRadius:8, padding:'10px 12px', border:'1px solid var(--brand-100)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, flexWrap:'wrap'}}>
-                      <div style={{minWidth:0}}>
-                        <div style={{fontSize:12, fontWeight:700, color:'var(--brand-800)'}}>
-                          Acompte AMO <span style={{color:'var(--brand-700)'}}>({tauxCourtagePct}%)</span> · <span className="tnum" style={{color:'var(--ink-900)'}}>{fmt(honorairesCourtagePrev)}</span>
-                        </div>
-                        <div style={{fontSize:10.5, color:'var(--brand-700)', marginTop:2}}>Signature devis</div>
+                    <div style={{background:'#fff', borderRadius:8, padding:'10px 12px', border:'1px solid var(--brand-100)'}}>
+                      <div style={{fontSize:12, fontWeight:700, color:'var(--brand-800)'}}>
+                        Acompte AMO <span style={{color:'var(--brand-700)'}}>({tauxCourtagePct}%)</span> · <span className="tnum" style={{color:'var(--ink-900)'}}>{fmt(honorairesCourtagePrev)}</span>
                       </div>
-                      <select
-                        value={suiviAcompteAMO?.statut_client || 'en_attente'}
-                        onChange={e => majSuiviChantier('acompte_amo', honorairesCourtagePrev, 'statut_client', e.target.value)}
-                        className="input"
-                        style={{height:30, fontSize:11.5, padding:'0 8px', minWidth:130}}
-                      >
-                        <option value="en_attente">⏳ En attente</option>
-                        <option value="envoye">📤 Facturé</option>
-                        <option value="regle">✅ Réglé</option>
-                      </select>
+                      <div style={{fontSize:10.5, color:'var(--brand-700)', marginTop:2}}>Signature devis</div>
                     </div>
 
-                    <div style={{background:'#fff', borderRadius:8, padding:'10px 12px', border:'1px solid var(--brand-100)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, flexWrap:'wrap'}}>
-                      <div style={{minWidth:0}}>
-                        <div style={{fontSize:12, fontWeight:700, color:'var(--brand-800)'}}>
-                          Solde AMO <span style={{color:'var(--brand-700)'}}>({tauxAmoPct}%)</span> · <span className="tnum" style={{color:'var(--ink-900)'}}>{fmt(honorairesAMOPrev - honorairesCourtagePrev)}</span>
-                        </div>
-                        <div style={{fontSize:10.5, color:'var(--brand-700)', marginTop:2}}>Fin de chantier</div>
+                    <div style={{background:'#fff', borderRadius:8, padding:'10px 12px', border:'1px solid var(--brand-100)'}}>
+                      <div style={{fontSize:12, fontWeight:700, color:'var(--brand-800)'}}>
+                        Solde AMO <span style={{color:'var(--brand-700)'}}>({tauxAmoPct}%)</span> · <span className="tnum" style={{color:'var(--ink-900)'}}>{fmt(honorairesAMOPrev - honorairesCourtagePrev)}</span>
                       </div>
-                      <select
-                        value={suiviSoldeAMO?.statut_client || 'en_attente'}
-                        onChange={e => majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'statut_client', e.target.value)}
-                        className="input"
-                        style={{height:30, fontSize:11.5, padding:'0 8px', minWidth:130}}
-                      >
-                        <option value="en_attente">⏳ En attente</option>
-                        <option value="envoye">📤 Facturé</option>
-                        <option value="regle">✅ Réglé</option>
-                      </select>
+                      <div style={{fontSize:10.5, color:'var(--brand-700)', marginTop:2}}>Fin de chantier</div>
                     </div>
                   </div>
                 </div>
@@ -2602,6 +2612,7 @@ export default function FicheChantier({ params }) {
                         <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
                           <span style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>{d.artisan?.entreprise || '—'}</span>
                           {d.artisan?.metier && <span style={{fontSize:11.5, color:'var(--ink-500)'}}>· {d.artisan.metier}</span>}
+                          {d.notes && <span className="clip-1" style={{fontSize:12, color:'var(--ink-500)', fontStyle:'italic', minWidth:0, flex:'1 1 auto'}}>— {d.notes}</span>}
                         </div>
                         <div style={{display:'flex', gap:14, marginTop:6, fontSize:12, color:'var(--ink-500)', flexWrap:'wrap'}}>
                           {d.montant_ht > 0 && <span><span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(d.montant_ht)}</span> HT</span>}
@@ -2747,13 +2758,15 @@ export default function FicheChantier({ params }) {
                       {d.statut === 'accepte' && (() => {
                         const suiviAcompte = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && (s.artisan_id === d.artisan_id || s.artisan_id === d.artisan?.id))
                         const acomptePaye = suiviAcompte?.statut_client === 'regle'
+                        const dateAcompte = suiviAcompte?.date_reglement_client || suiviAcompte?.date_paiement
                         return (
                           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                            <span style={{fontSize:11, color:'var(--ink-400)'}}>Acompte client</span>
+                            <span style={{fontSize:11, color:'var(--ink-400)'}}>
+                              Acompte client {acomptePaye && dateAcompte && <span style={{color:'#15803d', fontWeight:600}}>· {new Date(dateAcompte).toLocaleDateString('fr-FR')}</span>}
+                            </span>
                             <button onClick={async () => {
                               const artId = d.artisan_id || d.artisan?.id
-                              const newStatut = acomptePaye ? 'en_attente' : 'regle'
-                              await majSuiviAvecArtisan('acompte_artisan', artId, 'statut_client', newStatut)
+                              await setAcompteArtisanPaye(artId, !acomptePaye, dateAcompte)
                             }}
                               style={{
                                 fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
@@ -3039,25 +3052,27 @@ export default function FicheChantier({ params }) {
                   <RecapRow label="Total TTC" value={fmt(totalDevisTTCRecus)} tone="brand" />
                   {['courtage', 'amo'].includes(dossier?.typologie) && (
                     <div style={{borderTop:'1px solid var(--brand-200)', marginTop:6, paddingTop:6}}>
-                      {dossier.typologie === 'courtage' && (
-                        <RecapRow label={`Honoraires (${tauxCourtagePct}%)`} value={fmt(honorairesCourtagePrev)} tone="brand" />
-                      )}
-                      {dossier.typologie === 'amo' && (<>
-                        <RecapRow label={`Honoraires courtage (${tauxCourtagePct}%)`} value={fmt(honorairesCourtagePrev)} tone="brand" />
-                        <RecapRow label="Honoraires AMO (9%)" value={fmt(baseCourtageHTTCPrev * 0.09)} tone="brand" />
-                        <RecapRow label="Total honoraires (15%)" value={fmt(baseCourtageHTTCPrev * (tauxCourtage + 0.09))} tone="brand" />
-                        {tauxAmoPct !== 9 && (<>
-                          <div style={{borderTop:'1px dashed var(--brand-200)', marginTop:4, paddingTop:4}} />
-                          <RecapRow label={`Honoraires AMO (${tauxAmoPct}%)`} value={fmt(honorairesAMOPrev - honorairesCourtagePrev)} tone="brand" />
-                          <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMOPrev)} tone="brand" strong />
-                        </>)}
-                      </>)}
-                      {fraisInclus && !dossier.frais_deduits && (
-                        <RecapRow label="Frais consultation" value={fmt(fraisTTC)} tone="brand" />
-                      )}
+                      <RecapRow label={`Honoraires courtage (${tauxCourtagePct}%)`} value={fmt(honorairesCourtagePrev)} tone="brand" />
                       <div style={{borderTop:'2px solid var(--brand-500)', marginTop:8, paddingTop:8}}>
-                        <RecapRow label="Total chantier prévisionnel" value={fmt(totalDevisTTCRecus + (dossier.typologie === 'amo' ? honorairesAMOPrev : honorairesCourtagePrev) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                        <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + honorairesCourtagePrev + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
                       </div>
+                      {dossier.typologie === 'amo' && (
+                        <div style={{marginTop:10, paddingTop:10, borderTop:'1px dashed var(--brand-200)'}}>
+                          <RecapRow label="Total honoraires (15%)" value={fmt(baseCourtageHTTCPrev * (tauxCourtage + 0.09))} tone="brand" />
+                          <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + baseCourtageHTTCPrev * (tauxCourtage + 0.09) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                          {tauxAmoPct !== 9 && (
+                            <div style={{marginTop:8, paddingTop:8, borderTop:'1px dashed var(--brand-200)'}}>
+                              <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMOPrev)} tone="brand" />
+                              <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + honorairesAMOPrev + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {fraisInclus && !dossier.frais_deduits && (
+                        <div style={{marginTop:6, fontSize:11, color:'var(--ink-500)', textAlign:'right'}}>
+                          dont frais consultation {fmt(fraisTTC)}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3073,25 +3088,25 @@ export default function FicheChantier({ params }) {
                   <RecapRow label="Total TTC" value={fmt(totalDevisTTCSignes)} />
                   {['courtage', 'amo'].includes(dossier?.typologie) && (
                     <div style={{borderTop:'1px solid var(--ink-200)', marginTop:6, paddingTop:6}}>
-                      {dossier.typologie === 'courtage' && (
-                        <RecapRow label={`Honoraires (${tauxCourtagePct}%)`} value={fmt(honorairesCourtage)} />
-                      )}
-                      {dossier.typologie === 'amo' && (<>
-                        <RecapRow label={`Honoraires courtage (${tauxCourtagePct}%)`} value={fmt(honorairesCourtage)} />
-                        <RecapRow label="Honoraires AMO (9%)" value={fmt(baseCourtageHTTC * 0.09)} />
-                        <RecapRow label="Total honoraires (15%)" value={fmt(baseCourtageHTTC * (tauxCourtage + 0.09))} />
-                        {tauxAmoPct !== 9 && (<>
-                          <div style={{borderTop:'1px dashed var(--ink-200)', marginTop:4, paddingTop:4}} />
-                          <RecapRow label={`Honoraires AMO (${tauxAmoPct}%)`} value={fmt(honorairesAMO - honorairesCourtage)} />
-                          <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMO)} strong />
-                        </>)}
-                      </>)}
-                      {fraisInclus && !dossier.frais_deduits && (
-                        <RecapRow label="Frais consultation" value={fmt(fraisTTC)} />
-                      )}
+                      <RecapRow label={`Honoraires courtage (${tauxCourtagePct}%)`} value={fmt(honorairesCourtage)} />
+                      <div style={{borderTop:'2px solid var(--brand-500)', marginTop:8, paddingTop:8}}>
+                        <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + honorairesCourtage + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                      </div>
                       {dossier.typologie === 'amo' && (
-                        <div style={{borderTop:'2px solid var(--brand-500)', marginTop:8, paddingTop:8}}>
-                          <RecapRow label="Total chantier signé" value={fmt(totalDevisTTCSignes + honorairesAMO + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                        <div style={{marginTop:10, paddingTop:10, borderTop:'1px dashed var(--ink-200)'}}>
+                          <RecapRow label="Total honoraires (15%)" value={fmt(baseCourtageHTTC * (tauxCourtage + 0.09))} />
+                          <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + baseCourtageHTTC * (tauxCourtage + 0.09) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                          {tauxAmoPct !== 9 && (
+                            <div style={{marginTop:8, paddingTop:8, borderTop:'1px dashed var(--ink-200)'}}>
+                              <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMO)} />
+                              <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + honorairesAMO + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {fraisInclus && !dossier.frais_deduits && (
+                        <div style={{marginTop:6, fontSize:11, color:'var(--ink-500)', textAlign:'right'}}>
+                          dont frais consultation {fmt(fraisTTC)}
                         </div>
                       )}
                     </div>
@@ -3111,12 +3126,22 @@ export default function FicheChantier({ params }) {
         const fraisHTReal      = fin.frais.fraisHT
         const fraisRoyalties   = fin.frais.royalties
         const fraisNet         = fin.frais.net
-        const comHTReal        = fin.commissions.comHT
-        const comRoyalties     = fin.commissions.royaltiesType2
-        const comNet           = fin.commissions.netCom
-        const royaltiesTotal   = fin.royalties.total
-        const gainAgente       = fin.gains.nets.agente
-        const gainAdmin        = fin.gains.nets.admin
+        // Commissions — uniquement comptées si l'acompte illiCO est débloqué (statut_illico='recu'),
+        // sauf apporteurs artisans (sans_royalties) qui se déclenchent dès la signature
+        const comDebloque = (fin.commissions?.devis || []).filter(dv => {
+          if (dv.refused) return false
+          if (dv.isApporteur) return dv.signed
+          const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === (devis.find(x => x.id === dv.id)?.artisan_id))
+          return sf?.statut_illico === 'recu'
+        })
+        const comHTReal        = comDebloque.reduce((s, d) => s + d.comHT, 0)
+        const comRoyalties     = comDebloque.reduce((s, d) => s + d.royaltiesType2, 0)
+        const comNet           = comDebloque.reduce((s, d) => s + d.netCom, 0)
+        const comAgente        = comDebloque.reduce((s, d) => s + d.parts.agente, 0)
+        const comAdmin         = comDebloque.reduce((s, d) => s + d.parts.admin, 0)
+        const royaltiesTotal   = fin.royalties.frais + fin.royalties.honoraires + comRoyalties
+        const gainAgente       = fin.frais.parts.agente + fin.honoraires.parts.agente + comAgente - fin.apporteur.parts.agente
+        const gainAdmin        = fin.frais.parts.admin  + fin.honoraires.parts.admin  + comAdmin  - fin.apporteur.parts.admin
         const totalNet         = gainAgente + gainAdmin
         const partAgenteCfg    = fin.settings.partAgente
         const isAdmin          = dossier?.referente?.role === 'admin'
@@ -3190,10 +3215,10 @@ export default function FicheChantier({ params }) {
                       label={`Acompte client — ${dv.artisan?.entreprise || '—'}`}
                       sub={`${dv.acompte_pourcentage === -1 ? 'fixe' : (dv.acompte_pourcentage || 30) + '%'} acompte · ${fmt(acompteMontant)} TTC`}
                       statut={sf?.statut_client || 'en_attente'}
-                      date={sf?.date_reglement_client || null}
+                      date={sf?.date_reglement_client || sf?.date_paiement || null}
                       onToggle={() => {
-                        const newStatut = sf?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                        majSuiviAvecArtisan('acompte_artisan', artId, 'statut_client', newStatut)
+                        const paye = sf?.statut_client !== 'regle'
+                        setAcompteArtisanPaye(artId, paye, sf?.date_reglement_client || sf?.date_paiement)
                       }}
                       fmtDateFn={fmtD}
                     />
@@ -3242,6 +3267,83 @@ export default function FicheChantier({ params }) {
                   fmtDateFn={fmtD}
                 />
               )}
+
+              {/* ── Apporteur d'affaires — règlements dus ── */}
+              {fin.apporteur?.enabled && fin.apporteur.totalHT > 0 && (() => {
+                const nomApp = dossier?.client?.apporteur_nom || 'Apporteur'
+                const pctApp = parseFloat((fin.apporteur.tauxApporteur * 100).toFixed(2))
+                const totalDu = fin.apporteur.totalHT
+                const lignes = fin.apporteur.lines || []
+                const totalPaye = lignes.reduce((s, l) => {
+                  if (fin.apporteur.mode === 'total_chantier_ht') {
+                    const sf = suiviFinancier.find(x => x.type_echeance === 'apporteur_agente' && x.artisan_id === null)
+                    return sf?.statut_client === 'regle' ? s + l.totalHT : s
+                  }
+                  const dv = devis.find(x => x.id === l.devisId)
+                  const artId = dv?.artisan_id || dv?.artisan?.id
+                  const sf = suiviFinancier.find(x => x.type_echeance === 'apporteur_agente' && x.artisan_id === artId)
+                  return sf?.statut_client === 'regle' ? s + l.totalHT : s
+                }, 0)
+                const reste = Math.max(0, totalDu - totalPaye)
+
+                return (
+                  <div style={{marginTop:6, paddingTop:14, borderTop:'1px dashed var(--ink-200)', display:'flex', flexDirection:'column', gap:10}}>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:10, flexWrap:'wrap'}}>
+                      <div>
+                        <div style={{fontSize:13, fontWeight:700, color:'#c2410c'}}>★ Apporteur d&apos;affaires — {nomApp}</div>
+                        <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>
+                          {pctApp}% · {fin.apporteur.mode === 'total_chantier_ht' ? 'sur total chantier HT' : 'par devis signé'}
+                        </div>
+                      </div>
+                      <div style={{textAlign:'right'}}>
+                        <div style={{fontSize:11, color:'var(--ink-400)'}}>
+                          Total dû <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(totalDu)}</span>
+                        </div>
+                        <div style={{fontSize:11, color: reste > 0 ? '#c2410c' : '#15803d', marginTop:2, fontWeight:600}}>
+                          {reste > 0 ? `Reste à régler : ${fmt(reste)}` : '✓ Soldé'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {lignes.map((l, idx) => {
+                      const dv = l.devisId ? devis.find(x => x.id === l.devisId) : null
+                      const artId = dv?.artisan_id || dv?.artisan?.id || null
+                      const sf = suiviFinancier.find(x =>
+                        x.type_echeance === 'apporteur_agente' &&
+                        (artId === null ? x.artisan_id === null : x.artisan_id === artId)
+                      )
+                      const paye = sf?.statut_client === 'regle'
+                      const labelLigne = fin.apporteur.mode === 'total_chantier_ht'
+                        ? 'Règlement apporteur (total)'
+                        : `Devis ${l.label || dv?.artisan?.entreprise || ''}`
+                      return (
+                        <EcheanceRow
+                          key={l.devisId || idx}
+                          label={labelLigne}
+                          sub={`${pctApp}% × ${fmt(l.baseHT)} HT · ${fmt(l.totalHT)}`}
+                          statut={paye ? 'regle' : 'en_attente'}
+                          date={sf?.date_reglement_client || sf?.date_paiement || null}
+                          onToggle={async () => {
+                            const newStatut = paye ? 'en_attente' : 'regle'
+                            if (artId === null) {
+                              await majSuiviChantier('apporteur_agente', l.totalHT, 'statut_client', newStatut)
+                              if (newStatut === 'regle') {
+                                await majSuiviChantier('apporteur_agente', l.totalHT, 'date_reglement_client', new Date().toISOString().slice(0,10))
+                              }
+                            } else {
+                              await majSuiviAvecArtisan('apporteur_agente', artId, 'statut_client', newStatut)
+                              if (newStatut === 'regle') {
+                                await majSuiviAvecArtisan('apporteur_agente', artId, 'date_reglement_client', new Date().toISOString().slice(0,10))
+                              }
+                            }
+                          }}
+                          fmtDateFn={fmtD}
+                        />
+                      )
+                    })}
+                  </div>
+                )
+              })()}
 
               {devisSignes.length === 0 && (dossier.frais_consultation || 0) === 0 && (
                 <div style={{padding:'24px 0', textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
