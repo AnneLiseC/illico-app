@@ -42,10 +42,10 @@ export default function Login() {
   }
 
   return (
-    <div style={{position:'fixed', inset:0, display:'grid', gridTemplateColumns:'1fr 1fr', background:'#fff', overflow:'hidden', zIndex:9999}}>
+    <div className="login-shell" style={{position:'fixed', inset:0, display:'grid', gridTemplateColumns:'1fr 1fr', background:'#fff', overflow:'auto', zIndex:9999}}>
 
       {/* ── Colonne gauche — panel brand ── */}
-      <div style={{
+      <div className="login-brand" style={{
         position:'relative', overflow:'hidden',
         background:'linear-gradient(135deg, var(--brand-800) 0%, var(--brand-900) 60%, #001e3c 100%)',
         color:'#fff', padding:'60px 64px', display:'flex', flexDirection:'column', justifyContent:'space-between'
@@ -87,7 +87,7 @@ export default function Login() {
       </div>
 
       {/* ── Colonne droite — formulaire ── */}
-      <div style={{padding:'60px 64px', display:'flex', flexDirection:'column', justifyContent:'center', maxWidth:520, width:'100%', margin:'0 auto'}}>
+      <div className="login-form-col" style={{padding:'60px 64px', display:'flex', flexDirection:'column', justifyContent:'center', maxWidth:520, width:'100%', margin:'0 auto'}}>
 
         {mode === 'signin' ? (
           <form onSubmit={handleLogin} style={{display:'flex', flexDirection:'column'}}>
