@@ -808,8 +808,8 @@ select.input { padding-right: 32px; }
   .hide-mobile { display: none !important; }
   .stack-mobile { flex-direction: column !important; align-items: stretch !important; }
   .full-mobile { width: 100% !important; }
-  h1.page, .page-h1 { font-size: 20px; }
-  h2.page, .page-h2 { font-size: 16px; }
+  h1.page, .page-h1 { font-size: 20px !important; }
+  h2.page, .page-h2 { font-size: 16px !important; }
   .card { border-radius: 12px; }
   .kpi { padding: 16px; }
 }
@@ -873,3 +873,237 @@ select.input { padding-right: 32px; }
 body[data-density="compact"]     .row-pad { padding-top: 10px; padding-bottom: 10px; }
 body[data-density="comfortable"] .row-pad { padding-top: 14px; padding-bottom: 14px; }
 body[data-density="cozy"]        .row-pad { padding-top: 18px; padding-bottom: 18px; }
+
+/* ─────────────────────────────────────────────────────────────────
+   Mobile responsive — global overrides
+   Pages use lots of inline `style={{ gridTemplateColumns: '…' }}`.
+   We override them here via attribute selectors so we don't have to
+   touch every page. Keep these rules at the end so they win on
+   specificity ties, and use !important where we override inline styles.
+   ───────────────────────────────────────────────────────────────── */
+
+html, body { max-width: 100%; }
+/* `clip` (not `hidden`) prevents accidental horizontal scroll without
+   establishing a scroll container that would break `position: sticky`. */
+html { overflow-x: clip; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { overflow-x: clip; }
+img, svg, video, canvas { max-width: 100%; }
+
+/* Avoid iOS auto-zoom on focus: inputs must be ≥16px on small screens. */
+@media (max-width: 767px) {
+  .input,
+  input.input,
+  select.input,
+  textarea.input,
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="number"],
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  .input { height: 42px; }
+  /* Touch targets */
+  .btn { min-height: 40px; padding: 10px 14px; }
+  .btn.btn-ghost,
+  .btn.btn-primary,
+  .btn.btn-dark { font-size: 13.5px; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Collapse inline grids on mobile.
+   Inline styles use formats like:
+     gridTemplateColumns: '1fr 1fr'
+     gridTemplateColumns: '1.4fr 1fr'
+     gridTemplateColumns: '2fr 1fr'
+     gridTemplateColumns: '1fr 1fr 1fr'
+     gridTemplateColumns: 'repeat(4, 1fr)'
+     gridTemplateColumns: '300px 1fr'
+   React serializes these to the DOM `style` attribute as
+   `grid-template-columns:…`. Match on substring.
+   ───────────────────────────────────────────────────────────────── */
+
+@media (max-width: 767px) {
+  /* 2-column equal */
+  [style*="grid-template-columns:1fr 1fr"],
+  [style*="grid-template-columns: 1fr 1fr"]:not([style*="1fr 1fr 1fr"]):not([style*="1fr 1fr auto"]):not([style*="1fr 1fr 320px"]) {
+    grid-template-columns: 1fr !important;
+  }
+  /* Weighted 2-column (1.4fr 1fr, 2fr 1fr, 1.6fr 1fr…) */
+  [style*="grid-template-columns:1.4fr 1fr"],
+  [style*="grid-template-columns: 1.4fr 1fr"],
+  [style*="grid-template-columns:1.6fr 1fr"],
+  [style*="grid-template-columns: 1.6fr 1fr"],
+  [style*="grid-template-columns:2fr 1fr"],
+  [style*="grid-template-columns: 2fr 1fr"],
+  [style*="grid-template-columns:1fr 2fr"],
+  [style*="grid-template-columns: 1fr 2fr"] {
+    grid-template-columns: 1fr !important;
+  }
+  /* 3 columns → 1 column */
+  [style*="grid-template-columns:1fr 1fr 1fr"],
+  [style*="grid-template-columns: 1fr 1fr 1fr"],
+  [style*="grid-template-columns:repeat(3"],
+  [style*="grid-template-columns: repeat(3"] {
+    grid-template-columns: 1fr !important;
+  }
+  /* 4 columns → 2 columns */
+  [style*="grid-template-columns:repeat(4"],
+  [style*="grid-template-columns: repeat(4"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  /* 5+ columns → 2 columns */
+  [style*="grid-template-columns:repeat(5"],
+  [style*="grid-template-columns: repeat(5"],
+  [style*="grid-template-columns:repeat(6"],
+  [style*="grid-template-columns: repeat(6"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  /* 12-column finance grids → 6 cols */
+  [style*="grid-template-columns:repeat(12"],
+  [style*="grid-template-columns: repeat(12"] {
+    grid-template-columns: repeat(6, 1fr) !important;
+  }
+
+  /* Two-pane layouts (sidebar + content): list/detail style */
+  [style*="grid-template-columns:240px 1fr"],
+  [style*="grid-template-columns: 240px 1fr"],
+  [style*="grid-template-columns:280px 1fr"],
+  [style*="grid-template-columns: 280px 1fr"],
+  [style*="grid-template-columns:300px 1fr"],
+  [style*="grid-template-columns: 300px 1fr"],
+  [style*="grid-template-columns:320px 1fr"],
+  [style*="grid-template-columns: 320px 1fr"],
+  [style*="grid-template-columns:1fr 280px"],
+  [style*="grid-template-columns: 1fr 280px"],
+  [style*="grid-template-columns:1fr 300px"],
+  [style*="grid-template-columns: 1fr 300px"],
+  [style*="grid-template-columns:1fr 320px"],
+  [style*="grid-template-columns: 1fr 320px"],
+  [style*="grid-template-columns:1fr 360px"],
+  [style*="grid-template-columns: 1fr 360px"],
+  [style*="grid-template-columns:1fr 420px"],
+  [style*="grid-template-columns: 1fr 420px"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Login page (1fr 1fr fixed-screen) — let form column take over */
+  [style*="grid-template-columns:1fr 1fr"][style*="position:fixed"],
+  [style*="grid-template-columns: 1fr 1fr"][style*="position:fixed"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Very small phones (iPhone SE, Galaxy Fold closed, …) — tighter still */
+@media (max-width: 480px) {
+  /* 4-column → 2 (e.g. KPI strip on chantier detail) */
+  [style*="grid-template-columns:repeat(4"],
+  [style*="grid-template-columns: repeat(4"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  /* Reduce big numbers so they fit one-line */
+  .big-num { font-size: 28px !important; }
+  h1.page, .page-h1 { font-size: 18px !important; }
+  h2.page, .page-h2 { font-size: 15px !important; }
+  .kpi { padding: 14px !important; min-height: 0 !important; }
+  .kpi .big-num { font-size: 24px !important; }
+  .page-pad { padding: 12px 10px 80px !important; }
+  .page-content { padding: 12px 10px 80px; }
+  /* Cards a bit tighter */
+  .card { border-radius: 12px; }
+  .card[style*="padding:20"],
+  .card[style*="padding: 20"] { padding: 14px !important; }
+  .card[style*="padding:22"],
+  .card[style*="padding: 22"] { padding: 14px !important; }
+  .card[style*="padding:24"],
+  .card[style*="padding: 24"] { padding: 14px !important; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Tables — make them horizontally scrollable wherever they appear.
+   Many pages render `<table>` directly inside a `.card` without a
+   scroll wrapper; force the parent card to scroll on overflow.
+   ───────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  table { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .card { max-width: 100%; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Header/topbar safe-area for notched phones
+   ───────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .mobile-topbar {
+    padding-top: env(safe-area-inset-top, 0);
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+    height: calc(56px + env(safe-area-inset-top, 0));
+  }
+  .page-pad,
+  .page-content {
+    padding-left: max(14px, env(safe-area-inset-left)) !important;
+    padding-right: max(14px, env(safe-area-inset-right)) !important;
+    padding-bottom: max(80px, env(safe-area-inset-bottom, 0)) !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Modals / fixed overlays — keep inside viewport on small screens.
+   Many `.card` elements are reused as modals with inline width.
+   ───────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  [style*="position:fixed"][style*="width:"][style*="px"],
+  [style*="position: fixed"][style*="width:"][style*="px"] {
+    max-width: calc(100vw - 24px);
+  }
+  /* Common modal sizing */
+  [style*="maxWidth"][style*="px"] { max-width: 100% !important; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Tabs — ensure horizontal scroll always works on small screens.
+   ───────────────────────────────────────────────────────────────── */
+.tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tabs > * { flex-shrink: 0; }
+
+/* ─────────────────────────────────────────────────────────────────
+   Buttons inside crowded header rows — wrap nicely on mobile.
+   ───────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .btn { white-space: nowrap; }
+  /* When a flex row contains a title + button group, allow wrap */
+  [style*="justify-content:space-between"][style*="display:flex"],
+  [style*="justifyContent:'space-between'"][style*="display:'flex'"] {
+    flex-wrap: wrap;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Login page — stack columns + hide brand panel on phones.
+   ───────────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .login-shell { grid-template-columns: 1fr !important; }
+  .login-brand { display: none !important; }
+  .login-form-col { padding: 32px 22px !important; min-height: 100vh; max-width: 100% !important; }
+}
+@media (max-width: 480px) {
+  .login-form-col { padding: 24px 16px !important; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   FullCalendar — collapse toolbar on mobile so it fits.
+   ───────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .fc-toolbar { flex-direction: column; align-items: stretch !important; gap: 8px; }
+  .fc-toolbar-chunk { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px; }
+  .fc-toolbar-title { font-size: 16px !important; }
+  .fc .fc-button { padding: 6px 10px !important; font-size: 12px !important; }
+  .fc .fc-col-header-cell-cushion,
+  .fc .fc-daygrid-day-number { font-size: 11px !important; }
+}

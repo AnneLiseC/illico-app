@@ -24,6 +24,13 @@ export const metadata = {
   description: "Gestion des dossiers chantiers",
 }
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#00578e",
+}
+
 export default function RootLayout({ children }) {
   return (
     <html lang="fr" className={`${manrope.variable} ${jetbrainsMono.variable} h-full antialiased`}>
