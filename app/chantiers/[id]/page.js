@@ -46,9 +46,21 @@ function Fact({ label, value, highlight, mono }) {
   )
 }
 
+// Format euro court partagé (helpers module-level)
+const fmtEurShort = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
+
+function RecapRow({ label, value, strong, large, tone }) {
+  const color = tone === 'brand' ? 'var(--brand-700)' : 'var(--ink-700)'
+  return (
+    <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', padding:'3px 0', fontSize: large ? 14 : 13}}>
+      <span style={{color: strong ? 'var(--ink-900)' : 'var(--ink-500)', fontWeight: strong ? 700 : 400}}>{label}</span>
+      <span className="tnum" style={{color: strong ? (tone === 'brand' ? 'var(--brand-800)' : 'var(--ink-900)') : color, fontWeight: strong ? 800 : 600}}>{value}</span>
+    </div>
+  )
+}
+
 function FactureMiniLine({ title, fact, expected, onAdd, onTogglePaid, onView }) {
-  // Format euro court (sans dépendance)
-  const fmtE = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
+  const fmtE = fmtEurShort
   if (!fact) {
     return (
       <button onClick={onAdd} style={{
@@ -2311,6 +2323,135 @@ export default function FicheChantier({ params }) {
       {onglet === 'devis' && (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
+        {/* Honoraires client (restylé tokens) */}
+        {['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCRecus > 0 && (
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
+              <h2 className="page" style={{fontSize:16}}>Honoraires client</h2>
+              <div className="eyebrow" style={{marginTop:4}}>
+                Calculés sur <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(baseCourtageHTTCPrev)}</span> TTC (devis reçus + signés{fraisHT > 0 && ' · frais déduits'})
+              </div>
+            </div>
+            <div style={{padding:16, display:'flex', flexDirection:'column', gap:12}}>
+
+              {/* Bloc Honoraires courtage */}
+              <div style={{border:'1px solid var(--ink-200)', borderRadius:10, padding:14}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:10, flexWrap:'wrap'}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>
+                      Honoraires courtage <span style={{color:'var(--brand-800)'}}>({tauxCourtagePct}%)</span>
+                    </div>
+                    <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:3}}>
+                      {tauxCourtagePct}% × <span className="tnum">{fmt(baseCourtageHTTCPrev)}</span> TTC · Échéance 48h après signature devis
+                    </div>
+                  </div>
+                  <span className="tnum" style={{fontSize:17, fontWeight:800, color:'var(--ink-900)', letterSpacing:-0.01}}>{fmt(honorairesCourtagePrev)}</span>
+                </div>
+                <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
+                  <div style={{display:'flex', alignItems:'center', gap:6}}>
+                    <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux courtage</label>
+                    <input
+                      type="number" step="0.1" min="0" max="20"
+                      value={(dossier.taux_courtage ?? 0.06) * 100}
+                      onChange={async e => {
+                        const taux = parseFloat(e.target.value || 0) / 100
+                        set('taux_courtage', taux)
+                        await supabase.from('dossiers').update({ taux_courtage: taux }).eq('id', id)
+                      }}
+                      className="input"
+                      style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
+                    />
+                    <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
+                  </div>
+                  <select
+                    value={suiviCourtage?.statut_client || 'en_attente'}
+                    onChange={e => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'statut_client', e.target.value)}
+                    className="input"
+                    style={{flex:1, minWidth:140, height:32, fontSize:12, cursor:'pointer'}}
+                  >
+                    <option value="en_attente">⏳ En attente</option>
+                    <option value="envoye">📤 Facturé</option>
+                    <option value="regle">✅ Réglé</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Bloc Honoraires AMO (typologie AMO uniquement) */}
+              {dossier.typologie === 'amo' && (
+                <div style={{border:'1px solid var(--brand-200)', borderRadius:10, padding:14, background:'rgba(0,148,212,0.04)'}}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:10, flexWrap:'wrap'}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:13.5, fontWeight:700, color:'var(--brand-900)'}}>
+                        Honoraires AMO <span style={{color:'var(--brand-700)'}}>({parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)</span>
+                      </div>
+                      <div style={{fontSize:11.5, color:'var(--brand-700)', marginTop:3}}>
+                        {tauxCourtagePct}% courtage + {tauxAmoPct}% AMO × <span className="tnum">{fmt(baseCourtageHTTCPrev)}</span> TTC
+                      </div>
+                    </div>
+                    <span className="tnum" style={{fontSize:17, fontWeight:800, color:'var(--brand-900)', letterSpacing:-0.01}}>{fmt(honorairesAMOPrev)}</span>
+                  </div>
+
+                  <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap', marginBottom:12}}>
+                    <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux AMO</label>
+                    <input
+                      type="number" step="0.1" min="0" max="20"
+                      value={dossier.honoraires_amo_taux ?? 9}
+                      onChange={async e => {
+                        const taux = parseFloat(e.target.value || 0)
+                        set('honoraires_amo_taux', taux)
+                        await supabase.from('dossiers').update({ honoraires_amo_taux: taux }).eq('id', id)
+                      }}
+                      className="input"
+                      style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
+                    />
+                    <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
+                  </div>
+
+                  <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                    <div style={{background:'#fff', borderRadius:8, padding:'10px 12px', border:'1px solid var(--brand-100)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:12, fontWeight:700, color:'var(--brand-800)'}}>
+                          Acompte AMO <span style={{color:'var(--brand-700)'}}>({tauxCourtagePct}%)</span> · <span className="tnum" style={{color:'var(--ink-900)'}}>{fmt(honorairesCourtagePrev)}</span>
+                        </div>
+                        <div style={{fontSize:10.5, color:'var(--brand-700)', marginTop:2}}>Signature devis</div>
+                      </div>
+                      <select
+                        value={suiviAcompteAMO?.statut_client || 'en_attente'}
+                        onChange={e => majSuiviChantier('acompte_amo', honorairesCourtagePrev, 'statut_client', e.target.value)}
+                        className="input"
+                        style={{height:30, fontSize:11.5, padding:'0 8px', minWidth:130}}
+                      >
+                        <option value="en_attente">⏳ En attente</option>
+                        <option value="envoye">📤 Facturé</option>
+                        <option value="regle">✅ Réglé</option>
+                      </select>
+                    </div>
+
+                    <div style={{background:'#fff', borderRadius:8, padding:'10px 12px', border:'1px solid var(--brand-100)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:12, fontWeight:700, color:'var(--brand-800)'}}>
+                          Solde AMO <span style={{color:'var(--brand-700)'}}>({tauxAmoPct}%)</span> · <span className="tnum" style={{color:'var(--ink-900)'}}>{fmt(honorairesAMOPrev - honorairesCourtagePrev)}</span>
+                        </div>
+                        <div style={{fontSize:10.5, color:'var(--brand-700)', marginTop:2}}>Fin de chantier</div>
+                      </div>
+                      <select
+                        value={suiviSoldeAMO?.statut_client || 'en_attente'}
+                        onChange={e => majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'statut_client', e.target.value)}
+                        className="input"
+                        style={{height:30, fontSize:11.5, padding:'0 8px', minWidth:130}}
+                      >
+                        <option value="en_attente">⏳ En attente</option>
+                        <option value="envoye">📤 Facturé</option>
+                        <option value="regle">✅ Réglé</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Devis artisans */}
         <div className="card" style={{padding:0, overflow:'hidden'}}>
           <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)', display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -2722,128 +2863,85 @@ export default function FicheChantier({ params }) {
 
         </div>
 
-        {/* Honoraires client */}
-        {['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCRecus > 0 && (
-          <div className="card" style={{padding:22}}>
-            <h2 className="font-semibold text-gray-800">Honoraires client</h2>
-            <p className="text-xs text-gray-400">
-              Calculés sur {fmt(baseCourtageHTTCPrev)} TTC (devis reçus + signés
-              {fraisHT > 0 && <span className="text-purple-500"> - frais déduits</span>})
-            </p>
-
-            <div className="border border-gray-100 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-gray-700">
-                  Honoraires courtage ({tauxCourtagePct}%)
-                </p>
-                <span className="text-sm font-bold text-gray-800">
-                  {fmt(honorairesCourtagePrev)}
-                </span>
-              </div>
-              <p className="text-xs text-gray-400 mb-3">
-                {tauxCourtagePct}% × {fmt(baseCourtageHTTCPrev)} € TTC - Échéance : 48h après signature devis
-              </p>
-              <div className="flex items-center gap-3">
-                <label className="text-xs font-medium text-blue-700">Taux courtage (%)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="20"
-                  value={(dossier.taux_courtage ?? 0.06) * 100}
-                  onChange={async e => {
-                    const taux = parseFloat(e.target.value || 0) / 100
-                    set('taux_courtage', taux)
-                    await supabase.from('dossiers').update({ taux_courtage: taux }).eq('id', id)
-                  }}
-                  className="w-24 border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>  
-              <div className="mt-3">
-                <select
-                  value={suiviCourtage?.statut_client || 'en_attente'}
-                  onChange={e => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'statut_client', e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer"
-                >
-                  <option value="en_attente">⏳ En attente</option>
-                  <option value="envoye">📤 Facturé</option>
-                  <option value="regle">✅ Réglé</option>
-                </select>
-              </div>
+        {/* Récapitulatif chantier (restylé tokens, déplacé depuis Finance) */}
+        {devis.length > 0 && (
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
+              <h2 className="page" style={{fontSize:16}}>Récapitulatif chantier</h2>
+              <div className="eyebrow" style={{marginTop:4}}>Totaux prévisionnel et signé · {devis.length} devis</div>
             </div>
+            <div style={{padding:16, display:'flex', flexDirection:'column', gap:12}}>
 
-            {dossier.typologie === 'amo' && (
-              <div className="border border-blue-100 rounded-lg p-4 bg-blue-50">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm font-medium text-blue-800">
-                    Honoraires AMO ({parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)
-                  </p>
-                  <span className="text-sm font-bold text-blue-900">
-                    {fmt(honorairesAMOPrev)}
-                  </span>
-                </div>
-                <p className="text-xs text-blue-500 mb-3">
-                  {tauxCourtagePct}% courtage + {tauxAmoPct}% AMO × {fmt(baseCourtageHTTCPrev)} TTC
-                </p>
-
-                <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="flex items-center gap-3">
-                    <label className="text-xs font-medium text-blue-700">Taux AMO (%)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="20"
-                      value={dossier.honoraires_amo_taux ?? 9}
-                      onChange={async e => {
-                        const taux = parseFloat(e.target.value || 0)
-                        set('honoraires_amo_taux', taux)
-                        await supabase.from('dossiers').update({ honoraires_amo_taux: taux }).eq('id', id)
-                      }}
-                      className="w-24 border border-blue-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    />
+              {/* Bloc prévisionnel */}
+              {devisRecus.length > 0 && (
+                <div style={{borderRadius:10, padding:14, background:'rgba(0,148,212,0.06)', border:'1px solid var(--brand-200)'}}>
+                  <div className="eyebrow" style={{color:'var(--brand-800)', marginBottom:8}}>
+                    Prévisionnel · {devisRecus.length} devis
                   </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="bg-white rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-blue-700">
-                        Acompte AMO ({tauxCourtagePct}%) - {fmt(honorairesCourtagePrev)}
-                      </span>
-                      <span className="text-xs text-blue-400">Signature devis</span>
+                  <RecapRow label="Total HT" value={fmt(totalDevisHTRecus)} tone="brand" />
+                  <RecapRow label="Total TTC" value={fmt(totalDevisTTCRecus)} tone="brand" />
+                  {['courtage', 'amo'].includes(dossier?.typologie) && (
+                    <div style={{borderTop:'1px solid var(--brand-200)', marginTop:6, paddingTop:6}}>
+                      {dossier.typologie === 'courtage' && (
+                        <RecapRow label={`Honoraires (${tauxCourtagePct}%)`} value={fmt(honorairesCourtagePrev)} tone="brand" />
+                      )}
+                      {dossier.typologie === 'amo' && (<>
+                        <RecapRow label={`Honoraires courtage (${tauxCourtagePct}%)`} value={fmt(honorairesCourtagePrev)} tone="brand" />
+                        <RecapRow label="Honoraires AMO (9%)" value={fmt(baseCourtageHTTCPrev * 0.09)} tone="brand" />
+                        <RecapRow label="Total honoraires (15%)" value={fmt(baseCourtageHTTCPrev * (tauxCourtage + 0.09))} tone="brand" />
+                        {tauxAmoPct !== 9 && (<>
+                          <div style={{borderTop:'1px dashed var(--brand-200)', marginTop:4, paddingTop:4}} />
+                          <RecapRow label={`Honoraires AMO (${tauxAmoPct}%)`} value={fmt(honorairesAMOPrev - honorairesCourtagePrev)} tone="brand" />
+                          <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMOPrev)} tone="brand" strong />
+                        </>)}
+                      </>)}
+                      {fraisInclus && !dossier.frais_deduits && (
+                        <RecapRow label="Frais consultation" value={fmt(fraisTTC)} tone="brand" />
+                      )}
+                      <div style={{borderTop:'2px solid var(--brand-500)', marginTop:8, paddingTop:8}}>
+                        <RecapRow label="Total chantier prévisionnel" value={fmt(totalDevisTTCRecus + (dossier.typologie === 'amo' ? honorairesAMOPrev : honorairesCourtagePrev) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                      </div>
                     </div>
-                    <select
-                      value={suiviAcompteAMO?.statut_client || 'en_attente'}
-                      onChange={e => majSuiviChantier('acompte_amo', honorairesCourtagePrev, 'statut_client', e.target.value)}
-                      className="border border-blue-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
-                    >
-                      <option value="en_attente">En attente</option>
-                      <option value="envoye">Facturé</option>
-                      <option value="regle">✅ Réglé</option>
-                    </select>
-                  </div>
-
-                  <div className="bg-white rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-blue-700">
-                        Solde AMO ({tauxAmoPct}%) - {fmt(honorairesAMOPrev - honorairesCourtagePrev)}
-                      </span>
-                      <span className="text-xs text-blue-400">Fin de chantier</span>
-                    </div>
-                    <select
-                      value={suiviSoldeAMO?.statut_client || 'en_attente'}
-                      onChange={e => majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'statut_client', e.target.value)}
-                      className="border border-blue-200 rounded px-2 py-0.5 text-xs focus:outline-none bg-white"
-                    >
-                      <option value="en_attente">En attente</option>
-                      <option value="envoye">Facturé</option>
-                      <option value="regle">✅ Réglé</option>
-                    </select>
-                  </div>
+                  )}
                 </div>
-              </div>
-            )}
+              )}
+
+              {/* Bloc signé */}
+              {devisSignes.length > 0 && (
+                <div style={{borderRadius:10, padding:14, background:'var(--surface-2)', border:'1px solid var(--ink-200)'}}>
+                  <div className="eyebrow" style={{marginBottom:8}}>
+                    Signé · {devisSignes.length} devis
+                  </div>
+                  <RecapRow label="Total HT" value={fmt(totalDevisHTSignes)} />
+                  <RecapRow label="Total TTC" value={fmt(totalDevisTTCSignes)} />
+                  {['courtage', 'amo'].includes(dossier?.typologie) && (
+                    <div style={{borderTop:'1px solid var(--ink-200)', marginTop:6, paddingTop:6}}>
+                      {dossier.typologie === 'courtage' && (
+                        <RecapRow label={`Honoraires (${tauxCourtagePct}%)`} value={fmt(honorairesCourtage)} />
+                      )}
+                      {dossier.typologie === 'amo' && (<>
+                        <RecapRow label={`Honoraires courtage (${tauxCourtagePct}%)`} value={fmt(honorairesCourtage)} />
+                        <RecapRow label="Honoraires AMO (9%)" value={fmt(baseCourtageHTTC * 0.09)} />
+                        <RecapRow label="Total honoraires (15%)" value={fmt(baseCourtageHTTC * (tauxCourtage + 0.09))} />
+                        {tauxAmoPct !== 9 && (<>
+                          <div style={{borderTop:'1px dashed var(--ink-200)', marginTop:4, paddingTop:4}} />
+                          <RecapRow label={`Honoraires AMO (${tauxAmoPct}%)`} value={fmt(honorairesAMO - honorairesCourtage)} />
+                          <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMO)} strong />
+                        </>)}
+                      </>)}
+                      {fraisInclus && !dossier.frais_deduits && (
+                        <RecapRow label="Frais consultation" value={fmt(fraisTTC)} />
+                      )}
+                      {dossier.typologie === 'amo' && (
+                        <div style={{borderTop:'2px solid var(--brand-500)', marginTop:8, paddingTop:8}}>
+                          <RecapRow label="Total chantier signé" value={fmt(totalDevisTTCSignes + honorairesAMO + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -2854,138 +2952,17 @@ export default function FicheChantier({ params }) {
       {onglet === 'finance' && (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
-        {/* Récapitulatif chantier */}
-        {devis.length > 0 && (
-          <div className="card" style={{padding:22}}>
-            <p className="text-xs font-medium text-gray-600 uppercase">Récapitulatif chantier</p>
-
-            {/* BLOC PRÉVISIONNEL */}
-            {devisRecus.length > 0 && (
-              <div className="border border-blue-200 rounded-lg p-3 space-y-1 bg-blue-50">
-                <p className="text-xs text-blue-600 font-semibold uppercase">Prévisionnel - {devisRecus.length} devis</p>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total HT</span>
-                  <span className="font-medium text-blue-700">{fmt(totalDevisHTRecus)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total TTC</span>
-                  <span className="font-medium text-blue-700">{fmt(totalDevisTTCRecus)}</span>
-                </div>
-                {['courtage', 'amo'].includes(dossier?.typologie) && (
-                  <div className="border-t border-blue-200 pt-1 mt-1 space-y-1">
-                    {dossier.typologie === 'courtage' && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Honoraires ({tauxCourtagePct}%)</span>
-                        <span className="font-medium text-blue-600">{fmt(honorairesCourtagePrev)}</span>
-                      </div>
-                    )}
-                    {dossier.typologie === 'amo' && (<>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Honoraires courtage ({tauxCourtagePct}%)</span>
-                        <span className="font-medium text-blue-600">{fmt(honorairesCourtagePrev)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Honoraires AMO (9%)</span>
-                        <span className="font-medium text-blue-600">{fmt(baseCourtageHTTCPrev * 0.09)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Total honoraires (15%)</span>
-                        <span className="font-medium text-blue-600">{fmt(baseCourtageHTTCPrev * (tauxCourtage + 0.09))}</span>
-                      </div>
-                      {tauxAmoPct !== 9 && (<>
-                        <div className="border-t border-blue-100 my-1" />
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-400">Honoraires AMO ({tauxAmoPct}%)</span>
-                          <span className="font-medium text-blue-600">{fmt(honorairesAMOPrev - honorairesCourtagePrev)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm font-semibold">
-                          <span className="text-gray-500">Total honoraires ({parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)</span>
-                          <span className="text-blue-700">{fmt(honorairesAMOPrev)}</span>
-                        </div>
-                      </>)}
-                    </>)}
-                    {fraisInclus && !dossier.frais_deduits && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">Frais consultation</span>
-                        <span className="font-medium text-blue-600">{fmt(fraisTTC)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-sm border-t border-blue-300 pt-1 mt-1">
-                      <span className="font-bold text-blue-700">Total chantier prévisionnel</span>
-                      <span className="font-bold text-blue-700">
-                        {fmt(totalDevisTTCRecus + (dossier.typologie === 'amo' ? honorairesAMOPrev : honorairesCourtagePrev) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* BLOC SIGNÉ */}
-            {devisSignes.length > 0 && (
-              <div className="border border-gray-200 rounded-lg p-3 space-y-1 bg-white">
-                <p className="text-xs text-gray-500 font-semibold uppercase">Signé - {devisSignes.length} devis</p>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total HT</span>
-                  <span className="font-medium text-gray-800">{fmt(totalDevisHTSignes)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Total TTC</span>
-                  <span className="font-medium text-gray-800">{fmt(totalDevisTTCSignes)}</span>
-                </div>
-                {['courtage', 'amo'].includes(dossier?.typologie) && (
-                  <div className="border-t border-gray-200 pt-1 mt-1 space-y-1">
-                    {dossier.typologie === 'courtage' && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Honoraires ({tauxCourtagePct}%)</span>
-                        <span className="font-medium text-gray-700">{fmt(honorairesCourtage)}</span>
-                      </div>
-                    )}
-                    {dossier.typologie === 'amo' && (<>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Honoraires courtage ({tauxCourtagePct}%)</span>
-                        <span className="font-medium text-gray-700">{fmt(honorairesCourtage)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Honoraires AMO (9%)</span>
-                        <span className="font-medium text-gray-700">{fmt(baseCourtageHTTC * 0.09)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Total honoraires (15%)</span>
-                        <span className="font-medium text-gray-700">{fmt(baseCourtageHTTC * (tauxCourtage + 0.09))}</span>
-                      </div>
-                      {tauxAmoPct !== 9 && (<>
-                        <div className="border-t border-gray-100 my-1" />
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-500">Honoraires AMO ({tauxAmoPct}%)</span>
-                          <span className="font-medium text-gray-700">{fmt(honorairesAMO - honorairesCourtage)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm font-semibold">
-                          <span className="text-gray-600">Total honoraires ({parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)</span>
-                          <span className="text-gray-800">{fmt(honorairesAMO)}</span>
-                        </div>
-                      </>)}
-                    </>)}
-                    {fraisInclus && !dossier.frais_deduits && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Frais consultation</span>
-                        <span className="font-medium text-gray-700">{fmt(fraisTTC)}</span>
-                      </div>
-                    )}
-                    {dossier.typologie === 'amo' && (
-                      <div className="flex justify-between text-sm border-t border-gray-200 pt-1 mt-1">
-                        <span className="font-bold text-gray-700">Total chantier signé</span>
-                        <span className="font-bold text-blue-800">
-                          {fmt(totalDevisTTCSignes + honorairesAMO + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+        {/* Le Récapitulatif chantier est désormais dans l'onglet Devis & artisans (en bas) */}
+        <div className="card" style={{padding:32, textAlign:'center'}}>
+          <div className="eyebrow" style={{marginBottom:6}}>Suivi financier</div>
+          <div style={{fontSize:14, color:'var(--ink-600)', maxWidth:480, margin:'0 auto'}}>
+            Le récapitulatif chantier (totaux prévisionnel et signé) est maintenant disponible dans l'onglet{' '}
+            <button onClick={() => setOnglet('devis')} className="btn btn-ghost" style={{fontSize:12.5, padding:'2px 8px', color:'var(--brand-700)', fontWeight:700, display:'inline'}}>
+              Devis &amp; artisans
+            </button>
+            , en bas de la page.
           </div>
-        )}
+        </div>
 
       </div>
       )}
