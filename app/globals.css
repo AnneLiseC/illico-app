@@ -684,7 +684,9 @@ select.input { padding-right: 32px; }
   pointer-events: none;
 }
 @media (max-width: 1100px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 560px)  { .kpi-grid { grid-template-columns: 1fr; } }
+/* Keep 2 cols down to very small phones — single col wastes too much
+   vertical space on Finances/Chantiers (which have 4 KPIs each). */
+@media (max-width: 380px)  { .kpi-grid { grid-template-columns: 1fr; } }
 
 .grid-list {
   display: grid;
@@ -1026,13 +1028,50 @@ img, svg, video, canvas { max-width: 100%; }
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   Tables — make them horizontally scrollable wherever they appear.
-   Many pages render `<table>` directly inside a `.card` without a
-   scroll wrapper; force the parent card to scroll on overflow.
+   Tables — make them horizontally scrollable on small screens.
+   The pages wrap tables in `.card` with inline `overflow:hidden`
+   (to clip rounded corners). On mobile we need horizontal scroll
+   instead — table columns must not be cropped silently.
+
+   We use TWO strategies for robustness:
+   1. `:has()` selector on cards/wrappers around tables.
+   2. Attribute selector on `.card[style*="overflow:hidden"]`, which
+      lets the table inside scroll while ignoring the inline clip.
+   Plus, we wrap any solitary `<table>` in a scroll context by
+   making the table itself a `display:block` scroller AS A FALLBACK.
    ───────────────────────────────────────────────────────────────── */
 @media (max-width: 767px) {
-  table { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* Cards/wrappers containing a table allow horizontal scroll. Uses
+     :has() (modern Safari/Chrome/Firefox); pages with tables also wrap
+     them in `.table-scroll` as a fallback. */
+  .card:has(table),
+  .card > div:has(> table),
+  .card > div > div:has(> table) {
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+  /* Utility class — explicit horizontal scroll wrapper */
+  .table-scroll {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+  table { min-width: max-content; }
   .card { max-width: 100%; }
+
+  /* Detail expansion inside a scrollable table — pin it to the visible
+     viewport instead of inheriting the table's full width, so values
+     on the right side don't get cut off when the user reads the
+     expanded panel. */
+  .detail-expansion {
+    position: sticky;
+    left: 0;
+    width: calc(100vw - 28px);
+    max-width: calc(100vw - 28px);
+    box-sizing: border-box;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -1094,6 +1133,67 @@ img, svg, video, canvas { max-width: 100%; }
 }
 @media (max-width: 480px) {
   .login-form-col { padding: 24px 16px !important; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Mobile polish — compact KPI cards + helper classes for header rows
+   and pill toggles (applied via classNames on the relevant JSX).
+   ───────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  /* Compact KPI cards in 2-col layout */
+  .kpi-grid .card,
+  .kpi-grid .kpi { padding: 14px !important; min-height: 0 !important; }
+  .kpi-grid .big-num { font-size: 22px !important; }
+  .kpi-grid .eyebrow { font-size: 10px; }
+  /* Finance KPI uses a 26px tnum inline — shrink it */
+  .kpi-grid .card .tnum { font-size: 20px !important; }
+  /* Header row: stack title block and action buttons vertically.
+     Wrapping was unreliable because the title block sized to content
+     and left enough room to fit the button on the same line. Stacking
+     is predictable and consistent across pages. */
+  .header-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+  .header-row > * { width: 100%; min-width: 0; }
+  .header-row > div:last-child { display: flex; gap: 8px; flex-wrap: wrap; }
+  .header-row > div:last-child > .btn,
+  .header-row > .btn { flex: 1 1 auto; justify-content: center; }
+
+  /* Toolbar row (search + filters): same treatment. */
+  .toolbar-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .toolbar-row > * { width: 100% !important; min-width: 0 !important; }
+  .toolbar-row > .btn { width: 100%; justify-content: center; }
+}
+
+/* Pill-toggle scroll: lets segmented controls scroll horizontally on mobile
+   instead of overflowing the layout. Applied via className="pill-toggle". */
+.pill-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--ink-100);
+  padding: 3px;
+  border-radius: 9px;
+}
+@media (max-width: 767px) {
+  .pill-toggle {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    scrollbar-width: none;
+  }
+  .pill-toggle::-webkit-scrollbar { display: none; }
+  .pill-toggle > * { flex-shrink: 0; }
+}
+
+/* Client/contact card grid — tighter on tiny screens. */
+@media (max-width: 380px) {
+  .grid-cards .card { padding: 14px !important; }
 }
 
 /* ─────────────────────────────────────────────────────────────────

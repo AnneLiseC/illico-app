@@ -95,7 +95,7 @@ export default function Clients() {
     <div className="page-enter page-pad" style={{display:'flex', flexDirection:'column', gap:18}}>
 
       {/* En-tête */}
-      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:16, flexWrap:'wrap'}}>
+      <div className="header-row" style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:16, flexWrap:'wrap'}}>
         <div>
           <div className="eyebrow" style={{marginBottom:4}}>Contacts</div>
           <h1 className="page">Clients</h1>
@@ -116,8 +116,8 @@ export default function Clients() {
       )}
 
       {/* Barre de recherche */}
-      <div className="card" style={{padding:'14px 16px', display:'flex', gap:10}}>
-        <div style={{position:'relative', flex:1}}>
+      <div className="card toolbar-row" style={{padding:'14px 16px', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
+        <div style={{position:'relative', flex:1, minWidth:200}}>
           <span style={{position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', pointerEvents:'none'}}>
             <SearchIcon size={16}/>
           </span>
@@ -148,7 +148,7 @@ export default function Clients() {
             const isPro = client.type_client === 'professionnel'
             return (
               <button key={client.id} onClick={() => router.push(`/clients/${client.id}`)}
-                className="card" style={{padding:18, border:0, textAlign:'left', cursor:'pointer'}}>
+                className="card" style={{padding:18, border:0, textAlign:'left', cursor:'pointer', width:'100%', minWidth:0, overflow:'hidden'}}>
                 <div style={{display:'flex', gap:12, alignItems:'flex-start'}}>
                   {/* Avatar */}
                   <div style={{
@@ -237,14 +237,14 @@ export default function Clients() {
                 </div>
 
                 {/* Footer — Dossiers + Montant total */}
-                <div style={{marginTop:14, paddingTop:14, borderTop:'1px solid var(--ink-100)', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                  <div>
+                <div style={{marginTop:14, paddingTop:14, borderTop:'1px solid var(--ink-100)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, minWidth:0}}>
+                  <div style={{minWidth:0}}>
                     <div className="eyebrow">Dossiers</div>
                     <div className="tnum" style={{fontSize:18, fontWeight:800, color:'var(--ink-900)'}}>{dossierCount}</div>
                   </div>
-                  <div style={{textAlign:'right'}}>
+                  <div style={{textAlign:'right', minWidth:0, flexShrink:1}}>
                     <div className="eyebrow">Montant total</div>
-                    <div className="tnum" style={{fontSize:14, fontWeight:700, color: montantTotal > 0 ? 'var(--brand-800)' : 'var(--ink-400)'}}>
+                    <div className="tnum" style={{fontSize:14, fontWeight:700, color: montantTotal > 0 ? 'var(--brand-800)' : 'var(--ink-400)', whiteSpace:'nowrap'}}>
                       {montantTotal > 0 ? fmtEur(montantTotal) : '—'}
                     </div>
                   </div>

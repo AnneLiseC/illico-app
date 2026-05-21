@@ -131,14 +131,14 @@ function FinKpiCard({ label, value, sub, tone, children }) {
 
 function PillToggle({ options, active, onChange }) {
   return (
-    <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9,width:'fit-content'}}>
+    <div className="pill-toggle">
       {options.map(o => (
         <button key={o.key} onClick={() => onChange(o.key)} style={{
           padding:'6px 14px',fontSize:12.5,fontWeight:600,borderRadius:7,
           background: active === o.key ? '#fff' : 'transparent',
           color: active === o.key ? 'var(--brand-800)' : 'var(--ink-500)',
           boxShadow: active === o.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-          transition:'all 150ms',border:0,cursor:'pointer'
+          transition:'all 150ms',border:0,cursor:'pointer',whiteSpace:'nowrap'
         }}>{o.label}</button>
       ))}
     </div>
@@ -875,7 +875,7 @@ export default function Finances() {
     const gainAdmin  = isReel ? r.gainAdminReel  : c.gainsAdminPrevi
 
     return (
-      <div style={{borderTop:'1px solid var(--ink-100)', padding:'14px 22px 18px', background:'var(--surface-2)'}}>
+      <div className="detail-expansion" style={{borderTop:'1px solid var(--ink-100)', padding:'14px 22px 18px', background:'var(--surface-2)'}}>
         <div style={{display:'grid', gridTemplateColumns:'2fr 1fr', gap:18, alignItems:'flex-start'}}>
 
           {/* ── Détail des devis acceptés ── */}
@@ -886,7 +886,7 @@ export default function Finances() {
                 Aucun devis signé
               </div>
             ) : (
-              <div style={{background:'#fff', borderRadius:10, border:'1px solid var(--ink-200)', overflow:'hidden'}}>
+              <div className="table-scroll" style={{background:'#fff', borderRadius:10, border:'1px solid var(--ink-200)', overflow:'hidden'}}>
                 <table style={{width:'100%', borderCollapse:'collapse', fontSize:12.5}}>
                   <thead>
                     <tr style={{color:'var(--ink-400)', fontWeight:600, background:'var(--surface-2)'}}>
@@ -1006,6 +1006,7 @@ export default function Finances() {
             <button className="btn btn-ghost" style={{padding:'6px 10px',fontSize:12}}>📄 CSV</button>
           </div>
         </div>
+        <div className="table-scroll">
         <table style={{width:'100%',borderCollapse:'collapse'}}>
           <thead style={{position:'sticky',top:0,zIndex:1}}>
             <tr style={{borderBottom:'1px solid var(--ink-200)'}}>
@@ -1102,6 +1103,7 @@ export default function Finances() {
             </tfoot>
           )}
         </table>
+        </div>
       </div>
     )
   }
@@ -2704,9 +2706,9 @@ export default function Finances() {
     <div className="page-enter page-pad" style={{display:'flex',flexDirection:'column',gap:20,maxWidth:1400,margin:'0 auto'}}>
 
       {/* En-tête page */}
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:16,flexWrap:'wrap'}}>
+      <div className="header-row" style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:16,flexWrap:'wrap'}}>
         <div>
-          <button onClick={() => router.push('/dashboard')} style={{fontSize:12,color:'var(--ink-400)',marginBottom:6,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>← Retour</button>
+          <button onClick={() => router.push('/dashboard')} style={{fontSize:12,color:'var(--ink-400)',marginBottom:6,cursor:'pointer',display:'flex',alignItems:'center',gap:4,background:'none',border:0}}>← Retour</button>
           <div className="eyebrow" style={{marginBottom:4}}>Pilotage financier</div>
           <h1 className="page">Finances</h1>
           <div style={{color:'var(--ink-500)',fontSize:13,marginTop:6}}>
@@ -2714,7 +2716,7 @@ export default function Finances() {
             {saving && <span style={{marginLeft:12,color:'var(--ink-400)',fontSize:12}}>Enregistrement…</span>}
           </div>
         </div>
-        <div style={{display:'flex',gap:8}}>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
           <button className="btn btn-ghost">📄 Exporter le bilan</button>
           <button className="btn btn-primary">🪙 Saisir un règlement</button>
         </div>
@@ -2774,7 +2776,7 @@ export default function Finances() {
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
           <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
             <div className="eyebrow">Vue</div>
-            <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9}}>
+            <div className="pill-toggle">
               {periodOptions.map(p => (
                 <button key={p.key} onClick={() => setPeriod(p.key)} style={{
                   padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
@@ -2787,7 +2789,7 @@ export default function Finances() {
             {isMarine && (
               <div style={{marginLeft:6,display:'flex',gap:4,alignItems:'center'}}>
                 <div className="eyebrow">Périmètre</div>
-                <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9,marginLeft:8}}>
+                <div className="pill-toggle" style={{marginLeft:8}}>
                   {[
                     { key:'tous', label:'Tous' },
                     { key:'moi', label: profile?.prenom || 'Marine' },
@@ -2815,7 +2817,7 @@ export default function Finances() {
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
           <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
             <div className="eyebrow">Vue</div>
-            <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9}}>
+            <div className="pill-toggle">
               {periodOptions.map(p => (
                 <button key={p.key} onClick={() => setPeriod(p.key)} style={{
                   padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
@@ -2828,7 +2830,7 @@ export default function Finances() {
             {isMarine && (
               <div style={{marginLeft:6,display:'flex',gap:4,alignItems:'center'}}>
                 <div className="eyebrow">Périmètre</div>
-                <div style={{display:'flex',gap:4,background:'var(--ink-100)',padding:3,borderRadius:9,marginLeft:8}}>
+                <div className="pill-toggle" style={{marginLeft:8}}>
                   {[
                     { key:'tous', label:'Tous' },
                     { key:'moi', label: profile?.prenom || 'Marine' },
