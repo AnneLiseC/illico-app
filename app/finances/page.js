@@ -861,329 +861,117 @@ export default function Finances() {
   // DÉTAIL DOSSIER & TABLEAU FINANCE
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const renderDossierDetail = (d) => {
+  const renderDossierDetail = (d, isReel) => {
     const c = calculer(d)
     const r = calculerReel(d)
+    const devisAcc = c.devisAcceptes || []
+    const netPrevi = round2(c.gainsAdminPreviTotal + c.gainsAgentePreviTotal)
+    const netReel  = round2(r.gainAdminReel + r.gainsAgenteReels)
+    const value    = isReel ? netReel : netPrevi
+    const labelNet = isReel ? 'Encaissé net' : 'Prévi net'
+    const partAgenteRate = c.partAgenteRate
+    const partAdminRate  = 1 - partAgenteRate
+    const gainAgente = isReel ? r.gainAgenteReel : c.gainsAgentePrevi
+    const gainAdmin  = isReel ? r.gainAdminReel  : c.gainsAdminPrevi
+
     return (
-      <div style={{borderTop:'1px solid var(--ink-100)',padding:'16px 18px',display:'flex',flexDirection:'column',gap:14}}>
+      <div style={{borderTop:'1px solid var(--ink-100)', padding:'14px 22px 18px', background:'var(--surface-2)'}}>
+        <div style={{display:'grid', gridTemplateColumns:'2fr 1fr', gap:18, alignItems:'flex-start'}}>
 
-        {/* Infos contrat */}
-                <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-                  <span style={{padding:'4px 10px',borderRadius:99,fontSize:11,fontWeight:600,background: d.contrat_signe ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)',color: d.contrat_signe ? '#15803d' : '#b91c1c'}}>
-                    Contrat {d.contrat_signe ? `✅ ${d.date_signature_contrat ? new Date(d.date_signature_contrat).toLocaleDateString('fr-FR') : ''}` : '❌ non signé'}
-                  </span>
-                  {d.date_demarrage_chantier && <span style={{fontSize:12,color:'var(--ink-400)'}}>Démarrage : {new Date(d.date_demarrage_chantier).toLocaleDateString('fr-FR')}</span>}
-                  {d.date_fin_chantier && <span style={{fontSize:12,color:'var(--ink-400)'}}>Fin : {new Date(d.date_fin_chantier).toLocaleDateString('fr-FR')}</span>}
-                  <span style={{fontSize:12,color:'var(--ink-400)'}}>Répartition : {Math.round(c.partAgenteRate * 100)} / {Math.round((1 - c.partAgenteRate) * 100)}</span>
-                </div>
-
-                {/* Frais de consultation */}
-                {d.frais_consultation > 0 && (
-                  <div style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:8}}>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                      <p className="eyebrow">Frais de consultation</p>
-                      <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'var(--ink-500)'}}>
-                        <span>{fmt(c.fraisHT)} HT</span>
-                        <span className="text-red-400">- {fmt(c.fraisRoyalties)} royalties</span>
-                        <span className="font-medium text-gray-700">= {fmt(c.fraisNet)} net</span>
-                        {!c.estChantierMarine && c.partAgenteRate < 1 && <span className="text-blue-600">agente : {fmt(c.fraisAgente)}</span>}
-                      </div>
-                    </div>
-                    <CheckItem
-                      label="Réglé"
-                      checked={d.frais_statut === 'regle'}
-                      date={getSuivi(d, 'frais_consultation')?.date_paiement}
-                      onChange={(checked, autoDate) => {
-                        const updates = { statut_client: checked ? 'regle' : 'en_attente' }
-                        if (autoDate) updates.date_paiement = autoDate
-                        majSuivi(d.id, 'frais_consultation', null, updates)
-                      }}
-                      onDateChange={date => majSuivi(d.id, 'frais_consultation', null, 'date_paiement', date)}
-                      alert={alerte48h(d.date_signature_contrat) && d.frais_statut !== 'regle' ? '⚠️ Retard 48h' : null}
-                      disabled={d.statut === 'annule' && d.frais_statut === 'regle'}
-                    />
-                    <label className="flex items-center gap-2 cursor-pointer border-t border-gray-100 pt-2">
-                      <input
-                        type="checkbox"
-                        checked={d.frais_deduits || false}
-                        onChange={async (e) => {
-                          const val = e.target.checked
-                          await supabase.from('dossiers').update({ frais_deduits: val }).eq('id', d.id)
-                          await chargerTout()
-                        }}
-                        className="w-4 h-4 accent-blue-700"
-                      />
-                      <span className={`text-xs font-medium ${d.frais_deduits ? 'text-purple-600' : 'text-gray-500'}`}>
-                        Remboursés — déduit du courtage
-                      </span>
-                      {d.frais_deduits && (
-                        <span className="text-xs text-purple-500 ml-auto">
-                          — {fmt(c.fraisHT)} HT
-                        </span>
-                      )}
-                    </label>
-                  </div>
-                )}
-
-                {/* Artisans */}
-                {c.devisActifs.length > 0 && (
-                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                    <p className="eyebrow">Acomptes & Factures par artisan</p>
-                    {c.devisActifs.map(dv => {
-                      const artId        = dv.artisan_id || dv.artisan?.id
-                      const dvF          = c.devisFinanceMap.get(dv.id)
-                      const estSigne     = dv.statut === 'accepte'
-                      const estApporteur = dv.artisan?.sans_royalties
-                      const suiviAcompte = getSuivi(d, 'acompte_artisan', artId)
-                      const suiviFact    = getSuivi(d, 'facture_finale', artId)
-                      const suiviApp     = getSuivi(d, 'apporteur_agente', artId)
-                      const appLigne     = c.apporteurMap.get(dv.id)
-
-                      const acompteCalc = dv.acompte_pourcentage === -1
-                        ? (dv.acompte_montant_fixe || 0)
-                        : (dv.montant_ttc || 0) * ((dv.acompte_pourcentage || 30) / 100)
-                      const soldeCalc = (dv.montant_ttc || 0) - acompteCalc
-
+          {/* ── Détail des devis acceptés ── */}
+          <div>
+            <div className="eyebrow" style={{marginBottom:10}}>Détail des devis acceptés</div>
+            {devisAcc.length === 0 ? (
+              <div style={{padding:'14px 12px', background:'#fff', borderRadius:10, border:'1px solid var(--ink-200)', fontSize:12.5, color:'var(--ink-400)', textAlign:'center'}}>
+                Aucun devis signé
+              </div>
+            ) : (
+              <div style={{background:'#fff', borderRadius:10, border:'1px solid var(--ink-200)', overflow:'hidden'}}>
+                <table style={{width:'100%', borderCollapse:'collapse', fontSize:12.5}}>
+                  <thead>
+                    <tr style={{color:'var(--ink-400)', fontWeight:600, background:'var(--surface-2)'}}>
+                      <td style={{padding:'8px 12px'}}>Artisan</td>
+                      <td style={{padding:'8px 12px', textAlign:'right'}}>HT</td>
+                      <td style={{padding:'8px 12px', textAlign:'right'}}>%</td>
+                      <td style={{padding:'8px 12px', textAlign:'right'}}>Commission HT</td>
+                      <td style={{padding:'8px 12px', textAlign:'right'}}>Statut</td>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {devisAcc.map(dv => {
+                      const artId = dv.artisan_id || dv.artisan?.id
+                      const dvF   = c.devisFinanceMap.get(dv.id)
+                      const pct   = dvF?.commissionPct ? parseFloat((dvF.commissionPct * 100).toFixed(1)) : 0
+                      const comHT = dvF?.comHT || 0
+                      const sf    = getSuivi(d, 'acompte_artisan', artId)
+                      const isApporteur = dv.artisan?.sans_royalties
+                      let badge
+                      if (isReel) {
+                        const debloque = isApporteur ? true : (sf?.statut_illico === 'recu')
+                        badge = debloque
+                          ? <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(22,163,74,0.12)', color:'#15803d'}}>Encaissé</span>
+                          : <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(245,158,11,0.13)', color:'#a16207'}}>En attente</span>
+                      } else {
+                        badge = <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(0,148,212,0.10)', color:'var(--brand-800)'}}>Engagé</span>
+                      }
                       return (
-                        <div key={dv.id} style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:8}}>
-                          {/* En-tête artisan */}
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-medium text-gray-800">🔨 {dv.artisan?.entreprise}</span>
-                            {estApporteur && <span className="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">Apporteur d&apos;affaires</span>}
-                            <span className="text-xs text-gray-400">{fmt(dv.montant_ht)} HT / {fmt(dv.montant_ttc)} TTC</span>
-                            {dv.commission_pourcentage > 0 && dvF && (
-                              <span className="text-xs text-gray-500">
-                                Com. {dv.commission_pourcentage}% → {fmt(dvF.comHT)} HT → net {fmt(dvF.netCom)}
-                                {!c.estChantierMarine && <span className="text-blue-600"> (agente : {fmt(dvF.parts.agente)})</span>}
-                              </span>
-                            )}
-                            {estSigne
-                              ? <span className="text-xs text-green-600">Signé le {dv.date_signature ? new Date(dv.date_signature).toLocaleDateString('fr-FR') : '—'}</span>
-                              : <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Non signé</span>
-                            }
-                          </div>
-
-                          {/* Contrôles — uniquement si signé */}
-                          {estSigne && (
-                            <div className="pl-2 space-y-1 border-l-2 border-gray-100">
-                              {/* Acompte client */}
-                              {acompteCalc > 0 && (
-                                <CheckItem
-                                  label={`Acompte client payé — ${fmt(acompteCalc)} TTC`}
-                                  checked={suiviAcompte?.statut_client === 'regle'}
-                                  date={suiviAcompte?.date_paiement}
-                                  onChange={(checked, autoDate) => {
-                                    const updates = { statut_client: checked ? 'regle' : 'en_attente' }
-                                    if (autoDate) updates.date_paiement = autoDate
-                                    majSuivi(d.id, 'acompte_artisan', artId, updates)
-                                  }}
-                                  onDateChange={date => majSuivi(d.id, 'acompte_artisan', artId, 'date_paiement', date)}
-                                  alert={alerte7j(dv.date_signature) && suiviAcompte?.statut_client !== 'regle' ? '⚠️ Retard 7j' : null}
-                                />
-                              )}
-                              {/* illiCO débloqué — seulement si pas apporteur artisan */}
-                              {!estApporteur && (
-                                <CheckItem
-                                  label="illiCO France — acompte débloqué"
-                                  checked={suiviAcompte?.statut_illico === 'recu'}
-                                  date={suiviAcompte?.date_deblocage}
-                                  onChange={(checked, autoDate) => {
-                                    const updates = { statut_illico: checked ? 'recu' : 'en_attente' }
-                                    if (autoDate) updates.date_deblocage = autoDate
-                                    majSuivi(d.id, 'acompte_artisan', artId, updates)
-                                  }}
-                                  onDateChange={date => majSuivi(d.id, 'acompte_artisan', artId, 'date_deblocage', date)}
-                                  colorClass="text-indigo-600"
-                                />
-                              )}
-                              {/* Facture finale AMO */}
-                              {d.typologie === 'amo' && (
-                                <CheckItem
-                                  label={`Facture finale client payée — ${fmt(soldeCalc)} TTC`}
-                                  checked={suiviFact?.statut_client === 'regle'}
-                                  date={suiviFact?.date_paiement}
-                                  onChange={(checked, autoDate) => {
-                                    const updates = { statut_client: checked ? 'regle' : 'en_attente' }
-                                    if (autoDate) updates.date_paiement = autoDate
-                                    majSuivi(d.id, 'facture_finale', artId, updates)
-                                  }}
-                                  onDateChange={date => majSuivi(d.id, 'facture_finale', artId, 'date_paiement', date)}
-                                  alert={alerte48h(d.date_fin_chantier) && suiviFact?.statut_client !== 'regle' ? '⚠️ Retard 48h' : null}
-                                />
-                              )}
-                              {/* Apporteur client par devis */}
-                              {c.finance?.apporteur?.enabled && appLigne && appLigne.totalHT > 0 && (
-                                <div className="pt-1 space-y-1 border-t border-gray-100">
-                                  <p className="text-xs text-orange-600 font-medium">
-                                    Apporteur {d.client?.apporteur_nom} — {fmt(appLigne.totalHT)} HT
-                                    {!c.estChantierMarine && ` (agente : ${fmt(appLigne.agente)})`}
-                                  </p>
-                                  {/* Remboursement agente → CTP : visible si chantier agente, peu importe la vue */}
-                                  {!c.estChantierMarine && (
-                                    <CheckItem
-                                      label={`Agente → CTP remboursé — ${fmt(appLigne.agente)}`}
-                                      checked={suiviApp?.statut_ctp === 'rembourse'}
-                                      date={suiviApp?.date_paiement}
-                                      onChange={(checked, autoDate) => {
-                                        const updates = { statut_ctp: checked ? 'rembourse' : 'en_attente' }
-                                        if (autoDate) updates.date_paiement = autoDate
-                                        majSuivi(d.id, 'apporteur_agente', artId, updates)
-                                      }}
-                                      onDateChange={date => majSuivi(d.id, 'apporteur_agente', artId, 'date_paiement', date)}
-                                      colorClass="text-orange-600"
-                                    />
-                                  )}
-                                  {/* CTP retiré : visible uniquement sur chantier Marine, vue admin */}
-                                  {c.estChantierMarine && isMarine && (
-                                    <CheckItem
-                                      label={`CTP retiré — ${fmt(appLigne.admin)}`}
-                                      checked={suiviApp?.statut_client === 'retire'}
-                                      date={suiviApp?.date_paiement}
-                                      onChange={(checked, autoDate) => {
-                                        const updates = { statut_client: checked ? 'retire' : 'en_attente' }
-                                        if (autoDate) updates.date_paiement = autoDate
-                                        majSuivi(d.id, 'apporteur_agente', artId, updates)
-                                      }}
-                                      onDateChange={date => majSuivi(d.id, 'apporteur_agente', artId, 'date_paiement', date)}
-                                      colorClass="text-purple-600"
-                                    />
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                        <tr key={dv.id} style={{borderTop:'1px solid var(--ink-100)'}}>
+                          <td style={{padding:'10px 12px', fontWeight:600, color:'var(--ink-800)'}}>
+                            🔨 {dv.artisan?.entreprise || '—'}
+                            {isApporteur && <span style={{marginLeft:6, fontSize:10, padding:'1px 6px', borderRadius:99, background:'rgba(251,146,60,0.15)', color:'#c2410c'}}>Apporteur</span>}
+                          </td>
+                          <td className="tnum" style={{padding:'10px 12px', textAlign:'right', color:'var(--ink-700)'}}>{fmt(dv.montant_ht)}</td>
+                          <td className="tnum" style={{padding:'10px 12px', textAlign:'right', color:'var(--ink-500)'}}>{pct}%</td>
+                          <td className="tnum" style={{padding:'10px 12px', textAlign:'right', fontWeight:700, color:'var(--brand-800)'}}>{fmt(comHT)}</td>
+                          <td style={{padding:'10px 12px', textAlign:'right'}}>{badge}</td>
+                        </tr>
                       )
                     })}
-                  </div>
-                )}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
-                {/* Honoraires */}
-                {['courtage', 'amo'].includes(d.typologie) && c.honTotalTTC > 0 && (
-                  <div style={{border:'1px solid var(--ink-100)',borderRadius:10,padding:12,display:'flex',flexDirection:'column',gap:10}}>
-                    <p className="eyebrow">Honoraires client</p>
-                    <div style={{display:'flex',flexDirection:'column',gap:12}}>
-                      {/* Courtage */}
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
-                          <span className="font-medium text-gray-700">Courtage ({c.tauxCourtagePct}%)</span>
-                          <span>{fmt(c.courtHT)} HT</span>
-                          <span className="text-red-400">- {fmt(c.courtRoyalties)} royalties</span>
-                          <span className="font-medium">= {fmt(c.courtNet)} net</span>
-                          {!c.estChantierMarine && <span className="text-blue-600">agente : {fmt(c.courtAgente)}</span>}
-                        </div>
-                        <CheckItem
-                          label="Client réglé"
-                          checked={getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'}
-                          date={getSuivi(d, 'honoraires_courtage')?.date_paiement}
-                          onChange={(checked, autoDate) => {
-                            const updates = { statut_client: checked ? 'regle' : 'en_attente' }
-                            if (autoDate) updates.date_paiement = autoDate
-                            majSuivi(d.id, 'honoraires_courtage', null, updates)
-                          }}
-                          onDateChange={date => majSuivi(d.id, 'honoraires_courtage', null, 'date_paiement', date)}
-                        />
-                      </div>
-                      {/* AMO solde */}
-                      {d.typologie === 'amo' && (
-                        <div className="space-y-1 border-t border-gray-100 pt-2">
-                          <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
-                            <span className="font-medium text-blue-700">AMO solde ({c.tauxAmoPct}%)</span>
-                            <span>{fmt(c.amoHT)} HT</span>
-                            <span className="text-red-400">- {fmt(c.amoRoyalties)} royalties</span>
-                            <span className="font-medium">= {fmt(c.amoNet)} net</span>
-                            {!c.estChantierMarine && <span className="text-blue-600">agente : {fmt(c.amoAgente)}</span>}
-                          </div>
-                          <CheckItem
-                            label="Client réglé"
-                            checked={getSuivi(d, 'solde_amo')?.statut_client === 'regle'}
-                            date={getSuivi(d, 'solde_amo')?.date_paiement}
-                            onChange={(checked, autoDate) => {
-                              const updates = { statut_client: checked ? 'regle' : 'en_attente' }
-                              if (autoDate) updates.date_paiement = autoDate
-                              majSuivi(d.id, 'solde_amo', null, updates)
-                            }}
-                            onDateChange={date => majSuivi(d.id, 'solde_amo', null, 'date_paiement', date)}
-                            alert={alerte48h(d.date_fin_chantier) && getSuivi(d, 'solde_amo')?.statut_client !== 'regle' ? '⚠️ Retard 48h' : null}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
+            <button onClick={() => router.push(`/chantiers/${d.id}`)} className="btn btn-ghost" style={{fontSize:12, marginTop:10}}>
+              → Voir la fiche chantier
+            </button>
+          </div>
 
-                {/* Apporteur client global (résumé) */}
-                {d.client?.apporteur_affaires && c.apporteurTotalHT > 0 && (
-                  <div style={{border:'1px solid rgba(251,146,60,0.3)',borderRadius:10,padding:12,background:'rgba(251,146,60,0.06)'}}>
-                    <p style={{fontSize:12,fontWeight:600,color:'#c2410c'}}>
-                      Apporteur {d.client.apporteur_nom} ({d.client.apporteur_pourcentage}%) — total {fmt(c.apporteurTotalHT)} HT
-                      {!c.estChantierMarine && ` · part agente : ${fmt(c.apporteurAgente)}`}
-                    </p>
-                  </div>
-                )}
+          {/* ── Répartition ── */}
+          <div style={{padding:14, background:'#fff', borderRadius:10, border:'1px solid var(--ink-200)'}}>
+            <div className="eyebrow" style={{marginBottom:10}}>Répartition</div>
+            <div style={{display:'flex', flexDirection:'column', gap:8, fontSize:12.5}}>
+              <RepartRow label="Frais consultation HT" value={fmt(isReel ? r.fraisReel : c.fraisHT)} />
+              <RepartRow label="Commissions HT" value={fmt(c.comHT)} />
+              {c.honTotalNet > 0 && <RepartRow label="Honoraires" value={fmt(isReel ? r.honReel : c.honTotalNet)} />}
+              <RepartRow label="Royalties" value={`-${fmt(c.royaltiesTotal)}`} dim />
+              {c.apporteurTotalHT > 0 && (
+                <RepartRow label="Apporteur client" value={`-${fmt(isReel ? r.apporteurRembourse : (c.estChantierMarine ? c.apporteurAdmin : c.apporteurAgente))}`} accent="warn" />
+              )}
+              <div style={{height:1, background:'var(--ink-200)', margin:'4px 0'}}/>
+              <RepartRow label={labelNet} value={fmt(value)} bold />
+              <div style={{height:1, background:'var(--ink-200)', margin:'4px 0'}}/>
+              <RepartRow label={`${c.estChantierMarine ? 'Franchisée' : nomFranchisee} (${Math.round(partAdminRate * 100)}%)`} value={fmt(gainAdmin)} />
+              {partAgenteRate > 0 && (
+                <RepartRow label={`${nomReferente(d)} (${Math.round(partAgenteRate * 100)}%)`} value={fmt(gainAgente)} accent="brand" />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
-                {/* Total gain chantier */}
-                <div style={{border:'1px solid var(--ink-200)',borderRadius:10,padding:14,background:'var(--surface-2)'}}>
-                  <p className="eyebrow" style={{marginBottom:12}}>Total gain chantier</p>
-                  <div className="grid grid-cols-2 gap-4 text-xs">
-                    {/* Prévisionnel */}
-                    <div className="space-y-1">
-                      <p className="font-semibold text-gray-500 mb-2">Prévisionnel (HT net)</p>
-                      {c.fraisNet > 0 && <div className="flex justify-between"><span className="text-gray-500">Frais consul.</span><span>+ {fmt(c.fraisNet)}</span></div>}
-                      {c.honTotalNet > 0 && <div className="flex justify-between"><span className="text-gray-500">Honoraires</span><span>+ {fmt(c.honTotalNet)}</span></div>}
-                      {c.netComSigne > 0 && <div className="flex justify-between"><span className="text-gray-500">Commissions</span><span>+ {fmt(c.netComSigne)}</span></div>}
-                      {(() => {
-                        const comApporteursPrevi = round2(
-                          c.finance.commissions.devis
-                            .filter(dv => dv.isApporteur && dv.signed)
-                            .reduce((s, dv) => s + dv.netCom, 0)
-                        )
-                        return comApporteursPrevi > 0
-                          ? <div className="flex justify-between"><span className="text-gray-500">Com. apporteurs</span><span>+ {fmt(comApporteursPrevi)}</span></div>
-                          : null
-                      })()}
-                        {c.apporteurTotalHT > 0 && (
-                          <div className="flex justify-between">
-                            <span className="text-orange-500">Apporteur client</span>
-                            <span className="text-orange-500">— {fmt(c.estChantierMarine ? c.apporteurAdmin : c.apporteurAgente)}</span>
-                          </div>
-                        )}                      
-                        <div className="border-t border-gray-200 pt-1 mt-1 space-y-0.5">
-                        {!c.estChantierMarine && <div className="flex justify-between font-bold"><span className="text-blue-700">{nomReferente(d)}</span><span className="text-blue-700">{fmt(c.gainsAgentePrevi)}</span></div>}
-                        <div className="flex justify-between font-bold">
-                          <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>{c.estChantierMarine ? 'Net' : nomFranchisee}</span>
-                          <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>{fmt(c.gainsAdminPrevi)}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Réel */}
-                    <div className="space-y-1">
-                      <p className="font-semibold text-green-700 mb-2">Réel encaissé (HT net)</p>
-                      {r.fraisReel > 0 && <div className="flex justify-between"><span className="text-gray-500">Frais consul.</span><span>+ {fmt(r.fraisReel)}</span></div>}
-                      {r.honReel > 0 && <div className="flex justify-between"><span className="text-gray-500">Honoraires</span><span>+ {fmt(r.honReel)}</span></div>}
-                      {r.comReelNet > 0 && <div className="flex justify-between"><span className="text-gray-500">Commissions</span><span>+ {fmt(r.comReelNet)}</span></div>}
-                      {r.comApporteursReel > 0 && <div className="flex justify-between"><span className="text-gray-500">Com. apporteurs</span><span>+ {fmt(r.comApporteursReel)}</span></div>}
-                      {c.apporteurTotalHT > 0 && (
-                        <div className="flex justify-between">
-                          <span className="text-orange-500">Apporteur remboursé</span>
-                          <span className="text-orange-500">— {fmt(r.apporteurRembourse)}</span>
-                        </div>
-                      )}
-                      <div className="border-t border-green-200 pt-1 mt-1 space-y-0.5">
-                        {!c.estChantierMarine && <div className="flex justify-between font-bold"><span className="text-blue-700">{nomReferente(d)}</span><span className="text-blue-700">{fmt(r.gainAgenteReel)}</span></div>}
-                        <div className="flex justify-between font-bold">
-                          <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>{c.estChantierMarine ? 'Net' : nomFranchisee}</span>
-                          <span className={c.estChantierMarine ? 'text-gray-700' : 'text-purple-700'}>{fmt(r.gainAdminReel)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <button onClick={() => router.push(`/chantiers/${d.id}`)} className="btn btn-ghost" style={{fontSize:12,alignSelf:'flex-start'}}>
-                  → Voir la fiche chantier
-                </button>
+  const RepartRow = ({ label, value, bold, dim, accent }) => {
+    const color = accent === 'brand' ? 'var(--brand-800)'
+      : accent === 'warn' ? '#c2410c'
+      : dim ? 'var(--ink-400)'
+      : bold ? 'var(--ink-900)'
+      : 'var(--ink-900)'
+    return (
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+        <span style={{color: dim ? 'var(--ink-400)' : 'var(--ink-500)', fontSize:12}}>{label}</span>
+        <span className="tnum" style={{ fontWeight: bold ? 800 : 600, fontSize: bold ? 15 : 12.5, color }}>{value}</span>
       </div>
     )
   }
@@ -1291,7 +1079,7 @@ export default function Finances() {
                   </tr>
                   {isOpen && (
                     <tr><td colSpan={9} style={{padding:0,borderTop:'1px solid var(--ink-100)'}}>
-                      {renderDossierDetail(d)}
+                      {renderDossierDetail(d, isReel)}
                     </td></tr>
                   )}
                 </React.Fragment>
