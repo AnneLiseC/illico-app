@@ -249,27 +249,47 @@ function DocViewer({ url, nom, onClose }) {
   const estImage = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(nomFichier)
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-black/95" onClick={onClose}>
+    <div style={{
+      position:'fixed', inset:0, zIndex:300,
+      display:'flex', flexDirection:'column', background:'rgba(0,0,0,0.95)',
+    }} onClick={onClose}>
       {/* Barre haute */}
       <div
-        className="flex items-center justify-between px-4 py-3 bg-gray-900 flex-shrink-0 gap-4"
+        style={{
+          display:'flex', alignItems:'center', justifyContent:'space-between',
+          padding:'12px 18px', background:'rgba(15,23,42,0.95)', gap:14,
+          flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.08)',
+        }}
         onClick={e => e.stopPropagation()}
       >
-        <span className="text-white text-sm font-medium truncate">{nomFichier}</span>
-        <div className="flex items-center gap-4 flex-shrink-0">
+        <span className="clip-1" style={{color:'#fff', fontSize:13, fontWeight:600}}>{nomFichier}</span>
+        <div style={{display:'flex', alignItems:'center', gap:8, flexShrink:0}}>
           <a
             href={url}
             download={nomFichier}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center gap-1.5 text-sm text-blue-300 hover:text-white transition-colors"
+            style={{
+              display:'inline-flex', alignItems:'center', gap:6, fontSize:12, fontWeight:600,
+              color:'#cbd5e1', padding:'6px 12px', borderRadius:8,
+              background:'rgba(255,255,255,0.08)', textDecoration:'none', transition:'all 150ms',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.18)'; e.currentTarget.style.color = '#fff' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = '#cbd5e1' }}
             onClick={e => e.stopPropagation()}
           >
             ⬇ Télécharger
           </a>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center"
+            style={{
+              width:34, height:34, display:'grid', placeItems:'center',
+              fontSize:18, lineHeight:1, color:'rgba(255,255,255,0.7)',
+              border:'none', background:'rgba(255,255,255,0.08)', borderRadius:8, cursor:'pointer',
+              transition:'all 150ms',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.18)'; e.currentTarget.style.color = '#fff' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)' }}
           >
             ✕
           </button>
@@ -277,16 +297,16 @@ function DocViewer({ url, nom, onClose }) {
       </div>
 
       {/* Corps */}
-      <div className="flex-1 overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div style={{flex:1, overflow:'hidden'}} onClick={e => e.stopPropagation()}>
         {estImage ? (
-          <div className="w-full h-full flex items-center justify-center p-4">
+          <div style={{width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={url} alt={nomFichier} className="max-w-full max-h-full object-contain rounded shadow-lg" />
+            <img src={url} alt={nomFichier} style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain', borderRadius:8, boxShadow:'0 20px 60px rgba(0,0,0,0.5)'}} />
           </div>
         ) : (
           <iframe
             src={url}
-            className="w-full h-full border-0"
+            style={{width:'100%', height:'100%', border:0}}
             title={nomFichier}
           />
         )}
@@ -317,28 +337,35 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
 
   if (loading) return <div className="page-loading" />
   if (fiches.length === 0) return (
-    <p className="text-xs text-gray-400 mt-2">
+    <p style={{fontSize:11.5, color:'var(--ink-400)', marginTop:8}}>
       Aucune fiche technique pour cet artisan
-      <a href={`/artisans/${artisanId}`} target="_blank" className="text-blue-500 hover:underline ml-1">En ajouter →</a>
+      <a href={`/artisans/${artisanId}`} target="_blank" style={{color:'var(--brand-700)', textDecoration:'underline', marginLeft:6}}>En ajouter →</a>
     </p>
   )
   return (
     <>
       {viewer && <DocViewer url={viewer.url} nom={viewer.nom} onClose={() => setViewer(null)} />}
-      <div className="mt-2 space-y-1.5 bg-gray-50 rounded-lg p-3">
+      <div style={{marginTop:8, padding:12, background:'var(--surface-2)', border:'1px solid var(--ink-200)', borderRadius:10, display:'flex', flexDirection:'column', gap:6}}>
         {fiches.map(fiche => {
           const cochee = fichesCochees.some(f => f.fiche_technique_id === fiche.id)
           return (
-            <div key={fiche.id} className="flex items-center gap-2">
-              <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
-                <input type="checkbox" checked={cochee} onChange={() => onToggle(fiche.id, artisanId)} className="w-4 h-4 accent-blue-700 flex-shrink-0" />
-                <span className="text-xs text-gray-700 truncate">{fiche.nom}</span>
-                {fiche.description && <span className="text-xs text-gray-400 truncate">- {fiche.description}</span>}
+            <div key={fiche.id} style={{display:'flex', alignItems:'center', gap:8}}>
+              <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', flex:1, minWidth:0}}>
+                <input type="checkbox" checked={cochee} onChange={() => onToggle(fiche.id, artisanId)}
+                  style={{width:16, height:16, accentColor:'var(--brand-500)', flexShrink:0}} />
+                <span className="clip-1" style={{fontSize:11.5, color:'var(--ink-700)'}}>{fiche.nom}</span>
+                {fiche.description && <span className="clip-1" style={{fontSize:11.5, color:'var(--ink-400)'}}>— {fiche.description}</span>}
               </label>
               {fiche.url && (
                 <button
                   onClick={() => ouvrirFiche(fiche.url, fiche.nom)}
-                  className="flex-shrink-0 text-xs text-blue-600 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-50">
+                  style={{
+                    flexShrink:0, fontSize:11, color:'var(--brand-700)',
+                    border:'1px solid var(--brand-200)', padding:'2px 10px', borderRadius:6,
+                    background:'transparent', cursor:'pointer', transition:'all 150ms',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--brand-50)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
                   📄 Voir
                 </button>
               )}
@@ -529,80 +556,6 @@ function DevisModal({ open, devis, onClose, onSave, artisans, isMarine, partsAge
             {isEdit ? 'Enregistrer' : 'Créer le devis'}
           </button>
         </div>
-      </div>
-    </div>
-  )
-}
-
-function EditDevis({ devis, onSave, onCancel, isMarine }) {
-  const [form, setForm] = useState({
-    montant_ht: devis.montant_ht || '',
-    montant_ttc: devis.montant_ttc || '',
-    commission_pourcentage: devis.commission_pourcentage ? (devis.commission_pourcentage * 100).toFixed(1) : '',
-    sans_commission: devis.commission_pourcentage === 0,
-    part_agente: isMarine ? '0' : (devis.part_agente || '0.5'),
-    date_reception: devis.date_reception || '',
-    date_limite: devis.date_limite || '',
-    notes: devis.notes || '',
-  })
-  const set = (champ, val) => setForm(f => ({ ...f, [champ]: val }))
-  return (
-    <div className="border border-blue-100 bg-blue-50 rounded-lg p-3 space-y-3 mt-2">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Montant HT (€)</label>
-          <input type="number" step="0.01" value={form.montant_ht}
-            onChange={e => {
-              const ht = e.target.value
-              const ttcAuto = ht !== '' ? (parseFloat(ht) * 1.1).toFixed(2) : ''
-              setForm(f => ({ ...f, montant_ht: ht, montant_ttc: ttcAuto }))
-            }}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Montant TTC (€) <span className="text-gray-400 font-normal">auto 10%</span></label>
-          <input type="number" step="0.01" value={form.montant_ttc} onChange={e => set('montant_ttc', e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Commission (%)</label>
-          <input type="number" step="0.1" min="0" max="100"
-            value={form.sans_commission ? '0' : form.commission_pourcentage}
-            placeholder="ex: 15"
-            disabled={form.sans_commission}
-            onChange={e => set('commission_pourcentage', e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400" />
-          <label className="flex items-center gap-2 mt-1 cursor-pointer">
-            <input type="checkbox" checked={form.sans_commission}
-              onChange={e => set('sans_commission', e.target.checked)}
-              className="w-3.5 h-3.5 accent-blue-700" />
-            <span className="text-xs text-gray-500">Sans commission ni honoraires</span>
-          </label>
-        </div>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Date réception</label>
-          <input type="date" value={form.date_reception} onChange={e => set('date_reception', e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Date limite</label>
-          <input type="date" value={form.date_limite} onChange={e => set('date_limite', e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        </div>
-      </div>
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
-        <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2}
-          placeholder="Description des travaux..."
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
-      </div>
-      <div className="flex gap-2">
-        <button onClick={onCancel} className="flex-1 border border-gray-300 text-gray-700 py-1.5 rounded-lg text-sm hover:bg-gray-50">Annuler</button>
-        <button onClick={() => onSave(form)} className="flex-1 bg-blue-800 text-white py-1.5 rounded-lg text-sm hover:bg-blue-900">Enregistrer</button>
       </div>
     </div>
   )
@@ -1586,26 +1539,23 @@ export default function FicheChantier({ params }) {
 
   const typologieLabel = (t) => ({ courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' })[t] || t
 
-  const statutConfig = {
-    en_cours: { label: 'En cours', color: 'bg-green-100 text-green-700' },
-    en_attente: { label: 'En attente', color: 'bg-yellow-100 text-yellow-700' },
-    termine: { label: 'Terminé', color: 'bg-gray-100 text-gray-600' },
-    annule: { label: 'Annulé', color: 'bg-red-100 text-red-600' },
-  }
   const statutDevisConfig = {
-    en_attente: { label: 'En attente', color: 'bg-yellow-100 text-yellow-700' },
-    recu:       { label: 'Reçu',       color: 'bg-blue-100 text-blue-700' },
-    accepte:    { label: 'Accepté',    color: 'bg-green-100 text-green-700' },
-    refuse:     { label: 'Refusé',     color: 'bg-red-100 text-red-600' },
-    a_modifier: { label: 'À modifier', color: 'bg-orange-100 text-orange-700' },
+    en_attente: { label: 'En attente', tone: 'warn' },
+    recu:       { label: 'Reçu',       tone: 'info' },
+    accepte:    { label: 'Accepté',    tone: 'ok'   },
+    refuse:     { label: 'Refusé',     tone: 'bad'  },
+    a_modifier: { label: 'À modifier', tone: 'warn' },
   }
   const fraisStatutConfig = {
-    offerts:    { label: 'Offerts',               color: 'bg-blue-100 text-blue-700' },
-    rembourse_apres_signature: { label: 'Remboursé après signature', color: 'bg-purple-100 text-purple-700' },
-    factures:   { label: 'Facturés — en attente', color: 'bg-amber-100 text-amber-700' },
-    regle:      { label: 'Réglés',                color: 'bg-green-100 text-green-700' },
-    rembourse:  { label: 'Remboursé',             color: 'bg-purple-100 text-purple-700' },
+    offerts:                   { label: 'Offerts' },
+    rembourse_apres_signature: { label: 'Remboursé après signature' },
+    factures:                  { label: 'Facturés — en attente' },
+    regle:                     { label: 'Réglés' },
+    rembourse:                 { label: 'Remboursé' },
   }
+  // Couleurs tone → classes badge (pour les boutons quick statut)
+  const TONE_BG = { ok: 'rgba(22,163,74,0.12)', warn: 'rgba(245,158,11,0.13)', bad: 'rgba(220,38,38,0.10)', info: 'rgba(0,148,212,0.12)', mute: 'rgba(148,163,184,0.15)' }
+  const TONE_FG = { ok: '#15803d', warn: '#a16207', bad: '#b91c1c', info: '#0078ad', mute: '#475569' }
 
   const devisSignes = devis.filter(d => d.statut === 'accepte' && d.montant_ttc)
   const totalDevisTTCSignes = devisSignes.reduce((s, d) => s + (d.montant_ttc || 0), 0)
@@ -1768,8 +1718,7 @@ export default function FicheChantier({ params }) {
   if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-400)'}}>Chantier introuvable</div>
 
   const nomComplet = client ? `${client.civilite} ${client.prenom} ${client.nom}${client.prenom2 ? ` & ${client.prenom2} ${client.nom2}` : ''}` : ''
-  const s = statutConfig[dossier.statut] ?? { label: dossier.statut ?? '-', color: 'bg-gray-100 text-gray-600' }
-  const f = fraisStatutConfig[dossier.frais_statut] ?? { label: dossier.frais_statut ?? '-', color: 'bg-gray-100 text-gray-600' }
+  const f = fraisStatutConfig[dossier.frais_statut] ?? { label: dossier.frais_statut ?? '—' }
 
   const supprimerChantier = async () => {
     const ok = confirm(
@@ -2635,7 +2584,6 @@ export default function FicheChantier({ params }) {
           ) : (
             <div style={{display:'flex', flexDirection:'column'}}>
               {devis.map((d, idx) => {
-                const sd = statutDevisConfig[d.statut]
                 const expanded = devisExpanded.has(d.id)
                 const factDevis = factures.filter(f => f.devis_id === d.id)
                 const factAcompte = factDevis.find(f => (f.libelle || '').toLowerCase().includes('acompte'))
@@ -2815,13 +2763,25 @@ export default function FicheChantier({ params }) {
                       <p className="text-xs text-gray-500 italic">{d.notes}</p>
                     )}
 
-                    <div className="flex gap-2 pt-1 border-t border-gray-100 flex-wrap">
-                      {['en_attente', 'recu', 'accepte', 'refuse', 'a_modifier'].map(st => (
-                        <button key={st} onClick={() => changerStatutDevis(d.id, st)}
-                          className={`text-xs px-2 py-1 rounded-full border transition-all ${d.statut === st ? statutDevisConfig[st].color + ' border-transparent font-medium' : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
-                          {statutDevisConfig[st].label}
-                        </button>
-                      ))}
+                    <div style={{display:'flex', gap:6, flexWrap:'wrap', paddingTop:8, borderTop:'1px solid var(--ink-100)'}}>
+                      {['en_attente', 'recu', 'accepte', 'refuse', 'a_modifier'].map(st => {
+                        const cfg = statutDevisConfig[st]
+                        const active = d.statut === st
+                        return (
+                          <button key={st} onClick={() => changerStatutDevis(d.id, st)}
+                            style={{
+                              fontSize:11, fontWeight: active ? 700 : 600, padding:'4px 10px', borderRadius:99,
+                              border:'1px solid', cursor:'pointer', transition:'all 150ms',
+                              borderColor: active ? 'transparent' : 'var(--ink-200)',
+                              background: active ? TONE_BG[cfg.tone] : 'transparent',
+                              color: active ? TONE_FG[cfg.tone] : 'var(--ink-400)',
+                            }}
+                            onMouseEnter={e => { if (!active) e.currentTarget.style.borderColor = 'var(--ink-300)' }}
+                            onMouseLeave={e => { if (!active) e.currentTarget.style.borderColor = 'var(--ink-200)' }}>
+                            {cfg.label}
+                          </button>
+                        )
+                      })}
                     </div>
 
                     {/* ── DOCUMENTS : Devis signé + Facture ── */}
