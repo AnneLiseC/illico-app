@@ -684,7 +684,9 @@ select.input { padding-right: 32px; }
   pointer-events: none;
 }
 @media (max-width: 1100px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 560px)  { .kpi-grid { grid-template-columns: 1fr; } }
+/* Keep 2 cols down to very small phones — single col wastes too much
+   vertical space on Finances/Chantiers (which have 4 KPIs each). */
+@media (max-width: 380px)  { .kpi-grid { grid-template-columns: 1fr; } }
 
 .grid-list {
   display: grid;
@@ -1026,13 +1028,30 @@ img, svg, video, canvas { max-width: 100%; }
 }
 
 /* ─────────────────────────────────────────────────────────────────
-   Tables — make them horizontally scrollable wherever they appear.
-   Many pages render `<table>` directly inside a `.card` without a
-   scroll wrapper; force the parent card to scroll on overflow.
+   Tables — make them horizontally scrollable on small screens.
+   Many cards inline `overflow:hidden` to clip rounded corners. That
+   also clips any horizontally-overflowing table inside. Override:
+   allow horizontal scroll on cards that contain a table, and on the
+   page-level wrapper around tables. We keep native table layout
+   (don't switch to display:block, which breaks column alignment).
    ───────────────────────────────────────────────────────────────── */
 @media (max-width: 767px) {
-  table { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* Cards that wrap a table — let them scroll horizontally. */
+  .card:has(table) {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* When a card has a sub-div wrapper (.card > div > table), unblock
+     the wrapper too. */
+  .card > div:has(> table) {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+  table { min-width: max-content; max-width: none; }
   .card { max-width: 100%; }
+  /* Generic .table-scroll utility */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -1094,6 +1113,54 @@ img, svg, video, canvas { max-width: 100%; }
 }
 @media (max-width: 480px) {
   .login-form-col { padding: 24px 16px !important; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Mobile polish — compact KPI cards + helper classes for header rows
+   and pill toggles (applied via classNames on the relevant JSX).
+   ───────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  /* Compact KPI cards in 2-col layout */
+  .kpi-grid .card,
+  .kpi-grid .kpi { padding: 14px !important; min-height: 0 !important; }
+  .kpi-grid .big-num { font-size: 22px !important; }
+  .kpi-grid .eyebrow { font-size: 10px; }
+  /* Finance KPI uses a 26px tnum inline — shrink it */
+  .kpi-grid .card .tnum { font-size: 20px !important; }
+  /* Header row: title block stays on first line, action buttons wrap below */
+  .header-row { flex-wrap: wrap !important; }
+  .header-row > * + * { width: 100%; }
+  .header-row .btn { flex: 1 1 auto; justify-content: center; }
+  /* Toolbar card with search + filters — children stack/wrap */
+  .toolbar-row { flex-wrap: wrap !important; }
+  .toolbar-row > * { flex: 1 1 100% !important; min-width: 0 !important; }
+  .toolbar-row > .btn { flex: 1 1 auto; justify-content: center; }
+}
+
+/* Pill-toggle scroll: lets segmented controls scroll horizontally on mobile
+   instead of overflowing the layout. Applied via className="pill-toggle". */
+.pill-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--ink-100);
+  padding: 3px;
+  border-radius: 9px;
+}
+@media (max-width: 767px) {
+  .pill-toggle {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    scrollbar-width: none;
+  }
+  .pill-toggle::-webkit-scrollbar { display: none; }
+  .pill-toggle > * { flex-shrink: 0; }
+}
+
+/* Client/contact card grid — tighter on tiny screens. */
+@media (max-width: 380px) {
+  .grid-cards .card { padding: 14px !important; }
 }
 
 /* ─────────────────────────────────────────────────────────────────

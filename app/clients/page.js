@@ -95,7 +95,7 @@ export default function Clients() {
     <div className="page-enter page-pad" style={{display:'flex', flexDirection:'column', gap:18}}>
 
       {/* En-tête */}
-      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:16, flexWrap:'wrap'}}>
+      <div className="header-row" style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:16, flexWrap:'wrap'}}>
         <div>
           <div className="eyebrow" style={{marginBottom:4}}>Contacts</div>
           <h1 className="page">Clients</h1>
@@ -116,8 +116,8 @@ export default function Clients() {
       )}
 
       {/* Barre de recherche */}
-      <div className="card" style={{padding:'14px 16px', display:'flex', gap:10}}>
-        <div style={{position:'relative', flex:1}}>
+      <div className="card toolbar-row" style={{padding:'14px 16px', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
+        <div style={{position:'relative', flex:1, minWidth:200}}>
           <span style={{position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', pointerEvents:'none'}}>
             <SearchIcon size={16}/>
           </span>
