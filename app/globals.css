@@ -1029,29 +1029,49 @@ img, svg, video, canvas { max-width: 100%; }
 
 /* ─────────────────────────────────────────────────────────────────
    Tables — make them horizontally scrollable on small screens.
-   Many cards inline `overflow:hidden` to clip rounded corners. That
-   also clips any horizontally-overflowing table inside. Override:
-   allow horizontal scroll on cards that contain a table, and on the
-   page-level wrapper around tables. We keep native table layout
-   (don't switch to display:block, which breaks column alignment).
+   The pages wrap tables in `.card` with inline `overflow:hidden`
+   (to clip rounded corners). On mobile we need horizontal scroll
+   instead — table columns must not be cropped silently.
+
+   We use TWO strategies for robustness:
+   1. `:has()` selector on cards/wrappers around tables.
+   2. Attribute selector on `.card[style*="overflow:hidden"]`, which
+      lets the table inside scroll while ignoring the inline clip.
+   Plus, we wrap any solitary `<table>` in a scroll context by
+   making the table itself a `display:block` scroller AS A FALLBACK.
    ───────────────────────────────────────────────────────────────── */
 @media (max-width: 767px) {
-  /* Cards that wrap a table — let them scroll horizontally. */
-  .card:has(table) {
+  /* Cards/wrappers containing a table allow horizontal scroll. Uses
+     :has() (modern Safari/Chrome/Firefox); pages with tables also wrap
+     them in `.table-scroll` as a fallback. */
+  .card:has(table),
+  .card > div:has(> table),
+  .card > div > div:has(> table) {
     overflow-x: auto !important;
+    overflow-y: visible !important;
     -webkit-overflow-scrolling: touch;
+    max-width: 100%;
   }
-  /* When a card has a sub-div wrapper (.card > div > table), unblock
-     the wrapper too. */
-  .card > div:has(> table) {
+  /* Utility class — explicit horizontal scroll wrapper */
+  .table-scroll {
     overflow-x: auto !important;
     -webkit-overflow-scrolling: touch;
     max-width: 100%;
   }
-  table { min-width: max-content; max-width: none; }
+  table { min-width: max-content; }
   .card { max-width: 100%; }
-  /* Generic .table-scroll utility */
-  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Detail expansion inside a scrollable table — pin it to the visible
+     viewport instead of inheriting the table's full width, so values
+     on the right side don't get cut off when the user reads the
+     expanded panel. */
+  .detail-expansion {
+    position: sticky;
+    left: 0;
+    width: calc(100vw - 28px);
+    max-width: calc(100vw - 28px);
+    box-sizing: border-box;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -1127,14 +1147,27 @@ img, svg, video, canvas { max-width: 100%; }
   .kpi-grid .eyebrow { font-size: 10px; }
   /* Finance KPI uses a 26px tnum inline — shrink it */
   .kpi-grid .card .tnum { font-size: 20px !important; }
-  /* Header row: title block stays on first line, action buttons wrap below */
-  .header-row { flex-wrap: wrap !important; }
-  .header-row > * + * { width: 100%; }
-  .header-row .btn { flex: 1 1 auto; justify-content: center; }
-  /* Toolbar card with search + filters — children stack/wrap */
-  .toolbar-row { flex-wrap: wrap !important; }
-  .toolbar-row > * { flex: 1 1 100% !important; min-width: 0 !important; }
-  .toolbar-row > .btn { flex: 1 1 auto; justify-content: center; }
+  /* Header row: stack title block and action buttons vertically.
+     Wrapping was unreliable because the title block sized to content
+     and left enough room to fit the button on the same line. Stacking
+     is predictable and consistent across pages. */
+  .header-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+  .header-row > * { width: 100%; min-width: 0; }
+  .header-row > div:last-child { display: flex; gap: 8px; flex-wrap: wrap; }
+  .header-row > div:last-child > .btn,
+  .header-row > .btn { flex: 1 1 auto; justify-content: center; }
+
+  /* Toolbar row (search + filters): same treatment. */
+  .toolbar-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .toolbar-row > * { width: 100% !important; min-width: 0 !important; }
+  .toolbar-row > .btn { width: 100%; justify-content: center; }
 }
 
 /* Pill-toggle scroll: lets segmented controls scroll horizontally on mobile

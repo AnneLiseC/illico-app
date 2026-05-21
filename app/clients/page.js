@@ -148,7 +148,7 @@ export default function Clients() {
             const isPro = client.type_client === 'professionnel'
             return (
               <button key={client.id} onClick={() => router.push(`/clients/${client.id}`)}
-                className="card" style={{padding:18, border:0, textAlign:'left', cursor:'pointer'}}>
+                className="card" style={{padding:18, border:0, textAlign:'left', cursor:'pointer', width:'100%', minWidth:0, overflow:'hidden'}}>
                 <div style={{display:'flex', gap:12, alignItems:'flex-start'}}>
                   {/* Avatar */}
                   <div style={{
@@ -237,14 +237,14 @@ export default function Clients() {
                 </div>
 
                 {/* Footer — Dossiers + Montant total */}
-                <div style={{marginTop:14, paddingTop:14, borderTop:'1px solid var(--ink-100)', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                  <div>
+                <div style={{marginTop:14, paddingTop:14, borderTop:'1px solid var(--ink-100)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, minWidth:0}}>
+                  <div style={{minWidth:0}}>
                     <div className="eyebrow">Dossiers</div>
                     <div className="tnum" style={{fontSize:18, fontWeight:800, color:'var(--ink-900)'}}>{dossierCount}</div>
                   </div>
-                  <div style={{textAlign:'right'}}>
+                  <div style={{textAlign:'right', minWidth:0, flexShrink:1}}>
                     <div className="eyebrow">Montant total</div>
-                    <div className="tnum" style={{fontSize:14, fontWeight:700, color: montantTotal > 0 ? 'var(--brand-800)' : 'var(--ink-400)'}}>
+                    <div className="tnum" style={{fontSize:14, fontWeight:700, color: montantTotal > 0 ? 'var(--brand-800)' : 'var(--ink-400)', whiteSpace:'nowrap'}}>
                       {montantTotal > 0 ? fmtEur(montantTotal) : '—'}
                     </div>
                   </div>

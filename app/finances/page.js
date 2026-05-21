@@ -875,7 +875,7 @@ export default function Finances() {
     const gainAdmin  = isReel ? r.gainAdminReel  : c.gainsAdminPrevi
 
     return (
-      <div style={{borderTop:'1px solid var(--ink-100)', padding:'14px 22px 18px', background:'var(--surface-2)'}}>
+      <div className="detail-expansion" style={{borderTop:'1px solid var(--ink-100)', padding:'14px 22px 18px', background:'var(--surface-2)'}}>
         <div style={{display:'grid', gridTemplateColumns:'2fr 1fr', gap:18, alignItems:'flex-start'}}>
 
           {/* ── Détail des devis acceptés ── */}
@@ -886,7 +886,7 @@ export default function Finances() {
                 Aucun devis signé
               </div>
             ) : (
-              <div style={{background:'#fff', borderRadius:10, border:'1px solid var(--ink-200)', overflow:'hidden'}}>
+              <div className="table-scroll" style={{background:'#fff', borderRadius:10, border:'1px solid var(--ink-200)', overflow:'hidden'}}>
                 <table style={{width:'100%', borderCollapse:'collapse', fontSize:12.5}}>
                   <thead>
                     <tr style={{color:'var(--ink-400)', fontWeight:600, background:'var(--surface-2)'}}>
@@ -1006,6 +1006,7 @@ export default function Finances() {
             <button className="btn btn-ghost" style={{padding:'6px 10px',fontSize:12}}>📄 CSV</button>
           </div>
         </div>
+        <div className="table-scroll">
         <table style={{width:'100%',borderCollapse:'collapse'}}>
           <thead style={{position:'sticky',top:0,zIndex:1}}>
             <tr style={{borderBottom:'1px solid var(--ink-200)'}}>
@@ -1102,6 +1103,7 @@ export default function Finances() {
             </tfoot>
           )}
         </table>
+        </div>
       </div>
     )
   }
