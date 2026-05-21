@@ -32,9 +32,18 @@ export default function Artisans() {
   const [modeSelection, setModeSelection] = useState(false)
   const [selectionnes, setSelectionnes] = useState([])
   const [supprimant, setSupprimant] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
 
   const router = useRouter()
   const { user, initialized } = useAuth()
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const handler = (e) => setIsMobile(e.matches)
+    setIsMobile(mq.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
 
   useEffect(() => {
     if (!initialized) return
@@ -98,13 +107,13 @@ export default function Artisans() {
     <div className="page-enter page-pad" style={{display:'flex', flexDirection:'column', gap:18}}>
 
       {/* En-tête */}
-      <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:16, flexWrap:'wrap'}}>
+      <div className="header-row" style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:16, flexWrap:'wrap'}}>
         <div>
           <div className="eyebrow" style={{marginBottom:4}}>Contacts</div>
           <h1 className="page">Artisans</h1>
           <div style={{color:'var(--ink-500)', fontSize:13, marginTop:6}}>{artisansFiltres.length} artisans partenaires</div>
         </div>
-        <div style={{display:'flex', gap:8}}>
+        <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
           {modeSelection ? (
             <>
               <span style={{fontSize:13, color:'var(--ink-500)', alignSelf:'center'}}>{selectionnes.length} sélectionné(s)</span>
@@ -168,7 +177,7 @@ export default function Artisans() {
       )}
 
       {/* Filtres */}
-      <div className="card" style={{padding:'14px 16px', display:'flex', gap:10, flexWrap:'wrap'}}>
+      <div className="card toolbar-row" style={{padding:'14px 16px', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
         <div style={{position:'relative', flex:1, minWidth:200}}>
           <span style={{position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', pointerEvents:'none'}}>
             <SearchIcon size={16}/>
@@ -188,6 +197,83 @@ export default function Artisans() {
         <div className="card" style={{padding:48, textAlign:'center', color:'var(--ink-400)'}}>
           <div style={{marginBottom:12}}><HammerIcon size={32}/></div>
           <div>Aucun artisan trouvé</div>
+        </div>
+      ) : isMobile ? (
+        /* ── Liste en cartes pour mobile ── */
+        <div className="grid-cards">
+          {artisansFiltres.map(a => {
+            const selected = selectionnes.includes(a.id)
+            const nbDevis = (a.devis_artisans || []).length
+            const caHT    = (a.devis_artisans || []).reduce((s, dv) => s + (dv.montant_ht || 0), 0)
+            return (
+              <button key={a.id} onClick={() => {
+                if (modeSelection) setSelectionnes(prev => prev.includes(a.id) ? prev.filter(id => id !== a.id) : [...prev, a.id])
+                else router.push(`/artisans/${a.id}`)
+              }}
+                className="card" style={{
+                  padding:16, border: selected ? '1px solid rgba(220,38,38,0.3)' : 0, textAlign:'left', cursor:'pointer',
+                  width:'100%', minWidth:0, overflow:'hidden',
+                  background: selected ? 'rgba(220,38,38,0.04)' : undefined,
+                }}>
+                <div style={{display:'flex', gap:12, alignItems:'flex-start'}}>
+                  {modeSelection && (
+                    <input type="checkbox" checked={selected} readOnly style={{accentColor:'#b91c1c', marginTop:4, flexShrink:0}}/>
+                  )}
+                  <div style={{width:38, height:38, borderRadius:10, background:'var(--brand-50)', color:'var(--brand-800)', display:'grid', placeItems:'center', flexShrink:0}}>
+                    <HammerIcon size={18}/>
+                  </div>
+                  <div style={{flex:1, minWidth:0}}>
+                    <div className="clip-1" style={{fontSize:15, fontWeight:700, color:'var(--ink-900)'}}>{a.entreprise}</div>
+                    {a.nom && (
+                      <div className="clip-1" style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>
+                        {a.prenom ? a.prenom.charAt(0).toUpperCase() + a.prenom.slice(1).toLowerCase() : ''} {a.nom}
+                      </div>
+                    )}
+                    <div style={{display:'flex', gap:6, marginTop:6, flexWrap:'wrap', alignItems:'center'}}>
+                      {a.metier && (
+                        <span style={{
+                          display:'inline-flex', alignItems:'center', padding:'2px 10px',
+                          borderRadius:99, fontSize:11.5, fontWeight:600,
+                          background:'var(--ink-100)', color:'var(--ink-600)',
+                        }}>{a.metier}</span>
+                      )}
+                      {a.qualification && (
+                        <span style={{
+                          display:'inline-flex', alignItems:'center', padding:'2px 10px',
+                          borderRadius:99, fontSize:11, fontWeight:700,
+                          background:'rgba(22,163,74,0.1)', color:'#15803d',
+                        }}>★ {a.qualification}</span>
+                      )}
+                    </div>
+                    {(a.code_postal || a.ville) && (
+                      <div className="clip-1" style={{fontSize:12, color:'var(--ink-500)', marginTop:6}}>
+                        {a.code_postal} {a.ville}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {/* Footer */}
+                <div style={{marginTop:12, paddingTop:12, borderTop:'1px solid var(--ink-100)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:10}}>
+                  <div style={{display:'flex', alignItems:'center', gap:6, minWidth:0}}>
+                    <span className="eyebrow" style={{fontSize:10}}>Décennale</span>
+                    <DecBadge a={a}/>
+                  </div>
+                  <div style={{display:'flex', gap:14, alignItems:'center'}}>
+                    <div style={{textAlign:'right'}}>
+                      <div className="eyebrow" style={{fontSize:10}}>Devis</div>
+                      <div className="tnum" style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>{nbDevis}</div>
+                    </div>
+                    {caHT > 0 && (
+                      <div style={{textAlign:'right'}}>
+                        <div className="eyebrow" style={{fontSize:10}}>CA HT</div>
+                        <div className="tnum" style={{fontSize:13, fontWeight:700, color:'var(--brand-800)', whiteSpace:'nowrap'}}>{fmtEur(caHT)}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </button>
+            )
+          })}
         </div>
       ) : (
           <div className="card" style={{padding:0, overflow:'hidden'}}>
