@@ -31,6 +31,7 @@ const WalletIcon   = () => <Svg><path d="M3.5 8a2 2 0 0 1 2-2H18a2 2 0 0 1 2 2v9
 const FolderIcon   = () => <Svg><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2H19.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></Svg>
 const MsgIcon      = () => <Svg><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4 3v-3h-.5A2.5 2.5 0 0 1 3 14.5z" transform="translate(0.5,0.5)"/></Svg>
 const MoreIcon     = () => <Svg><circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/></Svg>
+const PlusIcon     = () => <Svg><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></Svg>
 
 // ─── Helpers Aperçu ───────────────────────────────────────────────────────────
 function Fact({ label, value, highlight, mono }) {
@@ -3251,75 +3252,123 @@ export default function FicheChantier({ params }) {
       {onglet === 'planning' && (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
-        {/* Planning du chantier */}
-        <div className="card" style={{padding:22}}>
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-800">Planning</h2>
-            <div className="flex gap-2">
-              <button onClick={() => { setNouvIntervArtisanId(null); setModalCreerIntervOuvert(true) }}
-                className="text-sm border border-green-300 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-50">+ Intervention</button>
-              <button onClick={() => setModalRdvOuvert(true)} className="text-sm bg-blue-800 text-white px-3 py-1.5 rounded-lg hover:bg-blue-900">+ RDV</button>
-            </div>
-          </div>
-          {rdvsDossier.length > 0 && (
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase mb-2">Rendez-vous</p>
-              <div className="space-y-2">
-                {rdvsDossier.map(r => {
-                  const typeConfig = {
-                    visite_technique_client: { label: 'R1 - Visite technique client', color: 'bg-blue-100 text-blue-700' },
-                    visite_technique_artisan: { label: 'R2 - Visite technique avec artisan', color: 'bg-green-100 text-green-700' },
-                    presentation_devis: { label: 'R3 - Présentation devis', color: 'bg-amber-100 text-amber-700' },
-                    autres: { label: 'Autre RDV', color: 'bg-slate-100 text-slate-700' },
-                  }
-                  const tc = typeConfig[r.type_rdv] || typeConfig.autres
-                  return (
-                    <div key={r.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
-                      <div>
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${tc.color}`}>{tc.label}</span>
-                        <p className="text-sm font-medium text-gray-800 mt-1">
-                          {new Date(r.date_heure).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
-                          {r.artisan && ` - ${r.artisan.entreprise}`}
-                        </p>
-                        {r.notes && <p className="text-xs text-gray-400">{r.notes}</p>}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => { setRdvEnEdition(r); setModalRdvOuvert(true) }} className="text-blue-400 text-xs hover:text-blue-600">Modifier</button>
-                        <button onClick={() => supprimerRdvDossier(r.id)} className="text-red-400 text-xs hover:text-red-600">Supprimer</button>
-                      </div>
-                    </div>
-                  )
-                })}
+        {/* Planning : RDV + Interventions (maquette : 2 cards séparées) */}
+        <div className="grid-2c" style={{gap:18}}>
+
+          {/* Card RDV */}
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--ink-200)'}}>
+              <div>
+                <h2 className="page" style={{fontSize:15}}>Rendez-vous</h2>
+                <div className="eyebrow" style={{marginTop:4}}>{rdvsDossier.length} RDV planifié{rdvsDossier.length > 1 ? 's' : ''}</div>
               </div>
+              <button onClick={() => setModalRdvOuvert(true)} className="btn btn-primary" style={{fontSize:12.5}}>
+                <PlusIcon /> Nouveau RDV
+              </button>
             </div>
-          )}
-          {interventionsDossier.length > 0 && (
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase mb-2">Interventions artisans</p>
-              <div className="space-y-2">
-                {interventionsDossier.map(i => (
-                  <div key={i.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">🔨 {i.artisan?.entreprise}</p>
-                      {i.type_intervention === 'periode' ? (
-                        <p className="text-xs text-gray-500">{new Date(i.date_debut).toLocaleDateString('fr-FR')} → {new Date(i.date_fin).toLocaleDateString('fr-FR')}</p>
-                      ) : (
-                        <p className="text-xs text-gray-500">{i.jours_specifiques?.length} jour(s) : {i.jours_specifiques?.slice(0, 3).map(j => new Date(j).toLocaleDateString('fr-FR')).join(', ')}{i.jours_specifiques?.length > 3 ? '...' : ''}</p>
-                      )}
-                      {i.notes && <p className="text-xs text-gray-400">{i.notes}</p>}
+            <div style={{padding:'4px 16px'}}>
+              {rdvsDossier.length === 0 ? (
+                <div style={{padding:30, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucun rendez-vous</div>
+              ) : rdvsDossier.map(r => {
+                const dt = new Date(r.date_heure)
+                const isPast = dt < new Date()
+                const day = dt.toLocaleDateString('fr-FR', { day:'2-digit' })
+                const month = dt.toLocaleDateString('fr-FR', { month:'short' }).replace('.','')
+                const time = dt.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })
+                const cfg = {
+                  visite_technique_client:  { label:'R1 — Visite client',         color:'#0094d4' },
+                  visite_technique_artisan: { label:'R2 — Visite artisan',        color:'#16a34a' },
+                  presentation_devis:       { label:'R3 — Présentation devis',    color:'#f59e0b' },
+                  autres:                   { label: r.titre || 'Autre RDV',      color:'#94a3b8' },
+                }[r.type_rdv] || { label:r.type_rdv, color:'#94a3b8' }
+                return (
+                  <div key={r.id} style={{
+                    display:'grid', gridTemplateColumns:'56px 4px 1fr auto', gap:14,
+                    padding:'12px 0', borderBottom:'1px solid var(--ink-100)', alignItems:'center',
+                    opacity: isPast ? 0.55 : 1,
+                  }}>
+                    <div style={{textAlign:'center'}}>
+                      <div className="tnum" style={{fontSize:18, fontWeight:800, color:'var(--ink-900)', lineHeight:1}}>{day}</div>
+                      <div style={{fontSize:9.5, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2, letterSpacing:0.04}}>{month}</div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => { setInterventionEnEdition(i); setModalInterventionOuvert(true) }} className="text-blue-400 text-xs hover:text-blue-600">Modifier</button>
-                      <button onClick={() => supprimerInterventionDossier(i.id)} className="text-red-400 text-xs hover:text-red-600">Supprimer</button>
+                    <div style={{width:4, alignSelf:'stretch', borderRadius:99, background: cfg.color}}/>
+                    <div style={{minWidth:0}}>
+                      <div className="clip-1" style={{fontSize:13, fontWeight:600, color:'var(--ink-900)'}}>{cfg.label}</div>
+                      <div className="clip-1" style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>
+                        {time} · {r.duree_minutes}min{r.artisan ? ` · ${r.artisan.entreprise}` : ''}
+                        {r.notes && ` · ${r.notes}`}
+                      </div>
+                    </div>
+                    <div style={{display:'flex', gap:4}}>
+                      <button onClick={() => { setRdvEnEdition(r); setModalRdvOuvert(true) }}
+                        className="btn btn-ghost" style={{padding:'4px 6px'}} title="Modifier">
+                        <EditIcon />
+                      </button>
+                      <button onClick={() => supprimerRdvDossier(r.id)}
+                        className="btn btn-ghost" style={{padding:'4px 6px', color:'#b91c1c'}} title="Supprimer">
+                        <span style={{fontSize:14, lineHeight:1}}>×</span>
+                      </button>
                     </div>
                   </div>
-                ))}
-              </div>
+                )
+              })}
             </div>
-          )}
-          {rdvsDossier.length === 0 && interventionsDossier.length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-4">Aucun planning pour ce chantier</p>
-          )}
+          </div>
+
+          {/* Card Interventions artisans */}
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--ink-200)'}}>
+              <div>
+                <h2 className="page" style={{fontSize:15}}>Interventions artisans</h2>
+                <div className="eyebrow" style={{marginTop:4}}>{interventionsDossier.length} planifiée{interventionsDossier.length > 1 ? 's' : ''}</div>
+              </div>
+              <button onClick={() => { setNouvIntervArtisanId(null); setModalCreerIntervOuvert(true) }}
+                className="btn btn-primary" style={{fontSize:12.5}}>
+                <PlusIcon /> Planifier
+              </button>
+            </div>
+            <div style={{padding:'4px 16px'}}>
+              {interventionsDossier.length === 0 ? (
+                <div style={{padding:30, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucune intervention planifiée</div>
+              ) : interventionsDossier.map(i => {
+                const fmtDate = (d) => new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' })
+                const sub = i.type_intervention === 'periode'
+                  ? (i.date_debut && i.date_fin ? `Du ${fmtDate(i.date_debut)} au ${fmtDate(i.date_fin)}` : 'Période')
+                  : `${(i.jours_specifiques || []).length} jour(s) spécifique(s)`
+                return (
+                  <div key={i.id} style={{
+                    display:'grid', gridTemplateColumns:'auto 1fr auto auto', gap:12,
+                    padding:'12px 0', borderBottom:'1px solid var(--ink-100)', alignItems:'center',
+                  }}>
+                    <div style={{
+                      width:36, height:36, borderRadius:8, background:'var(--brand-50)',
+                      color:'var(--brand-800)', display:'grid', placeItems:'center',
+                    }}>
+                      <HammerIcon />
+                    </div>
+                    <div style={{minWidth:0}}>
+                      <div className="clip-1" style={{fontSize:13, fontWeight:700, color:'var(--ink-900)'}}>{i.artisan?.entreprise || '—'}</div>
+                      <div className="clip-1" style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>
+                        {sub}{i.notes && ` · ${i.notes}`}
+                      </div>
+                    </div>
+                    <Badge tone="info">Planifié</Badge>
+                    <div style={{display:'flex', gap:4}}>
+                      <button onClick={() => { setInterventionEnEdition(i); setModalInterventionOuvert(true) }}
+                        className="btn btn-ghost" style={{padding:'4px 6px'}} title="Modifier">
+                        <EditIcon />
+                      </button>
+                      <button onClick={() => supprimerInterventionDossier(i.id)}
+                        className="btn btn-ghost" style={{padding:'4px 6px', color:'#b91c1c'}} title="Supprimer">
+                        <span style={{fontSize:14, lineHeight:1}}>×</span>
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
         </div>
 
         {/* Modal RDV */}
