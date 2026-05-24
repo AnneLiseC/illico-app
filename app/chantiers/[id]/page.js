@@ -2629,15 +2629,8 @@ export default function FicheChantier({ params }) {
                             <span>Signé le {new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
                           )}
                         </div>
-                        {d.commission_pourcentage > 0 && (() => {
+                        {!estChantierMarine && d.commission_pourcentage > 0 && (() => {
                           const finDevis = calculateDevisFinance(d, dossier)
-                          if (estChantierMarine) {
-                            return (
-                              <div style={{marginTop:4, fontSize:12, color:'var(--ink-500)'}}>
-                                Part {dossier.referente?.prenom || prenomAdmin} → <span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.netCom)}</span>
-                              </div>
-                            )
-                          }
                           return (
                             <div style={{marginTop:4, display:'flex', gap:14, flexWrap:'wrap', fontSize:12, color:'var(--ink-500)'}}>
                               <span>Part {dossier.referente?.prenom || 'agente'} → <span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.parts.agente)}</span></span>
