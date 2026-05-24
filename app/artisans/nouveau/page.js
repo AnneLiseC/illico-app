@@ -17,7 +17,8 @@ export default function NouvelArtisan() {
     code_postal: '',
     ville: '',
     decennale_expiration: '',
-    sans_royalties: false,
+    paiement_direct: false,
+    partenaire: false,
   })
   const [fichiers, setFichiers] = useState({
     kbis: null,
@@ -45,7 +46,9 @@ export default function NouvelArtisan() {
     setSaving(true)
     setErreur('')
 
-    // Créer l'artisan
+    // Créer l'artisan — un partenaire est toujours en paiement direct.
+    const partenaire = form.partenaire
+    const paiementDirect = partenaire || form.paiement_direct
     const { data: artisanInsere, error } = await supabase
       .from('artisans')
       .insert({
@@ -58,7 +61,10 @@ export default function NouvelArtisan() {
         code_postal: form.code_postal.trim() || null,
         ville: form.ville.trim() || null,
         decennale_expiration: form.decennale_expiration || null,
-        sans_royalties: form.sans_royalties,
+        paiement_direct: paiementDirect,
+        partenaire,
+        // Transition : sans_royalties reste aligné sur paiement_direct.
+        sans_royalties: paiementDirect,
       })
       .select()
       .single()
@@ -178,11 +184,37 @@ export default function NouvelArtisan() {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
           </div>
-          <label className="flex items-center gap-3 cursor-pointer select-none pt-1">
-            <input type="checkbox" checked={form.sans_royalties} onChange={e => set('sans_royalties', e.target.checked)}
-              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-            <span className="text-sm text-gray-700">Sans royalties illiCO <span className="text-gray-400">(architectes, BET…)</span></span>
-          </label>
+          <div className="pt-2 space-y-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Paiement & relation</p>
+            <label className={`flex items-start gap-3 select-none ${form.partenaire ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+              <input type="checkbox"
+                checked={form.paiement_direct || form.partenaire}
+                disabled={form.partenaire}
+                onChange={e => set('paiement_direct', e.target.checked)}
+                className="w-4 h-4 mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              <span className="text-sm text-gray-700">
+                <span className="font-medium">Paiement direct</span>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  Le client paie l&apos;entreprise en direct (hors PROTECTACOMPTE).
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input type="checkbox"
+                checked={form.partenaire}
+                onChange={e => {
+                  const checked = e.target.checked
+                  setForm(f => ({ ...f, partenaire: checked, paiement_direct: checked ? true : f.paiement_direct }))
+                }}
+                className="w-4 h-4 mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              <span className="text-sm text-gray-700">
+                <span className="font-medium">Partenaire</span>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  Bureau d&apos;études, architecte d&apos;intérieur, fournisseur… On facture une commission sur son devis HT.
+                </span>
+              </span>
+            </label>
+          </div>
         </div>
 
         {/* Documents administratifs */}
