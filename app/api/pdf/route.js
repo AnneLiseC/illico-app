@@ -505,6 +505,7 @@ export async function POST(request) {
     if (devisError) return NextResponse.json({ error: devisError.message }, { status: 500 })
 
     let pdfBuffer
+    let cr = null
 
     if (type === 'recapitulatif_prev') {
       const doc = buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: [], factures: [], preview: true })
@@ -579,8 +580,9 @@ export async function POST(request) {
 
     } else if (type === 'cr') {
       if (!crId) return NextResponse.json({ error: 'crId manquant' }, { status: 400 })
-      const { data: cr } = await supabaseAdmin.from('comptes_rendus').select('*').eq('id', crId).single()
-      if (!cr) return NextResponse.json({ error: 'CR non trouvé' }, { status: 404 })
+      const { data: crData } = await supabaseAdmin.from('comptes_rendus').select('*').eq('id', crId).single()
+      if (!crData) return NextResponse.json({ error: 'CR non trouvé' }, { status: 404 })
+      cr = crData
 
       const sections = (cr.contenu_final || '').split(/(?=## \d+\.)/).map(block => {
         const match = block.match(/^## (\d+)\. (.+?)\n([\s\S]*)/)

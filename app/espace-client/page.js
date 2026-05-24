@@ -48,6 +48,7 @@ export default function EspaceClient() {
   const [nouveauMessage, setNouveauMessage] = useState('')
   const [sendingMsg, setSendingMsg]   = useState(false)
   const [crOuvert, setCrOuvert]       = useState(null)
+  const [pdfErreur, setPdfErreur]     = useState('')
   const messagesEndRef                = useRef(null)
   const router                        = useRouter()
 
@@ -489,25 +490,39 @@ export default function EspaceClient() {
                         {renderMarkdown(cr.contenu_final || cr.notes_brutes)}
                       </div>
                       {cr.contenu_final && (
-                        <button
-                          onClick={async () => {
-                            const res = await fetch('/api/pdf', {
-                              method: 'POST',
-                              headers: await authHeaders(),
-                              body: JSON.stringify({ dossierId: dossier.id, type: 'cr', crId: cr.id }),
-                            })
-                            if (!res.ok) return
-                            const blob = await res.blob()
-                            const url = URL.createObjectURL(blob)
-                            const a = document.createElement('a')
-                            a.href = url
-                            a.download = `CR_${dossier.reference}.pdf`
-                            a.click()
-                            URL.revokeObjectURL(url)
-                          }}
-                          className="text-xs text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50">
-                          📄 Télécharger en PDF
-                        </button>
+                        <div className="space-y-2">
+                          <button
+                            onClick={async () => {
+                              setPdfErreur('')
+                              try {
+                                const res = await fetch('/api/pdf', {
+                                  method: 'POST',
+                                  headers: await authHeaders(),
+                                  body: JSON.stringify({ dossierId: dossier.id, type: 'cr', crId: cr.id }),
+                                })
+                                if (!res.ok) {
+                                  const data = await res.json().catch(() => ({}))
+                                  setPdfErreur('Erreur PDF : ' + (data.error || `code ${res.status}`))
+                                  return
+                                }
+                                const blob = await res.blob()
+                                const url = URL.createObjectURL(blob)
+                                const a = document.createElement('a')
+                                a.href = url
+                                a.download = `CR_${dossier.reference}.pdf`
+                                a.click()
+                                URL.revokeObjectURL(url)
+                              } catch (err) {
+                                setPdfErreur('Erreur PDF : ' + (err.message || 'réseau'))
+                              }
+                            }}
+                            className="text-xs text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50">
+                            📄 Télécharger en PDF
+                          </button>
+                          {pdfErreur && (
+                            <p className="text-xs text-red-600">{pdfErreur}</p>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
