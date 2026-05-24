@@ -69,3 +69,7 @@
 
 - [ ] **`devis_artisans.part_agente`** est désormais un miroir de `dossiers.part_agente` (alignement défensif). À supprimer quand plus rien ne la lit hors finance.js (qui lit déjà le dossier). **(fin Lot B)**
 - [ ] **`sans_royalties`** conservée en base le temps de la transition partenaire/paiement_direct. À retirer quand finance.js et toutes les pages liront `paiement_direct`/`partenaire`. **(fin Lot B)**
+
+### Lot E — dette / nommage
+
+- [ ] **Variable(s) au nom trompeur basé sur "Marine"** (ex. `estChantierMarine`, possiblement `estChantierAdmin` ou autres) utilisée(s) dans toute l'app. Le COMPORTEMENT est correct (basé sur `role === 'admin'`), mais le NOM évoque une personne précise → piège de compréhension le jour d'un 2e admin. À renommer proprement sur `...Admin`/`referentEstAdmin` en UNE passe globale (pas au milieu d'une autre tâche, car usage répandu). Conforme au principe CLAUDE.md (jamais de nom/id en dur, même dans les noms de variables). **(Lot E)**
