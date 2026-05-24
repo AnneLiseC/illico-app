@@ -25,7 +25,7 @@
 - **P0-4 — Sélecteur d'acompte : « sans acompte » devient 30%.** `acompte_pourcentage || 30` → `0 || 30 = 30`. 4 cas réels : 30/40/montant saisi/0. Correctif : `?? 30` au lieu de `|| 30`, + option « sans acompte » dans le sélecteur inline.
 - **P0-5 — TTC écrasé à la re-saisie du HT.** Le HT×1,1 écrase le TTC manuel multi-taux. Correctif : l'app ne recalcule jamais le TTC ; au changement de HT, l'utilisatrice ressaisit. Garde-fou : alerte si TTC < HT.
 - **P0-6 — Apporteur « total chantier » retombe sur « par devis ».** Renommage `apporteur_base`→`apporteur_mode` cassé vs `finance.js` qui teste `=== 'total_chantier'`. Correctif : harmoniser.
-- **P0-7 — Part franchisée sur-évaluée.** Royalties non déduites de `gainAdminReel` en mode non-Marine. Correctif : parts = (base − royalties) × taux, pour agente ET admin. `royalties = HT × 5% × 1,2`.
+- **P0-7 — Part franchisée sur-évaluée.** Royalties non déduites de `gainAdminReel` en mode non-Marine. Correctif : parts = (base − royalties) × taux, pour agente ET admin. `royalties = base × 5%` (5% HT — PAS de ×1,2, voir Doc 4). NB : finance.js calcule déjà les royalties à 5% correctement ; le vrai P0-7 restant concerne la déduction des royalties de la part ADMIN en mode non-Marine (à vérifier), pas le taux de royalties.
 - **P0-8 — Marine ne voit pas ses royalties.** `royaltiesReelTotal = 0` codé en dur en mode Marine.
 - **P0-9 — Anne-Lise voit la facturation d'une autre agente.** `FacturationAgentes` rendu au lieu de `FacturationAgentePropre`.
 
