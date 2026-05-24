@@ -642,9 +642,9 @@ export default function FicheChantier({ params }) {
       setDossier(dossierData)
       setClient(dossierData?.client)
       const { data: devisData } = await supabase.from('devis_artisans')
-        .select('*, artisan:artisans(id, entreprise, metier, sans_royalties)').eq('dossier_id', id).order('ordre').order('created_at')
+        .select('*, artisan:artisans(id, entreprise, metier, sans_royalties, partenaire)').eq('dossier_id', id).order('ordre').order('created_at')
       setDevis(devisData || [])
-      const { data: artisansData } = await supabase.from('artisans').select('id, entreprise, metier').order('entreprise')
+      const { data: artisansData } = await supabase.from('artisans').select('id, entreprise, metier, partenaire').order('entreprise')
       setArtisans(artisansData || [])
       const { data: photosData } = await supabase.from('photos').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
       const photosAvecUrl = await Promise.all((photosData || []).map(async (photo) => {
@@ -866,7 +866,7 @@ export default function FicheChantier({ params }) {
   }
 
   const chargerDevis = async () => {
-    const { data } = await supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier, sans_royalties)').eq('dossier_id', id).order('ordre').order('created_at')
+    const { data } = await supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier, sans_royalties, partenaire)').eq('dossier_id', id).order('ordre').order('created_at')
     setDevis(data || [])
   }
 
@@ -1152,6 +1152,13 @@ export default function FicheChantier({ params }) {
 
   // Handler unique du DevisModal (create + edit, inclut acompte custom)
   const saveDevisFromModal = async (form) => {
+    // Avertissement doux (non bloquant) : acompte 0 + commission > 0 sur un
+    // artisan non partenaire → la commission ne pourra pas être prélevée.
+    const commissionPct = form.sans_commission ? 0 : (parseFloat(form.commission_pourcentage) || 0)
+    const artisanSel    = artisans.find(a => a.id === form.artisan_id)
+    if (form.acompte_pourcentage === 0 && commissionPct > 0 && artisanSel?.partenaire !== true) {
+      if (!window.confirm('Attention, acompte 0 : la commission ne sera pas prélevée. Confirmer ?')) return
+    }
     const acomptePct = form.acompte_pourcentage === -1 || form.acompte_pourcentage === 0
       ? form.acompte_pourcentage
       : parseFloat(form.acompte_pourcentage)
@@ -2693,7 +2700,14 @@ export default function FicheChantier({ params }) {
                         <div style={{display:'flex', alignItems:'center', gap:8}}>
                           <select value={d.acompte_pourcentage ?? 30}
                             onChange={async e => {
-                              await supabase.from('devis_artisans').update({ acompte_pourcentage: parseFloat(e.target.value) }).eq('id', d.id)
+                              const newVal = parseFloat(e.target.value)
+                              if (newVal === 0 && (d.commission_pourcentage || 0) > 0 && d.artisan?.partenaire !== true) {
+                                if (!window.confirm('Attention, acompte 0 : la commission ne sera pas prélevée. Confirmer ?')) {
+                                  await chargerDevis()
+                                  return
+                                }
+                              }
+                              await supabase.from('devis_artisans').update({ acompte_pourcentage: newVal }).eq('id', d.id)
                               await chargerDevis()
                             }}
                             className="input" style={{height:26, fontSize:11, padding:'0 6px', minWidth:80}}>
