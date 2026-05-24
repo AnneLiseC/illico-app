@@ -73,3 +73,12 @@
 ### Lot E — dette / nommage
 
 - [ ] **Variable(s) au nom trompeur basé sur "Marine"** (ex. `estChantierMarine`, possiblement `estChantierAdmin` ou autres) utilisée(s) dans toute l'app. Le COMPORTEMENT est correct (basé sur `role === 'admin'`), mais le NOM évoque une personne précise → piège de compréhension le jour d'un 2e admin. À renommer proprement sur `...Admin`/`referentEstAdmin` en UNE passe globale (pas au milieu d'une autre tâche, car usage répandu). Conforme au principe CLAUDE.md (jamais de nom/id en dur, même dans les noms de variables). **(Lot E)**
+
+### Lot B — règle "acompte 0 ⟹ commission 0" : ABANDONNÉE
+
+- [x] **Règle "acompte 0 force commission 0" : NE PAS coder.** Raison : elle n'est vraie que pour les artisans en circuit illiCO France (commission prélevée sur l'acompte). Pour les PARTENAIRES (ex. Amandine), acompte 0 + commission est LÉGITIME — on ne prélève pas sur l'acompte, on facture l'entreprise à part. Forcer commission 0 casserait les partenaires.
+- [ ] **Remplacée par P0-4bis — avertissement doux (non bloquant).** Afficher « Attention, acompte 0 : la commission ne sera pas prélevée. Confirmer ? » UNIQUEMENT si : `acompte_pourcentage === 0` ET commission > 0 ET artisan NON partenaire. Pour un partenaire : jamais d'avertissement. Ne force aucune valeur. **(Lot B, après P0-4)**
+
+### Lot E — code mort détecté (P0-4bis)
+
+- [ ] **`sauvegarderDevis` (l. ~1106) et `modifierDevis` (l. ~1140)** dans `app/chantiers/[id]/page.js` : définis mais plus appelés. **Remplacés par `saveDevisFromModal(form)` (l. ~1154), qui gère désormais création ET édition en une seule fonction** (branché sur le bouton « Enregistrer » de DevisModal). Les deux anciennes sont des vestiges d'avant la fusion. Avant suppression au Lot E : confirmer qu'aucune référence cachée ne les appelle. **(Lot E)**
