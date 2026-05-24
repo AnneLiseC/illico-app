@@ -88,12 +88,19 @@ export default function FicheArtisan({ params }) {
 
   const handleSave = async () => {
     setSaving(true); setErreur(''); setSucces('')
+    // Un partenaire est toujours en paiement direct.
+    const partenaire = artisan.partenaire || false
+    const paiementDirect = partenaire || artisan.paiement_direct || false
     const { error } = await supabase.from('artisans').update({
       entreprise: artisan.entreprise, nom: artisan.nom, prenom: artisan.prenom,
       email: artisan.email, telephone: artisan.telephone,
       code_postal: artisan.code_postal, ville: artisan.ville,
       metier: artisan.metier, decennale_expiration: artisan.decennale_expiration,
-      sans_royalties: artisan.sans_royalties || false,
+      paiement_direct: paiementDirect,
+      partenaire,
+      // Transition : sans_royalties reste aligné sur paiement_direct tant que
+      // finance.js et les pages de calculs lisent encore cette colonne.
+      sans_royalties: paiementDirect,
     }).eq('id', id)
     if (error) { setErreur('Erreur : ' + error.message) }
     else { setSucces('Modifications enregistrées ✓'); setMode('lecture') }
@@ -212,9 +219,11 @@ export default function FicheArtisan({ params }) {
             {artisan.qualification && (
               <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(22,163,74,0.1)', color:'#15803d'}}>★ {artisan.qualification}</span>
             )}
-            {artisan.sans_royalties && (
-              <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(245,158,11,0.1)', color:'#a16207'}}>Apporteur</span>
-            )}
+            {artisan.partenaire ? (
+              <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(245,158,11,0.1)', color:'#a16207'}}>Partenaire</span>
+            ) : artisan.paiement_direct ? (
+              <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(107,114,128,0.1)', color:'#4b5563'}}>Paiement direct</span>
+            ) : null}
           </div>
         </div>
         {mode === 'lecture' ? (
@@ -279,10 +288,34 @@ export default function FicheArtisan({ params }) {
               <input className="input" value={artisan.ville || ''} onChange={e => set('ville', e.target.value)} />
             </div>
           </div>
-          <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'var(--ink-700)'}}>
-            <input type="checkbox" checked={artisan.sans_royalties || false} onChange={e => set('sans_royalties', e.target.checked)}
-              style={{accentColor:'#D97706', width:15, height:15}} />
-            Apporteur d'affaires (bureau d'études, architecte d'intérieur…)
+          <div className="eyebrow" style={{marginTop:4}}>Paiement & relation</div>
+          <label style={{display:'flex', alignItems:'flex-start', gap:8, cursor: artisan.partenaire ? 'not-allowed' : 'pointer', fontSize:13, color:'var(--ink-700)'}}>
+            <input type="checkbox"
+              checked={artisan.paiement_direct || artisan.partenaire || false}
+              disabled={artisan.partenaire || false}
+              onChange={e => set('paiement_direct', e.target.checked)}
+              style={{accentColor:'#6b7280', width:15, height:15, marginTop:2}} />
+            <span>
+              <strong>Paiement direct</strong>
+              <span style={{display:'block', color:'var(--ink-500)', fontSize:12, marginTop:2}}>
+                Le client paie l'entreprise en direct (hors PROTECTACOMPTE).
+              </span>
+            </span>
+          </label>
+          <label style={{display:'flex', alignItems:'flex-start', gap:8, cursor:'pointer', fontSize:13, color:'var(--ink-700)'}}>
+            <input type="checkbox"
+              checked={artisan.partenaire || false}
+              onChange={e => {
+                const checked = e.target.checked
+                setArtisan(a => ({ ...a, partenaire: checked, paiement_direct: checked ? true : a.paiement_direct }))
+              }}
+              style={{accentColor:'#D97706', width:15, height:15, marginTop:2}} />
+            <span>
+              <strong>Partenaire</strong>
+              <span style={{display:'block', color:'var(--ink-500)', fontSize:12, marginTop:2}}>
+                Bureau d'études, architecte d'intérieur, fournisseur… On facture une commission sur son devis HT.
+              </span>
+            </span>
           </label>
         </div>
       )}
