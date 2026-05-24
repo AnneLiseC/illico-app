@@ -1156,7 +1156,7 @@ export default function FicheChantier({ params }) {
       ? form.acompte_pourcentage
       : parseFloat(form.acompte_pourcentage)
     const acompteMontant = form.acompte_pourcentage === -1
-      ? (form.acompte_montant_fixe !== '' ? parseFloat(form.acompte_montant_fixe) : null)
+      ? (form.acompte_montant_fixe !== '' && Number.isFinite(parseFloat(form.acompte_montant_fixe)) ? parseFloat(form.acompte_montant_fixe) : null)
       : null
     const payload = {
       montant_ht: form.montant_ht !== '' ? parseFloat(form.montant_ht) : null,
@@ -2700,11 +2700,13 @@ export default function FicheChantier({ params }) {
                             <option value={30}>30%</option>
                             <option value={40}>40%</option>
                             <option value={-1}>Montant</option>
+                            <option value={0}>Sans acompte</option>
                           </select>
                           {d.acompte_pourcentage === -1 && (
                             <input type="number" step="0.01" placeholder="Montant TTC" defaultValue={d.acompte_montant_fixe || ''}
                               onBlur={async e => {
-                                await supabase.from('devis_artisans').update({ acompte_montant_fixe: parseFloat(e.target.value) }).eq('id', d.id)
+                                const v = e.target.value !== '' && Number.isFinite(parseFloat(e.target.value)) ? parseFloat(e.target.value) : null
+                                await supabase.from('devis_artisans').update({ acompte_montant_fixe: v }).eq('id', d.id)
                                 await chargerDevis()
                               }}
                               className="input" style={{width:96, height:26, fontSize:11, padding:'0 6px'}} />
