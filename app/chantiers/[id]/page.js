@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement } from '../../lib/dossiers'
 import { calculateDossierFinance } from '../../lib/finance'
+import { authHeaders } from '../../lib/api-auth-client'
 
 function Svg({ children, size = 14 }) {
   return (
@@ -1347,10 +1348,9 @@ export default function FicheChantier({ params }) {
     try {
       const res = await fetch('/api/cr', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({
           dossierId: id,
-          userId: profile?.id,
           typeVisite: crForm.type_visite,
           dateVisite: crForm.date_visite,
           intervenants: crForm.intervenants ? crForm.intervenants.split(',').map(s => s.trim()).filter(Boolean) : [],

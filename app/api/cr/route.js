@@ -3,6 +3,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireRole } from '../../lib/api-auth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -100,10 +101,12 @@ function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants,
 }
 
 export async function POST(request) {
+  const auth = await requireRole(request, ['admin', 'agente'])
+  if (auth.error) return auth.error
   try {
-    const { dossierId, userId, typeVisite, dateVisite, intervenants, notesBrutes, imagesBase64, docsPaths } = await request.json()
+    const { dossierId, typeVisite, dateVisite, intervenants, notesBrutes, imagesBase64, docsPaths } = await request.json()
 
-    if (!dossierId || !userId || !typeVisite || (!notesBrutes?.trim() && !imagesBase64?.length)) {
+    if (!dossierId || !typeVisite || (!notesBrutes?.trim() && !imagesBase64?.length)) {
       return NextResponse.json({ error: 'Paramètres manquants (type de visite + notes ou images requises)' }, { status: 400 })
     }
 
