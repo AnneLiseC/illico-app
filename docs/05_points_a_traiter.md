@@ -51,3 +51,21 @@
 
 - Restriction PDF côté client : volontairement limitée au CR de son propre dossier. À confirmer qu'aucun autre document n'est nécessaire côté client (sinon élargir).
 - Des chemins de code n'avaient jamais été exercés (ex. PDF de CR) → s'attendre à réveiller d'autres bugs dormants en testant le Lot B (calculs financiers). Normal.
+
+---
+
+## Ajouts (tests Lot B — tâche 2)
+
+### Bugs pré-existants découverts (indépendants de la tâche 2)
+
+- [ ] **Création de chantier sans client possible.** On peut créer un chantier sans lui associer de client → anormal. Ajouter une validation obligatoire du client à la création de chantier. **(Lot C/D — intégrité)**
+- [ ] **Suppression chantier cassée : `column devis_artisans.pdf_path does not exist`.** Le code de suppression en cascade référence une colonne `pdf_path` qui n'existe pas (ou plus) sur `devis_artisans`. Bloque la suppression de chantier ET de clients. C'est lié à **P0-11** (cascade incomplète). Identifier le bon nom de colonne (ou retirer la référence) et reconstruire la cascade proprement. **(Lot C — intégrité, à rattacher à P0-11)**
+
+### Prérequis au test des calculs financiers (BLOQUANT pour tâche calculs partenaire)
+
+- [ ] **Aucun affichage du détail des parts.** Aujourd'hui : la facturation montre un montant mensuel global, le suivi financier d'un chantier montre le montant mais PAS la décomposition (commission, royalties, part agente, part admin). **Impossible de vérifier un calcul au centime sans ce détail.** À construire AVANT de coder les calculs partenaire : un affichage par devis du détail (HT → commission → royalties Type 2 → net → part agente / part admin), dans le suivi financier du chantier. C'est l'outil de contrôle de tout le Lot B. **(Lot B — tâche prioritaire avant les calculs partenaire)**
+
+### Dette à solder en fin de Lot B
+
+- [ ] **`devis_artisans.part_agente`** est désormais un miroir de `dossiers.part_agente` (alignement défensif). À supprimer quand plus rien ne la lit hors finance.js (qui lit déjà le dossier). **(fin Lot B)**
+- [ ] **`sans_royalties`** conservée en base le temps de la transition partenaire/paiement_direct. À retirer quand finance.js et toutes les pages liront `paiement_direct`/`partenaire`. **(fin Lot B)**
