@@ -5,22 +5,28 @@
 ## Légende des écarts
 - **[NOUVEAU]** ajout cible · **[MODIF]** modifié · **[OK]** inchangé.
 
+
+## CONVENTION — apporteur vs partenaire (sens de l'ARGENT)
+On parle TOUJOURS du sens de l'argent, jamais de l'affaire :
+- **PARTENAIRE** = argent ENTRANT (gain). BET, architecte, fournisseur. On leur amène l'affaire, ils nous reversent un %. CTP encaisse, reverse une part à l'agente. Vit sur la fiche ARTISAN (case « apporteur d'affaires » actuelle À RENOMMER en « partenaire »).
+- **APPORTEUR** = argent SORTANT (coût). Ex. Kiosque à travaux. Il nous amène un client, on lui doit un %. CTP décaisse, l'agente rembourse sa part. Taux CONTRACTUEL (illiCO France ↔ apporteur), ne varie jamais.
+
 ## Module Accès / Auth
 - **profiles** : id, role (admin/agente/client), nom/prénom/téléphone, `client_id`→clients. **[NOUVEAU]** `taux_1`, `taux_2` (les 2 splits de l'agente), `agence_id`. Sécurité d'accès aujourd'hui inexistante (P0-1).
 - **google_tokens** : [OK].
 
 ## Module Clients
-- **clients** : identité, type particulier/pro. **[NOUVEAU]** `raison_sociale` (pros). **[MODIF]** bloc APPORTEUR (entrant), `apporteur_taux > 0` validé, `apporteur_base`/`mode` corrigé. **[NOUVEAU]** `agence_id`. Détection de doublon à la saisie.
+- **clients** : identité, type particulier/pro. **[NOUVEAU]** `raison_sociale` (pros). **[MODIF]** bloc APPORTEUR = MÉMOIRE DE PROVENANCE (« ce client vient du Kiosque ») : `apporteur` oui/non + nom + taux contractuel (fixe, ne varie pas) + base (par devis / total chantier). Le taux par défaut vient d'ici mais le CALCUL ne se déclenche QUE si activé sur le chantier (voir dossiers). `apporteur_taux > 0` validé (P1-7). **[NOUVEAU]** `agence_id`. Détection de doublon à la saisie.
 
 ## Module Artisans / Partenaires
-- **artisans** : entreprise, métier (texte libre), contact, `sans_royalties`. **[NOUVEAU]** bloc PARTENAIRE (sortant) : `partenaire` (oui/non) + `partenaire_taux` (0 légitime). Le devis du partenaire n'a pas de royalties, mais la commission qu'on gagne en lui amenant l'affaire = revenu CTP → royalties dessus (voir Doc 4). **[NOUVEAU]** `agence_id`. **[MODIF]** PDF sortent de la fiche → table `artisan_documents`.
+- **artisans** : entreprise, métier (texte libre), contact, `sans_royalties`. **[NOUVEAU]** bloc PARTENAIRE (argent ENTRANT / gain) : `partenaire` (oui/non) + `partenaire_taux` (0 légitime). C'est la case « apporteur d'affaires » actuelle À RENOMMER en « partenaire » (BET, archi, fournisseur). Le devis du partenaire n'a pas de royalties, mais la commission qu'on gagne en lui amenant l'affaire = revenu CTP → royalties dessus (voir Doc 4). **[NOUVEAU]** `agence_id`. **[MODIF]** PDF sortent de la fiche → table `artisan_documents`.
 - **artisan_documents** **[NOUVELLE TABLE]** : historique de TOUS les PDF artisan (qualification, RIB, KBIS, décennale). Champs : type, nom_fichier (nommage logique), path, date_upload, date_fin_validite (décennale), actif. Renouvellement = nouvelle ligne, ancienne conservée. Alerte J-30 lit la décennale active.
 - **specialites** **[VIVANTE]** : catalogue de référence. Libellé unique (sans doublon), modifiable. Suppression bloquée si au moins un artisan l'utilise (message listant les artisans).
 - **artisans_specialites** **[VIVANTE]** : couverture de chaque artisan. Remplie par l'IA qui lit la décennale → mappe sur `specialites` → propose les cases → validation. Retirer une spécialité à un artisan = toujours possible.
 - **fiches_techniques** : [OK] (hors historique, suppression sans conséquence).
 
 ## Module Dossier chantier
-- **dossiers** : référence unique. **[MODIF]** référence ATOMIQUE (P1-6) ; typologie CONVERTIBLE (courtage↔AMO, Estimo→courtage/AMO, recalcul honoraires à la conversion). **[NOUVEAU]** `taux_choisi` (1|2) → part agente au niveau dossier ; `taux_amo_standard` (9%) + `taux_amo_applique` (remise) → double honoraire ; `agence_id`. **[MODIF]** suppression en cascade complète (P0-11).
+- **dossiers** : référence unique. **[MODIF]** référence ATOMIQUE (P1-6) ; typologie CONVERTIBLE (courtage↔AMO, Estimo→courtage/AMO, recalcul honoraires à la conversion). **[NOUVEAU]** `taux_choisi` (1|2) → part agente au niveau dossier ; `taux_amo_standard` (9%) + `taux_amo_applique` (remise) → double honoraire ; **`apporteur_actif` (oui/non) = interrupteur : applique-t-on l'apporteur du client SUR CE chantier ? Le calcul ne se déclenche QUE si activé. Le taux est lu depuis le client, jamais redéfini ici.** ; `agence_id`. **[MODIF]** suppression en cascade complète (P0-11).
 - **photos**, **comptes_rendus**, **chantier_documents**, **chantier_fiches_techniques** : [OK].
 
 ## Module Devis & factures artisans
@@ -59,5 +65,6 @@
 
 ## Migrations BDD à prévoir
 - **Ajouts** : `artisan_documents` ; `profiles.taux_1/taux_2` ; `dossiers.taux_choisi/taux_amo_standard/taux_amo_applique` ; `artisans.partenaire/partenaire_taux` ; `clients.raison_sociale` ; `agence_id` (profiles, clients, dossiers, artisans — réservé).
-- **Modifications** : unifier `suivi_financier.date_paiement` ; `apporteur_base→mode` ; référence atomique ; cascade dossiers ; redevance HT paramétrable ; typologie convertible.
+- **Modifications** : unifier `suivi_financier.date_paiement` ; `apporteur_base→mode` ; référence atomique ; cascade dossiers ; redevance HT paramétrable ; typologie convertible ; **ajouter `dossiers.apporteur_actif` (interrupteur) ; renommer la case artisan « apporteur d'affaires » → « partenaire ».**
 - **Ressuscitées** : `specialites` + `artisans_specialites`.
+- **Horizon (non fait maintenant)** : table de référence `apporteurs` (réutilisable, contrats illiCO France) pour le multi-franchise. Pour l'instant on reste simple : champs apporteur sur le client + interrupteur sur le dossier.
