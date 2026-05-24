@@ -53,6 +53,7 @@ Objectif : quand le design bouge, ce doit être volontaire — jamais un effet d
 - **Auth unique.** Se baser sur la personne authentifiée au login (source unique). Supprimer les fetch d'auth refaits dans chaque page.
 - **TVA = couche de facturation uniquement.** Tous les partages agente/admin se calculent sur le **HT**, jamais sur le TTC.
 - **Pas de suppression de fonctionnalité** sans le dire. Si du code semble mort, le signaler avant de supprimer (cf. règle 1).
+- **JAMAIS de nom, prénom ou id en dur comme condition logique.** Toute distinction de comportement se fait sur le **rôle** (`role === 'admin'`, `role === 'agente'`, `role === 'client'`), jamais sur « Marine », « Anne-Lise » ou un id spécifique. L'app doit fonctionner à l'identique pour tout futur admin, toute future agente, tout futur client — c'est la base du multi-utilisateur et du multi-franchise. Si tu vois un nom/id en dur dans le code existant, signale-le.
 
 ---
 
