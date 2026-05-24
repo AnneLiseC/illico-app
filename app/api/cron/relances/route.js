@@ -152,7 +152,7 @@ export async function GET(req) {
       .from('suivi_financier')
       .select(`
         id, dossier_id, montant_ttc, artisan_id,
-        artisans(id, entreprise, sans_royalties),
+        artisans(id, entreprise, paiement_direct),
         dossiers(id, reference, referente_id,
           profiles!referente_id(email, prenom, nom, telephone, role),
           clients(email, nom, prenom, civilite, nom2, prenom2, adresse_chantier))
@@ -190,7 +190,7 @@ export async function GET(req) {
         artisan_id: ligne.artisan_id,
         entreprise: ligne.artisans?.entreprise,
         montant_ttc: ligne.montant_ttc,
-        sans_royalties: ligne.artisans?.sans_royalties,
+        paiement_direct: ligne.artisans?.paiement_direct,
       })
     }
 
@@ -218,8 +218,8 @@ export async function GET(req) {
       })
 
       // Artisans PROTECTACOMPTE vs paiement direct
-      const artisansProtect = artisans.filter(a => !a.sans_royalties)
-      const artisansDirect = artisans.filter(a => a.sans_royalties)
+      const artisansProtect = artisans.filter(a => !a.paiement_direct)
+      const artisansDirect = artisans.filter(a => a.paiement_direct)
 
       const clientNoms = nomsVirement(client)
       const salutation = salutationClient(client)
@@ -252,7 +252,7 @@ export async function GET(req) {
         `
       }
 
-      // Artisans à paiement direct (sans_royalties)
+      // Artisans à paiement direct
       for (const a of artisansDirect) {
         html += `
           <br>
