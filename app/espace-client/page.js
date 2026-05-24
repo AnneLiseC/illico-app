@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { calcStatut, STATUT_CONFIG } from '../lib/dossiers'
+import { authHeaders } from '../lib/api-auth-client'
 
 const ETAPES = [
   { key: 'a_contacter',       label: 'À contacter',  icon: '📞' },
@@ -492,7 +493,7 @@ export default function EspaceClient() {
                           onClick={async () => {
                             const res = await fetch('/api/pdf', {
                               method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
+                              headers: await authHeaders(),
                               body: JSON.stringify({ dossierId: dossier.id, type: 'cr', crId: cr.id }),
                             })
                             if (!res.ok) return

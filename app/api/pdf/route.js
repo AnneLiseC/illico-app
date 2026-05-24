@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server'
 import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
 import path from 'path'
 import fs from 'fs'
+import { requireUser } from '../../lib/api-auth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -460,7 +461,12 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
 }
 
 // ── ROUTE API ──
+// Types autorisés pour un utilisateur client (lecture de son propre dossier uniquement)
+const CLIENT_ALLOWED_TYPES = new Set(['cr'])
+
 export async function POST(request) {
+  const auth = await requireUser(request)
+  if (auth.error) return auth.error
   try {
     const { dossierId, type, crId } = await request.json()
 
@@ -476,6 +482,18 @@ export async function POST(request) {
 
     if (dossierError) return NextResponse.json({ error: dossierError.message }, { status: 500 })
     if (!dossier) return NextResponse.json({ error: 'Dossier non trouvé' }, { status: 404 })
+
+    // Contrôle d'accès : un client ne peut récupérer que les CR de son propre dossier.
+    if (auth.profile.role === 'client') {
+      if (!CLIENT_ALLOWED_TYPES.has(type)) {
+        return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+      }
+      if (!auth.profile.client_id || dossier.client_id !== auth.profile.client_id) {
+        return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+      }
+    } else if (auth.profile.role !== 'admin' && auth.profile.role !== 'agente') {
+      return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+    }
 
     const { data: devis, error: devisError } = await supabaseAdmin
       .from('devis_artisans')

@@ -1444,8 +1444,8 @@ export default function FicheChantier({ params }) {
     try {
       const res = await fetch('/api/pdf', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dossierId: id, type, crId, userId: profile?.id }),
+        headers: await authHeaders(),
+        body: JSON.stringify({ dossierId: id, type, crId }),
       })
       if (!res.ok) {
         const err = await res.json()
