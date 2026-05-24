@@ -4,6 +4,7 @@
 import { google } from 'googleapis'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireUser } from '../../../../lib/api-auth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -103,11 +104,14 @@ function rdvToGoogleEvent(rdv) {
 }
 
 export async function POST(request) {
+  const auth = await requireUser(request)
+  if (auth.error) return auth.error
   try {
     const body = await request.json()
-    const { userId, type, id } = body
+    const { type, id } = body
+    const userId = auth.user.id
 
-    if (!userId || !type || !id) {
+    if (!type || !id) {
       return NextResponse.json({ error: 'Paramètres manquants' }, { status: 400 })
     }
 

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
+import { authHeaders } from '../lib/api-auth-client'
 
 const LS = { display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5 }
 
@@ -87,7 +88,7 @@ export default function Parametres() {
     if (!agenteASupprimer) return
     setSupprimant(true); setErreur('')
     try {
-      const res = await fetch('/api/create-agente', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: agenteASupprimer.id }) })
+      const res = await fetch('/api/create-agente', { method: 'DELETE', headers: await authHeaders(), body: JSON.stringify({ id: agenteASupprimer.id }) })
       const data = await res.json()
       if (!res.ok) { setErreur(data.error || 'Erreur lors de la suppression') }
       else { setSucces(`${agenteASupprimer.prenom} ${agenteASupprimer.nom} supprimée ✓`); setModal(false); setAgenteASupprimer(null); await chargerAgentes() }
@@ -100,7 +101,7 @@ export default function Parametres() {
     try {
       const partsArray = form.parts_agente_disponibles.split(',').map(v => parseInt(v.trim()) / 100).filter(v => !isNaN(v) && v > 0 && v <= 1)
       const partDefaut = partsArray[0] ?? 0.5
-      const res = await fetch('/api/create-agente', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prenom: form.prenom, nom: form.nom, email: form.email, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100 }) })
+      const res = await fetch('/api/create-agente', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ prenom: form.prenom, nom: form.nom, email: form.email, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100 }) })
       const data = await res.json()
       if (!res.ok) { setErreur(data.error || 'Erreur') } else { setSucces(`Invitation envoyée à ${form.email} ✓`); setModal(false); await chargerAgentes() }
     } catch (err) { setErreur(err.message) }
@@ -112,7 +113,7 @@ export default function Parametres() {
     try {
       const partsArray = form.parts_agente_disponibles.split(',').map(v => parseInt(v.trim()) / 100).filter(v => !isNaN(v) && v > 0 && v <= 1)
       const partDefaut = partsArray[0] ?? 0.5
-      const res = await fetch('/api/create-agente', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: agenteEditee.id, prenom: form.prenom, nom: form.nom, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, redevance_debut: form.redevance_debut || null }) })
+      const res = await fetch('/api/create-agente', { method: 'PATCH', headers: await authHeaders(), body: JSON.stringify({ id: agenteEditee.id, prenom: form.prenom, nom: form.nom, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, redevance_debut: form.redevance_debut || null }) })
       const data = await res.json()
       if (!res.ok) { setErreur(data.error || 'Erreur') } else { setSucces('Profil mis à jour ✓'); setModal(false); await chargerAgentes() }
     } catch (err) { setErreur(err.message) }
@@ -125,7 +126,7 @@ export default function Parametres() {
     const chemin = `kbis/${agenteId}.${ext}`
     const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (uploadError) { setErreur('Erreur upload KBIS : ' + uploadError.message); setUploadingKbis(null); return }
-    const res = await fetch('/api/create-agente', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: agenteId, kbis_url: chemin }) })
+    const res = await fetch('/api/create-agente', { method: 'PATCH', headers: await authHeaders(), body: JSON.stringify({ id: agenteId, kbis_url: chemin }) })
     if (res.ok) { setSucces('KBIS uploadé ✓'); await chargerAgentes() } else { setErreur('Erreur sauvegarde KBIS') }
     setUploadingKbis(null)
   }

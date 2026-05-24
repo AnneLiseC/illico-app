@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
+import { authHeaders } from '../lib/api-auth-client'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
@@ -109,7 +110,7 @@ export default function Planning() {
     const init = async () => {
       await chargerTout()
       try {
-        const res = await fetch(`/api/google/calendar/sync?userId=${profile.id}`)
+        const res = await fetch('/api/google/calendar/sync', { headers: await authHeaders() })
         if (res.ok) { const d = await res.json(); setGoogleConnected(d.connected) }
       } catch { setGoogleConnected(false) }
       const params = new URLSearchParams(window.location.search)
@@ -279,11 +280,11 @@ export default function Planning() {
 
   const pushToGoogle = (type, id) => {
     if (!googleConnected || !id) return
-    fetch('/api/google/calendar/push', {
+    authHeaders().then(headers => fetch('/api/google/calendar/push', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: profile?.id, type, id }),
-    }).catch(() => {})
+      headers,
+      body: JSON.stringify({ type, id }),
+    })).catch(() => {})
   }
 
   const sauvegarderRdv = async () => {
@@ -337,11 +338,11 @@ export default function Planning() {
     // Supprimer l'événement Google Calendar en premier (non bloquant)
     const googleEventId = elementSelectionne.data.google_event_id
     if (googleConnected && googleEventId) {
-      fetch('/api/google/calendar/event', {
+      authHeaders().then(headers => fetch('/api/google/calendar/event', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: profile?.id, googleEventId }),
-      }).catch(() => {})
+        headers,
+        body: JSON.stringify({ googleEventId }),
+      })).catch(() => {})
     }
     if (elementSelectionne.type === 'rdv') await supabase.from('rendez_vous').delete().eq('id', elementSelectionne.data.id)
     else await supabase.from('interventions_artisans').delete().eq('id', elementSelectionne.data.id)
@@ -352,7 +353,7 @@ export default function Planning() {
   const syncGoogle = async () => {
     setSyncing(true); setSyncMessage('')
     try {
-      const res = await fetch('/api/google/calendar/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: profile?.id }) })
+      const res = await fetch('/api/google/calendar/sync', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({}) })
       const data = await res.json()
       if (!res.ok) {
         setSyncMessage(`❌ ${data.error || 'Erreur de synchronisation'}`)
@@ -399,10 +400,21 @@ export default function Planning() {
               Google {syncing ? 'Sync…' : <span style={{color:'#15803d'}}>● Connecté</span>}
             </button>
           ) : (
-            <a href={`/api/auth/google?userId=${profile?.id}`} className="btn btn-ghost"
-              style={{display:'inline-flex', alignItems:'center', gap:6, textDecoration:'none'}}>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/auth/google', { method: 'POST', headers: await authHeaders() })
+                  const data = await res.json()
+                  if (res.ok && data.url) window.location.href = data.url
+                  else setSyncMessage(`❌ ${data.error || 'Erreur de connexion Google'}`)
+                } catch {
+                  setSyncMessage('❌ Erreur de connexion Google')
+                }
+              }}
+              className="btn btn-ghost"
+              style={{display:'inline-flex', alignItems:'center', gap:6}}>
               📅 Google Calendar
-            </a>
+            </button>
           )}
           <button className="btn btn-ghost"
             onClick={() => { setModalType('intervention'); setElementSelectionne(null); setModeEdition(false); setModalOuvert(true) }}>
