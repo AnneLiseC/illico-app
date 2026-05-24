@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement } from '../../lib/dossiers'
-import { calculateDossierFinance } from '../../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 
 function Svg({ children, size = 14 }) {
@@ -550,6 +550,7 @@ export default function FicheChantier({ params }) {
   const [client, setClient] = useState(null)
   const [profile, setProfile] = useState(null)
   const [nomFranchisee, setNomFranchisee] = useState('Franchisée')
+  const [prenomAdmin, setPrenomAdmin] = useState('CTP')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [generatingPDF, setGeneratingPDF] = useState(null) // 'recapitulatif' | 'dossier_fin'
@@ -635,7 +636,7 @@ export default function FicheChantier({ params }) {
       // Charger le nom de la franchisée pour les labels dynamiques
       const { data: adminData } = await supabase
         .from('profiles').select('prenom, nom').eq('role', 'admin').single()
-      if (adminData) setNomFranchisee(`${adminData.prenom} ${adminData.nom}`)
+      if (adminData) { setNomFranchisee(`${adminData.prenom} ${adminData.nom}`); setPrenomAdmin(adminData.prenom || 'CTP') }
       const { data: dossierData } = await supabase.from('dossiers')
         .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), client:clients(*)')        .eq('id', id).single()
       setDossier(dossierData)
@@ -2593,6 +2594,15 @@ export default function FicheChantier({ params }) {
                             <span>Signé le {new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
                           )}
                         </div>
+                        {!estChantierMarine && d.commission_pourcentage > 0 && (() => {
+                          const finDevis = calculateDevisFinance(d, dossier)
+                          return (
+                            <div style={{marginTop:4, display:'flex', gap:14, flexWrap:'wrap', fontSize:12, color:'var(--ink-500)'}}>
+                              <span>Part {dossier.referente?.prenom || 'agente'} → <span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.parts.agente)}</span></span>
+                              <span>Part {prenomAdmin} → <span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.parts.admin)}</span></span>
+                            </div>
+                          )
+                        })()}
                       </div>
                       <div style={{textAlign:'right'}}>
                         {d.statut === 'accepte'    && <Badge tone="ok">Signé</Badge>}
