@@ -379,7 +379,7 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
 }
 
 // ─── Modal d'ajout / édition d'un devis ───────────────────────────────────────
-function DevisModal({ open, devis, onClose, onSave, artisans, isMarine, partsAgenteDispo }) {
+function DevisModal({ open, devis, onClose, onSave, artisans }) {
   const isEdit = !!devis
   const initForm = () => ({
     artisan_id: devis?.artisan_id || '',
@@ -387,7 +387,6 @@ function DevisModal({ open, devis, onClose, onSave, artisans, isMarine, partsAge
     montant_ttc: devis?.montant_ttc ?? '',
     commission_pourcentage: devis?.commission_pourcentage != null ? (devis.commission_pourcentage * 100).toFixed(1) : '',
     sans_commission: devis?.commission_pourcentage === 0,
-    part_agente: isMarine ? '0' : String(devis?.part_agente ?? 0.5),
     date_reception: devis?.date_reception || '',
     date_limite: devis?.date_limite || '',
     notes: devis?.notes || '',
@@ -502,30 +501,6 @@ function DevisModal({ open, devis, onClose, onSave, artisans, isMarine, partsAge
               )}
             </div>
           </div>
-
-          {!isMarine && partsAgenteDispo?.length > 1 && (
-            <div style={{paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
-              <label className="eyebrow" style={{display:'block', marginBottom:8}}>Répartition commission (agente / CTP)</label>
-              <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
-                {partsAgenteDispo.map(pct => {
-                  const pctFloat = parseFloat(pct)
-                  const active = Math.abs(parseFloat(form.part_agente) - pctFloat) < 0.001
-                  return (
-                    <button key={pct} type="button" onClick={() => set('part_agente', String(pctFloat))}
-                      style={{
-                        fontSize:12, padding:'6px 12px', borderRadius:99,
-                        border:'1px solid', borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
-                        background: active ? 'var(--brand-50)' : '#fff',
-                        color: active ? 'var(--brand-800)' : 'var(--ink-600)',
-                        fontWeight:600, cursor:'pointer',
-                      }}>
-                      {Math.round(pctFloat * 100)} / {Math.round((1 - pctFloat) * 100)}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          )}
 
           <div>
             <label className="eyebrow" style={{display:'block', marginBottom:6}}>Description</label>
@@ -646,7 +621,7 @@ export default function FicheChantier({ params }) {
   const [uploadingDocChantier, setUploadingDocChantier] = useState(false)
   const [uploadingContrat, setUploadingContrat] = useState(false)
   const [docViewer, setDocViewer] = useState(null) // { url, nom }
-  const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, part_agente: '0.5', date_reception: '', date_limite: '', notes: '', fichier: null })
+  const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, date_reception: '', date_limite: '', notes: '', fichier: null })
   const [suiviFinancier, setSuiviFinancier] = useState([])
   const router = useRouter()
 
@@ -1096,12 +1071,6 @@ export default function FicheChantier({ params }) {
     if (error) {
       setErreur('Erreur : ' + error.message)
     } else {
-      await supabase.from('devis_artisans')
-        .update({ part_agente: newPartAgente })
-        .eq('dossier_id', id)
-        .neq('statut', 'refuse')
-      await chargerDevis()
-
       // Si frais réglés, créer/màj la ligne suivi_financier
       if (dossier.frais_statut === 'regle') {
         const { data: existingSuivi } = await supabase
@@ -1136,14 +1105,13 @@ export default function FicheChantier({ params }) {
   const sauvegarderDevis = async () => {
     if (!nouveauDevis.artisan_id) return
     setSavingDevis(true)
-    const partAgente = estChantierMarine ? 0 : parseFloat(nouveauDevis.part_agente)
     const prochainOrdre = devis.length > 0 ? Math.max(...devis.map(d => d.ordre ?? 0)) + 1 : 1
     const { data: devisInsere, error } = await supabase.from('devis_artisans').insert({
       dossier_id: id, artisan_id: nouveauDevis.artisan_id,
       montant_ht: nouveauDevis.montant_ht ? parseFloat(nouveauDevis.montant_ht) : null,
       montant_ttc: nouveauDevis.montant_ttc ? parseFloat(nouveauDevis.montant_ttc) : null,
       commission_pourcentage: nouveauDevis.sans_commission ? 0 : (nouveauDevis.commission_pourcentage ? parseFloat(nouveauDevis.commission_pourcentage) / 100 : null),
-      part_agente: partAgente, date_reception: nouveauDevis.date_reception || null, date_limite: nouveauDevis.date_limite || null,
+      date_reception: nouveauDevis.date_reception || null, date_limite: nouveauDevis.date_limite || null,
       notes: nouveauDevis.notes || null,
       statut: (nouveauDevis.date_reception || nouveauDevis.fichier) ? 'recu' : 'en_attente',
       ordre: prochainOrdre,
@@ -1162,19 +1130,18 @@ export default function FicheChantier({ params }) {
       }
       await chargerDevis()
       setAjouterDevis(false)
-      setNouveauDevis({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, part_agente: '0.5', date_reception: '', date_limite: '', notes: '', fichier: null })
+      setNouveauDevis({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, date_reception: '', date_limite: '', notes: '', fichier: null })
       setSucces('Devis ajouté ✓')
     } else { setErreur('Erreur : ' + error.message) }
     setSavingDevis(false)
   }
 
   const modifierDevis = async (devisId, updates) => {
-    const partAgente = estChantierMarine ? 0 : parseFloat(updates.part_agente)
     await supabase.from('devis_artisans').update({
       montant_ht: updates.montant_ht ? parseFloat(updates.montant_ht) : null,
       montant_ttc: updates.montant_ttc ? parseFloat(updates.montant_ttc) : null,
       commission_pourcentage: updates.sans_commission ? 0 : (updates.commission_pourcentage ? parseFloat(updates.commission_pourcentage) / 100 : null),
-      part_agente: partAgente, date_reception: updates.date_reception || null, date_limite: updates.date_limite || null,
+      date_reception: updates.date_reception || null, date_limite: updates.date_limite || null,
       notes: updates.notes || null,
     }).eq('id', devisId)
     await chargerDevis()
@@ -1184,7 +1151,6 @@ export default function FicheChantier({ params }) {
 
   // Handler unique du DevisModal (create + edit, inclut acompte custom)
   const saveDevisFromModal = async (form) => {
-    const partAgente = estChantierMarine ? 0 : parseFloat(form.part_agente)
     const acomptePct = form.acompte_pourcentage === -1 || form.acompte_pourcentage === 0
       ? form.acompte_pourcentage
       : parseFloat(form.acompte_pourcentage)
@@ -1195,7 +1161,6 @@ export default function FicheChantier({ params }) {
       montant_ht: form.montant_ht !== '' ? parseFloat(form.montant_ht) : null,
       montant_ttc: form.montant_ttc !== '' ? parseFloat(form.montant_ttc) : null,
       commission_pourcentage: form.sans_commission ? 0 : (form.commission_pourcentage ? parseFloat(form.commission_pourcentage) / 100 : null),
-      part_agente: partAgente,
       date_reception: form.date_reception || null,
       date_limite: form.date_limite || null,
       notes: form.notes || null,
@@ -2746,7 +2711,7 @@ export default function FicheChantier({ params }) {
                       {!estChantierMarine && (
                         <div style={{display:'flex', justifyContent:'space-between'}}>
                           <span style={{fontSize:11, color:'var(--ink-400)'}}>Répartition</span>
-                          <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{`${Math.round((d.part_agente ?? 0.5) * 100)} / ${Math.round((1 - (d.part_agente ?? 0.5)) * 100)}`}</span>
+                          <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{`${Math.round((dossier.part_agente ?? 0.5) * 100)} / ${Math.round((1 - (dossier.part_agente ?? 0.5)) * 100)}`}</span>
                         </div>
                       )}
                       {d.date_signature && d.statut === 'accepte' && (
@@ -4775,8 +4740,6 @@ export default function FicheChantier({ params }) {
         onClose={() => setDevisModal({ open: false, devis: null })}
         onSave={saveDevisFromModal}
         artisans={artisans}
-        isMarine={estChantierMarine}
-        partsAgenteDispo={profile?.parts_agente_disponibles}
       />
     </div>
   )
