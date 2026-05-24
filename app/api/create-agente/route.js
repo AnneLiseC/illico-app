@@ -1,6 +1,7 @@
 // app/api/create-agente/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireRole } from '../../lib/api-auth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -8,6 +9,8 @@ const supabaseAdmin = createClient(
 )
 
 export async function POST(request) {
+  const auth = await requireRole(request, ['admin'])
+  if (auth.error) return auth.error
   try {
     const body = await request.json()
     const { prenom, nom, email, telephone, part_agente_defaut, frais_part_agente_defaut, parts_agente_disponibles } = body
@@ -61,6 +64,8 @@ export async function POST(request) {
 }
 
 export async function PATCH(request) {
+  const auth = await requireRole(request, ['admin'])
+  if (auth.error) return auth.error
   try {
     const body = await request.json()
     const { id, prenom, nom, telephone, redevance_debut, part_agente_defaut, frais_part_agente_defaut, kbis_url, parts_agente_disponibles } = body
@@ -92,6 +97,8 @@ export async function PATCH(request) {
 }
 
 export async function DELETE(request) {
+  const auth = await requireRole(request, ['admin'])
+  if (auth.error) return auth.error
   try {
     const body = await request.json()
     const { id } = body

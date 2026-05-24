@@ -1,5 +1,6 @@
 // app/api/auth/google/callback/route.js
 import { google } from 'googleapis'
+import crypto from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
@@ -14,15 +15,42 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
+// Vérifie et décode le state signé HMAC produit par /api/auth/google.
+// Retourne userId si valide, sinon null.
+function verifySignedState(state) {
+  if (!state || typeof state !== 'string') return null
+  const secret = process.env.OAUTH_STATE_SECRET
+  if (!secret) return null
+  const parts = state.split('.')
+  if (parts.length !== 2) return null
+  const [payloadB64, signature] = parts
+  const expected = crypto.createHmac('sha256', secret).update(payloadB64).digest('base64url')
+  // Comparaison à temps constant pour éviter une fuite via timing
+  const a = Buffer.from(signature)
+  const b = Buffer.from(expected)
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null
+  let payload
+  try {
+    payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'))
+  } catch { return null }
+  if (!payload?.uid || !payload?.exp) return null
+  if (Date.now() > payload.exp) return null
+  return payload.uid
+}
+
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const error = searchParams.get('error')
-  const userId = searchParams.get('state') // userId passé dans le state OAuth
+  const state = searchParams.get('state')
 
-  if (error || !code || !userId) {
-    console.error('Callback error:', { error, code: !!code, userId })
+  if (error || !code || !state) {
     return NextResponse.redirect(new URL('/planning?google=error', request.url))
+  }
+
+  const userId = verifySignedState(state)
+  if (!userId) {
+    return NextResponse.redirect(new URL('/planning?google=error&reason=state_invalid', request.url))
   }
 
   try {

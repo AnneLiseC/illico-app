@@ -2,6 +2,7 @@
 import { google } from 'googleapis'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireUser } from '../../../../lib/api-auth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -124,10 +125,10 @@ async function tryUpdate(calendar, googleEventId, eventBody) {
 }
 
 export async function POST(request) {
+  const auth = await requireUser(request)
+  if (auth.error) return auth.error
   try {
-    const body = await request.json()
-    const userId = body?.userId
-    if (!userId) return NextResponse.json({ error: 'Non authentifié' }, { status: 401 })
+    const userId = auth.user.id
 
     const { data: tokenData } = await supabaseAdmin
       .from('google_tokens')
@@ -435,10 +436,10 @@ export async function POST(request) {
 }
 
 export async function GET(request) {
+  const auth = await requireUser(request)
+  if (auth.error) return NextResponse.json({ connected: false })
   try {
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
-    if (!userId) return NextResponse.json({ connected: false })
+    const userId = auth.user.id
 
     const { data } = await supabaseAdmin
       .from('google_tokens').select('updated_at').eq('user_id', userId).single()

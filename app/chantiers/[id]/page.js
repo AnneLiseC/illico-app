@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement } from '../../lib/dossiers'
 import { calculateDossierFinance } from '../../lib/finance'
+import { authHeaders } from '../../lib/api-auth-client'
 
 function Svg({ children, size = 14 }) {
   return (
@@ -769,8 +770,8 @@ export default function FicheChantier({ params }) {
     try {
       await fetch('/api/google/calendar/event', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: profile.id, googleEventId }),
+        headers: await authHeaders(),
+        body: JSON.stringify({ googleEventId }),
       })
     } catch (err) {
       console.error('Erreur suppression Google event:', err)
@@ -820,11 +821,11 @@ export default function FicheChantier({ params }) {
       if (insertErr) { setErreur('Erreur : ' + insertErr.message); return }
       // Sync Google si connecté (non bloquant)
       if (intData?.[0] && profile?.id) {
-        fetch('/api/google/calendar/sync', {
+        authHeaders().then(headers => fetch('/api/google/calendar/sync', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: profile.id, singleIntervId: intData[0].id }),
-        }).catch(() => {})
+          headers,
+          body: JSON.stringify({ singleIntervId: intData[0].id }),
+        })).catch(() => {})
       }
       await chargerRdvsDossier()
       setModalCreerIntervOuvert(false)
@@ -1347,10 +1348,9 @@ export default function FicheChantier({ params }) {
     try {
       const res = await fetch('/api/cr', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({
           dossierId: id,
-          userId: profile?.id,
           typeVisite: crForm.type_visite,
           dateVisite: crForm.date_visite,
           intervenants: crForm.intervenants ? crForm.intervenants.split(',').map(s => s.trim()).filter(Boolean) : [],
@@ -1444,8 +1444,8 @@ export default function FicheChantier({ params }) {
     try {
       const res = await fetch('/api/pdf', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dossierId: id, type, crId, userId: profile?.id }),
+        headers: await authHeaders(),
+        body: JSON.stringify({ dossierId: id, type, crId }),
       })
       if (!res.ok) {
         const err = await res.json()
