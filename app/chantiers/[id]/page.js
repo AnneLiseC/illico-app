@@ -1723,7 +1723,7 @@ export default function FicheChantier({ params }) {
     setSaving(false)
   }
 
-  const montantAcompte = (d) => (d.montant_ttc || 0) * ((d.acompte_pourcentage || 30) / 100)
+  const montantAcompte = (d) => (d.montant_ttc || 0) * ((d.acompte_pourcentage ?? 30) / 100)
 
   if (loading) return <div className="page-loading" />
   if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-400)'}}>Chantier introuvable</div>
@@ -2633,7 +2633,7 @@ export default function FicheChantier({ params }) {
                     {d.statut === 'accepte' && (
                       <div style={{marginTop:14, marginLeft:54, display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
                         <FactureMiniLine
-                          title={`Acompte ${d.acompte_pourcentage === -1 ? '(fixe)' : (d.acompte_pourcentage || 30) + '%'}`}
+                          title={`Acompte ${d.acompte_pourcentage === -1 ? '(fixe)' : (d.acompte_pourcentage ?? 30) + '%'}`}
                           fact={factAcompte} expected={acompteExpected}
                           onAdd={() => {
                             setAjouterFacture(d.id)
@@ -2691,7 +2691,7 @@ export default function FicheChantier({ params }) {
                       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                         <span style={{fontSize:11, color:'var(--ink-400)'}}>Acompte</span>
                         <div style={{display:'flex', alignItems:'center', gap:8}}>
-                          <select value={d.acompte_pourcentage || 30}
+                          <select value={d.acompte_pourcentage ?? 30}
                             onChange={async e => {
                               await supabase.from('devis_artisans').update({ acompte_pourcentage: parseFloat(e.target.value) }).eq('id', d.id)
                               await chargerDevis()
@@ -3182,13 +3182,13 @@ export default function FicheChantier({ params }) {
                 const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId)
                 const acompteMontant = dv.acompte_pourcentage === -1
                   ? (dv.acompte_montant_fixe || 0)
-                  : (dv.montant_ttc || 0) * ((dv.acompte_pourcentage || 30) / 100)
+                  : (dv.montant_ttc || 0) * ((dv.acompte_pourcentage ?? 30) / 100)
                 const comDevisHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
                 return (
                   <div key={`ech-${dv.id}`} style={{display:'flex', flexDirection:'column', gap:8}}>
                     <EcheanceRow
                       label={`Acompte client — ${dv.artisan?.entreprise || '—'}`}
-                      sub={`${dv.acompte_pourcentage === -1 ? 'fixe' : (dv.acompte_pourcentage || 30) + '%'} acompte · ${fmt(acompteMontant)} TTC`}
+                      sub={`${dv.acompte_pourcentage === -1 ? 'fixe' : (dv.acompte_pourcentage ?? 30) + '%'} acompte · ${fmt(acompteMontant)} TTC`}
                       statut={sf?.statut_client || 'en_attente'}
                       date={sf?.date_reglement_client || sf?.date_paiement || null}
                       onToggle={() => {

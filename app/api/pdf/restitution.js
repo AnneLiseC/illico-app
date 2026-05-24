@@ -182,7 +182,7 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
       if (suiviAcompte) {
         const acompteMontant = d.acompte_pourcentage === -1
           ? toNum(d.acompte_montant_fixe)
-          : ttc * (toNum(d.acompte_pourcentage || 30) / 100)
+          : ttc * (toNum(d.acompte_pourcentage ?? 30) / 100)
         const date = suiviAcompte.date_paiement ? new Date(suiviAcompte.date_paiement).toLocaleDateString('fr-FR') : '—'
         totalPaye += acompteMontant
         lignes.push({
@@ -835,8 +835,8 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
         React.createElement(Text, { style: CS.sectionH }, 'Acomptes entreprises'),
         ...devisR3.map(d => {
           const ttc = toNum(d.montant_ttc)
-          const acompte = d.acompte_pourcentage === -1 ? toNum(d.acompte_montant_fixe) : ttc * (toNum(d.acompte_pourcentage || 30) / 100)
-          const pct = d.acompte_pourcentage === -1 ? '' : ` (${d.acompte_pourcentage || 30}%)`
+          const acompte = d.acompte_pourcentage === -1 ? toNum(d.acompte_montant_fixe) : ttc * (toNum(d.acompte_pourcentage ?? 30) / 100)
+          const pct = d.acompte_pourcentage === -1 ? '' : ` (${d.acompte_pourcentage ?? 30}%)`
           return React.createElement(View, { key: d.id, style: CS.sumRow },
             React.createElement(Text, { style: CS.sumLabel }, `${d.artisan?.entreprise || '—'}${pct}`),
             React.createElement(Text, { style: CS.sumValue }, fmt(acompte)),
@@ -847,7 +847,7 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
           React.createElement(Text, { style: [CS.tdRB, { color: BLEU }] }, fmt(
             devisR3.reduce((sum, d) => {
               const ttc = toNum(d.montant_ttc)
-              const acompte = d.acompte_pourcentage === -1 ? toNum(d.acompte_montant_fixe) : ttc * (toNum(d.acompte_pourcentage || 30) / 100)
+              const acompte = d.acompte_pourcentage === -1 ? toNum(d.acompte_montant_fixe) : ttc * (toNum(d.acompte_pourcentage ?? 30) / 100)
               return sum + acompte
             }, 0)
           )),
