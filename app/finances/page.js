@@ -388,6 +388,8 @@ export default function Finances() {
       apporteurTotalHT: round2(f.apporteur.totalHT),
       apporteurAgente:  round2(f.apporteur.parts.agente),
       apporteurAdmin:   round2(f.apporteur.parts.admin),
+      apporteurAgenteReel: round2(f.apporteur.partsReel.agente),
+      apporteurAdminReel:  round2(f.apporteur.partsReel.admin),
 
       // Royalties globales
       royaltiesTotal: round2(f.royalties.total),
@@ -470,14 +472,9 @@ export default function Finances() {
           .filter(dv => dv.isApporteur && dv.signed)
           .reduce((s, dv) => s + dv.netCom, 0)
       )
-      const apporteurRetire = round2(
-        (c.finance?.apporteur?.lines || []).reduce((sum, ligne) => {
-          const devisOriginal = c.devisAcceptes.find(dv => dv.id === ligne.devisId)
-          const artId = devisOriginal?.artisan_id || devisOriginal?.artisan?.id
-          const suivi = getSuivi(d, 'apporteur_agente', artId)
-          return suivi?.statut_client === 'retire' ? sum + ligne.totalHT : sum
-        }, 0)
-      )
+      // Réel = coût apporteur sur les acomptes débloqués (finance.js).
+      // Admin référent porte tout (part_agente = 0).
+      const apporteurRetire = c.apporteurAdminReel
 
       const gainAdminReel = round2(fraisReel + honReel + comReelNet + comApporteursReel - apporteurRetire)
       return { ...c, fraisReel, fraisAgenteReel: 0, honReel, comReelNet, comApporteursReel, royaltiesReelTotal: 0, apporteurRembourse: apporteurRetire, gainAgenteReel: 0, gainAdminReel, gainsAgenteReels: 0, acompteAmoNet, acompteAmoAgente, soldeAmoNet: soldeAmoNetM, soldeAmoAgente: 0 }
@@ -538,15 +535,8 @@ export default function Finances() {
       comApporteursAgente = round2(comApporteursAgente + dvF.parts.agente)
     }
 
-    // Apporteur client remboursé
-    const apporteurRembourse = round2(
-      (c.finance?.apporteur?.lines || []).reduce((sum, ligne) => {
-        const devisOriginal = c.devisAcceptes.find(dv => dv.id === ligne.devisId)
-        const artId = devisOriginal?.artisan_id || devisOriginal?.artisan?.id
-        const suivi = getSuivi(d, 'apporteur_agente', artId)
-        return suivi?.statut_ctp === 'rembourse' ? sum + ligne.agente : sum
-      }, 0)
-    )
+    // Apporteur client réel = part agente sur les acomptes débloqués (finance.js).
+    const apporteurRembourse = c.apporteurAgenteReel
 
     const royaltiesReelTotal = round2(fraisRoyaltiesReel + royaltiesHonReel + royaltiesComReel)
     const gainAgenteReel = round2(fraisAgenteReel + honAgenteReel + comAgenteReel + comApporteursAgente - apporteurRembourse)
@@ -947,7 +937,7 @@ export default function Finances() {
           <div style={{padding:14, background:'#fff', borderRadius:10, border:'1px solid var(--ink-200)'}}>
             <div className="eyebrow" style={{marginBottom:10}}>Répartition</div>
             <div style={{display:'flex', flexDirection:'column', gap:8, fontSize:12.5}}>
-              <RepartRow label="Frais consultation HT" value={fmt(isReel ? r.fraisReel : c.fraisHT)} />
+              <RepartRow label="Frais consultation HT" value={fmt(isReel ? r.fraisReel : c.fraisNet)} />
               <RepartRow label="Commissions HT" value={fmt(c.comHT)} />
               {c.honTotalNet > 0 && <RepartRow label="Honoraires" value={fmt(isReel ? r.honReel : c.honTotalNet)} />}
               <RepartRow label="Royalties" value={`-${fmt(c.royaltiesTotal)}`} dim />
