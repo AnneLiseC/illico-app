@@ -309,7 +309,7 @@ export default function Finances() {
   // calculer() : extrait les valeurs depuis lib/finance.js — zéro calcul inline
   // calculerReel() : applique les déclencheurs suivi_financier — une seule source de vérité
 
-  const calculer = (d) => {
+  const calculerBase = (d) => {
     const normalized = normalizeDossier(d)
     const f = calculateDossierFinance(normalized)
 
@@ -440,8 +440,8 @@ export default function Finances() {
       ),
     }
   }
-  const calculerReel = (d) => {
-    const c = calculer(d)
+  const calculerReelBase = (d) => {
+    const c = calculerBase(d)
 
     // Acompte AMO — commun aux deux branches (Marine et non-Marine)
     const acompteAmoSF = d.typologie === 'amo'
@@ -570,6 +570,39 @@ export default function Finances() {
     (d.suivi_financier || []).find(
       s => s.type_echeance === type && (!artisanId || s.artisan_id === artisanId)
     )
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // ⚠️ INVARIANT CACHE FINANCE — NE PAS CONTOURNER
+  // financeCache mémoïse calculerBase/calculerReelBase par dossier (fonctions
+  // PURES de `d`). Il ne se recalcule QUE lorsque la référence `dossiers` change.
+  // Donc TOUTE mutation d'un dossier / devis / suivi_financier DOIT passer par
+  // chargerTout() (qui fait setDossiers(nouvelArray)). NE JAMAIS patcher `dossiers`
+  // en place : sinon le cache — et tous les montants affichés — resteraient PÉRIMÉS.
+  // ───────────────────────────────────────────────────────────────────────────
+  const financeCache = useMemo(() => {
+    const m = new Map()
+    for (const d of dossiers) m.set(d.id, { c: calculerBase(d), r: calculerReelBase(d) })
+    return m
+  }, [dossiers])
+
+  const calculer     = (d) => financeCache.get(d.id)?.c ?? calculerBase(d)
+  const calculerReel = (d) => financeCache.get(d.id)?.r ?? calculerReelBase(d)
+
+  // VÉRIFICATION TEMPORAIRE (conservée à la demande de l'utilisatrice — à retirer
+  // sur demande) : confirme zéro écart entre le cache et un calcul direct, sur
+  // tous les dossiers. Regarder la console : « N dossier(s), 0 écart(s) » attendu.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const ser = (o) => JSON.stringify(o, (k, v) => (v instanceof Map ? Array.from(v.entries()) : v))
+    let ecarts = 0
+    for (const d of dossiers) {
+      const cached = financeCache.get(d.id)
+      if (!cached) { console.warn('[memo-finances] dossier absent du cache :', d.reference || d.id); ecarts++; continue }
+      if (ser(cached.c) !== ser(calculerBase(d)))     { console.warn('[memo-finances] écart .c sur', d.reference || d.id); ecarts++ }
+      if (ser(cached.r) !== ser(calculerReelBase(d))) { console.warn('[memo-finances] écart .r sur', d.reference || d.id); ecarts++ }
+    }
+    console.log(`[memo-finances] vérif cache : ${dossiers.length} dossier(s), ${ecarts} écart(s)`)
+  }, [financeCache, dossiers])
 
   const majSuivi = async (dossierId, type, artisanId, champOrUpdates, valeur) => {
     setSaving(true)
