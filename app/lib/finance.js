@@ -127,7 +127,9 @@ export function calculateDevisFinance(devis, dossier = {}) {
     statut: devis?.statut || null,
     signed,
     refused,
-    isApporteur: Boolean(devis?.artisan?.sans_royalties),
+    isApporteur: Boolean(devis?.artisan?.paiement_direct),
+    partenaire: Boolean(devis?.artisan?.partenaire),
+    paiementDirect: Boolean(devis?.artisan?.paiement_direct),
     montantHT,
     montantTTC,
     commissionPct,
@@ -291,51 +293,85 @@ export function calculateApporteurFinance(dossier) {
   const tauxApporteur = normalizePercent(
     dossier?.apporteur_pourcentage ?? dossier?.client?.apporteur_pourcentage, 0
   )
-  const mode       = dossier?.client?.apporteur_mode === 'total_chantier'
+  // Mode lu sur le VRAI champ client (`apporteur_base`), valeur cible 'total_chantier_ht'.
+  // (Corrige le bug : l'ancien code lisait `apporteur_mode` et comparait à 'total_chantier'
+  //  → toujours faux → 'total chantier HT' inatteignable.)
+  const mode       = dossier?.client?.apporteur_base === 'total_chantier'
     ? 'total_chantier_ht' : 'par_devis'
   const partAgente = getPartAgente(dossier)
+  const actif      = dossier?.apporteur_actif === true
+  const tauxDefini = tauxApporteur > 0
   const signed     = getSignedDevis(dossier)
     .filter(dv => toNumber(dv.commission_pourcentage) > 0)
 
-  if (tauxApporteur === 0) {
-    return { enabled: false, mode, tauxApporteur, totalHT: 0, parts: { agente: 0, admin: 0 }, lines: [] }
+  // Le coût ne se déclenche QUE si l'apporteur est activé sur CE chantier ET taux défini.
+  // Taux null/0 = « taux à définir », coût 0, jamais de NaN.
+  if (!actif || !tauxDefini) {
+    return {
+      enabled: false, actif, tauxDefini, mode, tauxApporteur,
+      totalHT: 0, parts: { agente: 0, admin: 0 },
+      totalHTReel: 0, partsReel: { agente: 0, admin: 0 },
+      lines: [],
+    }
   }
 
-  let lines = []
+  // Réel = devis dont l'acompte est débloqué côté illiCO (statut_illico === 'recu').
+  const suivi = Array.isArray(dossier?.suivi_financier) ? dossier.suivi_financier : []
+  const estDebloque = (artisanId) => suivi.some(s =>
+    s.type_echeance === 'acompte_artisan' && s.artisan_id === artisanId && s.statut_illico === 'recu'
+  )
 
+  let lines = []
   if (mode === 'total_chantier_ht') {
-    const baseHT  = round2(signed.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
-    const totalHT = round2(baseHT * tauxApporteur)
-    const parts   = split(totalHT, partAgente)
-    lines = [{ type: 'total_chantier_ht', baseHT, tauxApporteur, totalHT, ...parts }]
+    const baseHT      = round2(signed.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
+    const totalHT     = round2(baseHT * tauxApporteur)
+    const parts       = split(totalHT, partAgente)
+    const baseHTReel  = round2(signed
+      .filter(dv => estDebloque(dv.artisan_id ?? dv.artisan?.id))
+      .reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
+    const totalHTReel = round2(baseHTReel * tauxApporteur)
+    const partsReel   = split(totalHTReel, partAgente)
+    lines = [{
+      type: 'total_chantier_ht', baseHT, tauxApporteur, totalHT,
+      agente: parts.agente, admin: parts.admin,
+      debloque: baseHTReel > 0, totalHTReel,
+      agenteReel: partsReel.agente, adminReel: partsReel.admin,
+    }]
   } else {
     lines = signed.map(dv => {
-      const baseHT  = round2(toNumber(dv.montant_ht))
-      const totalHT = round2(baseHT * tauxApporteur)
-      const parts   = split(totalHT, partAgente)
+      const artisanId = dv.artisan_id ?? dv.artisan?.id
+      const baseHT    = round2(toNumber(dv.montant_ht))
+      const totalHT   = round2(baseHT * tauxApporteur)
+      const parts     = split(totalHT, partAgente)
+      const debloque  = estDebloque(artisanId)
       return {
         type: 'par_devis',
         devisId: dv.id || null,
+        artisanId,
         label: dv?.artisan?.entreprise || 'Devis',
-        baseHT,
-        tauxApporteur,
-        totalHT,
-        agente: parts.agente,
-        admin: parts.admin,
+        baseHT, tauxApporteur, totalHT,
+        agente: parts.agente, admin: parts.admin,
+        debloque,
+        totalHTReel: debloque ? totalHT : 0,
+        agenteReel:  debloque ? parts.agente : 0,
+        adminReel:   debloque ? parts.admin : 0,
       }
     })
   }
 
-  const totalHT = round2(lines.reduce((s, l) => s + l.totalHT, 0))
-  const agente  = round2(lines.reduce((s, l) => s + l.agente, 0))
-  const admin   = round2(lines.reduce((s, l) => s + l.admin, 0))
+  const totalHT     = round2(lines.reduce((s, l) => s + l.totalHT, 0))
+  const agente      = round2(lines.reduce((s, l) => s + l.agente, 0))
+  const admin       = round2(lines.reduce((s, l) => s + l.admin, 0))
+  const totalHTReel = round2(lines.reduce((s, l) => s + (l.totalHTReel || 0), 0))
+  const agenteReel  = round2(lines.reduce((s, l) => s + (l.agenteReel || 0), 0))
+  const adminReel   = round2(lines.reduce((s, l) => s + (l.adminReel || 0), 0))
 
   return {
-    enabled: true,
-    mode,
-    tauxApporteur,
+    enabled: true, actif, tauxDefini, mode, tauxApporteur,
     totalHT,
     parts: { agente, admin },
+    totalHTReel,
+    partsReel: { agente: agenteReel, admin: adminReel },
     lines,
   }
 }
@@ -364,8 +400,8 @@ export function calculateDossierFinance(dossier) {
     admin:  round2(frais.parts.admin  + commissions.parts.admin  + honoraires.parts.admin),
   }
   const gainsNets = {
-    agente: round2(gainsBruts.agente - apporteur.parts.agente),
-    admin:  round2(gainsBruts.admin  - apporteur.parts.admin),
+    agente: round2(gainsBruts.agente - apporteur.partsReel.agente),
+    admin:  round2(gainsBruts.admin  - apporteur.partsReel.admin),
   }
 
   const gainsBrutsPrevi = {
