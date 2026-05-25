@@ -146,6 +146,8 @@ Repérés par l'advisor sécurité Supabase pendant l'analyse P0-9. NE PAS méla
 ### Lot E — code mort détecté (facturation)
 
 - [ ] **`FacturationAgentePropre` et `renderFacturationMoisSuivi`** : jamais rendus (code mort). La facturation active = `FacturationAgentes`. Découvert lors de P0-9. À supprimer au Lot E après confirmation. **(Lot E)**
+- [ ] **`renderAgenteMoisAdmin` (l.2464) et `renderFacturationAnneeAgente` (l.1683)** : code mort de facturation NON listé initialement, découvert lors de l'audit étape 1 facturation. Aucun call-site (def seule). `renderAgenteMoisAdmin` est la version la plus complète (calcul live F1/F2 + handlers statut). À supprimer en bloc au Lot E avec le reste du code mort facturation. **(Lot E)**
+- [ ] **Variables mortes facturation** : `totalRedevancesReglees` (l.827), `mesRedevancesReglees` (l.849), `monNet` (l.850) — jamais utilisées. À supprimer au Lot E. **(Lot E)**
 
 ### Lot E — code mort détecté (formulaire devis inline)
 
@@ -156,3 +158,22 @@ Repérés par l'advisor sécurité Supabase pendant l'analyse P0-9. NE PAS méla
 - [ ] **`sauvegarderDevis` (l. ~1106) et `modifierDevis` (l. ~1140)** dans `app/chantiers/[id]/page.js` : définis mais plus appelés. **Remplacés par `saveDevisFromModal(form)` (l. ~1154), qui gère désormais création ET édition en une seule fonction** (branché sur le bouton « Enregistrer » de DevisModal). Les deux anciennes sont des vestiges d'avant la fusion. Avant suppression au Lot E : confirmer qu'aucune référence cachée ne les appelle. **(Lot E)**
 
 - [ ] **Formulaire inline de devis = code mort complet.** `nouveauDevis`, `ajouterDevis`, `setND`, `sauvegarderDevis`, `modifierDevis`, `devisEnEdition` dans `app/chantiers/[id]/page.js` : jamais rendus, jamais appelés. Le seul chemin actif est `DevisModal` + `saveDevisFromModal`. À supprimer en bloc au Lot E (après vérif des références). **(Lot E)**
+
+---
+
+## Ajouts (Lot B facturation — étape 1 : redevance HT)
+
+### Section facturation Lot B — vérification en cours (étape 1)
+
+- [ ] **Vérifier qu'aucun affichage admin ne lit le PARAMÈTRE redevance au lieu des LIGNES encaissées.** « Redevance » a deux sens opposés selon le rôle : côté **agente** = ce qu'elle DOIT (lit le paramètre `profiles.redevance_mensuelle_ht`) ; côté **admin** = ce qu'elle a FACTURÉ/ENCAISSÉ des agentes (agrège les lignes de la table `redevances.montant_ht`). Ces flux ne doivent JAMAIS se croiser. Point de contrôle identifié : `totalNetCTP` (`finances/page.js` l.841) et tout KPI rendu en contexte admin. Si un affichage admin lit le paramètre (qui est `null` pour un admin) au lieu des lignes → bug à corriger (risque NaN / affichage faux dans la vue admin). **(Lot B facturation — étape 1 ; statut à mettre à jour selon le rapport Claude Code.)**
+
+### Lot E — dette (convention null redevance)
+
+- [ ] **Cohérence de convention null sur la redevance.** Depuis l'étape 1 facturation : les lectures de LIGNE redevance gèrent le manquant en `|| 0` (compte comme 0), les affichages de PARAMÈTRE en `!= null ? … : 'à paramétrer'`. Deux conventions pour la même idée « pas de valeur ». Invisible dans le cas réel actuel (montant 450, jamais null côté agente). À harmoniser un jour, pas un bloqueur. **(Lot E — dette.)**
+
+### Lot F — fonction (réglage du montant de redevance dans Paramètres)
+
+- [ ] **CHANTIER PARAMÈTRES — construire le réglage du montant de redevance par agente.** Aujourd'hui la page Paramètres ne gère que la DATE de début des redevances ; le MONTANT n'est réglable nulle part (il vivait en dur : `540 €` codé dans le texte `parametres/page.js:551` + défaut DB, tous deux supprimés en étape 1 facturation). À construire : ajouter un champ « Redevance mensuelle (HT) » au formulaire agente (`app/parametres/page.js`) + le faire transiter dans `/api/create-agente` (destructure + updates + création) + écrire `profiles.redevance_mensuelle_ht`. Source de vérité = ce champ, jamais un littéral ; absent = « à paramétrer ».
+  **Règle d'affichage : ce champ ne s'affiche QUE pour les agentes, JAMAIS pour un admin.** Un admin encaisse les redevances des agentes mais n'en doit aucune → le paramètre est sans objet pour lui (mis à `NULL` en base via `WHERE role = 'admin'` en étape 1 facturation). L'admin ne voit que les redevances facturées/encaissées (lignes de la table `redevances`), jamais une redevance « à lui ».
+  NB : reporté hors étape 1 (le champ n'existe pas encore → rien à masquer en étape 1, le sujet masquage admin appartient à cette construction). Ne bloque pas la clôture du Lot B. **(Lot F — fonction.)**
+- [ ] **Cases de redevance mensuelle non cliquables côté agente** (déjà noté plus haut dans « notification mail à l'upload de facture ») : à traiter avec le workflow redevance. Rappel ici car même zone. **(Lot B / Fonctions.)**
