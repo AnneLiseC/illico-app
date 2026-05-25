@@ -385,6 +385,7 @@ function DevisModal({ open, devis, onClose, onSave, artisans }) {
     artisan_id: devis?.artisan_id || '',
     montant_ht: devis?.montant_ht ?? '',
     montant_ttc: devis?.montant_ttc ?? '',
+    ttc_manuel: devis?.ttc_manuel ?? false,
     commission_pourcentage: devis?.commission_pourcentage != null ? (devis.commission_pourcentage * 100).toFixed(1) : '',
     sans_commission: devis?.commission_pourcentage === 0,
     date_reception: devis?.date_reception || '',
@@ -440,16 +441,17 @@ function DevisModal({ open, devis, onClose, onSave, artisans }) {
                 value={form.montant_ht}
                 onChange={e => {
                   const ht = e.target.value
-                  const ttcAuto = ht !== '' ? (parseFloat(ht) * 1.1).toFixed(2) : ''
-                  setForm(f => ({ ...f, montant_ht: ht, montant_ttc: ttcAuto }))
+                  setForm(f => f.ttc_manuel
+                    ? { ...f, montant_ht: ht }
+                    : { ...f, montant_ht: ht, montant_ttc: ht !== '' ? (parseFloat(ht) * 1.1).toFixed(2) : '' })
                 }}
                 style={{height:40, width:'100%'}} />
             </div>
             <div>
-              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Montant TTC (€) <span style={{color:'var(--ink-400)', fontWeight:400, textTransform:'none'}}>auto +10%</span></label>
+              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Montant TTC (€) <span style={{color:'var(--ink-400)', fontWeight:400, textTransform:'none'}}>{form.ttc_manuel ? 'figé / manuel' : 'auto +10%'}</span></label>
               <input type="number" step="0.01" min="0" className="input"
                 value={form.montant_ttc}
-                onChange={e => set('montant_ttc', e.target.value)}
+                onChange={e => setForm(f => ({ ...f, montant_ttc: e.target.value, ttc_manuel: true }))}
                 style={{height:40, width:'100%'}} />
             </div>
           </div>
@@ -1159,6 +1161,12 @@ export default function FicheChantier({ params }) {
     if (form.acompte_pourcentage === 0 && commissionPct > 0 && artisanSel?.partenaire !== true) {
       if (!window.confirm('Attention, acompte 0 : la commission ne sera pas prélevée. Confirmer ?')) return
     }
+    // Avertissement doux (non bloquant) : TTC saisi inférieur au HT.
+    const htNum  = parseFloat(form.montant_ht)
+    const ttcNum = parseFloat(form.montant_ttc)
+    if (Number.isFinite(htNum) && Number.isFinite(ttcNum) && ttcNum < htNum) {
+      if (!window.confirm('Le TTC est inférieur au HT, est-ce normal ?')) return
+    }
     const acomptePct = form.acompte_pourcentage === -1 || form.acompte_pourcentage === 0
       ? form.acompte_pourcentage
       : parseFloat(form.acompte_pourcentage)
@@ -1168,6 +1176,7 @@ export default function FicheChantier({ params }) {
     const payload = {
       montant_ht: form.montant_ht !== '' ? parseFloat(form.montant_ht) : null,
       montant_ttc: form.montant_ttc !== '' ? parseFloat(form.montant_ttc) : null,
+      ttc_manuel: form.ttc_manuel ?? false,
       commission_pourcentage: form.sans_commission ? 0 : (form.commission_pourcentage ? parseFloat(form.commission_pourcentage) / 100 : null),
       date_reception: form.date_reception || null,
       date_limite: form.date_limite || null,
