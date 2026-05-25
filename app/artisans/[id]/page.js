@@ -98,9 +98,6 @@ export default function FicheArtisan({ params }) {
       metier: artisan.metier, decennale_expiration: artisan.decennale_expiration,
       paiement_direct: paiementDirect,
       partenaire,
-      // Transition : sans_royalties reste aligné sur paiement_direct tant que
-      // finance.js et les pages de calculs lisent encore cette colonne.
-      sans_royalties: paiementDirect,
     }).eq('id', id)
     if (error) { setErreur('Erreur : ' + error.message) }
     else { setSucces('Modifications enregistrées ✓'); setMode('lecture') }

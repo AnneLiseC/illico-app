@@ -179,7 +179,7 @@ export default function Dashboard() {
           honoraires_amo_taux, taux_courtage, typologie, created_at,
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
           client:clients(prenom, nom, apporteur_pourcentage, apporteur_base),
-          devis_artisans(id, montant_ht, montant_ttc, commission_pourcentage, statut, date_signature, artisan:artisans(id, entreprise, sans_royalties)),
+          devis_artisans(id, montant_ht, montant_ttc, commission_pourcentage, statut, date_signature, artisan:artisans(id, entreprise)),
           suivi_financier(*)
         `).eq('referente_id', profile.id).order('created_at', { ascending: false }),
         supabase.from('objectifs_ca').select('*').eq('annee', annee).eq('agente_id', profile.id),
