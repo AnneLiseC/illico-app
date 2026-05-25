@@ -63,8 +63,6 @@ export default function NouvelArtisan() {
         decennale_expiration: form.decennale_expiration || null,
         paiement_direct: paiementDirect,
         partenaire,
-        // Transition : sans_royalties reste aligné sur paiement_direct.
-        sans_royalties: paiementDirect,
       })
       .select()
       .single()

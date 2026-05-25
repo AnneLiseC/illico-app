@@ -195,7 +195,7 @@ export default function Statistiques() {
     if (!user) { router.push('/login'); return }
     if (!profile) return
     Promise.all([
-      supabase.from('dossiers').select(`*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), client:clients(id, prenom, nom, civilite), devis_artisans(*, artisan:artisans(id, entreprise, metier, sans_royalties)), suivi_financier(*)`).order('created_at', { ascending: false }),
+      supabase.from('dossiers').select(`*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), client:clients(id, prenom, nom, civilite), devis_artisans(*, artisan:artisans(id, entreprise, metier)), suivi_financier(*)`).order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').in('role', ['admin', 'agente']).order('prenom'),
       supabase.from('clients').select('id, prenom, nom, apporteur_affaires, apporteur_pourcentage, dossiers(id)').eq('apporteur_affaires', true).order('nom'),
     ]).then(([{ data: dossiersData }, { data: agentesData }, { data: apporteursData }]) => {
