@@ -20,9 +20,13 @@ Décision validée : les royalties illiCO France représentent le **coût net** 
 
 La commission est **calculée** sur le HT du devis, mais elle est **physiquement prélevée sur l'acompte** au moment où le client le paie (circuit bancaire / illiCO France).
 
-**Conséquence : acompte 0% ⟹ commission 0% OBLIGATOIRE.**
+**Conséquence : acompte 0% ⟹ commission 0% OBLIGATOIRE — UNIQUEMENT pour les artisans classiques (non partenaires).**
 Sans acompte, l'argent ne transite pas par illiCO France → aucun flux sur lequel prélever la commission. L'app devrait forcer/griser la commission à 0 quand l'acompte est mis à 0.
 (L'inverse n'est pas vrai : acompte 30% + commission 0% est un cas valide — entreprise connue.)
+
+⚠️ **EXCEPTION PARTENAIRE :** cette règle NE s'applique PAS aux partenaires. Pour un partenaire (BET, archi, fournisseur), la commission n'est PAS prélevée sur l'acompte du client — on facture DIRECTEMENT le partenaire (X% de son devis HT), indépendamment de l'acompte. Un partenaire peut donc avoir acompte 0% + commission 10% : c'est même son cas standard (paiement direct du client + commission facturée à part). Pour un partenaire, acompte et commission sont totalement INDÉPENDANTS, aucune contrainte entre les deux.
+
+→ Règle à coder : « acompte 0 ⟹ commission 0 » seulement si `partenaire = false`. Si `partenaire = true`, pas de contrainte.
 
 ## MATRICE acompte × commission (cas réels)
 
@@ -78,11 +82,31 @@ Partage PARAMÉTRABLE par le franchisé. Marine : NON partagé → 100% à la r�
 ### Apporteur (COÛT / sortant — ex. Kiosque à travaux)
 ```
 base = HT  (mode "total chantier" OU "par devis", au choix selon l'apporteur)
-montant = base × taux
-L'apporteur facture CTP : montant + TVA
+coût apporteur = base × taux  (ex. Kiosque 3%)
+L'apporteur facture CTP : coût + TVA (facture reçue ~1 mois après le déblocage de l'acompte).
 Pas de royalties.
-Devis à 0% de commission EXCLU de la base apporteur ET des commissions, MAIS compté dans les honoraires (voir matrice ci-dessus).
-Partage sur le HT : l'agente DOIT sa part à CTP (taux_choisi).
+Devis à 0% de commission EXCLU de la base apporteur (ne passe pas par illiCO France).
+```
+**Base prévisionnel vs réel (comme le reste des calculs) :**
+- Prévisionnel (ce que l'agente VA devoir) = sur les devis SIGNÉS/acceptés.
+- Réel (ce qu'elle doit MAINTENANT) = sur les devis dont l'ACOMPTE est débloqué.
+
+**Déclenchement :** le coût existe dès la signature, devient payable au déblocage de l'acompte. L'interrupteur `dossiers.apporteur_actif` (défaut false) décide si l'apporteur du client s'applique à CE chantier — le calcul ne se déclenche QUE si activé.
+
+**Partage du coût (sens INVERSE des gains) :** le coût se partage avec le MÊME taux que les gains (ex. 60/40), mais l'agente PAIE au lieu de toucher. CTP paie l'apporteur, puis l'agente rembourse sa part à CTP, l'admin assume la sienne.
+
+**Exemple — dossier Guerteau (Kiosque 3%, par devis, 60/40) :**
+```
+DAMIAN RENOVATION 17 477,98 × 3% = 524,34
+MJ RENOVATION      7 200,00 × 3% = 216,00
+ELEC 2G            4 470,00 × 3% = 134,10
+PIERRE ET MAGUY    9 348,86 × 3% = 280,47
+ESPRIT CUISINES   21 988,01 × 3% = 659,64
+(Solmat + DecoGranit EXCLUS : commission 0%)
+Coût apporteur total = 1 814,55 €
+→ CTP paie 1 814,55 € au Kiosque
+→ Agente rembourse sa part : 1 814,55 × 60% = 1 088,73 €
+→ Admin assume : 1 814,55 × 40% = 725,82 €
 ```
 
 ### Partenaire (GAIN / entrant — BET, archi, fournisseur)
