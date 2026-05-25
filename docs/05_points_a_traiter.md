@@ -125,6 +125,13 @@ Relevés par l'advisor Supabase pendant le diagnostic perf de la fiche chantier.
 - [ ] **`multiple_permissive_policies` (51×)** : plusieurs policies permissives sur la même table/action, toutes évaluées par ligne et OR-ées (ex. dossiers, photos, messages, comptes_rendus). Multiplicateur du point précédent. À consolider.
 - [ ] **`unindexed_foreign_keys` (29×)** : FK sans index, dont `devis_artisans.dossier_id`, `suivi_financier.dossier_id` (d'où des Seq Scan). Ajouter les index = hygiène/échelle. SQL simple.
 
+### P0-9-bis — SÉCURITÉ : cloisonner par agente les tables OPÉRATIONNELLES (lacune préexistante)
+
+Découvert pendant le diagnostic perf (prototype embedding). P0-9 n'a cloisonné par agente QUE les tables financières (devis_artisans, suivi_financier, factures_artisans, redevances, factures_agente). Les tables OPÉRATIONNELLES sont restées « staff voit tout » (`get_my_role() IN ('admin','agente')`), donc NON cloisonnées :
+- `rendez_vous`, `interventions_artisans`, `photos`, `comptes_rendus`, `chantier_documents`, `chantier_fiches_techniques`, `messages`
+**Conséquence (testée empiriquement)** : aujourd'hui, une agente qui requête en direct `rendez_vous?dossier_id=eq.X` (ou photos, CR, messages...) d'un dossier d'une AUTRE agente récupère les données (test B : rdv=1, photos=1 sur dossier admin, alors que devis=0/suivi=0/factures=0 bien bloqués). C'est la même classe de faille que P0-9, sur d'autres tables.
+**Statut** : l'embedding (perf fiche chantier) MASQUE cette lacune sur le chargement de la fiche chantier (les enfants ne sont atteignables qu'à travers un parent gaté), mais NE FERME PAS la faille au niveau base (un appel direct par dossier_id étranger renvoie toujours les données). À fermer pour de vrai : appliquer le même pattern P0-9 (admin OR EXISTS(dossier WHERE referente_id=auth.uid())) à ces 7 tables. **(SÉCURITÉ — à faire, pas une simple dette. À coupler avec le select-wrapping RLS.)**
+
 ### Sécurité — durcissement RLS complémentaire (juste après P0-9)
 
 Repérés par l'advisor sécurité Supabase pendant l'analyse P0-9. NE PAS mélanger à P0-9 (un changement à la fois). À traiter en bloc « durcissement sécurité » juste après P0-9 :
