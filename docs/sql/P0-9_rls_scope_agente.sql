@@ -16,13 +16,12 @@
 -- entière, elle ne peut pas dire « cette agente ne peut écrire QUE la colonne
 -- statut ». (Le contrôle par colonne existe via GRANT UPDATE(col), mais il vise
 -- un RÔLE Postgres — or admin ET agente sont tous le rôle `authenticated`, donc
--- GRANT ne les distingue pas.) On utilise donc un TRIGGER BEFORE INSERT/UPDATE :
---   • la RLS autorise l'agente à toucher SA ligne de redevance ;
---   • le trigger neutralise toute modif du MONTANT par une non-admin
---     (UPDATE : on restaure l'ancien montant ; INSERT : montant imposé depuis
---      profiles.redevance_mensuelle_ttc, fixé par l'admin).
+-- GRANT ne les distingue pas.) On utilise donc un TRIGGER BEFORE UPDATE :
+--   • les redevances sont créées par l'ADMIN uniquement (INSERT admin-only) ;
+--   • la RLS autorise l'agente à UPDATE SA ligne de redevance (cocher le statut) ;
+--   • le trigger BEFORE UPDATE restaure montant/rattachement pour une non-admin
+--     → l'agente ne change que statut/date/mode/notes, jamais le montant ;
 --   • l'admin (par le RÔLE) garde le contrôle total du montant.
--- => l'agente ne peut que cocher le statut « payé » de SA redevance.
 --
 -- À appliquer manuellement dans Supabase (jamais via MCP).
 -- Ne touche PAS : policies client, table `clients`, ni les 3 bonus sécurité
@@ -68,8 +67,9 @@ CREATE POLICY "factures_agente_staff" ON public.factures_agente
   WITH CHECK (get_my_role() = 'admin' OR agente_id = auth.uid());
 
 
--- ── redevances : lecture/INSERT/UPDATE admin OR agente_id ; DELETE admin ────
---    + trigger pour que l'agente ne touche QUE le statut (pas le montant).
+-- ── redevances : SELECT/UPDATE admin OR agente_id ; INSERT/DELETE admin only ─
+--    Les redevances sont créées par l'ADMIN ; l'agente coche seulement le statut.
+--    + trigger (BEFORE UPDATE) qui protège le montant côté agente.
 DROP POLICY IF EXISTS "staff_all_redevances"    ON public.redevances;
 DROP POLICY IF EXISTS "Lecture redevances"      ON public.redevances;
 DROP POLICY IF EXISTS "Insertion redevances"    ON public.redevances;
@@ -79,9 +79,9 @@ CREATE POLICY "redevances_select" ON public.redevances
   FOR SELECT TO public
   USING (get_my_role() = 'admin' OR agente_id = auth.uid());
 
-CREATE POLICY "redevances_insert" ON public.redevances
+CREATE POLICY "redevances_insert_admin" ON public.redevances
   FOR INSERT TO public
-  WITH CHECK (get_my_role() = 'admin' OR agente_id = auth.uid());
+  WITH CHECK (get_my_role() = 'admin');
 
 CREATE POLICY "redevances_update" ON public.redevances
   FOR UPDATE TO public
@@ -92,7 +92,8 @@ CREATE POLICY "redevances_delete_admin" ON public.redevances
   FOR DELETE TO public
   USING (get_my_role() = 'admin');
 
--- Trigger : montant fixé par l'admin uniquement ; l'agente ne change que le statut.
+-- Trigger : l'agente (non-admin) ne peut modifier QUE le statut, jamais le montant.
+-- BEFORE UPDATE uniquement (l'agente n'insère jamais : INSERT réservé admin).
 CREATE OR REPLACE FUNCTION public.redevances_montant_protege()
   RETURNS trigger
   LANGUAGE plpgsql
@@ -104,28 +105,20 @@ BEGIN
   IF get_my_role() = 'admin' THEN
     RETURN NEW;
   END IF;
-
-  IF TG_OP = 'UPDATE' THEN
-    -- Une agente ne peut PAS modifier le montant ni le rattachement :
-    -- on restaure les valeurs d'origine (elle ne change que statut/date/mode/notes).
-    NEW.montant_ttc := OLD.montant_ttc;
-    NEW.montant_ht  := OLD.montant_ht;
-    NEW.agente_id   := OLD.agente_id;
-    NEW.mois        := OLD.mois;
-    NEW.annee       := OLD.annee;
-  ELSIF TG_OP = 'INSERT' THEN
-    -- À la création par une agente : montant IMPOSÉ depuis son profil (fixé par
-    -- l'admin), rattachement forcé à elle-même. Jamais un montant libre.
-    NEW.agente_id   := auth.uid();
-    NEW.montant_ttc := (SELECT redevance_mensuelle_ttc FROM public.profiles WHERE id = auth.uid());
-  END IF;
+  -- Non-admin (agente) : on restaure montant + rattachement d'origine.
+  -- Elle ne change donc que statut / date_paiement / date_reglement / mode_reglement / notes.
+  NEW.montant_ttc := OLD.montant_ttc;
+  NEW.montant_ht  := OLD.montant_ht;
+  NEW.agente_id   := OLD.agente_id;
+  NEW.mois        := OLD.mois;
+  NEW.annee       := OLD.annee;
   RETURN NEW;
 END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_redevances_montant_protege ON public.redevances;
 CREATE TRIGGER trg_redevances_montant_protege
-  BEFORE INSERT OR UPDATE ON public.redevances
+  BEFORE UPDATE ON public.redevances
   FOR EACH ROW EXECUTE FUNCTION public.redevances_montant_protege();
 
 
@@ -171,7 +164,7 @@ CREATE POLICY "factures_artisans_staff" ON public.factures_artisans
 -- DROP POLICY IF EXISTS "dossiers_staff" ON public.dossiers;
 -- DROP POLICY IF EXISTS "factures_agente_staff" ON public.factures_agente;
 -- DROP POLICY IF EXISTS "redevances_select" ON public.redevances;
--- DROP POLICY IF EXISTS "redevances_insert" ON public.redevances;
+-- DROP POLICY IF EXISTS "redevances_insert_admin" ON public.redevances;
 -- DROP POLICY IF EXISTS "redevances_update" ON public.redevances;
 -- DROP POLICY IF EXISTS "redevances_delete_admin" ON public.redevances;
 -- DROP TRIGGER IF EXISTS trg_redevances_montant_protege ON public.redevances;
