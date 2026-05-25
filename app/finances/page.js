@@ -588,22 +588,6 @@ export default function Finances() {
   const calculer     = (d) => financeCache.get(d.id)?.c ?? calculerBase(d)
   const calculerReel = (d) => financeCache.get(d.id)?.r ?? calculerReelBase(d)
 
-  // VÉRIFICATION TEMPORAIRE (conservée à la demande de l'utilisatrice — à retirer
-  // sur demande) : confirme zéro écart entre le cache et un calcul direct, sur
-  // tous les dossiers. Regarder la console : « N dossier(s), 0 écart(s) » attendu.
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const ser = (o) => JSON.stringify(o, (k, v) => (v instanceof Map ? Array.from(v.entries()) : v))
-    let ecarts = 0
-    for (const d of dossiers) {
-      const cached = financeCache.get(d.id)
-      if (!cached) { console.warn('[memo-finances] dossier absent du cache :', d.reference || d.id); ecarts++; continue }
-      if (ser(cached.c) !== ser(calculerBase(d)))     { console.warn('[memo-finances] écart .c sur', d.reference || d.id); ecarts++ }
-      if (ser(cached.r) !== ser(calculerReelBase(d))) { console.warn('[memo-finances] écart .r sur', d.reference || d.id); ecarts++ }
-    }
-    console.log(`[memo-finances] vérif cache : ${dossiers.length} dossier(s), ${ecarts} écart(s)`)
-  }, [financeCache, dossiers])
-
   const majSuivi = async (dossierId, type, artisanId, champOrUpdates, valeur) => {
     setSaving(true)
     const updates = typeof champOrUpdates === 'object'
