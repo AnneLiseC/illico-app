@@ -73,7 +73,11 @@
 
 ### Lot E — dette / nommage
 
-- [ ] **Variable(s) au nom trompeur basé sur "Marine"** (ex. `estChantierMarine`, possiblement `estChantierAdmin` ou autres) utilisée(s) dans toute l'app. Le COMPORTEMENT est correct (basé sur `role === 'admin'`), mais le NOM évoque une personne précise → piège de compréhension le jour d'un 2e admin. À renommer proprement sur `...Admin`/`referentEstAdmin` en UNE passe globale (pas au milieu d'une autre tâche, car usage répandu). Conforme au principe CLAUDE.md (jamais de nom/id en dur, même dans les noms de variables). **(Lot E)**
+- [ ] **Variables au nom trompeur basé sur "Marine"** — à renommer en UNE passe globale (Lot E). Recensées à ce jour :
+  - `estChantierMarine` (chantiers/[id]/page.js, finances/page.js, etc.) = `referente?.role === 'admin'`
+  - `isMarine` (finances/page.js:2303) = test admin pour le sélecteur d'agente
+  - (probablement d'autres `...Marine` ailleurs — faire un grep global au moment du renommage)
+  Le COMPORTEMENT est correct (basé sur le rôle admin), mais le NOM évoque une personne → piège le jour d'un 2e admin. Renommer sur `...Admin` / `referentEstAdmin` / `isAdmin`. Conforme au principe CLAUDE.md (jamais de nom en dur, même en nom de variable). **(Lot E)**
 
 ### Lot B — règle "acompte 0 ⟹ commission 0" : ABANDONNÉE
 
@@ -105,9 +109,29 @@ Reste de la Tâche 1 (séparation sans_royalties → partenaire/paiement_direct)
 - [ ] **Suivi financier (chantier/id) — ligne « illiCO France — acompte débloqué » FAUSSE** pour les entreprises en paiement_direct (l'argent ne passe pas par illiCO France). DÉCIDÉ : remplacer par « Paiement direct à l'entreprise ». Concerne DECOGRANIT, SOLMAT, Amandine, MARC.
 - [ ] Ces deux affichages doivent lire `partenaire` / `paiement_direct`, plus jamais `sans_royalties` ni l'ancienne logique apporteur.
 
+### Fonctionnalité — notification mail à l'upload de facture (à creuser, hors Lot B)
+
+- [ ] **Envoi automatique d'un mail quand une facture est uploadée**, idée d'Anne-Lise :
+  - Agente upload sa facture F1 → mail à l'admin.
+  - Admin upload sa facture → mail à l'agente + redevance cochée des deux côtés ?
+  À cadrer : quel déclencheur exact, quel destinataire, contenu du mail, sens du « redevance cochée des deux côtés » (workflow à définir). NB : la redevance est paramétrée (montant) par l'ADMIN ; elle fait partie de la facture du mois mais est séparée pour la visu. Fonctionnalité, pas un bug — à traiter après le Lot B. **(Fonctions / Lot F)**
+- [ ] **Cases de redevance mensuelle non cliquables côté agente.** Sur la page Facturation, la section « Redevances mensuelles » affiche des cases par mois (JAN ✓, AVR ⏳…) mais le clic ne fait RIEN (pas d'erreur console — handler absent, fonctionnalité non branchée). La RLS P0-9 autorise pourtant l'agente à cocher le statut de SA redevance (UPDATE, montant protégé par trigger). Il manque juste le branchement UI du clic → UPDATE. À faire avec le cadrage du workflow redevance (option B + automatisme éventuel). NB : vérifier aussi si l'admin peut cocher (peut-être cassé pour tous). **(Lot B / Fonctions)**
+- [ ] **Automatisme de cochage de la redevance** (question d'Anne-Lise) : le statut « payé » de la redevance pourrait-il se cocher automatiquement quand l'admin rentre sa facture du mois (puisque la redevance est dans cette facture) ? Workflow à définir, lié à l'idée de notification mail ci-dessus. En P0-9 on donne seulement le DROIT à l'agente de cocher le statut ; l'automatisme éventuel vient après. **(Fonctions / Lot F)**
+
+### Sécurité — durcissement RLS complémentaire (juste après P0-9)
+
+Repérés par l'advisor sécurité Supabase pendant l'analyse P0-9. NE PAS mélanger à P0-9 (un changement à la fois). À traiter en bloc « durcissement sécurité » juste après P0-9 :
+- [ ] **`get_my_role()` exécutable par `anon`** (fonction SECURITY DEFINER exposée). À restreindre.
+- [ ] **Policy INSERT `notifications` en `WITH CHECK (true)`** : n'importe qui peut insérer des notifications. À resserrer.
+- [ ] **Protection « mots de passe compromis » désactivée** dans Supabase Auth. À activer.
+
 ### Lot E — champ mort PIÉGÉ (royaltiesReelTotal)
 
 - [ ] **`royaltiesReelTotal: 0` (et `fraisAgenteReel: 0`, `gainAgenteReel: 0`) dans la branche Marine de `calculerReel`, `finances/page.js:~480`** : champ mort actuellement (lu nulle part dans le JSX de la page Finances). MAIS piégé : code une valeur d'argent FAUSSE (0). Si quelqu'un le rebranche un jour à un affichage, Marine retombe à 0 royalties silencieusement. À supprimer au Lot E (pas neutre comme du code mort ordinaire — c'est un piège financier). **(Lot E, priorité dans le nettoyage)**
+
+### Lot E — code mort détecté (facturation)
+
+- [ ] **`FacturationAgentePropre` et `renderFacturationMoisSuivi`** : jamais rendus (code mort). La facturation active = `FacturationAgentes`. Découvert lors de P0-9. À supprimer au Lot E après confirmation. **(Lot E)**
 
 ### Lot E — code mort détecté (formulaire devis inline)
 
