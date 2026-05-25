@@ -2508,6 +2508,35 @@ export default function FicheChantier({ params }) {
                 </div>
               </div>
 
+              {/* Bloc Apporteur (coût sortant) — visible si le client a un apporteur */}
+              {client?.apporteur_affaires && (
+                <div style={{border:'1px solid var(--ink-200)', borderRadius:10, padding:14}}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, flexWrap:'wrap'}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>
+                        Apporteur{client.apporteur_nom ? ` · ${client.apporteur_nom}` : ''} <span style={{color:'var(--ink-400)', fontWeight:400}}>(coût)</span>
+                      </div>
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:3}}>
+                        {client.apporteur_pourcentage != null && client.apporteur_pourcentage !== ''
+                          ? <>{parseFloat(client.apporteur_pourcentage)}% · {client.apporteur_base === 'total_chantier' ? 'sur total chantier HT' : 'par devis signé'}</>
+                          : <span style={{color:'#b45309'}}>taux à définir, coût non calculé</span>}
+                      </div>
+                    </div>
+                    <label style={{display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:12, fontWeight:600, color:'var(--brand-800)'}}>
+                      <input type="checkbox"
+                        checked={dossier.apporteur_actif || false}
+                        onChange={async e => {
+                          const v = e.target.checked
+                          set('apporteur_actif', v)
+                          await supabase.from('dossiers').update({ apporteur_actif: v }).eq('id', id)
+                        }}
+                        style={{width:14, height:14, accentColor:'var(--brand-700)'}} />
+                      Appliquer à ce chantier
+                    </label>
+                  </div>
+                </div>
+              )}
+
               {/* Bloc Honoraires AMO (typologie AMO uniquement) */}
               {dossier.typologie === 'amo' && (
                 <div style={{border:'1px solid var(--brand-200)', borderRadius:10, padding:14, background:'rgba(0,148,212,0.04)'}}>
