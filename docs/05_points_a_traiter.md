@@ -58,6 +58,7 @@
 
 ### Bugs pré-existants découverts (indépendants de la tâche 2)
 
+- [ ] **Devis avec TTC mais sans HT : message d'erreur « il manque le HT ».** Règle de validation de saisie (même famille que « création chantier sans client »). Le HT est obligatoire sur un devis. Découvert lors de P0-5 (ces devis sont marqués ttc_manuel à la migration, mais la saisie future doit les empêcher). **(Lot C/D — validation)**
 - [ ] **Création de chantier sans client possible.** On peut créer un chantier sans lui associer de client → anormal. Ajouter une validation obligatoire du client à la création de chantier. **(Lot C/D — intégrité)**
 - [ ] **Suppression chantier cassée : `column devis_artisans.pdf_path does not exist`.** Le code de suppression en cascade référence une colonne `pdf_path` qui n'existe pas (ou plus) sur `devis_artisans`. Bloque la suppression de chantier ET de clients. C'est lié à **P0-11** (cascade incomplète). Identifier le bon nom de colonne (ou retirer la référence) et reconstruire la cascade proprement. **(Lot C — intégrité, à rattacher à P0-11)**
 
@@ -78,6 +79,14 @@
 
 - [x] **Règle "acompte 0 force commission 0" : NE PAS coder.** Raison : elle n'est vraie que pour les artisans en circuit illiCO France (commission prélevée sur l'acompte). Pour les PARTENAIRES (ex. Amandine), acompte 0 + commission est LÉGITIME — on ne prélève pas sur l'acompte, on facture l'entreprise à part. Forcer commission 0 casserait les partenaires.
 - [ ] **Remplacée par P0-4bis — avertissement doux (non bloquant).** Afficher « Attention, acompte 0 : la commission ne sera pas prélevée. Confirmer ? » UNIQUEMENT si : `acompte_pourcentage === 0` ET commission > 0 ET artisan NON partenaire. Pour un partenaire : jamais d'avertissement. Ne force aucune valeur. **(Lot B, après P0-4)**
+
+### Lot B — Tâche B : affichages financiers à basculer sur partenaire/paiement_direct
+
+Reste de la Tâche 1 (séparation sans_royalties → partenaire/paiement_direct) : seul le CRON a été basculé. Les affichages Finances et Suivi financier lisent encore l'ancienne logique. À corriger AVEC la Tâche B (calcul apporteur), car même zone (finance.js + écrans financiers).
+
+- [ ] **Onglet Finances — badge « Apporteur » FAUX** sur les entreprises en paiement_direct (DECOGRANIT, SOLMAT = commission 0% ; et Amandine, MARC = partenaires sur Jadras). DÉCIDÉ : badge « Partenaire » (ambre) sur les vrais partenaires (`partenaire = true` — Amandine, MARC) ; AUCUN badge sur les artisans à commission 0% non-partenaires (DECOGRANIT, SOLMAT).
+- [ ] **Suivi financier (chantier/id) — ligne « illiCO France — acompte débloqué » FAUSSE** pour les entreprises en paiement_direct (l'argent ne passe pas par illiCO France). DÉCIDÉ : remplacer par « Paiement direct à l'entreprise ». Concerne DECOGRANIT, SOLMAT, Amandine, MARC.
+- [ ] Ces deux affichages doivent lire `partenaire` / `paiement_direct`, plus jamais `sans_royalties` ni l'ancienne logique apporteur.
 
 ### Lot E — code mort détecté (formulaire devis inline)
 

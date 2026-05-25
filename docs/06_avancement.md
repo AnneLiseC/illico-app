@@ -2,7 +2,7 @@
 
 *Où on en est dans le chantier de correction. À rouvrir à chaque reprise. Le CDC (00) décrit la CIBLE ; ce fichier décrit l'ÉTAT RÉEL.*
 
-**Dernière mise à jour : P0-5 fait et mergé (Lot B en cours).**
+**Dernière mise à jour : P0-6 tâche A mergée (Lot B en cours).**
 
 ---
 
@@ -71,15 +71,17 @@ Mergé et testé en production. Contenu :
 - `window.confirm` non bloquant si : acompte 0 ET commission > 0 ET artisan NON partenaire.
 - Branché sur les 2 chemins (modale + sélecteur inline). Partenaire → jamais d'avertissement.
 
-**P0-5 — TTC figé dès saisie manuelle** ✅ (fait, mergé)
-- Colonne `devis_artisans.ttc_manuel` (booléen). Migration B5 : 11 devis multi-taux/HT=TTC marqués manuels (dont correction d'une erreur de saisie : Toits du Midi avait la TVA 3225 € au lieu du TTC 61873 € → corrigé).
-- TTC suit le HT en auto (×1,1) tant que non touché ; dès saisie manuelle du TTC → figé, le HT ne l'écrase plus jamais (création comme édition). Label conditionnel « auto +10% » / « figé ».
-- TTC < HT : BLOCAGE (bandeau rouge persistant + bouton désactivé), pas d'alerte douce — TTC < HT est toujours une erreur. TTC = HT autorisé (partenaires). Remplace le `window.confirm` initial qui échouait en silence.
-- SQL : `docs/sql/B5_ttc_fige.sql`.
-
 ### À faire (reste du Lot B)
 
-- [ ] **P0-6 — Apporteur (Kiosque).** Déplacer l'apporteur du client vers un interrupteur `dossiers.apporteur_actif`. Brancher le calcul de coût (3% Kiosque, mode total chantier OU par devis — le bug original = "total chantier retombe sur par devis"). Exclure les devis à commission 0%. Afficher comme un COÛT (sortant). À CALIBRER avant de coder.
+**P0-5 — TTC figé dès saisie manuelle** ✅ (fait, mergé)
+- Colonne `devis_artisans.ttc_manuel` (booléen). Migration B5 : 11 devis multi-taux/HT=TTC marqués manuels (dont correction d'une erreur de saisie : Toits du Midi avait la TVA 3225€ au lieu du TTC 61873€ → corrigé).
+- TTC suit le HT en auto (×1,1) tant que non touché ; dès saisie manuelle du TTC → figé, le HT ne l'écrase plus jamais (création comme édition). Label conditionnel « auto +10% » / « figé ».
+- TTC < HT : BLOCAGE (bandeau rouge persistant + bouton désactivé), pas d'alerte douce — TTC < HT est toujours une erreur. TTC = HT autorisé (partenaires). Remplace le window.confirm initial qui échouait en silence.
+- SQL : `docs/sql/B5_ttc_fige.sql`.
+
+- 🔄 **P0-6 — Apporteur (Kiosque).** EN COURS, découpé en A + B.
+  - **Tâche A (structure)** ✅ faite, mergée : colonne `dossiers.apporteur_actif` (défaut false), interrupteur en ÉDITION + CRÉATION du chantier (visible si client a un apporteur, désactivé défaut, nom/%/mode lecture seule depuis le client, "taux à définir, coût non calculé" si % null). SQL `B6a_apporteur_actif.sql`. Option A retenue (tout false, réactivation manuelle des vrais chantiers Kiosque).
+  - **Tâche B (calcul + affichages)** ⏳ à faire : brancher le calcul dans finance.js (sur `apporteur_actif`, 3% par devis, exclusion commission 0%, prévi=signés / réel=acomptes débloqués) ; corriger le bug de mode (`apporteur_mode`→`apporteur_base` + `total_chantier`→`total_chantier_ht`) ; basculer les affichages Finances + Suivi financier sur partenaire/paiement_direct (badge "Partenaire" ambre sur vrais partenaires, aucun badge sur commission 0% ; ligne "Paiement direct à l'entreprise" au lieu de "illiCO France — acompte débloqué"). Test au centime sur Guerteau : coût 1 814,55 € → agente 1 088,73 / admin 725,82.
 - [ ] **P0-7 — Parts admin après royalties (mode non-Marine).** Le taux de royalties est OK (5%). Reste à vérifier que les royalties sont bien déduites de la part ADMIN sur les dossiers d'une agente (pas seulement de la part agente). À tester sur un dossier Anne-Lise.
 - [ ] **P0-8 — Royalties visibles pour Marine** (codées à 0 en dur en mode Marine).
 - [ ] **P0-9 — Chaque agente voit SES créances/dettes** (pas celles d'une autre).
