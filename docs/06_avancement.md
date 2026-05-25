@@ -2,7 +2,7 @@
 
 *Où on en est dans le chantier de correction. À rouvrir à chaque reprise. Le CDC (00) décrit la CIBLE ; ce fichier décrit l'ÉTAT RÉEL.*
 
-**Dernière mise à jour : pause après P0-4bis (Lot B en cours).**
+**Dernière mise à jour : P0-5 fait et mergé (Lot B en cours).**
 
 ---
 
@@ -71,9 +71,13 @@ Mergé et testé en production. Contenu :
 - `window.confirm` non bloquant si : acompte 0 ET commission > 0 ET artisan NON partenaire.
 - Branché sur les 2 chemins (modale + sélecteur inline). Partenaire → jamais d'avertissement.
 
-### À faire (reste du Lot B)
+**P0-5 — TTC figé dès saisie manuelle** ✅ (fait, mergé)
+- Colonne `devis_artisans.ttc_manuel` (booléen). Migration B5 : 11 devis multi-taux/HT=TTC marqués manuels (dont correction d'une erreur de saisie : Toits du Midi avait la TVA 3225 € au lieu du TTC 61873 € → corrigé).
+- TTC suit le HT en auto (×1,1) tant que non touché ; dès saisie manuelle du TTC → figé, le HT ne l'écrase plus jamais (création comme édition). Label conditionnel « auto +10% » / « figé ».
+- TTC < HT : BLOCAGE (bandeau rouge persistant + bouton désactivé), pas d'alerte douce — TTC < HT est toujours une erreur. TTC = HT autorisé (partenaires). Remplace le `window.confirm` initial qui échouait en silence.
+- SQL : `docs/sql/B5_ttc_fige.sql`.
 
-- [ ] **P0-5 — TTC écrasé à la re-saisie du HT.** ⚠️ Oublié dans une version précédente de ce journal, rattrapé au contrôle croisé. Figure dans la carte des bugs (chiffres faux) et la décision actée #5 (TTC figé dès saisie manuelle, jamais recalculé). **État réel à VÉRIFIER dans le code avant correction** : le TTC est-il stocké ou recalculé ? HT×1,1 écrase-t-il un TTC saisi ? Alerte si TTC<HT ? À traiter en premier dans le reste du Lot B (ordre de la carte).
+### À faire (reste du Lot B)
 
 - [ ] **P0-6 — Apporteur (Kiosque).** Déplacer l'apporteur du client vers un interrupteur `dossiers.apporteur_actif`. Brancher le calcul de coût (3% Kiosque, mode total chantier OU par devis — le bug original = "total chantier retombe sur par devis"). Exclure les devis à commission 0%. Afficher comme un COÛT (sortant). À CALIBRER avant de coder.
 - [ ] **P0-7 — Parts admin après royalties (mode non-Marine).** Le taux de royalties est OK (5%). Reste à vérifier que les royalties sont bien déduites de la part ADMIN sur les dossiers d'une agente (pas seulement de la part agente). À tester sur un dossier Anne-Lise.
