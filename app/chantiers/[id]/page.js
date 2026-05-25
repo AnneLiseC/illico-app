@@ -405,7 +405,10 @@ function DevisModal({ open, devis, onClose, onSave, artisans }) {
   const set = (champ, val) => setForm(f => ({ ...f, [champ]: val }))
   if (!open) return null
 
-  const canSave = !!form.artisan_id && form.montant_ht !== ''
+  const htNum  = parseFloat(form.montant_ht)
+  const ttcNum = parseFloat(form.montant_ttc)
+  const ttcInferieurHt = Number.isFinite(htNum) && Number.isFinite(ttcNum) && ttcNum < htNum
+  const canSave = !!form.artisan_id && form.montant_ht !== '' && !ttcInferieurHt
 
   return (
     <div onClick={onClose} style={{
@@ -455,6 +458,12 @@ function DevisModal({ open, devis, onClose, onSave, artisans }) {
                 style={{height:40, width:'100%'}} />
             </div>
           </div>
+
+          {ttcInferieurHt && (
+            <div style={{background:'#fef2f2', border:'1px solid #fecaca', color:'#b91c1c', borderRadius:8, padding:'8px 12px', fontSize:13, fontWeight:600}}>
+              Le TTC ne peut pas être inférieur au HT.
+            </div>
+          )}
 
           <div>
             <label className="eyebrow" style={{display:'block', marginBottom:6}}>Commission (%)</label>
@@ -1160,12 +1169,6 @@ export default function FicheChantier({ params }) {
     const artisanSel    = artisans.find(a => a.id === form.artisan_id)
     if (form.acompte_pourcentage === 0 && commissionPct > 0 && artisanSel?.partenaire !== true) {
       if (!window.confirm('Attention, acompte 0 : la commission ne sera pas prélevée. Confirmer ?')) return
-    }
-    // Avertissement doux (non bloquant) : TTC saisi inférieur au HT.
-    const htNum  = parseFloat(form.montant_ht)
-    const ttcNum = parseFloat(form.montant_ttc)
-    if (Number.isFinite(htNum) && Number.isFinite(ttcNum) && ttcNum < htNum) {
-      if (!window.confirm('Le TTC est inférieur au HT, est-ce normal ?')) return
     }
     const acomptePct = form.acompte_pourcentage === -1 || form.acompte_pourcentage === 0
       ? form.acompte_pourcentage
