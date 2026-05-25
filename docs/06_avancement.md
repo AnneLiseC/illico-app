@@ -2,7 +2,7 @@
 
 *Où on en est dans le chantier de correction. À rouvrir à chaque reprise. Le CDC (00) décrit la CIBLE ; ce fichier décrit l'ÉTAT RÉEL.*
 
-**Dernière mise à jour : P0-6 tâche A mergée (Lot B en cours).**
+**Dernière mise à jour : P0-6 calcul (B6b) mergé (Lot B en cours).**
 
 ---
 
@@ -81,7 +81,8 @@ Mergé et testé en production. Contenu :
 
 - 🔄 **P0-6 — Apporteur (Kiosque).** EN COURS, découpé en A + B.
   - **Tâche A (structure)** ✅ faite, mergée : colonne `dossiers.apporteur_actif` (défaut false), interrupteur en ÉDITION + CRÉATION du chantier (visible si client a un apporteur, désactivé défaut, nom/%/mode lecture seule depuis le client, "taux à définir, coût non calculé" si % null). SQL `B6a_apporteur_actif.sql`. Option A retenue (tout false, réactivation manuelle des vrais chantiers Kiosque).
-  - **Tâche B (calcul + affichages)** ⏳ à faire : brancher le calcul dans finance.js (sur `apporteur_actif`, 3% par devis, exclusion commission 0%, prévi=signés / réel=acomptes débloqués) ; corriger le bug de mode (`apporteur_mode`→`apporteur_base` + `total_chantier`→`total_chantier_ht`) ; basculer les affichages Finances + Suivi financier sur partenaire/paiement_direct (badge "Partenaire" ambre sur vrais partenaires, aucun badge sur commission 0% ; ligne "Paiement direct à l'entreprise" au lieu de "illiCO France — acompte débloqué"). Test au centime sur Guerteau : coût 1 814,55 € → agente 1 088,73 / admin 725,82.
+  - **Tâche B6b (calcul + bug de mode + affichages)** ✅ faite, testée au centime : calcul apporteur dans finance.js gaté sur `apporteur_actif` + taux défini (sinon 0, jamais NaN), base = signés hors commission 0%, deux versions prévi (signés) / réel (acomptes débloqués), partage part_agente sens inverse sans royalties. Bug de mode corrigé (`apporteur_base` + `total_chantier_ht`) → modes par-devis/total-chantier distincts (découpage des règlements voulu). Affichages basculés : badge "Partenaire" ambre sur vrais partenaires, aucun sur commission 0% ; "Paiement direct à l'entreprise" dans le suivi. Test validé sur Guerteau : prévi 1 814,55 € (1 088,73 / 725,82), réel suit les acomptes débloqués (décocher Esprit Cuisine fait baisser le réel). Bonus déterré : frais consultation prévi déduit maintenant les royalties (475 au lieu de 500).
+  - **Reste apporteur (notés dans 05, après B6b)** : visu du détail apporteur PAR DEVIS (contrôle de la facture Kiosque) ; vue F1/F2 mensuelle (timing du remboursement) à traiter avec les vues de facturation détaillées.
 - [ ] **P0-7 — Parts admin après royalties (mode non-Marine).** Le taux de royalties est OK (5%). Reste à vérifier que les royalties sont bien déduites de la part ADMIN sur les dossiers d'une agente (pas seulement de la part agente). À tester sur un dossier Anne-Lise.
 - [ ] **P0-8 — Royalties visibles pour Marine** (codées à 0 en dur en mode Marine).
 - [ ] **P0-9 — Chaque agente voit SES créances/dettes** (pas celles d'une autre).
