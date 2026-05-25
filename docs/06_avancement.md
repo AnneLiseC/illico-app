@@ -2,7 +2,7 @@
 
 *Où on en est dans le chantier de correction. À rouvrir à chaque reprise. Le CDC (00) décrit la CIBLE ; ce fichier décrit l'ÉTAT RÉEL.*
 
-**Dernière mise à jour : P0-6 calcul (B6b) mergé (Lot B en cours).**
+**Dernière mise à jour : P0-8 mergé (Lot B en cours).**
 
 ---
 
@@ -86,7 +86,12 @@ Mergé et testé en production. Contenu :
 **P0-7 — Parts admin après royalties (mode non-Marine)** ✅ vérifié, DÉJÀ OK (aucune correction)
 - finance.js déduit les royalties Type 2 AVANT le split (`comHT → royalties → netCom → split(netCom, part_agente)`), donc symétrique : agente + admin = netCom dans tous les cas.
 - Preuve : devis 7200 HT à 15%, 60/40 → admin = 410,40 (et non 432 qui serait le bug). 432 − 410,40 = 21,60 = 40% des royalties → l'admin supporte bien sa part. Idem mode Marine (100%). Comme le ×1,2 : bug supposé par l'audit, mais finance.js était déjà juste.
-- [ ] **P0-8 — Royalties visibles pour Marine** (codées à 0 en dur en mode Marine).
+**P0-8 — KPI du suivi financier (fiche chantier) faux** ✅ fait, mergé, testé au centime
+- Cause racine (pas Marine, UNIVERSEL) : `calculateDossierFinance` recevait un `dossier` SANS les devis (chargés dans un state séparé, jamais fusionnés) → tous les KPI dérivés des devis (commissions, honoraires, leurs royalties, net) à 0. Seuls les frais (sur le dossier) étaient comptés. Touchait TOUS les dossiers, repéré sur Marine par hasard.
+- Correctif : passer `{ ...dossier, devis_artisans: devis, suivi_financier: suiviFinancier }` à finance.js (même motif que l'avancement).
+- Filtrage « réel » (option b) cohérent sur les 3 flux : frais si `frais_statut='regle'` (sinon 0, « Offert » si offerts), commissions si acompte débloqué (`statut_illico='recu'`), honoraires par composant (courtage si `honoraires_courtage` réglé, AMO si `solde_amo` réglé). Net = nets − apporteur RÉEL (`partsReel`). Tout dynamique, zéro hardcode (royalties via `ROYALTIES_RATE`, sommes via `.reduce`).
+- Validé au centime sur Guerteau : royalties 555,70 (frais 25 + commissions 331,60 + courtage 199,10), commissions 6 631,99, AMO solde exclu (en attente), chiffres bougent quand on coche/décoche les statuts. Marine : KPI réparés + « Offert ».
+- NB : le bug supposé d'origine (royalties Marine à 0 en dur, ligne 480 page Finances) était un VRAI champ mort distinct — noté pour suppression au Lot E (piège futur si rebranché).
 - [ ] **P0-9 — Chaque agente voit SES créances/dettes** (pas celles d'une autre).
 - [ ] **Vues de facturation détaillées** : menus déroulants F1/F2 par mois (détail de ce qui compose chaque facture).
 - [ ] **Nettoyage fin de Lot B** : supprimer `sans_royalties` et `devis_artisans.part_agente` quand plus rien ne les lit hors transition.

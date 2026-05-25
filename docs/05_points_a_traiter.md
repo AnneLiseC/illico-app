@@ -85,6 +85,14 @@
 - [ ] **BUG (en cours de correction) : le RÉEL du coût apporteur-client ne suit pas les acomptes débloqués.** Vérifié par test (décocher l'acompte Esprit Cuisine → le réel apporteur reste identique au prévi à 1 088,72€, alors que honoraires et frais baissent bien). Cause : l'affichage de la Répartition réelle utilise l'ancien axe `retire` au lieu de la version `partsReel`/`totalHTReel` (acomptes débloqués) ajoutée dans finance.js. Le réel apporteur doit baisser quand un acompte est décoché, comme honoraires/frais. **(Tâche B, passe dédiée)**
 - [ ] **AJOUT (nouvelle visu) : aucun détail « ce que je dois au Kiosque par devis » dans la fiche chantier.** Aujourd'hui : le total apporteur est dans Finances, et intégré aux factures agente (paiement ~1 mois après déblocage acompte). Mais pas de vue devis-par-devis du coût apporteur dans la fiche chantier. À ajouter (probablement avec les vues de facturation détaillées F1/F2). **(Lot B — ajout, après le bug réel)**
 
+### Lot B / affichage — KPI « Frais consult. HT » quand frais offerts
+
+- [ ] **KPI « Frais consult. HT » affiche « 0,00 € / net 0,00 € » quand les frais sont offerts.** Améliorer : afficher « Offert » (comme le KPI du haut « Frais consultation TTC : Offerts »). Cosmétique, pas un bug de calcul. À traiter avec P0-8 (même écran) ou au Lot E. **(Lot B/affichage)**
+
+### Lot B — vue F1/F2 mensuelle : remboursement apporteur sur le timing (avec les vues de facturation)
+
+- [ ] **Vue F1/F2 mensuelle/annuelle — remboursement apporteur garde un axe distinct** (`apporteurRembourseNet`, basé sur une DATE de remboursement, pas sur « acompte débloqué »). Volontairement non migré en B6b car ça relève du TIMING de facturation (facture Kiosque ~1 mois après déblocage acompte). À traiter AVEC les vues de facturation détaillées F1/F2 (déjà au programme du Lot B). Cohérent avec la décision : calcul du montant en B6b, timing de facturation séparé. **(Lot B, vues facturation)**
+
 ### Lot B — visu du détail apporteur par devis (fonctionnalité, après B6b)
 
 - [ ] **Aucune visu du détail « ce que je dois à l'apporteur PAR DEVIS ».** Aujourd'hui : l'onglet Finances montre le TOTAL apporteur, la facturation agente l'intègre dans les factures (timing ~1 mois après déblocage acompte). Mais nulle part le détail par devis (ex. DAMIAN 524,34 / MJ 216 / ELEC 134,10 / P&M 280,47 / ESPRIT 659,64). Anne-Lise en a besoin pour CONTRÔLER la facture du Kiosque à réception. À ajouter dans le suivi financier du chantier (une ligne de coût apporteur par devis signé éligible). Fonctionnalité, pas un bug. **(Lot B, après le calcul B6b)**
@@ -96,6 +104,10 @@ Reste de la Tâche 1 (séparation sans_royalties → partenaire/paiement_direct)
 - [ ] **Onglet Finances — badge « Apporteur » FAUX** sur les entreprises en paiement_direct (DECOGRANIT, SOLMAT = commission 0% ; et Amandine, MARC = partenaires sur Jadras). DÉCIDÉ : badge « Partenaire » (ambre) sur les vrais partenaires (`partenaire = true` — Amandine, MARC) ; AUCUN badge sur les artisans à commission 0% non-partenaires (DECOGRANIT, SOLMAT).
 - [ ] **Suivi financier (chantier/id) — ligne « illiCO France — acompte débloqué » FAUSSE** pour les entreprises en paiement_direct (l'argent ne passe pas par illiCO France). DÉCIDÉ : remplacer par « Paiement direct à l'entreprise ». Concerne DECOGRANIT, SOLMAT, Amandine, MARC.
 - [ ] Ces deux affichages doivent lire `partenaire` / `paiement_direct`, plus jamais `sans_royalties` ni l'ancienne logique apporteur.
+
+### Lot E — champ mort PIÉGÉ (royaltiesReelTotal)
+
+- [ ] **`royaltiesReelTotal: 0` (et `fraisAgenteReel: 0`, `gainAgenteReel: 0`) dans la branche Marine de `calculerReel`, `finances/page.js:~480`** : champ mort actuellement (lu nulle part dans le JSX de la page Finances). MAIS piégé : code une valeur d'argent FAUSSE (0). Si quelqu'un le rebranche un jour à un affichage, Marine retombe à 0 royalties silencieusement. À supprimer au Lot E (pas neutre comme du code mort ordinaire — c'est un piège financier). **(Lot E, priorité dans le nettoyage)**
 
 ### Lot E — code mort détecté (formulaire devis inline)
 
