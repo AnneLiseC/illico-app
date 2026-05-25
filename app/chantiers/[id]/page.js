@@ -3156,12 +3156,19 @@ export default function FicheChantier({ params }) {
 
       {/* ── SUIVI FINANCIER (maquette : KPI gains + Échéances) ── */}
       {onglet === 'finance' && (() => {
-        const fin = calculateDossierFinance(dossier)
-        const fraisHTReal      = fin.frais.fraisHT
-        const fraisRoyalties   = fin.frais.royalties
-        const fraisNet         = fin.frais.net
-        // Commissions — uniquement comptées si l'acompte illiCO est débloqué (statut_illico='recu'),
-        // sauf apporteurs artisans (sans_royalties) qui se déclenchent dès la signature
+        const fin = calculateDossierFinance({ ...dossier, devis_artisans: devis, suivi_financier: suiviFinancier })
+
+        // Frais de consultation — comptés en réel seulement si réglés (offerts / en attente → 0)
+        const fraisRegle       = dossier?.frais_statut === 'regle'
+        const fraisOfferts     = dossier?.frais_statut === 'offerts'
+        const fraisHTReal      = fraisRegle ? fin.frais.fraisHT : 0
+        const fraisNet         = fraisRegle ? fin.frais.net : 0
+        const fraisRoyalties   = fraisRegle ? fin.frais.royalties : 0
+        const fraisAgente      = fraisRegle ? fin.frais.parts.agente : 0
+        const fraisAdmin       = fraisRegle ? fin.frais.parts.admin : 0
+
+        // Commissions — comptées si l'acompte illiCO est débloqué (statut_illico='recu'),
+        // sauf paiement direct (commission déclenchée dès la signature)
         const comDebloque = (fin.commissions?.devis || []).filter(dv => {
           if (dv.refused) return false
           if (dv.isApporteur) return dv.signed
@@ -3173,9 +3180,18 @@ export default function FicheChantier({ params }) {
         const comNet           = comDebloque.reduce((s, d) => s + d.netCom, 0)
         const comAgente        = comDebloque.reduce((s, d) => s + d.parts.agente, 0)
         const comAdmin         = comDebloque.reduce((s, d) => s + d.parts.admin, 0)
-        const royaltiesTotal   = fin.royalties.frais + fin.royalties.honoraires + comRoyalties
-        const gainAgente       = fin.frais.parts.agente + fin.honoraires.parts.agente + comAgente - fin.apporteur.parts.agente
-        const gainAdmin        = fin.frais.parts.admin  + fin.honoraires.parts.admin  + comAdmin  - fin.apporteur.parts.admin
+
+        // Honoraires — comptés par composant seulement si réglé (courtage / AMO solde)
+        const courtageRegle    = suiviCourtage?.statut_client === 'regle'
+        const amoSoldeRegle    = suiviSoldeAMO?.statut_client === 'regle'
+        const honRoyalties     = (courtageRegle ? fin.honoraires.courtage.royalties : 0) + (amoSoldeRegle ? fin.honoraires.soldeAmo.royalties : 0)
+        const honAgente        = (courtageRegle ? fin.honoraires.courtage.parts.agente : 0) + (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.agente : 0)
+        const honAdmin         = (courtageRegle ? fin.honoraires.courtage.parts.admin : 0) + (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.admin : 0)
+
+        // Réel = somme des flux réellement comptés ; net déduit du coût apporteur RÉEL (acomptes débloqués)
+        const royaltiesTotal   = fraisRoyalties + honRoyalties + comRoyalties
+        const gainAgente       = fraisAgente + honAgente + comAgente - fin.apporteur.partsReel.agente
+        const gainAdmin        = fraisAdmin  + honAdmin  + comAdmin  - fin.apporteur.partsReel.admin
         const totalNet         = gainAgente + gainAdmin
         const partAgenteCfg    = fin.settings.partAgente
         const isAdmin          = dossier?.referente?.role === 'admin'
@@ -3188,8 +3204,8 @@ export default function FicheChantier({ params }) {
           <div className="kpi-grid">
             <MiniKpi
               label="Frais consult. HT"
-              value={fmt(fraisHTReal)}
-              sub={`net ${fmt(fraisNet)}`}
+              value={fraisOfferts ? 'Offert' : fmt(fraisHTReal)}
+              sub={fraisOfferts ? 'frais offerts' : `net ${fmt(fraisNet)}`}
               tone="brand"
             />
             <MiniKpi
