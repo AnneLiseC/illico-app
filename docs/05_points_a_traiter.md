@@ -80,6 +80,15 @@
 - [x] **Règle "acompte 0 force commission 0" : NE PAS coder.** Raison : elle n'est vraie que pour les artisans en circuit illiCO France (commission prélevée sur l'acompte). Pour les PARTENAIRES (ex. Amandine), acompte 0 + commission est LÉGITIME — on ne prélève pas sur l'acompte, on facture l'entreprise à part. Forcer commission 0 casserait les partenaires.
 - [ ] **Remplacée par P0-4bis — avertissement doux (non bloquant).** Afficher « Attention, acompte 0 : la commission ne sera pas prélevée. Confirmer ? » UNIQUEMENT si : `acompte_pourcentage === 0` ET commission > 0 ET artisan NON partenaire. Pour un partenaire : jamais d'avertissement. Ne force aucune valeur. **(Lot B, après P0-4)**
 
+### Lot B — Tâche B : RÉEL apporteur + visu par devis
+
+- [ ] **BUG (en cours de correction) : le RÉEL du coût apporteur-client ne suit pas les acomptes débloqués.** Vérifié par test (décocher l'acompte Esprit Cuisine → le réel apporteur reste identique au prévi à 1 088,72€, alors que honoraires et frais baissent bien). Cause : l'affichage de la Répartition réelle utilise l'ancien axe `retire` au lieu de la version `partsReel`/`totalHTReel` (acomptes débloqués) ajoutée dans finance.js. Le réel apporteur doit baisser quand un acompte est décoché, comme honoraires/frais. **(Tâche B, passe dédiée)**
+- [ ] **AJOUT (nouvelle visu) : aucun détail « ce que je dois au Kiosque par devis » dans la fiche chantier.** Aujourd'hui : le total apporteur est dans Finances, et intégré aux factures agente (paiement ~1 mois après déblocage acompte). Mais pas de vue devis-par-devis du coût apporteur dans la fiche chantier. À ajouter (probablement avec les vues de facturation détaillées F1/F2). **(Lot B — ajout, après le bug réel)**
+
+### Lot B — visu du détail apporteur par devis (fonctionnalité, après B6b)
+
+- [ ] **Aucune visu du détail « ce que je dois à l'apporteur PAR DEVIS ».** Aujourd'hui : l'onglet Finances montre le TOTAL apporteur, la facturation agente l'intègre dans les factures (timing ~1 mois après déblocage acompte). Mais nulle part le détail par devis (ex. DAMIAN 524,34 / MJ 216 / ELEC 134,10 / P&M 280,47 / ESPRIT 659,64). Anne-Lise en a besoin pour CONTRÔLER la facture du Kiosque à réception. À ajouter dans le suivi financier du chantier (une ligne de coût apporteur par devis signé éligible). Fonctionnalité, pas un bug. **(Lot B, après le calcul B6b)**
+
 ### Lot B — Tâche B : affichages financiers à basculer sur partenaire/paiement_direct
 
 Reste de la Tâche 1 (séparation sans_royalties → partenaire/paiement_direct) : seul le CRON a été basculé. Les affichages Finances et Suivi financier lisent encore l'ancienne logique. À corriger AVEC la Tâche B (calcul apporteur), car même zone (finance.js + écrans financiers).
