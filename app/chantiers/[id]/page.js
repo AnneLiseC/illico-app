@@ -651,54 +651,70 @@ export default function FicheChantier({ params }) {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
 
-      // Toutes ces requêtes sont indépendantes (filtrées par `id` ou user.id) → en parallèle.
-      // ⚠️ L'ORDRE du tableau et celui de la déstructuration ci-dessous doivent rester
-      // rigoureusement alignés (un décalage mélangerait les données).
-      const [
-        profRes, adminRes, dossierRes, devisRes, photosRes,
-        rdvsRes, intRes, suiviRes, docsRes, facturesRes,
-        crRes, msgRes, fichesRes, artisansRes,
-      ] = await Promise.all([
+      // Le dossier ET tous ses enfants sont récupérés en UNE requête imbriquée
+      // (embedding PostgREST via les FK dossier_id) au lieu de ~11 requêtes séparées :
+      // 1 seul aller-retour au lieu de 14 → fini la file d'attente sur le pool de connexions.
+      // La RLS s'applique à chaque table imbriquée comme aux requêtes séparées (même
+      // cloisonnement P0-9, enfants atteignables uniquement via un parent visible).
+      // Restent séparés : profile (own), profile (admin), liste artisans, signature photos (storage).
+      const [dossierRes, profRes, adminRes, artisansRes] = await Promise.all([
+        supabase.from('dossiers').select(`
+          *,
+          referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role),
+          client:clients(*),
+          devis_artisans(*, artisan:artisans(id, entreprise, metier, partenaire, paiement_direct)),
+          photos(*),
+          rendez_vous(*, artisan:artisans(id, entreprise)),
+          interventions_artisans(*, artisan:artisans(id, entreprise)),
+          suivi_financier(*),
+          chantier_documents(*),
+          factures_artisans(*),
+          comptes_rendus(*),
+          messages(*, auteur:profiles(prenom, nom, role)),
+          chantier_fiches_techniques(*, fiche:fiches_techniques(id, nom, description))
+        `)
+          .eq('id', id)
+          .order('ordre',      { referencedTable: 'devis_artisans' })
+          .order('created_at', { referencedTable: 'devis_artisans' })
+          .order('created_at', { referencedTable: 'photos', ascending: false })
+          .order('date_heure', { referencedTable: 'rendez_vous' })
+          .order('date_debut', { referencedTable: 'interventions_artisans' })
+          .order('created_at', { referencedTable: 'chantier_documents', ascending: false })
+          .order('created_at', { referencedTable: 'factures_artisans' })
+          .order('created_at', { referencedTable: 'comptes_rendus', ascending: false })
+          .order('created_at', { referencedTable: 'messages' })
+          .single(),
         supabase.from('profiles').select('*').eq('id', user.id).single(),
         supabase.from('profiles').select('prenom, nom').eq('role', 'admin').single(),
-        supabase.from('dossiers').select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), client:clients(*)').eq('id', id).single(),
-        supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier, partenaire, paiement_direct)').eq('dossier_id', id).order('ordre').order('created_at'),
-        supabase.from('photos').select('*').eq('dossier_id', id).order('created_at', { ascending: false }),
-        supabase.from('rendez_vous').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_heure'),
-        supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut'),
-        supabase.from('suivi_financier').select('*').eq('dossier_id', id),
-        supabase.from('chantier_documents').select('*').eq('dossier_id', id).order('created_at', { ascending: false }),
-        supabase.from('factures_artisans').select('*').eq('dossier_id', id).order('created_at'),
-        supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false }),
-        supabase.from('messages').select('*, auteur:profiles(prenom, nom, role)').eq('dossier_id', id).order('created_at'),
-        supabase.from('chantier_fiches_techniques').select('*, fiche:fiches_techniques(id, nom, description)').eq('dossier_id', id),
         supabase.from('artisans').select('id, entreprise, metier, partenaire').order('entreprise'),
       ])
 
+      const d = dossierRes.data
+
       setProfile(profRes.data)
       if (adminRes.data) { setNomFranchisee(`${adminRes.data.prenom} ${adminRes.data.nom}`); setPrenomAdmin(adminRes.data.prenom || 'CTP') }
-      setDossier(dossierRes.data)
-      setClient(dossierRes.data?.client)
-      setDevis(devisRes.data || [])
+      setDossier(d)
+      setClient(d?.client)
+      setDevis(d?.devis_artisans || [])
       setArtisans(artisansRes.data || [])
-      setRdvsDossier(rdvsRes.data || [])
-      setInterventionsDossier(intRes.data || [])
-      setSuiviFinancier(suiviRes.data || [])
-      setDocuments(docsRes.data || [])
-      setFactures(facturesRes.data || [])
-      setComptesRendus(crRes.data || [])
-      setMessages(msgRes.data || [])
-      setNbMsgNonLus((msgRes.data || []).filter(m => m.auteur_role === 'client' && !m.lu_agence).length)
+      setRdvsDossier(d?.rendez_vous || [])
+      setInterventionsDossier(d?.interventions_artisans || [])
+      setSuiviFinancier(d?.suivi_financier || [])
+      setDocuments(d?.chantier_documents || [])
+      setFactures(d?.factures_artisans || [])
+      setComptesRendus(d?.comptes_rendus || [])
+      setMessages(d?.messages || [])
+      setNbMsgNonLus((d?.messages || []).filter(m => m.auteur_role === 'client' && !m.lu_agence).length)
 
       const grouped = {}
-      ;(fichesRes.data || []).forEach(item => {
+      ;(d?.chantier_fiches_techniques || []).forEach(item => {
         if (!grouped[item.artisan_id]) grouped[item.artisan_id] = []
         grouped[item.artisan_id].push(item)
       })
       setFichesTechChantier(grouped)
 
       // Photos : signature groupée (1 appel) au lieu de N appels individuels.
-      setPhotos(await signerPhotos(photosRes.data))
+      setPhotos(await signerPhotos(d?.photos))
 
       setLoading(false)
     }
