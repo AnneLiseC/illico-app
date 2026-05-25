@@ -91,6 +91,8 @@ Devis à 0% de commission EXCLU de la base apporteur (ne passe pas par illiCO Fr
 - Prévisionnel (ce que l'agente VA devoir) = sur les devis SIGNÉS/acceptés.
 - Réel (ce qu'elle doit MAINTENANT) = sur les devis dont l'ACOMPTE est débloqué.
 
+**Mode « par devis » vs « total chantier HT » — découpage VOULU :** le total du coût est identique dans les deux modes (taux × ΣHT = Σ(taux × HT)), mais le DÉCOUPAGE des règlements dans le suivi financier diffère et c'est voulu : « par devis » = une ligne de règlement par devis ; « total chantier HT » = une seule ligne agrégée. Ne pas fusionner les deux modes. (Bug historique : `apporteur_mode`/`total_chantier` faisait retomber « total chantier » sur « par devis » → mode agrégé inatteignable, corrigé en tâche B6b.)
+
 **Taux null légitime :** un apporteur peut être identifié sans taux encore négocié (`apporteur_pourcentage = null`). Le calcul ne se déclenche QUE si taux défini (non null, > 0) ET `apporteur_actif`. Sinon : pas de coût calculé (afficher « taux à définir »). Ne jamais produire de NaN (corrige P1-7).
 
 **Déclenchement :** le coût existe dès la signature, devient payable au déblocage de l'acompte. L'interrupteur `dossiers.apporteur_actif` (défaut false) décide si l'apporteur du client s'applique à CE chantier — le calcul ne se déclenche QUE si activé.
