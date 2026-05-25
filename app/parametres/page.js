@@ -548,7 +548,7 @@ export default function Parametres() {
               <div>
                 <label style={LS}>Début des redevances</label>
                 <input className="input" type="date" value={form.redevance_debut} onChange={e => setForm(f => ({ ...f, redevance_debut: e.target.value }))}/>
-                <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Date à partir de laquelle la redevance mensuelle de 540 € est due.</div>
+                <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Date à partir de laquelle la redevance mensuelle est due.</div>
               </div>
               <div>
                 <label style={LS}>Répartitions commission disponibles — agente %</label>

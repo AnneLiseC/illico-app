@@ -647,15 +647,16 @@ export default function Finances() {
     // Sync redevance quand Facture 2 change de statut
     if (type === 'ctp_vers_agente') {
       const agenteProfile = agentes.find(a => a.id === agenteId)
-      const montantRedevance = agenteProfile?.redevance_mensuelle_ttc ?? 540
-      await supabase.from('redevances').upsert({
+      const montantRedevance = agenteProfile?.redevance_mensuelle_ht ?? null
+      const { error: redevErr } = await supabase.from('redevances').upsert({
         agente_id: agenteId,
         annee,
         mois,
-        montant_ttc: montantRedevance,
+        montant_ht: montantRedevance,
         statut: updates.statut === 'paye' ? 'regle' : 'en_attente',
         date_paiement: updates.statut === 'paye' ? new Date().toISOString().split('T')[0] : null,
       }, { onConflict: 'agente_id,annee,mois' })
+      if (redevErr) setErreur('Redevance : ' + redevErr.message)
     }
 
     const { data } = await supabase.from('factures_agente').select('*')
@@ -838,7 +839,7 @@ export default function Finances() {
   const totalNetCTP = (() => {
     const keysAnnee = rowsReelScoped.filter(([k]) => k.startsWith(String(anneeEnCours)))
     const reelProduits = keysAnnee.reduce((s, [, agg]) => s + round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0)), 0)
-    const reelRedev = (isMarine ? redevances : mesRedevances).filter(r => r.statut === 'regle' && r.annee === anneeEnCours).reduce((s, r) => s + (r.montant_ttc || 540), 0)
+    const reelRedev = (isMarine ? redevances : mesRedevances).filter(r => r.statut === 'regle' && r.annee === anneeEnCours).reduce((s, r) => s + (r.montant_ht || 0), 0)
     const reelCharges = keysAnnee.reduce((s, [, agg]) => s + (agg.gainsAgenteReels || 0), 0)
     return round2(reelProduits + reelRedev - reelCharges)
   })()
@@ -1334,7 +1335,7 @@ export default function Finances() {
         mapPrevi[key].royalties   = round2(mapPrevi[key].royalties   + c.royaltiesTotal)
       })
       const [annee, mois] = cle.split('-')
-      const redevMois = redevances.filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
+      const redevMois = redevances.filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois)).reduce((s, r) => s + (r.montant_ht || 0), 0)
       const p = mapPrevi[cle] || {}
       const r = rowsReel.find(([k]) => k === cle)?.[1] || {}
       const previProduits = round2((p.frais||0) + (p.com||0) + (p.hon||0) + (p.comApport||0) + (isCTP ? redevMois : 0))
@@ -1385,7 +1386,7 @@ export default function Finances() {
     const allKeys = new Set([...rowsReel.map(([k]) => k), ...redevances.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`)])
     const cles = Array.from(allKeys).sort((a, b) => b.localeCompare(a))
     const chartLabels = cles.map(cle => { const [a, m] = cle.split('-'); return `${MOIS[parseInt(m)].slice(0,3)}. ${a}` })
-    const chartProduits = cles.map(cle => { const [a, m] = cle.split('-'); const r = rowsReel.find(([k]) => k === cle)?.[1] || {}; const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === parseInt(a) && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ttc||540), 0); return round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0)) })
+    const chartProduits = cles.map(cle => { const [a, m] = cle.split('-'); const r = rowsReel.find(([k]) => k === cle)?.[1] || {}; const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === parseInt(a) && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ht||0), 0); return round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0)) })
     const chartCharges = cles.map(cle => { const r = rowsReel.find(([k]) => k === cle)?.[1] || {}; return isCTP ? -round2((r.gainsAgenteReels||0) + (r.apporteurRembourseNet||0)) : 0 })
     const chartNet = cles.map((_, i) => round2(chartProduits[i] + chartCharges[i]))
     const sfSousOnglet = sfSousOngletCTP; const setSfSousOnglet = setSfSousOngletCTP
@@ -1411,7 +1412,7 @@ export default function Finances() {
       const totR = { frais: 0, com: 0, comApport: 0, hon: 0, redev: 0, partAgentes: 0, royalties: 0, apporteur: 0 }
       clesMois.forEach(cle => {
         const [, m] = cle.split('-')
-        const redev = redevances.filter(r => r.statut === 'regle' && r.annee === anneeSelectionnee && r.mois === parseInt(m)).reduce((s, r) => s + (r.montant_ttc || 540), 0)
+        const redev = redevances.filter(r => r.statut === 'regle' && r.annee === anneeSelectionnee && r.mois === parseInt(m)).reduce((s, r) => s + (r.montant_ht || 0), 0)
         const p = mapPrevi[cle] || {}; const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}
         totP.frais = round2(totP.frais + (p.frais||0)); totP.com = round2(totP.com + (p.com||0)); totP.comApport = round2(totP.comApport + (p.comApport||0)); totP.hon = round2(totP.hon + (p.hon||0)); totP.redev = round2(totP.redev + redev); totP.partAgentes = round2(totP.partAgentes + (p.partAgentes||0)); totP.royalties = round2(totP.royalties + (p.royalties||0))
         totR.frais = round2(totR.frais + (r.fraisNet||0)); totR.com = round2(totR.com + (r.comReelNet||0)); totR.comApport = round2(totR.comApport + (r.comApporteursReel||0)); totR.hon = round2(totR.hon + (r.honReel||0)); totR.redev = round2(totR.redev + redev); totR.partAgentes = round2(totR.partAgentes + (r.gainsAgenteReels||0)); totR.royalties = round2(totR.royalties + round2((r.comReelNet||0) * (0.05 / 0.95)))
@@ -1426,7 +1427,7 @@ export default function Finances() {
       const reelNet       = round2(reelProduits - reelCharges)
       const ecart = (p, r) => { const e = round2(r - p); return <span className={`text-xs font-medium ${e >= 0 ? 'text-green-600' : 'text-red-500'}`}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
       const chartLabelsAnnee = clesMois.map(cle => { const [, m] = cle.split('-'); return MOIS[parseInt(m)].slice(0, 3) })
-      const chartProduitsAnnee = clesMois.map(cle => { const [, m] = cle.split('-'); const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}; const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === anneeSelectionnee && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ttc||540), 0); return round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0)) })
+      const chartProduitsAnnee = clesMois.map(cle => { const [, m] = cle.split('-'); const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}; const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === anneeSelectionnee && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ht||0), 0); return round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0)) })
       const chartChargesAnnee = clesMois.map(cle => { const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}; return isCTP ? -round2((r.gainsAgenteReels||0) + (r.apporteurRembourseNet||0)) : 0 })
       const chartNetAnnee = clesMois.map((_, i) => round2(chartProduitsAnnee[i] + chartChargesAnnee[i]))
       return (
@@ -1481,7 +1482,7 @@ export default function Finances() {
         {sfSousOnglet === 'mois' && (
           <div className="space-y-5">
             <ObjectifBar label={isCTP ? `Objectif mensuel CTP (${fmt(objectifMensuel)}/mois)` : `Objectif mensuel agence (${fmt(objectifMensuel)}/mois)`}
-              reel={(() => { const moisCourant = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`; const r = rowsReel.find(([k]) => k === moisCourant)?.[1] || {}; const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === new Date().getFullYear() && rv.mois === new Date().getMonth() + 1).reduce((s, rv) => s + (rv.montant_ttc||540), 0); return getReelNet(r, redev) })()}
+              reel={(() => { const moisCourant = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`; const r = rowsReel.find(([k]) => k === moisCourant)?.[1] || {}; const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === new Date().getFullYear() && rv.mois === new Date().getMonth() + 1).reduce((s, rv) => s + (rv.montant_ht||0), 0); return getReelNet(r, redev) })()}
               objectifMontant={objectifMensuel} cible="agence" canEdit={isMarine} onSave={sauvegarderObjectif} />
             <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId={`chart_${mode}_mois`} />
             <div className="card" style={{overflow:'hidden'}}>
@@ -1499,7 +1500,7 @@ export default function Finances() {
                     const [a, m] = cle.split('-')
                     const label = `${MOIS[parseInt(m)].slice(0, 3)}. ${a}`
                     const r = rowsReel.find(([k]) => k === cle)?.[1] || {}
-                    const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === parseInt(a) && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ttc||540), 0)
+                    const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === parseInt(a) && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ht||0), 0)
                     const reelNet = getReelNet(r, redev)
                     const ecartObj = round2(reelNet - objectifMensuel)
                     const isOpen = moisOuvert === `${mode}_${cle}`
@@ -1518,7 +1519,7 @@ export default function Finances() {
                   })}
                   <tr className="bg-gray-50 border-t-2 border-gray-300 font-bold text-xs">
                     <td className="px-4 py-2.5 text-gray-700">Total</td>
-                    <td className={`px-3 py-2.5 text-right ${cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevances.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ttc||540),0);return s+getReelNet(r,redev)},0)>=0?'text-green-700':'text-red-600'}`}>{fmt(cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevances.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ttc||540),0);return s+getReelNet(r,redev)},0))}</td>
+                    <td className={`px-3 py-2.5 text-right ${cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevances.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ht||0),0);return s+getReelNet(r,redev)},0)>=0?'text-green-700':'text-red-600'}`}>{fmt(cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevances.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ht||0),0);return s+getReelNet(r,redev)},0))}</td>
                     <td className="px-3 py-2.5 text-right text-gray-400">{fmt(objectifMensuel * cles.length)}</td>
                     <td className="px-4 py-2.5 text-right text-gray-500">—</td>
                   </tr>
@@ -1548,7 +1549,7 @@ export default function Finances() {
         await supabase.from('factures_agente').insert({ agente_id: agenteId, mois, annee, montant, type_facture: type, ...updates })
       }
       if (type === 'ctp_vers_agente') {
-        const montantRedevance = profile?.redevance_mensuelle_ttc ?? 540
+        const montantRedevance = profile?.redevance_mensuelle_ht ?? 540
         await supabase.from('redevances').upsert({
           agente_id: agenteId, annee, mois, montant_ttc: montantRedevance,
           statut: updates.statut === 'paye' ? 'regle' : 'en_attente',
@@ -1585,7 +1586,7 @@ export default function Finances() {
           const montantF1 = round2((agg.fraisAgenteNet||0) + (agg.comAgenteNet||0) + (agg.honAgenteNet||0) + (agg.comApporteursAgenteNet||0))
           const debutRedev = profile?.redevance_debut ? new Date(profile.redevance_debut) : null
           const moisConcerne = new Date(annee, mois - 1, 1)
-          const redevMois = debutRedev && moisConcerne >= debutRedev ? (profile?.redevance_mensuelle_ttc ?? 540) : 0
+          const redevMois = debutRedev && moisConcerne >= debutRedev ? (profile?.redevance_mensuelle_ht ?? 540) : 0
           const apporteurMois = round2(agg.apporteurRembourseNet||0)
           const montantF2 = round2(redevMois + apporteurMois)
           const net = round2(montantF1 - montantF2)
@@ -1697,7 +1698,7 @@ export default function Finances() {
       const montantF1 = round2((agg.fraisAgenteNet||0) + (agg.comAgenteNet||0) + (agg.honAgenteNet||0) + (agg.comApporteursAgenteNet||0))
       const debutRedev = profile?.redevance_debut ? new Date(profile.redevance_debut) : null
       const moisConcerne = new Date(anneeSelectionnee, mois - 1, 1)
-      const redev = debutRedev && moisConcerne >= debutRedev ? (profile?.redevance_mensuelle_ttc ?? 540) : 0
+      const redev = debutRedev && moisConcerne >= debutRedev ? (profile?.redevance_mensuelle_ht ?? 540) : 0
       const montantF2 = round2(redev + (agg.apporteurRembourseNet||0))
       const f1 = facturesAgente.find(f => f.mois === mois && f.annee === anneeSelectionnee && f.agente_id === profile?.id && f.type_facture === 'agente_vers_ctp')
       const f2 = facturesAgente.find(f => f.mois === mois && f.annee === anneeSelectionnee && f.agente_id === profile?.id && f.type_facture === 'ctp_vers_agente')
@@ -2258,7 +2259,7 @@ export default function Finances() {
     const totalF1Paye = facturesAg.filter(f => f.type_facture === 'agente_vers_ctp' && f.statut === 'paye').reduce((s, f) => s + (f.montant||0), 0)
     const totalF2     = facturesAg.filter(f => f.type_facture === 'ctp_vers_agente').reduce((s, f) => s + (f.montant||0), 0)
     const totalF2Paye = facturesAg.filter(f => f.type_facture === 'ctp_vers_agente' && f.statut === 'paye').reduce((s, f) => s + (f.montant||0), 0)
-    const totalRedev  = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ttc||540), 0)
+    const totalRedev  = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ht||0), 0)
     const net         = round2(totalF1 - totalF2)
 
     const months = [...new Set(facturesAg.map(f => `${f.annee}-${String(f.mois).padStart(2,'0')}`))].sort((a, b) => b.localeCompare(a))
@@ -2341,7 +2342,7 @@ export default function Finances() {
         <div className="kpi-grid">
           <FinKpiCard label="F1 — Gains à facturer"       value={fmt(totalF1)}    sub={`Payé ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
           <FinKpiCard label="F2 — Redevances + apporteur" value={fmt(totalF2)}    sub={`Payé ${fmt(totalF2Paye)}`}                                              tone="warn"/>
-          <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ttc ?? 540} €/mois`}     tone="brand"/>
+          <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
           <FinKpiCard label="Net à virer à l'agente"       value={(net >= 0 ? '+' : '') + fmt(Math.abs(net))} sub={net >= 0 ? 'F1 − F2' : "L'agente doit à CTP"} tone={net >= 0 ? 'brand' : 'bad'}/>
         </div>
 
@@ -2431,7 +2432,7 @@ export default function Finances() {
 
         {/* Redevances 12 mois */}
         <div className="card" style={{padding:22}}>
-          <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)',marginBottom:14}}>Redevances mensuelles · {agenteActuelle?.redevance_mensuelle_ttc ?? 540} € TTC</div>
+          <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)',marginBottom:14}}>Redevances mensuelles · {agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} € HT` : 'montant à paramétrer'}</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(12,1fr)',gap:6}}>
             {MOIS_LABELS.map((mLabel, i) => {
               const r = redevAg.find(rv => rv.mois === i+1 && rv.annee === anneeEnCours)
@@ -2482,7 +2483,7 @@ export default function Finances() {
         const gains = round2(agg.gainsAgenteReels||0)
         const debutRedev = agenteActuelle?.redevance_debut ? new Date(agenteActuelle.redevance_debut) : null
         const moisConcerne = new Date(anneeSelectionnee, mois - 1, 1)
-        const redev = debutRedev && moisConcerne >= debutRedev ? (agenteActuelle?.redevance_mensuelle_ttc ?? 540) : 0
+        const redev = debutRedev && moisConcerne >= debutRedev ? (agenteActuelle?.redevance_mensuelle_ht ?? 540) : 0
         const apporteur = round2(agg.apporteurRembourseNet||0)
         const duParAgente = round2(redev + apporteur)
         const f1 = facturesAgente.find(f => f.mois === mois && f.annee === anneeSelectionnee && f.agente_id === agenteSelectionnee && f.type_facture === 'agente_vers_ctp')
@@ -2584,7 +2585,7 @@ export default function Finances() {
           const gains = round2(agg.gainsAgenteReels||0)
           const debutRedev = agenteActuelle?.redevance_debut ? new Date(agenteActuelle.redevance_debut) : null
           const moisConcerne = new Date(annee, mois - 1, 1)
-          const redev = debutRedev && moisConcerne >= debutRedev ? (agenteActuelle?.redevance_mensuelle_ttc ?? 540) : 0
+          const redev = debutRedev && moisConcerne >= debutRedev ? (agenteActuelle?.redevance_mensuelle_ht ?? 540) : 0
           const apporteur = round2(agg.apporteurRembourseNet||0)
           const duParAgente = round2(redev + apporteur)
           const net = round2(duParAgente - gains)
