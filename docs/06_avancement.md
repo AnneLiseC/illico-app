@@ -2,7 +2,7 @@
 
 *Où on en est dans le chantier de correction. À rouvrir à chaque reprise. Le CDC (00) décrit la CIBLE ; ce fichier décrit l'ÉTAT RÉEL.*
 
-**Dernière mise à jour : P0-6 calcul (B6b) mergé (Lot B en cours).**
+**Dernière mise à jour : P0-7 vérifié (déjà OK, sans correction) — Lot B en cours.**
 
 ---
 
@@ -83,9 +83,12 @@ Mergé et testé en production. Contenu :
   - **Tâche A (structure)** ✅ faite, mergée : colonne `dossiers.apporteur_actif` (défaut false), interrupteur en ÉDITION + CRÉATION du chantier (visible si client a un apporteur, désactivé défaut, nom/%/mode lecture seule depuis le client, "taux à définir, coût non calculé" si % null). SQL `B6a_apporteur_actif.sql`. Option A retenue (tout false, réactivation manuelle des vrais chantiers Kiosque).
   - **Tâche B6b (calcul + bug de mode + affichages)** ✅ faite, testée au centime : calcul apporteur dans finance.js gaté sur `apporteur_actif` + taux défini (sinon 0, jamais NaN), base = signés hors commission 0%, deux versions prévi (signés) / réel (acomptes débloqués), partage part_agente sens inverse sans royalties. Bug de mode corrigé (`apporteur_base` + `total_chantier_ht`) → modes par-devis/total-chantier distincts (découpage des règlements voulu). Affichages basculés : badge "Partenaire" ambre sur vrais partenaires, aucun sur commission 0% ; "Paiement direct à l'entreprise" dans le suivi. Test validé sur Guerteau : prévi 1 814,55 € (1 088,73 / 725,82), réel suit les acomptes débloqués (décocher Esprit Cuisine fait baisser le réel). Bonus déterré : frais consultation prévi déduit maintenant les royalties (475 au lieu de 500).
   - **Reste apporteur (notés dans 05, après B6b)** : visu du détail apporteur PAR DEVIS (contrôle de la facture Kiosque) ; vue F1/F2 mensuelle (timing du remboursement) à traiter avec les vues de facturation détaillées.
-**P0-7 — Parts admin après royalties (mode non-Marine)** ✅ vérifié, DÉJÀ OK (aucune correction)
-- finance.js déduit les royalties Type 2 AVANT le split (`comHT → royalties → netCom → split(netCom, part_agente)`), donc symétrique : agente + admin = netCom dans tous les cas.
-- Preuve : devis 7200 HT à 15%, 60/40 → admin = 410,40 (et non 432 qui serait le bug). 432 − 410,40 = 21,60 = 40% des royalties → l'admin supporte bien sa part. Idem mode Marine (100%). Comme le ×1,2 : bug supposé par l'audit, mais finance.js était déjà juste.
+
+- **P0-7 — Parts admin après royalties (mode non-Marine)** ✅ (vérifié, AUCUNE correction)
+  - Audit `finance.js` : les royalties Type 2 (5%) sont déduites AVANT le split (`netCom = comHT − royalties`, puis `split(netCom, part_agente)` où `admin = netCom − agente`). Elles impactent donc agente ET admin ; `agente + admin = netCom` dans tous les cas. Idem honoraires (courtage/AMO) et frais. Pas d'asymétrie.
+  - Preuve (devis 7 200 HT, 15%, 60/40) : comHT 1 080 → royalties 54 → net 1 026 → agente 615,60 / admin 410,40. L'admin est bien sur le net (et non 432 sur le brut → 432 − 410,40 = 21,60 = 40% des royalties). Mode Marine (100%) : admin reçoit le net intégral 1 026. Côté réel (gainAdminReel) : calculé sur des montants nets (`dvF.netCom`), pas d'asymétrie non plus.
+  - Conclusion : le bug supposé n'existe pas. Aucun code modifié.
+  - 
 - [ ] **P0-8 — Royalties visibles pour Marine** (codées à 0 en dur en mode Marine).
 - [ ] **P0-9 — Chaque agente voit SES créances/dettes** (pas celles d'une autre).
 - [ ] **Vues de facturation détaillées** : menus déroulants F1/F2 par mois (détail de ce qui compose chaque facture).
