@@ -118,6 +118,13 @@ Reste de la Tâche 1 (séparation sans_royalties → partenaire/paiement_direct)
 - [ ] **Cases de redevance mensuelle non cliquables côté agente.** Sur la page Facturation, la section « Redevances mensuelles » affiche des cases par mois (JAN ✓, AVR ⏳…) mais le clic ne fait RIEN (pas d'erreur console — handler absent, fonctionnalité non branchée). La RLS P0-9 autorise pourtant l'agente à cocher le statut de SA redevance (UPDATE, montant protégé par trigger). Il manque juste le branchement UI du clic → UPDATE. À faire avec le cadrage du workflow redevance (option B + automatisme éventuel). NB : vérifier aussi si l'admin peut cocher (peut-être cassé pour tous). **(Lot B / Fonctions)**
 - [ ] **Automatisme de cochage de la redevance** (question d'Anne-Lise) : le statut « payé » de la redevance pourrait-il se cocher automatiquement quand l'admin rentre sa facture du mois (puisque la redevance est dans cette facture) ? Workflow à définir, lié à l'idée de notification mail ci-dessus. En P0-9 on donne seulement le DROIT à l'agente de cocher le statut ; l'automatisme éventuel vient après. **(Fonctions / Lot F)**
 
+### Optimisation BDD — dette d'hygiène (future-proofing, PAS urgent)
+
+Relevés par l'advisor Supabase pendant le diagnostic perf de la fiche chantier. NE SONT PAS la cause de la lenteur actuelle (à ce volume — 20 dossiers, 35 devis — invisible, mesuré <1,5 ms/requête). La vraie cause des 3s = nombre d'allers-retours PostgREST en file sur le pool de 11 connexions (traité par l'embedding, voir perf chantier). Ces 3 points deviennent utiles à partir de milliers de lignes — à traiter en UNE passe d'optimisation BDD plus tard :
+- [ ] **`auth_rls_initplan` (32×)** : `auth.uid()`/`get_my_role()` réévalués par ligne dans les policies P0-9 (dossiers, devis_artisans, suivi_financier, redevances, factures_agente, factures_artisans). Correctif = encapsuler dans `(select get_my_role())` / `(select auth.uid())` → évalué une fois (InitPlan). Gain sub-milliseconde aujourd'hui, réel à l'échelle. Ne change PAS la logique de sécurité, juste l'évaluation.
+- [ ] **`multiple_permissive_policies` (51×)** : plusieurs policies permissives sur la même table/action, toutes évaluées par ligne et OR-ées (ex. dossiers, photos, messages, comptes_rendus). Multiplicateur du point précédent. À consolider.
+- [ ] **`unindexed_foreign_keys` (29×)** : FK sans index, dont `devis_artisans.dossier_id`, `suivi_financier.dossier_id` (d'où des Seq Scan). Ajouter les index = hygiène/échelle. SQL simple.
+
 ### Sécurité — durcissement RLS complémentaire (juste après P0-9)
 
 Repérés par l'advisor sécurité Supabase pendant l'analyse P0-9. NE PAS mélanger à P0-9 (un changement à la fois). À traiter en bloc « durcissement sécurité » juste après P0-9 :
