@@ -73,6 +73,8 @@ Mergé et testé en production. Contenu :
 
 ### À faire (reste du Lot B)
 
+- [ ] **P0-5 — TTC écrasé à la re-saisie du HT.** ⚠️ Oublié dans une version précédente de ce journal, rattrapé au contrôle croisé. Figure dans la carte des bugs (chiffres faux) et la décision actée #5 (TTC figé dès saisie manuelle, jamais recalculé). **État réel à VÉRIFIER dans le code avant correction** : le TTC est-il stocké ou recalculé ? HT×1,1 écrase-t-il un TTC saisi ? Alerte si TTC<HT ? À traiter en premier dans le reste du Lot B (ordre de la carte).
+
 - [ ] **P0-6 — Apporteur (Kiosque).** Déplacer l'apporteur du client vers un interrupteur `dossiers.apporteur_actif`. Brancher le calcul de coût (3% Kiosque, mode total chantier OU par devis — le bug original = "total chantier retombe sur par devis"). Exclure les devis à commission 0%. Afficher comme un COÛT (sortant). À CALIBRER avant de coder.
 - [ ] **P0-7 — Parts admin après royalties (mode non-Marine).** Le taux de royalties est OK (5%). Reste à vérifier que les royalties sont bien déduites de la part ADMIN sur les dossiers d'une agente (pas seulement de la part agente). À tester sur un dossier Anne-Lise.
 - [ ] **P0-8 — Royalties visibles pour Marine** (codées à 0 en dur en mode Marine).
