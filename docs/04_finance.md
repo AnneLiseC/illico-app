@@ -91,6 +91,8 @@ Devis à 0% de commission EXCLU de la base apporteur (ne passe pas par illiCO Fr
 - Prévisionnel (ce que l'agente VA devoir) = sur les devis SIGNÉS/acceptés.
 - Réel (ce qu'elle doit MAINTENANT) = sur les devis dont l'ACOMPTE est débloqué.
 
+**Taux null légitime :** un apporteur peut être identifié sans taux encore négocié (`apporteur_pourcentage = null`). Le calcul ne se déclenche QUE si taux défini (non null, > 0) ET `apporteur_actif`. Sinon : pas de coût calculé (afficher « taux à définir »). Ne jamais produire de NaN (corrige P1-7).
+
 **Déclenchement :** le coût existe dès la signature, devient payable au déblocage de l'acompte. L'interrupteur `dossiers.apporteur_actif` (défaut false) décide si l'apporteur du client s'applique à CE chantier — le calcul ne se déclenche QUE si activé.
 
 **Partage du coût (sens INVERSE des gains) :** le coût se partage avec le MÊME taux que les gains (ex. 60/40), mais l'agente PAIE au lieu de toucher. CTP paie l'apporteur, puis l'agente rembourse sa part à CTP, l'admin assume la sienne.

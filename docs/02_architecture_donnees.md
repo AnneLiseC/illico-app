@@ -7,6 +7,8 @@
 
 
 ## CONVENTION — apporteur vs partenaire (sens de l'ARGENT)
+> **Une même entité peut être À LA FOIS partenaire ET apporteur** (ex. Amandine PARIS : partenaire côté artisan car on lui amène des chantiers + apporteur côté client car elle peut nous amener des clients). Les deux rôles coexistent, dans deux tables différentes (artisans pour partenaire, client pour apporteur). Ce n'est pas une erreur.
+> **Le taux apporteur peut être `null` LÉGITIMEMENT** : apporteur identifié mais conditions pas encore négociées (projet pas assez avancé). `null` ≠ erreur. Conséquence : le calcul apporteur ne se déclenche QUE si taux défini (non null, > 0) ET `apporteur_actif`. Un apporteur à taux null peut être activé sur un dossier ; le coût s'affiche « taux à définir » jusqu'à ce que le % soit renseigné.
 On parle TOUJOURS du sens de l'argent, jamais de l'affaire :
 - **PARTENAIRE** = argent ENTRANT (gain). BET, architecte, fournisseur. On leur amène l'affaire, ils nous reversent un %. CTP encaisse, reverse une part à l'agente. Vit sur la fiche ARTISAN (case « apporteur d'affaires » actuelle À RENOMMER en « partenaire »).
 - **APPORTEUR** = argent SORTANT (coût). Ex. Kiosque à travaux. Il nous amène un client, on lui doit un %. CTP décaisse, l'agente rembourse sa part. Taux CONTRACTUEL (illiCO France ↔ apporteur), ne varie jamais.
