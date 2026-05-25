@@ -20,6 +20,7 @@ function NouveauChantierForm() {
     frais_statut: 'offerts',
     date_limite_devis: '',
     part_agente: null,
+    apporteur_actif: false,
   })
 
 
@@ -92,6 +93,7 @@ function NouveauChantierForm() {
         date_limite_devis: form.date_limite_devis || null,
         part_agente: form.part_agente ?? profile?.part_agente_defaut ?? 0.5,
         frais_part_agente: profile?.frais_part_agente_defaut ?? null,
+        apporteur_actif: form.apporteur_actif,
       }).select()
 
       if (error) {
@@ -258,6 +260,35 @@ function NouveauChantierForm() {
               </div>
             </div>
           ) : null}
+
+          {/* Apporteur (coût sortant) — visible si le client a un apporteur */}
+          {client?.apporteur_affaires && (
+            <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="font-semibold text-gray-800">
+                    Apporteur{client.apporteur_nom ? ` · ${client.apporteur_nom}` : ''} <span className="font-normal text-gray-400 text-sm">(coût)</span>
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {client.apporteur_pourcentage != null && client.apporteur_pourcentage !== ''
+                      ? <>{parseFloat(client.apporteur_pourcentage)}% · {client.apporteur_base === 'total_chantier' ? 'sur total chantier HT' : 'par devis signé'}</>
+                      : <span className="text-amber-700">taux à définir, coût non calculé</span>}
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={form.apporteur_actif}
+                    onChange={e => set('apporteur_actif', e.target.checked)}
+                    className="w-3.5 h-3.5 accent-blue-700"
+                  />
+                  <span className={`text-sm font-medium ${form.apporteur_actif ? 'text-blue-800' : 'text-gray-500'}`}>
+                    Appliquer à ce chantier
+                  </span>
+                </label>
+              </div>
+            </div>
+          )}
 
           {/* Date limite devis */}
           <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">

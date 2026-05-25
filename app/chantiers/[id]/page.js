@@ -2392,6 +2392,37 @@ export default function FicheChantier({ params }) {
           )}
         </div>
 
+        {/* Apporteur (coût sortant) — visible si le client a un apporteur */}
+        {client?.apporteur_affaires && (
+          <div className="card" style={{padding:24}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap'}}>
+              <div style={{minWidth:0}}>
+                <h2 className="page" style={{fontSize:15, marginBottom:4}}>
+                  Apporteur{client.apporteur_nom ? ` · ${client.apporteur_nom}` : ''} <span style={{color:'var(--ink-400)', fontWeight:400, fontSize:13}}>(coût)</span>
+                </h2>
+                <div style={{fontSize:12, color:'var(--ink-500)'}}>
+                  {client.apporteur_pourcentage != null && client.apporteur_pourcentage !== ''
+                    ? <>{parseFloat(client.apporteur_pourcentage)}% · {client.apporteur_base === 'total_chantier' ? 'sur total chantier HT' : 'par devis signé'}</>
+                    : <span style={{color:'#b45309'}}>taux à définir, coût non calculé</span>}
+                </div>
+              </div>
+              <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer'}}>
+                <input type="checkbox"
+                  checked={dossier.apporteur_actif || false}
+                  onChange={async e => {
+                    const v = e.target.checked
+                    set('apporteur_actif', v)
+                    await supabase.from('dossiers').update({ apporteur_actif: v }).eq('id', id)
+                  }}
+                  style={{width:14, height:14, accentColor:'var(--brand-700)'}} />
+                <span style={{fontSize:13, fontWeight:600, color: dossier.apporteur_actif ? 'var(--brand-800)' : 'var(--ink-500)'}}>
+                  {dossier.apporteur_actif ? 'Appliqué à ce chantier' : 'Appliquer à ce chantier'}
+                </span>
+              </label>
+            </div>
+          </div>
+        )}
+
         {/* Contrat de prestation */}
         <div className="card" style={{padding:24}}>
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
