@@ -30,7 +30,7 @@ const normalizeDossier = (d) => ({
   part_agente: d.part_agente ?? (d.referente?.role === 'admin' ? 0 : 0.5),
   frais_part_agente: d.frais_part_agente ?? null,
   taux_amo: d?.taux_amo ?? d?.honoraires_amo_taux,
-  client: d?.client ? { ...d.client, apporteur_mode: d.client?.apporteur_base === 'total_chantier' ? 'total_chantier_ht' : 'par_devis' } : null,
+  client: d?.client || null,
 })
 
 const calculerStats = (d) => {

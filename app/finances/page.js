@@ -31,11 +31,7 @@ const normalizeDossier = (d) => ({
   part_agente: d.part_agente ?? (d.referente?.role === 'admin' ? 0 : 0.5),
   frais_part_agente: d.frais_part_agente ?? null,
   taux_amo: d?.taux_amo ?? d?.honoraires_amo_taux,
-  client: d?.client ? {
-    ...d.client,
-    apporteur_mode: d.client?.apporteur_base === 'total_chantier'
-      ? 'total_chantier_ht' : 'par_devis',
-  } : null,
+  client: d?.client || null,
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -249,7 +245,7 @@ export default function Finances() {
         *,
         referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
         client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
-        devis_artisans(*, artisan:artisans(id, entreprise, sans_royalties)),
+        devis_artisans(*, artisan:artisans(id, entreprise, partenaire, paiement_direct)),
         suivi_financier(*)
       `).order('created_at', { ascending: false }),
       supabase.from('redevances').select('*').order('annee', { ascending: false }).order('mois', { ascending: false }),
@@ -462,7 +458,7 @@ export default function Finances() {
       const honReel = round2((courtageRegle ? c.courtNet : 0) + acompteAmoNet + soldeAmoNetM)
       let comReelNet = 0
       for (const dv of c.devisAcceptes) {
-        if (dv.artisan?.sans_royalties) continue
+        if (dv.artisan?.paiement_direct) continue
         const artId = dv.artisan_id || dv.artisan?.id
         const dvF = c.devisFinanceMap.get(dv.id)
         if (!dvF) continue
@@ -518,7 +514,7 @@ export default function Finances() {
     let comAgenteReel     = 0
 
     for (const dv of c.devisAcceptes) {
-      if (dv.artisan?.sans_royalties) continue // apporteurs artisans : déclenchés dès signé
+      if (dv.artisan?.paiement_direct) continue // paiement direct : commission déclenchée dès signé
       const artId      = dv.artisan_id || dv.artisan?.id
       const dvF        = c.devisFinanceMap.get(dv.id)
       if (!dvF) continue
@@ -535,7 +531,7 @@ export default function Finances() {
     let comApporteursReel     = 0
     let comApporteursAgente   = 0
     for (const dv of c.devisAcceptes) {
-      if (!dv.artisan?.sans_royalties) continue
+      if (!dv.artisan?.paiement_direct) continue
       const dvF = c.devisFinanceMap.get(dv.id)
       if (!dvF || !dvF.signed) continue
       comApporteursReel   = round2(comApporteursReel   + dvF.netCom)
@@ -761,7 +757,7 @@ export default function Finances() {
       // Commissions artisans normaux
       const devisActifs = (d.devis_artisans || []).filter(dv => dv.statut === 'accepte')
       for (const dv of devisActifs) {
-        if (dv.artisan?.sans_royalties) continue
+        if (dv.artisan?.paiement_direct) continue
         const artId = dv.artisan_id || dv.artisan?.id
         const suiviAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId && s.statut_illico === 'recu')
         if (!suiviAcompte) continue
@@ -772,9 +768,9 @@ export default function Finances() {
         addToKey(key, 'comAgenteNet', dvF.parts.agente, d.id)
       }
 
-      // Commissions apporteurs artisans (déclenchées dès signé — date_signature du devis)
+      // Commissions paiement direct (déclenchées dès signé — date_signature du devis)
       for (const dv of devisActifs) {
-        if (!dv.artisan?.sans_royalties) continue
+        if (!dv.artisan?.paiement_direct) continue
         const dvF = c.devisFinanceMap.get(dv.id)
         if (!dvF || !dvF.signed) continue
         const key = getKeyFromDate(dv.date_signature, isAnnee)
@@ -913,10 +909,11 @@ export default function Finances() {
                       const pct   = dvF?.commissionPct ? parseFloat((dvF.commissionPct * 100).toFixed(1)) : 0
                       const comHT = dvF?.comHT || 0
                       const sf    = getSuivi(d, 'acompte_artisan', artId)
-                      const isApporteur = dv.artisan?.sans_royalties
+                      const estPaiementDirect = dv.artisan?.paiement_direct
+                      const estPartenaire     = dv.artisan?.partenaire
                       let badge
                       if (isReel) {
-                        const debloque = isApporteur ? true : (sf?.statut_illico === 'recu')
+                        const debloque = estPaiementDirect ? true : (sf?.statut_illico === 'recu')
                         badge = debloque
                           ? <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(22,163,74,0.12)', color:'#15803d'}}>Encaissé</span>
                           : <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(245,158,11,0.13)', color:'#a16207'}}>En attente</span>
@@ -927,7 +924,7 @@ export default function Finances() {
                         <tr key={dv.id} style={{borderTop:'1px solid var(--ink-100)'}}>
                           <td style={{padding:'10px 12px', fontWeight:600, color:'var(--ink-800)'}}>
                             🔨 {dv.artisan?.entreprise || '—'}
-                            {isApporteur && <span style={{marginLeft:6, fontSize:10, padding:'1px 6px', borderRadius:99, background:'rgba(251,146,60,0.15)', color:'#c2410c'}}>Apporteur</span>}
+                            {estPartenaire && <span style={{marginLeft:6, fontSize:10, padding:'1px 6px', borderRadius:99, background:'rgba(245,158,11,0.15)', color:'#b45309'}}>Partenaire</span>}
                           </td>
                           <td className="tnum" style={{padding:'10px 12px', textAlign:'right', color:'var(--ink-700)'}}>{fmt(dv.montant_ht)}</td>
                           <td className="tnum" style={{padding:'10px 12px', textAlign:'right', color:'var(--ink-500)'}}>{pct}%</td>
