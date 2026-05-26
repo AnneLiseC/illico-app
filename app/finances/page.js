@@ -2016,8 +2016,9 @@ export default function Finances() {
       return { fraisN, comN, honN, partN, montantF1, redev, apporteur, montantF2 }
     }
 
-    // F1 effectif : figé (snapshot factures_agente.montant) si payé, sinon live. F2 inchangé.
+    // F1/F2 effectif : figé (snapshot factures_agente.montant) si payé, sinon live.
     const f1Eff = (f, liveF1) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF1
+    const f2Eff = (f, liveF2) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF2
 
     // Clés mois : activité réelle ∪ factures déjà enregistrées (historique conservé visible).
     const months = [...new Set([
@@ -2033,9 +2034,10 @@ export default function Finances() {
       const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
       const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
       const f1eff = f1Eff(f1, montantF1)
-      totalF1 = round2(totalF1 + f1eff); totalF2 = round2(totalF2 + montantF2)
+      const f2eff = f2Eff(f2, montantF2)
+      totalF1 = round2(totalF1 + f1eff); totalF2 = round2(totalF2 + f2eff)
       if (f1?.statut === 'paye') totalF1Paye = round2(totalF1Paye + f1eff)
-      if (f2?.statut === 'paye') totalF2Paye = round2(totalF2Paye + montantF2)
+      if (f2?.statut === 'paye') totalF2Paye = round2(totalF2Paye + f2eff)
     })
     const totalRedev = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => round2(s + (r.montant_ht || 0)), 0)
     const net        = round2(totalF1 - totalF2)
@@ -2065,6 +2067,19 @@ export default function Finances() {
       }
     }
 
+    // Bascule du statut F2 (CTP → agente). Miroir de F1 : fige le montant LIVE
+    // (calcMois().montantF2, jamais f.montant) au clic « payé », NULL au déclic.
+    // Le type 'ctp_vers_agente' déclenche la synchro redevances dans
+    // upsertFactureMoisType (regle au clic / en_attente + date nulle au déclic).
+    const toggleF2Statut = async (annee, mois, f2) => {
+      const live = calcMois(annee, mois).montantF2
+      if (f2?.statut === 'paye') {
+        await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'a_facturer', montant: null })
+      } else {
+        await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'paye', montant: live })
+      }
+    }
+
     const FactureDetailCard = ({ title, subtitle, type, accent }) => {
       const fs = facturesAg.filter(f => f.type_facture === type)
       return (
@@ -2076,7 +2091,7 @@ export default function Finances() {
           <div>
             {fs.map(f => {
               const m = calcMois(f.annee, f.mois)
-              const montant = type === 'agente_vers_ctp' ? f1Eff(f, m.montantF1) : m.montantF2
+              const montant = type === 'agente_vers_ctp' ? f1Eff(f, m.montantF1) : f2Eff(f, m.montantF2)
               return (
               <div key={f.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:12,alignItems:'center',padding:'12px 18px',borderTop:'1px solid var(--ink-100)'}}>
                 <div>
@@ -2167,7 +2182,7 @@ export default function Finances() {
                 const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
                 const d   = calcMois(annee, mois)
                 const f1m = f1Eff(f1, d.montantF1)
-                const f2m = d.montantF2
+                const f2m = f2Eff(f2, d.montantF2)
                 const n   = round2(f1m - f2m)
                 const isOpen = moisDeplie === key
                 const voirPdf = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }
@@ -2197,7 +2212,20 @@ export default function Finances() {
                     <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f2m>0?'#b91c1c':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
                       {f2m > 0 ? fmt(f2m) : '—'}
                     </td>
-                    <td style={{padding:'14px 16px',textAlign:'center'}}><StatutFacture f={f2}/></td>
+                    <td style={{padding:'14px 16px',textAlign:'center'}}>
+                      {(f2m === 0 && f2?.statut !== 'paye') ? (
+                        <span style={{color:'var(--ink-400)'}}>—</span>
+                      ) : (
+                        <span
+                          onClick={(e) => { e.stopPropagation(); toggleF2Statut(annee, mois, f2) }}
+                          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
+                          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
+                          title={f2?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « payé » (fige le montant)'}
+                          style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
+                          <StatutFacture f={f2}/>
+                        </span>
+                      )}
+                    </td>
                     <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:n>=0?'var(--brand-800)':'#b91c1c',fontVariantNumeric:'tabular-nums'}}>
                       {n >= 0 ? '+' : ''}{fmt(n)}
                     </td>
