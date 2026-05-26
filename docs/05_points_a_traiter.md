@@ -194,3 +194,7 @@ Repérés par l'advisor sécurité Supabase pendant l'analyse P0-9. NE PAS méla
 ### Lot B facturation — hygiène (après validation étapes 2-3)
 
 - [ ] **Supprimer la table de backup `factures_agente_backup_b7b`.** Créée par le SQL B7b (filet de sécurité avant la remise à plat des 8 lignes). À dropper (`DROP TABLE public.factures_agente_backup_b7b;`) une fois que les étapes 2 et 3 sont validées et qu'on est sûr de ne plus avoir besoin de restaurer les anciens montants. **(Lot B facturation — hygiène, après étape 3.)**
+
+### Lot B facturation — détail par chantier (fin de lot facturation)
+
+- [ ] **Afficher de quel CHANTIER vient chaque montant dans le détail dépliable de la facturation.** Aujourd'hui (étape 2) le détail mensuel dépliable montre la décomposition par FLUX (commissions artisans, part partenaire, honoraires, redevance, apporteur) mais PAS quel dossier alimente chaque montant. Pour contrôler au centime, il faut voir que (ex.) les 245,81 € de part partenaire viennent de Jadras (2026-AM-001). La donnée existe déjà : `agrégerParPaiement` garde le `d.id` du dossier dans `addToKey`. À ajouter sans refonte. **(Lot B facturation — fin de lot.)**
