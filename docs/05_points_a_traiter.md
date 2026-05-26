@@ -165,7 +165,7 @@ Repérés par l'advisor sécurité Supabase pendant l'analyse P0-9. NE PAS méla
 
 ### Section facturation Lot B — vérification en cours (étape 1)
 
-- [ ] **Vérifier qu'aucun affichage admin ne lit le PARAMÈTRE redevance au lieu des LIGNES encaissées.** « Redevance » a deux sens opposés selon le rôle : côté **agente** = ce qu'elle DOIT (lit le paramètre `profiles.redevance_mensuelle_ht`) ; côté **admin** = ce qu'elle a FACTURÉ/ENCAISSÉ des agentes (agrège les lignes de la table `redevances.montant_ht`). Ces flux ne doivent JAMAIS se croiser. Point de contrôle identifié : `totalNetCTP` (`finances/page.js` l.841) et tout KPI rendu en contexte admin. Si un affichage admin lit le paramètre (qui est `null` pour un admin) au lieu des lignes → bug à corriger (risque NaN / affichage faux dans la vue admin). **(Lot B facturation — étape 1 ; statut à mettre à jour selon le rapport Claude Code.)**
+- [x] **VÉRIFIÉ (conforme) — aucun affichage admin ne lit le PARAMÈTRE redevance au lieu des LIGNES encaissées.** « Redevance » a deux sens opposés selon le rôle : côté **agente** = ce qu'elle DOIT (lit le paramètre `profiles.redevance_mensuelle_ht`) ; côté **admin** = ce qu'elle a FACTURÉ/ENCAISSÉ des agentes (agrège les lignes de la table `redevances.montant_ht`). Ces flux ne doivent JAMAIS se croiser. Point de contrôle identifié : `totalNetCTP` (`finances/page.js` l.841) et tout KPI rendu en contexte admin. Si un affichage admin lit le paramètre (qui est `null` pour un admin) au lieu des lignes → bug à corriger (risque NaN / affichage faux dans la vue admin). **(Vérifié pendant l'étape 1 : les agrégats admin lisent bien les LIGNES `redevances.montant_ht` ; les 2 lectures du paramètre — 2344/2434 — portent sur `agenteActuelle`, jamais sur l'admin. Le null du paramètre admin est inerte. RÉSOLU.)**
 
 ### Lot E — dette (convention null redevance)
 
@@ -177,3 +177,20 @@ Repérés par l'advisor sécurité Supabase pendant l'analyse P0-9. NE PAS méla
   **Règle d'affichage : ce champ ne s'affiche QUE pour les agentes, JAMAIS pour un admin.** Un admin encaisse les redevances des agentes mais n'en doit aucune → le paramètre est sans objet pour lui (mis à `NULL` en base via `WHERE role = 'admin'` en étape 1 facturation). L'admin ne voit que les redevances facturées/encaissées (lignes de la table `redevances`), jamais une redevance « à lui ».
   NB : reporté hors étape 1 (le champ n'existe pas encore → rien à masquer en étape 1, le sujet masquage admin appartient à cette construction). Ne bloque pas la clôture du Lot B. **(Lot F — fonction.)**
 - [ ] **Cases de redevance mensuelle non cliquables côté agente** (déjà noté plus haut dans « notification mail à l'upload de facture ») : à traiter avec le workflow redevance. Rappel ici car même zone. **(Lot B / Fonctions.)**
+
+---
+
+## Ajouts (Lot B facturation — étape 2 : affichage live + détail par mois)
+
+### Lot B facturation — à corriger BIENTÔT (affichage selon le rôle/périmètre)
+
+- [ ] **Dernière colonne des onglets Réel / Prévisionnel affiche « Marine » en dur** au lieu de s'adapter au périmètre sélectionné. Comportement attendu : périmètre « Tous » = chiffres de l'agence ; « Marine » = chiffres de l'admin ; « Anne-Lise » = chiffres de l'agente. Concerne l'affichage des données financières F1/F2 **par mois ET par année**, **côté admin ET côté agente**. C'est un libellé/calcul en dur basé sur un nom de personne (même famille de piège que `isMarine` / `estChantierMarine`). À corriger bientôt (pas Lot E lointain) car ça touche l'affichage financier réel. **(Lot B facturation — à corriger bientôt.)**
+
+### Lot B facturation — étape 3 (à faire ensuite)
+
+- [ ] **Découpler l'upload PDF du statut.** Aujourd'hui `uploadPdf` (FactureDetailCard) force `statut: 'facture'` quand un PDF est déposé. À l'étape 3, le PDF doit devenir optionnel et indépendant du statut : déposer un PDF ne doit PAS changer le statut. **PENDANT LES TESTS DE L'ÉTAPE 2 : ne pas uploader de PDF** (ça basculerait le mois en « facturé », comportement résiduel attendu, pas un bug). **(Lot B facturation — étape 3.)**
+- [ ] **Clic « payé » cliquable + figement du montant.** Étape 3 : rendre le statut cliquable (2 états « à facturer » / « payé »), figer le montant live au clic payé, retrait du statut « Facturé ». ATTENTION : le clic/déclic payé a des conséquences sur d'autres pages (CA réel net, net à virer, redevances réglées, Suivi). Avant de coder : cartographier EXHAUSTIVEMENT tout ce que le statut payé fait bouger, dans les deux sens (clic ET déclic), pour avoir la check-list de test de réversibilité. **(Lot B facturation — étape 3.)**
+
+### Lot B facturation — hygiène (après validation étapes 2-3)
+
+- [ ] **Supprimer la table de backup `factures_agente_backup_b7b`.** Créée par le SQL B7b (filet de sécurité avant la remise à plat des 8 lignes). À dropper (`DROP TABLE public.factures_agente_backup_b7b;`) une fois que les étapes 2 et 3 sont validées et qu'on est sûr de ne plus avoir besoin de restaurer les anciens montants. **(Lot B facturation — hygiène, après étape 3.)**
