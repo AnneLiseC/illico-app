@@ -2181,14 +2181,18 @@ export default function Finances() {
                       {f1m > 0 ? fmt(f1m) : '—'}
                     </td>
                     <td style={{padding:'14px 16px',textAlign:'center'}}>
-                      <span
-                        onClick={(e) => { e.stopPropagation(); toggleF1Statut(annee, mois, f1) }}
-                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
-                        title={f1?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « payé » (fige le montant)'}
-                        style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
-                        <StatutFacture f={f1}/>
-                      </span>
+                      {(f1m === 0 && f1?.statut !== 'paye') ? (
+                        <span style={{color:'var(--ink-400)'}}>—</span>
+                      ) : (
+                        <span
+                          onClick={(e) => { e.stopPropagation(); toggleF1Statut(annee, mois, f1) }}
+                          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
+                          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
+                          title={f1?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « payé » (fige le montant)'}
+                          style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
+                          <StatutFacture f={f1}/>
+                        </span>
+                      )}
                     </td>
                     <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f2m>0?'#b91c1c':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
                       {f2m > 0 ? fmt(f2m) : '—'}
