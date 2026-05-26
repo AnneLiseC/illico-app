@@ -99,7 +99,7 @@ function Td({ children, right, mono, dim, bold, accent }) {
 }
 function StatutFacture({ f }) {
   const s = f?.statut || 'a_facturer'
-  return <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,background:s==='paye'?'rgba(22,163,74,0.1)':s==='facture'?'rgba(0,87,142,0.1)':'var(--ink-100)',color:s==='paye'?'#15803d':s==='facture'?'var(--brand-700)':'var(--ink-500)'}}>{s==='paye'?'✅ Payé':s==='facture'?'📋 Facturé':'📋 À facturer'}</span>
+  return <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,background:s==='paye'?'rgba(22,163,74,0.1)':s==='facture'?'rgba(0,87,142,0.1)':'var(--ink-100)',color:s==='paye'?'#15803d':s==='facture'?'var(--brand-700)':'var(--ink-500)'}}>{s==='paye'?'✅ Reçu':s==='facture'?'📋 Facturé':'📋 À facturer'}</span>
 }
 function Row({ label, value, bold, dim, accent }) {
   return <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8}}><span style={{fontSize:12,color:dim?'var(--ink-400)':'var(--ink-600)'}}>{label}</span><span style={{fontSize:13,fontWeight:bold?700:500,color:accent?'var(--brand-800)':'var(--ink-800)',fontVariantNumeric:'tabular-nums'}}>{value}</span></div>
@@ -1684,8 +1684,9 @@ export default function Finances() {
       return { fraisN, comN, honN, partN, montantF1, redev, apporteur, montantF2 }
     }
 
-    // F1 effectif : figé (snapshot factures_agente.montant) si payé, sinon live. F2 inchangé.
+    // F1/F2 effectif : figé (snapshot factures_agente.montant) si payé, sinon live.
     const f1Eff = (f, liveF1) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF1
+    const f2Eff = (f, liveF2) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF2
 
     // Clés mois : activité réelle ∪ factures déjà enregistrées (historique conservé visible).
     const months = [...new Set([
@@ -1701,9 +1702,10 @@ export default function Finances() {
       const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
       const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
       const f1eff = f1Eff(f1, montantF1)
-      totalF1 = round2(totalF1 + f1eff); totalF2 = round2(totalF2 + montantF2)
+      const f2eff = f2Eff(f2, montantF2)
+      totalF1 = round2(totalF1 + f1eff); totalF2 = round2(totalF2 + f2eff)
       if (f1?.statut === 'paye') totalF1Paye = round2(totalF1Paye + f1eff)
-      if (f2?.statut === 'paye') totalF2Paye = round2(totalF2Paye + montantF2)
+      if (f2?.statut === 'paye') totalF2Paye = round2(totalF2Paye + f2eff)
     })
     const totalRedev = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => round2(s + (r.montant_ht || 0)), 0)
     const net        = round2(totalF1 - totalF2)
@@ -1733,6 +1735,19 @@ export default function Finances() {
       }
     }
 
+    // Bascule du statut F2 (CTP → agente). ADMIN ONLY (appelé uniquement depuis la
+    // branche isMarine de la cellule). Fige le montant LIVE (calcMois().montantF2,
+    // jamais f.montant) au clic « reçu », NULL au déclic. Le type 'ctp_vers_agente'
+    // déclenche la synchro redevances dans upsertFactureMoisType (regle / en_attente).
+    const toggleF2Statut = async (annee, mois, f2) => {
+      const live = calcMois(annee, mois).montantF2
+      if (f2?.statut === 'paye') {
+        await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'a_facturer', montant: null })
+      } else {
+        await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'paye', montant: live })
+      }
+    }
+
     const FactureDetailCard = ({ title, subtitle, type, accent }) => {
       const fs = facturesAg.filter(f => f.type_facture === type)
       return (
@@ -1744,7 +1759,7 @@ export default function Finances() {
           <div>
             {fs.map(f => {
               const m = calcMois(f.annee, f.mois)
-              const montant = type === 'agente_vers_ctp' ? f1Eff(f, m.montantF1) : m.montantF2
+              const montant = type === 'agente_vers_ctp' ? f1Eff(f, m.montantF1) : f2Eff(f, m.montantF2)
               return (
               <div key={f.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:12,alignItems:'center',padding:'12px 18px',borderTop:'1px solid var(--ink-100)'}}>
                 <div>
@@ -1800,8 +1815,8 @@ export default function Finances() {
 
         {/* KPI strip */}
         <div className="kpi-grid">
-          <FinKpiCard label="F1 — Gains à facturer"       value={fmt(totalF1)}    sub={`Payé ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
-          <FinKpiCard label="F2 — Redevances + apporteur" value={fmt(totalF2)}    sub={`Payé ${fmt(totalF2Paye)}`}                                              tone="warn"/>
+          <FinKpiCard label="F1 — Gains à facturer"       value={fmt(totalF1)}    sub={`Reçu ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
+          <FinKpiCard label="F2 — Redevances + apporteur" value={fmt(totalF2)}    sub={`Reçu ${fmt(totalF2Paye)}`}                                              tone="warn"/>
           <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
           <FinKpiCard label="Net à virer à l'agente"       value={(net >= 0 ? '+' : '') + fmt(Math.abs(net))} sub={net >= 0 ? 'F1 − F2' : "L'agente doit à CTP"} tone={net >= 0 ? 'brand' : 'bad'}/>
         </div>
@@ -1835,7 +1850,7 @@ export default function Finances() {
                 const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
                 const d   = calcMois(annee, mois)
                 const f1m = f1Eff(f1, d.montantF1)
-                const f2m = d.montantF2
+                const f2m = f2Eff(f2, d.montantF2)
                 const n   = round2(f1m - f2m)
                 const isOpen = moisDeplie === key
                 const voirPdf = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }
@@ -1856,7 +1871,7 @@ export default function Finances() {
                           onClick={(e) => { e.stopPropagation(); toggleF1Statut(annee, mois, f1) }}
                           onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
                           onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
-                          title={f1?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « payé » (fige le montant)'}
+                          title={f1?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
                           style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
                           <StatutFacture f={f1}/>
                         </span>
@@ -1865,7 +1880,22 @@ export default function Finances() {
                     <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f2m>0?'#b91c1c':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
                       {f2m > 0 ? fmt(f2m) : '—'}
                     </td>
-                    <td style={{padding:'14px 16px',textAlign:'center'}}><StatutFacture f={f2}/></td>
+                    <td style={{padding:'14px 16px',textAlign:'center'}}>
+                      {(f2m === 0 && f2?.statut !== 'paye') ? (
+                        <span style={{color:'var(--ink-400)'}}>—</span>
+                      ) : isMarine ? (
+                        <span
+                          onClick={(e) => { e.stopPropagation(); toggleF2Statut(annee, mois, f2) }}
+                          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
+                          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
+                          title={f2?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
+                          style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
+                          <StatutFacture f={f2}/>
+                        </span>
+                      ) : (
+                        <StatutFacture f={f2}/>
+                      )}
+                    </td>
                     <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:n>=0?'var(--brand-800)':'#b91c1c',fontVariantNumeric:'tabular-nums'}}>
                       {n >= 0 ? '+' : ''}{fmt(n)}
                     </td>
@@ -1908,9 +1938,9 @@ export default function Finances() {
                 <tr style={{borderTop:'2px solid var(--ink-200)',background:'var(--surface-2)'}}>
                   <td style={{padding:'14px 16px',fontWeight:800,color:'var(--ink-900)'}}>Total</td>
                   <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#15803d',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF1)}</td>
-                  <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF1Paye)} payé</td>
+                  <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF1Paye)} reçu</td>
                   <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#b91c1c',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF2)}</td>
-                  <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF2Paye)} payé</td>
+                  <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF2Paye)} reçu</td>
                   <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,fontSize:15,fontVariantNumeric:'tabular-nums',color:net>=0?'var(--brand-800)':'#b91c1c'}}>
                     {net >= 0 ? '+' : ''}{fmt(net)}
                   </td>
