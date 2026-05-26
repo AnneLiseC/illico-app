@@ -2256,14 +2256,50 @@ export default function Finances() {
   function FacturationAgentes() {
     const facturesAg  = facturesAgente.filter(f => f.agente_id === agenteSelectionnee)
     const redevAg     = redevancesAgente
-    const totalF1     = facturesAg.filter(f => f.type_facture === 'agente_vers_ctp').reduce((s, f) => s + (f.montant||0), 0)
-    const totalF1Paye = facturesAg.filter(f => f.type_facture === 'agente_vers_ctp' && f.statut === 'paye').reduce((s, f) => s + (f.montant||0), 0)
-    const totalF2     = facturesAg.filter(f => f.type_facture === 'ctp_vers_agente').reduce((s, f) => s + (f.montant||0), 0)
-    const totalF2Paye = facturesAg.filter(f => f.type_facture === 'ctp_vers_agente' && f.statut === 'paye').reduce((s, f) => s + (f.montant||0), 0)
-    const totalRedev  = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => s + (r.montant_ht||0), 0)
-    const net         = round2(totalF1 - totalF2)
+    const [moisDeplie, setMoisDeplie] = useState(null)
 
-    const months = [...new Set(facturesAg.map(f => `${f.annee}-${String(f.mois).padStart(2,'0')}`))].sort((a, b) => b.localeCompare(a))
+    // Montants F1/F2 calculés EN LIVE (source unique : agrégerParPaiement → finance.js).
+    // Le snapshot factures_agente ne sert plus qu'à lire le statut + le PDF (read-only ici).
+    const rowsReel   = agrégerParPaiement(dossiersAgente, false)
+    const aggParMois = new Map(rowsReel)
+    const debutRedev = agenteActuelle?.redevance_debut ? new Date(agenteActuelle.redevance_debut) : null
+    const redevParam = agenteActuelle?.redevance_mensuelle_ht   // paramètre, jamais de littéral
+
+    // F1 (agente → CTP) = frais + commissions + honoraires + part partenaire (= gainsAgenteReels)
+    // F2 (CTP → agente) = redevance HT datée (param) + apporteur remboursé
+    const calcMois = (annee, mois) => {
+      const agg = aggParMois.get(`${annee}-${String(mois).padStart(2, '0')}`) || {}
+      const fraisN = round2(agg.fraisAgenteNet || 0)
+      const comN   = round2(agg.comAgenteNet || 0)
+      const honN   = round2(agg.honAgenteNet || 0)
+      const partN  = round2(agg.comApporteursAgenteNet || 0)
+      const montantF1 = round2(fraisN + comN + honN + partN)
+      const moisConcerne = new Date(annee, mois - 1, 1)
+      const redev = (debutRedev && redevParam != null && moisConcerne >= debutRedev) ? round2(redevParam) : 0
+      const apporteur = round2(agg.apporteurRembourseNet || 0)
+      const montantF2 = round2(redev + apporteur)
+      return { fraisN, comN, honN, partN, montantF1, redev, apporteur, montantF2 }
+    }
+
+    // Clés mois : activité réelle ∪ factures déjà enregistrées (historique conservé visible).
+    const months = [...new Set([
+      ...rowsReel.map(([k]) => k),
+      ...facturesAg.map(f => `${f.annee}-${String(f.mois).padStart(2, '0')}`),
+    ])].sort((a, b) => b.localeCompare(a))
+
+    let totalF1 = 0, totalF1Paye = 0, totalF2 = 0, totalF2Paye = 0
+    months.forEach(key => {
+      const [aStr, mStr] = key.split('-')
+      const annee = parseInt(aStr), mois = parseInt(mStr)
+      const { montantF1, montantF2 } = calcMois(annee, mois)
+      const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
+      const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
+      totalF1 = round2(totalF1 + montantF1); totalF2 = round2(totalF2 + montantF2)
+      if (f1?.statut === 'paye') totalF1Paye = round2(totalF1Paye + montantF1)
+      if (f2?.statut === 'paye') totalF2Paye = round2(totalF2Paye + montantF2)
+    })
+    const totalRedev = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => round2(s + (r.montant_ht || 0)), 0)
+    const net        = round2(totalF1 - totalF2)
 
     const uploadPdf = async (f, fichier) => {
       const key = `${f.annee}-${f.mois}-${f.type_facture}`
@@ -2287,7 +2323,10 @@ export default function Finances() {
             <div style={{fontSize:11.5,color:'var(--ink-500)',marginTop:4,lineHeight:1.4}}>{subtitle}</div>
           </div>
           <div>
-            {fs.map(f => (
+            {fs.map(f => {
+              const m = calcMois(f.annee, f.mois)
+              const montant = type === 'agente_vers_ctp' ? m.montantF1 : m.montantF2
+              return (
               <div key={f.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:12,alignItems:'center',padding:'12px 18px',borderTop:'1px solid var(--ink-100)'}}>
                 <div>
                   <div style={{fontSize:13,fontWeight:600,color:'var(--ink-900)'}}>{MOIS[f.mois]} {f.annee}</div>
@@ -2298,7 +2337,7 @@ export default function Finances() {
                       : <span style={{color:'var(--ink-400)'}}>Pas de PDF déposé</span>}
                   </div>
                 </div>
-                <div style={{fontWeight:700,color:'var(--ink-900)',fontVariantNumeric:'tabular-nums'}}>{fmt(f.montant||0)}</div>
+                <div style={{fontWeight:700,color:'var(--ink-900)',fontVariantNumeric:'tabular-nums'}}>{fmt(montant)}</div>
                 <div style={{display:'flex',gap:6,alignItems:'center'}}>
                   <StatutFacture f={f}/>
                   {!f.facture_path && (
@@ -2309,7 +2348,8 @@ export default function Finances() {
                   )}
                 </div>
               </div>
-            ))}
+              )
+            })}
             {fs.length === 0 && <div style={{padding:24,textAlign:'center',color:'var(--ink-400)',fontSize:13}}>Aucune facture</div>}
           </div>
         </div>
@@ -2374,12 +2414,18 @@ export default function Finances() {
                 const mois = parseInt(mStr); const annee = parseInt(aStr)
                 const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
                 const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
-                const f1m = f1?.montant || 0
-                const f2m = f2?.montant || 0
+                const d   = calcMois(annee, mois)
+                const f1m = d.montantF1
+                const f2m = d.montantF2
                 const n   = round2(f1m - f2m)
+                const isOpen = moisDeplie === key
+                const voirPdf = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }
                 return (
-                  <tr key={key} style={{borderTop:'1px solid var(--ink-100)'}} className="row-hover">
-                    <td style={{padding:'14px 16px',fontWeight:700,color:'var(--ink-900)'}}>{MOIS[mois]} {annee}</td>
+                  <React.Fragment key={key}>
+                  <tr style={{borderTop:'1px solid var(--ink-100)',cursor:'pointer'}} className="row-hover" onClick={() => setMoisDeplie(isOpen ? null : key)}>
+                    <td style={{padding:'14px 16px',fontWeight:700,color:'var(--ink-900)'}}>
+                      <span style={{display:'inline-block',width:14,color:'var(--ink-400)'}}>{isOpen ? '▾' : '▸'}</span>{MOIS[mois]} {annee}
+                    </td>
                     <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f1m>0?'#15803d':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
                       {f1m > 0 ? fmt(f1m) : '—'}
                     </td>
@@ -2392,10 +2438,37 @@ export default function Finances() {
                       {n >= 0 ? '+' : ''}{fmt(n)}
                     </td>
                   </tr>
+                  {isOpen && (
+                    <tr style={{background:'var(--surface-2)'}}>
+                      <td colSpan={6} style={{padding:'4px 16px 16px'}}>
+                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,maxWidth:720}}>
+                          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                            <div className="eyebrow" style={{color:'#15803d'}}>F1 — Agente facture CTP</div>
+                            {d.fraisN > 0 && <Row label="Frais de consultation" value={fmt(d.fraisN)} />}
+                            {d.comN   > 0 && <Row label="Commissions artisans"   value={fmt(d.comN)} />}
+                            {d.honN   > 0 && <Row label="Honoraires (courtage + AMO)" value={fmt(d.honN)} />}
+                            {d.partN  > 0 && <Row label="Part partenaire"         value={fmt(d.partN)} />}
+                            {f1m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucun gain encaissé ce mois</span>}
+                            <Row label="Total F1" value={fmt(f1m)} bold accent />
+                            {f1?.facture_path && <button onClick={() => voirPdf(f1.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
+                          </div>
+                          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                            <div className="eyebrow" style={{color:'#b91c1c'}}>F2 — CTP facture l&apos;agente</div>
+                            {d.redev     > 0 && <Row label="Redevance mensuelle (HT)" value={fmt(d.redev)} />}
+                            {d.apporteur > 0 && <Row label="Apporteur remboursé"      value={fmt(d.apporteur)} />}
+                            {f2m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucune charge ce mois</span>}
+                            <Row label="Total F2" value={fmt(f2m)} bold accent />
+                            {f2?.facture_path && <button onClick={() => voirPdf(f2.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 )
               })}
               {months.length === 0 && (
-                <tr><td colSpan={6} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-400)'}}>Aucune facture enregistrée</td></tr>
+                <tr><td colSpan={6} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-400)'}}>Aucune facturation à afficher</td></tr>
               )}
             </tbody>
             {months.length > 0 && (
