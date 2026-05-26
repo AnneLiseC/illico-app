@@ -27,18 +27,19 @@ FROM redevances GROUP BY montant_ht, montant_ttc;
 
 
 -- ─── PARAMÈTRE (profiles) ───────────────────────────────────────────────────
+-- ─── PARAMÈTRE (profiles) ───────────────────────────────────────────────────
 ALTER TABLE public.profiles RENAME COLUMN redevance_mensuelle_ttc TO redevance_mensuelle_ht;
 
+-- La redevance n'a de sens QUE pour une agente (un admin encaisse, un client n'est pas concerné).
+-- Conversion TTC→HT pour les agentes uniquement…
 UPDATE public.profiles
   SET redevance_mensuelle_ht = round(redevance_mensuelle_ht / 1.2, 2)   -- 540 → 450
-  WHERE redevance_mensuelle_ht IS NOT NULL;
+  WHERE role = 'agente' AND redevance_mensuelle_ht IS NOT NULL;
 
--- Un admin encaisse les redevances mais n'en doit aucune → paramètre sans objet pour lui.
--- Ciblé sur le RÔLE, jamais sur un nom/id (conforme CLAUDE.md).
-UPDATE public.profiles SET redevance_mensuelle_ht = NULL WHERE role = 'admin';
+-- …et sans objet (NULL) pour tout autre rôle (admin, client, etc.). Ciblé sur le RÔLE.
+UPDATE public.profiles SET redevance_mensuelle_ht = NULL WHERE role <> 'agente';
 
-ALTER TABLE public.profiles ALTER COLUMN redevance_mensuelle_ht DROP DEFAULT;   -- zéro défaut en dur
-
+ALTER TABLE public.profiles ALTER COLUMN redevance_mensuelle_ht DROP DEFAULT;
 
 -- ─── LIGNES (redevances) ────────────────────────────────────────────────────
 -- montant_ht est DÉJÀ rempli à 450 sur les 4 lignes → AUCUNE conversion de données.
@@ -48,10 +49,10 @@ ALTER TABLE public.redevances ALTER COLUMN montant_ht DROP DEFAULT;             
 
 -- ─── CONTRÔLE APRÈS ─────────────────────────────────────────────────────────
 SELECT 'param profiles' AS src, role, redevance_mensuelle_ht::text AS valeur, count(*) AS n
-FROM profiles WHERE role IN ('admin','agente') GROUP BY role, redevance_mensuelle_ht
+FROM profiles GROUP BY role, redevance_mensuelle_ht
 UNION ALL
 SELECT 'ligne ht', '—', montant_ht::text, count(*) FROM redevances GROUP BY montant_ht;
--- Attendu : admin → NULL (×1) ; agente → 450 (×3) ; lignes ht → 450 (×4).
+-- Attendu : agente → 450 (×3) ; admin → NULL (×1) ; client → NULL (×1) ; lignes ht → 450 (×4).
 
 SELECT table_name, column_name, column_default FROM information_schema.columns
 WHERE table_schema='public'
