@@ -1688,15 +1688,23 @@ export default function Finances() {
     const f1Eff = (f, liveF1) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF1
     const f2Eff = (f, liveF2) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF2
 
-    // Clés mois : activité réelle ∪ factures déjà enregistrées (historique conservé visible).
+    // Facturation décalée : la facture du mois M porte sur l'activité du mois M−1.
+    // P2 : on persiste / apparie / toggle sur le mois d'ACTIVITÉ ; seul le libellé est décalé.
+    const shiftMoisKey = (key, delta) => {
+      const [y, m] = key.split('-').map(Number)
+      const dt = new Date(y, m - 1 + delta, 1)            // Date gère le rollover d'année
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+    }
+
+    // Lignes = mois de FACTURE (= activité + 1). Dérivé de l'activité (rowsReel + factures persistées sur l'activité, P2).
     const months = [...new Set([
-      ...rowsReel.map(([k]) => k),
-      ...facturesAg.map(f => `${f.annee}-${String(f.mois).padStart(2, '0')}`),
+      ...rowsReel.map(([k]) => shiftMoisKey(k, +1)),
+      ...facturesAg.map(f => shiftMoisKey(`${f.annee}-${String(f.mois).padStart(2, '0')}`, +1)),
     ])].sort((a, b) => b.localeCompare(a))
 
     let totalF1 = 0, totalF1Paye = 0, totalF2 = 0, totalF2Paye = 0
     months.forEach(key => {
-      const [aStr, mStr] = key.split('-')
+      const [aStr, mStr] = shiftMoisKey(key, -1).split('-')   // mois d'activité (M−1)
       const annee = parseInt(aStr), mois = parseInt(mStr)
       const { montantF1, montantF2 } = calcMois(annee, mois)
       const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
@@ -1760,10 +1768,12 @@ export default function Finances() {
             {fs.map(f => {
               const m = calcMois(f.annee, f.mois)
               const montant = type === 'agente_vers_ctp' ? f1Eff(f, m.montantF1) : f2Eff(f, m.montantF2)
+              const [fFaStr, fFmStr] = shiftMoisKey(`${f.annee}-${String(f.mois).padStart(2, '0')}`, +1).split('-')
               return (
               <div key={f.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:12,alignItems:'center',padding:'12px 18px',borderTop:'1px solid var(--ink-100)'}}>
                 <div>
-                  <div style={{fontSize:13,fontWeight:600,color:'var(--ink-900)'}}>{MOIS[f.mois]} {f.annee}</div>
+                  <div style={{fontSize:13,fontWeight:600,color:'var(--ink-900)'}}>{MOIS[parseInt(fFmStr)]} {fFaStr}</div>
+                  <div style={{fontSize:10,color:'var(--ink-400)'}}>activité de {MOIS[f.mois]} {f.annee}</div>
                   <div style={{fontSize:11,color:'var(--ink-500)',marginTop:2}}>
                     {f.facture_path
                       ? <button onClick={async () => { const { data } = await supabase.storage.from('documents').createSignedUrl(f.facture_path, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }}
@@ -1844,8 +1854,10 @@ export default function Finances() {
             </thead>
             <tbody>
               {months.map(key => {
-                const [aStr, mStr] = key.split('-')
-                const mois = parseInt(mStr); const annee = parseInt(aStr)
+                const [faStr, fmStr] = key.split('-')
+                const fMois = parseInt(fmStr); const fAnnee = parseInt(faStr)        // mois de FACTURE (libellé)
+                const [aStr, mStr] = shiftMoisKey(key, -1).split('-')
+                const mois = parseInt(mStr); const annee = parseInt(aStr)            // mois d'ACTIVITÉ (M−1) : données, appariement, toggle
                 const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
                 const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
                 const d   = calcMois(annee, mois)
@@ -1858,7 +1870,8 @@ export default function Finances() {
                   <React.Fragment key={key}>
                   <tr style={{borderTop:'1px solid var(--ink-100)',cursor:'pointer'}} className="row-hover" onClick={() => setMoisDeplie(isOpen ? null : key)}>
                     <td style={{padding:'14px 16px',fontWeight:700,color:'var(--ink-900)'}}>
-                      <span style={{display:'inline-block',width:14,color:'var(--ink-400)'}}>{isOpen ? '▾' : '▸'}</span>{MOIS[mois]} {annee}
+                      <span style={{display:'inline-block',width:14,color:'var(--ink-400)'}}>{isOpen ? '▾' : '▸'}</span>{MOIS[fMois]} {fAnnee}
+                      <div style={{fontSize:11,fontWeight:500,color:'var(--ink-400)',marginLeft:14}}>activité de {MOIS[mois]} {annee}</div>
                     </td>
                     <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f1m>0?'#15803d':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
                       {f1m > 0 ? fmt(f1m) : '—'}
