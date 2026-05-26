@@ -1665,7 +1665,10 @@ export default function Finances() {
     // Le snapshot factures_agente ne sert plus qu'à lire le statut + le PDF (read-only ici).
     const rowsReel   = agrégerParPaiement(dossiersAgente, false)
     const aggParMois = new Map(rowsReel)
-    const debutRedev = agenteActuelle?.redevance_debut ? new Date(agenteActuelle.redevance_debut) : null
+    // Seuil de redevance dérivé de la CHAÎNE "YYYY-MM-DD" (zéro Date → zéro fuseau).
+    const debutIndex = agenteActuelle?.redevance_debut
+      ? (() => { const [y, m] = agenteActuelle.redevance_debut.split('-').map(Number); return y * 12 + (m - 1) })()
+      : null
     const redevParam = agenteActuelle?.redevance_mensuelle_ht   // paramètre, jamais de littéral
 
     // F1 (agente → CTP) = frais + commissions + honoraires + part partenaire (= gainsAgenteReels)
@@ -1677,8 +1680,8 @@ export default function Finances() {
       const honN   = round2(agg.honAgenteNet || 0)
       const partN  = round2(agg.comApporteursAgenteNet || 0)
       const montantF1 = round2(fraisN + comN + honN + partN)
-      const moisConcerne = new Date(annee, mois - 1, 1)
-      const redev = (debutRedev && redevParam != null && moisConcerne >= debutRedev) ? round2(redevParam) : 0
+      const moisIndex = annee * 12 + (mois - 1)
+      const redev = (debutIndex != null && redevParam != null && moisIndex >= debutIndex) ? round2(redevParam) : 0
       const apporteur = round2(agg.apporteurPartAgenteNet || 0)
       const montantF2 = round2(redev + apporteur)
       return { fraisN, comN, honN, partN, montantF1, redev, apporteur, montantF2 }
@@ -1696,10 +1699,21 @@ export default function Finances() {
       return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
     }
 
-    // Lignes = mois de FACTURE (= activité + 1). Dérivé de l'activité (rowsReel + factures persistées sur l'activité, P2).
+    // Tous les mois de redevance due : de debutIndex au mois courant (activité) INCLUS, même creux.
+    const now = new Date()
+    const moisCourantIndex = now.getFullYear() * 12 + now.getMonth()    // getMonth() 0-based = (mois-1), cohérent avec debutIndex
+    const redevanceDueKeys = []
+    if (debutIndex != null) {
+      for (let i = debutIndex; i <= moisCourantIndex; i++) {
+        redevanceDueKeys.push(`${Math.floor(i / 12)}-${String(i % 12 + 1).padStart(2, '0')}`)   // clé activité "YYYY-MM"
+      }
+    }
+
+    // Lignes = mois de FACTURE (= activité + 1). Sources activité : rowsReel + factures persistées (P2) + redevances dues.
     const months = [...new Set([
       ...rowsReel.map(([k]) => shiftMoisKey(k, +1)),
       ...facturesAg.map(f => shiftMoisKey(`${f.annee}-${String(f.mois).padStart(2, '0')}`, +1)),
+      ...redevanceDueKeys.map(k => shiftMoisKey(k, +1)),
     ])].sort((a, b) => b.localeCompare(a))
 
     let totalF1 = 0, totalF1Paye = 0, totalF2 = 0, totalF2Paye = 0
