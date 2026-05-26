@@ -143,11 +143,9 @@ Repérés par l'advisor sécurité Supabase pendant l'analyse P0-9. NE PAS méla
 
 - [ ] **`royaltiesReelTotal: 0` (et `fraisAgenteReel: 0`, `gainAgenteReel: 0`) dans la branche Marine de `calculerReel`, `finances/page.js:~480`** : champ mort actuellement (lu nulle part dans le JSX de la page Finances). MAIS piégé : code une valeur d'argent FAUSSE (0). Si quelqu'un le rebranche un jour à un affichage, Marine retombe à 0 royalties silencieusement. À supprimer au Lot E (pas neutre comme du code mort ordinaire — c'est un piège financier). **(Lot E, priorité dans le nettoyage)**
 
-### Lot E — code mort détecté (facturation)
+### Lot E — code mort détecté (facturation) — ✅ SUPPRIMÉ (voir section « code mort supprimé » en fin de doc)
 
-- [ ] **`FacturationAgentePropre` et `renderFacturationMoisSuivi`** : jamais rendus (code mort). La facturation active = `FacturationAgentes`. Découvert lors de P0-9. À supprimer au Lot E après confirmation. **(Lot E)**
-- [ ] **`renderAgenteMoisAdmin` (l.2464) et `renderFacturationAnneeAgente` (l.1683)** : code mort de facturation NON listé initialement, découvert lors de l'audit étape 1 facturation. Aucun call-site (def seule). `renderAgenteMoisAdmin` est la version la plus complète (calcul live F1/F2 + handlers statut). À supprimer en bloc au Lot E avec le reste du code mort facturation. **(Lot E)**
-- [ ] **Variables mortes facturation** : `totalRedevancesReglees` (l.827), `mesRedevancesReglees` (l.849), `monNet` (l.850) — jamais utilisées. À supprimer au Lot E. **(Lot E)**
+- [x] **`FacturationAgentePropre`, `renderFacturationMoisSuivi`, `renderFacturationAnneeAgente`, `renderAgenteMoisAdmin`, variables mortes (`totalRedevancesReglees`, `mesRedevancesReglees`, `monNet`, etc.)** : tout ce code mort de facturation a été SUPPRIMÉ (513 lignes) avant l'étape 3, pas au Lot E finalement. Détail dans la section « Lot B facturation — code mort supprimé » en fin de document. **(FAIT.)**
 
 ### Lot E — code mort détecté (formulaire devis inline)
 
