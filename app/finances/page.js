@@ -783,6 +783,7 @@ export default function Finances() {
         if (!dvF || !dvF.signed) continue
         const key = getKeyFromDate(dv.date_signature, isAnnee)
         addToKey(key, 'comApporteursNet', dvF.netCom, d.id)
+        addToKey(key, 'comApporteursAgenteNet', dvF.parts.agente, d.id)
       }
 
             // Apporteur client remboursé par ligne
