@@ -30,7 +30,9 @@
 2. [x] **3b-1** — F2 cliquable ADMIN ONLY + figement (`f2Eff`) + label « Payé » → « Reçu » + masquage 0 €. Propagation `redevances` (CA réel net, Suivi CTP via `renderSuiviFinancier`, grille 12 mois + KPI redevances, tout en `montant_ht`). Testé EN BASE (clic F2 admin persiste ; agente non cliquable, plus de 403 RLS). ✅ FAIT, mergé.
 3. [x] **3b-2** — retrait du statut `facture` : `StatutFacture` passe de 3 à 2 branches (`paye` / `a_facturer`) + découplage `uploadPdf` (n'écrit plus `statut:'facture'`, juste `facture_path`). ✅ FAIT, mergé.
 4. [x] **Ménage code mort FINANCES** (zone finances/facturation uniquement, PAS tout le repo) : `royaltiesReelTotal` (champ piégé, valeur d'argent fausse à 0, voir Lot E ci-dessous) + orphelins `agentePeriod`/`setAgentePeriod` + audit grep des autres résidus de la zone. Audit/call-sites AVANT suppression (leçon : ne jamais qualifier « vivant/mort » sans grep call-site). NB : `renderSuiviAgenteFinancier` déjà supprimé (voir « faits »). ✅ FAIT, mergé (PR #73, 3 commits, ~175 l. supprimées — détail dans Doc 6).
-5. [ ] **DROP `redevances.montant_ttc`** : débloqué (le dernier porteur des `montant_ttc||540` était `renderSuiviAgenteFinancier`, supprimé). Re-grep tout le repo AVANT le DROP (`montant_ttc` légitime sur devis_artisans / suivi_financier / factures_artisans — NE PAS confondre). 
+5. [x] **DROP `redevances.montant_ttc`** : débloqué (le dernier porteur des `montant_ttc||540` était `renderSuiviAgenteFinancier`, supprimé). Re-grep tout le repo AVANT le DROP (`montant_ttc` légitime sur devis_artisans / suivi_financier / factures_artisans — NE PAS confondre). ✅ FAIT, appliqué en prod le 27 mai 2026 (B8a recréation trigger + B8b DROP COLUMN — détail dans Doc 6).
+
+> ✅ **Séquence étape 3 TERMINÉE** — les 5 items faits (3a, 3b-1, 3b-2, remplacement PDF, ménage code mort, DROP `montant_ttc`). Seul `3a-bis` reste, parké en attente d'arbitrage avec Marine (voir « À arbitrer avec Marine »).
 
 > Hors de cette séquence (autre zone, autre passe) : formulaire devis inline mort dans `chantiers/[id]`, renommage `isMarine`/`estChantierMarine` → ne PAS mélanger au ménage finances (Lot E).
 
