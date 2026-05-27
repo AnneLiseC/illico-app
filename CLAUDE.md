@@ -109,3 +109,14 @@ Langue de travail et de communication : **français**.
   Le build local n'est qu'indicatif ; son absence ne bloque pas le travail.
 - La vérification finale reste : (1) lecture du diff par Anne-Lise, (2) test à l'écran
   sur la preview Vercel après push, (3) vérification en base si pertinent.
+
+  ## 9. CONSÉQUENCES MÉCANIQUES D'UNE SUPPRESSION
+- Si retirer un symbole rend immédiatement orphelin un autre symbole (variable
+  inutilisée, import devenu mort, paramètre jamais lu), traite-le dans le même
+  commit, en le signalant clairement dans le message du commit.
+- Si l'orphelin est ambigu (commentaire qui titre du vide, code qui peut avoir
+  une autre raison d'être, fonction utilitaire potentiellement utile ailleurs)
+  → demande avant de supprimer.
+- Principe : différencier la conséquence mécanique évidente (`const key` qui
+  n'est plus lu après retrait de son seul consommateur) du jugement éditorial
+  (un commentaire qui pourrait servir de repère structurel).
