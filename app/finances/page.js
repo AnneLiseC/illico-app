@@ -1735,9 +1735,10 @@ export default function Finances() {
     const net        = round2(totalF1 - totalF2)
 
     const uploadPdf = async (f, fichier) => {
+      setErreur(''); setSucces('')
       const key = `${f.annee}-${f.mois}-${f.type_facture}`
       setUploadingFactureAgente(key)
-      const ext = fichier.name.split('.').pop()
+      const ext = fichier.name.split('.').pop().toLowerCase()
       const chemin = `factures_agente/${agenteSelectionnee}/${f.annee}-${String(f.mois).padStart(2,'0')}-${f.type_facture}.${ext}`
       const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
       if (!error) {
@@ -1792,7 +1793,7 @@ export default function Finances() {
                   <div style={{fontSize:10,color:'var(--ink-400)'}}>activité de {MOIS[f.mois]} {f.annee}</div>
                   <div style={{fontSize:11,color:'var(--ink-500)',marginTop:2}}>
                     {f.facture_path
-                      ? <button onClick={async () => { const { data } = await supabase.storage.from('documents').createSignedUrl(f.facture_path, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }}
+                      ? <button onClick={async () => { const { data } = await supabase.storage.from('documents').createSignedUrl(f.facture_path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }}
                           style={{fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>
                       : <span style={{color:'var(--ink-400)'}}>Pas de PDF déposé</span>}
                   </div>
@@ -1800,12 +1801,10 @@ export default function Finances() {
                 <div style={{fontWeight:700,color:'var(--ink-900)',fontVariantNumeric:'tabular-nums'}}>{fmt(montant)}</div>
                 <div style={{display:'flex',gap:6,alignItems:'center'}}>
                   <StatutFacture f={f}/>
-                  {!f.facture_path && (
-                    <label style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid var(--ink-200)',cursor:'pointer',color:'var(--ink-600)',background:'#fff'}}>
-                      📤 PDF
-                      <input type="file" accept=".pdf" className="hidden" onChange={e => e.target.files[0] && uploadPdf(f, e.target.files[0])}/>
-                    </label>
-                  )}
+                  <label style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid var(--ink-200)',cursor:'pointer',color:'var(--ink-600)',background:'#fff'}}>
+                    {f.facture_path ? '📤 Remplacer le PDF' : '📤 Déposer un PDF'}
+                    <input type="file" accept=".pdf" className="hidden" onChange={e => e.target.files[0] && uploadPdf(f, e.target.files[0])}/>
+                  </label>
                 </div>
               </div>
               )
@@ -1818,6 +1817,8 @@ export default function Finances() {
 
     return (
       <div style={{display:'flex',flexDirection:'column',gap:18}}>
+        {succes && <div style={{background:'rgba(22,163,74,0.07)',border:'1px solid rgba(22,163,74,0.25)',borderRadius:10,padding:'10px 16px',fontSize:13,color:'#15803d'}}>{succes}</div>}
+        {erreur && <div style={{background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:10,padding:'10px 16px',fontSize:13,color:'#b91c1c'}}>{erreur}</div>}
         {/* Sélecteur agente — admin uniquement (agente voit sa propre facturation) */}
         {isMarine && (
           <div className="card" style={{padding:'14px 18px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
@@ -1881,7 +1882,7 @@ export default function Finances() {
                 const f2m = f2Eff(f2, d.montantF2)
                 const n   = round2(f1m - f2m)
                 const isOpen = moisDeplie === key
-                const voirPdf = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl, '_blank') }
+                const voirPdf = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }
                 return (
                   <React.Fragment key={key}>
                   <tr style={{borderTop:'1px solid var(--ink-100)',cursor:'pointer'}} className="row-hover" onClick={() => setMoisDeplie(isOpen ? null : key)}>
