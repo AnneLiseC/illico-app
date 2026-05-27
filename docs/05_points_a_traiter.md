@@ -116,6 +116,8 @@
 - [ ] **`get_my_role()` exécutable par `anon`** (SECURITY DEFINER exposée). À restreindre.
 - [ ] **Policy INSERT `notifications` en `WITH CHECK (true)`** : n'importe qui peut insérer des notifications. À resserrer.
 - [ ] **Protection « mots de passe compromis » désactivée** dans Supabase Auth. À activer.
+- [ ] **Buckets Storage sans policy UPDATE** : `photos` a INSERT/SELECT/DELETE sans UPDATE (même trou que `documents` avant le fix factures). Si remplacement de photo voulu un jour → même bug (upsert refusé, échec silencieux), à corriger par une policy UPDATE ciblée.
+- [ ] **Policies Storage non versionnées (dette infra)** : les policies du bucket `documents` (Lecture/Upload/Suppression) et celles des autres buckets vivent uniquement en base, pas dans le repo. Seule la policy UPDATE `factures_agente` est désormais consignée (`docs/sql/storage_policy_update_factures.sql`). À résorber : exporter/versionner toutes les policies Storage existantes pour reproductibilité.
 
 ---
 
