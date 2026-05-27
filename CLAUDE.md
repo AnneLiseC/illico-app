@@ -84,3 +84,17 @@ Autres règles structurantes : prospect avant le client (statut léger), détect
 Next.js 16 (App Router, React 19) · Supabase (PostgreSQL + Auth + Storage, 23 tables, RLS) · Tailwind · Claude API · @react-pdf + pdf-lib · googleapis · Vercel.
 
 Langue de travail et de communication : **français**.
+
+## 7. SOBRIÉTÉ DU CODE — le minimum qui résout le problème
+
+- Rien de spéculatif : pas de fonctionnalité au-delà du demandé, pas d'abstraction
+  pour du code à usage unique, pas de « flexibilité » non requise, pas de gestion
+  d'erreur pour des cas impossibles.
+- Si une approche plus simple existe, le dire et la défendre, même si je n'ai pas demandé.
+- Si plusieurs interprétations de ma demande existent, les exposer — ne pas en choisir
+  une en silence.
+- Test mental avant de livrer : « un ingénieur senior dirait-il que c'est sur-compliqué ? »
+  Si oui, réécrire plus court.
+- Critère de succès et vérification : `npm run build` passe + le comportement est
+  conforme à `/docs`. Tant qu'il n'y a pas de tests automatisés dans le projet,
+  ne pas en inventer pour « vérifier » — ne pas installer d'infra de test sans validation.
