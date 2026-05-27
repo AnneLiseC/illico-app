@@ -35,10 +35,6 @@ const normalizeDossier = (d) => ({
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// COMPOSANT CHECKBOX + DATE
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ─────────────────────────────────────────────────────────────────────────────
 // HELPERS TABLEAU
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -286,54 +282,31 @@ export default function Finances() {
       partAgenteRate: partAgente,
 
       // Taux affichage
-      tauxCourtagePct: round2(f.settings.tauxCourtage * 100),
-      tauxAmoPct:      round2(f.settings.tauxAmo * 100),
 
       // Frais
       fraisHT:       round2(f.frais.fraisHT),
-      fraisTTC:      round2(f.frais.fraisTTC),
       fraisRoyalties: round2(f.frais.royalties),
       fraisNet:      round2(f.frais.net),
       fraisAgente:   round2(f.frais.parts.agente),
-      fraisAdmin:    round2(f.frais.parts.admin),
 
       // Commissions (tous devis actifs)
       comHT:          round2(f.commissions.comHT),
-      comTTC:         round2(f.commissions.comTTC),
-      royaltiesCom:   round2(f.commissions.royaltiesType2),
       netCom:         round2(f.commissions.netCom),
-      comAgente:      round2(f.commissions.parts.agente),
-      comAdmin:       round2(f.commissions.parts.admin),
 
       // Commissions signées uniquement
-      comHTSigne:     round2(f.commissions.devis.filter(dv => dv.signed).reduce((s, dv) => s + dv.comHT, 0)),
-      comTTCSigne:    round2(f.commissions.devis.filter(dv => dv.signed).reduce((s, dv) => s + dv.comTTC, 0)),
-      royaltiesComSigne: round2(f.commissions.devis.filter(dv => dv.signed).reduce((s, dv) => s + dv.royaltiesType2, 0)),
-      netComSigne:    round2(f.commissions.devis.filter(dv => dv.signed).reduce((s, dv) => s + dv.netCom, 0)),
-      comAgenteSigne: round2(f.commissions.devis.filter(dv => dv.signed).reduce((s, dv) => s + dv.parts.agente, 0)),
-      comAdminSigne:  round2(f.commissions.devis.filter(dv => dv.signed).reduce((s, dv) => s + dv.parts.admin, 0)),
 
       // Honoraires courtage
-      courtTTC:       round2(f.honoraires.courtage.ttc),
-      courtHT:        round2(f.honoraires.courtage.ht),
       courtRoyalties: round2(f.honoraires.courtage.royalties),
       courtNet:       round2(f.honoraires.courtage.net),
       courtAgente:    round2(f.honoraires.courtage.parts.agente),
-      courtAdmin:     round2(f.honoraires.courtage.parts.admin),
 
       // Honoraires AMO solde
-      amoTTC:         round2(f.honoraires.soldeAmo.ttc),
-      amoHT:          round2(f.honoraires.soldeAmo.ht),
       amoRoyalties:   round2(f.honoraires.soldeAmo.royalties),
       amoNet:         round2(f.honoraires.soldeAmo.net),
       amoAgente:      round2(f.honoraires.soldeAmo.parts.agente),
-      amoAdmin:       round2(f.honoraires.soldeAmo.parts.admin),
 
       // Honoraires total
-      honTotalTTC:    round2(f.honoraires.totalTTC),
       honTotalNet:    round2(f.honoraires.totalNet),
-      honAgente:      round2(f.honoraires.parts.agente),
-      honAdmin:       round2(f.honoraires.parts.admin),
 
       // Apporteur client
       apporteurTotalHT: round2(f.apporteur.totalHT),
@@ -344,7 +317,6 @@ export default function Finances() {
 
       // Royalties globales
       royaltiesTotal: round2(f.royalties.total),
-      sommeRoyalties: round2(f.royalties.total),
 
       // Gains prévisionnels nets
       gainsAgentePrevi: round2(f.gains.netsPrevi.agente),
@@ -352,26 +324,18 @@ export default function Finances() {
 
       // Prévisionnel frais
       fraisNetPrevi:    d.frais_statut !== 'offerts' ? round2(f.frais.net) : 0,
-      fraisAgentePrevi: d.frais_statut !== 'offerts' ? round2(f.frais.parts.agente) : 0,
 
       // Prévisionnel commissions tous devis
       netComTous: round2(f.commissions.netCom),
-      comAgenteTous: round2(f.commissions.parts.agente),
 
       // Prévisionnel commissions apporteurs
       comApporteursPrevi: round2(
         f.commissions.devis.filter(dv => dv.isApporteur)
           .reduce((s, dv) => s + dv.netCom, 0)
       ),
-      comApporteursAgentePrevi: round2(
-        f.commissions.devis.filter(dv => dv.isApporteur)
-          .reduce((s, dv) => s + dv.parts.agente, 0)
-      ),
 
       // Prévisionnel honoraires (tous devis actifs)
       honPreviNet:    round2(f.honorairesPrevi.totalNet),
-      honPreviAgente: round2(f.honorairesPrevi.parts.agente),
-      honPreviAdmin:  round2(f.honorairesPrevi.parts.admin),
 
       // Gains prévisionnels complets
       gainsAgentePreviTotal: round2(
@@ -497,15 +461,12 @@ export default function Finances() {
       fraisReel,
       fraisAgenteReel,
       honReel,
-      honAgenteReel,
       acompteAmoNet,
       acompteAmoAgente,
       soldeAmoNet,
       soldeAmoAgente,
       comReelNet,
-      comAgenteReel,
       comApporteursReel,
-      comApporteursAgente,
       apporteurRembourse,
       gainAgenteReel,
       gainAdminReel,
@@ -1112,8 +1073,6 @@ export default function Finances() {
       </table>
     </div>
   )
-
-  // ── MES CHANTIERS par période ───────────────────────────────────────────────
 
   // ── TOUS LES CHANTIERS par période (admin) ─────────────────────────────────
 
