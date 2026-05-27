@@ -99,7 +99,7 @@ function Td({ children, right, mono, dim, bold, accent }) {
 }
 function StatutFacture({ f }) {
   const s = f?.statut || 'a_facturer'
-  return <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,background:s==='paye'?'rgba(22,163,74,0.1)':s==='facture'?'rgba(0,87,142,0.1)':'var(--ink-100)',color:s==='paye'?'#15803d':s==='facture'?'var(--brand-700)':'var(--ink-500)'}}>{s==='paye'?'✅ Reçu':s==='facture'?'📋 Facturé':'📋 À facturer'}</span>
+  return <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,background:s==='paye'?'rgba(22,163,74,0.1)':'var(--ink-100)',color:s==='paye'?'#15803d':'var(--ink-500)'}}>{s==='paye'?'✅ Reçu':'📋 À facturer'}</span>
 }
 function Row({ label, value, bold, dim, accent }) {
   return <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8}}><span style={{fontSize:12,color:dim?'var(--ink-400)':'var(--ink-600)'}}>{label}</span><span style={{fontSize:13,fontWeight:bold?700:500,color:accent?'var(--brand-800)':'var(--ink-800)',fontVariantNumeric:'tabular-nums'}}>{value}</span></div>
@@ -643,8 +643,10 @@ export default function Finances() {
       })
     }
 
-    // Sync redevance quand Facture 2 change de statut
-    if (type === 'ctp_vers_agente') {
+    // La synchro redevance suit le CHANGEMENT DE STATUT F2, pas toute écriture sur la ligne.
+    // Tout appelant qui doit (dé)cocher la redevance DOIT passer `statut` dans updates.
+    // Un upload PDF (facture_path seul, sans statut) ne déclenche donc PAS la synchro — découplage voulu.
+    if (type === 'ctp_vers_agente' && 'statut' in updates) {
       const agenteProfile = agentes.find(a => a.id === agenteId)
       const montantRedevance = agenteProfile?.redevance_mensuelle_ht ?? null
       const { error: redevErr } = await supabase.from('redevances').upsert({
@@ -1739,7 +1741,7 @@ export default function Finances() {
       const chemin = `factures_agente/${agenteSelectionnee}/${f.annee}-${String(f.mois).padStart(2,'0')}-${f.type_facture}.${ext}`
       const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
       if (!error) {
-        await upsertFactureMoisType(f.mois, f.annee, f.montant||0, f.type_facture, { facture_path: chemin, statut: 'facture' })
+        await upsertFactureMoisType(f.mois, f.annee, f.montant||0, f.type_facture, { facture_path: chemin })
         setSucces('Facture uploadée ✓')
       } else { setErreur('Erreur upload : ' + error.message) }
       setUploadingFactureAgente(null)
