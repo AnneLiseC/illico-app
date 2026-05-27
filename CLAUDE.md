@@ -98,3 +98,14 @@ Langue de travail et de communication : **français**.
 - Critère de succès et vérification : `npm run build` passe + le comportement est
   conforme à `/docs`. Tant qu'il n'y a pas de tests automatisés dans le projet,
   ne pas en inventer pour « vérifier » — ne pas installer d'infra de test sans validation.
+
+  ## 8. BUILD LOCAL — ne pas réinstaller les dépendances entre sessions
+- Les `node_modules` ne sont pas persistés entre sessions Claude Code. Si `next` est
+  introuvable ou que `npm run build` échoue pour cause de dépendances manquantes,
+  **ne pas lancer `npm install` automatiquement** — l'install des dépendances génère
+  un long log qui consomme inutilement des tokens à chaque session.
+- À la place : signaler brièvement (« build skip : node_modules absent ») et continuer.
+- La vérification primaire du build = Vercel à chaque push (preview), pas le build local.
+  Le build local n'est qu'indicatif ; son absence ne bloque pas le travail.
+- La vérification finale reste : (1) lecture du diff par Anne-Lise, (2) test à l'écran
+  sur la preview Vercel après push, (3) vérification en base si pertinent.
