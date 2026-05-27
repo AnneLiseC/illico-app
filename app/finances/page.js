@@ -1737,7 +1737,7 @@ export default function Finances() {
     const uploadPdf = async (f, fichier) => {
       const key = `${f.annee}-${f.mois}-${f.type_facture}`
       setUploadingFactureAgente(key)
-      const ext = fichier.name.split('.').pop()
+      const ext = fichier.name.split('.').pop().toLowerCase()
       const chemin = `factures_agente/${agenteSelectionnee}/${f.annee}-${String(f.mois).padStart(2,'0')}-${f.type_facture}.${ext}`
       const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
       if (!error) {
@@ -1800,12 +1800,10 @@ export default function Finances() {
                 <div style={{fontWeight:700,color:'var(--ink-900)',fontVariantNumeric:'tabular-nums'}}>{fmt(montant)}</div>
                 <div style={{display:'flex',gap:6,alignItems:'center'}}>
                   <StatutFacture f={f}/>
-                  {!f.facture_path && (
-                    <label style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid var(--ink-200)',cursor:'pointer',color:'var(--ink-600)',background:'#fff'}}>
-                      📤 PDF
-                      <input type="file" accept=".pdf" className="hidden" onChange={e => e.target.files[0] && uploadPdf(f, e.target.files[0])}/>
-                    </label>
-                  )}
+                  <label style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid var(--ink-200)',cursor:'pointer',color:'var(--ink-600)',background:'#fff'}}>
+                    {f.facture_path ? '📤 Remplacer le PDF' : '📤 Déposer un PDF'}
+                    <input type="file" accept=".pdf" className="hidden" onChange={e => e.target.files[0] && uploadPdf(f, e.target.files[0])}/>
+                  </label>
                 </div>
               </div>
               )
