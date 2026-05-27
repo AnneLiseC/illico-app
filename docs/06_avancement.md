@@ -152,6 +152,12 @@ P0-9-bis (sécurité, tables opérationnelles), durcissement RLS (3 bonus + sele
 
 ---
 
+## Lot C — Intégrité 🔧 (fix isolé, hors séquence facturation)
+
+- **Suppression chantier (P0-11, terminé)** — 27 mai 2026, branche `claude/fix-suppression-chantier` (1 commit, +26/−21 dans `app/chantiers/[id]/page.js`). Refonte option B simplifiée : passage de **6 deletes DB manuels à 1 seul** (`DELETE FROM dossiers WHERE id = X`), s'appuyant sur les **10 FK `ON DELETE CASCADE`** natives Postgres (vérifiées en base) → atomicité acquise gratuitement. Storage nettoyé exhaustivement : 4 lectures de chemins (`devis_pdf_path`, `devis_signe_path`, `factures_artisans.pdf_path`, `chantier_documents.path`) + `contrat_url` depuis l'état + `photos.url`, sur 2 buckets (`documents`, `photos`), avec balayages de dossier en filet de sécurité (5 préfixes `documents` : devis, devis_signes, factures, documents, contrat + 4 préfixes `photos` : avant, pendant, apres, maquette). **Cause visible** : confusion de table — `pdf_path` n'existe pas sur `devis_artisans` (vraie colonne `devis_pdf_path`). `comptes_rendus` exclu du Storage (aucune colonne fichier en base ; lignes purgées par CASCADE — voir 05). 2 libellés UI (confirm + sous-titre bouton) alignés sur la liste exhaustive. **Test au centième validé** : chantier complet (contrat AMO + 3 devis dont 2 PDF + 1 facture + 1 document + 4 photos + 2 RDV + 2 messages + 2 fiches techniques) supprimé → tout parti en base ET en Storage (4 requêtes SQL de contrôle). **Contrat implicite** : toute nouvelle table fille de `dossiers` doit être en `ON DELETE CASCADE` (voir Méthode).
+
+---
+
 ## Règles métier verrouillées (référence rapide)
 
 - **Convention argent** : PARTENAIRE = entrant/gain (on facture un %) ; APPORTEUR = sortant/coût (Kiosque, on lui doit un %).
@@ -172,4 +178,5 @@ P0-9-bis (sécurité, tables opérationnelles), durcissement RLS (3 bonus + sele
 - Audit/call-sites AVANT de qualifier une fonction « vivante/morte ».
 - SQL livré en fichier (appliqué manuellement dans Supabase), jamais via MCP. Contrôle AVANT/APRÈS + rollback.
 - `_design` intouchable. finance.js = source unique. Jamais de nom/id en dur.
+- **Contrat implicite suppression chantier** : `supprimerChantier` repose sur les FK `ON DELETE CASCADE` natives pour purger les tables filles de `dossiers`. Toute nouvelle table fille (FK vers `dossiers.id`) DOIT être déclarée `ON DELETE CASCADE`, sinon le `DELETE FROM dossiers` final plantera sur violation de FK.
 - Points hors-périmètre notés dans `05_points_a_traiter.md`.
