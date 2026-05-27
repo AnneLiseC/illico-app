@@ -11,7 +11,7 @@
 | Lot | Sujet | État |
 |---|---|---|
 | A | Sécurité | ✅ TERMINÉ, mergé, testé en prod |
-| **B** | **Argent juste** | 🟢 CŒUR TERMINÉ (tous P0 + nettoyage + perf) ; FACTURATION bien avancée (3a + 3b-1 + 3b-2 + décalage M−1 + fix redevance + ménage code mort faits ; reste 3a-bis, vues, DROP `montant_ttc`) |
+| **B** | **Argent juste** | 🟢 CŒUR TERMINÉ (tous P0 + nettoyage + perf) ; FACTURATION bien avancée (3a + 3b-1 + 3b-2 + décalage M−1 + fix redevance + ménage code mort faits ; reste 3a-bis (parking Marine), vues, DROP `montant_ttc`) |
 | C | Intégrité (P0-3, P0-10, P0-11) | ⏳ à venir |
 | D | Confort (P1) | ⏳ à venir |
 | E | Dette technique (P2) | ⏳ à venir |
