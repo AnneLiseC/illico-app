@@ -2,7 +2,7 @@
 
 *Où on en est dans le chantier de correction. À rouvrir à chaque reprise. Le CDC (00) décrit la CIBLE ; ce fichier décrit l'ÉTAT RÉEL.*
 
-**Dernière mise à jour : facturation Lot B bien avancée.** Faits cette session : redevance HT (B7a), reset B7b, étape 2 (affichage live + détail dépliable), 3a (F1 cliquable), correction apporteur (#65, bug financier), suppression `renderSuiviAgenteFinancier` (336 l.), 3b-1 (F2 admin-only), décalage temporel M−1 (P2), fix 2 bugs redevance (fuseau + mois creux). Reste facturation : 3b-2, 3a-bis, chantier 2 (décalage vue admin), vue agente du suivi, ménage finances, DROP `montant_ttc`, détails/KPI. Puis lot sécurité P0-9-bis + dette.
+**Dernière mise à jour : 27 mai 2026 — facturation Lot B bien avancée.** Faits récemment : redevance HT (B7a), reset B7b, étape 2 (affichage live + détail dépliable), 3a (F1 cliquable), correction apporteur (#65, bug financier), suppression `renderSuiviAgenteFinancier` (336 l.), 3b-1 (F2 admin-only), 3b-2 (retrait statut `facture`), décalage temporel M−1 (P2), fix 2 bugs redevance (fuseau + mois creux), ménage code mort FINANCES (PR #73, ~175 l.). Reste facturation : 3a-bis, chantier 2 (décalage vue admin), vue agente du suivi, DROP `montant_ttc`, détails/KPI. Puis lot sécurité P0-9-bis + dette.
 
 ---
 
@@ -11,7 +11,7 @@
 | Lot | Sujet | État |
 |---|---|---|
 | A | Sécurité | ✅ TERMINÉ, mergé, testé en prod |
-| **B** | **Argent juste** | 🟢 CŒUR TERMINÉ (tous P0 + nettoyage + perf) ; FACTURATION bien avancée (3a + 3b-1 + décalage M−1 + fix redevance faits ; reste 3b-2, 3a-bis, vues, ménage) |
+| **B** | **Argent juste** | 🟢 CŒUR TERMINÉ (tous P0 + nettoyage + perf) ; FACTURATION bien avancée (3a + 3b-1 + 3b-2 + décalage M−1 + fix redevance + ménage code mort faits ; reste 3a-bis, vues, DROP `montant_ttc`) |
 | C | Intégrité (P0-3, P0-10, P0-11) | ⏳ à venir |
 | D | Confort (P1) | ⏳ à venir |
 | E | Dette technique (P2) | ⏳ à venir |
@@ -147,7 +147,7 @@ Mergé et testé en production. Contenu :
 - [ ] **Hygiène** : dropper `factures_agente_backup_b7b` après validation.
 
 ### HORS Lot B — découvertes notées dans 05, à planifier en lots dédiés
-P0-9-bis (sécurité, tables opérationnelles), durcissement RLS (3 bonus + select-wrapping + index), Lot E (champ mort piégé, code mort devis inline, renommage isMarine/estChantierMarine), notif mail upload facture.
+P0-9-bis (sécurité, tables opérationnelles), durcissement RLS (3 bonus + select-wrapping + index), Lot E (code mort devis inline, renommage isMarine/estChantierMarine, audit `finance.js` repo-wide ; champ mort piégé `royaltiesReelTotal` neutralisé par le ménage code mort), notif mail upload facture.
 
 ---
 
