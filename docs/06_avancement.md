@@ -134,9 +134,9 @@ Mergé et testé en production. Contenu :
 - **Fix 2 bugs redevance** (avec le décalage) : bug fuseau (comparaison de date au mois de début, corrigée au grain mois via entiers, zéro Date) + bug mois creux (`months` ne couvrait pas les mois redevance-seule → `redevanceDueKeys` de debut au mois courant). Testé en base.
 - **Remplacement PDF de facture (terminé)** — 5 pièces : (1) zone d'upload toujours visible + libellé adaptatif « Remplacer le PDF » ; (2) extension normalisée `.toLowerCase()` → chemin déterministe ; (3) cause racine : policy UPDATE Storage manquante sur le bucket `documents` → l'upsert ne pouvait pas écraser ; corrigée par policy UPDATE ciblée `factures_agente/` (voir `docs/sql/storage_policy_update_factures.sql`) ; (4) bandeau erreur/succès rendu dans l'onglet facturation + reset en tête d'`uploadPdf` (les échecs d'upload étaient silencieux) ; (5) cache-buster `&t=Date.now()` sur les 2 « Voir le PDF » (cache CDN 1h).
 
+-  **3b-2** : `StatutFacture` 2 états (retrait du statut `facture`) + découplage `uploadPdf` (n'écrit plus `statut:'facture'`).
+
 #### Reste (facturation) — détail dans 05
-- [ ] **3b-2** : `StatutFacture` 2 états (retrait du statut `facture`) + découplage `uploadPdf` (n'écrit plus `statut:'facture'`).
-- [ ] **3a-bis** : alerte d'écart figé/live (badge ⚠️ si `f.montant ≠ calcMois().montantFx` sur un mois payé), F1 ET F2.
 - [ ] **Chantier 2** : décalage M−1 redevance+apporteur dans la vue activité propre de l'admin (écran à identifier, à auditer).
 - [ ] **Vue agente du suivi** (gros sujet de conception ; base = spec archivée de `renderSuiviAgenteFinancier`).
 - [ ] **Ménage finances** : `royaltiesReelTotal` (champ piégé), orphelins `agentePeriod`/`setAgentePeriod`.
