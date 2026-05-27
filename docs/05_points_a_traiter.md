@@ -29,9 +29,8 @@
 1. [x] **3a** — F1 cliquable + figement (option B `f1Eff`) + masquage 0 €. ✅ FAIT, mergé.
 2. [x] **3b-1** — F2 cliquable ADMIN ONLY + figement (`f2Eff`) + label « Payé » → « Reçu » + masquage 0 €. Propagation `redevances` (CA réel net, Suivi CTP via `renderSuiviFinancier`, grille 12 mois + KPI redevances, tout en `montant_ht`). Testé EN BASE (clic F2 admin persiste ; agente non cliquable, plus de 403 RLS). ✅ FAIT, mergé.
 3. [ ] **3b-2** — retrait du statut `facture` : `StatutFacture` passe de 3 à 2 branches (`paye` / `a_facturer`) + découplage `uploadPdf` (n'écrit plus `statut:'facture'`, juste `facture_path`). **Les deux ensemble (liés).** **(à faire — prochaine étape.)**
-4. [ ] **3a-bis** — alerte d'écart figé/live : badge ⚠️ quand `f.montant ≠ calcMois().montantFx` sur un mois payé, pour F1 ET F2 ensemble. Protège du cas où un montant déjà facturé bougerait (correction manuelle d'acompte, annulation…). **(à faire.)**
-5. [ ] **Ménage code mort FINANCES** (zone finances/facturation uniquement, PAS tout le repo) : reste `royaltiesReelTotal` (champ piégé, valeur d'argent fausse à 0, voir Lot E ci-dessous) + orphelins `agentePeriod`/`setAgentePeriod` (l.205) + audit grep des autres résidus de la zone. Audit/call-sites AVANT suppression (leçon : ne jamais qualifier « vivant/mort » sans grep call-site). NB : `renderSuiviAgenteFinancier` déjà supprimé (voir « faits »). **(à faire.)**
-6. [ ] **DROP `redevances.montant_ttc`** : débloqué (le dernier porteur des `montant_ttc||540` était `renderSuiviAgenteFinancier`, supprimé). Re-grep tout le repo AVANT le DROP (`montant_ttc` légitime sur devis_artisans / suivi_financier / factures_artisans — NE PAS confondre). **(à faire.)**
+4. [ ] **Ménage code mort FINANCES** (zone finances/facturation uniquement, PAS tout le repo) : reste `royaltiesReelTotal` (champ piégé, valeur d'argent fausse à 0, voir Lot E ci-dessous) + orphelins `agentePeriod`/`setAgentePeriod` (l.205) + audit grep des autres résidus de la zone. Audit/call-sites AVANT suppression (leçon : ne jamais qualifier « vivant/mort » sans grep call-site). NB : `renderSuiviAgenteFinancier` déjà supprimé (voir « faits »). **(à faire.)**
+5. [ ] **DROP `redevances.montant_ttc`** : débloqué (le dernier porteur des `montant_ttc||540` était `renderSuiviAgenteFinancier`, supprimé). Re-grep tout le repo AVANT le DROP (`montant_ttc` légitime sur devis_artisans / suivi_financier / factures_artisans — NE PAS confondre). **(à faire.)**
 
 > Hors de cette séquence (autre zone, autre passe) : formulaire devis inline mort dans `chantiers/[id]`, renommage `isMarine`/`estChantierMarine` → ne PAS mélanger au ménage finances (Lot E).
 
@@ -162,6 +161,12 @@ Relevés par l'advisor Supabase. NE SONT PAS la cause de la lenteur actuelle (à
 ## Horizon (section 10 du CDC — multi-franchise / mobile)
 
 - [ ] **Connexion agenda multi-fournisseurs :** pour le multi-franchise, proposer d'autres calendriers que Google (Notion, Apple, etc.) selon le choix du franchisé.
+
+---
+
+## À arbitrer avec Marine (décisions métier en attente)
+
+- [ ] **3a-bis — Alerte d'écart figé/live (à arbitrer avec Marine)** : badge ⚠️ qui signalerait un écart entre `f.montant` (figé au clic « Reçu ») et `calcMois().montantFx` (live), pour F1 et F2, sur les mois « Reçu » uniquement. Question métier : la fréquence des modifs post-figement (devis/commission/acompte modifié après que la facture est marquée « Reçu ») justifie-t-elle un filet de sécurité ? En théorie, l'activité d'un mois facturé ne devrait pas bouger. Blocage si on le fait seul : un badge non actionnable (il dit qu'il y a écart mais pas pourquoi) crée du bruit sans valeur — il faudrait coupler à une traçabilité des modifs post-figement, ce qui est un sujet plus large. Décision attendue : (a) on laisse tomber si Marine confirme que le cas est marginal ; (b) on fait juste le badge si visibilité minimale suffit ; (c) on conçoit un vrai système de traçabilité (gros sujet à part).
 
 ---
 

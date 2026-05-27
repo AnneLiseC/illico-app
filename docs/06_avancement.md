@@ -111,6 +111,8 @@ Mergé et testé en production. Contenu :
 
 > Page la plus sensible (franchisée ↔ agentes, on facture sur les montants de l'app). `app/finances/page.js`, composant `FacturationAgentes`.
 
+**Cœur de l'étape 3 — terminé.** 3a (toggles F1 cliquables, figement, masquage 0 €), 3b-1 (F2 admin-only via RLS), 3b-2 (retrait statut `facture` + découplage upload PDF + gate synchro redevances), remplacement PDF (5 pièces : UI + extension + policy UPDATE Storage + bandeau erreur/succès + cache-buster). Reste **3a-bis** (alerte d'écart figé/live) en attente d'arbitrage métier avec Marine — voir Doc 5.
+
 #### Décisions métier verrouillées
 - **F1** = `agente_vers_ctp` (l'agente facture CTP : frais + commissions + honoraires + part partenaire) — action agente ET admin.
 - **F2** = `ctp_vers_agente` (CTP facture l'agente : redevance HT + part apporteur) — action ADMIN UNIQUEMENT.
