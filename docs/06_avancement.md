@@ -2,7 +2,7 @@
 
 *Où on en est dans le chantier de correction. À rouvrir à chaque reprise. Le CDC (00) décrit la CIBLE ; ce fichier décrit l'ÉTAT RÉEL.*
 
-**Dernière mise à jour : 27 mai 2026 — facturation Lot B bien avancée.** Faits récemment : redevance HT (B7a), reset B7b, étape 2 (affichage live + détail dépliable), 3a (F1 cliquable), correction apporteur (#65, bug financier), suppression `renderSuiviAgenteFinancier` (336 l.), 3b-1 (F2 admin-only), 3b-2 (retrait statut `facture`), décalage temporel M−1 (P2), fix 2 bugs redevance (fuseau + mois creux), ménage code mort FINANCES (PR #73, ~175 l.). Reste facturation : 3a-bis, chantier 2 (décalage vue admin), vue agente du suivi, DROP `montant_ttc`, détails/KPI. Puis lot sécurité P0-9-bis + dette.
+**Dernière mise à jour : 27 mai 2026 — facturation Lot B bien avancée.** Faits récemment : redevance HT (B7a), reset B7b, étape 2 (affichage live + détail dépliable), 3a (F1 cliquable), correction apporteur (#65, bug financier), suppression `renderSuiviAgenteFinancier` (336 l.), 3b-1 (F2 admin-only), 3b-2 (retrait statut `facture`), décalage temporel M−1 (P2), fix 2 bugs redevance (fuseau + mois creux), ménage code mort FINANCES (PR #73, ~175 l.), DROP `redevances.montant_ttc` (B8a+B8b, prod 27/05). **Séquence étape 3 TERMINÉE.** Reste facturation : 3a-bis (parking Marine), chantier 2 (décalage vue admin), vue agente du suivi, détails/KPI, hygiène backup. Puis lot sécurité P0-9-bis + dette.
 
 ---
 
@@ -11,7 +11,7 @@
 | Lot | Sujet | État |
 |---|---|---|
 | A | Sécurité | ✅ TERMINÉ, mergé, testé en prod |
-| **B** | **Argent juste** | 🟢 CŒUR TERMINÉ (tous P0 + nettoyage + perf) ; FACTURATION bien avancée (3a + 3b-1 + 3b-2 + décalage M−1 + fix redevance + ménage code mort faits ; reste 3a-bis (parking Marine), vues, DROP `montant_ttc`) |
+| **B** | **Argent juste** | 🟢 CŒUR TERMINÉ (tous P0 + nettoyage + perf) ; FACTURATION — séquence étape 3 terminée (3a + 3b-1 + 3b-2 + décalage M−1 + fix redevance + ménage code mort + DROP `montant_ttc`) ; reste 3a-bis (parking Marine), vues, chantier 2 (décalage admin), détails/KPI, hygiène backup |
 | C | Intégrité (P0-3, P0-10, P0-11) | ⏳ à venir |
 | D | Confort (P1) | ⏳ à venir |
 | E | Dette technique (P2) | ⏳ à venir |
@@ -137,10 +137,11 @@ Mergé et testé en production. Contenu :
 -  **3b-2** : `StatutFacture` 2 états (retrait du statut `facture`) + découplage `uploadPdf` (n'écrit plus `statut:'facture'`).
 - **Ménage code mort FINANCES (terminé)** — PR #73, 3 commits sur `app/finances/page.js`, ~175 lignes supprimées, **0 chiffre changé** (le mort retiré n'avait aucune lecture, donc aucun montant ne pouvait bouger ; validé au centime sur Guerteau et Jadras en preview). (1) **9 morts évidents** : `royaltiesReelTotal` (le piège prioritaire — la branche Marine codait 0 € en dur), `agentePeriod`/`setAgentePeriod`, `CheckItem`, `majSuivi`, `renderMesPeriode`, `tabs`, `nomAgente`, `uploadingFactureAgente` (état write-only) + import `useRef` inutilisé + `const key` orphelin (conséquence mécanique). (2) **29 clés mortes** du retour de `calculerBase` + **3 clés mortes** du retour de `calculerReelBase` (const internes CONSERVÉS, alimentent `gainAgenteReel`). (3) **4 commentaires orphelins** (2 bandeaux de section + 2 groupeurs internes). Anti-leçon respectée : re-grep des call-sites avant chaque suppression ; faux-amis vérifiés (`dv.comTTC` épargné — disparu avec sa seule clé porteuse morte `comTTCSigne` ; `nomReferente`/`nomFranchisee`/`sfSousOngletCTP` intacts).
 
+- **DROP `redevances.montant_ttc` (terminé)** — appliqué en prod le 27 mai 2026, 2 fichiers SQL (B8a + B8b) sur branche dédiée (PR #75). Cause : la colonne portait un `DEFAULT 540` inutile (la valeur métier vit dans `montant_ht`). Débloqué par la suppression de `renderSuiviAgenteFinancier` (lot B précédent). **Piège trouvé et corrigé** : la fonction trigger `redevances_montant_protege` (P0-9) faisait `NEW.montant_ttc := OLD.montant_ttc;` — Postgres ne tracke pas les corps plpgsql comme dépendances, donc le DROP serait passé sans erreur MAIS aurait cassé le premier UPDATE de redevance en prod (`record "new" has no field "montant_ttc"`). **B8a** recrée la fonction sans cette ligne (SECURITY DEFINER + search_path conservés à l'identique) AVANT **B8b** qui DROP la colonne. Test fonctionnel dédoublé (entre B8a et B8b, puis après B8b) : UPDATE de redevance passe, `montant_ht`/`agente_id`/`mois`/`annee` intacts. Code applicatif déjà propre (audit PR #74 : zéro lecture vivante). Audit BDD complet : aucune autre dépendance (index, vue, fonction).
+
 #### Reste (facturation) — détail dans 05
 - [ ] **Chantier 2** : décalage M−1 redevance+apporteur dans la vue activité propre de l'admin (écran à identifier, à auditer).
 - [ ] **Vue agente du suivi** (gros sujet de conception ; base = spec archivée de `renderSuiviAgenteFinancier`).
-- [ ] **DROP `redevances.montant_ttc`** (re-grep tout le repo avant).
 - [ ] **Détail par chantier** dans le dépliable ; **détail apporteur par devis** ; **timing remboursement apporteur** dans F2.
 - [ ] **Colonne « Marine » en dur** (Réel/Prévisionnel) à adapter au périmètre ; **KPI « Net à virer »** trompeur à revoir.
 - [ ] **Grille redevances 12 mois** : éventuellement relibeller en mois de facture (à juger à l'écran).
