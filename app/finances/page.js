@@ -1,6 +1,6 @@
 // app/finances/page.js
 'use client'
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, ArcElement, DoughnutController, Tooltip, Legend, Filler } from 'chart.js'
 Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, ArcElement, DoughnutController, Tooltip, Legend, Filler)
 import { supabase } from '../lib/supabase'
@@ -37,52 +37,6 @@ const normalizeDossier = (d) => ({
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPOSANT CHECKBOX + DATE
 // ─────────────────────────────────────────────────────────────────────────────
-
-function CheckItem({ label, checked, date, onChange, onDateChange, alert, disabled = false, colorClass = '' }) {
-  const [localDate, setLocalDate] = useState(date || '')
-  const [syncedDate, setSyncedDate] = useState(date)
-  if (syncedDate !== date) {
-    setSyncedDate(date)
-    setLocalDate(date || '')
-  }
-
-  const handleCheck = (isChecked) => {
-    const autoDate = isChecked && !date ? new Date().toISOString().split('T')[0] : null
-    onChange(isChecked, autoDate)
-  }
-
-  return (
-    <div className={`flex items-center gap-2 flex-wrap py-1 ${disabled ? 'opacity-40' : ''}`}>
-      <label className="flex items-center gap-2 cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={!!checked}
-          disabled={disabled}
-          onChange={e => !disabled && handleCheck(e.target.checked)}
-          className="w-4 h-4 rounded accent-blue-700"
-        />
-        <span className={`text-xs font-medium ${colorClass || (checked ? 'text-green-700' : 'text-gray-600')}`}>
-          {label}
-        </span>
-      </label>
-      {alert && !checked && (
-        <span className="text-xs text-red-500 font-medium">{alert}</span>
-      )}
-      {checked && (
-        <input
-          type="date"
-          value={localDate}
-          onChange={e => {
-            setLocalDate(e.target.value)
-            if (e.target.value && e.target.value !== date) onDateChange(e.target.value)
-          }}
-          onBlur={e => { if (e.target.value && e.target.value !== date) onDateChange(e.target.value) }}
-          className="border border-gray-200 rounded px-2 py-0.5 text-xs focus:outline-none focus:border-blue-400"
-        />
-      )}
-    </div>
-  )
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS TABLEAU
@@ -202,7 +156,6 @@ export default function Finances() {
   const [tab, setTab]                               = useState('synthese')
   const [period, setPeriod]                         = useState('chantier')
   const [scope, setScope]                           = useState('tous')
-  const [agentePeriod, setAgentePeriod]             = useState('mois')
   const [suiviMode, setSuiviMode]                   = useState('ctp')
   const [dossierOuvert, setDossierOuvert]           = useState(null)
   const [dossiers, setDossiers]                     = useState([])
@@ -211,7 +164,6 @@ export default function Finances() {
   const [agenteSelectionnee, setAgenteSelectionnee] = useState(null)
   const [nomFranchisee, setNomFranchisee]           = useState('CTP')
   const [facturesAgente, setFacturesAgente]         = useState([])
-  const [uploadingFactureAgente, setUploadingFactureAgente] = useState(null)
   const [objectifs, setObjectifs]                   = useState([])
   const [anneeSelectionnee, setAnneeSelectionnee]   = useState(new Date().getFullYear())
   const [moisOuvert, setMoisOuvert]                 = useState(null)
@@ -476,7 +428,7 @@ export default function Finances() {
       const apporteurRetire = c.apporteurAdminReel
 
       const gainAdminReel = round2(fraisReel + honReel + comReelNet + comApporteursReel - apporteurRetire)
-      return { ...c, fraisReel, fraisAgenteReel: 0, honReel, comReelNet, comApporteursReel, royaltiesReelTotal: 0, apporteurRembourse: apporteurRetire, gainAgenteReel: 0, gainAdminReel, gainsAgenteReels: 0, acompteAmoNet, acompteAmoAgente, soldeAmoNet: soldeAmoNetM, soldeAmoAgente: 0 }
+      return { ...c, fraisReel, fraisAgenteReel: 0, honReel, comReelNet, comApporteursReel, apporteurRembourse: apporteurRetire, gainAgenteReel: 0, gainAdminReel, gainsAgenteReels: 0, acompteAmoNet, acompteAmoAgente, soldeAmoNet: soldeAmoNetM, soldeAmoAgente: 0 }
     }
 
     // Frais — HT net si réglé
@@ -537,7 +489,6 @@ export default function Finances() {
     // Apporteur client réel = part agente sur les acomptes débloqués (finance.js).
     const apporteurRembourse = c.apporteurAgenteReel
 
-    const royaltiesReelTotal = round2(fraisRoyaltiesReel + royaltiesHonReel + royaltiesComReel)
     const gainAgenteReel = round2(fraisAgenteReel + honAgenteReel + comAgenteReel + comApporteursAgente - apporteurRembourse)
     const gainAdminReel = round2(fraisReel + honReel + comReelNet + comApporteursReel - gainAgenteReel)
 
@@ -555,7 +506,6 @@ export default function Finances() {
       comAgenteReel,
       comApporteursReel,
       comApporteursAgente,
-      royaltiesReelTotal,
       apporteurRembourse,
       gainAgenteReel,
       gainAdminReel,
@@ -586,44 +536,6 @@ export default function Finances() {
 
   const calculer     = (d) => financeCache.get(d.id)?.c ?? calculerBase(d)
   const calculerReel = (d) => financeCache.get(d.id)?.r ?? calculerReelBase(d)
-
-  const majSuivi = async (dossierId, type, artisanId, champOrUpdates, valeur) => {
-    setSaving(true)
-    const updates = typeof champOrUpdates === 'object'
-      ? champOrUpdates
-      : { [champOrUpdates]: valeur }
-    try {
-      let query = supabase.from('suivi_financier').select('id')
-        .eq('dossier_id', dossierId).eq('type_echeance', type)
-      query = artisanId ? query.eq('artisan_id', artisanId) : query.is('artisan_id', null)
-      const { data: existing } = await query.maybeSingle()
-
-      let error
-      if (existing) {
-        ;({ error } = await supabase.from('suivi_financier').update(updates).eq('id', existing.id))
-      } else {
-        ;({ error } = await supabase.from('suivi_financier').insert({
-          dossier_id: dossierId, type_echeance: type,
-          artisan_id: artisanId || null, ...updates,
-        }))
-      }
-      if (error) { alert('Erreur sauvegarde : ' + error.message); return }
-
-      // Sync frais_statut sur dossiers
-      if (type === 'frais_consultation' && updates.statut_client !== undefined) {
-        await supabase.from('dossiers').update({ frais_statut: updates.statut_client }).eq('id', dossierId)
-      }
-
-      if (type === 'facture_finale' && updates.statut_client !== undefined && artisanId) {
-        const statutFacture = updates.statut_client === 'regle' ? 'paye' : 'en_attente'
-        await supabase.from('factures_artisans').update({ statut: statutFacture })
-          .eq('dossier_id', dossierId).eq('artisan_id', artisanId)
-      }
-      await chargerTout()
-    } finally {
-      setSaving(false)
-    }
-  }
 
   // ── ALERTES ────────────────────────────────────────────────────────────────
 
@@ -677,7 +589,6 @@ export default function Finances() {
     ? dossiers.filter(d => d.referente?.id === agenteSelectionnee)
     : dossiersAgentes
   const agenteActuelle   = agentes.find(a => a.id === agenteSelectionnee)
-  const nomAgente        = agenteActuelle ? `${agenteActuelle.prenom} ${agenteActuelle.nom}` : 'Agente'
   const redevancesAgente = agenteSelectionnee
     ? redevances.filter(r => r.agente_id === agenteSelectionnee)
     : redevances
@@ -1204,34 +1115,6 @@ export default function Finances() {
 
   // ── MES CHANTIERS par période ───────────────────────────────────────────────
 
-  const renderMesPeriode = (listeDossiers, colLabel, rows) => {
-    const colonnesMarine = [
-      { label: 'Frais net',    key: 'fraisNet',          type: 'normal' },
-      { label: 'Com. net',     key: 'comNet',             type: 'normal' },
-      { label: 'Com. apport.', key: 'comApporteursNet',   type: 'normal' },
-      { label: 'Hon. court.',  key: 'courtNet',           type: 'normal' },
-      { label: 'Hon. AMO',     key: 'amoNet',             type: 'normal' },
-      { label: 'Apporteur',    key: 'apporteurCoutTotalNet', type: 'neg' },
-      { label: nomFranchisee,  key: 'gainAdminReel',      type: 'total'  },
-    ]
-    const colonnesAgente = [
-      { label: 'Frais net',    key: 'fraisAgenteNet',          type: 'normal' },
-      { label: 'Com. net',     key: 'comAgenteNet',            type: 'normal' },
-      { label: 'Com. apport.', key: 'comApporteursAgenteNet',  type: 'normal' },
-      { label: 'Hon. net',     key: 'honAgenteNet',            type: 'normal' },
-      { label: 'Apporteur',    key: 'apporteurPartAgenteNet',   type: 'neg'    },
-      { label: 'Mes gains',    key: 'gainsAgenteReels',        type: 'total'  },
-    ]
-    const colonnes = isMarine ? colonnesMarine : colonnesAgente
-    const getDossierMontant = (d, key, periodKey) => {
-      const agg = agrégerParPaiement([d], periodKey?.includes('-') ? false : true)
-        .find(([k]) => k === periodKey)?.[1]
-      if (!agg) return 0
-      return agg[key] || 0
-    }
-    return renderTableauPeriode(listeDossiers, rows, colLabel, colonnes, (agg, key) => agg[key] || 0, getDossierMontant)
-  }
-
   // ── TOUS LES CHANTIERS par période (admin) ─────────────────────────────────
 
   const renderTousPeriode = (listeDossiers, rows, colLabel) => {
@@ -1736,8 +1619,6 @@ export default function Finances() {
 
     const uploadPdf = async (f, fichier) => {
       setErreur(''); setSucces('')
-      const key = `${f.annee}-${f.mois}-${f.type_facture}`
-      setUploadingFactureAgente(key)
       const ext = fichier.name.split('.').pop().toLowerCase()
       const chemin = `factures_agente/${agenteSelectionnee}/${f.annee}-${String(f.mois).padStart(2,'0')}-${f.type_facture}.${ext}`
       const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
@@ -1745,7 +1626,6 @@ export default function Finances() {
         await upsertFactureMoisType(f.mois, f.annee, f.montant||0, f.type_facture, { facture_path: chemin })
         setSucces('Facture uploadée ✓')
       } else { setErreur('Erreur upload : ' + error.message) }
-      setUploadingFactureAgente(null)
     }
 
     // Bascule du statut F1 (agente → CTP). Au clic « payé » : fige le montant LIVE
@@ -2029,14 +1909,6 @@ export default function Finances() {
   // ─────────────────────────────────────────────────────────────────────────────
   // RENDU PRINCIPAL
   // ─────────────────────────────────────────────────────────────────────────────
-
-  const tabs = [
-    { key: 'previsionnel', label: 'F1 Prévisionnel' },
-    { key: 'reel',         label: 'F2 Réel'         },
-    { key: 'synthese',     label: 'Synthèse'         },
-    { key: 'suivi',        label: 'Suivi financier'  },
-    { key: 'facturation',  label: 'Facturation'      },
-  ]
 
   const periodOptions = [
     { key: 'chantier', label: 'Par chantier' },
