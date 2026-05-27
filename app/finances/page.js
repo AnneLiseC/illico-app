@@ -281,8 +281,6 @@ export default function Finances() {
       apporteurMap,
       partAgenteRate: partAgente,
 
-      // Taux affichage
-
       // Frais
       fraisHT:       round2(f.frais.fraisHT),
       fraisRoyalties: round2(f.frais.royalties),
@@ -292,8 +290,6 @@ export default function Finances() {
       // Commissions (tous devis actifs)
       comHT:          round2(f.commissions.comHT),
       netCom:         round2(f.commissions.netCom),
-
-      // Commissions signées uniquement
 
       // Honoraires courtage
       courtRoyalties: round2(f.honoraires.courtage.royalties),
