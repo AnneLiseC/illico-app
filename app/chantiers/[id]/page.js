@@ -1769,7 +1769,7 @@ export default function FicheChantier({ params }) {
 
   const supprimerChantier = async () => {
     const ok = confirm(
-      'Supprimer définitivement ce chantier, tous ses devis, photos, documents, RDV, interventions et suivis financiers ? Cette action est irréversible.'
+      'Supprimer définitivement ce chantier et tout ce qui lui est rattaché (devis, factures, photos, comptes-rendus, documents, RDV, interventions, suivis financiers, messages, contrat) ? Cette action est irréversible.'
     )
     if (!ok) return
 
@@ -1788,19 +1788,36 @@ export default function FicheChantier({ params }) {
 
       const { data: devisData, error: devisErr } = await supabase
         .from('devis_artisans')
-        .select('id, devis_signe_path, pdf_path')
+        .select('id, devis_signe_path, devis_pdf_path')
         .eq('dossier_id', id)
 
       if (devisErr) throw devisErr
+
+      const { data: facturesData, error: facturesErr } = await supabase
+        .from('factures_artisans')
+        .select('pdf_path')
+        .eq('dossier_id', id)
+
+      if (facturesErr) throw facturesErr
+
+      const { data: docsData, error: docsErr } = await supabase
+        .from('chantier_documents')
+        .select('path')
+        .eq('dossier_id', id)
+
+      if (docsErr) throw docsErr
 
       // 2) Supprimer les fichiers Storage connus
       const photoPaths = (photosData || [])
         .map(p => p.url)
         .filter(Boolean)
 
-      const documentPaths = (devisData || [])
-        .flatMap(d => [d.devis_signe_path, d.pdf_path])
-        .filter(Boolean)
+      const documentPaths = [
+        ...(devisData || []).flatMap(d => [d.devis_signe_path, d.devis_pdf_path]),
+        ...(facturesData || []).map(f => f.pdf_path),
+        ...(docsData || []).map(d => d.path),
+        dossier?.contrat_url,
+      ].filter(Boolean)
 
       if (photoPaths.length > 0) {
         const { error } = await supabase.storage.from('photos').remove(photoPaths)
@@ -1841,22 +1858,10 @@ export default function FicheChantier({ params }) {
       await removeFolderContents('documents', `chantiers/${id}/devis`)
       await removeFolderContents('documents', `chantiers/${id}/devis_signes`)
       await removeFolderContents('documents', `chantiers/${id}/factures`)
+      await removeFolderContents('documents', `chantiers/${id}/documents`)
+      await removeFolderContents('documents', `chantiers/${id}/contrat`)
 
-      // 4) Supprimer les lignes liées en base
-      const deletes = [
-        supabase.from('suivi_financier').delete().eq('dossier_id', id),
-        supabase.from('chantier_fiches_techniques').delete().eq('dossier_id', id),
-        supabase.from('rendez_vous').delete().eq('dossier_id', id),
-        supabase.from('interventions_artisans').delete().eq('dossier_id', id),
-        supabase.from('photos').delete().eq('dossier_id', id),
-        supabase.from('devis_artisans').delete().eq('dossier_id', id),
-      ]
-
-      const results = await Promise.all(deletes)
-      const deleteError = results.find(r => r.error)?.error
-      if (deleteError) throw deleteError
-
-      // 5) Supprimer le dossier chantier
+      // 4) Supprimer le dossier chantier — les tables filles tombent par ON DELETE CASCADE
       const { error: dossierErr } = await supabase
         .from('dossiers')
         .delete()
@@ -2497,7 +2502,7 @@ export default function FicheChantier({ params }) {
           <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap'}}>
             <div>
               <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)', marginBottom:2}}>Supprimer définitivement ce chantier</div>
-              <div style={{fontSize:12, color:'var(--ink-500)'}}>Cette action est irréversible (dossier, devis, photos, CR, suivi financier).</div>
+              <div style={{fontSize:12, color:'var(--ink-500)'}}>Cette action est irréversible — supprime le dossier et toutes ses données (devis, factures, photos, CR, documents, RDV, interventions, suivis, messages, contrat).</div>
             </div>
             <button onClick={supprimerChantier} disabled={saving} className="btn btn-ghost"
               style={{fontSize:12.5, color:'#b91c1c', borderColor:'rgba(239,68,68,0.3)'}}>
