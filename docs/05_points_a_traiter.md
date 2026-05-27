@@ -95,7 +95,13 @@
 - [ ] **Erreur Google « Cannot access 'n' before initialization »** au clic sur le bouton Google quand le calendrier est DÉJÀ connecté (cas limite ; la première connexion fonctionne).
 - [ ] **Avancement du projet pas à jour côté client** (espace client). Vérifier le calcul/la source de la barre.
 - [ ] **CR côté client : visible seulement après actualisation** (manque refetch temps réel après publication).
+-  [ ] **Comptes-rendus — fonctionnalité PDF à compléter ou à clarifierÉtat actuel découvert lors du fix suppression chantier (mai 2026)** : La table comptes_rendus n'a aucune colonne pour stocker un chemin de fichier (vérifié information_schema.columns : colonnes existantes = id, dossier_id, auteur_id, type_visite, notes_brutes, contenu_ia, contenu_final, valide, date_visite, created_at). Le CR est donc stocké en colonnes texte uniquement. 
+Mais le code app/chantiers/[id]/page.js:1334 tente d'écrire pdf_path sur comptes_rendus — soit cette écriture plante silencieusement, soit elle est dans une branche jamais exécutée. À auditer.
+Conséquence dans le fix suppression chantier : on a exclu comptes_rendus du nettoyage Storage (rien à supprimer côté fichiers). Le CASCADE supprime les lignes en base, c'est tout.À décider :
 
+(a) Garder les CR en texte pur (contenu_brut/ia/final), supprimer la l.1334 morte → simplification, aucune feature PDF.
+(b) Ajouter la fonctionnalité PDF de CR : créer la colonne pdf_path en base, brancher l'upload, et inclure les CR dans le nettoyage Storage du fix suppression chantier (à compléter rétroactivement). Sujet de conception (génération du PDF côté client/serveur ? Template ?).
+Lien avec autres sujets : à inclure dans l'audit code mort repo-wide de lib/finance.js qu'on a noté pour plus tard (l.1334 est code mort ou code latent à clarifier).
 ---
 
 ## Consignes IA — sujet dédié (ni Lot A ni B)
