@@ -204,8 +204,8 @@ Une policy `<table>_scope` par table, `FOR ALL TO authenticated`, enveloppant `(
 - [x] L9 Rebranding BATILIS — ✅ FAIT (PR `claude/L9-rebranding-batilis`, mergé). 11 changements / 5 fichiers : 8 textes (layout, navbar ×2, app-header, login ×3, parametres) + 3 logo marks `iC`→`Ba`. Vérif négative validée : PDF/espace-client/notifs affichent toujours illiCO légitime. « Martigues » résiduel laissé pour L10.
 - [x] L11 Neutralisation Messagerie + Statistiques — ✅ FAIT (`claude/L11-neutralisation`, mergé `f12420a`). CR NON neutralisés (gardés, fonctionnent). 2 pages → placeholder « Bientôt disponible » (Server Components statiques). Realtime coupé physiquement (2 channels supprimés), Chart.js retiré, fetch supprimés. Commentaire traçabilité en tête → code complet à `3dbd6f1`. Vérif négative : CR toujours OK dans fiche chantier + espace-client.
 - [x] L13 Suppression bouton Google login + fix #2 création chantier sans client — ✅ FAIT (`claude/L13-creation-chantier`, mergé `3dbd6f1`). 13a : bouton Google + séparateur « ou » retirés, faux lien invitation neutralisé (texte « franchisé(e) » conservé). 13b : composant `ModaleChoixClient` (modale « pour quel client ? » sur les 2 boutons « + nouveau chantier » liste+dashboard) + guard sur `/chantiers/nouveau` (sans `?client=` → redirige `/chantiers?nouveau=1` qui rouvre la modale) → `client_id:null` structurellement impossible. Fix : filtre `.eq('referente', profile.id)` pour agente dans la modale (aligné sur `/clients`, seul rempart tant que RLS clients permissive — sera nettoyé en L5c).
-- [ ] L17 Durcissements sécu annexes (leaked password Auth + policy Storage `photos` UPDATE). ⚠️ Vérifier d'abord en base que le bucket `photos` manque bien sa policy UPDATE (hypothèse audit 2 non confirmée) avant d'ajouter une policy inutile.
-- *État sûr fin P1 : app BATILIS-brandée, modules sensibles neutralisés, pas encore de multi-tenant.*
+- [x] L17 Durcissements sécu annexes — ✅ TRAITÉ (vérifié en base avant toute action, conformément à la règle anti-hypothèse). Bilan : (1) **Policy UPDATE `photos`** → ABANDONNÉ : l'absence de policy UPDATE est confirmée (4 policies : DELETE/INSERT/SELECT×2, pas d'UPDATE) MAIS c'est théorique — Anne-Lise uploade avec noms uniques (pas de remplacement/upsert), donc aucun bug réel, on n'ajoute pas de policy inutile. (2) **`notifications` INSERT `WITH CHECK (true)`** → confirmé permissif (`roles {public}`), RENVOYÉ À L5c (réécrire la policy proprement avec la refonte RLS, pas de patch isolé). (3) **Leaked password protection** → confirmé désactivé, mais RÉSERVÉ AU PLAN PRO (projet en plan gratuit, toggle bloqué) → reporté « avant ouverture réelle » (naturellement couplé au passage Pro). (4) **Captcha** → laissé OFF volontairement (hors périmètre, inutile pour onboarding sur invitation fermée sans inscription publique).
+- *État sûr fin P1 : app BATILIS-brandée, modules sensibles neutralisés, pas encore de multi-tenant. **PHASE 1 BOUCLÉE.***
 
 **PHASE 2 — Schéma & data (½-1j, fenêtre maintenance courte)** — `docs/sql/MT1_*` + `MT2_helpers.sql`
 - [ ] L1 CREATE `societes` + `agences` (RLS activée, fermée par défaut).
@@ -241,6 +241,7 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 - [ ] L18 Bug ajout intervention · L19 Bug molette nombres · L20 Route `/clients/[id]/modifier` 404 · L21 DROP `factures_agente_backup_b7b`.
 - [ ] Optim perf RLS (wrapping fait en L5 ; dénormalisation/claim JWT si besoin).
 - [ ] #8 dashboard admin scope (à arbitrer selon scénario testeur).
+- [ ] **Durcissements sécu « avant ouverture réelle »** (vérifiés en L17) : (a) activer leaked password protection (nécessite plan Supabase Pro) ; (b) durcir policy INSERT `notifications` (`WITH CHECK (true)` → restreindre, à faire en L5c) ; (c) captcha auth (optionnel, seulement si inscription publique un jour — pas le modèle actuel).
 
 ### 5.5 VERDICT DÉLAI
 - **2 semaines** : tendu, faisable SI Phase 6 strictement reportée ET L5a sans régression. Pas de marge. (Le report de L12 hors fenêtre — D13 — est le levier qui rend ça respirable.)
@@ -261,6 +262,8 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 | 28/05 | **L9 Rebranding BATILIS** | ✅ mergé |
 | 28/05 | **L13 Création chantier sans client + login** | ✅ mergé `3dbd6f1` |
 | 28/05 | **L11 Neutralisation Msg + Stats** | ✅ mergé `f12420a` |
-| — | Phase 1 : reste L17 | ⏳ en cours |
+| 28/05 | **L17 Durcissements (vérifiés/dégonflés)** | ✅ traité |
+| 28/05 | **PHASE 1 COMPLÈTE** | ✅✅ |
+| — | Phase 2 : schéma multi-tenant (L1-L4) | ⏳ prochaine action |
 
-**Prochaine action** : L17 (durcissements sécu annexes — protection mots de passe compromis Auth + policy Storage `photos` UPDATE). ⚠️ VÉRIFIER D'ABORD l'état réel (la policy `photos` UPDATE manque-t-elle vraiment ? la protection Auth est-elle vraiment off ?) AVANT de corriger — ne pas patcher une hypothèse. Après L17 → Phase 1 bouclée, passage Phase 2 (schéma multi-tenant).
+**Prochaine action** : démarrer la **Phase 2 — schéma & data** (le vrai début du dur, première intervention en base). L1 : créer tables `societes` + `agences`. Protocole SQL strict : fichier `docs/sql/`, contrôle AVANT, application MAIN dans Supabase (jamais MCP), contrôle APRÈS, rollback écrit. Pattern expand→backfill→contract sur L1-L4.
