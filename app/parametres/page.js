@@ -287,7 +287,7 @@ export default function Parametres() {
                   </div>
                 ))}
               </div>
-              <div style={{fontSize:12, color:'var(--ink-400)'}}>Pour modifier ces informations, contactez le réseau illiCO travaux.</div>
+              <div style={{fontSize:12, color:'var(--ink-400)'}}>Pour modifier ces informations, contactez Anne-Lise à l'adresse mail suivante : anne-lise.caillet@outlook.com</div>
             </div>
           )}
 
