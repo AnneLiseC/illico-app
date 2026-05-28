@@ -54,7 +54,7 @@ INSERT INTO public.agences
   (societe_id, nom, ville, code, responsable_nom, email, adresse, telephone)
 SELECT
   s.id,
-  'Agence de Martigues',                  -- nom (À CONFIRMER)
+  'illiCO travaux Martigues',                  -- nom (À CONFIRMER)
   'Martigues',                            -- ville
   'MTG',                                  -- code (préfixe réf chantier)
   'Marine MICHELANGELI',                  -- responsable_nom (À CONFIRMER)
