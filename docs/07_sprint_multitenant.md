@@ -202,8 +202,8 @@ Une policy `<table>_scope` par table, `FOR ALL TO authenticated`, enveloppant `(
 
 **PHASE 1 — Préparatoires indépendants (2-3j, sans risque base)**
 - [x] L9 Rebranding BATILIS — ✅ FAIT (PR `claude/L9-rebranding-batilis`, mergé). 11 changements / 5 fichiers : 8 textes (layout, navbar ×2, app-header, login ×3, parametres) + 3 logo marks `iC`→`Ba`. Vérif négative validée : PDF/espace-client/notifs affichent toujours illiCO légitime. « Martigues » résiduel laissé pour L10.
-- [ ] L11 Neutralisation CR / Messagerie / Statistiques (placeholder « Bientôt disponible »).
-- [ ] L13 Suppression bouton Google login + fix #2 création chantier sans client.
+- [x] L11 Neutralisation Messagerie + Statistiques — ✅ FAIT (`claude/L11-neutralisation`, mergé `f12420a`). CR NON neutralisés (gardés, fonctionnent). 2 pages → placeholder « Bientôt disponible » (Server Components statiques). Realtime coupé physiquement (2 channels supprimés), Chart.js retiré, fetch supprimés. Commentaire traçabilité en tête → code complet à `3dbd6f1`. Vérif négative : CR toujours OK dans fiche chantier + espace-client.
+- [x] L13 Suppression bouton Google login + fix #2 création chantier sans client — ✅ FAIT (`claude/L13-creation-chantier`, mergé `3dbd6f1`). 13a : bouton Google + séparateur « ou » retirés, faux lien invitation neutralisé (texte « franchisé(e) » conservé). 13b : composant `ModaleChoixClient` (modale « pour quel client ? » sur les 2 boutons « + nouveau chantier » liste+dashboard) + guard sur `/chantiers/nouveau` (sans `?client=` → redirige `/chantiers?nouveau=1` qui rouvre la modale) → `client_id:null` structurellement impossible. Fix : filtre `.eq('referente', profile.id)` pour agente dans la modale (aligné sur `/clients`, seul rempart tant que RLS clients permissive — sera nettoyé en L5c).
 - [ ] L17 Durcissements sécu annexes (leaked password Auth + policy Storage `photos` UPDATE). ⚠️ Vérifier d'abord en base que le bucket `photos` manque bien sa policy UPDATE (hypothèse audit 2 non confirmée) avant d'ajouter une policy inutile.
 - *État sûr fin P1 : app BATILIS-brandée, modules sensibles neutralisés, pas encore de multi-tenant.*
 
@@ -233,6 +233,7 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 - *État sûr fin P5 : un nouvel utilisateur peut s'authentifier durablement. PRÊT POUR LE TEST.*
 
 ### 5.4 REPORTABLE POST-TEST (Phase 6)
+- [ ] **Réactiver Messagerie + Statistiques** : code complet conservé à `3dbd6f1` (neutralisés en L11). À restaurer et adapter au multi-tenant (RLS agence sur messages, scope agence sur stats).
 - [ ] L12 Storage cloisonné par agence + migration fichiers + policies versionnées (**dette sécu prioritaire, AVANT ouverture multi-franchise réelle**, D13).
 - [ ] L14b Reste onboarding : flow création société + ajout 2e agence + sélecteur agence dans `/api/create-agente`.
 - [ ] L15 Navbar bi-zone + sélecteur multi-agences.
@@ -258,6 +259,8 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 | 28/05 | Audit 3 (ampleur/chiffrage/séquençage) | ✅ |
 | 28/05 | Plan d'exécution 6 phases (L1-L21) | ✅ |
 | 28/05 | **L9 Rebranding BATILIS** | ✅ mergé |
-| — | Phase 1 : reste L11, L13, L17 | ⏳ en cours |
+| 28/05 | **L13 Création chantier sans client + login** | ✅ mergé `3dbd6f1` |
+| 28/05 | **L11 Neutralisation Msg + Stats** | ✅ mergé `f12420a` |
+| — | Phase 1 : reste L17 | ⏳ en cours |
 
-**Prochaine action** : continuer Phase 1. Reste L11 (neutralisation CR/Msg/Stats), L13 (Google login + fix #2 création chantier sans client), L17 (durcissements annexes — vérifier d'abord bucket photos UPDATE). Un lot à la fois.
+**Prochaine action** : L17 (durcissements sécu annexes — protection mots de passe compromis Auth + policy Storage `photos` UPDATE). ⚠️ VÉRIFIER D'ABORD l'état réel (la policy `photos` UPDATE manque-t-elle vraiment ? la protection Auth est-elle vraiment off ?) AVANT de corriger — ne pas patcher une hypothèse. Après L17 → Phase 1 bouclée, passage Phase 2 (schéma multi-tenant).
