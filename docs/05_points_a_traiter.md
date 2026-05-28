@@ -87,7 +87,7 @@
 
 - [ ] **Devis avec TTC mais sans HT : message d'erreur « il manque le HT ».** Règle de validation de saisie (même famille que « création chantier sans client »). Le HT est obligatoire sur un devis. Découvert lors de P0-5. **(Lot C/D — validation)**
 - [ ] **Création de chantier sans client possible.** On peut créer un chantier sans client associé → anormal. Ajouter une validation obligatoire du client. **(Lot C/D — intégrité)**
-- [ ] **Suppression chantier cassée : `column devis_artisans.pdf_path does not exist`.** Le code de suppression en cascade référence une colonne `pdf_path` inexistante. Bloque la suppression de chantier ET de clients. Lié à **P0-11** (cascade incomplète). Identifier le bon nom de colonne (ou retirer la référence) et reconstruire la cascade. **(Lot C — intégrité, à rattacher à P0-11)**
+- [x] **Suppression chantier cassée : `column devis_artisans.pdf_path does not exist`.** Le code de suppression en cascade référence une colonne `pdf_path` inexistante. Bloque la suppression de chantier ET de clients. Lié à **P0-11** (cascade incomplète). Identifier le bon nom de colonne (ou retirer la référence) et reconstruire la cascade. **(Lot C — intégrité, à rattacher à P0-11)** ✅ FAIT, mergé (PR #77, branche `claude/fix-suppression-chantier`). Test au centième validé en preview le 27 mai 2026 (chantier de test complet : contrat AMO + 9 fichiers Storage + 10 tables filles → tout est parti, en base ET en Storage). Détail dans Doc 6.
 
 ---
 
@@ -97,6 +97,7 @@
 - [ ] **Erreur Google « Cannot access 'n' before initialization »** au clic sur le bouton Google quand le calendrier est DÉJÀ connecté (cas limite ; la première connexion fonctionne).
 - [ ] **Avancement du projet pas à jour côté client** (espace client). Vérifier le calcul/la source de la barre.
 - [ ] **CR côté client : visible seulement après actualisation** (manque refetch temps réel après publication).
+- [ ] **Source unique de libellé suppression chantier (anomalie hors scope P0-11).** Le libellé de suppression est dupliqué entre le `confirm()` (`app/chantiers/[id]/page.js`, ~l.1772) et le sous-titre du bouton « Supprimer le chantier » (~l.2502). Les deux ont été alignés sur la liste exhaustive dans le fix P0-11, mais une source unique de vérité (constante partagée) serait plus propre et éviterait une nouvelle divergence. Sujet séparé. **(Lot D — confort.)**
 -  [ ] **Comptes-rendus — fonctionnalité PDF à compléter ou à clarifierÉtat actuel découvert lors du fix suppression chantier (mai 2026)** : La table comptes_rendus n'a aucune colonne pour stocker un chemin de fichier (vérifié information_schema.columns : colonnes existantes = id, dossier_id, auteur_id, type_visite, notes_brutes, contenu_ia, contenu_final, valide, date_visite, created_at). Le CR est donc stocké en colonnes texte uniquement. 
 Mais le code app/chantiers/[id]/page.js:1334 tente d'écrire pdf_path sur comptes_rendus — soit cette écriture plante silencieusement, soit elle est dans une branche jamais exécutée. À auditer.
 Conséquence dans le fix suppression chantier : on a exclu comptes_rendus du nettoyage Storage (rien à supprimer côté fichiers). Le CASCADE supprime les lignes en base, c'est tout.À décider :
