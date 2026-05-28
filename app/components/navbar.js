@@ -124,8 +124,8 @@ export default function NavBar() {
           <MenuIcon />
         </button>
         <div className="mobile-topbar-brand">
-          <div className="logo-mark" style={{ width: 28, height: 28, fontSize: 12 }}>iC</div>
-          <span>illiCO travaux</span>
+          <div className="logo-mark" style={{ width: 28, height: 28, fontSize: 12 }}>Ba</div>
+          <span>BATILIS</span>
         </div>
       </header>
 
@@ -143,9 +143,9 @@ export default function NavBar() {
 
           {/* Logo */}
           <div className="logo-block">
-            <div className="logo-mark">iC</div>
+            <div className="logo-mark">Ba</div>
             <div className="logo-text">
-              illiCO travaux
+              BATILIS
               <span className="muted">Martigues · {profile.prenom}</span>
             </div>
             <button

@@ -20,7 +20,7 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata = {
-  title: "illiCO travaux Martigues",
+  title: "BATILIS",
   description: "Gestion des dossiers chantiers",
 }
 
