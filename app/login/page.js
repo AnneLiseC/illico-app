@@ -55,9 +55,9 @@ export default function Login() {
 
         {/* Logo */}
         <div style={{position:'relative', display:'flex', alignItems:'center', gap:12}}>
-          <div style={{width:42, height:42, borderRadius:10, background:'#fff', color:'var(--brand-800)', display:'grid', placeItems:'center', fontWeight:800, fontSize:16}}>iC</div>
+          <div style={{width:42, height:42, borderRadius:10, background:'#fff', color:'var(--brand-800)', display:'grid', placeItems:'center', fontWeight:800, fontSize:16}}>Ba</div>
           <div>
-            <div style={{fontSize:18, fontWeight:800, letterSpacing:-0.01}}>illiCO travaux</div>
+            <div style={{fontSize:18, fontWeight:800, letterSpacing:-0.01}}>BATILIS</div>
             <div style={{fontSize:11, opacity:0.6, letterSpacing:0.06, textTransform:'uppercase'}}>Martigues</div>
           </div>
         </div>
@@ -71,7 +71,7 @@ export default function Login() {
             Pilote ton activité de courtage travaux en toute sérénité.
           </h1>
           <p style={{fontSize:15, opacity:0.85, lineHeight:1.6, marginTop:18}}>
-            Suivi des chantiers, gestion des artisans, finances, planning et espace client AMO — tout illiCO Martigues dans un seul écran.
+            Suivi des chantiers, gestion des artisans, finances, planning et espace client AMO — toute votre activité dans un seul écran.
           </p>
           <div style={{display:'flex', gap:24, marginTop:30, fontSize:12, opacity:0.7, flexWrap:'wrap'}}>
             <span style={{display:'inline-flex', alignItems:'center', gap:6}}>🔒 Chiffré SSL</span>
@@ -82,7 +82,7 @@ export default function Login() {
 
         {/* Footer */}
         <div style={{position:'relative', fontSize:12, opacity:0.55}}>
-          © illiCO travaux Martigues · {new Date().getFullYear()}
+          © BATILIS · {new Date().getFullYear()}
         </div>
       </div>
 
@@ -130,18 +130,8 @@ export default function Login() {
               {loading ? 'Connexion…' : 'Se connecter →'}
             </button>
 
-            <div style={{display:'flex', alignItems:'center', gap:12, margin:'24px 0', color:'var(--ink-400)', fontSize:11.5}}>
-              <div style={{flex:1, height:1, background:'var(--ink-200)'}}/>
-              ou
-              <div style={{flex:1, height:1, background:'var(--ink-200)'}}/>
-            </div>
-
-            <button type="button" className="btn btn-ghost" style={{width:'100%', justifyContent:'center', height:42, fontSize:13}}>
-              🌐 Connexion avec Google
-            </button>
-
             <p style={{fontSize:12, color:'var(--ink-500)', marginTop:30, textAlign:'center'}}>
-              Première fois ? <span style={{color:'var(--brand-500)', fontWeight:600, cursor:'pointer'}}>Demande une invitation à ta franchisée</span>
+              Première fois ? Demande une invitation à ton ou ta franchisé (e)
             </p>
           </form>
         ) : (
