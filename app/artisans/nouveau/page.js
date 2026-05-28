@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 
 export default function NouvelArtisan() {
   const [profile, setProfile] = useState(null)
+  const [effectiveAgenceId, setEffectiveAgenceId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [erreur, setErreur] = useState('')
   const [form, setForm] = useState({
@@ -32,6 +33,15 @@ export default function NouvelArtisan() {
       if (!user) { router.push('/login'); return }
       const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       setProfile(profData)
+
+      // D18 : artisan = agence du créateur. Agente → son agence. Admin → unique agence société (mono-agence).
+      if (profData?.role === 'agente') {
+        setEffectiveAgenceId(profData.agence_id)
+      } else if (profData?.societe_id) {
+        const { data: ag } = await supabase
+          .from('agences').select('id').eq('societe_id', profData.societe_id).limit(1).single()
+        setEffectiveAgenceId(ag?.id ?? null)
+      }
     }
     init()
   }, [router])
@@ -45,6 +55,12 @@ export default function NouvelArtisan() {
     }
     setSaving(true)
     setErreur('')
+
+    if (!effectiveAgenceId) {
+      setErreur('Agence non déterminée — recharge la page.')
+      setSaving(false)
+      return
+    }
 
     // Créer l'artisan — un partenaire est toujours en paiement direct.
     const partenaire = form.partenaire
@@ -63,6 +79,7 @@ export default function NouvelArtisan() {
         decennale_expiration: form.decennale_expiration || null,
         paiement_direct: paiementDirect,
         partenaire,
+        agence_id: effectiveAgenceId,
       })
       .select()
       .single()

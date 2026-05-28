@@ -36,6 +36,15 @@ export async function POST(request) {
 
     const userId = inviteData.user.id
 
+    // D18 : nouvelle agente rattachée à la société de l'admin + son unique agence (mono-agence).
+    // L15 ajoutera un sélecteur d'agence quand multi-agences sera ouvert.
+    const { data: agence } = await supabaseAdmin
+      .from('agences').select('id').eq('societe_id', auth.profile.societe_id).limit(1).single()
+    if (!agence?.id) {
+      await supabaseAdmin.auth.admin.deleteUser(userId)
+      return NextResponse.json({ error: 'Aucune agence trouvée pour la société de l\'admin' }, { status: 500 })
+    }
+
     // 2. Créer le profil dans profiles
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
@@ -46,6 +55,8 @@ export async function POST(request) {
         email,
         telephone: telephone || null,
         role: 'agente',
+        societe_id: auth.profile.societe_id,
+        agence_id: agence.id,
         part_agente_defaut: part_agente_defaut || 0.5,
         frais_part_agente_defaut: frais_part_agente_defaut || 0.5,
         parts_agente_disponibles: parts_agente_disponibles || null,

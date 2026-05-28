@@ -79,6 +79,13 @@ function NouveauChantierForm() {
     setLoading(true)
     setErreur('')
 
+    // D18 : le dossier hérite de l'agence de son client.
+    if (!client?.agence_id) {
+      setErreur('Agence du client introuvable — recharge la page.')
+      setLoading(false)
+      return
+    }
+
     try {
       const reference = await genererReference(form.typologie)
 
@@ -86,6 +93,7 @@ function NouveauChantierForm() {
         reference,
         client_id: clientId,
         referente_id: client?.referente_id || profile?.id,
+        agence_id: client.agence_id,
         typologie: form.typologie,
         statut: 'a_contacter',
         frais_consultation: form.frais_consultation ? parseFloat(form.frais_consultation) : null,
