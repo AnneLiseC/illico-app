@@ -1,7 +1,7 @@
 # 07 — SPRINT MULTI-TENANT BATILIS
 
 > Boussole du sprint. Lue par Claude (binôme) et Claude Code à chaque session.
-> Créé le 28/05/2026. Statut : **AUDITS EN COURS** (audit 1 ✅, audit 2 ✅, audit 3 à faire).
+> Créé le 28/05/2026. Statut : **PLAN PRÊT** (audits 1/2/3 ✅, plan d'exécution 6 phases ✅). Prochaine étape : exécution Phase 1.
 
 ---
 
@@ -39,22 +39,24 @@ Société  →  Agence(s)  →  Utilisateurs
 - **Anne-Lise (dev)** : AUCUN rôle applicatif privilégié. Pas de super-admin dans l'UI. Accès INFRASTRUCTURE uniquement (propriétaire projet Supabase → SQL/logs pour débug), encadré par déontologie + clause confidentialité CGU (à terme). Emprunte le compte Marine (avec accord) pour la vue admin. Argument commercial : « dans l'app, je ne vois que ma franchise ».
 
 ### 1.4 Cloisonnement des données
-- **Tables racines portent `agence_id` en propre** : `dossiers`, `clients`, `artisans`, `profiles`.
+- **Tables racines portent `agence_id` en propre** : `dossiers`, `clients`, `artisans`.
+- **`profiles`** porte `societe_id` (pour admin) ET `agence_id` (rempli pour agent, **NULL pour admin** cf D14).
 - **`agences.societe_id`** (l'agence appartient à une société).
 - **Tables filles héritent l'agence par JOIN** (pas de dénormalisation) :
   - via `dossier_id` → `dossiers.agence_id` : `devis_artisans`, `factures_artisans`, `photos`, `rendez_vous`, `comptes_rendus`, `suivi_financier`, `interventions_artisans`, `chantier_documents`, `chantier_fiches_techniques`, `messages`.
   - via `agente_id` → `profiles.agence_id` : `factures_agente`, `redevances`, `objectifs_ca`.
-  - via `artisan_id` → `artisans.agence_id` : `fiches_techniques`, `artisans_specialites` (à confirmer audit 3).
-  - via `user_id` → `profiles.agence_id` : `notifications`, `google_tokens`.
+  - via `artisan_id` → `artisans.agence_id` : `fiches_techniques`, `artisans_specialites`.
+  - via `user_id` → `profiles` : `notifications`, `google_tokens` (cloisonnement par user, pas par agence — cf. Cas 5).
 
 ### 1.5 Branding — distinction clé
 - **PRODUIT = BATILIS** : navbar, login, titre, métadonnées → BATILIS partout.
 - **Contenu COMMUN réseau illiCO** (semi-fixe, NON configurable) :
   - Slogan « Quand vous pensez travaux, pensez illiCO ! » (identique toutes agences).
   - Marque « illiCO travaux » dans PDF/emails clients, header espace-client, « Équipe illiCO ».
-- **Coordonnées DYNAMIQUES par agence** (table `agences`, fin du hardcode CLAUDE.md §3) :
-  - nom agence, nom responsable (ex « Marine MICHELANGELI »), email, logo, raison sociale société, SIRET, ville.
-  - Les valeurs actuelles de Marine deviennent la config de SON agence.
+- **Coordonnées DYNAMIQUES** (fin du hardcode CLAUDE.md §3) :
+  - portées par `societes` : raison sociale, SIRET.
+  - portées par `agences` : nom agence, ville, nom responsable (ex « Marine MICHELANGELI »), email, logo, adresse, téléphone.
+  - Les valeurs actuelles de Marine (en dur dans `parametres/page.js:276-283` + `restitution.js:39`) deviennent la config de SA société/agence.
 - **Login** : placeholder `nom.prenom@illico-travaux.com` conservé (tous les users sont illiCO).
 
 ### 1.6 Navbar
@@ -78,15 +80,17 @@ Société  →  Agence(s)  →  Utilisateurs
 4. Une fois connecté, il ajoute ses **autres agences**.
 5. Puis il ajoute ses **agentes**, chacune rattachée à une agence précise (formulaire « + nouvelle agente » avec sélecteur d'agence si plusieurs ; `/api/create-agente` à adapter pour la notion d'agence).
 
-Mécanisme : réutilise `inviteUserByEmail` (déjà en place pour les agentes), étendu pour créer une société. Résout en même temps le fix #1 (page set-password). Un seul flow d'invitation, réutilisé pour franchisé ET agentes.
+Mécanisme : réutilise `inviteUserByEmail` (déjà en place pour les agentes), étendu pour créer une société.
+
+⚠️ **Découpage test vs post-test** : pour le TEST, seul le **fix #1 reconnexion après invitation** (page set-password, lot L14a) est dans le périmètre — Anne-Lise prépare le compte du franchisé testeur en amont. Le **self-service complet** (création société + ajout agence + sélecteur agente, lot L14b) est **reporté post-test**. Cf. plan §5.3/5.4.
 
 ### 1.10 Référence de chantier — séquence par agence
 Aujourd'hui : référence générée séquentiellement AU GLOBAL sur l'année (`chantiers/nouveau/page.js:56-74`, format `AAAA-CT-NNN`). En multi-agences, deux agences génèreraient des numéros qui se télescopent. → La séquence doit devenir **par agence** (probablement avec préfixe d'agence). Changement fonctionnel réel.
 
 ### 1.11 Storage (fichiers) — cloisonnement
 Fichiers rangés `chantiers/{dossier_id}/...` dans buckets `documents` et `photos`. Policies Storage NON versionnées (dette).
-- À trancher (audit 3) : préfixer par agence (`{agence_id}/chantiers/...`) ou `dossier_id` suffit-il ?
-- **CRITIQUE** : les policies Storage doivent cloisonner par agence. Sinon une agente accède aux fichiers d'une autre agence par URL directe, même avec RLS tables correcte. La sécurité données ne vaut rien si les fichiers fuient.
+- **Décision D13** : préfixage par agence + policies cloisonnées + migration → **REPORTÉ post-test** (lot L12, Phase 6), AVANT ouverture multi-franchise réelle.
+- Risque résiduel pour le test : un `dossier_id` peut fuiter par copie d'URL depuis un autre compte. En test contrôlé à 1 agence, risque théorique assumé. **Dette sécurité prioritaire** dès la fin du test.
 
 ### 1.12 Pour le test — modules NEUTRALISÉS (« bientôt disponible »)
 - **Comptes-rendus**, **Messagerie**, **Statistiques**.
@@ -119,7 +123,7 @@ Fichiers rangés `chantiers/{dossier_id}/...` dans buckets `documents` et `photo
 
 ## 3. SYNTHÈSE AUDIT 2 — DONNÉES & SÉCURITÉ (✅ fait, vérifié en base)
 
-### 3.1 Tables réelles : 23 (confirmé `information_schema`)
+### 3.1 Tables réelles : 23 (confirmé `information_schema`) — dont 1 backup à dropper (22 tables métier)
 artisans, artisans_specialites, chantier_documents, chantier_fiches_techniques, clients, comptes_rendus, devis_artisans, dossiers, factures_agente, **factures_agente_backup_b7b** (backup à dropper), factures_artisans, fiches_techniques, google_tokens, interventions_artisans, messages, notifications, objectifs_ca, photos, profiles, redevances, rendez_vous, specialites, suivi_financier.
 - `artisan_documents` et `apporteurs` **n'existent PAS** (apporteur géré par colonnes sur `dossiers` : `apporteur_actif`).
 
@@ -170,47 +174,77 @@ id, nom, prenom, email, role, created_at, client_id, telephone, part_agente_defa
 - D10. Login Google supprimé.
 - D11. Onboarding : lien d'invitation nommé (par email) envoyé par Anne-Lise + validation `@illico-travaux.com`. Le franchisé crée société+1ère agence+mot de passe via le lien, puis ajoute agences et agentes (rattachées à une agence). Réutilise `inviteUserByEmail` + résout fix #1.
 - D12. Référence chantier → séquence par agence (préfixe agence).
-- D13. Storage cloisonné par agence (policies à versionner) — sécurité critique.
+- D13. Storage cloisonné par agence (policies à versionner) — sécurité critique. **REPORTÉ post-test** (dette sécurité prioritaire, AVANT ouverture multi-franchise réelle). Risque assumé pour le test contrôlé : un `dossier_id` pourrait fuiter par copie d'URL, mais en test à 1 agence le risque est théorique.
+- D14. `profiles.agence_id` = NULL pour admin (rattaché société via `societe_id`), rempli pour agent. L'admin a SES PROPRES dossiers sur toutes ses agences. À la création d'un dossier/client : `agence_id` déduit de `profiles.agence_id` pour un agent ; **choisi** par l'admin (trivial/auto si 1 seule agence). → `profiles.agence_id` NOT NULL impossible globalement (NULL pour admin).
+- D15. Profils `client` portent `agence_id` = l'agence de l'agent/admin qui les a créés.
+- D16. Phase 3 (bascule RLS) : tout dans UNE seule session, ordre fondations → racines → filles → transverses. Test à la fin de chaque paquet (L5a/b/c), mais PAS d'arrêt sur plusieurs jours entre les paquets (sinon fenêtre d'incohérence dossiers/filles).
+- D17. Patch trigger `redevances_montant_protege` : ajouter `NEW.agence_id := OLD.agence_id;` (CREATE OR REPLACE, garder SECURITY DEFINER + search_path). À inclure dans L5a, sinon l'agente pourrait réaffecter sa redevance à une autre agence.
 
 ---
 
-## 5. TÂCHES PRIORISÉES — À COMPLÉTER APRÈS AUDIT 3
+## 5. PLAN D'EXÉCUTION (issu de l'audit 3)
 
-> L'audit 3 (ampleur/chiffrage) remplira le détail. Structure provisoire ci-dessous.
+> Plan issu de l'audit 3 (v2, ancré sur ce doc). Lots L1-L21. Effort : S≈½j, M≈1j, L≈2j, XL≈3-5j.
 
-### 🔴 BLOQUANT TEST (incompressible)
-- [ ] Tables `societes` + `agences` (avec `societe_id`).
-- [ ] `agence_id`/`societe_id` sur `profiles` + `agence_id` sur racines (dossiers, clients, artisans).
-- [ ] Migration données existantes → société CTP + agence Martigues (rattacher tout).
-- [ ] Refonte RLS double cloisonnement (admin société / agent agence) — TOUTES tables, pattern unifié.
-- [ ] **Storage : policies cloisonnées par agence** (sécurité critique — fichiers ne doivent pas fuir par URL directe). Versionner les policies.
-- [ ] Fix #1 reconnexion après invitation (route set-password) — prérequis onboarding.
-- [ ] Fix #2 création chantier sans client.
-- [ ] Cloisonnement P0-9-bis (7 tables opérationnelles) intégré à la refonte RLS.
-- [ ] **Référence chantier séquentielle PAR AGENCE** (sinon télescopage des numéros entre agences).
-- [ ] **Onboarding** (cf. 1.9 — décision verrouillée) : flow d'invitation nommé par email + validation `@illico-travaux.com` (PAS de page d'inscription publique). Via le lien : création société + 1ère agence + mot de passe. Puis dans Paramètres : ajout d'autres agences + ajout agentes avec sélecteur d'agence. Adapter `/api/create-agente` (notion d'agence) + étendre `inviteUserByEmail` pour créer une société.
-- [ ] Rebranding BATILIS (~50 occurrences / 17 fichiers). Gros des occurrences client = `api/pdf/restitution.js` (13) + `api/pdf/route.js` (10) — y inclure le fallback « Marine MICHELANGELI » en dur (`restitution.js:39`) → dynamique via agence. NE PAS toucher : clés base (`statut_illico`, `date_reglement_illico`, `acomptes_illico`) + tags Google Calendar (`[illico-int:]`, `[illico-rdv:]`).
-- [ ] Neutralisation propre CR / Messages / Statistiques.
-- [ ] Durcir `get_my_role()` (retirer anon/public) + futures fonctions tenant. ⚠️ le trigger `redevances_montant_protege` dépend de `get_my_role()` (dépendance plpgsql invisible — cf. piège DROP montant_ttc). Vérifier avant tout changement.
+### 5.1 Schéma des nouvelles tables (audit 3 §A.1)
+**`societes`** (minimal, D7) : `id` uuid PK · `raison_sociale` text NOT NULL · `siret` text (UNIQUE partiel) · `rcs` text · `created_at`/`updated_at` timestamptz.
+**`agences`** : `id` uuid PK · `societe_id` uuid NOT NULL FK→societes RESTRICT · `nom` text NOT NULL · `ville` text NOT NULL · `code` text NOT NULL (préfixe réf chantier, UNIQUE par société) · `responsable_nom` text (PAS de FK, évite circularité) · `email` · `logo_path` · `adresse` · `telephone` · `created_at`/`updated_at`.
+**Colonnes ajoutées** : `profiles.societe_id` (FK RESTRICT) + `profiles.agence_id` (FK RESTRICT, NULL pour admin cf D14) ; `dossiers.agence_id` + `clients.agence_id` + `artisans.agence_id` (FK RESTRICT, NOT NULL cible).
+Seed : société CTP (SIRET 948 096 888) + agence Martigues (code `MTG`, responsable « Marine MICHELANGELI », tel/adresse depuis `parametres/page.js:276-283`).
 
-### 🔴/🟠 À ARBITRER
-- [ ] **#8 dashboard admin ne voit que ses propres dossiers** : si le testeur a des agents → 🔴 (mauvaise 1ère impression au login). S'il teste seul d'abord → 🟠. **À décider selon le scénario du test.**
+### 5.2 Pattern RLS unifié (audit 3 §B.1)
+Une policy `<table>_scope` par table, `FOR ALL TO authenticated`, enveloppant `(SELECT auth.uid())`/`(SELECT get_my_role())` (résout `auth_rls_initplan`). Branches : admin (`agence_id IN agences de get_my_societe_id()`) · agent (`referente_id = uid AND agence_id = get_my_agence_id()`) · client (préservé). Helpers `get_my_societe_id()`/`get_my_agence_id()` SECURITY DEFINER + REVOKE anon/public (+ même REVOKE sur `get_my_role()`).
+6 cas : (1) racine `agence_id` · (2) fille via `dossier_id` EXISTS dossiers · (2-bis) rendez_vous nullable · (3) via `agente_id` · (4) via `artisan_id` · (5) notifications/google_tokens par user · (6) societes/agences.
 
-### 🟠 IMPORTANT (impression / robustesse)
-- [ ] **Durcissements sécurité annexes** (avant ouverture externe) : `notifications` INSERT `WITH CHECK (true)` à resserrer ; bucket Storage `photos` sans policy UPDATE (même bug que `factures_agente` corrigé récemment) ; protection « mots de passe compromis » désactivée dans Supabase Auth.
-- [ ] Bug ajout intervention (signalé, dans Doc 5).
-- [ ] Bug molette sur quasi toutes les entrées de nombres (décision archi : composant `NumberInput` / hook global / fix local).
-- [ ] Infos agence en dur → table agences (#16, #29).
-- [ ] Route `/clients/[id]/modifier` 404 (#5).
+### 5.3 PLAN D'EXÉCUTION — 6 phases (audit 3 §D.2, ordre sûr)
 
-### 🟢 PEUT ATTENDRE (post-test)
-- [ ] Barres de progression grises (alimenter `avancement`).
-- [ ] Bug statut devis refusé → « à modifier ».
-- [ ] Optim perf RLS (dénormalisation ou claim JWT).
-- [ ] Vue agente du suivi financier, KPI « Net à virer », colonne « Marine » en dur, détails facturation par chantier/apporteur.
-- [ ] Renommage `isMarine`/`estChantierMarine`. Formulaire devis inline mort. Audit `lib/finance.js`.
-- [ ] Sujet CR-PDF (table sans colonne PDF, code `l.1334` latent).
-- [ ] Drop `factures_agente_backup_b7b`. Source unique libellé suppression chantier.
+**Méthode test (rappel) : code applicatif → branche/preview/merge ; SQL/RLS → fichier `docs/sql/` avec rollback écrit → application main en fenêtre creuse → contrôle AVANT/requête/APRÈS → rollback si KO.**
+
+**PHASE 1 — Préparatoires indépendants (2-3j, sans risque base)**
+- [ ] L9 Rebranding BATILIS (~50 occ/17 fichiers ; NE PAS toucher `statut_illico`/`date_reglement_illico`/`acomptes_illico` + tags Google `[illico-int:]`/`[illico-rdv:]`).
+- [ ] L11 Neutralisation CR / Messagerie / Statistiques (placeholder « Bientôt disponible »).
+- [ ] L13 Suppression bouton Google login + fix #2 création chantier sans client.
+- [ ] L17 Durcissements sécu annexes (leaked password Auth + policy Storage `photos` UPDATE). ⚠️ Vérifier d'abord en base que le bucket `photos` manque bien sa policy UPDATE (hypothèse audit 2 non confirmée) avant d'ajouter une policy inutile.
+- *État sûr fin P1 : app BATILIS-brandée, modules sensibles neutralisés, pas encore de multi-tenant.*
+
+**PHASE 2 — Schéma & data (½-1j, fenêtre maintenance courte)** — `docs/sql/MT1_*` + `MT2_helpers.sql`
+- [ ] L1 CREATE `societes` + `agences` (RLS activée, fermée par défaut).
+- [ ] L2 Seeding CTP+Martigues + ALTER ADD COLUMN nullable (profiles ×2, dossiers, clients, artisans).
+- [ ] L3 Backfill (profiles societe_id + agence_id si agent ; dossiers/clients/artisans) → contrôle « 0 ligne sans agence_id » → SET NOT NULL (sauf `profiles.agence_id` qui reste nullable pour admin, D14).
+- [ ] L4 Helpers `get_my_societe_id`/`get_my_agence_id` + REVOKE anon/public sur les 3 helpers.
+- *État sûr fin P2 : colonnes remplies, RLS pas encore basculée → Marine voit comme avant. Vérifier 0 insertion échouée pendant la fenêtre.*
+
+**PHASE 3 — Bascule RLS (2-3j +1j tampon, CRITIQUE, UNE session, ordre strict D16)** — `docs/sql/MT3a/b/c`
+Ordre intra-phase : **fondations (societes, agences, profiles) → racines (dossiers, clients, artisans) → filles → transverses.**
+- [ ] L5a [fondations + racines + finances] societes/agences/profiles puis dossiers/clients/artisans puis devis_artisans/factures_artisans/suivi_financier/factures_agente/redevances. **+ patch trigger `redevances_montant_protege` (D17).** Test : Marine admin voit tout, Anne-Lise agente voit ses dossiers, KPI finances inchangés au centime.
+- [ ] L5b [opérationnelles P0-9-bis] rendez_vous, interventions_artisans, photos, comptes_rendus, chantier_documents, chantier_fiches_techniques. Test : cloisonnement croisé en base.
+- [ ] L5c [reste + transverses] messages (5 policies P0-2), objectifs_ca, notifications (INSERT resserré), fiches_techniques, specialites, artisans_specialites, google_tokens. Test.
+- [ ] L8 Référence chantier par agence (D12, préfixe `code` agence, atomicité concurrence).
+- *État sûr fin P3 : multi-tenant cloisonné, prouvé par « Marine voit les siens / Anne-Lise les siens » croisé en base.*
+
+**PHASE 4 — Adaptation applicative légère (1-2j)**
+- [ ] L6 AuthProvider + requireUser élargis (charger `agence_id`/`societe_id`).
+- [ ] L7 Navbar mono-agence (header BATILIS + nom agence depuis table).
+- [ ] L10 Info agence dynamique (parametres + PDFs `route.js`/`restitution.js` dont fallback « Marine MICHELANGELI » l.39 + cron relances).
+- *État sûr fin P4 : prêt pour test utilisateur (mono-agence).*
+
+**PHASE 5 — Fix invitation (1-2j, BLOQUANT minimal)**
+- [ ] L14a Fix #1 reconnexion : route `/auth/set-password` + `redirectTo` + `updateUser({password})`. Test : inviter, recevoir mail, définir mdp, déconnexion, reconnexion OK.
+- *État sûr fin P5 : un nouvel utilisateur peut s'authentifier durablement. PRÊT POUR LE TEST.*
+
+### 5.4 REPORTABLE POST-TEST (Phase 6)
+- [ ] L12 Storage cloisonné par agence + migration fichiers + policies versionnées (**dette sécu prioritaire, AVANT ouverture multi-franchise réelle**, D13).
+- [ ] L14b Reste onboarding : flow création société + ajout 2e agence + sélecteur agence dans `/api/create-agente`.
+- [ ] L15 Navbar bi-zone + sélecteur multi-agences.
+- [ ] L16 Facturation scopée/consolidée multi-agences.
+- [ ] L18 Bug ajout intervention · L19 Bug molette nombres · L20 Route `/clients/[id]/modifier` 404 · L21 DROP `factures_agente_backup_b7b`.
+- [ ] Optim perf RLS (wrapping fait en L5 ; dénormalisation/claim JWT si besoin).
+- [ ] #8 dashboard admin scope (à arbitrer selon scénario testeur).
+
+### 5.5 VERDICT DÉLAI
+- **2 semaines** : tendu, faisable SI Phase 6 strictement reportée ET L5a sans régression. Pas de marge. (Le report de L12 hors fenêtre — D13 — est le levier qui rend ça respirable.)
+- **3 semaines** : confortable, absorbe une régression L5a + permet 1 lot de Phase 6.
+- **Risque #1 = L5a** (RLS finances + trigger). Mitigation : fichier SQL unique avec rollback complet + smoke test (« Marine voit X dossiers, somme F1 inchangée »).
 
 ---
 
@@ -218,10 +252,11 @@ id, nom, prenom, email, role, created_at, client_id, telephone, part_agente_defa
 
 | Date | Étape | Statut |
 |---|---|---|
-| 28/05 | Cadrage modèle cible | ✅ verrouillé |
+| 28/05 | Cadrage modèle cible (D1-D17) | ✅ verrouillé |
 | 28/05 | Audit 1 (fonctionnel) | ✅ |
 | 28/05 | Audit 2 (données & sécurité) | ✅ vérifié en base |
-| — | Audit 3 (ampleur/chiffrage) | ⏳ à faire |
-| — | Plan séquencé + exécution | ⏳ |
+| 28/05 | Audit 3 (ampleur/chiffrage/séquençage) | ✅ |
+| 28/05 | Plan d'exécution 6 phases (L1-L21) | ✅ |
+| — | Exécution Phase 1 | ⏳ prochaine action |
 
-**Prochaine action** : lancer l'audit 3 (recensement exhaustif des changements + chiffrage + plan de séquençage sans casser la prod ni ouvrir de faille temporaire).
+**Prochaine action** : démarrer la Phase 1 (préparatoires indépendants, sans risque base) — L9 rebranding BATILIS, L11 neutralisation CR/Msg/Stats, L13 Google login + fix #2, L17 durcissements annexes. Un lot à la fois, prompt Claude Code, audit/plan avant code, test, merge.
