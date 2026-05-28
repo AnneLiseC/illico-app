@@ -24,7 +24,7 @@
 ```
 Société  →  Agence(s)  →  Utilisateurs
 ```
-- **Société** : entité juridique (raison sociale, SIRET). Ex : CONSEIL TRAVAUX PROVENCE (CTP), SIRET 948 096 888.
+- **Société** : entité juridique (nom société, SIREN/SIRET). Ex : CONSEIL TRAVAUX PROVENCE (CTP), SIREN 948 096 888 (9 chiffres, pas un SIRET 14 ch.).
 - **Agence** : le point de vente / la franchise locale. Ex : « Agence de Martigues » (illiCO travaux Martigues).
 - **Une société peut détenir PLUSIEURS agences** (cas réel : franchisé d'Aix-en-Provence possède Aix + Pennes-Mirabeau).
 
@@ -54,7 +54,7 @@ Société  →  Agence(s)  →  Utilisateurs
   - Slogan « Quand vous pensez travaux, pensez illiCO ! » (identique toutes agences).
   - Marque « illiCO travaux » dans PDF/emails clients, header espace-client, « Équipe illiCO ».
 - **Coordonnées DYNAMIQUES** (fin du hardcode CLAUDE.md §3) :
-  - portées par `societes` : raison sociale, SIRET.
+  - portées par `societes` : `nom_societe`, SIREN ou SIRET (colonne `siret` text).
   - portées par `agences` : nom agence, ville, nom responsable (ex « Marine MICHELANGELI »), email, logo, adresse, téléphone.
   - Les valeurs actuelles de Marine (en dur dans `parametres/page.js:276-283` + `restitution.js:39`) deviennent la config de SA société/agence.
 - **Login** : placeholder `nom.prenom@illico-travaux.com` conservé (tous les users sont illiCO).
@@ -173,7 +173,7 @@ id, nom, prenom, email, role, created_at, client_id, telephone, part_agente_defa
 - D9. Refonte RLS complète et unifiée (un seul pattern).
 - D10. Login Google supprimé.
 - D11. Onboarding : lien d'invitation nommé (par email) envoyé par Anne-Lise + validation `@illico-travaux.com`. Le franchisé crée société+1ère agence+mot de passe via le lien, puis ajoute agences et agentes (rattachées à une agence). Réutilise `inviteUserByEmail` + résout fix #1.
-- D12. Référence chantier → séquence par agence (préfixe agence).
+- D12. Référence chantier : la chaîne stockée reste `AAAA-XX-NNN` lisible (X X = suffixe typologie auto : `CT`=courtage / `AM`=AMO / `ES`=estimo, généré depuis `dossiers.typologie`). Cloisonnement par `UNIQUE (agence_id, reference)` + séquence NNN comptée **par agence**. Le `code` agence est un identifiant **interne** (colonne `agences.code`) qui n'apparaît PAS dans la référence affichée au client (UX propre, pas de préfixe parasite sur les PDFs). À la création de futures agences (L14b), le code se génère auto à partir des 3 premières lettres de la ville (ex. Martigues→`MAR`/`MTG`) avec incrément en cas de collision dans la même société (`MA1`, `MA2`...).
 - D13. Storage cloisonné par agence (policies à versionner) — sécurité critique. **REPORTÉ post-test** (dette sécurité prioritaire, AVANT ouverture multi-franchise réelle). Risque assumé pour le test contrôlé : un `dossier_id` pourrait fuiter par copie d'URL, mais en test à 1 agence le risque est théorique.
 - D14. `profiles.agence_id` = NULL pour admin (rattaché société via `societe_id`), rempli pour agent. L'admin a SES PROPRES dossiers sur toutes ses agences. À la création d'un dossier/client : `agence_id` déduit de `profiles.agence_id` pour un agent ; **choisi** par l'admin (trivial/auto si 1 seule agence). → `profiles.agence_id` NOT NULL impossible globalement (NULL pour admin).
 - D15. Profils `client` portent `agence_id` = l'agence de l'agent/admin qui les a créés.
@@ -187,10 +187,10 @@ id, nom, prenom, email, role, created_at, client_id, telephone, part_agente_defa
 > Plan issu de l'audit 3 (v2, ancré sur ce doc). Lots L1-L21. Effort : S≈½j, M≈1j, L≈2j, XL≈3-5j.
 
 ### 5.1 Schéma des nouvelles tables (audit 3 §A.1)
-**`societes`** (minimal, D7) : `id` uuid PK · `raison_sociale` text NOT NULL · `siret` text (UNIQUE partiel) · `rcs` text · `created_at`/`updated_at` timestamptz.
-**`agences`** : `id` uuid PK · `societe_id` uuid NOT NULL FK→societes RESTRICT · `nom` text NOT NULL · `ville` text NOT NULL · `code` text NOT NULL (préfixe réf chantier, UNIQUE par société) · `responsable_nom` text (PAS de FK, évite circularité) · `email` · `logo_path` · `adresse` · `telephone` · `created_at`/`updated_at`.
+**`societes`** (minimal, D7) : `id` uuid PK · `nom_societe` text NOT NULL · `siret` text (stocke un SIREN 9 ch. ou SIRET 14 ch., UNIQUE partiel quand renseigné) · `rcs` text · `created_at`/`updated_at` timestamptz.
+**`agences`** : `id` uuid PK · `societe_id` uuid NOT NULL FK→societes RESTRICT · `nom` text NOT NULL · `ville` text NOT NULL · `code` text NOT NULL (identifiant **interne** d'agence, UNIQUE par société — sert au cloisonnement de séquence et à des regroupements internes ; PAS affiché dans la référence chantier client, cf D12) · `responsable_nom` text (PAS de FK, évite circularité) · `email` · `logo_path` · `adresse` · `telephone` · `created_at`/`updated_at`.
 **Colonnes ajoutées** : `profiles.societe_id` (FK RESTRICT) + `profiles.agence_id` (FK RESTRICT, NULL pour admin cf D14) ; `dossiers.agence_id` + `clients.agence_id` + `artisans.agence_id` (FK RESTRICT, NOT NULL cible).
-Seed : société CTP (SIRET 948 096 888) + agence Martigues (code `MTG`, responsable « Marine MICHELANGELI », tel/adresse depuis `parametres/page.js:276-283`).
+Seed initial (MT2) : société CTP (SIREN 9 ch. `948096888` stocké en text dans `siret`), `nom_societe = 'CONSEIL TRAVAUX PROVENCE'` ; agence Martigues : `nom = 'illiCO travaux Martigues'`, `ville = 'Martigues'`, `code = 'MTG'`, `responsable_nom = 'Marine MICHELANGELI'`, coordonnées (email/adresse/téléphone) laissées NULL (à remplir en L10 dynamisation info agence).
 
 ### 5.2 Pattern RLS unifié (audit 3 §B.1)
 Une policy `<table>_scope` par table, `FOR ALL TO authenticated`, enveloppant `(SELECT auth.uid())`/`(SELECT get_my_role())` (résout `auth_rls_initplan`). Branches : admin (`agence_id IN agences de get_my_societe_id()`) · agent (`referente_id = uid AND agence_id = get_my_agence_id()`) · client (préservé). Helpers `get_my_societe_id()`/`get_my_agence_id()` SECURITY DEFINER + REVOKE anon/public (+ même REVOKE sur `get_my_role()`).
@@ -219,7 +219,7 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 - [ ] L5a [fondations + racines + finances] societes/agences/profiles puis dossiers/clients/artisans puis devis_artisans/factures_artisans/suivi_financier/factures_agente/redevances. **+ patch trigger `redevances_montant_protege` (D17).** Test : Marine admin voit tout, Anne-Lise agente voit ses dossiers, KPI finances inchangés au centime.
 - [ ] L5b [opérationnelles P0-9-bis] rendez_vous, interventions_artisans, photos, comptes_rendus, chantier_documents, chantier_fiches_techniques. Test : cloisonnement croisé en base.
 - [ ] L5c [reste + transverses] messages (5 policies P0-2), objectifs_ca, notifications (INSERT resserré), fiches_techniques, specialites, artisans_specialites, google_tokens. Test.
-- [ ] L8 Référence chantier par agence (D12, préfixe `code` agence, atomicité concurrence).
+- [ ] L8 Référence chantier par agence (D12) : ajouter `UNIQUE (agence_id, reference)` sur `dossiers` ; refondre la génération dans `chantiers/nouveau/page.js` (et tout endroit similaire) pour que la séquence NNN soit **comptée par agence** (`WHERE agence_id = ?`), pas globalement. Garder le format affiché `AAAA-XX-NNN` (X X = suffixe typologie auto, déjà géré). Atomicité : utiliser `SELECT FOR UPDATE` ou contrainte UNIQUE + retry pour gérer la concurrence. ⚠️ Vérifier en lecture d'abord comment les suffixes `CT`/`AM`/`ES` sont générés aujourd'hui (mapping `typologie`→suffixe), pour préserver la logique.
 - *État sûr fin P3 : multi-tenant cloisonné, prouvé par « Marine voit les siens / Anne-Lise les siens » croisé en base.*
 
 **PHASE 4 — Adaptation applicative légère (1-2j)**
@@ -235,7 +235,7 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 ### 5.4 REPORTABLE POST-TEST (Phase 6)
 - [ ] **Réactiver Messagerie + Statistiques** : code complet conservé à `3dbd6f1` (neutralisés en L11). À restaurer et adapter au multi-tenant (RLS agence sur messages, scope agence sur stats).
 - [ ] L12 Storage cloisonné par agence + migration fichiers + policies versionnées (**dette sécu prioritaire, AVANT ouverture multi-franchise réelle**, D13).
-- [ ] L14b Reste onboarding : flow création société + ajout 2e agence + sélecteur agence dans `/api/create-agente`.
+- [ ] L14b Reste onboarding : flow création société + ajout 2e agence + sélecteur agence dans `/api/create-agente`. À la création d'une agence : **génération auto du `code`** depuis les 3 premières lettres de la ville en majuscules (ex. Martigues→`MAR`) ; en cas de collision avec une agence existante de la même société (contrainte `UNIQUE (societe_id, code)`), incrémenter `MA1`, `MA2`... Le code n'est PAS demandé au franchisé (transparent côté UX), sauf cas extrême où on lui ferait valider la suggestion en cas d'ambiguïté.
 - [ ] L15 Navbar bi-zone + sélecteur multi-agences.
 - [ ] L16 Facturation scopée/consolidée multi-agences.
 - [ ] L18 Bug ajout intervention · L19 Bug molette nombres · L20 Route `/clients/[id]/modifier` 404 · L21 DROP `factures_agente_backup_b7b`.
@@ -264,6 +264,10 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 | 28/05 | **L11 Neutralisation Msg + Stats** | ✅ mergé `f12420a` |
 | 28/05 | **L17 Durcissements (vérifiés/dégonflés)** | ✅ traité |
 | 28/05 | **PHASE 1 COMPLÈTE** | ✅✅ |
-| — | Phase 2 : schéma multi-tenant (L1-L4) | ⏳ prochaine action |
+| 28/05 | Phase 2 — SQL versionnés `docs/sql/MT1-MT4` (commit `f905c2b`) | ✅ |
+| 28/05 | **L1 — MT1 tables societes/agences créées + RLS fermée** | ✅ appliqué main |
+| — | L2 — MT2 seed CTP+Martigues + colonnes nullable | ⏳ en cours |
+| — | L3 — MT3 backfill + NOT NULL | ⏳ |
+| — | L4 — MT4 helpers + REVOKE | ⏳ |
 
-**Prochaine action** : démarrer la **Phase 2 — schéma & data** (le vrai début du dur, première intervention en base). L1 : créer tables `societes` + `agences`. Protocole SQL strict : fichier `docs/sql/`, contrôle AVANT, application MAIN dans Supabase (jamais MCP), contrôle APRÈS, rollback écrit. Pattern expand→backfill→contract sur L1-L4.
+**Prochaine action** : appliquer MT2 (Lot L2) — seeding CTP+Martigues + ajout colonnes `societe_id`/`agence_id` nullable sur profiles/dossiers/clients/artisans. Protocole : CONTRÔLE AVANT → APPLICATION → CONTRÔLE APRÈS, validé pas à pas avec Claude.
