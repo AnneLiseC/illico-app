@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { calculateDossierFinance, calculateDevisFinance } from '../lib/finance'
 import { KpiCard, Progress } from '../components/shared'
+import ModaleChoixClient from '../components/ModaleChoixClient'
 
 /* ── Icônes KPI ── */
 
@@ -148,6 +149,7 @@ export default function Dashboard() {
   const [objectifs,    setObjectifs]    = useState([])
   const [rdvAujourdhui, setRdvAujourdhui] = useState([])
   const [loading,      setLoading]      = useState(true)
+  const [modaleClient, setModaleClient] = useState(false)
   const router = useRouter()
   const { user, profile, initialized, fetchProfile } = useAuth()
   const retriedRef = useRef(false)
@@ -288,7 +290,7 @@ export default function Dashboard() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-ghost" onClick={() => router.push('/chantiers')}>Voir les chantiers</button>
-          <button className="btn btn-primary" onClick={() => router.push('/chantiers/nouveau')}>+ Nouveau chantier</button>
+          <button className="btn btn-primary" onClick={() => setModaleClient(true)}>+ Nouveau chantier</button>
         </div>
       </div>
 
@@ -493,6 +495,8 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      <ModaleChoixClient open={modaleClient} onClose={() => setModaleClient(false)} />
 
     </div>
   )

@@ -130,18 +130,8 @@ export default function Login() {
               {loading ? 'Connexion…' : 'Se connecter →'}
             </button>
 
-            <div style={{display:'flex', alignItems:'center', gap:12, margin:'24px 0', color:'var(--ink-400)', fontSize:11.5}}>
-              <div style={{flex:1, height:1, background:'var(--ink-200)'}}/>
-              ou
-              <div style={{flex:1, height:1, background:'var(--ink-200)'}}/>
-            </div>
-
-            <button type="button" className="btn btn-ghost" style={{width:'100%', justifyContent:'center', height:42, fontSize:13}}>
-              🌐 Connexion avec Google
-            </button>
-
             <p style={{fontSize:12, color:'var(--ink-500)', marginTop:30, textAlign:'center'}}>
-              Première fois ? <span style={{color:'var(--brand-500)', fontWeight:600, cursor:'pointer'}}>Demande une invitation à ta franchisée</span>
+              Première fois ? Demande une invitation à ton ou ta franchisé (e)
             </p>
           </form>
         ) : (

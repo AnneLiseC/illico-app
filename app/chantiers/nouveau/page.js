@@ -25,6 +25,7 @@ function NouveauChantierForm() {
 
 
   useEffect(() => {
+    if (!clientId) { router.replace('/chantiers?nouveau=1'); return }
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
