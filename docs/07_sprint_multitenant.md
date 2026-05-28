@@ -208,11 +208,16 @@ Une policy `<table>_scope` par table, `FOR ALL TO authenticated`, enveloppant `(
 - *État sûr fin P1 : app BATILIS-brandée, modules sensibles neutralisés, pas encore de multi-tenant. **PHASE 1 BOUCLÉE.***
 
 **PHASE 2 — Schéma & data (½-1j, fenêtre maintenance courte)** — `docs/sql/MT1_*` + `MT2_helpers.sql`
-- [ ] L1 CREATE `societes` + `agences` (RLS activée, fermée par défaut).
-- [ ] L2 Seeding CTP+Martigues + ALTER ADD COLUMN nullable (profiles ×2, dossiers, clients, artisans).
-- [ ] L3 Backfill (profiles societe_id + agence_id si agent ; dossiers/clients/artisans) → contrôle « 0 ligne sans agence_id » → SET NOT NULL (sauf `profiles.agence_id` qui reste nullable pour admin, D14).
-- [ ] L4 Helpers `get_my_societe_id`/`get_my_agence_id` + REVOKE anon/public sur les 3 helpers.
-- *État sûr fin P2 : colonnes remplies, RLS pas encore basculée → Marine voit comme avant. Vérifier 0 insertion échouée pendant la fenêtre.*
+- [x] L1 CREATE `societes` + `agences` (RLS activée, fermée par défaut) — ✅ appliqué main, MT1.
+- [x] L2 Seeding CTP+Martigues + ALTER ADD COLUMN nullable (profiles ×2, dossiers, clients, artisans) — ✅ appliqué main, MT2 (commit `967a29c`).
+- [x] L3 Backfill (profiles societe_id + agence_id si agent ; dossiers/clients/artisans) → contrôle « 0 ligne sans agence_id » → SET NOT NULL (sauf `profiles.agence_id` qui reste nullable pour admin, D14) — ✅ appliqué main, MT3. 102 lignes backfillées (5 profiles, 21 dossiers, 23 clients, 53 artisans). NOT NULL posé sur 4 colonnes.
+- [x] L4 Helpers `get_my_societe_id`/`get_my_agence_id` + REVOKE anon/public sur les 3 helpers — ✅ appliqué main, MT4. Helpers calqués sur `get_my_role` (LANGUAGE sql STABLE SECURITY DEFINER search_path 'public'). EXECUTE durci : `authenticated, postgres, service_role` uniquement, plus de `anon`/`PUBLIC`.
+- *État réel fin P2* : ✅ schéma multi-tenant intègre côté données, mais ⚠️ **app cassée en CRÉATION** : les NOT NULL bloquent tout INSERT qui ne fournit pas `agence_id` (constaté : création chantier/client/artisan plantent). Consultation et UPDATE marchent normalement. → **L6-light intercalé** ci-dessous pour débloquer avant Phase 3.
+
+**PHASE 2-bis — L6-light (intercalé, non prévu initialement)**
+Découverte post-MT3 : poser NOT NULL `agence_id` sans adapter le code applicatif des INSERTs bloque les créations immédiatement (ce n'avait pas été anticipé dans le plan initial — le scénario « 0 insertion échouée » de l'état sûr P2 était trop optimiste). On anticipe donc la **partie INSERT** de L6 (Phase 4) AVANT la Phase 3, pour garder l'app utilisable pendant la bascule RLS.
+- [ ] **L6-light** Patch ciblé des INSERTs sur `dossiers` / `clients` / `artisans` pour fournir `agence_id`. Règle : pour une **agente** → `agence_id = profile.agence_id` ; pour un **admin** (agence_id NULL, D14) → déduire l'unique agence de sa société (`SELECT id FROM agences WHERE societe_id = profile.societe_id LIMIT 1`) tant qu'on est mono-agence (sélecteur d'agence multi viendra avec L14b/L15 post-test). Audit read-only d'abord pour recenser TOUS les INSERTs (pages + API routes + cron éventuels) — pas seulement les 3 chemins constatés. Test : créer chantier (dashboard + fiche client), créer client, créer artisan → tous fonctionnent en agente ET en admin.
+- *État sûr fin P2-bis : Phase 2 réellement bouclée, app fonctionnelle, prête pour Phase 3.*
 
 **PHASE 3 — Bascule RLS (2-3j +1j tampon, CRITIQUE, UNE session, ordre strict D16)** — `docs/sql/MT3a/b/c`
 Ordre intra-phase : **fondations (societes, agences, profiles) → racines (dossiers, clients, artisans) → filles → transverses.**
@@ -223,7 +228,7 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 - *État sûr fin P3 : multi-tenant cloisonné, prouvé par « Marine voit les siens / Anne-Lise les siens » croisé en base.*
 
 **PHASE 4 — Adaptation applicative légère (1-2j)**
-- [ ] L6 AuthProvider + requireUser élargis (charger `agence_id`/`societe_id`).
+- [ ] L6 AuthProvider + requireUser élargis (charger `agence_id`/`societe_id` dans le contexte global d'auth). ⚠️ **Partie INSERTs déjà faite en L6-light (Phase 2-bis)** — L6 ne traite donc que ce qui n'a pas été couvert : enrichir le contexte d'auth pour exposer `agence_id`/`societe_id` partout, utiliser ce contexte au lieu de re-déduire l'agence à chaque INSERT (nettoyage de la dette technique laissée par L6-light qui peut faire des `SELECT FROM agences` ponctuels).
 - [ ] L7 Navbar mono-agence (header BATILIS + nom agence depuis table).
 - [ ] L10 Info agence dynamique (parametres + PDFs `route.js`/`restitution.js` dont fallback « Marine MICHELANGELI » l.39 + cron relances).
 - *État sûr fin P4 : prêt pour test utilisateur (mono-agence).*
@@ -266,8 +271,14 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 | 28/05 | **PHASE 1 COMPLÈTE** | ✅✅ |
 | 28/05 | Phase 2 — SQL versionnés `docs/sql/MT1-MT4` (commit `f905c2b`) | ✅ |
 | 28/05 | **L1 — MT1 tables societes/agences créées + RLS fermée** | ✅ appliqué main |
-| — | L2 — MT2 seed CTP+Martigues + colonnes nullable | ⏳ en cours |
-| — | L3 — MT3 backfill + NOT NULL | ⏳ |
-| — | L4 — MT4 helpers + REVOKE | ⏳ |
+| 28/05 | **L2 — MT2 seed CTP+Martigues + colonnes nullable** | ✅ appliqué main |
+| 28/05 | **L3 — MT3 backfill 102 lignes + NOT NULL** | ✅ appliqué main |
+| 28/05 | **L4 — MT4 helpers + REVOKE anon/PUBLIC** | ✅ appliqué main |
+| 28/05 | **PHASE 2 COMPLÈTE (côté schéma)** | ✅✅ |
+| 28/05 | Découverte : NOT NULL casse les INSERTs sans `agence_id` | ⚠️ acté, plan ajusté |
+| — | **L6-light** (Phase 2-bis intercalée) : patch INSERTs dossiers/clients/artisans | ⏳ prochaine action |
+| — | L5a/b/c + L8 (Phase 3) — bascule RLS | ⏳ après L6-light |
 
-**Prochaine action** : appliquer MT2 (Lot L2) — seeding CTP+Martigues + ajout colonnes `societe_id`/`agence_id` nullable sur profiles/dossiers/clients/artisans. Protocole : CONTRÔLE AVANT → APPLICATION → CONTRÔLE APRÈS, validé pas à pas avec Claude.
+**Prochaine action** : audit L6-light (read-only, recensement exhaustif des INSERTs sur `dossiers`/`clients`/`artisans` dans le code — pages + API routes + cron). Puis patch ciblé avec règle « agence_id = profile.agence_id pour agente ; SELECT unique agence de sa société pour admin ». Une fois l'app fonctionnelle, attaque Phase 3.
+
+**Note de méthode** : la découverte du blocage NOT NULL/INSERTs en fin de Phase 2 confirme la valeur du protocole « tester après chaque MT ». Si on avait enchaîné directement Phase 3 sans test post-MT3, on aurait découvert le bug en plein milieu des RLS (bien pire à diagnostiquer). Erreur de planification partagée (binôme), détectée à temps par la méthode.
