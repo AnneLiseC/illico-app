@@ -131,7 +131,7 @@ export default function Login() {
             </button>
 
             <p style={{fontSize:12, color:'var(--ink-500)', marginTop:30, textAlign:'center'}}>
-              Première fois ? Demande une invitation à ta franchisée
+              Première fois ? Demande une invitation à ton ou ta franchisé (e)
             </p>
           </form>
         ) : (
