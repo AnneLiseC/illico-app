@@ -45,10 +45,10 @@ export default function NouveauClient() {
         .single()
       setProfile(profData)
 
-      // Récupérer tous les profils agente/admin
+      // Récupérer tous les profils agente/admin (agence_id nécessaire pour D18)
       const { data } = await supabase
         .from('profiles')
-        .select('id, prenom, nom, role')
+        .select('id, prenom, nom, role, agence_id')
         .in('role', ['admin', 'agente'])
       setProfiles(data || [])
 
@@ -66,6 +66,30 @@ export default function NouveauClient() {
     e.preventDefault()
     setLoading(true)
     setErreur('')
+
+    // D18 : agence_id = agence de la référente sélectionnée.
+    // Une agente crée toujours pour elle-même (sélecteur disabled côté agente) :
+    // on prend directement profile.agence_id, indépendamment de form.referente.
+    let agenceId = null
+    if (profile?.role === 'agente') {
+      agenceId = profile.agence_id
+    } else {
+      const referenteSel = profiles.find(p => p.id === form.referente)
+      if (referenteSel?.role === 'agente') {
+        agenceId = referenteSel.agence_id
+      } else if (referenteSel?.role === 'admin' && profile?.societe_id) {
+        // Admin référente d'elle-même : mono-agence → unique agence de sa société.
+        // (L15 ajoutera le sélecteur d'agence en vue consolidée multi-agences.)
+        const { data: ag } = await supabase
+          .from('agences').select('id').eq('societe_id', profile.societe_id).limit(1).single()
+        agenceId = ag?.id ?? null
+      }
+    }
+    if (!agenceId) {
+      setErreur('Agence introuvable pour la référente sélectionnée.')
+      setLoading(false)
+      return
+    }
 
     const adresseChantier = form.adresse_chantier_identique
       ? form.adresse || null
@@ -90,6 +114,7 @@ export default function NouveauClient() {
       apporteur_pourcentage: form.apporteur_affaires ? parseFloat(form.apporteur_pourcentage) : null,
       apporteur_base: form.apporteur_affaires ? form.apporteur_base : null,
       notes: form.notes || null,
+      agence_id: agenceId,
     }).select()
 
     if (error) {
