@@ -201,7 +201,7 @@ Une policy `<table>_scope` par table, `FOR ALL TO authenticated`, enveloppant `(
 **Méthode test (rappel) : code applicatif → branche/preview/merge ; SQL/RLS → fichier `docs/sql/` avec rollback écrit → application main en fenêtre creuse → contrôle AVANT/requête/APRÈS → rollback si KO.**
 
 **PHASE 1 — Préparatoires indépendants (2-3j, sans risque base)**
-- [ ] L9 Rebranding BATILIS (~50 occ/17 fichiers ; NE PAS toucher `statut_illico`/`date_reglement_illico`/`acomptes_illico` + tags Google `[illico-int:]`/`[illico-rdv:]`).
+- [x] L9 Rebranding BATILIS — ✅ FAIT (PR `claude/L9-rebranding-batilis`, mergé). 11 changements / 5 fichiers : 8 textes (layout, navbar ×2, app-header, login ×3, parametres) + 3 logo marks `iC`→`Ba`. Vérif négative validée : PDF/espace-client/notifs affichent toujours illiCO légitime. « Martigues » résiduel laissé pour L10.
 - [ ] L11 Neutralisation CR / Messagerie / Statistiques (placeholder « Bientôt disponible »).
 - [ ] L13 Suppression bouton Google login + fix #2 création chantier sans client.
 - [ ] L17 Durcissements sécu annexes (leaked password Auth + policy Storage `photos` UPDATE). ⚠️ Vérifier d'abord en base que le bucket `photos` manque bien sa policy UPDATE (hypothèse audit 2 non confirmée) avant d'ajouter une policy inutile.
@@ -257,6 +257,7 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 | 28/05 | Audit 2 (données & sécurité) | ✅ vérifié en base |
 | 28/05 | Audit 3 (ampleur/chiffrage/séquençage) | ✅ |
 | 28/05 | Plan d'exécution 6 phases (L1-L21) | ✅ |
-| — | Exécution Phase 1 | ⏳ prochaine action |
+| 28/05 | **L9 Rebranding BATILIS** | ✅ mergé |
+| — | Phase 1 : reste L11, L13, L17 | ⏳ en cours |
 
-**Prochaine action** : démarrer la Phase 1 (préparatoires indépendants, sans risque base) — L9 rebranding BATILIS, L11 neutralisation CR/Msg/Stats, L13 Google login + fix #2, L17 durcissements annexes. Un lot à la fois, prompt Claude Code, audit/plan avant code, test, merge.
+**Prochaine action** : continuer Phase 1. Reste L11 (neutralisation CR/Msg/Stats), L13 (Google login + fix #2 création chantier sans client), L17 (durcissements annexes — vérifier d'abord bucket photos UPDATE). Un lot à la fois.
