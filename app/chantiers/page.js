@@ -1,11 +1,12 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { getDossiersByScope, getFilteredDossiers, getCompteurs, calcStatut, calculerAvancement, STATUT_CONFIG } from '../lib/dossiers'
 import { calculateDossierFinance } from '../lib/finance'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniMeta } from '../components/shared'
+import ModaleChoixClient from '../components/ModaleChoixClient'
 
 /* ── Inline SVG icons ── */
 function Svg({ size = 16, children }) {
@@ -377,6 +378,14 @@ function ChantierPreview({ d, onOpen, onBack, isMobile }) {
 
 /* ── Page ── */
 export default function Chantiers() {
+  return (
+    <Suspense fallback={<div className="page-loading" />}>
+      <ChantiersInner />
+    </Suspense>
+  )
+}
+
+function ChantiersInner() {
   const [dossiers,     setDossiers]     = useState([])
   const [agentes,      setAgentes]      = useState([])
   const [loading,      setLoading]      = useState(true)
@@ -387,8 +396,17 @@ export default function Chantiers() {
   const [selectedId,   setSelectedId]   = useState(null)
   const [isMobile,     setIsMobile]     = useState(false)
   const [showPreview,  setShowPreview]  = useState(false)
-  const router  = useRouter()
+  const [modaleClient, setModaleClient] = useState(false)
+  const router        = useRouter()
+  const searchParams  = useSearchParams()
   const { user, profile, initialized } = useAuth()
+
+  useEffect(() => {
+    if (searchParams.get('nouveau') === '1') {
+      setModaleClient(true)
+      router.replace('/chantiers')
+    }
+  }, [searchParams, router])
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)')
@@ -467,7 +485,7 @@ export default function Chantiers() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-ghost"><DocIcon size={16} /> Exporter</button>
-          <button className="btn btn-primary" onClick={() => router.push('/chantiers/nouveau')}>
+          <button className="btn btn-primary" onClick={() => setModaleClient(true)}>
             <PlusIcon size={16} /> Nouveau chantier
           </button>
         </div>
@@ -550,6 +568,8 @@ export default function Chantiers() {
           <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} />
         </div>
       )}
+
+      <ModaleChoixClient open={modaleClient} onClose={() => setModaleClient(false)} />
 
     </div>
   )
