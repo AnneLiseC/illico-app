@@ -203,6 +203,7 @@ Seed initial (MT2) : société CTP (SIREN 9 ch. `948096888` stocké en text dans
 ### 5.2 Pattern RLS unifié (audit 3 §B.1)
 Une policy `<table>_scope` par table, `FOR ALL TO authenticated`, enveloppant `(SELECT auth.uid())`/`(SELECT get_my_role())` (résout `auth_rls_initplan`). Branches : admin (`agence_id IN agences de get_my_societe_id()`) · agent (`referente_id = uid AND agence_id = get_my_agence_id()`) · client (préservé). Helpers `get_my_societe_id()`/`get_my_agence_id()` SECURITY DEFINER + REVOKE anon/public (+ même REVOKE sur `get_my_role()`).
 6 cas : (1) racine `agence_id` · (2) fille via `dossier_id` EXISTS dossiers · (2-bis) rendez_vous nullable · (3) via `agente_id` · (4) via `artisan_id` · (5) notifications/google_tokens par user · (6) societes/agences.
+Note Cas 6 : les policies de **lecture** societes/agences sont déjà posées (MT5, Phase 2-bis). En L5a, vérifier leur présence avant d'en recréer (éviter les doublons). La question de l'**écriture** sur ces 2 tables (qui ? quand ?) reste à trancher en Phase 3 ou à l'onboarding L14b.
 
 ### 5.3 PLAN D'EXÉCUTION — 6 phases (audit 3 §D.2, ordre sûr)
 
@@ -224,17 +225,18 @@ Une policy `<table>_scope` par table, `FOR ALL TO authenticated`, enveloppant `(
 
 **PHASE 2-bis — L6-light (intercalé, non prévu initialement)**
 Découverte post-MT3 : poser NOT NULL `agence_id` sans adapter le code applicatif des INSERTs bloque les créations immédiatement (ce n'avait pas été anticipé dans le plan initial — le scénario « 0 insertion échouée » de l'état sûr P2 était trop optimiste). On anticipe donc la **partie INSERT** de L6 (Phase 4) AVANT la Phase 3, pour garder l'app utilisable pendant la bascule RLS.
-- [ ] **L6-light** Patch ciblé des INSERTs sur `dossiers` / `clients` / `artisans` (+ `profiles` via `api/create-agente`) pour fournir `agence_id` / `societe_id`. Règles **par entité conformes à D18** :
-  - **`dossiers`** : `agence_id = client.agence_id` (le chantier hérite de l'agence de son client — toujours créé pour un client via L13b). Vérifier que le formulaire chantier charge bien `client.agence_id`.
-  - **`clients`** : `agence_id` = agence de la `referente` sélectionnée. Agente → `profile.agence_id`. Admin → si référente = agente, agence de cette agente ; si référente = admin, unique agence de sa société (mono-agence).
-  - **`artisans`** : `agence_id` = agence du créateur (agente → `profile.agence_id` ; admin → unique agence de sa société).
-  - **`api/create-agente` (profiles)** : `societe_id = admin.societe_id` + `agence_id` = unique agence de la société de l'admin. Élargir `requireUser` (`lib/api-auth.js`) pour exposer `agence_id`/`societe_id`.
-  - Garde-fou null sur chaque INSERT (refuser si l'agence déduite est null, message explicite). Duplication locale assumée (sobriété §7) — L6 plein centralisera dans l'AuthProvider en Phase 4. Audit read-only fait (5 endroits identifiés, dont `api/create-agente` non anticipé). Test : créer chantier (dashboard + fiche client), créer client, créer artisan, inviter agente → tous fonctionnent en agente ET en admin, avec vérif base (0 ligne `agence_id`/`societe_id` NULL).
-- *État sûr fin P2-bis : Phase 2 réellement bouclée, app fonctionnelle, prête pour Phase 3.*
+- [x] **L6-light** ✅ (commit `c385bf7`, branche `claude/L6-light-inserts`) Patch des INSERTs sur `dossiers` / `clients` / `artisans` (+ `profiles` via `api/create-agente`) pour fournir `agence_id` / `societe_id`. Règles **par entité conformes à D18** :
+  - **`dossiers`** : `agence_id = client.agence_id` (hérite de l'agence du client). SELECT client via `select('*')` couvre déjà `agence_id`.
+  - **`clients`** : `agence_id` = agence de la `referente` sélectionnée. Agente → `profile.agence_id` (fallback ceinture+bretelles : si `role==='agente'`, prend directement `profile.agence_id` sans dépendre de `form.referente`). Admin → référente agente : son agence ; référente admin : unique agence de sa société. Liste profils élargie avec `agence_id`.
+  - **`artisans`** : `effectiveAgenceId` calculé au chargement (agente → `profile.agence_id` ; admin → unique agence société).
+  - **`api/create-agente` (profiles)** : `societe_id` + `agence_id` de l'admin. `requireUser` (`lib/api-auth.js`) élargi à `agence_id, societe_id` (retourne `{user, profile}`, confirmé l.46). Rollback Auth si agence introuvable.
+  - Garde-fou null sur chaque INSERT. Duplication locale assumée (§7) — L6 plein centralisera dans l'AuthProvider en Phase 4. Testé : 9 chemins (agente + admin) OK ; vérifs cohérence D18 en base = 0 (dossier hérite client, client = agence référente agente, 0 NULL).
+- [x] **MT5 — policies de LECTURE fondations** ✅ (appliqué main ; fichier `docs/sql/MT5_policies_lecture_fondations.sql`) Découverte au test L6-light : chemins admin (créer client en se désignant référente / créer artisan) plantaient car `societes`/`agences` avaient RLS activée mais 0 policy (MT1 « fermées par défaut ») → le code client (rôle `authenticated`) ne pouvait pas lire `agences` pour déduire l'unique agence. Créé 2 policies `FOR SELECT TO authenticated` : `agences_select_ma_societe` USING (`societe_id = get_my_societe_id()`) + `societes_select_la_mienne` USING (`id = get_my_societe_id()`). Lecture posée en avance (brique du Cas 6, §5.2). ⚠️ En Phase 3 (L5a), vérifier la présence de ces 2 policies SELECT avant d'en recréer (éviter doublons) ; la question de l'écriture sur ces tables reste à trancher en Phase 3 ou L14b.
+- *État sûr fin P2-bis : ✅ Phase 2 réellement bouclée, app fonctionnelle (création + consultation), fondations lisibles. Prête pour Phase 3.*
 
 **PHASE 3 — Bascule RLS (2-3j +1j tampon, CRITIQUE, UNE session, ordre strict D16)** — `docs/sql/MT3a/b/c`
 Ordre intra-phase : **fondations (societes, agences, profiles) → racines (dossiers, clients, artisans) → filles → transverses.**
-- [ ] L5a [fondations + racines + finances] societes/agences/profiles puis dossiers/clients/artisans puis devis_artisans/factures_artisans/suivi_financier/factures_agente/redevances. **+ patch trigger `redevances_montant_protege` (D17).** Test : Marine admin voit tout, Anne-Lise agente voit ses dossiers, KPI finances inchangés au centime.
+- [ ] L5a [fondations + racines + finances] societes/agences/profiles puis dossiers/clients/artisans puis devis_artisans/factures_artisans/suivi_financier/factures_agente/redevances. **+ patch trigger `redevances_montant_protege` (D17).** (Rappel : lecture societes/agences déjà posée par MT5 — vérifier avant de recréer.) Test : Marine admin voit tout, Anne-Lise agente voit ses dossiers, KPI finances inchangés au centime.
 - [ ] L5b [opérationnelles P0-9-bis] rendez_vous, interventions_artisans, photos, comptes_rendus, chantier_documents, chantier_fiches_techniques. Test : cloisonnement croisé en base.
 - [ ] L5c [reste + transverses] messages (5 policies P0-2), objectifs_ca, notifications (INSERT resserré), fiches_techniques, specialites, artisans_specialites, google_tokens. Test.
 - [ ] L8 Référence chantier par agence (D12) : ajouter `UNIQUE (agence_id, reference)` sur `dossiers` ; refondre la génération dans `chantiers/nouveau/page.js` (et tout endroit similaire) pour que la séquence NNN soit **comptée par agence** (`WHERE agence_id = ?`), pas globalement. Garder le format affiché `AAAA-XX-NNN` (X X = suffixe typologie auto, déjà géré). Atomicité : utiliser `SELECT FOR UPDATE` ou contrainte UNIQUE + retry pour gérer la concurrence. ⚠️ Vérifier en lecture d'abord comment les suffixes `CT`/`AM`/`ES` sont générés aujourd'hui (mapping `typologie`→suffixe), pour préserver la logique.
@@ -289,9 +291,12 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 | 28/05 | **L4 — MT4 helpers + REVOKE anon/PUBLIC** | ✅ appliqué main |
 | 28/05 | **PHASE 2 COMPLÈTE (côté schéma)** | ✅✅ |
 | 28/05 | Découverte : NOT NULL casse les INSERTs sans `agence_id` | ⚠️ acté, plan ajusté |
-| — | **L6-light** (Phase 2-bis intercalée) : patch INSERTs dossiers/clients/artisans | ⏳ prochaine action |
-| — | L5a/b/c + L8 (Phase 3) — bascule RLS | ⏳ après L6-light |
+| 28/05 | **L6-light** (Phase 2-bis) : patch INSERTs + `api/create-agente` (commit `c385bf7`) | ✅ testé 9 chemins |
+| 28/05 | **MT5** : policies lecture `societes`/`agences` (débloque admin) | ✅ appliqué main |
+| 28/05 | **PHASE 2 RÉELLEMENT BOUCLÉE — app fonctionnelle** | ✅✅✅ |
+| — | Demande Marine : rattacher `2026-AM-021` au client LEULIER Laura | ⏳ prochaine action |
+| — | L5a/b/c + L8 (Phase 3) — bascule RLS | ⏳ après |
 
-**Prochaine action** : coder L6-light (audit déjà fait : 5 endroits identifiés). Patcher les INSERTs selon les règles **par entité de D18** : dossiers hérite `client.agence_id` ; clients = agence de la référente sélectionnée ; artisans = agence du créateur ; `api/create-agente` = société+agence de l'admin (+ élargir `requireUser`). Garde-fous null partout. Un seul commit groupé, test des 5 chemins (agente + admin) avec vérif base. Une fois l'app fonctionnelle → Phase 3.
+**Prochaine action** : (1) Petite correction de donnée demandée par Marine — rattacher le chantier `2026-AM-021` au client LEULIER Laura (chantier créé avant L13b, `client_id` probablement NULL). Protocole : audit lecture d'abord (existence du chantier, son `client_id` actuel, existence/id de LEULIER Laura, enfants éventuels), puis UPDATE encadré (contrôle avant/après + rollback). (2) Puis attaquer la **Phase 3** (bascule RLS, le cœur du risque). ⚠️ Rappel Phase 3 : les policies SELECT sur `societes`/`agences` sont déjà posées (MT5) — vérifier leur présence avant d'en recréer.
 
-**Note de méthode** : la découverte du blocage NOT NULL/INSERTs en fin de Phase 2 confirme la valeur du protocole « tester après chaque MT ». Si on avait enchaîné directement Phase 3 sans test post-MT3, on aurait découvert le bug en plein milieu des RLS (bien pire à diagnostiquer). Erreur de planification partagée (binôme), détectée à temps par la méthode.
+**Note de méthode** : la découverte du blocage NOT NULL/INSERTs en fin de Phase 2 confirme la valeur du protocole « tester après chaque MT ». Si on avait enchaîné directement Phase 3 sans test post-MT3, on aurait découvert le bug en plein milieu des RLS (bien pire à diagnostiquer). Erreur de planification partagée (binôme), détectée à temps par la méthode. Idem MT5 : le blocage RLS lecture `agences` a été révélé par le test des 9 chemins, pas deviné.
