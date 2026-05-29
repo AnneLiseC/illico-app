@@ -657,7 +657,13 @@ export default function FicheChantier({ params }) {
       // La RLS s'applique à chaque table imbriquée comme aux requêtes séparées (même
       // cloisonnement P0-9, enfants atteignables uniquement via un parent visible).
       // Restent séparés : profile (own), profile (admin), liste artisans, signature photos (storage).
-      const [dossierRes, profRes, adminRes, artisansRes] = await Promise.all([
+      // Profil propre fetché d'abord pour connaître le rôle ; le fetch admin n'est exécuté
+      // QUE pour un admin (policy L5a-1 : agente n'accède qu'à son propre profil).
+      const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+      setProfile(profData)
+      const isAdmin = profData?.role === 'admin'
+
+      const [dossierRes, adminRes, artisansRes] = await Promise.all([
         supabase.from('dossiers').select(`
           *,
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role),
@@ -684,14 +690,14 @@ export default function FicheChantier({ params }) {
           .order('created_at', { referencedTable: 'comptes_rendus', ascending: false })
           .order('created_at', { referencedTable: 'messages' })
           .single(),
-        supabase.from('profiles').select('*').eq('id', user.id).single(),
-        supabase.from('profiles').select('prenom, nom').eq('role', 'admin').single(),
+        isAdmin
+          ? supabase.from('profiles').select('prenom, nom').eq('role', 'admin').maybeSingle()
+          : Promise.resolve({ data: null }),
         supabase.from('artisans').select('id, entreprise, metier, partenaire').order('entreprise'),
       ])
 
       const d = dossierRes.data
 
-      setProfile(profRes.data)
       if (adminRes.data) { setNomFranchisee(`${adminRes.data.prenom} ${adminRes.data.nom}`); setPrenomAdmin(adminRes.data.prenom || 'CTP') }
       setDossier(d)
       setClient(d?.client)

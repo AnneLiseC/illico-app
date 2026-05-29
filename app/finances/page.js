@@ -180,6 +180,10 @@ export default function Finances() {
   // ── CHARGEMENT ─────────────────────────────────────────────────────────────
 
   const chargerTout = async () => {
+    // Lectures admin-only sur profiles (policy L5a-1) : conditionnées au rôle.
+    // Le profile est déjà chargé via useAuth → on connaît le rôle ici.
+    const isAdmin = profile?.role === 'admin'
+
     const [
       { data: dossiersData },
       { data: redevancesData },
@@ -197,8 +201,12 @@ export default function Finances() {
       `).order('created_at', { ascending: false }),
       supabase.from('redevances').select('*').order('annee', { ascending: false }).order('mois', { ascending: false }),
       supabase.from('factures_agente').select('*').order('annee', { ascending: false }).order('mois', { ascending: false }),
-      supabase.from('profiles').select('*').eq('role', 'agente').order('prenom'),
-      supabase.from('profiles').select('prenom, nom').eq('role', 'admin').single(),
+      isAdmin
+        ? supabase.from('profiles').select('*').eq('role', 'agente').order('prenom')
+        : Promise.resolve({ data: [] }),
+      isAdmin
+        ? supabase.from('profiles').select('prenom, nom').eq('role', 'admin').maybeSingle()
+        : Promise.resolve({ data: null }),
       supabase.from('objectifs_ca').select('*').eq('annee', new Date().getFullYear()),
     ])
     setDossiers(dossiersData || [])
