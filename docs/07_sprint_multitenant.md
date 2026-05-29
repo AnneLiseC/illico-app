@@ -236,7 +236,10 @@ Découverte post-MT3 : poser NOT NULL `agence_id` sans adapter le code applicati
 
 **PHASE 3 — Bascule RLS (2-3j +1j tampon, CRITIQUE, UNE session, ordre strict D16)** — `docs/sql/MT3a/b/c`
 Ordre intra-phase : **fondations (societes, agences, profiles) → racines (dossiers, clients, artisans) → filles → transverses.**
-- [ ] L5a [fondations + racines + finances] societes/agences/profiles puis dossiers/clients/artisans puis devis_artisans/factures_artisans/suivi_financier/factures_agente/redevances. **+ patch trigger `redevances_montant_protege` (D17).** (Rappel : lecture societes/agences déjà posée par MT5 — vérifier avant de recréer.) Test : Marine admin voit tout, Anne-Lise agente voit ses dossiers, KPI finances inchangés au centime.
+- L5a [fondations + racines + finances] — décomposé en 3 sous-lots :
+  - [x] **L5a-1** fondations : profiles (policies SELECT/INSERT/UPDATE cloisonnées société + trigger `profiles_protege_identite` figeant role/societe_id, souple en SQL direct). societes/agences déjà couverts en lecture par MT5. ✅ appliqué main + testé (login, visibilité admin/agente, cloisonnement). Fichier `docs/sql/L5a-1_rls_profiles.sql`.
+  - [x] **L5a-2** racines : dossiers (agente=ses dossiers via referente_id + agence ; admin=société ; client=identité), clients (idem via `referente` SANS _id ; **trou « agente voyait tous les clients » fermé**), artisans (annuaire commun société ; société B exclue). ✅ appliqué main + testé (admin voit tout, agente cloisonnée, création OK). Fichier `docs/sql/L5a-2_rls_racines.sql`.
+  - [ ] **L5a-3** finances : devis_artisans, factures_artisans, suivi_financier, factures_agente, redevances. **+ patch trigger `redevances_montant_protege` (D17).** ⚠️ Réglera le bug « agente voit la partie CTP ». Test : Marine voit tout, agente voit SES données financières seulement, KPI inchangés au centime.
 - [ ] L5b [opérationnelles P0-9-bis] rendez_vous, interventions_artisans, photos, comptes_rendus, chantier_documents, chantier_fiches_techniques. Test : cloisonnement croisé en base.
 - [ ] L5c [reste + transverses] messages (5 policies P0-2), objectifs_ca, notifications (INSERT resserré), fiches_techniques, specialites, artisans_specialites, google_tokens. Test.
 - [ ] L8 Référence chantier par agence (D12) : ajouter `UNIQUE (agence_id, reference)` sur `dossiers` ; refondre la génération dans `chantiers/nouveau/page.js` (et tout endroit similaire) pour que la séquence NNN soit **comptée par agence** (`WHERE agence_id = ?`), pas globalement. Garder le format affiché `AAAA-XX-NNN` (X X = suffixe typologie auto, déjà géré). Atomicité : utiliser `SELECT FOR UPDATE` ou contrainte UNIQUE + retry pour gérer la concurrence. ⚠️ Vérifier en lecture d'abord comment les suffixes `CT`/`AM`/`ES` sont générés aujourd'hui (mapping `typologie`→suffixe), pour préserver la logique.
@@ -294,9 +297,17 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 | 28/05 | **L6-light** (Phase 2-bis) : patch INSERTs + `api/create-agente` (commit `c385bf7`) | ✅ testé 9 chemins |
 | 28/05 | **MT5** : policies lecture `societes`/`agences` (débloque admin) | ✅ appliqué main |
 | 28/05 | **PHASE 2 RÉELLEMENT BOUCLÉE — app fonctionnelle** | ✅✅✅ |
-| — | Demande Marine : rattacher `2026-AM-021` au client LEULIER Laura | ⏳ prochaine action |
-| — | L5a/b/c + L8 (Phase 3) — bascule RLS | ⏳ après |
+| 29/05 | Correction donnée Marine : `2026-AM-021` rattaché à LEULIER Laura (UPDATE encadré, client_id était NULL) | ✅ fait |
+| 29/05 | **Phase 3 démarrée** — audit RLS complet (patchwork 3 générations confirmé) | ✅ |
+| 29/05 | **L5a-1-prep** (code) : lectures profiles compatibles policy stricte (commit `ddaa334`) | ✅ mergé |
+| 29/05 | **L5a-1a** : policies profiles (SELECT cloisonné société, agente=soi / admin=sa société) | ✅ appliqué main |
+| 29/05 | **L5a-1b** : trigger `profiles_protege_identite` (role+societe_id figés via app, souple en SQL direct) | ✅ appliqué main |
+| 29/05 | **L5a-2** : RLS racines — dossiers (référente+agence), clients (référente+agence, trou « agente voit tous clients » fermé), artisans (annuaire société) | ✅ appliqué main, testé |
+| — | L5a-3 (finances : devis_artisans, factures_artisans, suivi_financier, factures_agente, redevances + trigger D17) | ⏳ prochaine action |
+| — | L5b + L5c + L8 | ⏳ après |
 
-**Prochaine action** : (1) Petite correction de donnée demandée par Marine — rattacher le chantier `2026-AM-021` au client LEULIER Laura (chantier créé avant L13b, `client_id` probablement NULL). Protocole : audit lecture d'abord (existence du chantier, son `client_id` actuel, existence/id de LEULIER Laura, enfants éventuels), puis UPDATE encadré (contrôle avant/après + rollback). (2) Puis attaquer la **Phase 3** (bascule RLS, le cœur du risque). ⚠️ Rappel Phase 3 : les policies SELECT sur `societes`/`agences` sont déjà posées (MT5) — vérifier leur présence avant d'en recréer.
+**Prochaine action** : **L5a-3 — RLS finances** : devis_artisans, factures_artisans, suivi_financier, factures_agente, redevances + **patch trigger `redevances_montant_protege` (D17)**. Pattern : admin→société, agente→ses données (via dossier dont elle est référente, ou agente_id=uid). ⚠️ Réglera le **bug signalé « une agente voit la partie CTP dans suivi_financier »** — cas de test dédié : après L5a-3, une agente ne voit QUE ses propres données financières, jamais les chiffres CTP consolidés ni ceux d'une autre agente. Méthode : table par table, contrôle avant/après + smoke test, rollback prêt.
+
+Puis L5b (opérationnelles : rendez_vous, interventions_artisans, photos, comptes_rendus, chantier_documents, chantier_fiches_techniques — ⚠️ noter le sujet **calendrier Google partagé entre agences** = fuite potentielle à creuser), L5c (transverses), L8 (référence chantier par agence).
 
 **Note de méthode** : la découverte du blocage NOT NULL/INSERTs en fin de Phase 2 confirme la valeur du protocole « tester après chaque MT ». Si on avait enchaîné directement Phase 3 sans test post-MT3, on aurait découvert le bug en plein milieu des RLS (bien pire à diagnostiquer). Erreur de planification partagée (binôme), détectée à temps par la méthode. Idem MT5 : le blocage RLS lecture `agences` a été révélé par le test des 9 chemins, pas deviné.
