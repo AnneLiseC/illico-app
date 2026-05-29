@@ -525,16 +525,21 @@ export default function Finances() {
     // Un upload PDF (facture_path seul, sans statut) ne déclenche donc PAS la synchro — découplage voulu.
     if (type === 'ctp_vers_agente' && 'statut' in updates) {
       const agenteProfile = agentes.find(a => a.id === agenteId)
-      const montantRedevance = agenteProfile?.redevance_mensuelle_ht ?? null
-      const { error: redevErr } = await supabase.from('redevances').upsert({
-        agente_id: agenteId,
-        annee,
-        mois,
-        montant_ht: montantRedevance,
-        statut: updates.statut === 'paye' ? 'regle' : 'en_attente',
-        date_paiement: updates.statut === 'paye' ? new Date().toISOString().split('T')[0] : null,
-      }, { onConflict: 'agente_id,annee,mois' })
-      if (redevErr) setErreur('Redevance : ' + redevErr.message)
+      if (!agenteProfile?.agence_id) {
+        setErreur('Redevance : agence de l\'agente introuvable')
+      } else {
+        const montantRedevance = agenteProfile?.redevance_mensuelle_ht ?? null
+        const { error: redevErr } = await supabase.from('redevances').upsert({
+          agente_id: agenteId,
+          agence_id: agenteProfile.agence_id,
+          annee,
+          mois,
+          montant_ht: montantRedevance,
+          statut: updates.statut === 'paye' ? 'regle' : 'en_attente',
+          date_paiement: updates.statut === 'paye' ? new Date().toISOString().split('T')[0] : null,
+        }, { onConflict: 'agente_id,annee,mois' })
+        if (redevErr) setErreur('Redevance : ' + redevErr.message)
+      }
     }
 
     const { data } = await supabase.from('factures_agente').select('*')
