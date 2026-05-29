@@ -28,14 +28,17 @@ Société  →  Agence(s)  →  Utilisateurs
 - **Agence** : le point de vente / la franchise locale. Ex : « Agence de Martigues » (illiCO travaux Martigues).
 - **Une société peut détenir PLUSIEURS agences** (cas réel : franchisé d'Aix-en-Provence possède Aix + Pennes-Mirabeau).
 
-### 1.3 Rôles applicatifs — 2 niveaux (on garde `admin`/`agent`, pas de migration de la colonne `role`)
+### 1.3 Rôles applicatifs — 2 niveaux (on garde `admin`/`agente`, pas de migration de la colonne `role`)
+> ⚠️ Valeur technique en base : `role = 'agente'` (féminin — équipe Martigues 100% féminine au moment du choix). L'**affichage UI** peut être au masculin (« Agent ») ou neutre : c'est du texte d'interface, distinct de la valeur stockée. Ne JAMAIS changer la valeur `'agente'` en base (tout le code + les policies RLS s'en servent).
+
 | Rôle | Rattaché à | Voit |
 |---|---|---|
 | `admin` (franchisé) | sa **société** (`profiles.societe_id`) | TOUTES les agences de sa société |
-| `agent` | son **agence** (`profiles.agence_id`) | SES dossiers (clients/chantiers) de SON unique agence |
+| `agente` | son **agence** (`profiles.agence_id`) | SES dossiers (clients/chantiers) de SON unique agence |
 
 - Un franchisé n'est JAMAIS « juste dans une agence » — il gère tout ce qu'il possède.
-- Un agent est TOUJOURS dans une seule agence.
+- Une agente est TOUJOURS dans une seule agence.
+- **Anne-Lise (dev)** : AUCUN rôle applicatif privilégié. Pas de super-admin dans l'UI. Accès INFRASTRUCTURE uniquement (propriétaire projet Supabase → SQL/logs pour débug), encadré par déontologie + clause confidentialité CGU (à terme). Emprunte le compte Marine (avec accord) pour la vue admin. Argument commercial : « dans l'app, je ne vois que ma franchise ».
 - **Anne-Lise (dev)** : AUCUN rôle applicatif privilégié. Pas de super-admin dans l'UI. Accès INFRASTRUCTURE uniquement (propriétaire projet Supabase → SQL/logs pour débug), encadré par déontologie + clause confidentialité CGU (à terme). Emprunte le compte Marine (avec accord) pour la vue admin. Argument commercial : « dans l'app, je ne vois que ma franchise ».
 
 ### 1.4 Cloisonnement des données
@@ -143,10 +146,15 @@ select role from profiles where id = auth.uid()
 - Curiosité sans impact : `messages.lu_agence` (flag de lecture, rien à voir avec tenant).
 
 ### 3.4 RLS actuelles = PATCHWORK de 3 générations (à unifier)
-1. **P0-9 propre** (`get_my_role()` + ownership) : dossiers, devis_artisans, factures_artisans, suivi_financier, factures_agente, redevances. ✅ cloisonnées.
-2. **Ancienne par rôle seul** (`role IN ('admin','agente')` → toute agente voit tout) : rendez_vous, interventions_artisans, photos, comptes_rendus, chantier_documents, chantier_fiches_techniques, clients, artisans, fiches_techniques, specialites, artisans_specialites, objectifs_ca, messages (côté staff). ❌ = trou P0-9-bis.
-3. **Styles mélangés** : `get_my_role()` vs `EXISTS(SELECT FROM profiles...)` vs `auth.uid() IN (SELECT...)`. 3 façons d'écrire la même chose → à unifier.
-- **Conséquence** : la refonte RLS multi-agences = TOUTES les policies de TOUTES les tables réécrites en un pattern unique (rôle + société/agence + ownership). Gros morceau, cœur du risque.
+> 📍 **État au 29/05** (annoté en cours de Phase 3) : profiles + racines (dossiers/clients/artisans) + finances = ✅ refaits (L5a). Restent L5b (opérationnelles) + L5c (transverses). Détail par catégorie ci-dessous.
+
+1. **P0-9 propre** (`get_my_role()` + ownership) : dossiers, devis_artisans, factures_artisans, suivi_financier, factures_agente, redevances. ✅ **Toutes refaites en L5a-2/L5a-3** (cloisonnement société/agence ajouté au-dessus de l'ownership).
+2. **Ancienne par rôle seul** (`role IN ('admin','agente')` → toute agente voit tout) : ❌ = trou P0-9-bis. État :
+   - clients, artisans → ✅ **faits (L5a-2)** (trou « agente voit tout » fermé).
+   - rendez_vous, interventions_artisans, photos, comptes_rendus, chantier_documents, chantier_fiches_techniques → ⏳ **L5b** (pas encore faits).
+   - fiches_techniques, specialites, artisans_specialites, objectifs_ca, messages → ⏳ **L5c** (pas encore faits).
+3. **Styles mélangés** : `get_my_role()` vs `EXISTS(SELECT FROM profiles...)` vs `auth.uid() IN (SELECT...)`. 3 façons d'écrire la même chose → unification en cours (finalisée avec L5b + L5c, puis simplifiée par MT6 qui remplace les sous-SELECT agences par `societe_id` direct sur les racines).
+- **Conséquence** : la refonte RLS multi-agences = TOUTES les policies de TOUTES les tables réécrites en un pattern unique (rôle + société/agence + ownership). Gros morceau, cœur du risque. **~11 tables restent à cloisonner (L5b + L5c).**
 
 ### 3.5 FK (vérifié `pg_constraint`)
 - **12 FK enfants de `dossiers`** : 10 en CASCADE (devis_artisans, factures_artisans, suivi_financier, rendez_vous, interventions_artisans, photos, comptes_rendus, chantier_documents, chantier_fiches_techniques, messages) ; `factures_agente.dossier_id` = NO ACTION ; `notifications.dossier_id` = SET NULL.
@@ -239,7 +247,8 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 - L5a [fondations + racines + finances] — décomposé en 3 sous-lots :
   - [x] **L5a-1** fondations : profiles (policies SELECT/INSERT/UPDATE cloisonnées société + trigger `profiles_protege_identite` figeant role/societe_id, souple en SQL direct). societes/agences déjà couverts en lecture par MT5. ✅ appliqué main + testé (login, visibilité admin/agente, cloisonnement). Fichier `docs/sql/L5a-1_rls_profiles.sql`.
   - [x] **L5a-2** racines : dossiers (agente=ses dossiers via referente_id + agence ; admin=société ; client=identité), clients (idem via `referente` SANS _id ; **trou « agente voyait tous les clients » fermé**), artisans (annuaire commun société ; société B exclue). ✅ appliqué main + testé (admin voit tout, agente cloisonnée, création OK). Fichier `docs/sql/L5a-2_rls_racines.sql`.
-  - [ ] **L5a-3** finances : devis_artisans, factures_artisans, suivi_financier, factures_agente, redevances. **+ patch trigger `redevances_montant_protege` (D17).** ⚠️ Réglera le bug « agente voit la partie CTP ». Test : Marine voit tout, agente voit SES données financières seulement, KPI inchangés au centime.
+  - [x] **L5a-3** finances : devis_artisans, factures_artisans, suivi_financier (via `EXISTS dossiers`, approche 1 validée par test : la fille suit la visibilité du parent), factures_agente (par agente_id), redevances (par agente_id ; SELECT/UPDATE admin société + agente / INSERT/DELETE admin-only). **+ trigger D17 patché** (`NEW.agence_id := OLD.agence_id`). **+ L6-light-bis** (commit `0ae9c9c`) : upsert redevance dans `finances/page.js` câblé pour fournir `agence_id` (= agence de l'agente cible) + garde-fou si agence indéterminée. ✅ appliqué main + testé (KPI admin OK, agente cloisonnée, statut payé F2→redevance OK, agence_id correct en base). Fichiers `docs/sql/L5a-3-mig_*.sql` + `L5a-3-rls_finances.sql`.
+  - **Bug CTP = AFFICHAGE confirmé** (pas RLS) : onglets « Agence - encaissements bruts » / « CTP - Résultat net » visibles côté agente alors que la RLS cloisonne déjà au niveau base. → à masquer côté code pour le rôle agente (lot séparé, après MT6).
 - [ ] **MT6 — dénormalisation `societe_id` (amélioration de fond, AVANT L5b)** : ajouter `societe_id` en dur sur les RACINES (`dossiers`, `clients`, `artisans`, `redevances`) — PAS sur les filles (elles restent cloisonnées via `EXISTS dossiers`, lookup PK rapide). Raison : le cloisonnement multi-SOCIÉTÉ est l'enjeu sécu n°1 à ~50 franchisés ; `societe_id` est une propriété immuable (société A ≠ société B, un dossier ne change pas de société). Comparaison directe `societe_id = get_my_societe_id()` au lieu du sous-SELECT `agence_id IN (SELECT...FROM agences...)` → plus rapide + plus juste sémantiquement. Étapes : (1) ADD COLUMN nullable + backfill depuis `agence_id → agences.societe_id` + SET NOT NULL (pattern MT3) ; (2) **trigger de cohérence** dérivant `societe_id := agence.societe_id` à l'INSERT/UPDATE (ne pas dépendre du code applicatif) ; (3) **réécrire** les policies L5a-1/L5a-2/L5a-3 pour utiliser `societe_id = get_my_societe_id()`. Découverte tardive (MT2 n'avait ajouté qu'`agence_id`) — assumée, comme L6-light/MT5.
 - [ ] L5b [opérationnelles P0-9-bis] rendez_vous, interventions_artisans, photos, comptes_rendus, chantier_documents, chantier_fiches_techniques. Test : cloisonnement croisé en base.
 - [ ] L5c [reste + transverses] messages (5 policies P0-2), objectifs_ca, notifications (INSERT resserré), fiches_techniques, specialites, artisans_specialites, google_tokens. Test.
@@ -304,11 +313,14 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 | 29/05 | **L5a-1a** : policies profiles (SELECT cloisonné société, agente=soi / admin=sa société) | ✅ appliqué main |
 | 29/05 | **L5a-1b** : trigger `profiles_protege_identite` (role+societe_id figés via app, souple en SQL direct) | ✅ appliqué main |
 | 29/05 | **L5a-2** : RLS racines — dossiers (référente+agence), clients (référente+agence, trou « agente voit tous clients » fermé), artisans (annuaire société) | ✅ appliqué main, testé |
-| — | L5a-3 (finances : devis_artisans, factures_artisans, suivi_financier, factures_agente, redevances + trigger D17) | ⏳ prochaine action |
+| 29/05 | **L5a-3-mig** : migration `redevances.agence_id` (ADD+backfill+NOT NULL, prépa multi-agence) | ✅ appliqué main |
+| 29/05 | **L5a-3-rls** : RLS finances (5 tables : filles via EXISTS dossiers, factures_agente + redevances par agente_id) + trigger D17 patché + L6-light-bis (upsert redevance câblé agence_id, commit `0ae9c9c`) | ✅ appliqué main, testé |
+| 29/05 | **L5a COMPLET** (fondations + racines + finances) — bug CTP identifié = affichage (lot code séparé) | ✅✅ |
+| — | **MT6 — dénormalisation `societe_id` sur racines** (amélioration de fond, AVANT L5b) | ⏳ prochaine action |
 | — | L5b + L5c + L8 | ⏳ après |
 
-**Prochaine action** : **L5a-3 — RLS finances** : devis_artisans, factures_artisans, suivi_financier, factures_agente, redevances + **patch trigger `redevances_montant_protege` (D17)**. Pattern : admin→société, agente→ses données (via dossier dont elle est référente, ou agente_id=uid). ⚠️ Réglera le **bug signalé « une agente voit la partie CTP dans suivi_financier »** — cas de test dédié : après L5a-3, une agente ne voit QUE ses propres données financières, jamais les chiffres CTP consolidés ni ceux d'une autre agente. Méthode : table par table, contrôle avant/après + smoke test, rollback prêt.
+**Prochaine action** : **MT6 — dénormalisation `societe_id` sur les racines** (`dossiers`, `clients`, `artisans`, `redevances`). Décidée en cours de L5a-3 : enjeu sécu n°1 du multi-SOCIÉTÉ à ~50 franchisés ; `societe_id` immuable → comparaison directe `societe_id = get_my_societe_id()` plus rapide + plus juste que le sous-SELECT `agence_id IN (SELECT...FROM agences...)`. Étapes : (1) audit colonnes (confirmer agence_id présent partout, état RLS courant) ; (2) ADD `societe_id` nullable + backfill (`agence_id → agences.societe_id`) + SET NOT NULL (pattern MT3) ; (3) **trigger de cohérence** dérivant `societe_id := agence.societe_id` à INSERT/UPDATE (indépendant du code) ; (4) **réécrire** les policies L5a-1/L5a-2/L5a-3 pour utiliser `societe_id = get_my_societe_id()` ; (5) re-test complet (login, cloisonnement admin/agente, finances, création). Filles NON concernées (restent en `EXISTS dossiers`, lookup PK rapide). Méthode : table par table, contrôle avant/après + rollback.
 
-Puis L5b (opérationnelles : rendez_vous, interventions_artisans, photos, comptes_rendus, chantier_documents, chantier_fiches_techniques — ⚠️ noter le sujet **calendrier Google partagé entre agences** = fuite potentielle à creuser), L5c (transverses), L8 (référence chantier par agence).
+Puis : **lot code « masquer onglets Agence/CTP côté agente »** (bug CTP = affichage confirmé). Puis L5b (opérationnelles : rendez_vous, interventions_artisans, photos, comptes_rendus, chantier_documents, chantier_fiches_techniques — ⚠️ sujet **calendrier Google partagé entre agences** = fuite potentielle à creuser), L5c (transverses), L8 (référence chantier par agence).
 
 **Note de méthode** : la découverte du blocage NOT NULL/INSERTs en fin de Phase 2 confirme la valeur du protocole « tester après chaque MT ». Si on avait enchaîné directement Phase 3 sans test post-MT3, on aurait découvert le bug en plein milieu des RLS (bien pire à diagnostiquer). Erreur de planification partagée (binôme), détectée à temps par la méthode. Idem MT5 : le blocage RLS lecture `agences` a été révélé par le test des 9 chemins, pas deviné.
