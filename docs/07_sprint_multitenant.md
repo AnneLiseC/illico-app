@@ -152,7 +152,7 @@ select role from profiles where id = auth.uid()
 2. **Ancienne par rôle seul** (`role IN ('admin','agente')` → toute agente voit tout) : ❌ = trou P0-9-bis. État :
    - clients, artisans → ✅ **faits (L5a-2)** (trou « agente voit tout » fermé).
    - rendez_vous, interventions_artisans, photos, comptes_rendus, chantier_documents, chantier_fiches_techniques → ✅ **faits (L5b)** (staff via EXISTS dossiers ; branches client lecture seule sur CR + photos).
-   - fiches_techniques, specialites, artisans_specialites, objectifs_ca, messages → ⏳ **L5c** (pas encore faits).
+   - fiches_techniques, specialites, artisans_specialites, objectifs_ca, messages → ✅ **faits (L5c)** (+ objectifs_ca a nécessité une migration agence_id/societe_id pour cloisonner l'objectif d'agence).
 3. **Styles mélangés** : `get_my_role()` vs `EXISTS(SELECT FROM profiles...)` vs `auth.uid() IN (SELECT...)`. 3 façons d'écrire la même chose → unification en cours (finalisée avec L5b + L5c). ✅ Racines déjà simplifiées par MT6 (sous-SELECT agences remplacé par `societe_id = get_my_societe_id()` direct).
 - **Conséquence** : la refonte RLS multi-agences = TOUTES les policies de TOUTES les tables réécrites en un pattern unique (rôle + société/agence + ownership). Gros morceau, cœur du risque. **~11 tables restent à cloisonner (L5b + L5c).**
 
@@ -257,7 +257,14 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
   - photos : 5 policies empilées (3 générations) nettoyées → 2 policies propres.
   - ⚠️ chantier_documents : branche client (PDF devis signés/factures) REPORTÉE au développement espace-client.
   - Testé table par table (affichage + création/édition staff). Branches client non testables (espace-client non câblé) mais posées.
-- [ ] L5c [reste + transverses] messages (5 policies P0-2), objectifs_ca, notifications (INSERT resserré), fiches_techniques, specialites, artisans_specialites, google_tokens. Test.
+- [x] **L5c** [reste + transverses] ✅ FAIT (fichiers `docs/sql/L5c_rls_transverses.sql` + `L5c-B-fix_objectifs_ca.sql`). 6 tables, 4 patterns :
+  - **google_tokens** → par user (`user_id = auth.uid()`, → authenticated).
+  - **objectifs_ca** → ⚠️ **régression détectée et corrigée** : la 1re policy (par agente_id) cachait l'objectif d'AGENCE (`cible='agence'`, agente_id NULL) → KPI "Objectif" à 0. Fix (L5c-B-fix) : migration ADD `agence_id` + `societe_id` (backfill : cible='agente'→agence de l'agente ; cible='agence'→Martigues) + trigger `derive_societe_id_from_agence` + NOT NULL. Policy : agente voit son objectif perso (cible='agente' AND agente_id=moi) + l'objectif de SON agence (cible='agence' AND agence_id=mon agence), PAS les objectifs perso des autres ; admin voit toute sa société (societe_id). Multi-agence : total société = somme des objectifs d'agence. ⚠️ Dépendance future : écran de saisie objectifs (Phase 4) devra fournir agence_id.
+  - **specialites** → catalogue GLOBAL : `specialites_read` (SELECT staff) seule, **écriture verrouillée** (pas de policy INSERT/UPDATE/DELETE → SQL direct only). Table vide.
+  - **artisans_specialites** → via EXISTS artisans (suit l'artisan). Table vide.
+  - **fiches_techniques** → via EXISTS artisans (liées à un artisan, 22 lignes, testé OK).
+  - **messages** → staff EXISTS dossiers + client lecture (SELECT) + client écriture (INSERT, auteur_id=lui). Messagerie neutralisée (L11) → policies posées, non testables UI, fiche chantier charge sans erreur (non-régression OK).
+  - ⚠️ **notifications NON traitée** → reportée Phase 6 (avec réactivation Messagerie). Trou INSERT `WITH CHECK(true)` assumé temporairement (mineur).
 - [ ] L8 Référence chantier par agence (D12) : ajouter `UNIQUE (agence_id, reference)` sur `dossiers` ; refondre la génération dans `chantiers/nouveau/page.js` (et tout endroit similaire) pour que la séquence NNN soit **comptée par agence** (`WHERE agence_id = ?`), pas globalement. Garder le format affiché `AAAA-XX-NNN` (X X = suffixe typologie auto, déjà géré). Atomicité : utiliser `SELECT FOR UPDATE` ou contrainte UNIQUE + retry pour gérer la concurrence. ⚠️ Vérifier en lecture d'abord comment les suffixes `CT`/`AM`/`ES` sont générés aujourd'hui (mapping `typologie`→suffixe), pour préserver la logique.
 - *État sûr fin P3 : multi-tenant cloisonné, prouvé par « Marine voit les siens / Anne-Lise les siens » croisé en base.*
 
@@ -265,6 +272,7 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 - [ ] L6 AuthProvider + requireUser élargis (charger `agence_id`/`societe_id` dans le contexte global d'auth). ⚠️ **Partie INSERTs déjà faite en L6-light (Phase 2-bis)** — L6 ne traite donc que ce qui n'a pas été couvert : enrichir le contexte d'auth pour exposer `agence_id`/`societe_id` partout, utiliser ce contexte au lieu de re-déduire l'agence à chaque INSERT (nettoyage de la dette technique laissée par L6-light qui peut faire des `SELECT FROM agences` ponctuels).
 - [ ] L7 Navbar mono-agence (header BATILIS + nom agence depuis table).
 - [ ] L10 Info agence dynamique (parametres + PDFs `route.js`/`restitution.js` dont fallback « Marine MICHELANGELI » l.39 + cron relances).
+- [ ] **Écrans de saisie des objectifs de CA** (gestion objectifs `objectifs_ca`) : à (re)développer dans Paramètres (admin : objectif d'agence + objectifs perso des agentes) + future page paramètres agente (son objectif perso). ⚠️ **Dépendance L5c-B-fix** : `objectifs_ca` a désormais `agence_id` NOT NULL → le code de création/modif DOIT fournir `agence_id` (pour cible='agente' = agence de l'agente ; pour cible='agence' = l'agence cible). `societe_id` est dérivé automatiquement par le trigger. Sans agence_id fourni → INSERT bloqué (NOT NULL + WITH CHECK). Aucun écran de saisie actif aujourd'hui (objectifs en base, modifiables en SQL en attendant).
 - *État sûr fin P4 : prêt pour test utilisateur (mono-agence).*
 
 **PHASE 5 — Fix invitation (1-2j, BLOQUANT minimal)**
@@ -272,15 +280,17 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 - *État sûr fin P5 : un nouvel utilisateur peut s'authentifier durablement. PRÊT POUR LE TEST.*
 
 ### 5.4 REPORTABLE POST-TEST (Phase 6)
-- [ ] **Réactiver Messagerie + Statistiques** : code complet conservé à `3dbd6f1` (neutralisés en L11). À restaurer et adapter au multi-tenant (RLS agence sur messages, scope agence sur stats).
+- [ ] **Réactiver Messagerie + Statistiques** : code complet conservé à `3dbd6f1` (neutralisés en L11). À restaurer et adapter au multi-tenant (RLS agence sur messages, scope agence sur stats). **+ resserrer policy INSERT `notifications`** (`WITH CHECK (true)` {public} → restreindre ; à faire ICI avec la messagerie car les notifs y sont liées ; auditer d'abord qui crée les notifs — service_role/cron probablement). NB : trou mineur assumé jusque-là (créer une fausse notif n'expose pas de données).
 - [ ] L12 Storage cloisonné par agence + migration fichiers + policies versionnées (**dette sécu prioritaire, AVANT ouverture multi-franchise réelle**, D13).
 - [ ] L14b Reste onboarding : flow création société + ajout 2e agence + sélecteur agence dans `/api/create-agente`. À la création d'une agence : **génération auto du `code`** depuis les 3 premières lettres de la ville en majuscules (ex. Martigues→`MAR`) ; en cas de collision avec une agence existante de la même société (contrainte `UNIQUE (societe_id, code)`), incrémenter `MA1`, `MA2`... Le code n'est PAS demandé au franchisé (transparent côté UX), sauf cas extrême où on lui ferait valider la suggestion en cas d'ambiguïté.
 - [ ] L15 Navbar bi-zone + sélecteur multi-agences. Inclut la **notion de « vue active »** pour l'admin (onglet agence précise vs vue consolidée « toutes agences »). **Implémente le cas multi-agences de D18** : quand l'admin crée un dossier/client/artisan depuis la vue consolidée (pas d'agence active), afficher un **sélecteur d'agence obligatoire** ; depuis la vue d'une agence précise, l'agence active est utilisée automatiquement. (En mono-agence, ce cas ne se présentait pas — l'unique agence était déduite, cf. L6-light.)
 - [ ] L16 Facturation scopée/consolidée multi-agences.
 - [ ] L18 Bug ajout intervention · L19 Bug molette nombres · L20 Route `/clients/[id]/modifier` 404 · L21 DROP `factures_agente_backup_b7b`.
+- [ ] **L22 Bug synchro Google Calendar** (préexistant, identifié 29/05) : au clic sur le bouton « Google » (déjà connecté), erreur JS `Cannot access 'n' before initialization` → impossible de relancer la synchro. Les RDV s'enregistrent bien dans l'app (table rendez_vous OK) mais ne partent pas vers Google Calendar. Erreur de code (variable utilisée avant init, probablement bundle/ordre de déclaration), PAS de la RLS (google_tokens lit bien le statut « connecté »). À traiter avec le sujet planning/calendrier Google (non critique pour le test ; lié au sujet calendrier Google PARTAGÉ entre agences = fuite multi-tenant à creuser).
 - [ ] Optim perf RLS (wrapping fait en L5 ; dénormalisation/claim JWT si besoin).
 - [ ] #8 dashboard admin scope (à arbitrer selon scénario testeur).
-- [ ] **Durcissements sécu « avant ouverture réelle »** (vérifiés en L17) : (a) activer leaked password protection (nécessite plan Supabase Pro) ; (b) durcir policy INSERT `notifications` (`WITH CHECK (true)` → restreindre, à faire en L5c) ; (c) captcha auth (optionnel, seulement si inscription publique un jour — pas le modèle actuel).
+- [ ] **Durcissements sécu « avant ouverture réelle »** (vérifiés en L17) : (a) activer leaked password protection (nécessite plan Supabase Pro) ; (b) durcir policy INSERT `notifications` (`WITH CHECK (true)` → restreindre, traité avec la réactivation Messagerie ci-dessus) ; (c) captcha auth (optionnel, seulement si inscription publique un jour — pas le modèle actuel).
+- [ ] **Idées fonctionnelles futures (hors Phase 3, à creuser si besoin)** : (1) remplacer le champ texte libre `artisans.metier` par une liste déroulante alimentée par `specialites` (table aujourd'hui VIDE, jamais branchée) + table de liaison `artisans_specialites` ; (2) feature IA : lire les attestations décennales des artisans pour en déduire automatiquement leurs spécialités (pour quels métiers les solliciter). Ces 2 idées touchent au modèle metier/specialites — à concevoir séparément. En L5c, `specialites` est juste posée comme catalogue global verrouillé (lecture tous, écriture SQL only), même vide, prête si un jour utilisée.
 
 ### 5.5 VERDICT DÉLAI
 - **2 semaines** : tendu, faisable SI Phase 6 strictement reportée ET L5a sans régression. Pas de marge. (Le report de L12 hors fenêtre — D13 — est le levier qui rend ça respirable.)
@@ -326,11 +336,14 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 | 29/05 | Nettoyage données test : 6 clients + 4 dossiers test supprimés (audit enfants 0, transaction encadrée). Base = 19 clients / 20 dossiers, que du réel | ✅ |
 | 29/05 | **L5a-3-fix** : trou client filles finances fermé (devis/factures_artisans/suivi → staff only) | ✅ appliqué main |
 | 29/05 | **L5b** : RLS 6 tables opérationnelles (staff via EXISTS dossiers ; branches client lecture seule sur comptes_rendus + photos ; photos nettoyé de 5→2 policies) | ✅ appliqué main, testé |
+| 29/05 | **L5c** : RLS transverses (google_tokens par user, specialites catalogue global verrouillé, artisans_specialites + fiches_techniques via EXISTS artisans, messages staff+client) | ✅ appliqué main, testé |
+| 29/05 | **L5c-B-fix** : régression objectif d'agence détectée (KPI à 0) → migration objectifs_ca (agence_id+societe_id) + policy à 3 branches (agente: perso+agence ; admin: société) | ✅ appliqué main, testé |
 | — | Lot code « masquer onglets Agence/CTP côté agente » (bug affichage) | ⏳ |
-| — | L5c (transverses) + L8 (réf chantier par agence) | ⏳ prochaine action |
+| — | **L8 (réf chantier par agence)** — dernière pièce RLS Phase 3 | ⏳ prochaine action |
+| — | notifications (INSERT resserré) → reporté Phase 6 avec Messagerie | ⏳ Phase 6 |
 
-**Prochaine action** : **L5c — RLS transverses** : messages (5 policies P0-2), objectifs_ca, notifications (INSERT `WITH CHECK (true)` à resserrer), fiches_techniques, specialites, artisans_specialites, google_tokens. Tables hétérogènes (pas toutes des filles de dossiers) → analyser le rattachement de chacune avant d'écrire (certaines = catalogue commun société comme specialites/fiches_techniques ; messages = par dossier ou par expéditeur ; google_tokens = par user ; objectifs_ca = par agente). ⚠️ Audit du réel d'abord (colonnes + policies actuelles), comme pour L5b. Puis L8 (référence chantier par agence).
+**Prochaine action** : **L8 — référence chantier par agence** (dernière pièce RLS de la Phase 3). Ajouter `UNIQUE (agence_id, reference)` sur `dossiers` + refondre la génération de la séquence NNN dans `chantiers/nouveau/page.js` pour qu'elle soit comptée PAR AGENCE (`WHERE agence_id = ?`), pas globalement. Garder le format `AAAA-XX-NNN` (XX = suffixe typologie auto). Atomicité (SELECT FOR UPDATE ou UNIQUE + retry). ⚠️ Audit d'abord : comment les suffixes CT/AM/ES sont générés aujourd'hui + comment la séquence est calculée (indice repéré : des trous dans la séquence après suppressions, ex. CT-009 vs CT-024).
 
-Puis : **lot code « masquer onglets Agence/CTP côté agente »** (bug CTP = affichage confirmé). Puis L8 (UNIQUE (agence_id, reference) + séquence NNN par agence).
+Puis : **lot code « masquer onglets Agence/CTP côté agente »** (bug CTP = affichage). PHASE 3 RLS alors COMPLÈTE (hors notifications reportée Phase 6).
 
 **Note de méthode** : la découverte du blocage NOT NULL/INSERTs en fin de Phase 2 confirme la valeur du protocole « tester après chaque MT ». Si on avait enchaîné directement Phase 3 sans test post-MT3, on aurait découvert le bug en plein milieu des RLS (bien pire à diagnostiquer). Erreur de planification partagée (binôme), détectée à temps par la méthode. Idem MT5 : le blocage RLS lecture `agences` a été révélé par le test des 9 chemins, pas deviné.
