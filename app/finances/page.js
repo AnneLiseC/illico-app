@@ -2040,15 +2040,17 @@ export default function Finances() {
       {/* ── SYNTHÈSE ── */}
       {tab === 'synthese' && <SyntheseView />}
 
-      {/* ── SUIVI FINANCIER — même layout admin/agente, données scopées ── */}
+      {/* ── SUIVI FINANCIER — toggle Agence/CTP admin-only ; agente : mode agence forcé ── */}
       {tab === 'suivi' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <PillToggle
-            options={[{key:'agence',label:'Agence — Encaissements bruts'},{key:'ctp',label:'CTP — Résultat net (charges incluses)'}]}
-            active={suiviMode}
-            onChange={setSuiviMode}
-          />
-          {renderSuiviFinancier(suiviMode)}
+          {isMarine && (
+            <PillToggle
+              options={[{key:'agence',label:'Agence — Encaissements bruts'},{key:'ctp',label:'CTP — Résultat net (charges incluses)'}]}
+              active={suiviMode}
+              onChange={setSuiviMode}
+            />
+          )}
+          {renderSuiviFinancier(isMarine ? suiviMode : 'agence')}
         </div>
       )}
 
