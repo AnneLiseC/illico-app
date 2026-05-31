@@ -7,6 +7,7 @@ const AuthContext = createContext(null)
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
+  const [displayAgenceName, setDisplayAgenceName] = useState(null)
   const [initialized, setInitialized] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const prevUserIdRef = useRef(null)
@@ -21,15 +22,37 @@ export function AuthProvider({ children }) {
     setUnreadCount(count || 0)
   }, [])
 
+  // Nom à afficher dans le header : agence de l'utilisateur si rattaché à une
+  // agence (agence_id non NULL), sinon société (cas admin multi-agence).
+  const loadAgenceName = useCallback(async (prof) => {
+    if (!prof) { setDisplayAgenceName(null); return }
+    try {
+      if (prof.agence_id) {
+        const { data } = await supabase.from('agences').select('nom').eq('id', prof.agence_id).single()
+        setDisplayAgenceName(data?.nom ?? null)
+      } else if (prof.societe_id) {
+        const { data } = await supabase.from('societes').select('nom_societe').eq('id', prof.societe_id).single()
+        setDisplayAgenceName(data?.nom_societe ?? null)
+      } else {
+        setDisplayAgenceName(null)
+      }
+    } catch {
+      // erreur réseau transitoire, on ne reset pas le nom déjà affiché
+    }
+  }, [])
+
   const fetchProfile = useCallback(async (uid) => {
     try {
       const { data } = await supabase.from('profiles').select('*').eq('id', uid).single()
-      if (data) setProfile(data)
+      if (data) {
+        setProfile(data)
+        loadAgenceName(data)
+      }
       loadUnread(uid)
     } catch {
       // erreur réseau transitoire, on ne reset pas le profil
     }
-  }, [loadUnread])
+  }, [loadUnread, loadAgenceName])
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -38,6 +61,7 @@ export function AuthProvider({ children }) {
       if (!u) {
         prevUserIdRef.current = null
         setProfile(null)
+        setDisplayAgenceName(null)
         setUnreadCount(0)
         setInitialized(true)
         return
@@ -92,7 +116,7 @@ export function AuthProvider({ children }) {
   }, [user?.id])
 
   return (
-    <AuthContext.Provider value={{ user, profile, initialized, unreadCount, markAllRead, loadUnread, fetchProfile }}>
+    <AuthContext.Provider value={{ user, profile, displayAgenceName, initialized, unreadCount, markAllRead, loadUnread, fetchProfile }}>
       {children}
     </AuthContext.Provider>
   )
