@@ -22,6 +22,8 @@ export default function Parametres() {
   const [profile, setProfile]             = useState(null)
   const [loading, setLoading]             = useState(true)
   const [agentes, setAgentes]             = useState([])
+  const [societe, setSociete]             = useState(null)
+  const [agence, setAgence]               = useState(null)
   const [saving, setSaving]               = useState(false)
   const [erreur, setErreur]               = useState('')
   const [succes, setSucces]               = useState('')
@@ -52,11 +54,23 @@ export default function Parametres() {
     setAgentes(data || [])
   }
 
+  const chargerAgence = async (societeId) => {
+    if (!societeId) return
+    const [{ data: soc }, { data: ag }] = await Promise.all([
+      supabase.from('societes').select('nom_societe, siret, rcs').eq('id', societeId).single(),
+      // L15: multi-agences — ici on prend l'unique agence de la société (mono-agence).
+      supabase.from('agences').select('nom, ville, adresse, code_postal, telephone').eq('societe_id', societeId).limit(1).single(),
+    ])
+    setSociete(soc || null)
+    setAgence(ag || null)
+  }
+
   useEffect(() => {
     if (!initialized) return
     if (!authProfile) { router.push('/login'); return }
     if (authProfile.role !== 'admin') { router.push('/dashboard'); return }
     setProfile(authProfile)
+    chargerAgence(authProfile.societe_id)
     Promise.all([
       chargerAgentes(),
       supabase.from('google_tokens')
@@ -254,7 +268,6 @@ export default function Parametres() {
                 <div>
                   <label style={LS}>Email</label>
                   <input className="input" value={profile?.email || ''} disabled style={{opacity:0.6}}/>
-                  <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>Modifiable dans Sécurité via Supabase Auth</div>
                 </div>
               </div>
               <div>
@@ -274,16 +287,18 @@ export default function Parametres() {
               </div>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, maxWidth:680}}>
                 {[
-                  { l:'Raison sociale',    v:'Conseil Travaux Provence' },
-                  { l:'Franchise',         v:'illiCO travaux Martigues' },
-                  { l:'SIRET',             v:'948 096 888 00011' },
-                  { l:'RCS',               v:'Aix-en-Provence (16/01/2023)' },
-                  { l:'Adresse',           v:'22 rue Ramade, 13500 Martigues' },
-                  { l:'Téléphone agence',  v:'06 59 81 06 81' },
+                  { l:'Raison sociale',    v:societe?.nom_societe },
+                  { l:'Franchise',         v:agence?.nom },
+                  { l:'SIRET',             v:societe?.siret },
+                  { l:'RCS',               v:societe?.rcs },
+                  { l:'Rue',               v:agence?.adresse },
+                  { l:'Code postal',       v:agence?.code_postal },
+                  { l:'Ville',             v:agence?.ville },
+                  { l:'Téléphone agence',  v:agence?.telephone },
                 ].map(({ l, v }) => (
                   <div key={l} style={{padding:'14px 16px', background:'var(--surface-2)', borderRadius:10, border:'1px solid var(--ink-100)'}}>
                     <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>{l}</div>
-                    <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>{v}</div>
+                    <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>{v || '—'}</div>
                   </div>
                 ))}
               </div>
