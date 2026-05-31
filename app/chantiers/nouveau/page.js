@@ -53,27 +53,6 @@ function NouveauChantierForm() {
 
   const set = (champ, valeur) => setForm(f => ({ ...f, [champ]: valeur }))
 
-  // Génère la référence automatiquement : AAAA-CODE-NNN (séquentiel sur l'année)
-  const genererReference = async (typologie) => {
-    const codes = {
-      courtage: 'CT',
-      amo: 'AM',
-      estimo: 'ES',
-      merad: 'MR',
-      audit_energetique: 'AU',
-      studio_jardin: 'SJ',
-    }
-    const code = codes[typologie] || 'XX'
-    const annee = new Date().getFullYear()
-    const { count } = await supabase
-      .from('dossiers')
-      .select('id', { count: 'exact', head: true })
-      .gte('created_at', `${annee}-01-01`)
-      .lt('created_at', `${annee + 1}-01-01`)
-    const numero = ((count || 0) + 1).toString().padStart(3, '0')
-    return `${annee}-${code}-${numero}`
-  }
-
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -87,10 +66,7 @@ function NouveauChantierForm() {
     }
 
     try {
-      const reference = await genererReference(form.typologie)
-
       const { data, error } = await supabase.from('dossiers').insert({
-        reference,
         client_id: clientId,
         referente_id: client?.referente_id || profile?.id,
         agence_id: client.agence_id,
