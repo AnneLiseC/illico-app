@@ -58,7 +58,7 @@ export default function Login() {
           <div style={{width:42, height:42, borderRadius:10, background:'#fff', color:'var(--brand-800)', display:'grid', placeItems:'center', fontWeight:800, fontSize:16}}>Ba</div>
           <div>
             <div style={{fontSize:18, fontWeight:800, letterSpacing:-0.01}}>BATILIS</div>
-            <div style={{fontSize:11, opacity:0.6, letterSpacing:0.06, textTransform:'uppercase'}}>Martigues</div>
+            <div style={{fontSize:11, opacity:0.6, letterSpacing:0.06, textTransform:'uppercase'}}>Gestion travaux</div>
           </div>
         </div>
 
