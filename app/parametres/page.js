@@ -22,6 +22,8 @@ export default function Parametres() {
   const [profile, setProfile]             = useState(null)
   const [loading, setLoading]             = useState(true)
   const [agentes, setAgentes]             = useState([])
+  const [societe, setSociete]             = useState(null)
+  const [agence, setAgence]               = useState(null)
   const [saving, setSaving]               = useState(false)
   const [erreur, setErreur]               = useState('')
   const [succes, setSucces]               = useState('')
@@ -57,7 +59,7 @@ export default function Parametres() {
     const [{ data: soc }, { data: ag }] = await Promise.all([
       supabase.from('societes').select('nom_societe, siret, rcs').eq('id', societeId).single(),
       // L15: multi-agences — ici on prend l'unique agence de la société (mono-agence).
-      supabase.from('agences').select('nom, ville, adresse, telephone').eq('societe_id', societeId).limit(1).single(),
+      supabase.from('agences').select('nom, ville, adresse, code_postal, telephone').eq('societe_id', societeId).limit(1).single(),
     ])
     setSociete(soc || null)
     setAgence(ag || null)
@@ -289,7 +291,9 @@ export default function Parametres() {
                   { l:'Franchise',         v:agence?.nom },
                   { l:'SIRET',             v:societe?.siret },
                   { l:'RCS',               v:societe?.rcs },
-                  { l:'Adresse',           v:agence ? [agence.adresse, agence.ville].filter(Boolean).join(', ') : null },
+                  { l:'Rue',               v:agence?.adresse },
+                  { l:'Code postal',       v:agence?.code_postal },
+                  { l:'Ville',             v:agence?.ville },
                   { l:'Téléphone agence',  v:agence?.telephone },
                 ].map(({ l, v }) => (
                   <div key={l} style={{padding:'14px 16px', background:'var(--surface-2)', borderRadius:10, border:'1px solid var(--ink-100)'}}>
