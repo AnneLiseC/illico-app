@@ -82,7 +82,7 @@ export default function NavBar() {
   const [hover, setHover] = useState(false)
   const [pinned, setPinned] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { profile, unreadCount } = useAuth()
+  const { profile, displayAgenceName, unreadCount } = useAuth()
 
   // Close mobile drawer on route change
   useEffect(() => { setMobileOpen(false) }, [pathname])
@@ -146,7 +146,7 @@ export default function NavBar() {
             <div className="logo-mark">Ba</div>
             <div className="logo-text">
               BATILIS
-              <span className="muted">Martigues · {profile.prenom}</span>
+              <span className="muted">{displayAgenceName ? `${displayAgenceName} · ` : ''}{profile.prenom}</span>
             </div>
             <button
               className="mobile-close-btn"
