@@ -80,7 +80,6 @@ export async function GET(req) {
   const in30 = dateInDays(30)
   const yesterday = dateInDays(-1)
   const tomorrow = dateInDays(1)
-  const agenceVille = process.env.AGENCY_CITY || 'Martigues'
 
   // ─────────────────────────────────────────────────────────────
   // 1. Devis artisan non reçu — deadline dans 7 jours
@@ -153,7 +152,8 @@ export async function GET(req) {
       .select(`
         id, dossier_id, montant_ttc, artisan_id,
         artisans(id, entreprise, paiement_direct),
-        dossiers(id, reference, referente_id,
+        dossiers(id, reference, referente_id, agence_id,
+          agences(ville),
           profiles!referente_id(email, prenom, nom, telephone, role),
           clients(email, nom, prenom, civilite, nom2, prenom2, adresse_chantier))
       `)
@@ -224,6 +224,7 @@ export async function GET(req) {
       const clientNoms = nomsVirement(client)
       const salutation = salutationClient(client)
       const montantAmo = amoParDossier[dossierId]
+      const agenceVille = dossier?.agences?.ville || ''
 
       // Construction du HTML
       const rowsHtml = artisansProtect.map(a => `
@@ -247,7 +248,7 @@ export async function GET(req) {
           <p>Les artisans sont classés par ordre d'intervention.</p>
           <br>
           <p>Vous avez la possibilité d'effectuer les virements un par un, en respectant l'intitulé suivant :<br>
-          <strong>NOM DE L'ENTREPRISE – ${clientNoms} – ${agenceVille.toUpperCase()}</strong>.<br>
+          <strong>NOM DE L'ENTREPRISE – ${clientNoms}${agenceVille ? ` – ${agenceVille.toUpperCase()}` : ''}</strong>.<br>
           Merci de bien vouloir me transmettre une capture d'écran ou l'avis de virement correspondant à chacun.</p>
         `
       }
@@ -371,21 +372,47 @@ export async function GET(req) {
   try {
     const { data: artisans } = await supabase
       .from('artisans')
-      .select('id, email, entreprise, nom, prenom, decennale_expiration')
+      .select('id, email, entreprise, nom, prenom, decennale_expiration, societe_id')
       .eq('decennale_expiration', in30)
+
+    // L'artisan est société-wide (pas d'agence). On signe au niveau société :
+    // admin de la société comme expéditeur + villes de ses agences dans la signature.
+    // Cache par société pour éviter de refetcher quand plusieurs artisans la partagent.
+    const societeCache = {}
+    const chargerSociete = async (societeId) => {
+      if (!societeId) return { admin: null, villes: [] }
+      if (societeCache[societeId]) return societeCache[societeId]
+      let admin = null, villes = []
+      try {
+        const [{ data: adm }, { data: ags }] = await Promise.all([
+          supabase.from('profiles').select('email, prenom, nom')
+            .eq('role', 'admin').eq('societe_id', societeId).limit(1).maybeSingle(),
+          supabase.from('agences').select('ville').eq('societe_id', societeId),
+        ])
+        admin = adm || null
+        villes = (ags || []).map(a => a.ville).filter(Boolean)
+      } catch {
+        // fetch société en échec → on retombe sur la signature générique
+      }
+      societeCache[societeId] = { admin, villes }
+      return societeCache[societeId]
+    }
 
     for (const a of artisans || []) {
       if (!a.email) continue
       const expDate = new Date(a.decennale_expiration).toLocaleDateString('fr-FR')
+      const { admin, villes } = await chargerSociete(a.societe_id)
+      const signatureVilles = villes.length ? ` ${villes.join(' - ')}` : ''
       await sendEmail({
         to: a.email,
+        from: admin?.email,
         subject: `Votre assurance décennale expire dans 30 jours`,
         html: `
           <p>Bonjour ${prenomNom(a) || a.entreprise},</p>
           <p>Nous vous informons que votre assurance décennale arrive à expiration le <strong>${expDate}</strong>.</p>
           <p>Afin de maintenir notre partenariat, merci de renouveler votre assurance et de nous transmettre
           la nouvelle attestation avant cette date.</p>
-          <p>Cordialement,<br>L'équipe illiCO travaux</p>
+          <p>Cordialement,<br>L'équipe illiCO travaux${signatureVilles}</p>
         `,
       })
       log.push(`[6] Email artisan ${a.email} — décennale expire ${expDate}`)
