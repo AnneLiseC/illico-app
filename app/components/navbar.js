@@ -146,7 +146,7 @@ export default function NavBar() {
             <div className="logo-mark">Ba</div>
             <div className="logo-text">
               BATILIS
-              <span className="muted">{displayAgenceName ? `${displayAgenceName} · ` : ''}{profile.prenom}</span>
+              <span className="muted">{displayAgenceName || ' '}</span>
             </div>
             <button
               className="mobile-close-btn"
