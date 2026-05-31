@@ -2,10 +2,11 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../../lib/auth-context'
 
 export default function NouveauClient() {
+  const { user, profile, initialized } = useAuth()
   const [profiles, setProfiles] = useState([])
-  const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(false)
   const [erreur, setErreur] = useState('')
   const router = useRouter()
@@ -33,18 +34,11 @@ export default function NouveauClient() {
   })
 
   useEffect(() => {
+    if (!initialized) return
+    if (!user) { router.push('/login'); return }
+    if (!profile) return
+
     const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-
-      // Récupérer le profil connecté
-      const { data: profData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-      setProfile(profData)
-
       // Récupérer tous les profils agente/admin (agence_id nécessaire pour D18)
       const { data } = await supabase
         .from('profiles')
@@ -53,12 +47,10 @@ export default function NouveauClient() {
       setProfiles(data || [])
 
       // Pré-sélectionner l'utilisateur connecté
-      if (profData) {
-        setForm(f => ({ ...f, referente: profData.id }))
-      }
+      setForm(f => ({ ...f, referente: profile.id }))
     }
     init()
-  }, [router])
+  }, [initialized, user, profile, router])
 
   const set = (champ, valeur) => setForm(f => ({ ...f, [champ]: valeur }))
 
@@ -129,6 +121,12 @@ export default function NouveauClient() {
   }
 
   const estCouple = ['M. et Mme', 'Mme et Mme', 'M. et M.'].includes(form.civilite)
+
+  if (!profile) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 96 }}>
+      <p className="eyebrow">Chargement…</p>
+    </div>
+  )
 
   return (
     <div className="page-enter min-h-screen bg-gray-50">
