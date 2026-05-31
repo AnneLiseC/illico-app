@@ -2,9 +2,10 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '../../lib/auth-context'
 
 export default function NouvelArtisan() {
-  const [profile, setProfile] = useState(null)
+  const { user, profile, initialized } = useAuth()
   const [saving, setSaving] = useState(false)
   const [erreur, setErreur] = useState('')
   const [form, setForm] = useState({
@@ -27,14 +28,9 @@ export default function NouvelArtisan() {
   const router = useRouter()
 
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
-      const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      setProfile(profData)
-    }
-    init()
-  }, [router])
+    if (!initialized) return
+    if (!user) router.push('/login')
+  }, [initialized, user, router])
 
   const set = (champ, valeur) => setForm(f => ({ ...f, [champ]: valeur }))
 
@@ -109,6 +105,12 @@ export default function NouvelArtisan() {
       setSaving(false)
     }
   }
+
+  if (!profile) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 96 }}>
+      <p className="eyebrow">Chargement…</p>
+    </div>
+  )
 
   return (
     <div className="page-enter min-h-screen bg-gray-50">
