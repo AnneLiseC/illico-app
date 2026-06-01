@@ -649,10 +649,8 @@ export default function Planning() {
 
       {/* ── MODAL ──────────────────────────────────────────────────────────── */}
       {modalOuvert && (
-        <div style={{position:'fixed', inset:0, zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(11,45,94,0.65)', backdropFilter:'blur(6px)'}}
-          onClick={fermerModal}>
-          <div className="card" style={{width:'100%', maxWidth:448, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 25px 70px rgba(11,45,94,0.3)', padding:0}}
-            onClick={e => e.stopPropagation()}>
+        <div style={{position:'fixed', inset:0, zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(11,45,94,0.65)', backdropFilter:'blur(6px)'}}>
+          <div className="card" style={{width:'100%', maxWidth:448, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 25px 70px rgba(11,45,94,0.3)', padding:0}}>
 
             {/* Header modal */}
             <div style={{
