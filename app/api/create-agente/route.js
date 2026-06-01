@@ -27,7 +27,7 @@ export async function POST(request) {
         nom,
         role: 'agente',
       },
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/login`,
+      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/set-password`,
     })
 
     if (inviteError) {
