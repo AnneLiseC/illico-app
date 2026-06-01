@@ -52,6 +52,8 @@
 
 - [ ] **KPI « Net à virer à l'agente = F1 − F2 » trompeur.** F1 et F2 sont DEUX factures séparées, chacune émet et paie la sienne — il n'y a PAS de virement net unique. Le KPI laisse croire à un solde net à virer, ce qui ne correspond pas au flux réel (deux règlements distincts). À revoir (affichage KPI, pas le calcul). **(Lot B facturation — affichage KPI à revoir.)**
 
+- [ ] **Barre objectif MENSUEL agence : réel affiché à 0** alors que le mois a un encaissé réel (constaté 01/06 : juin = 998,07 € encaissés, barre affiche « 0,00 € / 16 666,25 € · 0% »). **Préexistant** (vérifié sur preview : déjà à 0 AVANT le lot saisie objectifs ; SEULE la barre mensuelle est touchée — l'objectif annuel agence et les autres KPI affichent le bon réel). Le dénominateur est correct (`getObjectif('agence')/12` ≈ 16 666). C'est le **numérateur (réel du mois)** passé à l'`ObjectifBar` mensuelle qui ne tape pas sur le bon calcul / le bon mois. À reprendre avec la refonte finances post-test (même famille que l'incohérence objectif par périmètre, Doc 7 §5.4). NON bloquant pour le test. **(Refonte finances post-test.)**
+
 ### Détail / confort (fin de lot facturation)
 
 - [ ] **Détail par CHANTIER dans le dépliable de la facturation.** Aujourd'hui le détail mensuel dépliable montre la décomposition par FLUX (commissions, part partenaire, honoraires, redevance, apporteur) mais PAS quel dossier alimente chaque montant. Pour contrôler au centime, il faut voir que (ex.) les 245,81 € de part partenaire viennent de Jadras (2026-AM-001). La donnée existe déjà (`agrégerParPaiement` garde le `d.id` dans `addToKey`). À ajouter sans refonte. **(Lot B facturation — fin de lot.)**
