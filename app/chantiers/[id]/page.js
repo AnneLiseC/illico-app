@@ -63,11 +63,11 @@ function ModalShell({ title, subtitle, onClose, width = 580, children, footer })
     <div style={{
       position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:200,
       display:'grid', placeItems:'center', padding:20, overflow:'auto',
-    }} onClick={onClose}>
+    }}>
       <div className="card" style={{
         padding:0, maxWidth:width, width:'100%', maxHeight:'90vh',
         overflow:'hidden', display:'flex', flexDirection:'column',
-      }} onClick={e => e.stopPropagation()}>
+      }}>
         <div style={{
           padding:'18px 24px', borderBottom:'1px solid var(--ink-200)',
           display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:14,
@@ -411,11 +411,11 @@ function DevisModal({ open, devis, onClose, onSave, artisans }) {
   const canSave = !!form.artisan_id && form.montant_ht !== '' && !ttcInferieurHt
 
   return (
-    <div onClick={onClose} style={{
+    <div style={{
       position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:60,
       display:'grid', placeItems:'center', padding:16,
     }}>
-      <div onClick={e => e.stopPropagation()} className="card" style={{
+      <div className="card" style={{
         width:'100%', maxWidth:600, padding:0, maxHeight:'90vh', display:'flex', flexDirection:'column',
         boxShadow:'var(--shadow-pop)',
       }}>

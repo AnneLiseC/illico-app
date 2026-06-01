@@ -539,8 +539,8 @@ export default function Parametres() {
 
       {/* ── Modal créer / modifier ── */}
       {(modal === 'creer' || modal === 'modifier') && (
-        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}} onClick={() => { setModal(false); setErreur(''); setSucces('') }}>
-          <div className="card" style={{padding:0, maxWidth:520, width:'100%', maxHeight:'90vh', overflow:'auto'}} onClick={e => e.stopPropagation()}>
+        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
+          <div className="card" style={{padding:0, maxWidth:520, width:'100%', maxHeight:'90vh', overflow:'auto'}}>
             <div style={{padding:'18px 22px', borderBottom:'1px solid var(--ink-200)'}}>
               <h2 className="page" style={{fontSize:16}}>{modal === 'creer' ? 'Nouvelle agente' : `Modifier — ${agenteEditee?.prenom} ${agenteEditee?.nom}`}</h2>
               <div className="eyebrow" style={{marginTop:4}}>{modal === 'creer' ? 'Invitation par email' : 'Profil et parts'}</div>
@@ -599,8 +599,8 @@ export default function Parametres() {
 
       {/* ── Modal suppression ── */}
       {modal === 'supprimer' && agenteASupprimer && (
-        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}} onClick={() => { setModal(false); setAgenteASupprimer(null); setErreur('') }}>
-          <div className="card" style={{padding:24, maxWidth:440, width:'100%'}} onClick={e => e.stopPropagation()}>
+        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
+          <div className="card" style={{padding:24, maxWidth:440, width:'100%'}}>
             <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:16}}>
               <div style={{width:40, height:40, borderRadius:99, background:'rgba(239,68,68,0.1)', color:'#DC2626', display:'grid', placeItems:'center', fontSize:18, flexShrink:0}}>⚠</div>
               <div>
