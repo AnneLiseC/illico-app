@@ -384,6 +384,7 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 | 31/05 | **UPDATE valeurs CTP** en base (societes nom/siret 14ch/rcs + agences adresse/tél) | ✅ commit doc `b48d4b7` |
 | 31/05 | **L10-a** : params bloc Agence dynamique + login neutre + texte profil retiré + adresse décomposée (SQL `code_postal` `8896618` + code `399afc9`) | ✅ mergé `23b4d97`, testé |
 | 31/05 | **L10-b** : cron relances — villes d'agence dynamiques (boucle acompte) + décennale signée par admin société + villes. ⚠️ emails non branchés → validé build+diff | ✅ `5d1ab4b`, mergé `ff4b678` |
+| 31/05 | **[HORS SPRINT — demande Marine] Modals de saisie : plus de fermeture au clic extérieur** (DevisModal puis 5 autres : ModalShell interventions/CR, agente créer/suppression, RDV planning, ModaleChoixClient). Retrait handler overlay + stopPropagation. Échap ModalShell conservé. Visionneuses/quick menu volontairement NON touchés. | ✅ `9d70cb3` (devis) + `77d2202`→`dde285a` (reste), testé |
 | — | notifications (INSERT resserré) → reporté Phase 6 avec Messagerie | ⏳ Phase 6 |
 
 ⚠️ **CONSIGNES PROCESS CLAUDE CODE (permanentes, à rappeler en tête de CHAQUE lot)** :
