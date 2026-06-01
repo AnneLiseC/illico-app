@@ -35,11 +35,11 @@ export default function ModaleChoixClient({ open, onClose }) {
   const creerClient = () => { onClose(); router.push('/clients/nouveau') }
 
   return (
-    <div onClick={onClose} style={{
+    <div style={{
       position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:9999,
       display:'flex', alignItems:'center', justifyContent:'center', padding:20,
     }}>
-      <div onClick={e => e.stopPropagation()} style={{
+      <div style={{
         background:'#fff', borderRadius:14, width:'100%', maxWidth:480,
         maxHeight:'85vh', display:'flex', flexDirection:'column', overflow:'hidden',
       }}>
