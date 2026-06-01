@@ -143,7 +143,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
           {logoBase64 ? <PdfImage src={logoBase64} style={styles.logo} /> : <View style={styles.logo} />}
           <View style={styles.headerRight}>
             <Text style={styles.headerTitle}>{preview ? 'Récapitulatif financier' : 'Suivi financier'}</Text>
-            <Text style={styles.headerSub}>illiCO travaux Martigues</Text>
+            <Text style={styles.headerSub}>{dossier.agence?.nom || ''}</Text>
             <Text style={[styles.headerSub, { marginTop: 2 }]}>Établi le {dateAuj}</Text>
           </View>
         </View>
@@ -316,7 +316,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
 
 
         <View style={styles.footer} fixed>
-          <Text style={styles.footerText}>illiCO travaux Martigues — {dossier.reference}</Text>
+          <Text style={styles.footerText}>{dossier.agence?.nom || ''} — {dossier.reference}</Text>
           <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
         </View>
       </Page>
@@ -337,7 +337,7 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
     ? [client.civilite, client.prenom, client.nom, client.prenom2 ? '& ' + client.prenom2 + ' ' + client.nom2 : null].filter(Boolean).join(' ')
     : '—'
   const ref = dossier.referente
-  const nomRef = ref ? (ref.prenom + ' ' + ref.nom) : 'illiCO travaux Martigues'
+  const nomRef = ref ? (ref.prenom + ' ' + ref.nom) : ''
 
   const TITRES = {
     r1: 'COMPTE RENDU DE PREMIÈRE VISITE',
@@ -453,7 +453,7 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
       ),
       React.createElement(View, { style: CRS.footer, fixed: true },
         React.createElement(Text, { style: CRS.footerTxt }, 'Document établi le ' + dateEmis + ' – Chantier ' + nomClient),
-        React.createElement(Text, { style: CRS.footerTxt }, nomRef + ' – illiCO travaux Martigues'),
+        React.createElement(Text, { style: CRS.footerTxt }, nomRef + (dossier.agence?.nom ? ' – ' + dossier.agence.nom : '')),
         React.createElement(Text, { style: CRS.footerTxt, render: ({ pageNumber, totalPages }) => pageNumber + ' / ' + totalPages }),
       ),
     )
@@ -476,7 +476,7 @@ export async function POST(request) {
 
     const { data: dossier, error: dossierError } = await supabaseAdmin
       .from('dossiers')
-      .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, email, telephone), client:clients(*)')
+      .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, email, telephone), client:clients(*), agence:agences!dossiers_agence_id_fkey(nom, ville, adresse, code_postal, telephone, societe:societes(nom_societe, siret, rcs))')
       .eq('id', dossierId)
       .single()
 
