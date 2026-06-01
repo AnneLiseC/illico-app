@@ -240,26 +240,6 @@ export default function Finances() {
   const getObjectif = (cible, agenteId = null) =>
     objectifs.find(o => o.cible === cible && o.agente_id === agenteId)?.montant || 0
 
-  const sauvegarderObjectif = async (cible, agenteId, montant) => {
-    const annee = new Date().getFullYear()
-    const payload = { annee, cible, agente_id: agenteId || null, montant: parseFloat(montant) || 0 }
-
-    const query = supabase.from('objectifs_ca').select('id')
-      .eq('annee', annee).eq('cible', cible)
-    const { data: existing } = agenteId
-      ? await query.eq('agente_id', agenteId).maybeSingle()
-      : await query.is('agente_id', null).maybeSingle()
-
-    if (existing) {
-      await supabase.from('objectifs_ca').update({ montant: parseFloat(montant) || 0 }).eq('id', existing.id)
-    } else {
-      await supabase.from('objectifs_ca').insert(payload)
-    }
-
-    const { data } = await supabase.from('objectifs_ca').select('*').eq('annee', annee)
-    setObjectifs(data || [])
-  }
-
   // ── CALCUL FINANCIER ───────────────────────────────────────────────────────
   // calculer() : extrait les valeurs depuis lib/finance.js — zéro calcul inline
   // calculerReel() : applique les déclencheurs suivi_financier — une seule source de vérité
@@ -1279,7 +1259,7 @@ export default function Finances() {
       const chartNetAnnee = clesMois.map((_, i) => round2(chartProduitsAnnee[i] + chartChargesAnnee[i]))
       return (
         <div className="space-y-5">
-          <ObjectifBar label={isCTP ? 'Objectif CA CTP (résultat net)' : 'Objectif CA agence (encaissements bruts)'} reel={reelNet} objectifMontant={getObjectif('agence')} cible="agence" canEdit={isMarine} onSave={sauvegarderObjectif} />
+          <ObjectifBar label={isCTP ? 'Objectif CA CTP (résultat net)' : 'Objectif CA agence (encaissements bruts)'} reel={reelNet} objectifMontant={getObjectif('agence')} cible="agence" canEdit={false} />
           <div className="card" style={{overflow:'hidden'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
               <span style={{fontSize:14,fontWeight:600,color:'var(--ink-700)'}}>Compte de résultat {isCTP ? 'CTP' : 'Agence'}</span>
@@ -1330,7 +1310,7 @@ export default function Finances() {
           <div className="space-y-5">
             <ObjectifBar label={isCTP ? `Objectif mensuel CTP (${fmt(objectifMensuel)}/mois)` : `Objectif mensuel agence (${fmt(objectifMensuel)}/mois)`}
               reel={(() => { const moisCourant = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`; const r = rowsReel.find(([k]) => k === moisCourant)?.[1] || {}; const redev = redevances.filter(rv => rv.statut === 'regle' && rv.annee === new Date().getFullYear() && rv.mois === new Date().getMonth() + 1).reduce((s, rv) => s + (rv.montant_ht||0), 0); return getReelNet(r, redev) })()}
-              objectifMontant={objectifMensuel} cible="agence" canEdit={isMarine} onSave={sauvegarderObjectif} />
+              objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
             <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId={`chart_${mode}_mois`} />
             <div className="card" style={{overflow:'hidden'}}>
               <table className="w-full text-xs">

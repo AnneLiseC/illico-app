@@ -24,6 +24,10 @@ export default function Parametres() {
   const [agentes, setAgentes]             = useState([])
   const [societe, setSociete]             = useState(null)
   const [agence, setAgence]               = useState(null)
+  const [objectifs, setObjectifs]         = useState([])
+  const [objAgenceVal, setObjAgenceVal]   = useState('')
+  const [savingObjAgence, setSavingObjAgence] = useState(false)
+  const [objAgenceMsg, setObjAgenceMsg]   = useState('')
   const [saving, setSaving]               = useState(false)
   const [erreur, setErreur]               = useState('')
   const [succes, setSucces]               = useState('')
@@ -46,6 +50,7 @@ export default function Parametres() {
     parts_agente_disponibles: '60',
     frais_part_agente_defaut: 100,
     redevance_debut: '',
+    objectif: '',
   }
   const [form, setForm] = useState(emptyForm)
 
@@ -59,10 +64,47 @@ export default function Parametres() {
     const [{ data: soc }, { data: ag }] = await Promise.all([
       supabase.from('societes').select('nom_societe, siret, rcs').eq('id', societeId).single(),
       // L15: multi-agences — ici on prend l'unique agence de la société (mono-agence).
-      supabase.from('agences').select('nom, ville, adresse, code_postal, telephone').eq('societe_id', societeId).limit(1).single(),
+      supabase.from('agences').select('id, nom, ville, adresse, code_postal, telephone').eq('societe_id', societeId).limit(1).single(),
     ])
     setSociete(soc || null)
     setAgence(ag || null)
+  }
+
+  // Objectifs de CA (grain annuel). Lecture pour pré-remplir, écriture via sauvegarderObjectif.
+  const chargerObjectifs = async () => {
+    const annee = new Date().getFullYear()
+    const { data } = await supabase.from('objectifs_ca').select('*').eq('annee', annee)
+    setObjectifs(data || [])
+    setObjAgenceVal(String(data?.find(o => o.cible === 'agence' && o.agente_id === null)?.montant || ''))
+  }
+
+  // Écriture objectif côté client : objectif d'agence ET objectif d'agente (édition).
+  // agence_id est REQUIS par la policy (le trigger en dérive societe_id) + NOT NULL.
+  // La création d'agente NE passe PAS par ici (agence inconnue côté client → /api/create-agente).
+  const sauvegarderObjectif = async (cible, agenteId, agenceId, montant) => {
+    if (!agenceId) return
+    const annee = new Date().getFullYear()
+    const query = supabase.from('objectifs_ca').select('id').eq('annee', annee).eq('cible', cible)
+    const { data: existing } = agenteId
+      ? await query.eq('agente_id', agenteId).maybeSingle()
+      : await query.is('agente_id', null).maybeSingle()
+    if (existing) {
+      await supabase.from('objectifs_ca').update({ montant: parseFloat(montant) || 0 }).eq('id', existing.id)
+    } else {
+      await supabase.from('objectifs_ca').insert({ annee, cible, agente_id: agenteId || null, agence_id: agenceId, montant: parseFloat(montant) || 0 })
+    }
+    await chargerObjectifs()
+  }
+
+  const enregistrerObjAgence = async () => {
+    setSavingObjAgence(true); setObjAgenceMsg('')
+    try {
+      await sauvegarderObjectif('agence', null, agence?.id, objAgenceVal)
+      setObjAgenceMsg('Enregistré ✓')
+    } catch (err) {
+      setObjAgenceMsg('Erreur : ' + err.message)
+    }
+    setSavingObjAgence(false)
   }
 
   useEffect(() => {
@@ -71,6 +113,7 @@ export default function Parametres() {
     if (authProfile.role !== 'admin') { router.push('/dashboard'); return }
     setProfile(authProfile)
     chargerAgence(authProfile.societe_id)
+    chargerObjectifs()
     Promise.all([
       chargerAgentes(),
       supabase.from('google_tokens')
@@ -86,6 +129,7 @@ export default function Parametres() {
   /* ── Handlers agentes (inchangés) ── */
   const ouvrirCreer = () => { setForm(emptyForm); setAgenteEditee(null); setModal('creer'); setErreur(''); setSucces('') }
   const ouvrirModifier = (agente) => {
+    const objAgente = objectifs.find(o => o.cible === 'agente' && o.agente_id === agente.id)?.montant
     setForm({
       prenom: agente.prenom || '', nom: agente.nom || '', email: agente.email || '', telephone: agente.telephone || '',
       frais_part_agente_defaut: Math.round((agente.frais_part_agente_defaut || 0.5) * 100),
@@ -93,6 +137,7 @@ export default function Parametres() {
         ? agente.parts_agente_disponibles.map(p => Math.round(p * 100)).join(', ')
         : String(Math.round((agente.part_agente_defaut || 0.5) * 100)),
       redevance_debut: agente.redevance_debut || '',
+      objectif: objAgente != null ? String(objAgente) : '',
     })
     setAgenteEditee(agente); setModal('modifier'); setErreur(''); setSucces('')
   }
@@ -115,9 +160,9 @@ export default function Parametres() {
     try {
       const partsArray = form.parts_agente_disponibles.split(',').map(v => parseInt(v.trim()) / 100).filter(v => !isNaN(v) && v > 0 && v <= 1)
       const partDefaut = partsArray[0] ?? 0.5
-      const res = await fetch('/api/create-agente', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ prenom: form.prenom, nom: form.nom, email: form.email, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100 }) })
+      const res = await fetch('/api/create-agente', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ prenom: form.prenom, nom: form.nom, email: form.email, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, objectif: form.objectif !== '' ? parseFloat(form.objectif) || 0 : null }) })
       const data = await res.json()
-      if (!res.ok) { setErreur(data.error || 'Erreur') } else { setSucces(`Invitation envoyée à ${form.email} ✓`); setModal(false); await chargerAgentes() }
+      if (!res.ok) { setErreur(data.error || 'Erreur') } else { setSucces(`Invitation envoyée à ${form.email} ✓`); setModal(false); await chargerAgentes(); await chargerObjectifs() }
     } catch (err) { setErreur(err.message) }
     setSaving(false)
   }
@@ -129,7 +174,12 @@ export default function Parametres() {
       const partDefaut = partsArray[0] ?? 0.5
       const res = await fetch('/api/create-agente', { method: 'PATCH', headers: await authHeaders(), body: JSON.stringify({ id: agenteEditee.id, prenom: form.prenom, nom: form.nom, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, redevance_debut: form.redevance_debut || null }) })
       const data = await res.json()
-      if (!res.ok) { setErreur(data.error || 'Erreur') } else { setSucces('Profil mis à jour ✓'); setModal(false); await chargerAgentes() }
+      if (!res.ok) { setErreur(data.error || 'Erreur'); setSaving(false); return }
+      // Objectif d'agente : écriture côté client (agence_id = celle de l'agente, dispo en state).
+      if (agenteEditee.agence_id) {
+        await sauvegarderObjectif('agente', agenteEditee.id, agenteEditee.agence_id, form.objectif !== '' ? form.objectif : 0)
+      }
+      setSucces('Profil mis à jour ✓'); setModal(false); await chargerAgentes()
     } catch (err) { setErreur(err.message) }
     setSaving(false)
   }
@@ -316,6 +366,23 @@ export default function Parametres() {
                 </div>
                 <button className="btn btn-primary" onClick={ouvrirCreer}>+ Nouvelle agente</button>
               </div>
+
+              {/* Objectif de CA de l'agence (annuel) */}
+              <div className="card" style={{padding:'16px 18px', display:'flex', flexDirection:'column', gap:10}}>
+                <div>
+                  <div style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>Objectif de CA — agence {new Date().getFullYear()}</div>
+                  <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}}>Montant annuel (encaissements bruts). {agence?.nom || ''}</div>
+                </div>
+                <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                  <input className="input" type="number" min="0" value={objAgenceVal}
+                    onChange={e => setObjAgenceVal(e.target.value)} placeholder="Objectif annuel €" style={{maxWidth:220}}/>
+                  <button className="btn btn-primary" onClick={enregistrerObjAgence} disabled={savingObjAgence || !agence?.id}>
+                    {savingObjAgence ? 'Enregistrement…' : 'Enregistrer'}
+                  </button>
+                  {objAgenceMsg && <span style={{fontSize:12.5, color: objAgenceMsg.startsWith('Erreur') ? '#b91c1c' : '#15803d'}}>{objAgenceMsg}</span>}
+                </div>
+              </div>
+
               {agentes.length === 0 ? (
                 <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:24}}>Aucune agente</p>
               ) : (
@@ -583,6 +650,11 @@ export default function Parametres() {
                     <div style={{fontSize:11, textAlign:'center', color:'var(--ink-400)', marginTop:3}}>CTP %</div>
                   </div>
                 </div>
+              </div>
+              <div>
+                <label style={LS}>Objectif de CA — agente {new Date().getFullYear()}</label>
+                <input className="input" type="number" min="0" value={form.objectif} onChange={e => setForm(f => ({ ...f, objectif: e.target.value }))} placeholder="Objectif annuel €"/>
+                <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Montant annuel. Modifiable à tout moment.</div>
               </div>
             </div>
             <div style={{padding:'14px 22px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:8, justifyContent:'flex-end'}}>
