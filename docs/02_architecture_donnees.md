@@ -1,5 +1,7 @@
 # Document 2 — Architecture & schéma de données (cible mono-agence)
 
+> ⚠️ **DOC PÉRIMÉ (cible mono-agence pré-multitenant).** Plusieurs affirmations sont fausses après le sprint multi-tenant : « 23 tables » → 25 (+ societes/agences) ; « agence_id réservé non exploité » → pleinement exploité ; et plusieurs `[NOUVEAU]` n'ont JAMAIS été créés (`profiles.taux_1/taux_2`, `clients.raison_sociale`, `dossiers.taux_choisi/taux_amo_standard/taux_amo_applique` = double honoraire AMO, `artisan_documents`, `artisans.partenaire_taux`) ; `artisans.agence_id` a été RETIRÉ (MT7) ; `suivi_financier` date non unifiée, `apporteur_base→mode` non fait. **Schéma RÉEL = doc 07 §3 + audits du 01/06.** Les `[NOUVEAU]` jamais construits sont des non-implémentations du CDC (à arbitrer), pas des régressions du sprint.
+
 *23 tables. `agence_id` réservé partout pour le multi-franchise futur (non exploité). Annexe visuelle : schéma relationnel.*
 
 ## Légende des écarts
