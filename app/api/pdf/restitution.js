@@ -32,11 +32,10 @@ const fmt = (n) => {
 }
 
 function getTelReferente(ref) {
-  if (!ref) return '06 59 81 06 81'
-  return ref.telephone || '06 59 81 06 81'
+  return ref?.telephone || ''
 }
 function getNomRef(ref) {
-  if (!ref) return 'Marine MICHELANGELI'
+  if (!ref) return ''
   return `${ref.prenom || ''} ${(ref.nom || '').toUpperCase()}`.trim()
 }
 
@@ -105,9 +104,9 @@ function Hdr({ title, sub, logo }) {
     ),
   )
 }
-function Ftr({ ref: r }) {
+function Ftr({ ref: r, agenceNom }) {
   return React.createElement(View, { style: CS.footer, fixed: true },
-    React.createElement(Text, { style: CS.footerTxt }, `illiCO travaux Martigues — ${r}`),
+    React.createElement(Text, { style: CS.footerTxt }, `${agenceNom || ''} — ${r}`),
     React.createElement(Text, { style: CS.footerSlogan }, 'Quand vous pensez travaux, pensez illiCO !'),
     React.createElement(Text, { style: CS.footerTxt, render: ({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}` }),
   )
@@ -247,7 +246,7 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
 }
 
 // ── Page de garde : template illiCO + overlay texte référente ──
-async function makeCoverPage({ nomRef, telRef }) {
+async function makeCoverPage({ nomRef, telRef, agence }) {
   // Charger le template (design illiCO sans les coordonnées)
   const tplBytes = Buffer.from(SEP_PAGE_GARDE, 'base64')
   const tplPdf = await PDFDocument.load(tplBytes)
@@ -266,9 +265,9 @@ async function makeCoverPage({ nomRef, telRef }) {
   // Lignes de contact — centrées, au-dessus du slogan (y=29)
   const lignes = [
     { text: nomRef,                               font: fontBold,   size: 11, color: bleu },
-    { text: 'Société CONSEIL TRAVAUX PROVENCE - CTP', font: fontNormal, size: 10, color: gris },
-    { text: '22 rue ramade, quartier Jonquières', font: fontNormal, size: 10, color: gris },
-    { text: '13 500 MARTIGUES',                  font: fontNormal, size: 10, color: gris },
+    { text: `Société ${agence?.societe?.nom_societe || ''}`, font: fontNormal, size: 10, color: gris },
+    { text: agence?.adresse || '',                font: fontNormal, size: 10, color: gris },
+    { text: `${agence?.code_postal || ''} ${agence?.ville || ''}`.trim(), font: fontNormal, size: 10, color: gris },
     { text: telRef,                               font: fontNormal, size: 10, color: gris },
   ]
 
@@ -353,7 +352,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
         React.createElement(Text, { style: CS.sectionH }, 'Résumé du projet'),
         React.createElement(Text, { style: { fontSize: 8.5, lineHeight: 1.6, color: '#374151' } }, resumeGenere),
       ),
-      React.createElement(Ftr, { ref: dossier.reference }),
+      React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
     )
   )
 
@@ -453,7 +452,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
           ),
         ),
       ),
-      React.createElement(Ftr, { ref: dossier.reference }),
+      React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
     )
   )
 
@@ -462,7 +461,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
     React.createElement(Page, { key: 'suivi-paiements', size: 'A4', style: CS.page },
       React.createElement(Hdr, { title: 'Suivi des paiements', sub: `${dossier.reference} — ${nomClient}`, logo }),
       buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier }),
-      React.createElement(Ftr, { ref: dossier.reference }),
+      React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
     )
   )
 
@@ -488,7 +487,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
         React.createElement(Text, { style: { fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', marginTop: 14, lineHeight: 1.4 } },
           "Ce planning est communiqué à titre purement indicatif et ne possède aucune valeur contractuelle.",
         ),
-        React.createElement(Ftr, { ref: dossier.reference }),
+        React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
       )
     )
   }
@@ -510,7 +509,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
           React.createElement(Text, { style: { position: 'absolute', bottom: 40, left: 38, right: 38, fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', lineHeight: 1.4 } },
             "Les illustrations graphiques reproduites sont des illustrations commerciales qui ne peuvent servir de base à la réalisation du chantier.",
           ),
-          React.createElement(Ftr, { ref: dossier.reference }),
+          React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
         )
       )
     }
@@ -781,7 +780,7 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
       React.createElement(Text, { style: { fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', marginTop: 16, lineHeight: 1.4 } },
         "Ce document présente l'ensemble des devis reçus et signés pour votre projet. Les devis signés sont déjà engagés ; les devis à valider constituent une simulation sous réserve de signature.",
       ),
-      React.createElement(Ftr, { ref: dossier.reference }),
+      React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
     ),
     // ── Récapitulatif financier (simulation) ──
     React.createElement(Page, { key: 'recap', size: 'A4', style: CS.page },
@@ -895,7 +894,7 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
           React.createElement(Text, { style: { color: BLANC, fontSize: 13, fontFamily: 'Helvetica-Bold' } }, fmt(totalTTC + (showFrais ? fraisTTC : 0) + (isAMO ? honAMO : honC))),
         ),
       ),
-      React.createElement(Ftr, { ref: dossier.reference }),
+      React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
     ),
   ]
 
@@ -1047,8 +1046,8 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
 
   // ── Page de garde ──
   const nomRef = getNomRef(dossier.referente)
-  const telRef = getTelReferente(dossier.referente)
-  const coverBuf = await makeCoverPage({ nomRef, telRef })
+  const telRef = getTelReferente(dossier.referente) || dossier.agence?.telephone || ''
+  const coverBuf = await makeCoverPage({ nomRef, telRef, agence: dossier.agence })
   const coverPdf = await PDFDocument.load(coverBuf)
   const [coverPage] = await final.copyPages(coverPdf, [0])
   final.addPage(coverPage)
