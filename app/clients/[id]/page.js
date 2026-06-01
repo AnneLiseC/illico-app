@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, use, Suspense } from 'react'
 import { supabase } from '../../lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '../../lib/auth-context'
 
 function Svg({ size = 16, children }) {
@@ -82,6 +82,14 @@ const labelStyle = { display: 'block', fontSize: 13, fontWeight: 600, color: 'va
 const inputProps = { className: 'input', style: { width: '100%', height: 40 } }
 
 export default function FicheClient({ params }) {
+  return (
+    <Suspense fallback={<div className="page-loading" />}>
+      <FicheClientInner params={params} />
+    </Suspense>
+  )
+}
+
+function FicheClientInner({ params }) {
   const { id } = use(params)
   const [client, setClient] = useState(null)
   const [profiles, setProfiles] = useState([])
@@ -92,6 +100,8 @@ export default function FicheClient({ params }) {
   const [succes, setSucces] = useState('')
   const [mode, setMode] = useState('vue')
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const editParam = searchParams.get('edit')
   const { user, profile: authProfile, initialized } = useAuth()
 
   useEffect(() => {
@@ -120,6 +130,12 @@ export default function FicheClient({ params }) {
     }
     init()
   }, [initialized, user?.id, id, router])
+
+  // L20 — ouverture directe en mode édition depuis le menu de la liste (?edit=list).
+  // useEffect dédié : le param n'est jamais réécrit ici → pas de reboucle avec l'init.
+  useEffect(() => {
+    if (editParam === 'list') setMode('edition')
+  }, [editParam])
 
   const set = (champ, valeur) => setClient(c => ({ ...c, [champ]: valeur }))
 
@@ -155,6 +171,10 @@ export default function FicheClient({ params }) {
 
     if (error) {
       setErreur('Erreur : ' + error.message)
+    } else if (editParam === 'list') {
+      // Édition ouverte depuis la liste → retour à la liste après enregistrement.
+      router.push('/clients')
+      return
     } else {
       setSucces('Modifications enregistrées ✓')
       setMode('vue')
