@@ -13,7 +13,7 @@ export async function POST(request) {
   if (auth.error) return auth.error
   try {
     const body = await request.json()
-    const { prenom, nom, email, telephone, part_agente_defaut, frais_part_agente_defaut, parts_agente_disponibles } = body
+    const { prenom, nom, email, telephone, part_agente_defaut, frais_part_agente_defaut, parts_agente_disponibles, objectif } = body
 
     // Validation
     if (!prenom || !nom || !email) {
@@ -66,6 +66,23 @@ export async function POST(request) {
       // Rollback : supprimer l'utilisateur auth si le profil échoue
       await supabaseAdmin.auth.admin.deleteUser(userId)
       return NextResponse.json({ error: profileError.message }, { status: 400 })
+    }
+
+    // 3. Objectif de CA (annuel) de l'agente — avec l'agence_id attribué ci-dessus.
+    //    Tolérance échec partiel : si l'objectif échoue, l'agente reste créée
+    //    (réglable ensuite en édition). PAS de rollback Auth pour un objectif raté.
+    if (objectif != null) {
+      try {
+        await supabaseAdmin.from('objectifs_ca').insert({
+          annee: new Date().getFullYear(),
+          cible: 'agente',
+          agente_id: userId,
+          agence_id: agence.id,
+          montant: parseFloat(objectif) || 0,
+        })
+      } catch {
+        // Objectif non bloquant : l'agente est créée, l'objectif reste réglable en édition.
+      }
     }
 
     return NextResponse.json({ success: true, userId })
