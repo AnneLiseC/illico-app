@@ -1571,7 +1571,6 @@ export default function FicheChantier({ params }) {
   }
   const fraisStatutConfig = {
     offerts:                   { label: 'Offerts' },
-    rembourse_apres_signature: { label: 'Remboursé après signature' },
     factures:                  { label: 'Facturés — en attente' },
     regle:                     { label: 'Réglés' },
     rembourse:                 { label: 'Remboursé' },
@@ -2141,7 +2140,7 @@ export default function FicheChantier({ params }) {
               {dossier.frais_statut === 'regle' && <Badge tone="ok">Réglés</Badge>}
               {dossier.frais_statut === 'offerts' && <Badge tone="mute">Offerts</Badge>}
               {dossier.frais_statut === 'factures' && <Badge tone="warn">Facturés</Badge>}
-              {dossier.frais_statut === 'rembourse_apres_signature' && <Badge tone="info">À rembourser</Badge>}
+              {dossier.frais_statut === 'rembourse' && <Badge tone="info">À rembourser</Badge>}
             </div>
             {dossier.frais_statut === 'offerts' ? (
               <div style={{fontSize:13, color:'var(--ink-500)'}}>Frais offerts — 0 €</div>
@@ -2377,7 +2376,7 @@ export default function FicheChantier({ params }) {
                 <label style={{display:'block', fontSize:12, color:'var(--ink-500)', marginBottom:4}}>Statut</label>
                 <select className="input" value={dossier.frais_statut || 'offerts'} onChange={e => set('frais_statut', e.target.value)} style={{height:40, width:'100%'}}>
                   <option value="offerts">Offerts</option>
-                  <option value="rembourse_apres_signature">Remboursé après signature</option>
+                  <option value="rembourse">Remboursé après signature</option>
                   <option value="factures">Facturés (à régler)</option>
                   <option value="regle">Facturés et réglés</option>
                 </select>

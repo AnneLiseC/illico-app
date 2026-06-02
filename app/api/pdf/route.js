@@ -114,9 +114,9 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
   const fraisStatut = dossier.frais_statut
   const isAMO = dossier.typologie === 'amo'
   const isCourtage = ['courtage', 'amo'].includes(dossier.typologie)
-  const fraisInTable = fraisTTC > 0 && fraisStatut !== 'offerts' && fraisStatut !== 'rembourse_apres_signature' && !dossier.frais_deduits
+  const fraisInTable = fraisTTC > 0 && fraisStatut !== 'offerts' && fraisStatut !== 'rembourse' && !dossier.frais_deduits
   const fraisOfferts = fraisStatut === 'offerts' && fraisTTC > 0
-  const fraisRembourse = fraisStatut === 'rembourse_apres_signature' && fraisTTC > 0
+  const fraisRembourse = fraisStatut === 'rembourse' && fraisTTC > 0
   const dateAuj = new Date().toLocaleDateString('fr-FR')
 
   const totalFraisTable = fraisInTable ? fraisTTC : 0
