@@ -393,9 +393,17 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 - **Risque #1 = L5a** (RLS finances + trigger). Mitigation : fichier SQL unique avec rollback complet + smoke test (« Marine voit X dossiers, somme F1 inchangée »).
 
 ## Chantier finances (B) — phase 2 : REBRANCHER les écrans sur finance.js (PAS ENCORE FAIT)
-`finance.js` est correct, mais 2 écrans sur 3 recalculent encore en dur → divergences persistantes. À faire, écran par écran, testé :
+`finance.js` est désormais COMPLET et JUSTE (base honoraires, double taux standard/remisé, déduction frais, acomptes, périmètre prévi/signé corrigé, définition unique de « signé »). Il expose tout ce dont les écrans ont besoin. Reste à faire pointer les écrans dessus — ils recalculent encore en dur, d'où les divergences persistantes. À faire écran par écran, testé.
+### ⚠️ 4 écrans réimplémentent le filtre devis en dur (à corriger AU rebranchement de chaque écran)
+Ils font `statut !== 'refuse'` localement → incluent en_attente à tort, et divergent de la règle recu/accepte/a_modifier :
+- `finances/page.js:254` (= le « prévisionnel page finance cassé » ci-dessous, même cause probable)
+- `chantiers/[id]:1586` (commentaire dit « recu+accepte », code prend tout sauf refusé)
+- `chantiers/[id]:2089` (commission prévue HT)
+- `dashboard:129`
+⚠️ Statut DEVIS (recu/accepte/refuse/a_modifier/en_attente) ≠ statut DOSSIER (devis_en_attente/devis_a_modifier/… préfixés devis_) — ne pas confondre.
+
 - [ ] **Rebrancher `chantiers/[id]` (suivi financier)** sur finance.js. Aujourd'hui : recalcul en dur, ancien modèle frais faux (`frais × taux` = 18€ au lieu du plein 300€), lit encore `frais_deduits` (la case). Prouvé par test 02/06 : cocher/décocher la case change le courtage de 18€ sur cet écran (faux). Doit afficher : Total HT/TTC, courtage standard(6%)+remisé, AMO standard(9%)+remisé, total 15%+remisé, prévi ET signé, le tout depuis finance.js.
-- [ ] **Calculer les ACOMPTES dans finance.js** (manque identifié ; le Recap en a besoin). Aucun calcul d'acompte dans finance.js aujourd'hui.
+- [x] **Calculer les ACOMPTES dans finance.js** ✅ FAIT (02/06). Montant par devis (acompte/acompteMode/acomptePct) + totaux (totalSignes/totalActifs), sentinel -1/0 géré nativement. ⚠️ Au rebranchement Recap : `totalActifs` repose sur getActiveDevis (recu+accepte+a_modifier) ; le Recap preview affiche recu+accepte seulement → soit recomposer depuis sa liste filtrée, soit ajouter un total dédié. À trancher au rebranchement.
 - [ ] **Rebrancher le Recap PDF** sur finance.js (utilise double taux + acomptes). ⚠️ Document CLIENT — le rebranchement AJOUTERA l'affichage courtage standard+remise qui manque aujourd'hui (le Recap ne montre la remise que sur l'AMO, pas le courtage). Test : montants AMO/total inchangés, nouveau bloc courtage à valider visuellement.
 - [ ] **Bug préexistant : prévisionnel de la page finance** (devis non signés invisibles). Pas une régression de nous (confirmé 02/06). À auditer.
 - [ ] **Dette `frais_deduits`** : champ encore lu à finance.js:94 (frais en tant que gain, sémantique distincte) + affichages (totaux chantier, conditions PDF) + la case UI. Une fois TOUT migré sur `frais_statut`, supprimer la case + la colonne. Question métier en attente : frais remboursés ⟹ automatiquement "ne compte pas comme gain" (l.94) ? ou décision séparée ?
@@ -460,6 +468,7 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 | 02/06 | **Bloc A — bug unicité redevances ✅** : DROP de l'ancienne contrainte `(mois, annee)`, la bonne `(agente_id, annee, mois)` existait déjà en index. Testé prod (2 agentes même mois OK). SQL versionné A1 | ✅ appliqué main |
 | 02/06 | **Bloc A — nettoyage orphelins Storage** : 21 fichiers résiduels supprimés (3 dossiers + 2 artisans supprimés dont le ménage Storage avait été manqué ; 0 référence vivante vérifiée sur 7 tables). Buckets propres avant L12 | ✅ fait via interface Storage |
 | 02/06 | **Chantier finances (B) — étape 1 : base honoraires corrigée.** Bug `finance.js:76` (`getSignedTotals` filtrait `commission_pourcentage > 0`, excluant à tort les devis 0% de la base honoraires, contraire doc 04 l.41). Filtre retiré (1 ligne). Prouvé sur 2026-AM-002 : honoraires 6 895,27 → 7 623,21 € ; commissions/apporteur inchangés ; dossier sans 0% non régressé. Branche `fix/honoraires-base-devis-0pct` | ✅ mergé |
+| 02/06 | **Chantier finances (B) — finance.js complété : acomptes + périmètre devis.** (1) Acomptes artisans calculés dans finance.js (montant + mode + totalSignes/totalActifs), gestion native sentinel -1/0. (2) `getActiveDevis` corrigé en liste blanche (recu/accepte/a_modifier) → exclut en_attente du prévisionnel. (3) Définition UNIQUE de « signé » : `getSignedDevis` + flag `.signed` excluent a_modifier même avec date_signature (cas client qui revient sur un devis signé). Impact réel vérifié : Jadras (honoraires réels −15 298 € base, devis a_modifier sortis du réel, statut confirmé correct), en_attente 0 € d'impact. | ✅ mergé |
 
 ⚠️ **CONSIGNES PROCESS CLAUDE CODE (permanentes, à rappeler en tête de CHAQUE lot)** :
 1. **SYNC AVANT TOUT** : Anne-Lise merge côté GitHub → la copie locale de Claude Code est en retard. Au début de chaque session/lot, Claude Code DOIT `git fetch origin && git checkout main && git pull origin main`, puis confirmer le HEAD, AVANT tout audit ou patch. Ne jamais auditer/coder sur un HEAD désynchronisé (risque : travailler sur du code périmé, ex. sans L6).
