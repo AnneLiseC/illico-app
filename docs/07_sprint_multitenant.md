@@ -392,6 +392,13 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 - **3 semaines** : confortable, absorbe une régression L5a + permet 1 lot de Phase 6.
 - **Risque #1 = L5a** (RLS finances + trigger). Mitigation : fichier SQL unique avec rollback complet + smoke test (« Marine voit X dossiers, somme F1 inchangée »).
 
+## Chantier finances (B) — phase 2 : REBRANCHER les écrans sur finance.js (PAS ENCORE FAIT)
+`finance.js` est correct, mais 2 écrans sur 3 recalculent encore en dur → divergences persistantes. À faire, écran par écran, testé :
+- [ ] **Rebrancher `chantiers/[id]` (suivi financier)** sur finance.js. Aujourd'hui : recalcul en dur, ancien modèle frais faux (`frais × taux` = 18€ au lieu du plein 300€), lit encore `frais_deduits` (la case). Prouvé par test 02/06 : cocher/décocher la case change le courtage de 18€ sur cet écran (faux). Doit afficher : Total HT/TTC, courtage standard(6%)+remisé, AMO standard(9%)+remisé, total 15%+remisé, prévi ET signé, le tout depuis finance.js.
+- [ ] **Calculer les ACOMPTES dans finance.js** (manque identifié ; le Recap en a besoin). Aucun calcul d'acompte dans finance.js aujourd'hui.
+- [ ] **Rebrancher le Recap PDF** sur finance.js (utilise double taux + acomptes). ⚠️ Document CLIENT — le rebranchement AJOUTERA l'affichage courtage standard+remise qui manque aujourd'hui (le Recap ne montre la remise que sur l'AMO, pas le courtage). Test : montants AMO/total inchangés, nouveau bloc courtage à valider visuellement.
+- [ ] **Bug préexistant : prévisionnel de la page finance** (devis non signés invisibles). Pas une régression de nous (confirmé 02/06). À auditer.
+- [ ] **Dette `frais_deduits`** : champ encore lu à finance.js:94 (frais en tant que gain, sémantique distincte) + affichages (totaux chantier, conditions PDF) + la case UI. Une fois TOUT migré sur `frais_statut`, supprimer la case + la colonne. Question métier en attente : frais remboursés ⟹ automatiquement "ne compte pas comme gain" (l.94) ? ou décision séparée ?
 ---
 
 ## 6. AVANCEMENT
