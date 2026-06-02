@@ -64,13 +64,22 @@ function getDevisList(dossier) {
   return Array.isArray(dossier?.devis_artisans) ? dossier.devis_artisans : []
 }
 
+// Actifs (prévisionnel) = liste BLANCHE explicite : recu, accepte, a_modifier.
+// Exclut nativement en_attente (devis pas encore arrivé), refuse, et tout statut
+// inconnu/null (plus robuste qu'une liste négative).
 export function getActiveDevis(dossier) {
-  return getDevisList(dossier).filter(dv => dv?.statut !== 'refuse')
+  return getDevisList(dossier).filter(dv =>
+    dv?.statut === 'recu' || dv?.statut === 'accepte' || dv?.statut === 'a_modifier'
+  )
 }
 
+// Signés = accepte (ou date_signature), MAIS jamais a_modifier — même avec une
+// date_signature résiduelle (client signe puis demande une modif → repasse
+// a_modifier ; il ne doit plus compter comme signé).
 export function getSignedDevis(dossier) {
   return getActiveDevis(dossier).filter(dv =>
-    dv?.statut === 'accepte' || isTruthyDate(dv?.date_signature)
+    dv?.statut !== 'a_modifier' &&
+    (dv?.statut === 'accepte' || isTruthyDate(dv?.date_signature))
   )
 }
 
@@ -121,8 +130,19 @@ export function calculateDevisFinance(devis, dossier = {}) {
   const royaltiesType2 = round2(comHT * ROYALTIES_RATE)
   const netCom         = round2(comHT - royaltiesType2)
   const parts          = split(netCom, partAgente)
-  const signed         = devis?.statut === 'accepte' || isTruthyDate(devis?.date_signature)
+  const signed         = devis?.statut !== 'a_modifier' &&
+                         (devis?.statut === 'accepte' || isTruthyDate(devis?.date_signature))
   const refused        = devis?.statut === 'refuse'
+
+  // Acompte artisan (affichage uniquement — n'entre dans aucun calcul de gain).
+  // Sentinel géré nativement : -1 = montant fixe, 0 = sans acompte, sinon % du TTC.
+  // Robuste par construction : un -1 sans montant fixe → 0 (jamais négatif ni NaN).
+  // Pas d'arrondi (cohérent avec les sites d'affichage existants).
+  const acomptePct  = toNumber(devis?.acompte_pourcentage ?? 30, 30)
+  const acompteMode = acomptePct === -1 ? 'fixe' : acomptePct === 0 ? 'sans' : 'pourcentage'
+  const acompte     = acompteMode === 'fixe' ? toNumber(devis?.acompte_montant_fixe)
+                    : acompteMode === 'sans' ? 0
+                    : montantTTC * (acomptePct / 100)
 
   return {
     id: devis?.id || null,
@@ -140,6 +160,9 @@ export function calculateDevisFinance(devis, dossier = {}) {
     royaltiesType2,
     netCom,
     parts: { agente: parts.agente, admin: parts.admin },
+    acompte,
+    acompteMode,
+    acomptePct,
   }
 }
 
@@ -452,6 +475,16 @@ export function calculateDossierFinance(dossier) {
     admin:  round2(gainsBrutsPrevi.admin  - apporteur.parts.admin),
   }
 
+  // Total des acomptes artisans (affichage uniquement). Deux ensembles en miroir
+  // des honoraires : SIGNÉS (getSignedDevis) et ACTIFS (getActiveDevis = même base
+  // que les honoraires prévi). Dérivés de commissions.devis (déjà = getActiveDevis
+  // mappé), chacun portant son champ .acompte et .signed. Pas d'arrondi (cohérent
+  // avec les sites d'affichage existants).
+  const acomptes = {
+    totalSignes: commissions.devis.filter(d => d.signed).reduce((s, d) => s + d.acompte, 0),
+    totalActifs: commissions.devis.reduce((s, d) => s + d.acompte, 0),
+  }
+
   return {
     settings: {
       partAgente,
@@ -476,5 +509,6 @@ export function calculateDossierFinance(dossier) {
       brutsPrevi: gainsBrutsPrevi,
       netsPrevi:  gainsNetsPrevi,
     },
+    acomptes,
   }
 }
