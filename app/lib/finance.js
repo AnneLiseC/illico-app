@@ -3,6 +3,8 @@
 
 const TVA = 1.2
 const ROYALTIES_RATE = 0.05
+const COURTAGE_STANDARD = 0.06
+const AMO_STANDARD = 0.09
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILITAIRES
@@ -177,15 +179,19 @@ export function calculateHonorairesFinance(dossier) {
   const isCourtage = typologie === 'courtage'
   const isAmo      = typologie === 'amo'
 
+  // Frais remboursés : on retire le PLEIN montant TTC des frais du courtage CALCULÉ
+  // (après application du taux), uniquement si frais_statut === 'rembourse'.
+  // La base honoraires n'est PAS amputée ; l'AMO n'est PAS affecté.
+  const fraisRembourse    = dossier?.frais_statut === 'rembourse'
+  const deductionFraisTTC = fraisRembourse ? round2(toNumber(dossier?.frais_consultation) || 0) : 0
+  const deductionFraisHT  = fraisRembourse ? round2((toNumber(dossier?.frais_consultation) || 0) / TVA) : 0
+
   let courtage = { ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
   if (isCourtage || isAmo) {
-    const fraisHT = (dossier?.frais_statut === 'rembourse' && dossier?.frais_deduits)
-      ? round2((toNumber(dossier?.frais_consultation) || 0) / TVA)
-      : 0
-    const baseHT  = round2(totalDevisHTSignes - fraisHT)
-    const baseTTC = round2(totalDevisTTCSignes - (fraisHT * TVA))
-    const ttc      = round2(baseTTC * tauxCourtage)
-    const ht       = round2(baseHT * tauxCourtage)
+    // Courtage net de frais = (base × taux) − frais remboursés (plein montant).
+    // Royalties/net calculés sur ce courtage APRÈS déduction (montant réellement facturé).
+    const ttc      = round2(totalDevisTTCSignes * tauxCourtage - deductionFraisTTC)
+    const ht       = round2(totalDevisHTSignes * tauxCourtage - deductionFraisHT)
     const royalties = round2(ht * ROYALTIES_RATE)
     const net      = round2(ht - royalties)
     const parts    = split(net, partAgente)
@@ -211,6 +217,15 @@ export function calculateHonorairesFinance(dossier) {
     admin:  round2(courtage.parts.admin  + soldeAmo.parts.admin),
   }
 
+  // Tarif STANDARD (barré côté client), TTC brut, même base que le remisé.
+  // Le courtage standard est DÉJÀ net de frais → totalTTC additionne sans re-soustraire.
+  const standard = {
+    courtageTTC: round2(totalDevisTTCSignes * COURTAGE_STANDARD - deductionFraisTTC),
+    amoTTC:      round2(totalDevisTTCSignes * AMO_STANDARD),
+    totalTTC:    0,
+  }
+  standard.totalTTC = round2(standard.courtageTTC + standard.amoTTC)
+
   return {
     typologie,
     tauxCourtage,
@@ -225,6 +240,7 @@ export function calculateHonorairesFinance(dossier) {
     totalRoyalties,
     totalNet,
     parts: totalParts,
+    standard,
   }
 }
 
@@ -254,35 +270,58 @@ export function calculateHonorairesPrevi(dossier) {
   const isCourtage = typologie === 'courtage'
   const isAmo      = typologie === 'amo'
 
-  let courtage = { ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
+  // Frais remboursés : même règle que le réel — plein montant TTC retiré du
+  // courtage calculé, condition unique frais_statut === 'rembourse'. AMO non affecté.
+  const fraisRembourse    = dossier?.frais_statut === 'rembourse'
+  const deductionFraisTTC = fraisRembourse ? round2(toNumber(dossier?.frais_consultation) || 0) : 0
+  const deductionFraisHT  = fraisRembourse ? round2((toNumber(dossier?.frais_consultation) || 0) / TVA) : 0
+
+  let courtage = { ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
   if (isCourtage || isAmo) {
-    const fraisHT   = dossier?.frais_deduits
-      ? round2((toNumber(dossier?.frais_consultation) || 0) / TVA)
-      : 0
-    const baseHT    = round2(totalHT - fraisHT)
-    const ht        = round2(baseHT * tauxCourtage)
+    const ttc       = round2(totalTTC * tauxCourtage - deductionFraisTTC)
+    const ht        = round2(totalHT * tauxCourtage - deductionFraisHT)
     const royalties = round2(ht * ROYALTIES_RATE)
     const net       = round2(ht - royalties)
     const parts     = split(net, partAgente)
-    courtage = { ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
+    courtage = { ttc, ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
   }
 
-  let soldeAmo = { ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
+  let soldeAmo = { ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
   if (isAmo) {
+    const ttc       = round2(totalTTC * tauxAmo)
     const ht        = round2(totalHT * tauxAmo)
     const royalties = round2(ht * ROYALTIES_RATE)
     const net       = round2(ht - royalties)
     const parts     = split(net, partAgente)
-    soldeAmo = { ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
+    soldeAmo = { ttc, ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
   }
 
-  const totalNet = round2(courtage.net + soldeAmo.net)
+  const totalNet       = round2(courtage.net + soldeAmo.net)
+  const totalTTCRemise = round2(courtage.ttc + soldeAmo.ttc)
   const parts    = {
     agente: round2(courtage.parts.agente + soldeAmo.parts.agente),
     admin:  round2(courtage.parts.admin  + soldeAmo.parts.admin),
   }
 
-  return { courtage, soldeAmo, totalNet, parts }
+  // Tarif STANDARD prévisionnel (barré côté client), TTC brut, même base que le remisé.
+  // Courtage standard déjà net de frais → totalTTC additionne sans re-soustraire.
+  const standard = {
+    courtageTTC: round2(totalTTC * COURTAGE_STANDARD - deductionFraisTTC),
+    amoTTC:      round2(totalTTC * AMO_STANDARD),
+    totalTTC:    0,
+  }
+  standard.totalTTC = round2(standard.courtageTTC + standard.amoTTC)
+
+  return {
+    courtage,
+    soldeAmo,
+    totalNet,
+    parts,
+    totalDevisHTRecus:  totalHT,
+    totalDevisTTCRecus: totalTTC,
+    totalTTC: totalTTCRemise,
+    standard,
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
