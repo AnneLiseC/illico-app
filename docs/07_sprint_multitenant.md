@@ -412,7 +412,7 @@ Les écrans recalculent encore en dur → divergences. À faire écran par écra
 - [x] **Étape 1 — Acomptes ✅ (03/06).** Les 6 sites d'acompte → `calculateDevisFinance().acompte`. Helper incomplet `montantAcompte` (sans cas -1) supprimé. `solde` ajouté à finance.js. `soldeExpected` conserve l'override par facture réelle. Testé Guerteau : montants inchangés, préremplissage facture OK, acompte fixe OK. Branche `feat/rebranch-acomptes-chantier`.
 - [x] **Étape 2 — Filtres devis ✅ (03/06).** 3 filtres (devisSignes, devisRecus, commission prévue) → `getSignedDevis`/`getActiveDevis`. Exigence `&& montant_ttc` abandonnée. Corrige bug latent en_attente. Effet nul sur données actuelles (test 48 devis/17 dossiers, ensembles identiques). Mergé `d9df59f`.
 - [x] **Étape 3 — Totaux signés : RIEN À FAIRE ✅ (03/06).** Déjà exposés par finance.js (faux manque de l'audit). Branche supprimée, aucun commit.
-- [ ] **Étape 4 — Commission prévue (montant).** `comHT` en dur (l.2087 via devisRecus, l.2668 par devis, l.3288 échéance) → `calculateCommissionsFinance().comHT` / `calculateDevisFinance().comHT`. NEUTRE (écart sub-centime d'arrondi). Indépendant, faible risque.
+- [x] **Étape 4 — Commission ✅ (03/06).** 3 calculs (l.2087, 2668, 3288) → `calculateCommissionsFinance`/`calculateDevisFinance().comHT`. Affichage pur, neutre (écart sub-centime). Mergé.
 - [ ] **Étapes 5+6+7 — Honoraires + Récap + Persistance : INSÉPARABLES, gros lot, à faire en session dédiée tête reposée.** (voir cadrage ci-dessous)
 
 **Cadrage du gros lot 5+6+7 (audit complet 03/06) :**
@@ -500,7 +500,7 @@ Une fois finance.js source unique partout : construire le **comparateur de varia
 | 03/06 | **Finances (B) Étape 1 — Acomptes rebranchés** : 6 sites de chantiers/[id] → `calculateDevisFinance().acompte`, helper `montantAcompte` supprimé, `solde` ajouté à finance.js. Testé Guerteau | ✅ mergé |
 | 03/06 | **Finances (B) Étape 2 — Filtres devis rebranchés** : 3 filtres → `getSignedDevis`/`getActiveDevis`, bug latent en_attente corrigé, effet nul (test 48 devis). Mergé `d9df59f` | ✅ mergé |
 | 03/06 | **Audit zones 4-5-6-7** (rebranchement chantiers/[id]) : ZONE 7 persistance = argent réel (relu par honReel) mais déclenchée sur clic seulement ; 5+6+7 inséparables ; migration 10 lignes suivi_financier nécessaire ; décision ZONE 6 = standard 6/9 pur | ✅ lecture seule |
-
+| 03/06 | **Finances (B) Étape 4 — Commission rebranchée** : 3 calculs de commission de chantiers/[id] (Commission prévue HT l.2087, par devis l.2668, échéance l.3288) → `calculateCommissionsFinance().comHT` / `calculateDevisFinance().comHT`. Affichage pur. Neutre (écart sub-centime d'arrondi). Réutilise finAc/finDv (DRY). Branche `feat/rebranch-commission-chantier` | ✅ mergé |
 
 
 ⚠️ **CONSIGNES PROCESS CLAUDE CODE (permanentes, à rappeler en tête de CHAQUE lot)** :
