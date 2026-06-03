@@ -6,7 +6,7 @@ Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { calculateDossierFinance } from '../lib/finance'
+import { calculateDossierFinance, getActiveDevis, getSignedDevis } from '../lib/finance'
 import { Avatar } from '../components/shared'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -251,8 +251,8 @@ export default function Finances() {
     const partAgente = f.settings.partAgente
 
     const estChantierMarine = d.referente?.role === 'admin'
-    const devisActifs       = (d.devis_artisans || []).filter(dv => dv.statut !== 'refuse')
-    const devisAcceptes     = devisActifs.filter(dv => dv.statut === 'accepte')
+    const devisActifs       = getActiveDevis(d)
+    const devisAcceptes     = getSignedDevis(d)
 
     // Map devisId → données finance
     const devisFinanceMap = new Map(f.commissions.devis.map(dv => [dv.id, dv]))
@@ -625,7 +625,7 @@ export default function Finances() {
       }
 
       // Commissions artisans normaux
-      const devisActifs = (d.devis_artisans || []).filter(dv => dv.statut === 'accepte')
+      const devisActifs = getSignedDevis(d)
       for (const dv of devisActifs) {
         if (dv.artisan?.paiement_direct) continue
         const artId = dv.artisan_id || dv.artisan?.id
