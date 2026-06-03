@@ -1764,8 +1764,6 @@ export default function FicheChantier({ params }) {
     setSaving(false)
   }
 
-  const montantAcompte = (d) => (d.montant_ttc || 0) * ((d.acompte_pourcentage ?? 30) / 100)
-
   if (loading) return <div className="page-loading" />
   if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-400)'}}>Chantier introuvable</div>
 
@@ -2641,8 +2639,11 @@ export default function FicheChantier({ params }) {
                 const factDevis = factures.filter(f => f.devis_id === d.id)
                 const factAcompte = factDevis.find(f => (f.libelle || '').toLowerCase().includes('acompte'))
                 const factSolde = factDevis.find(f => (f.libelle || '').toLowerCase().includes('solde'))
-                const acompteExpected = d.acompte_pourcentage === -1 ? (d.acompte_montant_fixe || 0) : montantAcompte(d)
-                const soldeExpected = Math.max(0, (d.montant_ttc || 0) - (factAcompte?.montant_ttc ?? acompteExpected))
+                const finAc = calculateDevisFinance(d, dossier)
+                const acompteExpected = finAc.acompte
+                const soldeExpected = factAcompte?.montant_ttc != null
+                  ? Math.max(0, (d.montant_ttc || 0) - factAcompte.montant_ttc)
+                  : Math.max(0, finAc.solde)
                 return (
                   <div key={d.id} style={{padding:'18px 22px', borderTop: idx === 0 ? 'none' : '1px solid var(--ink-100)'}}>
 
@@ -2710,7 +2711,7 @@ export default function FicheChantier({ params }) {
                     {d.statut === 'accepte' && (
                       <div style={{marginTop:14, marginLeft:54, display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
                         <FactureMiniLine
-                          title={`Acompte ${d.acompte_pourcentage === -1 ? '(fixe)' : (d.acompte_pourcentage ?? 30) + '%'}`}
+                          title={`Acompte ${finAc.acompteMode === 'fixe' ? '(fixe)' : finAc.acomptePct + '%'}`}
                           fact={factAcompte} expected={acompteExpected}
                           onAdd={() => {
                             setAjouterFacture(d.id)
@@ -2786,7 +2787,7 @@ export default function FicheChantier({ params }) {
                             <option value={-1}>Montant</option>
                             <option value={0}>Sans acompte</option>
                           </select>
-                          {d.acompte_pourcentage === -1 && (
+                          {finAc.acompteMode === 'fixe' && (
                             <input type="number" step="0.01" placeholder="Montant TTC" defaultValue={d.acompte_montant_fixe || ''}
                               onBlur={async e => {
                                 const v = e.target.value !== '' && Number.isFinite(parseFloat(e.target.value)) ? parseFloat(e.target.value) : null
@@ -2796,7 +2797,7 @@ export default function FicheChantier({ params }) {
                               className="input" style={{width:96, height:26, fontSize:11, padding:'0 6px'}} />
                           )}
                           <span className="tnum" style={{fontSize:11, fontWeight:600, color:'var(--ink-900)'}}>
-                            {fmt((d.acompte_pourcentage === -1 ? (d.acompte_montant_fixe || 0) : montantAcompte(d)))} TTC
+                            {fmt(finAc.acompte)} TTC
                           </span>
                         </div>
                       </div>
@@ -2940,7 +2941,7 @@ export default function FicheChantier({ params }) {
                         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                           <span style={{fontSize:11, color:'var(--ink-500)', fontWeight:600}}>🧾 Factures artisan</span>
                           <button onClick={() => {
-                            const acompteMontant = d.acompte_pourcentage === -1 ? (d.acompte_montant_fixe || 0) : montantAcompte(d)
+                            const acompteMontant = finAc.acompte
                             setAjouterFacture(d.id)
                             setNouvelleFacture({ montant_ttc: acompteMontant > 0 ? acompteMontant.toFixed(2) : '', date_paiement: '', statut: 'en_attente', fichier: null, libelle: 'Facture acompte', libelle_autre: '' })
                           }}
@@ -3010,7 +3011,7 @@ export default function FicheChantier({ params }) {
                                   setNouvelleFacture(f => {
                                     const next = { ...f, libelle, libelle_autre: '' }
                                     if (libelle === 'Facture acompte') {
-                                      const m = d.acompte_pourcentage === -1 ? (d.acompte_montant_fixe || 0) : montantAcompte(d)
+                                      const m = finAc.acompte
                                       if (m > 0) next.montant_ttc = m.toFixed(2)
                                     }
                                     return next
@@ -3282,15 +3283,14 @@ export default function FicheChantier({ params }) {
               {devisSignes.map(dv => {
                 const artId = dv.artisan_id || dv.artisan?.id
                 const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId)
-                const acompteMontant = dv.acompte_pourcentage === -1
-                  ? (dv.acompte_montant_fixe || 0)
-                  : (dv.montant_ttc || 0) * ((dv.acompte_pourcentage ?? 30) / 100)
+                const finDv = calculateDevisFinance(dv, dossier)
+                const acompteMontant = finDv.acompte
                 const comDevisHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
                 return (
                   <div key={`ech-${dv.id}`} style={{display:'flex', flexDirection:'column', gap:8}}>
                     <EcheanceRow
                       label={`Acompte client — ${dv.artisan?.entreprise || '—'}`}
-                      sub={`${dv.acompte_pourcentage === -1 ? 'fixe' : (dv.acompte_pourcentage ?? 30) + '%'} acompte · ${fmt(acompteMontant)} TTC`}
+                      sub={`${finDv.acompteMode === 'fixe' ? 'fixe' : finDv.acomptePct + '%'} acompte · ${fmt(acompteMontant)} TTC`}
                       statut={sf?.statut_client || 'en_attente'}
                       date={sf?.date_reglement_client || sf?.date_paiement || null}
                       onToggle={() => {

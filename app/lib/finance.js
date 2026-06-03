@@ -143,6 +143,7 @@ export function calculateDevisFinance(devis, dossier = {}) {
   const acompte     = acompteMode === 'fixe' ? toNumber(devis?.acompte_montant_fixe)
                     : acompteMode === 'sans' ? 0
                     : montantTTC * (acomptePct / 100)
+  const solde       = montantTTC - acompte  // reste à payer après acompte (affichage)
 
   return {
     id: devis?.id || null,
@@ -163,6 +164,7 @@ export function calculateDevisFinance(devis, dossier = {}) {
     acompte,
     acompteMode,
     acomptePct,
+    solde,
   }
 }
 
