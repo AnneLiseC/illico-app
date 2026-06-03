@@ -1,7 +1,7 @@
 # 07 — SPRINT MULTI-TENANT BATILIS
 
 > Boussole du sprint. Lue par Claude (binôme) et Claude Code à chaque session.
-> Créé le 28/05/2026. Statut : **PLAN PRÊT** (audits 1/2/3 ✅, plan d'exécution 6 phases ✅). Prochaine étape : exécution Phase 1.
+> Créé le 28/05/2026. Statut : **PHASES 1-5 CLOSES** (app prête pour test mono-agence). En cours : **Chantier finances (B)** — assainir finance.js puis rebrancher les écrans dessus (voir section dédiée avant §6). En attente derrière : nettoyage données test + TEST UTILISATEUR, puis Phase 6 post-test (bloc A sécurité/L12 en tête).
 
 ---
 
@@ -392,22 +392,50 @@ Ordre intra-phase : **fondations (societes, agences, profiles) → racines (doss
 - **3 semaines** : confortable, absorbe une régression L5a + permet 1 lot de Phase 6.
 - **Risque #1 = L5a** (RLS finances + trigger). Mitigation : fichier SQL unique avec rollback complet + smoke test (« Marine voit X dossiers, somme F1 inchangée »).
 
-## Chantier finances (B) — phase 2 : REBRANCHER les écrans sur finance.js (PAS ENCORE FAIT)
-`finance.js` est désormais COMPLET et JUSTE (base honoraires, double taux standard/remisé, déduction frais, acomptes, périmètre prévi/signé corrigé, définition unique de « signé »). Il expose tout ce dont les écrans ont besoin. Reste à faire pointer les écrans dessus — ils recalculent encore en dur, d'où les divergences persistantes. À faire écran par écran, testé.
-### ⚠️ 4 écrans réimplémentent le filtre devis en dur (à corriger AU rebranchement de chaque écran)
-Ils font `statut !== 'refuse'` localement → incluent en_attente à tort, et divergent de la règle recu/accepte/a_modifier :
-- `finances/page.js:254` (= le « prévisionnel page finance cassé » ci-dessous, même cause probable)
-- `chantiers/[id]:1586` (commentaire dit « recu+accepte », code prend tout sauf refusé)
-- `chantiers/[id]:2089` (commission prévue HT)
-- `dashboard:129`
-⚠️ Statut DEVIS (recu/accepte/refuse/a_modifier/en_attente) ≠ statut DOSSIER (devis_en_attente/devis_a_modifier/… préfixés devis_) — ne pas confondre.
+## CHANTIER FINANCES (B) — assainir finance.js + rebrancher les écrans
 
-- [ ] **Rebrancher `chantiers/[id]` (suivi financier)** sur finance.js. Aujourd'hui : recalcul en dur, ancien modèle frais faux (`frais × taux` = 18€ au lieu du plein 300€), lit encore `frais_deduits` (la case). Prouvé par test 02/06 : cocher/décocher la case change le courtage de 18€ sur cet écran (faux). Doit afficher : Total HT/TTC, courtage standard(6%)+remisé, AMO standard(9%)+remisé, total 15%+remisé, prévi ET signé, le tout depuis finance.js.
-- [x] **Calculer les ACOMPTES dans finance.js** ✅ FAIT (02/06). Montant par devis (acompte/acompteMode/acomptePct) + totaux (totalSignes/totalActifs), sentinel -1/0 géré nativement. ⚠️ Au rebranchement Recap : `totalActifs` repose sur getActiveDevis (recu+accepte+a_modifier) ; le Recap preview affiche recu+accepte seulement → soit recomposer depuis sa liste filtrée, soit ajouter un total dédié. À trancher au rebranchement.
-- [ ] **Rebrancher le Recap PDF** sur finance.js (utilise double taux + acomptes). ⚠️ Document CLIENT — le rebranchement AJOUTERA l'affichage courtage standard+remise qui manque aujourd'hui (le Recap ne montre la remise que sur l'AMO, pas le courtage). Test : montants AMO/total inchangés, nouveau bloc courtage à valider visuellement.
-- [ ] **Bug préexistant : prévisionnel de la page finance** (devis non signés invisibles). Pas une régression de nous (confirmé 02/06). À auditer.
-- [ ] **Dette `frais_deduits`** : champ encore lu à finance.js:94 (frais en tant que gain, sémantique distincte) + affichages (totaux chantier, conditions PDF) + la case UI. Une fois TOUT migré sur `frais_statut`, supprimer la case + la colonne. Question métier en attente : frais remboursés ⟹ automatiquement "ne compte pas comme gain" (l.94) ? ou décision séparée ?
----
+> Déclenché par le besoin d'un comparateur de variantes de devis (présenter des scénarios au client). Constat : impossible de le construire sur des calculs faux/divergents → décision (assumée) de TOUT assainir d'abord. Deux phases : (1) rendre finance.js juste et complet ✅ FAIT ; (2) rebrancher les écrans dessus (en cours).
+
+### Phase 1 — finance.js juste et complet ✅ TERMINÉE (02/06)
+finance.js est désormais la SOURCE unique correcte. Corrections successives :
+- ✅ Base honoraires : devis 0% (paiement direct) étaient exclus à tort → filtre `commission > 0` retiré de `getSignedTotals` (commit `ce97937`).
+- ✅ Double taux : courtage/AMO en standard (6%/9% constantes) + remisé, exposés en TTC, réel ET prévi. Constantes `COURTAGE_STANDARD=0.06`, `AMO_STANDARD=0.09`.
+- ✅ Déduction frais remboursés : plein montant TTC retiré du COURTAGE calculé (pas de la base, pas l'AMO), condition `frais_statut='rembourse'` seul. Doublon statut `rembourse_apres_signature`→`rembourse` nettoyé (commit `81326ca`).
+- ✅ Acomptes : montant + mode + `acomptePct` + `solde` par devis, totaux `totalSignes`/`totalActifs`, sentinel -1/0 géré nativement.
+- ✅ Périmètre devis : `getActiveDevis` = liste blanche `recu/accepte/a_modifier` (exclut en_attente). Définition UNIQUE de « signé » : `getSignedDevis` + flag `.signed` excluent `a_modifier` même avec date_signature.
+- ✅ Totaux signés : déjà exposés (`f.honoraires.totalDevisHTSignes/TTCSignes`) — faux manque.
+
+### Phase 2 — REBRANCHER les écrans sur finance.js (EN COURS)
+Les écrans recalculent encore en dur → divergences. À faire écran par écran, testé.
+
+**chantiers/[id]/page.js (4858 lignes) — rebranchement progressif par zones :**
+- [x] **Étape 1 — Acomptes ✅ (03/06).** Les 6 sites d'acompte → `calculateDevisFinance().acompte`. Helper incomplet `montantAcompte` (sans cas -1) supprimé. `solde` ajouté à finance.js. `soldeExpected` conserve l'override par facture réelle. Testé Guerteau : montants inchangés, préremplissage facture OK, acompte fixe OK. Branche `feat/rebranch-acomptes-chantier`.
+- [x] **Étape 2 — Filtres devis ✅ (03/06).** 3 filtres (devisSignes, devisRecus, commission prévue) → `getSignedDevis`/`getActiveDevis`. Exigence `&& montant_ttc` abandonnée. Corrige bug latent en_attente. Effet nul sur données actuelles (test 48 devis/17 dossiers, ensembles identiques). Mergé `d9df59f`.
+- [x] **Étape 3 — Totaux signés : RIEN À FAIRE ✅ (03/06).** Déjà exposés par finance.js (faux manque de l'audit). Branche supprimée, aucun commit.
+- [ ] **Étape 4 — Commission prévue (montant).** `comHT` en dur (l.2087 via devisRecus, l.2668 par devis, l.3288 échéance) → `calculateCommissionsFinance().comHT` / `calculateDevisFinance().comHT`. NEUTRE (écart sub-centime d'arrondi). Indépendant, faible risque.
+- [ ] **Étapes 5+6+7 — Honoraires + Récap + Persistance : INSÉPARABLES, gros lot, à faire en session dédiée tête reposée.** (voir cadrage ci-dessous)
+
+**Cadrage du gros lot 5+6+7 (audit complet 03/06) :**
+- **Chaîne** : `devisSignes`/`devisRecus` (✅ rebranchés) → honoraires en dur (l.1591-1603) → Récap (l.3108-3164) → `majSuiviChantier` PERSISTE en base (l.3327, 3342). Inséparables : rebrancher 5 propage dans 6 et 7.
+- **ZONE 5 (honoraires)** : `f.honoraires.courtage/soldeAmo.ttc` (signé), `f.honorairesPrevi.*` (prévi). Modèle frais finance = plein montant. **Change 2 dossiers à frais remboursés** : Cossanteli −300€, Leulier −550€ (courtage prévi). Reste neutre (`frais_deduits=false` partout).
+- **ZONE 6 (standard Récap)** : aujourd'hui hybride `base × (taux_courtage_réel + 0.09)` → libellé « 15% » menteur (vaut 14,4% sur Eppinger). **DÉCISION MÉTIER TRANCHÉE (03/06) : standard = 6%/9% PUR (15% catalogue illiCO)** → utiliser `f.honoraires.standard.totalTTC`. Change le « standard 15% » des dossiers à taux≠6% (Eppinger : 10 635,83 faux → 11 078,99 vrai). « Total chantier » composite = MANQUANT dans finance.js (à recomposer côté écran).
+- **🔴 ZONE 7 (persistance — le point dangereux)** : `majSuiviChantier` écrit `suivi_financier.montant_ttc`, RELU par `finances/page.js:349` → `honReel` = **honoraires RÉELS facturés de l'agente** (argent réel, pas cosmétique), ET par `calculerAvancement` → % avancement. **Bon point : déclenché UNIQUEMENT sur clic (onToggle), JAMAIS au render** → ouvrir un dossier ne réécrit rien. `montant_ttc` figé au 1er insert (jamais ré-updaté).
+- **🔴 MIGRATION DE DONNÉES NÉCESSAIRE** : 10 lignes `suivi_financier` existent avec `montant_ttc` ancien modèle (certaines RÉGLÉES → pèsent sur gains + avancement). Resteront figées/fausses (dossiers rembourse + taux≠6%) sauf UPDATE explicite. NE PAS migrer en aveugle (lignes réglées = historique). À cadrer : recalculer via finance.js, comparer, décider — priorité Cossanteli/Leulier (rembourse) + Eppinger/Delbove (taux≠6%).
+- **Dette préexistante repérée** : `finances/page.js:349` reconstitue le HT via `/1.1` au lieu de `/1.2` (incohérent). Hors périmètre immédiat.
+- **Ordre** : Étape 4 (commission, neutre) → puis 5+6+7 ENSEMBLE (change argent réel + persistance + migration → session dédiée, tête reposée).
+
+**Autres écrans (après chantiers/[id]) :**
+- [ ] **Rebrancher le Recap PDF** sur finance.js. ⚠️ Document CLIENT. Le rebranchement AJOUTERA l'affichage courtage standard+remise (le Recap ne montre la remise que sur l'AMO aujourd'hui). ⚠️ `acomptes.totalActifs` (recu+accepte+a_modifier) ≠ Recap preview (recu+accepte) → recomposer depuis la liste filtrée ou ajouter un total dédié.
+- [ ] **Bug préexistant : prévisionnel page finance** (devis non signés invisibles, `finances/page.js:254` filtre `!== refuse` en dur). Pas une régression de nous. À auditer/rebrancher.
+- [ ] **dashboard:129** filtre devis en dur (`!== refuse`) → à rebrancher.
+
+### Dettes liées au chantier finances
+- [ ] **Dette `frais_deduits`** : champ encore lu à `finance.js:94` (frais en tant que GAIN — sémantique distincte de la déduction courtage, ne PAS confondre) + affichages (totaux chantier, conditions PDF) + la case UI « Remboursés — déduits du courtage ». Une fois TOUT migré sur `frais_statut`, supprimer la case + la colonne. **Question métier en attente** : frais remboursés ⟹ automatiquement « ne compte pas comme gain » (l.94) ? ou décision séparée ?
+- [ ] **⚠️ Statut DEVIS** (recu/accepte/refuse/a_modifier/en_attente) **≠ statut DOSSIER** (devis_en_attente/… préfixés `devis_`) — ne pas confondre lors des corrections de filtres.
+
+### Objectif final du chantier
+Une fois finance.js source unique partout : construire le **comparateur de variantes de devis** (besoin initial) — sélection de devis + surcharge montant/taux + export PDF d'une variante. Sur base saine.
+
 
 ## 6. AVANCEMENT
 
@@ -469,8 +497,9 @@ Ils font `statut !== 'refuse'` localement → incluent en_attente à tort, et di
 | 02/06 | **Bloc A — nettoyage orphelins Storage** : 21 fichiers résiduels supprimés (3 dossiers + 2 artisans supprimés dont le ménage Storage avait été manqué ; 0 référence vivante vérifiée sur 7 tables). Buckets propres avant L12 | ✅ fait via interface Storage |
 | 02/06 | **Chantier finances (B) — étape 1 : base honoraires corrigée.** Bug `finance.js:76` (`getSignedTotals` filtrait `commission_pourcentage > 0`, excluant à tort les devis 0% de la base honoraires, contraire doc 04 l.41). Filtre retiré (1 ligne). Prouvé sur 2026-AM-002 : honoraires 6 895,27 → 7 623,21 € ; commissions/apporteur inchangés ; dossier sans 0% non régressé. Branche `fix/honoraires-base-devis-0pct` | ✅ mergé |
 | 02/06 | **Chantier finances (B) — finance.js complété : acomptes + périmètre devis.** (1) Acomptes artisans calculés dans finance.js (montant + mode + totalSignes/totalActifs), gestion native sentinel -1/0. (2) `getActiveDevis` corrigé en liste blanche (recu/accepte/a_modifier) → exclut en_attente du prévisionnel. (3) Définition UNIQUE de « signé » : `getSignedDevis` + flag `.signed` excluent a_modifier même avec date_signature (cas client qui revient sur un devis signé). Impact réel vérifié : Jadras (honoraires réels −15 298 € base, devis a_modifier sortis du réel, statut confirmé correct), en_attente 0 € d'impact. | ✅ mergé |
-- [x] **Étape 1 — Acomptes rebranchés ✅ (03/06).** Les 6 sites d'acompte de chantiers/[id] passent par `calculateDevisFinance().acompte`. Helper incomplet `montantAcompte` (sans cas -1) supprimé. Ajout de `solde` (= TTC − acompte) à finance.js. `soldeExpected` conserve l'override par la facture réelle (solde = TTC − montant facturé si facture acompte émise, sinon TTC − acompte théorique). Testé prod Guerteau : montants inchangés, préremplissage facture OK, acompte fixe OK, solde OK. Branche `feat/rebranch-acomptes-chantier`.
-- [x] **Étape 2 — Filtres devis rebranchés ✅ (03/06).** Les 3 filtres devis en dur (devisSignes l.1582, devisRecus l.1586, commission prévue l.2087) passent par `getSignedDevis`/`getActiveDevis`. Exigence `&& montant_ttc` abandonnée (null-safe en aval). Corrige le bug latent `en_attente` (un en_attente chiffré futur ne sera plus compté dans le prévi). Effet nul sur données actuelles (test non-régression : 48 devis, 17 dossiers, ensembles identiques). Commentaire l.1585 corrigé (recu+accepte+a_modifier). Branche `feat/rebranch-filtres-devis-chantier`. Testé prod Guerteau + Jadras : Récap inchangé. Mergé `d9df59f`.
+| 03/06 | **Finances (B) Étape 1 — Acomptes rebranchés** : 6 sites de chantiers/[id] → `calculateDevisFinance().acompte`, helper `montantAcompte` supprimé, `solde` ajouté à finance.js. Testé Guerteau | ✅ mergé |
+| 03/06 | **Finances (B) Étape 2 — Filtres devis rebranchés** : 3 filtres → `getSignedDevis`/`getActiveDevis`, bug latent en_attente corrigé, effet nul (test 48 devis). Mergé `d9df59f` | ✅ mergé |
+| 03/06 | **Audit zones 4-5-6-7** (rebranchement chantiers/[id]) : ZONE 7 persistance = argent réel (relu par honReel) mais déclenchée sur clic seulement ; 5+6+7 inséparables ; migration 10 lignes suivi_financier nécessaire ; décision ZONE 6 = standard 6/9 pur | ✅ lecture seule |
 
 
 
