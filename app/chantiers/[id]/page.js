@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement } from '../../lib/dossiers'
-import { calculateDossierFinance, calculateDevisFinance } from '../../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance, getSignedDevis, getActiveDevis } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 
 function Svg({ children, size = 14 }) {
@@ -1579,11 +1579,11 @@ export default function FicheChantier({ params }) {
   const TONE_BG = { ok: 'rgba(22,163,74,0.12)', warn: 'rgba(245,158,11,0.13)', bad: 'rgba(220,38,38,0.10)', info: 'rgba(0,148,212,0.12)', mute: 'rgba(148,163,184,0.15)' }
   const TONE_FG = { ok: '#15803d', warn: '#a16207', bad: '#b91c1c', info: '#0078ad', mute: '#475569' }
 
-  const devisSignes = devis.filter(d => d.statut === 'accepte' && d.montant_ttc)
+  const devisSignes = getSignedDevis({ ...dossier, devis_artisans: devis })
   const totalDevisTTCSignes = devisSignes.reduce((s, d) => s + (d.montant_ttc || 0), 0)
   const totalDevisHTSignes  = devisSignes.reduce((s, d) => s + (d.montant_ht  || 0), 0)
-    // Devis reçus = recu + accepte (vue prévisionnelle complète)
-  const devisRecus = devis.filter(d => d.statut !== 'refuse' && d.montant_ttc)
+    // Devis actifs (prévisionnel) = recu + accepte + a_modifier (en_attente et refuse exclus)
+  const devisRecus = getActiveDevis({ ...dossier, devis_artisans: devis })
   const totalDevisTTCRecus = devisRecus.reduce((s, d) => s + (d.montant_ttc || 0), 0)
   const totalDevisHTRecus  = devisRecus.reduce((s, d) => s + (d.montant_ht  || 0), 0)
   const fraisTTC = dossier?.frais_consultation || 0
@@ -2084,7 +2084,7 @@ export default function FicheChantier({ params }) {
             <h2 className="page" style={{fontSize:15, marginBottom:14}}>Informations clés</h2>
             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', rowGap:14, columnGap:18}}>
               <Fact label="Montant chantier" value={totalDevisTTCSignes > 0 ? fmt(totalDevisTTCSignes) : '—'} highlight />
-              <Fact label="Commission prévue HT" value={fmt(devis.filter(d => d.statut !== 'refuse').reduce((s, d) => s + (Number(d.montant_ht) || 0) * (Number(d.commission_pourcentage) || 0), 0))} highlight />
+              <Fact label="Commission prévue HT" value={fmt(devisRecus.reduce((s, d) => s + (Number(d.montant_ht) || 0) * (Number(d.commission_pourcentage) || 0), 0))} highlight />
               <Fact label="Démarrage" value={dossier.date_demarrage_chantier ? new Date(dossier.date_demarrage_chantier).toLocaleDateString('fr-FR') : '—'} />
               <Fact label="Fin prévue" value={dossier.date_fin_chantier ? new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR') : '—'} />
               <Fact label="Limite devis" value={dossier.date_limite_devis ? new Date(dossier.date_limite_devis).toLocaleDateString('fr-FR') : '—'} />
