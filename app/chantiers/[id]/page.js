@@ -1588,19 +1588,18 @@ export default function FicheChantier({ params }) {
   const totalDevisHTRecus  = devisRecus.reduce((s, d) => s + (d.montant_ht  || 0), 0)
   const fraisTTC = dossier?.frais_consultation || 0
   const fraisInclus = fraisTTC > 0 && dossier?.frais_statut !== 'offerts'
-  const fraisHT = (dossier?.frais_deduits && fraisTTC) ? (fraisTTC / 1.2) : 0
   const tauxCourtage = (dossier?.taux_courtage ?? 0.06)
   const tauxCourtagePct = parseFloat((tauxCourtage * 100).toFixed(1))
   const tauxAmo = ((dossier?.honoraires_amo_taux ?? 9) / 100)
   const tauxAmoPct = parseFloat((tauxAmo * 100).toFixed(1))
-  // Base honoraires signés (accepte uniquement)
-  const baseCourtageHTTC = totalDevisTTCSignes - (fraisHT * 1.2)
-  const honorairesCourtage = baseCourtageHTTC * tauxCourtage
-  const honorairesAMO      = baseCourtageHTTC * (tauxCourtage + tauxAmo)
-  // Base honoraires prévisionnelle (recu + accepte)
-  const baseCourtageHTTCPrev  = totalDevisTTCRecus - (fraisHT * 1.2)
-  const honorairesCourtagePrev = baseCourtageHTTCPrev * tauxCourtage
-  const honorairesAMOPrev      = baseCourtageHTTCPrev * (tauxCourtage + tauxAmo)
+  // Honoraires depuis finance.js (source unique de calcul). Modèle frais = finance :
+  // le plein montant TTC est déduit du courtage si frais_statut==='rembourse'
+  // (et non l'ancien modèle local base-réduction sur frais_deduits).
+  const finDossier = calculateDossierFinance({ ...dossier, devis_artisans: devis, suivi_financier: suiviFinancier })
+  const honorairesCourtage = finDossier.honoraires.courtage.ttc
+  const honorairesAMO      = finDossier.honoraires.courtage.ttc + finDossier.honoraires.soldeAmo.ttc
+  const honorairesCourtagePrev = finDossier.honorairesPrevi.courtage.ttc
+  const honorairesAMOPrev      = finDossier.honorairesPrevi.courtage.ttc + finDossier.honorairesPrevi.soldeAmo.ttc
   const suiviCourtage = suiviFinancier.find(s => s.type_echeance === 'honoraires_courtage')
   const suiviAcompteAMO = suiviFinancier.find(s => s.type_echeance === 'acompte_amo')
   const suiviSoldeAMO = suiviFinancier.find(s => s.type_echeance === 'solde_amo')
@@ -2527,7 +2526,7 @@ export default function FicheChantier({ params }) {
             <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
               <h2 className="page" style={{fontSize:16}}>Honoraires client</h2>
               <div className="eyebrow" style={{marginTop:4}}>
-                Calculés sur <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(baseCourtageHTTCPrev)}</span> TTC (devis reçus + signés{fraisHT > 0 && ' · frais déduits'})
+                Calculés sur <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(finDossier.honorairesPrevi.totalDevisTTCRecus)}</span> TTC (devis reçus + signés)
               </div>
             </div>
             <div style={{padding:16, display:'flex', flexDirection:'column', gap:12}}>
@@ -2540,8 +2539,13 @@ export default function FicheChantier({ params }) {
                       Honoraires courtage <span style={{color:'var(--brand-800)'}}>({tauxCourtagePct}%)</span>
                     </div>
                     <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:3}}>
-                      {tauxCourtagePct}% × <span className="tnum">{fmt(baseCourtageHTTCPrev)}</span> TTC · Échéance 48h après signature devis
+                      {tauxCourtagePct}% × <span className="tnum">{fmt(finDossier.honorairesPrevi.totalDevisTTCRecus)}</span> TTC · Échéance 48h après signature devis
                     </div>
+                    {dossier.frais_statut === 'rembourse' && fraisTTC > 0 && (
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:3}}>
+                        dont frais consultation déduits : −{fmt(fraisTTC)}
+                      </div>
+                    )}
                   </div>
                   <span className="tnum" style={{fontSize:17, fontWeight:800, color:'var(--ink-900)', letterSpacing:-0.01}}>{fmt(honorairesCourtagePrev)}</span>
                 </div>
@@ -2573,8 +2577,13 @@ export default function FicheChantier({ params }) {
                         Honoraires AMO <span style={{color:'var(--brand-700)'}}>({parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)</span>
                       </div>
                       <div style={{fontSize:11.5, color:'var(--brand-700)', marginTop:3}}>
-                        {tauxCourtagePct}% courtage + {tauxAmoPct}% AMO × <span className="tnum">{fmt(baseCourtageHTTCPrev)}</span> TTC
+                        {tauxCourtagePct}% courtage + {tauxAmoPct}% AMO × <span className="tnum">{fmt(finDossier.honorairesPrevi.totalDevisTTCRecus)}</span> TTC
                       </div>
+                      {dossier.frais_statut === 'rembourse' && fraisTTC > 0 && (
+                        <div style={{fontSize:11.5, color:'var(--brand-700)', marginTop:3}}>
+                          dont frais consultation déduits : −{fmt(fraisTTC)}
+                        </div>
+                      )}
                     </div>
                     <span className="tnum" style={{fontSize:17, fontWeight:800, color:'var(--brand-900)', letterSpacing:-0.01}}>{fmt(honorairesAMOPrev)}</span>
                   </div>
@@ -3120,8 +3129,8 @@ export default function FicheChantier({ params }) {
                       </div>
                       {dossier.typologie === 'amo' && (
                         <div style={{marginTop:10, paddingTop:10, borderTop:'1px dashed var(--brand-200)'}}>
-                          <RecapRow label="Total honoraires (15%)" value={fmt(baseCourtageHTTCPrev * (tauxCourtage + 0.09))} tone="brand" />
-                          <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + baseCourtageHTTCPrev * (tauxCourtage + 0.09) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                          <RecapRow label="Total honoraires (15%)" value={fmt(finDossier.honorairesPrevi.standard.totalTTC)} tone="brand" />
+                          <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + finDossier.honorairesPrevi.standard.totalTTC + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
                           {tauxAmoPct !== 9 && (
                             <div style={{marginTop:8, paddingTop:8, borderTop:'1px dashed var(--brand-200)'}}>
                               <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMOPrev)} tone="brand" />
@@ -3156,8 +3165,8 @@ export default function FicheChantier({ params }) {
                       </div>
                       {dossier.typologie === 'amo' && (
                         <div style={{marginTop:10, paddingTop:10, borderTop:'1px dashed var(--ink-200)'}}>
-                          <RecapRow label="Total honoraires (15%)" value={fmt(baseCourtageHTTC * (tauxCourtage + 0.09))} />
-                          <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + baseCourtageHTTC * (tauxCourtage + 0.09) + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                          <RecapRow label="Total honoraires (15%)" value={fmt(finDossier.honoraires.standard.totalTTC)} />
+                          <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + finDossier.honoraires.standard.totalTTC + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
                           {tauxAmoPct !== 9 && (
                             <div style={{marginTop:8, paddingTop:8, borderTop:'1px dashed var(--ink-200)'}}>
                               <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMO)} />
@@ -3184,7 +3193,7 @@ export default function FicheChantier({ params }) {
 
       {/* ── SUIVI FINANCIER (maquette : KPI gains + Échéances) ── */}
       {onglet === 'finance' && (() => {
-        const fin = calculateDossierFinance({ ...dossier, devis_artisans: devis, suivi_financier: suiviFinancier })
+        const fin = finDossier
 
         // Frais de consultation — comptés en réel seulement si réglés (offerts / en attente → 0)
         const fraisRegle       = dossier?.frais_statut === 'regle'
