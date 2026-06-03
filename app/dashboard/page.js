@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { calculateDossierFinance, calculateDevisFinance } from '../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance, getActiveDevis } from '../lib/finance'
 import { KpiCard, Progress } from '../components/shared'
 import ModaleChoixClient from '../components/ModaleChoixClient'
 
@@ -126,7 +126,7 @@ function computeCAMensuel(dossiers, annee) {
     if (sfFrais    && nd.frais_statut !== 'offerts') add(sfFrais.date_paiement    || nd.date_signature_contrat, fin.frais.net)
     if (sfCourtage) add(sfCourtage.date_paiement || nd.date_signature_contrat, fin.honoraires.courtage.net)
     if (sfAmo)      add(sfAmo.date_paiement, fin.honoraires.soldeAmo.net)
-    for (const dv of (d.devis_artisans || []).filter(dv => dv?.statut !== 'refuse')) {
+    for (const dv of getActiveDevis(d)) {
       const artId     = dv.artisan?.id
       const sfAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId && s.statut_illico === 'recu')
       const sfFacture = suivi.find(s => s.type_echeance === 'facture_finale'  && s.artisan_id === artId && s.statut_illico === 'recu')
