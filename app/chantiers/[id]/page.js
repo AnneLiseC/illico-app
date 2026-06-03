@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement } from '../../lib/dossiers'
-import { calculateDossierFinance, calculateDevisFinance, getSignedDevis, getActiveDevis } from '../../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 
 function Svg({ children, size = 14 }) {
@@ -2084,7 +2084,7 @@ export default function FicheChantier({ params }) {
             <h2 className="page" style={{fontSize:15, marginBottom:14}}>Informations clés</h2>
             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', rowGap:14, columnGap:18}}>
               <Fact label="Montant chantier" value={totalDevisTTCSignes > 0 ? fmt(totalDevisTTCSignes) : '—'} highlight />
-              <Fact label="Commission prévue HT" value={fmt(devisRecus.reduce((s, d) => s + (Number(d.montant_ht) || 0) * (Number(d.commission_pourcentage) || 0), 0))} highlight />
+              <Fact label="Commission prévue HT" value={fmt(calculateCommissionsFinance({ ...dossier, devis_artisans: devis }).comHT)} highlight />
               <Fact label="Démarrage" value={dossier.date_demarrage_chantier ? new Date(dossier.date_demarrage_chantier).toLocaleDateString('fr-FR') : '—'} />
               <Fact label="Fin prévue" value={dossier.date_fin_chantier ? new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR') : '—'} />
               <Fact label="Limite devis" value={dossier.date_limite_devis ? new Date(dossier.date_limite_devis).toLocaleDateString('fr-FR') : '—'} />
@@ -2665,7 +2665,7 @@ export default function FicheChantier({ params }) {
                             <span>
                               <strong style={{color:'var(--brand-800)'}}>Com. {(d.commission_pourcentage * 100).toFixed(1)}%</strong>
                               {' → '}
-                              <span className="tnum">{fmt((d.montant_ht || 0) * d.commission_pourcentage)}</span> HT
+                              <span className="tnum">{fmt(finAc.comHT)}</span> HT
                             </span>
                           )}
                           {d.date_signature && d.statut === 'accepte' && (
@@ -3285,7 +3285,7 @@ export default function FicheChantier({ params }) {
                 const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId)
                 const finDv = calculateDevisFinance(dv, dossier)
                 const acompteMontant = finDv.acompte
-                const comDevisHT = (dv.montant_ht || 0) * (dv.commission_pourcentage || 0)
+                const comDevisHT = finDv.comHT
                 return (
                   <div key={`ech-${dv.id}`} style={{display:'flex', flexDirection:'column', gap:8}}>
                     <EcheanceRow
