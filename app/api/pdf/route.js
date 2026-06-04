@@ -9,7 +9,7 @@ import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleShe
 import path from 'path'
 import fs from 'fs'
 import { requireUser } from '../../lib/api-auth'
-import { calculateHonorairesFinance, calculateHonorairesRecuAccepte, COURTAGE_STANDARD, AMO_STANDARD } from '../../lib/finance'
+import RecapHonoraires from '../../lib/pdf/RecapHonoraires.js'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -104,21 +104,10 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
   const devisAcceptes = (devis || []).filter((d) => preview ? (d.statut === 'recu' || d.statut === 'accepte') : d.statut === 'accepte')
   const totalDevisTTCSignes = devisAcceptes.reduce((s, d) => s + toNumber(d.montant_ttc), 0)
   const totalDevisHTSignes = devisAcceptes.reduce((s, d) => s + toNumber(d.montant_ht), 0)
-  const tauxCourtage = toNumber(dossier.taux_courtage ?? 0.06)
-  const tauxAmo = toNumber(dossier.honoraires_amo_taux ?? 9) / 100
-  // Honoraires depuis finance.js (source unique). Preview = base recu+accepte ;
-  // final = base signés. Modèle frais plein : on affiche le BRUT (courtage.brut)
-  // + la ligne « Remise frais » séparée ci-dessous (pas le net).
-  const f = preview
-    ? calculateHonorairesRecuAccepte({ ...dossier, devis_artisans: devis })
-    : calculateHonorairesFinance({ ...dossier, devis_artisans: devis })
   const fraisTTC = toNumber(dossier.frais_consultation)
   const fraisStatut = dossier.frais_statut
-  const isAMO = dossier.typologie === 'amo'
-  const isCourtage = ['courtage', 'amo'].includes(dossier.typologie)
   const fraisInTable = fraisTTC > 0 && fraisStatut !== 'offerts' && fraisStatut !== 'rembourse' && !dossier.frais_deduits
   const fraisOfferts = fraisStatut === 'offerts' && fraisTTC > 0
-  const fraisRembourse = fraisStatut === 'rembourse' && fraisTTC > 0
   const dateAuj = new Date().toLocaleDateString('fr-FR')
 
   const totalFraisTable = fraisInTable ? fraisTTC : 0
@@ -252,80 +241,8 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
         {/* ── Suivi paiements (final uniquement) ── */}
         {preview ? null : (buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier }) || null)}
 
-        {/* ── Honoraires illiCO : deux blocs Courtage / AMO ── */}
-        {isCourtage && totalDevisTTCSignes > 0 ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Honoraires illiCO travaux</Text>
-
-            {/* Remise sur frais de consultation (si remboursés après signature) */}
-            {fraisRembourse ? (
-              <View style={[styles.infoRow, { marginBottom: 6 }]}>
-                <Text style={[styles.infoRowLabel, { fontStyle: 'italic', color: '#7c3aed' }]}>Remise commerciale sur frais de consultation</Text>
-                <Text style={[styles.infoRowValue, { color: '#7c3aed' }]}>— {fmt(fraisTTC)}</Text>
-              </View>
-            ) : null}
-
-            {/* ── Bloc COURTAGE ── */}
-            <View style={{ borderLeftWidth: 3, borderLeftColor: BLEU_CLAIR, paddingLeft: 8, marginBottom: 8 }}>
-              <Text style={{ fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 4 }}>
-                Honoraires illiCO travaux COURTAGE ({(tauxCourtage * 100).toFixed(1)}%)
-              </Text>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoRowLabel}>Honoraires courtage — à la signature des devis</Text>
-                <Text style={styles.infoRowValue}>{fmt(f.courtage.brut)}</Text>
-              </View>
-              {/* Remise commerciale courtage si taux < 6% */}
-              {tauxCourtage < COURTAGE_STANDARD ? (
-                <View style={[styles.infoRow, { marginTop: 2 }]}>
-                  <Text style={[styles.infoRowLabel, { fontStyle: 'italic', color: BLEU }]}>
-                    Remise commerciale sur honoraire courtage ({((COURTAGE_STANDARD - tauxCourtage) * 100).toFixed(1)}%)
-                  </Text>
-                  <Text style={[styles.infoRowValue, { color: BLEU }]}>
-                    — {fmt(f.standard.courtageTTCBrut - f.courtage.brut)}
-                  </Text>
-                </View>
-              ) : null}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 6, backgroundColor: BLEU, borderRadius: 4, marginTop: 4 }}>
-                <Text style={{ color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' }}>TOTAL CHANTIER si COURTAGE</Text>
-                <Text style={{ color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' }}>
-                  {fmt(totalDevisTTCSignes + f.courtage.brut + totalFraisTable - (fraisRembourse ? fraisTTC : 0))}
-                </Text>
-              </View>
-            </View>
-
-            {/* ── Bloc AMO ── */}
-            <View style={{ borderLeftWidth: 3, borderLeftColor: '#f97316', paddingLeft: 8 }}>
-              <Text style={{ fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: '#c2410c', marginBottom: 4 }}>
-                Honoraires illiCO travaux AMO ({((tauxCourtage + tauxAmo) * 100).toFixed(1)}%)
-              </Text>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoRowLabel}>Acompte AMO ({(tauxCourtage * 100).toFixed(1)}%) — à la signature des devis</Text>
-                <Text style={styles.infoRowValue}>{fmt(f.courtage.brut)}</Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoRowLabel}>Solde AMO ({(tauxAmo * 100).toFixed(1)}%) — à l'avancement du chantier</Text>
-                <Text style={styles.infoRowValue}>{fmt(f.soldeAmo.ttc)}</Text>
-              </View>
-              {/* Remise commerciale AMO si taux ≠ 9% */}
-              {Math.round(tauxAmo * 1000) !== Math.round(AMO_STANDARD * 1000) ? (
-                <View style={[styles.infoRow, { marginTop: 2 }]}>
-                  <Text style={[styles.infoRowLabel, { fontStyle: 'italic', color: '#f97316' }]}>
-                    Remise commerciale sur honoraire AMO ({(Math.abs((tauxAmo - AMO_STANDARD) * 100)).toFixed(1)}%)
-                  </Text>
-                  <Text style={[styles.infoRowValue, { color: '#f97316' }]}>
-                    — {fmt(f.standard.amoTTC - f.soldeAmo.ttc)}
-                  </Text>
-                </View>
-              ) : null}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 6, backgroundColor: '#c2410c', borderRadius: 4, marginTop: 4 }}>
-                <Text style={{ color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' }}>TOTAL CHANTIER si AMO</Text>
-                <Text style={{ color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' }}>
-                  {fmt(totalDevisTTCSignes + f.courtage.brut + f.soldeAmo.ttc + totalFraisTable - (fraisRembourse ? fraisTTC : 0))}
-                </Text>
-              </View>
-            </View>
-          </View>
-        ) : null}
+        {/* ── Honoraires illiCO (composant partagé) ── */}
+        <RecapHonoraires dossier={dossier} devis={devis} preview={preview} />
 
 
         <View style={styles.footer} fixed>
