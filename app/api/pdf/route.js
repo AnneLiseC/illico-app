@@ -9,6 +9,7 @@ import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleShe
 import path from 'path'
 import fs from 'fs'
 import { requireUser } from '../../lib/api-auth'
+import { calculateHonorairesFinance, calculateHonorairesRecuAccepte, COURTAGE_STANDARD, AMO_STANDARD } from '../../lib/finance'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -105,11 +106,12 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
   const totalDevisHTSignes = devisAcceptes.reduce((s, d) => s + toNumber(d.montant_ht), 0)
   const tauxCourtage = toNumber(dossier.taux_courtage ?? 0.06)
   const tauxAmo = toNumber(dossier.honoraires_amo_taux ?? 9) / 100
-  const honorairesCourtage = totalDevisTTCSignes * tauxCourtage
-  const honorairesAMO = totalDevisTTCSignes * (tauxCourtage + tauxAmo)
-  // Simulations pour affichage double scénario
-  const honorairesCourtageSimul = totalDevisTTCSignes * tauxCourtage
-  const honorairesAMOSimul = totalDevisTTCSignes * (tauxCourtage + 0.09)
+  // Honoraires depuis finance.js (source unique). Preview = base recu+accepte ;
+  // final = base signés. Modèle frais plein : on affiche le BRUT (courtage.brut)
+  // + la ligne « Remise frais » séparée ci-dessous (pas le net).
+  const f = preview
+    ? calculateHonorairesRecuAccepte({ ...dossier, devis_artisans: devis })
+    : calculateHonorairesFinance({ ...dossier, devis_artisans: devis })
   const fraisTTC = toNumber(dossier.frais_consultation)
   const fraisStatut = dossier.frais_statut
   const isAMO = dossier.typologie === 'amo'
@@ -270,12 +272,23 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
               </Text>
               <View style={styles.infoRow}>
                 <Text style={styles.infoRowLabel}>Honoraires courtage — à la signature des devis</Text>
-                <Text style={styles.infoRowValue}>{fmt(honorairesCourtageSimul)}</Text>
+                <Text style={styles.infoRowValue}>{fmt(f.courtage.brut)}</Text>
               </View>
+              {/* Remise commerciale courtage si taux < 6% */}
+              {tauxCourtage < COURTAGE_STANDARD ? (
+                <View style={[styles.infoRow, { marginTop: 2 }]}>
+                  <Text style={[styles.infoRowLabel, { fontStyle: 'italic', color: BLEU }]}>
+                    Remise commerciale sur honoraire courtage ({((COURTAGE_STANDARD - tauxCourtage) * 100).toFixed(1)}%)
+                  </Text>
+                  <Text style={[styles.infoRowValue, { color: BLEU }]}>
+                    — {fmt(f.standard.courtageTTCBrut - f.courtage.brut)}
+                  </Text>
+                </View>
+              ) : null}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 6, backgroundColor: BLEU, borderRadius: 4, marginTop: 4 }}>
                 <Text style={{ color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' }}>TOTAL CHANTIER si COURTAGE</Text>
                 <Text style={{ color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' }}>
-                  {fmt(totalDevisTTCSignes + honorairesCourtageSimul + totalFraisTable - (fraisRembourse ? fraisTTC : 0))}
+                  {fmt(totalDevisTTCSignes + f.courtage.brut + totalFraisTable - (fraisRembourse ? fraisTTC : 0))}
                 </Text>
               </View>
             </View>
@@ -287,27 +300,27 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
               </Text>
               <View style={styles.infoRow}>
                 <Text style={styles.infoRowLabel}>Acompte AMO ({(tauxCourtage * 100).toFixed(1)}%) — à la signature des devis</Text>
-                <Text style={styles.infoRowValue}>{fmt(honorairesCourtage)}</Text>
+                <Text style={styles.infoRowValue}>{fmt(f.courtage.brut)}</Text>
               </View>
               <View style={styles.infoRow}>
                 <Text style={styles.infoRowLabel}>Solde AMO ({(tauxAmo * 100).toFixed(1)}%) — à l'avancement du chantier</Text>
-                <Text style={styles.infoRowValue}>{fmt(honorairesAMO - honorairesCourtage)}</Text>
+                <Text style={styles.infoRowValue}>{fmt(f.soldeAmo.ttc)}</Text>
               </View>
               {/* Remise commerciale AMO si taux ≠ 9% */}
-              {Math.round(tauxAmo * 1000) !== 90 ? (
+              {Math.round(tauxAmo * 1000) !== Math.round(AMO_STANDARD * 1000) ? (
                 <View style={[styles.infoRow, { marginTop: 2 }]}>
                   <Text style={[styles.infoRowLabel, { fontStyle: 'italic', color: '#f97316' }]}>
-                    Remise commerciale sur honoraire AMO ({(Math.abs((tauxAmo - 0.09) * 100)).toFixed(1)}%)
+                    Remise commerciale sur honoraire AMO ({(Math.abs((tauxAmo - AMO_STANDARD) * 100)).toFixed(1)}%)
                   </Text>
                   <Text style={[styles.infoRowValue, { color: '#f97316' }]}>
-                    — {fmt(totalDevisTTCSignes * Math.abs(tauxAmo - 0.09))}
+                    — {fmt(f.standard.amoTTC - f.soldeAmo.ttc)}
                   </Text>
                 </View>
               ) : null}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 6, backgroundColor: '#c2410c', borderRadius: 4, marginTop: 4 }}>
                 <Text style={{ color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' }}>TOTAL CHANTIER si AMO</Text>
                 <Text style={{ color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' }}>
-                  {fmt(totalDevisTTCSignes + honorairesAMO + totalFraisTable - (fraisRembourse ? fraisTTC : 0))}
+                  {fmt(totalDevisTTCSignes + f.courtage.brut + f.soldeAmo.ttc + totalFraisTable - (fraisRembourse ? fraisTTC : 0))}
                 </Text>
               </View>
             </View>
