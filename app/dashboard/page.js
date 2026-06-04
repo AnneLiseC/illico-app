@@ -177,7 +177,7 @@ export default function Dashboard() {
       const [{ data: dos }, { data: obj }, { data: rdv }] = await Promise.all([
         supabase.from('dossiers').select(`
           id, reference, statut, date_limite_devis, date_signature_contrat,
-          frais_statut, frais_deduits, frais_consultation, part_agente, frais_part_agente,
+          frais_statut, frais_consultation, part_agente, frais_part_agente,
           honoraires_amo_taux, taux_courtage, typologie, created_at,
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
           client:clients(prenom, nom, apporteur_pourcentage, apporteur_base),

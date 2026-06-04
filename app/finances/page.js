@@ -185,12 +185,12 @@ export default function Finances() {
     const isAdmin = profile?.role === 'admin'
 
     const [
-      { data: dossiersData },
-      { data: redevancesData },
-      { data: facturesAgenteData },
-      { data: agentesData },
-      { data: adminData },
-      { data: objectifsData },
+      dossiersRes,
+      redevancesRes,
+      facturesAgenteRes,
+      agentesRes,
+      adminRes,
+      objectifsRes,
     ] = await Promise.all([
       supabase.from('dossiers').select(`
         *,
@@ -209,13 +209,26 @@ export default function Finances() {
         : Promise.resolve({ data: null }),
       supabase.from('objectifs_ca').select('*').eq('annee', new Date().getFullYear()),
     ])
-    setDossiers(dossiersData || [])
-    setRedevances(redevancesData || [])
-    setFacturesAgente(facturesAgenteData || [])
-    setAgentes(agentesData || [])
-    setAgenteSelectionnee(prev => prev || (profile?.role === 'agente' ? profile.id : agentesData?.[0]?.id) || null)
-    if (adminData) setNomFranchisee(`${adminData.prenom} ${adminData.nom}`)
-    setObjectifs(objectifsData || [])
+
+    // Requêtes critiques : sans elles, les montants affichés seraient faux (0 €
+    // silencieux). On remonte l'erreur plutôt que d'afficher des chiffres erronés.
+    const critiques = {
+      'dossiers':        dossiersRes,
+      'redevances':      redevancesRes,
+      'factures agente': facturesAgenteRes,
+      'objectifs':       objectifsRes,
+    }
+    for (const [nom, res] of Object.entries(critiques)) {
+      if (res?.error) throw new Error(`${nom} : ${res.error.message}`)
+    }
+
+    setDossiers(dossiersRes.data || [])
+    setRedevances(redevancesRes.data || [])
+    setFacturesAgente(facturesAgenteRes.data || [])
+    setAgentes(agentesRes.data || [])
+    setAgenteSelectionnee(prev => prev || (profile?.role === 'agente' ? profile.id : agentesRes.data?.[0]?.id) || null)
+    if (adminRes.data) setNomFranchisee(`${adminRes.data.prenom} ${adminRes.data.nom}`)
+    setObjectifs(objectifsRes.data || [])
   }
 
   // ── INIT ───────────────────────────────────────────────────────────────────
@@ -224,7 +237,13 @@ export default function Finances() {
     if (!initialized) return
     if (!user) { router.push('/login'); return }
     if (!profile) return
-    chargerTout().then(() => setLoading(false))
+    setErreur('')
+    chargerTout()
+      .then(() => setLoading(false))
+      .catch((e) => {
+        setErreur('Impossible de charger les données financières (' + (e?.message || e) + '). Rechargez la page.')
+        setLoading(false)
+      })
   }, [initialized, user?.id, profile?.id, router])
 
   // Agente : périmètre forcé sur ses propres données (pas de sélecteur scope)
@@ -1849,6 +1868,16 @@ export default function Finances() {
   ]
 
   if (loading) return <div className="page-loading" />
+
+  // Panne de chargement : afficher l'erreur plutôt que des montants à 0 € trompeurs.
+  // Ne se déclenche que sans données chargées ; les erreurs d'action (redevance/upload,
+  // données déjà présentes) restent gérées par le bandeau de section existant.
+  if (erreur && !dossiers.length) return (
+    <div className="page-pad" style={{maxWidth:1400,margin:'0 auto'}}>
+      <button onClick={() => router.push('/dashboard')} style={{fontSize:12,color:'var(--ink-400)',marginBottom:12,cursor:'pointer',display:'flex',alignItems:'center',gap:4,background:'none',border:0}}>← Retour</button>
+      <div style={{background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:10,padding:'16px 20px',fontSize:14,color:'#b91c1c'}}>⚠️ {erreur}</div>
+    </div>
+  )
 
   return (
     <div className="page-enter page-pad" style={{display:'flex',flexDirection:'column',gap:20,maxWidth:1400,margin:'0 auto'}}>
