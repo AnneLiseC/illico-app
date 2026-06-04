@@ -3324,7 +3324,7 @@ export default function FicheChantier({ params }) {
                   label="Honoraires courtage"
                   sub={`${tauxCourtagePct}% travaux HT · ${fmt(honorairesCourtagePrev)}`}
                   statut={suiviCourtage?.statut_client || 'en_attente'}
-                  date={dossier.date_signature_contrat}
+                  date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || dossier.date_signature_contrat}
                   onToggle={() => {
                     const newStatut = suiviCourtage?.statut_client === 'regle' ? 'en_attente' : 'regle'
                     majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'statut_client', newStatut)
@@ -3339,7 +3339,7 @@ export default function FicheChantier({ params }) {
                   label="Honoraires AMO — solde"
                   sub={`${tauxAmoPct}% travaux HT · ${fmt(honorairesAMOPrev - honorairesCourtagePrev)}`}
                   statut={suiviSoldeAMO?.statut_client || 'en_attente'}
-                  date={dossier.date_fin_chantier}
+                  date={(suiviSoldeAMO?.statut_client === 'regle' && suiviSoldeAMO.date_paiement) || dossier.date_fin_chantier}
                   onToggle={() => {
                     const newStatut = suiviSoldeAMO?.statut_client === 'regle' ? 'en_attente' : 'regle'
                     majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'statut_client', newStatut)
