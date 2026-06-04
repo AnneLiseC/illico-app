@@ -3,8 +3,8 @@
 
 const TVA = 1.2
 const ROYALTIES_RATE = 0.05
-const COURTAGE_STANDARD = 0.06
-const AMO_STANDARD = 0.09
+export const COURTAGE_STANDARD = 0.06
+export const AMO_STANDARD = 0.09
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILITAIRES
@@ -193,13 +193,14 @@ export function calculateCommissionsFinance(dossier) {
 // HONORAIRES
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function calculateHonorairesFinance(dossier) {
-  const typologie  = dossier?.typologie || ''
-  const partAgente = getPartAgente(dossier)
+// Cœur de calcul des honoraires — arithmétique commune aux 3 entrées (signés /
+// actifs / recu+accepte). Prend la base (totaux devis) EN PARAMÈTRE ; ne refiltre
+// pas. Déplacement à l'identique de l'arithmétique existante : valeurs inchangées.
+function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC }) {
+  const typologie    = dossier?.typologie || ''
+  const partAgente   = getPartAgente(dossier)
   const tauxCourtage = getTauxCourtage(dossier)
-  const tauxAmo    = getTauxAmo(dossier)
-  const { totalHT: totalDevisHTSignes, totalTTC: totalDevisTTCSignes, signed: signedDevis } =
-    getSignedTotals(dossier)
+  const tauxAmo      = getTauxAmo(dossier)
 
   const isCourtage = typologie === 'courtage'
   const isAmo      = typologie === 'amo'
@@ -211,25 +212,28 @@ export function calculateHonorairesFinance(dossier) {
   const deductionFraisTTC = fraisRembourse ? round2(toNumber(dossier?.frais_consultation) || 0) : 0
   const deductionFraisHT  = fraisRembourse ? round2((toNumber(dossier?.frais_consultation) || 0) / TVA) : 0
 
-  let courtage = { ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
+  let courtage = { brut: 0, htBrut: 0, ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
   if (isCourtage || isAmo) {
-    // Courtage net de frais = (base × taux) − frais remboursés (plein montant).
-    // Royalties/net calculés sur ce courtage APRÈS déduction (montant réellement facturé).
-    const ttc      = round2(totalDevisTTCSignes * tauxCourtage - deductionFraisTTC)
-    const ht       = round2(totalDevisHTSignes * tauxCourtage - deductionFraisHT)
+    // brut = base × taux (AVANT déduction frais). net/ttc = brut − frais remboursés.
+    // round2(brut − dedFrais) = round2(base×taux − dedFrais) car dedFrais est déjà
+    // à 2 décimales → valeur ttc/ht identique à l'existant.
+    const brut      = round2(baseTTC * tauxCourtage)
+    const htBrut    = round2(baseHT * tauxCourtage)
+    const ttc       = round2(brut - deductionFraisTTC)
+    const ht        = round2(htBrut - deductionFraisHT)
     const royalties = round2(ht * ROYALTIES_RATE)
-    const net      = round2(ht - royalties)
-    const parts    = split(net, partAgente)
-    courtage = { ttc, ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
+    const net       = round2(ht - royalties)
+    const parts     = split(net, partAgente)
+    courtage = { brut, htBrut, ttc, ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
   }
 
   let soldeAmo = { ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
   if (isAmo) {
-    const ttc      = round2(totalDevisTTCSignes * tauxAmo)
-    const ht       = round2(totalDevisHTSignes * tauxAmo)
+    const ttc       = round2(baseTTC * tauxAmo)
+    const ht        = round2(baseHT * tauxAmo)
     const royalties = round2(ht * ROYALTIES_RATE)
-    const net      = round2(ht - royalties)
-    const parts    = split(net, partAgente)
+    const net       = round2(ht - royalties)
+    const parts     = split(net, partAgente)
     soldeAmo = { ttc, ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
   }
 
@@ -237,35 +241,43 @@ export function calculateHonorairesFinance(dossier) {
   const totalHT       = round2(courtage.ht + soldeAmo.ht)
   const totalRoyalties = round2(courtage.royalties + soldeAmo.royalties)
   const totalNet      = round2(courtage.net + soldeAmo.net)
-  const totalParts    = {
+  const parts    = {
     agente: round2(courtage.parts.agente + soldeAmo.parts.agente),
     admin:  round2(courtage.parts.admin  + soldeAmo.parts.admin),
   }
 
-  // Tarif STANDARD (barré côté client), TTC brut, même base que le remisé.
-  // Le courtage standard est DÉJÀ net de frais → totalTTC additionne sans re-soustraire.
+  // Tarif STANDARD (barré côté client), TTC. courtageTTCBrut = avant déduction frais ;
+  // courtageTTC = net (identique à l'existant). amoTTC = base × 9% (AMO non amputé).
   const standard = {
-    courtageTTC: round2(totalDevisTTCSignes * COURTAGE_STANDARD - deductionFraisTTC),
-    amoTTC:      round2(totalDevisTTCSignes * AMO_STANDARD),
-    totalTTC:    0,
+    courtageTTCBrut: round2(baseTTC * COURTAGE_STANDARD),
+    courtageTTC:     round2(baseTTC * COURTAGE_STANDARD - deductionFraisTTC),
+    amoTTC:          round2(baseTTC * AMO_STANDARD),
+    totalTTC:        0,
   }
   standard.totalTTC = round2(standard.courtageTTC + standard.amoTTC)
 
+  return { courtage, soldeAmo, totalTTC, totalHT, totalRoyalties, totalNet, parts, standard }
+}
+
+export function calculateHonorairesFinance(dossier) {
+  const { signed, totalHT, totalTTC } = getSignedTotals(dossier)
+  const core = honorairesCore(dossier, { totalHT, totalTTC })
+
   return {
-    typologie,
-    tauxCourtage,
-    tauxAmo,
-    totalDevisHTSignes,
-    totalDevisTTCSignes,
-    signedDevisCount: signedDevis.length,
-    courtage,
-    soldeAmo,
-    totalTTC,
-    totalHT,
-    totalRoyalties,
-    totalNet,
-    parts: totalParts,
-    standard,
+    typologie: dossier?.typologie || '',
+    tauxCourtage: getTauxCourtage(dossier),
+    tauxAmo: getTauxAmo(dossier),
+    totalDevisHTSignes:  totalHT,
+    totalDevisTTCSignes: totalTTC,
+    signedDevisCount: signed.length,
+    courtage: core.courtage,
+    soldeAmo: core.soldeAmo,
+    totalTTC: core.totalTTC,
+    totalHT:  core.totalHT,
+    totalRoyalties: core.totalRoyalties,
+    totalNet: core.totalNet,
+    parts: core.parts,
+    standard: core.standard,
   }
 }
 
@@ -286,66 +298,50 @@ function getActiveTotals(dossier) {
 }
 
 export function calculateHonorairesPrevi(dossier) {
-  const typologie    = dossier?.typologie || ''
-  const partAgente   = getPartAgente(dossier)
-  const tauxCourtage = getTauxCourtage(dossier)
-  const tauxAmo      = getTauxAmo(dossier)
   const { totalHT, totalTTC } = getActiveTotals(dossier)
-
-  const isCourtage = typologie === 'courtage'
-  const isAmo      = typologie === 'amo'
-
-  // Frais remboursés : même règle que le réel — plein montant TTC retiré du
-  // courtage calculé, condition unique frais_statut === 'rembourse'. AMO non affecté.
-  const fraisRembourse    = dossier?.frais_statut === 'rembourse'
-  const deductionFraisTTC = fraisRembourse ? round2(toNumber(dossier?.frais_consultation) || 0) : 0
-  const deductionFraisHT  = fraisRembourse ? round2((toNumber(dossier?.frais_consultation) || 0) / TVA) : 0
-
-  let courtage = { ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
-  if (isCourtage || isAmo) {
-    const ttc       = round2(totalTTC * tauxCourtage - deductionFraisTTC)
-    const ht        = round2(totalHT * tauxCourtage - deductionFraisHT)
-    const royalties = round2(ht * ROYALTIES_RATE)
-    const net       = round2(ht - royalties)
-    const parts     = split(net, partAgente)
-    courtage = { ttc, ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
-  }
-
-  let soldeAmo = { ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
-  if (isAmo) {
-    const ttc       = round2(totalTTC * tauxAmo)
-    const ht        = round2(totalHT * tauxAmo)
-    const royalties = round2(ht * ROYALTIES_RATE)
-    const net       = round2(ht - royalties)
-    const parts     = split(net, partAgente)
-    soldeAmo = { ttc, ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
-  }
-
-  const totalNet       = round2(courtage.net + soldeAmo.net)
-  const totalTTCRemise = round2(courtage.ttc + soldeAmo.ttc)
-  const parts    = {
-    agente: round2(courtage.parts.agente + soldeAmo.parts.agente),
-    admin:  round2(courtage.parts.admin  + soldeAmo.parts.admin),
-  }
-
-  // Tarif STANDARD prévisionnel (barré côté client), TTC brut, même base que le remisé.
-  // Courtage standard déjà net de frais → totalTTC additionne sans re-soustraire.
-  const standard = {
-    courtageTTC: round2(totalTTC * COURTAGE_STANDARD - deductionFraisTTC),
-    amoTTC:      round2(totalTTC * AMO_STANDARD),
-    totalTTC:    0,
-  }
-  standard.totalTTC = round2(standard.courtageTTC + standard.amoTTC)
+  const core = honorairesCore(dossier, { totalHT, totalTTC })
 
   return {
-    courtage,
-    soldeAmo,
-    totalNet,
-    parts,
+    courtage: core.courtage,
+    soldeAmo: core.soldeAmo,
+    totalNet: core.totalNet,
+    parts: core.parts,
     totalDevisHTRecus:  totalHT,
     totalDevisTTCRecus: totalTTC,
-    totalTTC: totalTTCRemise,
-    standard,
+    totalTTC: core.totalTTC,
+    standard: core.standard,
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HONORAIRES RECAP PDF — base recu+accepte
+// Mêmes honoraires, mais sur la base « devis reçus + signés » (recu+accepte,
+// sans a_modifier), conforme au périmètre du Recap client en mode preview.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getRecuAccepteTotals(dossier) {
+  const list = getDevisList(dossier).filter(dv => dv?.statut === 'recu' || dv?.statut === 'accepte')
+  const totalHT  = round2(list.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
+  const totalTTC = round2(list.reduce((s, dv) => {
+    if (dv.montant_ttc !== undefined && dv.montant_ttc !== null) return s + toNumber(dv.montant_ttc)
+    return s + toNumber(dv.montant_ht) * TVA
+  }, 0))
+  return { totalHT, totalTTC }
+}
+
+export function calculateHonorairesRecuAccepte(dossier) {
+  const { totalHT, totalTTC } = getRecuAccepteTotals(dossier)
+  const core = honorairesCore(dossier, { totalHT, totalTTC })
+
+  return {
+    courtage: core.courtage,
+    soldeAmo: core.soldeAmo,
+    totalNet: core.totalNet,
+    parts: core.parts,
+    totalDevisHTRecuAccepte:  totalHT,
+    totalDevisTTCRecuAccepte: totalTTC,
+    totalTTC: core.totalTTC,
+    standard: core.standard,
   }
 }
 
