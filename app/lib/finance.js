@@ -102,7 +102,7 @@ export function calculateFraisFinance(dossier) {
   const fraisTTC  = round2(toNumber(dossier?.frais_consultation))
   const fraisHT   = round2(fraisTTC / TVA)
   const royalties = round2(fraisHT * ROYALTIES_RATE)
-  const net       = dossier?.frais_deduits ? 0 : round2(fraisHT - royalties)
+  const net       = round2(fraisHT - royalties)
   const parts     = split(net, fraisPartAgente)
 
   return {
