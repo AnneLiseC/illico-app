@@ -342,21 +342,14 @@ export default function Finances() {
   const calculerReelBase = (d) => {
     const c = calculerBase(d)
 
-    // Acompte AMO — commun aux deux branches (Marine et non-Marine)
-    const acompteAmoSF = d.typologie === 'amo'
-      ? (d.suivi_financier || []).find(sf => sf.type_echeance === 'acompte_amo' && sf.statut_client === 'regle')
-      : null
-    const acompteAmoHT     = acompteAmoSF ? round2(Number(acompteAmoSF.montant_ttc || 0) / 1.1) : 0
-    const acompteAmoRoy    = round2(acompteAmoHT * 0.05)
-    const acompteAmoNet    = round2(acompteAmoHT - acompteAmoRoy)
-    const acompteAmoAgente = round2(acompteAmoNet * c.partAgenteRate)
-
     if (c.estChantierMarine) {
       const fraisReel = d.frais_statut === 'regle' ? c.fraisNet : 0
       const courtageRegle = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
       const amoRegle = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
-      const soldeAmoNetM = amoRegle ? round2(c.amoNet - acompteAmoNet) : 0
-      const honReel = round2((courtageRegle ? c.courtNet : 0) + acompteAmoNet + soldeAmoNetM)
+      // AMO : l'acompte AMO = la part courtage (même encaissement, compté via le courtage).
+      // Le solde AMO ajoute la part AMO pleine (finance.js) quand il est réglé. Jamais les deux.
+      const soldeAmoNetM = amoRegle ? c.amoNet : 0
+      const honReel = round2((courtageRegle ? c.courtNet : 0) + soldeAmoNetM)
       let comReelNet = 0
       for (const dv of c.devisAcceptes) {
         if (dv.artisan?.paiement_direct) continue
@@ -376,7 +369,7 @@ export default function Finances() {
       const apporteurRetire = c.apporteurAdminReel
 
       const gainAdminReel = round2(fraisReel + honReel + comReelNet + comApporteursReel - apporteurRetire)
-      return { ...c, fraisReel, fraisAgenteReel: 0, honReel, comReelNet, comApporteursReel, apporteurRembourse: apporteurRetire, gainAgenteReel: 0, gainAdminReel, gainsAgenteReels: 0, acompteAmoNet, acompteAmoAgente, soldeAmoNet: soldeAmoNetM, soldeAmoAgente: 0 }
+      return { ...c, fraisReel, fraisAgenteReel: 0, honReel, comReelNet, comApporteursReel, apporteurRembourse: apporteurRetire, gainAgenteReel: 0, gainAdminReel, gainsAgenteReels: 0, soldeAmoNet: soldeAmoNetM, soldeAmoAgente: 0 }
     }
 
     // Frais — HT net si réglé
@@ -388,19 +381,19 @@ export default function Finances() {
     // Honoraires — HT net si réglé
     const courtageRegle  = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
     const amoRegle       = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
+    // AMO : l'acompte AMO = la part courtage (même encaissement, compté via le courtage).
+    // Le solde AMO ajoute la part AMO pleine (finance.js) quand il est réglé. Jamais les deux.
     const honCourtageReel = courtageRegle ? c.courtNet : 0
-    const soldeAmoNet    = amoRegle ? round2(c.amoNet - acompteAmoNet) : 0
-    const soldeAmoAgente = amoRegle ? round2(c.amoAgente - acompteAmoAgente) : 0
-    const honAMOReel     = round2(acompteAmoNet + soldeAmoNet)
+    const soldeAmoNet    = amoRegle ? c.amoNet : 0
+    const soldeAmoAgente = amoRegle ? c.amoAgente : 0
+    const honAMOReel     = soldeAmoNet
     const honReel        = round2(honCourtageReel + honAMOReel)
     const royaltiesHonReel = round2(
       (courtageRegle ? c.courtRoyalties : 0) +
-      acompteAmoRoy +
-      (amoRegle ? round2(c.amoRoyalties - acompteAmoRoy) : 0)
+      (amoRegle ? c.amoRoyalties : 0)
     )
     const honAgenteReel  = round2(
       (courtageRegle ? c.courtAgente : 0) +
-      acompteAmoAgente +
       soldeAmoAgente
     )
 
@@ -445,8 +438,6 @@ export default function Finances() {
       fraisReel,
       fraisAgenteReel,
       honReel,
-      acompteAmoNet,
-      acompteAmoAgente,
       soldeAmoNet,
       soldeAmoAgente,
       comReelNet,
@@ -606,22 +597,15 @@ export default function Finances() {
         addToKey(key, 'honAgenteNet', c.courtAgente, d.id)
       }
 
-      // Solde AMO
+      // Solde AMO — part AMO pleine (finance.js), gated par solde_amo réglé.
+      // L'acompte AMO n'ajoute PLUS son montant : c'est la part courtage, déjà
+      // comptée par le bloc « Honoraires courtage » ci-dessus (même encaissement).
       const suiviAmo = suivi.find(s => s.type_echeance === 'solde_amo' && s.statut_client === 'regle')
       if (c.soldeAmoNet > 0 && suiviAmo) {
         const dateAmo = suiviAmo?.date_paiement || d.date_fin_chantier
         const key = getKeyFromDate(dateAmo, isAnnee)
         addToKey(key, 'amoNet', c.soldeAmoNet, d.id)
         addToKey(key, 'honAgenteNet', c.soldeAmoAgente, d.id)
-      }
-
-      // Acompte AMO
-      const suiviAcompteAmo = suivi.find(s => s.type_echeance === 'acompte_amo' && s.statut_client === 'regle')
-      if (c.acompteAmoNet > 0 && suiviAcompteAmo) {
-        const dateAcompteAmo = suiviAcompteAmo?.date_paiement || d.date_fin_chantier
-        const key = getKeyFromDate(dateAcompteAmo, isAnnee)
-        addToKey(key, 'amoNet', c.acompteAmoNet, d.id)
-        addToKey(key, 'honAgenteNet', c.acompteAmoAgente, d.id)
       }
 
       // Commissions artisans normaux
