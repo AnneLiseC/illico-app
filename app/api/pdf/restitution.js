@@ -3,6 +3,7 @@
 
 import React from 'react'
 import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
+import RecapHonoraires from '../../lib/pdf/RecapHonoraires.js'
 import { PDFDocument, degrees, rgb, StandardFonts } from 'pdf-lib'
 import { SEP_PAGE_GARDE } from '../../lib/sep_page_garde.js'
 import { SEP_DESCRIPTIF }    from '../../lib/sep_descriptif.js'
@@ -304,12 +305,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
   const totalTTC = devisAcceptes.reduce((s, d) => s + toNum(d.montant_ttc), 0)
   const fraisTTC = toNum(dossier.frais_consultation)
   const fraisHT  = fraisTTC / 1.2
-  const tauxC = toNum(dossier.taux_courtage || 0.06)
-  const tauxA = toNum(dossier.honoraires_amo_taux ?? 9) / 100
-  const honC  = totalTTC * tauxC
-  const honAMO= totalTTC * (tauxC + tauxA)
   const isAMO = dossier.typologie === 'amo'
-  const isC   = ['courtage', 'amo'].includes(dossier.typologie)
   const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
 
   const acomptesArtisans = devisAcceptes.map(d => {
@@ -412,46 +408,8 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
           React.createElement(Text, { style: [CS.tdRB, { color: BLEU, fontSize: 9 }] }, fmt(totalAcomptes)),
         ),
       ),
-      // Honoraires — deux blocs Courtage / AMO
-      isC && totalTTC > 0 && React.createElement(View, { style: { marginTop: 10 } },
-        React.createElement(Text, { style: CS.sectionH }, 'Honoraires illiCO travaux'),
-        // Bloc COURTAGE
-        React.createElement(View, { style: { borderLeftWidth: 3, borderLeftColor: BLEU2, paddingLeft: 8, marginBottom: 8 } },
-          React.createElement(Text, { style: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 4 } },
-            `Honoraires illiCO travaux COURTAGE (${(tauxC * 100).toFixed(1)}%)`),
-          React.createElement(View, { style: CS.sumRow },
-            React.createElement(Text, { style: CS.sumLabel }, 'Honoraires courtage — à la signature des devis'),
-            React.createElement(Text, { style: CS.sumValue }, fmt(honC)),
-          ),
-          React.createElement(View, { style: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 6, backgroundColor: BLEU, borderRadius: 4, marginTop: 4 } },
-            React.createElement(Text, { style: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' } }, 'TOTAL CHANTIER si COURTAGE'),
-            React.createElement(Text, { style: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' } }, fmt(totalTTC + fraisTTC + honC)),
-          ),
-        ),
-        // Bloc AMO
-        React.createElement(View, { style: { borderLeftWidth: 3, borderLeftColor: '#f97316', paddingLeft: 8 } },
-          React.createElement(Text, { style: { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: '#c2410c', marginBottom: 4 } },
-            `Honoraires illiCO travaux AMO (${((tauxC + tauxA) * 100).toFixed(1)}%)`),
-          React.createElement(View, { style: CS.sumRow },
-            React.createElement(Text, { style: CS.sumLabel }, `Acompte AMO (${(tauxC * 100).toFixed(1)}%) — à la signature des devis`),
-            React.createElement(Text, { style: CS.sumValue }, fmt(honC)),
-          ),
-          React.createElement(View, { style: CS.sumRow },
-            React.createElement(Text, { style: CS.sumLabel }, `Solde AMO (${(tauxA * 100).toFixed(1)}%) — à l'avancement du chantier`),
-            React.createElement(Text, { style: CS.sumValue }, fmt(honAMO - honC)),
-          ),
-          Math.round(tauxA * 1000) !== 90 && React.createElement(View, { style: [CS.sumRow, { marginTop: 2 }] },
-            React.createElement(Text, { style: { fontSize: 7.5, color: '#f97316', flex: 1, fontStyle: 'italic' } },
-              `Remise commerciale sur honoraire AMO (${(Math.abs((tauxA - 0.09) * 100)).toFixed(1)}%)`),
-            React.createElement(Text, { style: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: '#f97316' } },
-              `— ${fmt(totalTTC * Math.abs(tauxA - 0.09))}`),
-          ),
-          React.createElement(View, { style: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 6, backgroundColor: '#c2410c', borderRadius: 4, marginTop: 4 } },
-            React.createElement(Text, { style: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' } }, 'TOTAL CHANTIER si AMO'),
-            React.createElement(Text, { style: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' } }, fmt(totalTTC + fraisTTC + honAMO)),
-          ),
-        ),
-      ),
+      // Honoraires — composant partagé (source unique, branché finance.js)
+      React.createElement(RecapHonoraires, { dossier, devis, preview: false }),
       React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
     )
   )
@@ -588,12 +546,6 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
   const totalTTC = devisR3.reduce((s, d) => s + toNum(d.montant_ttc), 0)
   const fraisTTC = toNum(dossier.frais_consultation)
   const fraisHT  = fraisTTC / 1.2
-  const tauxC = toNum(dossier.taux_courtage || 0.06)
-  const tauxA = toNum(dossier.honoraires_amo_taux ?? 9) / 100
-  const honC  = totalTTC * tauxC
-  const honAMO= totalTTC * (tauxC + tauxA)
-  const isAMO = dossier.typologie === 'amo'
-  const isC   = ['courtage', 'amo'].includes(dossier.typologie)
 
   let rowNum = 0
   const showFrais = fraisTTC > 0 && dossier.frais_statut !== 'offerts'
@@ -696,48 +648,8 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
           )),
         ),
       ),
-      // Honoraires
-      isC && totalTTC > 0 && React.createElement(View, { style: { marginTop: 10 } },
-        React.createElement(Text, { style: CS.sectionH }, 'Honoraires illiCO travaux'),
-        React.createElement(View, { style: CS.sumRow },
-          React.createElement(Text, { style: CS.sumLabel }, `Honoraires courtage (${(tauxC * 100).toFixed(0)}%) — à la signature des devis`),
-          React.createElement(Text, { style: CS.sumValue }, fmt(honC)),
-        ),
-        // Standard AMO at 9%
-        isAMO && React.createElement(View, { style: CS.sumRow },
-          React.createElement(Text, { style: CS.sumLabel }, `Honoraires AMO (9%) — à la fin du chantier`),
-          React.createElement(Text, { style: CS.sumValue }, fmt(totalTTC * 0.09)),
-        ),
-        // Standard total at 15%
-        isAMO && React.createElement(View, { style: CS.sumRow },
-          React.createElement(Text, { style: [CS.sumLabel, { fontFamily: 'Helvetica-Bold' }] }, `Total honoraires (15%)`),
-          React.createElement(Text, { style: [CS.sumValue, { fontFamily: 'Helvetica-Bold' }] }, fmt(totalTTC * (tauxC + 0.09))),
-        ),
-        // Remise block — only when taux ≠ 9%
-        isAMO && Math.round(tauxA * 1000) !== 90 && React.createElement(View, null,
-          React.createElement(View, { style: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 4 } }),
-          React.createElement(View, { style: CS.sumRow },
-            React.createElement(Text, { style: [CS.sumLabel, { fontStyle: 'italic', color: '#f97316' }] }, 'Remise commerciale exceptionnelle sur honoraire AMO'),
-            React.createElement(Text, { style: [CS.sumValue, { color: '#f97316' }] }, fmt(totalTTC * (tauxA - 0.09))),
-          ),
-          React.createElement(View, { style: CS.sumRow },
-            React.createElement(Text, { style: CS.sumLabel }, `Honoraires courtage — à la signature des devis`),
-            React.createElement(Text, { style: CS.sumValue }, fmt(honC)),
-          ),
-          React.createElement(View, { style: CS.sumRow },
-            React.createElement(Text, { style: CS.sumLabel }, `Honoraires AMO — à la fin du chantier`),
-            React.createElement(Text, { style: CS.sumValue }, fmt(honAMO - honC)),
-          ),
-          React.createElement(View, { style: CS.sumRow },
-            React.createElement(Text, { style: [CS.sumLabel, { fontFamily: 'Helvetica-Bold' }] }, `Total honoraires AMO`),
-            React.createElement(Text, { style: [CS.sumValue, { fontFamily: 'Helvetica-Bold' }] }, fmt(honAMO)),
-          ),
-        ),
-        React.createElement(View, { style: CS.totalBlock },
-          React.createElement(Text, { style: { color: BLANC, fontSize: 9, fontFamily: 'Helvetica-Bold' } }, 'TOTAL PROJET'),
-          React.createElement(Text, { style: { color: BLANC, fontSize: 13, fontFamily: 'Helvetica-Bold' } }, fmt(totalTTC + (showFrais ? fraisTTC : 0) + (isAMO ? honAMO : honC))),
-        ),
-      ),
+      // Honoraires — composant partagé (source unique, branché finance.js)
+      React.createElement(RecapHonoraires, { dossier, devis: devisR3, preview: true }),
       React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
     ),
   ]
