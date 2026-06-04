@@ -83,7 +83,7 @@ export default function RecapHonoraires({ dossier, devis, preview = false }) {
 
   const fraisTTC       = toNum(dossier.frais_consultation)
   const fraisStatut    = dossier.frais_statut
-  const fraisInTable   = fraisTTC > 0 && fraisStatut !== 'offerts' && fraisStatut !== 'rembourse' && !dossier.frais_deduits
+  const fraisInTable   = fraisTTC > 0 && fraisStatut !== 'offerts' && fraisStatut !== 'rembourse'
   const fraisRembourse = fraisStatut === 'rembourse' && fraisTTC > 0
   const totalFraisTable = fraisInTable ? fraisTTC : 0
   const fraisComp      = totalFraisTable - (fraisRembourse ? fraisTTC : 0) // composante frais du total chantier

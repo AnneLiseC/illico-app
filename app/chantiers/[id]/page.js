@@ -1092,7 +1092,6 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.from('dossiers').update({
       typologie: dossier.typologie, statut: dossier.statut,
       frais_consultation: dossier.frais_consultation, frais_statut: dossier.frais_statut,
-      frais_deduits: dossier.frais_deduits || false,
       date_limite_devis: dossier.date_limite_devis, contrat_signe: dossier.contrat_signe,
       date_signature_contrat: dossier.date_signature_contrat, date_demarrage_chantier: dossier.date_demarrage_chantier,
       date_fin_chantier: dossier.date_fin_chantier, taux_courtage: dossier.taux_courtage, honoraires_amo_taux: dossier.honoraires_amo_taux,
@@ -1593,8 +1592,7 @@ export default function FicheChantier({ params }) {
   const tauxAmo = ((dossier?.honoraires_amo_taux ?? 9) / 100)
   const tauxAmoPct = parseFloat((tauxAmo * 100).toFixed(1))
   // Honoraires depuis finance.js (source unique de calcul). Modèle frais = finance :
-  // le plein montant TTC est déduit du courtage si frais_statut==='rembourse'
-  // (et non l'ancien modèle local base-réduction sur frais_deduits).
+  // le plein montant TTC est déduit du courtage si frais_statut==='rembourse'.
   const finDossier = calculateDossierFinance({ ...dossier, devis_artisans: devis, suivi_financier: suiviFinancier })
   const honorairesCourtage = finDossier.honoraires.courtage.ttc
   const honorairesAMO      = finDossier.honoraires.courtage.ttc + finDossier.honoraires.soldeAmo.ttc
@@ -2146,26 +2144,6 @@ export default function FicheChantier({ params }) {
                 <Fact label="Montant TTC" value={fmt(dossier.frais_consultation || 0)} highlight />
                 <Fact label="Montant HT" value={fmt((dossier.frais_consultation || 0) / 1.2)} />
               </div>
-            )}
-            {dossier.frais_statut !== 'offerts' && (
-              <label style={{display:'flex',alignItems:'center',gap:8, marginTop:14, paddingTop:14, borderTop:'1px solid var(--ink-100)', cursor:'pointer'}}>
-                <input type="checkbox" checked={dossier.frais_deduits || false}
-                  onChange={async (e) => {
-                    const val = e.target.checked
-                    await supabase.from('dossiers').update({ frais_deduits: val }).eq('id', id)
-                    setDossier(d => ({ ...d, frais_deduits: val }))
-                    setSucces('Frais mis à jour ✓')
-                  }}
-                  style={{width:14, height:14, accentColor:'var(--brand-700)'}} />
-                <span style={{fontSize:12.5, fontWeight:600, color: dossier.frais_deduits ? '#7c3aed' : 'var(--ink-500)'}}>
-                  Remboursés — déduits du courtage
-                </span>
-                {dossier.frais_deduits && (
-                  <span className="tnum" style={{fontSize:12, color:'#7c3aed', marginLeft:'auto'}}>
-                    − {fmt((dossier.frais_consultation || 0) / 1.2)} HT
-                  </span>
-                )}
-              </label>
             )}
           </div>
 
@@ -3125,21 +3103,21 @@ export default function FicheChantier({ params }) {
                     <div style={{borderTop:'1px solid var(--brand-200)', marginTop:6, paddingTop:6}}>
                       <RecapRow label={`Honoraires courtage (${tauxCourtagePct}%)`} value={fmt(honorairesCourtagePrev)} tone="brand" />
                       <div style={{borderTop:'2px solid var(--brand-500)', marginTop:8, paddingTop:8}}>
-                        <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + honorairesCourtagePrev + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                        <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + honorairesCourtagePrev + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
                       </div>
                       {dossier.typologie === 'amo' && (
                         <div style={{marginTop:10, paddingTop:10, borderTop:'1px dashed var(--brand-200)'}}>
                           <RecapRow label="Total honoraires (15%)" value={fmt(finDossier.honorairesPrevi.standard.totalTTC)} tone="brand" />
-                          <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + finDossier.honorairesPrevi.standard.totalTTC + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                          <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + finDossier.honorairesPrevi.standard.totalTTC + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
                           {tauxAmoPct !== 9 && (
                             <div style={{marginTop:8, paddingTop:8, borderTop:'1px dashed var(--brand-200)'}}>
                               <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMOPrev)} tone="brand" />
-                              <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + honorairesAMOPrev + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                              <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + honorairesAMOPrev + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
                             </div>
                           )}
                         </div>
                       )}
-                      {fraisInclus && !dossier.frais_deduits && (
+                      {fraisInclus && (
                         <div style={{marginTop:6, fontSize:11, color:'var(--ink-500)', textAlign:'right'}}>
                           dont frais consultation {fmt(fraisTTC)}
                         </div>
@@ -3161,21 +3139,21 @@ export default function FicheChantier({ params }) {
                     <div style={{borderTop:'1px solid var(--ink-200)', marginTop:6, paddingTop:6}}>
                       <RecapRow label={`Honoraires courtage (${tauxCourtagePct}%)`} value={fmt(honorairesCourtage)} />
                       <div style={{borderTop:'2px solid var(--brand-500)', marginTop:8, paddingTop:8}}>
-                        <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + honorairesCourtage + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                        <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + honorairesCourtage + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
                       </div>
                       {dossier.typologie === 'amo' && (
                         <div style={{marginTop:10, paddingTop:10, borderTop:'1px dashed var(--ink-200)'}}>
                           <RecapRow label="Total honoraires (15%)" value={fmt(finDossier.honoraires.standard.totalTTC)} />
-                          <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + finDossier.honoraires.standard.totalTTC + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                          <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + finDossier.honoraires.standard.totalTTC + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
                           {tauxAmoPct !== 9 && (
                             <div style={{marginTop:8, paddingTop:8, borderTop:'1px dashed var(--ink-200)'}}>
                               <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMO)} />
-                              <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + honorairesAMO + (fraisInclus && !dossier.frais_deduits ? fraisTTC : 0))} tone="brand" strong large />
+                              <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + honorairesAMO + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
                             </div>
                           )}
                         </div>
                       )}
-                      {fraisInclus && !dossier.frais_deduits && (
+                      {fraisInclus && (
                         <div style={{marginTop:6, fontSize:11, color:'var(--ink-500)', textAlign:'right'}}>
                           dont frais consultation {fmt(fraisTTC)}
                         </div>

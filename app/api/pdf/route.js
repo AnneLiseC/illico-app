@@ -106,7 +106,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
   const totalDevisHTSignes = devisAcceptes.reduce((s, d) => s + toNumber(d.montant_ht), 0)
   const fraisTTC = toNumber(dossier.frais_consultation)
   const fraisStatut = dossier.frais_statut
-  const fraisInTable = fraisTTC > 0 && fraisStatut !== 'offerts' && fraisStatut !== 'rembourse' && !dossier.frais_deduits
+  const fraisInTable = fraisTTC > 0 && fraisStatut !== 'offerts' && fraisStatut !== 'rembourse'
   const fraisOfferts = fraisStatut === 'offerts' && fraisTTC > 0
   const dateAuj = new Date().toLocaleDateString('fr-FR')
 

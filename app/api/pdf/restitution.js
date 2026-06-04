@@ -123,7 +123,7 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
   const blocs = []
 
   // ── Bloc frais de consultation ──
-  if (fraisTTC > 0 && dossier.frais_statut !== 'offerts' && !dossier.frais_deduits) {
+  if (fraisTTC > 0 && dossier.frais_statut !== 'offerts') {
     const datePaiement = suiviFrais?.date_paiement ? new Date(suiviFrais.date_paiement).toLocaleDateString('fr-FR') : null
     const paye = !!suiviFrais
     blocs.push(

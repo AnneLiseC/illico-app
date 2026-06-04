@@ -75,7 +75,7 @@ royalties (5% HT) / Net / partage : idem courtage, partage sur le HT
 ```
 frais_HT = frais_TTC ÷ 1,2          (reconstitution du HT depuis un TTC — À GARDER, sans rapport avec les royalties)
 roy      = frais_HT × 5%            (5% HT, pas de ×1,2)
-Net      = frais_HT − roy           (0 si frais_deduits)
+Net      = frais_HT − roy           (frais TOUJOURS comptés comme gain — encaissés)
 Partage PARAMÉTRABLE par le franchisé. Marine : NON partagé → 100% à la référente du dossier.
 ```
 
