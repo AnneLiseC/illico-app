@@ -1657,6 +1657,14 @@ export default function FicheChantier({ params }) {
   }
 
   const majSuiviChantier = async (type, montant, champ, valeur) => {
+    // Échéances honoraires togglées par statut_client : on DATE le règlement au coche
+    // (date_paiement = aujourd'hui, la date que lit l'agrégation F2) et on SUPPRIME la
+    // ligne au décoche (zéro résidu, pas de date périmée). Tout autre cas (apporteur,
+    // autres champs) garde l'upsert d'origine. date_paiement est de type `date` → AAAA-MM-JJ.
+    const honoToggle = champ === 'statut_client' &&
+      ['honoraires_courtage', 'acompte_amo', 'solde_amo'].includes(type)
+    const today = new Date().toISOString().slice(0, 10)
+
     const upsertOne = async (t, m) => {
       // Interroger la BDD directement (pas le state) pour éviter les problèmes de double appel
       const { data: existing } = await supabase
@@ -1666,10 +1674,18 @@ export default function FicheChantier({ params }) {
         .eq('type_echeance', t)
         .is('artisan_id', null)
         .maybeSingle()
+
+      if (honoToggle && valeur === 'en_attente') {
+        // Décoche : supprimer la ligne (élimine le résidu + la date périmée).
+        if (existing) await supabase.from('suivi_financier').delete().eq('id', existing.id)
+        return
+      }
+
+      const payload = honoToggle ? { statut_client: 'regle', date_paiement: today } : { [champ]: valeur }
       if (existing) {
-        await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
+        await supabase.from('suivi_financier').update(payload).eq('id', existing.id)
       } else {
-        await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: t, montant_ttc: m, [champ]: valeur })
+        await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: t, montant_ttc: m, ...payload })
       }
     }
     await upsertOne(type, montant)
@@ -3308,7 +3324,7 @@ export default function FicheChantier({ params }) {
                   label="Honoraires courtage"
                   sub={`${tauxCourtagePct}% travaux HT · ${fmt(honorairesCourtagePrev)}`}
                   statut={suiviCourtage?.statut_client || 'en_attente'}
-                  date={dossier.date_signature_contrat}
+                  date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || dossier.date_signature_contrat}
                   onToggle={() => {
                     const newStatut = suiviCourtage?.statut_client === 'regle' ? 'en_attente' : 'regle'
                     majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'statut_client', newStatut)
@@ -3323,7 +3339,7 @@ export default function FicheChantier({ params }) {
                   label="Honoraires AMO — solde"
                   sub={`${tauxAmoPct}% travaux HT · ${fmt(honorairesAMOPrev - honorairesCourtagePrev)}`}
                   statut={suiviSoldeAMO?.statut_client || 'en_attente'}
-                  date={dossier.date_fin_chantier}
+                  date={(suiviSoldeAMO?.statut_client === 'regle' && suiviSoldeAMO.date_paiement) || dossier.date_fin_chantier}
                   onToggle={() => {
                     const newStatut = suiviSoldeAMO?.statut_client === 'regle' ? 'en_attente' : 'regle'
                     majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'statut_client', newStatut)
