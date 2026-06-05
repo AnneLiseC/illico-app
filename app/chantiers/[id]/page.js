@@ -1933,6 +1933,7 @@ export default function FicheChantier({ params }) {
       await removeFolderContents('documents', `chantiers/${id}/factures`)
       await removeFolderContents('documents', `chantiers/${id}/documents`)
       await removeFolderContents('documents', `chantiers/${id}/contrat`)
+      await removeFolderContents('documents', `chantiers/${id}/cr`)
 
       // 4) Supprimer le dossier chantier — les tables filles tombent par ON DELETE CASCADE
       const { error: dossierErr } = await supabase
