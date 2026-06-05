@@ -1,8 +1,8 @@
 // app/lib/finance.js
 // Source de vérité unique pour tous les calculs financiers illiCO travaux
 
-const TVA = 1.2
-const ROYALTIES_RATE = 0.05
+export const TVA = 1.2
+export const ROYALTIES_RATE = 0.05
 export const COURTAGE_STANDARD = 0.06
 export const AMO_STANDARD = 0.09
 
@@ -53,11 +53,11 @@ export function getPartAdmin(dossier) {
 }
 
 export function getTauxCourtage(dossier) {
-  return normalizePercent(dossier?.taux_courtage, 0.06)
+  return normalizePercent(dossier?.taux_courtage, COURTAGE_STANDARD)
 }
 
 export function getTauxAmo(dossier) {
-  return normalizePercent(dossier?.taux_amo ?? dossier?.honoraires_amo_taux, 0.09)
+  return normalizePercent(dossier?.taux_amo ?? dossier?.honoraires_amo_taux, AMO_STANDARD)
 }
 
 function getDevisList(dossier) {
