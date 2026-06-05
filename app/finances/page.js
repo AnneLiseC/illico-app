@@ -1973,7 +1973,7 @@ export default function Finances() {
                 <div className="pill-toggle" style={{marginLeft:8}}>
                   {[
                     { key:'tous', label:'Tous' },
-                    { key:'moi', label: profile?.prenom || 'Marine' },
+                    { key:'moi', label: profile?.prenom || 'Moi' },
                     ...agentes.map(a => ({ key: a.id, label: a.prenom })),
                   ].map(s => (
                     <button key={s.key} onClick={() => setScope(s.key)} style={{
@@ -2014,7 +2014,7 @@ export default function Finances() {
                 <div className="pill-toggle" style={{marginLeft:8}}>
                   {[
                     { key:'tous', label:'Tous' },
-                    { key:'moi', label: profile?.prenom || 'Marine' },
+                    { key:'moi', label: profile?.prenom || 'Moi' },
                     ...agentes.map(a => ({ key: a.id, label: a.prenom })),
                   ].map(s => (
                     <button key={s.key} onClick={() => setScope(s.key)} style={{
