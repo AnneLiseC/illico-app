@@ -3,7 +3,7 @@ import { useState, useEffect, use, Suspense } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '../../lib/auth-context'
-import { archiverClient, supprimerClient } from '../../lib/clients'
+import { archiverClient, desarchiverClient, supprimerClient } from '../../lib/clients'
 
 function Svg({ size = 16, children }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -201,6 +201,15 @@ function FicheClientInner({ params }) {
     router.push('/clients')
   }
 
+  // Désarchiver le client (le trigger DB propage sur ses dossiers). On reste sur la
+  // fiche : maj locale archive=false → la fiche redevient « active » sur place.
+  const handleDesarchiver = async () => {
+    if (!confirm('Désarchiver ce client ? Il réapparaîtra dans les vues opérationnelles.')) return
+    const { error } = await desarchiverClient(supabase, id)
+    if (error) { setErreur(error.message); return }
+    setClient(c => ({ ...c, archive: false }))
+  }
+
   const estCouple = ['M. et Mme', 'Mme et Mme', 'M. et M.'].includes(client?.civilite)
 
   if (loading) return <div className="page-loading" />
@@ -280,6 +289,16 @@ function FicheClientInner({ params }) {
           <span style={{ color: 'var(--ink-700)', fontWeight: 600 }}>{nomDisplay}</span>
         </div>
 
+        {/* Bandeau client archivé */}
+        {client.archive && (
+          <div style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12, color: '#a16207' }}>
+            <span style={{ fontSize: 20 }}>📦</span>
+            <div style={{ fontSize: 13 }}>
+              <strong>Client archivé.</strong> Ses dossiers sont masqués des vues opérationnelles (conservés en comptabilité).
+            </div>
+          </div>
+        )}
+
         {/* Hero card */}
         <div className="card" style={{ padding: 28 }}>
           <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -334,10 +353,16 @@ function FicheClientInner({ params }) {
                   <MailIcon size={14}/>
                 </a>
               )}
-              <button className="btn btn-primary" onClick={() => router.push(`/chantiers/nouveau?client=${id}`)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <PlusIcon size={14}/> Nouveau dossier
-              </button>
-              {dossiers.length > 0 ? (
+              {!client.archive && (
+                <button className="btn btn-primary" onClick={() => router.push(`/chantiers/nouveau?client=${id}`)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <PlusIcon size={14}/> Nouveau dossier
+                </button>
+              )}
+              {client.archive ? (
+                <button className="btn btn-ghost" onClick={handleDesarchiver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <ArchiveIcon size={14}/> Désarchiver
+                </button>
+              ) : dossiers.length > 0 ? (
                 <button className="btn btn-ghost" onClick={handleArchiver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   <ArchiveIcon size={14}/> Archiver
                 </button>
