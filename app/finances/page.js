@@ -181,8 +181,7 @@ export default function Finances() {
 
   const chargerTout = async () => {
     // Lectures admin-only sur profiles (policy L5a-1) : conditionnées au rôle.
-    // Le profile est déjà chargé via useAuth → on connaît le rôle ici.
-    const isAdmin = profile?.role === 'admin'
+    // Le profile est déjà chargé via useAuth → on connaît le rôle ici (isAdmin, niveau composant).
 
     const [
       dossiersRes,
@@ -253,7 +252,7 @@ export default function Finances() {
 
   // ── HELPERS PROFIL ─────────────────────────────────────────────────────────
 
-  const isMarine     = profile?.role === 'admin'
+  const isAdmin     = profile?.role === 'admin'
   const nomReferente = (d) => d.referente ? `${d.referente.prenom} ${d.referente.nom}` : 'Agente'
 
   const getObjectif = (cible, agenteId = null) =>
@@ -269,7 +268,7 @@ export default function Finances() {
 
     const partAgente = f.settings.partAgente
 
-    const estChantierMarine = d.referente?.role === 'admin'
+    const referentEstAdmin = d.referente?.role === 'admin'
     const devisActifs       = getActiveDevis(d)
     const devisAcceptes     = getSignedDevis(d)
 
@@ -281,7 +280,7 @@ export default function Finances() {
     return {
       // Référence brute
       finance: f,
-      estChantierMarine,
+      referentEstAdmin,
       devisActifs,
       devisAcceptes,
       devisFinanceMap,
@@ -361,7 +360,7 @@ export default function Finances() {
   const calculerReelBase = (d) => {
     const c = calculerBase(d)
 
-    if (c.estChantierMarine) {
+    if (c.referentEstAdmin) {
       const fraisReel = d.frais_statut === 'regle' ? c.fraisNet : 0
       const courtageRegle = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
       const amoRegle = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
@@ -542,7 +541,7 @@ export default function Finances() {
   // ── LISTES DÉRIVÉES ────────────────────────────────────────────────────────
 
   const dossiersAgentes = dossiers.filter(d => d.referente?.role === 'agente')
-  const mesDossiers     = isMarine
+  const mesDossiers     = isAdmin
     ? dossiers.filter(d => d.referente?.role === 'admin')
     : dossiers.filter(d => d.referente?.id === profile?.id)
   const dossiersAgente   = agenteSelectionnee
@@ -555,7 +554,7 @@ export default function Finances() {
   const mesRedevances    = profile?.id ? redevances.filter(r => r.agente_id === profile.id) : redevances
 
   // ── PÉRIMÈTRE SCOPÉ (défini tôt pour pouvoir scoper les KPI) ──────────────
-  const scopedDossiers = isMarine
+  const scopedDossiers = isAdmin
     ? (scope === 'tous' ? dossiers
       : scope === 'moi'  ? mesDossiers
       : dossiers.filter(d => d.referente?.id === scope))
@@ -710,7 +709,7 @@ export default function Finances() {
   const totalNetCTP = (() => {
     const keysAnnee = rowsReelScoped.filter(([k]) => k.startsWith(String(anneeEnCours)))
     const reelProduits = keysAnnee.reduce((s, [, agg]) => s + round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0)), 0)
-    const reelRedev = (isMarine ? redevances : mesRedevances).filter(r => r.statut === 'regle' && r.annee === anneeEnCours).reduce((s, r) => s + (r.montant_ht || 0), 0)
+    const reelRedev = (isAdmin ? redevances : mesRedevances).filter(r => r.statut === 'regle' && r.annee === anneeEnCours).reduce((s, r) => s + (r.montant_ht || 0), 0)
     const reelCharges = keysAnnee.reduce((s, [, agg]) => s + (agg.gainsAgenteReels || 0), 0)
     return round2(reelProduits + reelRedev - reelCharges)
   })()
@@ -825,12 +824,12 @@ export default function Finances() {
               {c.honTotalNet > 0 && <RepartRow label="Honoraires" value={fmt(isReel ? r.honReel : c.honTotalNet)} />}
               <RepartRow label="Royalties" value={`-${fmt(c.royaltiesTotal)}`} dim />
               {c.apporteurTotalHT > 0 && (
-                <RepartRow label="Apporteur client" value={`-${fmt(isReel ? r.apporteurRembourse : (c.estChantierMarine ? c.apporteurAdmin : c.apporteurAgente))}`} accent="warn" />
+                <RepartRow label="Apporteur client" value={`-${fmt(isReel ? r.apporteurRembourse : (c.referentEstAdmin ? c.apporteurAdmin : c.apporteurAgente))}`} accent="warn" />
               )}
               <div style={{height:1, background:'var(--ink-200)', margin:'4px 0'}}/>
               <RepartRow label={labelNet} value={fmt(value)} bold />
               <div style={{height:1, background:'var(--ink-200)', margin:'4px 0'}}/>
-              <RepartRow label={`${c.estChantierMarine ? 'Franchisée' : nomFranchisee} (${Math.round(partAdminRate * 100)}%)`} value={fmt(gainAdmin)} />
+              <RepartRow label={`${c.referentEstAdmin ? 'Franchisée' : nomFranchisee} (${Math.round(partAdminRate * 100)}%)`} value={fmt(gainAdmin)} />
               {partAgenteRate > 0 && (
                 <RepartRow label={`${nomReferente(d)} (${Math.round(partAgenteRate * 100)}%)`} value={fmt(gainAgente)} accent="brand" />
               )}
@@ -1597,7 +1596,7 @@ export default function Finances() {
     }
 
     // Bascule du statut F2 (CTP → agente). ADMIN ONLY (appelé uniquement depuis la
-    // branche isMarine de la cellule). Fige le montant LIVE (calcMois().montantF2,
+    // branche isAdmin de la cellule). Fige le montant LIVE (calcMois().montantF2,
     // jamais f.montant) au clic « reçu », NULL au déclic. Le type 'ctp_vers_agente'
     // déclenche la synchro redevances dans upsertFactureMoisType (regle / en_attente).
     const toggleF2Statut = async (annee, mois, f2) => {
@@ -1656,7 +1655,7 @@ export default function Finances() {
         {succes && <div style={{background:'rgba(22,163,74,0.07)',border:'1px solid rgba(22,163,74,0.25)',borderRadius:10,padding:'10px 16px',fontSize:13,color:'#15803d'}}>{succes}</div>}
         {erreur && <div style={{background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:10,padding:'10px 16px',fontSize:13,color:'#b91c1c'}}>{erreur}</div>}
         {/* Sélecteur agente — admin uniquement (agente voit sa propre facturation) */}
-        {isMarine && (
+        {isAdmin && (
           <div className="card" style={{padding:'14px 18px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
             <div className="eyebrow">Agente :</div>
             <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
@@ -1749,7 +1748,7 @@ export default function Finances() {
                     <td style={{padding:'14px 16px',textAlign:'center'}}>
                       {(f2m === 0 && f2?.statut !== 'paye') ? (
                         <span style={{color:'var(--ink-400)'}}>—</span>
-                      ) : isMarine ? (
+                      ) : isAdmin ? (
                         <span
                           onClick={(e) => { e.stopPropagation(); toggleF2Statut(annee, mois, f2) }}
                           onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
@@ -1947,9 +1946,9 @@ export default function Finances() {
           value={fmt(totComHT)}
           sub={`Frais conso. ${fmt(totFraisHT)} HT`}
           tone="warn"/>
-        <FinKpiCard label={isMarine ? "Part franchisée" : "Mes gains"}
-          value={fmt(isMarine ? round2(totalNetCTP-totalGainsAgentesReels) : totalGainsAgentesReels)}
-          sub={isMarine ? `Part agentes ${fmt(totalGainsAgentesReels)}` : 'Réels encaissés'}
+        <FinKpiCard label={isAdmin ? "Part franchisée" : "Mes gains"}
+          value={fmt(isAdmin ? round2(totalNetCTP-totalGainsAgentesReels) : totalGainsAgentesReels)}
+          sub={isAdmin ? `Part agentes ${fmt(totalGainsAgentesReels)}` : 'Réels encaissés'}
           tone="brand"/>
       </div>
 
@@ -1968,7 +1967,7 @@ export default function Finances() {
                 }}>{p.label}</button>
               ))}
             </div>
-            {isMarine && (
+            {isAdmin && (
               <div style={{marginLeft:6,display:'flex',gap:4,alignItems:'center'}}>
                 <div className="eyebrow">Périmètre</div>
                 <div className="pill-toggle" style={{marginLeft:8}}>
@@ -2009,7 +2008,7 @@ export default function Finances() {
                 }}>{p.label}</button>
               ))}
             </div>
-            {isMarine && (
+            {isAdmin && (
               <div style={{marginLeft:6,display:'flex',gap:4,alignItems:'center'}}>
                 <div className="eyebrow">Périmètre</div>
                 <div className="pill-toggle" style={{marginLeft:8}}>
@@ -2041,14 +2040,14 @@ export default function Finances() {
       {/* ── SUIVI FINANCIER — toggle Agence/CTP admin-only ; agente : mode agence forcé ── */}
       {tab === 'suivi' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {isMarine && (
+          {isAdmin && (
             <PillToggle
               options={[{key:'agence',label:'Agence — Encaissements bruts'},{key:'ctp',label:'CTP — Résultat net (charges incluses)'}]}
               active={suiviMode}
               onChange={setSuiviMode}
             />
           )}
-          {renderSuiviFinancier(isMarine ? suiviMode : 'agence')}
+          {renderSuiviFinancier(isAdmin ? suiviMode : 'agence')}
         </div>
       )}
 

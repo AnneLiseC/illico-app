@@ -440,7 +440,7 @@ function ChantiersInner() {
     })
   }, [initialized, user?.id, profile?.id, router])
 
-  const isMarine = profile?.role === 'admin'
+  const isAdmin = profile?.role === 'admin'
 
   const dossiersFiltresOnglet = getDossiersByScope(dossiers, profile, onglet, agentes)
   const dossiersFiltres       = getFilteredDossiers(dossiersFiltresOnglet, recherche, filtreStatut, filtreTypo, nomClient)
@@ -461,7 +461,7 @@ function ChantiersInner() {
     if (isMobile) setShowPreview(true)
   }
 
-  const ongletsList = isMarine ? [
+  const ongletsList = isAdmin ? [
     { key: 'moi', label: 'Mes chantiers' },
     ...agentes.map(a => ({ key: a.id, label: `${a.prenom} ${a.nom}` })),
     { key: 'tous', label: 'Tous' },
@@ -492,7 +492,7 @@ function ChantiersInner() {
       </div>
 
       {/* Scope tabs (admin uniquement) */}
-      {isMarine && (
+      {isAdmin && (
         <div className="tabs" style={{ overflowX: 'auto' }}>
           {ongletsList.map(({ key, label }) => (
             <button key={key} className={`tab ${onglet === key ? 'active' : ''}`}

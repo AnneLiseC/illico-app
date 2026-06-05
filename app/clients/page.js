@@ -67,10 +67,10 @@ export default function Clients() {
     })
   }, [initialized, user?.id, profile?.id, router])
 
-  const isMarine = profile?.role === 'admin'
+  const isAdmin = profile?.role === 'admin'
 
   const clientsFiltresOnglet = clients.filter(c => {
-    if (!isMarine) return true
+    if (!isAdmin) return true
     if (onglet === 'tous') return true
     if (onglet === 'moi') return c.referente?.role === 'admin'
     return c.referente?.id === onglet
@@ -81,13 +81,13 @@ export default function Clients() {
       .includes(recherche.toLowerCase())
   )
 
-  const ongletsList = isMarine ? [
+  const ongletsList = isAdmin ? [
     { key: 'moi', label: 'Mes clients' },
     ...agentes.map(a => ({ key: a.id, label: `Clients ${a.prenom} ${a.nom}` })),
     { key: 'tous', label: 'Tous les clients' },
   ] : []
 
-  const afficherReferente = isMarine && (onglet === 'tous' || agentes.some(a => a.id === onglet))
+  const afficherReferente = isAdmin && (onglet === 'tous' || agentes.some(a => a.id === onglet))
 
   if (loading) return <div className="page-loading" />
 
@@ -105,7 +105,7 @@ export default function Clients() {
       </div>
 
       {/* Onglets (admin uniquement) */}
-      {isMarine && (
+      {isAdmin && (
         <div className="tabs" style={{overflowX:'auto'}}>
           {ongletsList.map(({ key, label }) => (
             <button key={key} className={`tab ${onglet === key ? 'active' : ''}`} onClick={() => setOnglet(key)}>
