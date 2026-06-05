@@ -16,6 +16,7 @@ export default function ModaleChoixClient({ open, onClose }) {
     setLoading(true)
     let q = supabase.from('clients')
       .select('id, civilite, nom, prenom, nom2, prenom2, email')
+      .eq('archive', false)
       .order('nom', { ascending: true })
     if (profile.role === 'agente') q = q.eq('referente', profile.id)
     q.then(({ data }) => { setClients(data || []); setLoading(false) })

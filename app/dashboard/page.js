@@ -178,7 +178,7 @@ export default function Dashboard() {
         supabase.from('dossiers').select(`
           id, reference, statut, date_limite_devis, date_signature_contrat,
           frais_statut, frais_consultation, part_agente, frais_part_agente,
-          honoraires_amo_taux, taux_courtage, typologie, created_at,
+          honoraires_amo_taux, taux_courtage, typologie, created_at, archive,
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
           client:clients(prenom, nom, apporteur_pourcentage, apporteur_base),
           devis_artisans(id, montant_ht, montant_ttc, commission_pourcentage, statut, date_signature, artisan:artisans(id, entreprise)),
@@ -187,12 +187,14 @@ export default function Dashboard() {
         supabase.from('objectifs_ca').select('*').eq('annee', annee).eq('agente_id', profile.id),
         supabase.from('rendez_vous').select(`
           id, titre, type_rdv, date_heure, duree_minutes, notes,
-          dossier:dossiers(reference, client:clients(prenom, nom))
+          dossier:dossiers(reference, archive, client:clients(prenom, nom))
         `).gte('date_heure', todayStart.toISOString()).lt('date_heure', tomorrowStart.toISOString()).order('date_heure', { ascending: true }),
       ])
       setDossiers(dos || [])
       setObjectifs(obj || [])
-      setRdvAujourdhui(rdv || [])
+      // Masquage archive (3b) : les RDV du jour rattachés à un dossier archivé
+      // sont retirés ; ceux sans dossier sont conservés (dossier?.archive !== true).
+      setRdvAujourdhui((rdv || []).filter(r => r.dossier?.archive !== true))
       setLoading(false)
     }
     loadData()
@@ -241,8 +243,13 @@ export default function Dashboard() {
     return new Date(dateStr).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
   }
 
-  const enCours    = dossiers.filter(d => d.statut === 'en_cours_chantier')
-  const aRelancer  = dossiers.filter(d => {
+  // Masquage fin (3b) : `dossiers` (tous) sert au CALCUL du CA (computeCAMensuel,
+  // plus bas) — archivés inclus, compta préservée. `dossiersActifs` (archivés
+  // retirés) ne sert QU'aux listes opérationnelles affichées ci-dessous.
+  const dossiersActifs = dossiers.filter(d => d.archive !== true)
+
+  const enCours    = dossiersActifs.filter(d => d.statut === 'en_cours_chantier')
+  const aRelancer  = dossiersActifs.filter(d => {
     if (!d.date_limite_devis) return false
     const diff = (new Date(d.date_limite_devis) - today) / 86400000
     return diff <= 7 && diff >= -2 && !['termine','annule'].includes(d.statut)
@@ -297,7 +304,7 @@ export default function Dashboard() {
       {/* ── KPI Row ── */}
       <div className="kpi-grid">
         <KpiCard label="Chantiers en cours" value={loading ? '—' : enCours.length}
-          sub={`${dossiers.filter(d => !['termine','annule'].includes(d.statut)).length} dossiers actifs`}
+          sub={`${dossiersActifs.filter(d => !['termine','annule'].includes(d.statut)).length} dossiers actifs`}
           icon={<BuildingIcon />} tone="brand" />
         <KpiCard label="Devis à relancer <7j" value={loading ? '—' : aRelancer.length}
           sub={enRetardCount > 0 ? `${enRetardCount} en retard` : 'aucun en retard'}
@@ -461,7 +468,7 @@ export default function Dashboard() {
             </div>
             {loading
               ? <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span className="eyebrow">Chargement…</span></div>
-              : <Pipeline dossiers={dossiers} />}
+              : <Pipeline dossiers={dossiersActifs} />}
           </div>
 
           {/* Activité récente */}
@@ -471,7 +478,7 @@ export default function Dashboard() {
               <button className="btn btn-ghost" style={{ padding: '4px 8px' }} onClick={() => router.push('/chantiers')}>Voir tout →</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {loading ? <span className="eyebrow">Chargement…</span> : dossiers.slice(0, 5).map(d => {
+              {loading ? <span className="eyebrow">Chargement…</span> : dossiersActifs.slice(0, 5).map(d => {
                 const nomClient = d.client ? `${d.client.prenom || ''} ${d.client.nom || ''}`.trim() : '—'
                 const s = STATUT_STYLE[d.statut] || { bg: 'var(--surface-2)', color: 'var(--ink-500)', label: d.statut }
                 const actionLabel = d.statut === 'en_cours_chantier' ? 'chantier en cours' : d.statut === 'termine' ? 'chantier terminé' : ['devis_en_attente','devis_a_modifier'].includes(d.statut) ? 'devis en attente' : d.statut === 'annule' ? 'dossier annulé' : 'à contacter'

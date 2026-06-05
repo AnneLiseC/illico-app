@@ -424,6 +424,7 @@ function ChantiersInner() {
     let query = supabase
       .from('dossiers')
       .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse, telephone, email), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, artisan_id, artisan:artisans(id, entreprise, metier, ville)), comptes_rendus(id, type_visite), suivi_financier(type_echeance, montant_ttc, statut_illico, statut_client, artisan_id)')
+      .eq('archive', false)
       .order('created_at', { ascending: false })
     if (profile.role === 'agente') query = query.eq('referente_id', profile.id)
 
