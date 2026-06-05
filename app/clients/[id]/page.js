@@ -368,9 +368,6 @@ function FicheClientInner({ params }) {
                         <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--brand-800)', fontWeight: 700 }}>{d.reference}</span>
                         {d.typologie && <TypoBadge typo={d.typologie}/>}
                       </div>
-                      {d.objet && (
-                        <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink-900)', marginTop: 4 }}>{d.objet}</div>
-                      )}
                       {d.description && (
                         <div className="clip-1" style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 3, lineHeight: 1.4 }}>{d.description}</div>
                       )}
