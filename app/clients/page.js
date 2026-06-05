@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
+import { archiverClient, supprimerClient } from '../lib/clients'
 
 /* ── Inline SVG icons ── */
 function Svg({ size = 16, children }) {
@@ -67,6 +68,23 @@ export default function Clients() {
       setLoading(false)
     })
   }, [initialized, user?.id, profile?.id, router])
+
+  // Archiver un client (≥1 dossier) : le trigger DB propage sur ses dossiers.
+  // Succès → retrait local de la carte (la vue Actifs ne l'affiche plus).
+  const handleArchiverListe = async (clientId) => {
+    if (!confirm('Archiver ce client ? Ses dossiers seront masqués des vues opérationnelles (conservés en compta). Réversible.')) return
+    const { error } = await archiverClient(supabase, clientId)
+    if (error) { alert(error.message); return }
+    setClients(prev => prev.filter(c => c.id !== clientId))
+  }
+
+  // Supprimer un client SANS dossier (le helper mappe l'erreur FK 23503).
+  const handleSupprimerListe = async (clientId) => {
+    if (!confirm('Supprimer définitivement ce client ? Cette action est irréversible.')) return
+    const { error } = await supprimerClient(supabase, clientId)
+    if (error) { alert(error.message); return }
+    setClients(prev => prev.filter(c => c.id !== clientId))
+  }
 
   const isAdmin = profile?.role === 'admin'
 
@@ -219,6 +237,8 @@ export default function Clients() {
                                 : `/clients/${client.id}`
                             ),
                           },
+                          { label:'Archiver',  hide: dossierCount === 0, action: () => handleArchiverListe(client.id) },
+                          { label:'Supprimer', hide: dossierCount > 0,   action: () => handleSupprimerListe(client.id) },
                         ].filter(item => !item.hide).map(item => (
                           <button key={item.label} className="row-hover"
                             style={{width:'100%', textAlign:'left', padding:'10px 14px', border:0, background:'transparent', fontSize:13, cursor:'pointer', color:'var(--ink-700)'}}
