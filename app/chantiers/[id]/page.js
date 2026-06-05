@@ -1630,9 +1630,10 @@ export default function FicheChantier({ params }) {
     const datePaye = paye ? (date || new Date().toISOString().slice(0, 10)) : null
     const statutSuivi = paye ? 'regle' : 'en_attente'
     await majSuiviAvecArtisan('acompte_artisan', artisanId, 'statut_client', statutSuivi)
-    if (paye && datePaye) {
-      await majSuiviAvecArtisan('acompte_artisan', artisanId, 'date_paiement', datePaye)
-    }
+    // Date du règlement client : posée au coche, effacée au décoche (datePaye=null).
+    // N'affecte que date_paiement (l'événement déblocage statut_illico/date_deblocage
+    // sur la même ligne reste intact).
+    await majSuiviAvecArtisan('acompte_artisan', artisanId, 'date_paiement', datePaye)
     // Synchroniser les factures_artisans dont le libellé contient "acompte" pour ce devis
     const facturesAcompte = factures.filter(f =>
       f.artisan_id === artisanId &&
@@ -1651,6 +1652,29 @@ export default function FicheChantier({ params }) {
           : f
       ))
     }
+  }
+
+  // Toggle « illiCO a débloqué l'acompte » (2e événement de la MÊME ligne acompte_artisan,
+  // distinct de l'acompte client). Coche → statut_illico='recu' + date_deblocage=today ;
+  // décoche → statut_illico='en_attente' + date_deblocage=NULL. Upsert des DEUX champs en
+  // un appel (sans passer par majSuiviAvecArtisan générique → factures non affectées).
+  // PAS de DELETE : la ligne est partagée avec l'acompte client (statut_client/date_paiement),
+  // qui reste intact. date_deblocage est de type `date` → AAAA-MM-JJ.
+  const setDeblocagePaye = async (artisanId, recu) => {
+    const { data: existing } = await supabase
+      .from('suivi_financier').select('id')
+      .eq('dossier_id', id).eq('type_echeance', 'acompte_artisan').eq('artisan_id', artisanId)
+      .maybeSingle()
+    const payload = recu
+      ? { statut_illico: 'recu', date_deblocage: new Date().toISOString().slice(0, 10) }
+      : { statut_illico: 'en_attente', date_deblocage: null }
+    if (existing) {
+      await supabase.from('suivi_financier').update(payload).eq('id', existing.id)
+    } else if (recu) {
+      await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'acompte_artisan', artisan_id: artisanId, ...payload })
+    }
+    const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(data || [])
   }
 
   // Toggle « CTP a payé l'apporteur » (décaissement CTP→apporteur). F2 agrège la
@@ -3329,11 +3353,8 @@ export default function FicheChantier({ params }) {
                       label={dv.artisan?.paiement_direct ? 'Paiement direct à l’entreprise' : 'illiCO France — acompte débloqué'}
                       sub={`Commission ${fmt(comDevisHT)} HT · ${dv.artisan?.entreprise || ''}`}
                       statut={sf?.statut_illico === 'recu' ? 'regle' : 'en_attente'}
-                      date={sf?.date_reglement_illico || null}
-                      onToggle={() => {
-                        const newStatut = sf?.statut_illico === 'recu' ? 'en_attente' : 'recu'
-                        majSuiviAvecArtisan('acompte_artisan', artId, 'statut_illico', newStatut)
-                      }}
+                      date={sf?.date_deblocage || null}
+                      onToggle={() => setDeblocagePaye(artId, sf?.statut_illico !== 'recu')}
                       variant="illico"
                       fmtDateFn={fmtD}
                     />
