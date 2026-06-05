@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/react"
 import "./globals.css"
 import NavBar from "./components/navbar"
 import { AuthProvider } from "./lib/auth-context"
+import DisableNumberInputScroll from "./components/DisableNumberInputScroll"
 
 const manrope = Manrope({
   variable: "--font-sans",
@@ -35,6 +36,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="fr" className={`${manrope.variable} ${jetbrainsMono.variable} h-full antialiased`}>
       <body className="min-h-full">
+        <DisableNumberInputScroll />
         <AuthProvider>
           <NavBar />
           {/* app-shell : pl-72px sur desktop, 0 sur mobile (drawer overlay) */}
