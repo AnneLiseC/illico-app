@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement } from '../../lib/dossiers'
-import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis } from '../../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 
 function Svg({ children, size = 14 }) {
@@ -1585,9 +1585,9 @@ export default function FicheChantier({ params }) {
   const totalDevisHTRecus  = devisRecus.reduce((s, d) => s + (d.montant_ht  || 0), 0)
   const fraisTTC = dossier?.frais_consultation || 0
   const fraisInclus = fraisTTC > 0 && dossier?.frais_statut !== 'offerts'
-  const tauxCourtage = (dossier?.taux_courtage ?? 0.06)
+  const tauxCourtage = (dossier?.taux_courtage ?? COURTAGE_STANDARD)
   const tauxCourtagePct = parseFloat((tauxCourtage * 100).toFixed(1))
-  const tauxAmo = ((dossier?.honoraires_amo_taux ?? 9) / 100)
+  const tauxAmo = ((dossier?.honoraires_amo_taux ?? AMO_STANDARD * 100) / 100)
   const tauxAmoPct = parseFloat((tauxAmo * 100).toFixed(1))
   // Honoraires depuis finance.js (source unique de calcul). Modèle frais = finance :
   // le plein montant TTC est déduit du courtage si frais_statut==='rembourse'.
@@ -1759,7 +1759,7 @@ export default function FicheChantier({ params }) {
       // Mettre à jour la typologie + taux AMO si non défini
       await supabase.from('dossiers').update({
         typologie: 'amo',
-        honoraires_amo_taux: dossier.honoraires_amo_taux ?? 9,
+        honoraires_amo_taux: dossier.honoraires_amo_taux ?? AMO_STANDARD * 100,
       }).eq('id', id)
 
       // Migrer la ligne honoraires_courtage → acompte_amo
@@ -1782,7 +1782,7 @@ export default function FicheChantier({ params }) {
       }
 
       // Recharger état
-      setDossier(d => ({ ...d, typologie: 'amo', honoraires_amo_taux: d.honoraires_amo_taux ?? 9 }))
+      setDossier(d => ({ ...d, typologie: 'amo', honoraires_amo_taux: d.honoraires_amo_taux ?? AMO_STANDARD * 100 }))
       const { data: newSuivi } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
       setSuiviFinancier(newSuivi || [])
       setSucces('Dossier converti en AMO ✓')
@@ -2207,7 +2207,7 @@ export default function FicheChantier({ params }) {
             ) : (
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
                 <Fact label="Montant TTC" value={fmt(dossier.frais_consultation || 0)} highlight />
-                <Fact label="Montant HT" value={fmt((dossier.frais_consultation || 0) / 1.2)} />
+                <Fact label="Montant HT" value={fmt((dossier.frais_consultation || 0) / TVA_FRAIS)} />
               </div>
             )}
           </div>
@@ -2597,7 +2597,7 @@ export default function FicheChantier({ params }) {
                     <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux courtage</label>
                     <input
                       type="number" step="0.1" min="0" max="20"
-                      value={(dossier.taux_courtage ?? 0.06) * 100}
+                      value={(dossier.taux_courtage ?? COURTAGE_STANDARD) * 100}
                       onChange={async e => {
                         const taux = parseFloat(e.target.value || 0) / 100
                         set('taux_courtage', taux)
@@ -2635,7 +2635,7 @@ export default function FicheChantier({ params }) {
                     <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux AMO</label>
                     <input
                       type="number" step="0.1" min="0" max="20"
-                      value={dossier.honoraires_amo_taux ?? 9}
+                      value={dossier.honoraires_amo_taux ?? AMO_STANDARD * 100}
                       onChange={async e => {
                         const taux = parseFloat(e.target.value || 0)
                         set('honoraires_amo_taux', taux)
@@ -3174,7 +3174,7 @@ export default function FicheChantier({ params }) {
                         <div style={{marginTop:10, paddingTop:10, borderTop:'1px dashed var(--brand-200)'}}>
                           <RecapRow label="Total honoraires (15%)" value={fmt(finDossier.honorairesPrevi.standard.totalTTC)} tone="brand" />
                           <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + finDossier.honorairesPrevi.standard.totalTTC + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
-                          {tauxAmoPct !== 9 && (
+                          {tauxAmoPct !== AMO_STANDARD * 100 && (
                             <div style={{marginTop:8, paddingTop:8, borderTop:'1px dashed var(--brand-200)'}}>
                               <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMOPrev)} tone="brand" />
                               <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + honorairesAMOPrev + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
@@ -3210,7 +3210,7 @@ export default function FicheChantier({ params }) {
                         <div style={{marginTop:10, paddingTop:10, borderTop:'1px dashed var(--ink-200)'}}>
                           <RecapRow label="Total honoraires (15%)" value={fmt(finDossier.honoraires.standard.totalTTC)} />
                           <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + finDossier.honoraires.standard.totalTTC + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
-                          {tauxAmoPct !== 9 && (
+                          {tauxAmoPct !== AMO_STANDARD * 100 && (
                             <div style={{marginTop:8, paddingTop:8, borderTop:'1px dashed var(--ink-200)'}}>
                               <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMO)} />
                               <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + honorairesAMO + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />

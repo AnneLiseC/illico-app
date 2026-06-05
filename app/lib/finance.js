@@ -1,8 +1,9 @@
 // app/lib/finance.js
 // Source de vérité unique pour tous les calculs financiers illiCO travaux
 
-const TVA = 1.2
-const ROYALTIES_RATE = 0.05
+export const TVA_FRAIS = 1.2      // frais de consultation = TVA 20%
+export const TVA_TRAVAUX = 1.1    // devis travaux = TVA 10% (fallback TTC si montant_ttc absent)
+export const ROYALTIES_RATE = 0.05
 export const COURTAGE_STANDARD = 0.06
 export const AMO_STANDARD = 0.09
 
@@ -53,11 +54,11 @@ export function getPartAdmin(dossier) {
 }
 
 export function getTauxCourtage(dossier) {
-  return normalizePercent(dossier?.taux_courtage, 0.06)
+  return normalizePercent(dossier?.taux_courtage, COURTAGE_STANDARD)
 }
 
 export function getTauxAmo(dossier) {
-  return normalizePercent(dossier?.taux_amo ?? dossier?.honoraires_amo_taux, 0.09)
+  return normalizePercent(dossier?.taux_amo ?? dossier?.honoraires_amo_taux, AMO_STANDARD)
 }
 
 function getDevisList(dossier) {
@@ -88,7 +89,7 @@ function getSignedTotals(dossier) {
   const totalHT  = round2(signed.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
   const totalTTC = round2(signed.reduce((s, dv) => {
     if (dv.montant_ttc !== undefined && dv.montant_ttc !== null) return s + toNumber(dv.montant_ttc)
-    return s + toNumber(dv.montant_ht) * TVA
+    return s + toNumber(dv.montant_ht) * TVA_TRAVAUX
   }, 0))
   return { signed, totalHT, totalTTC }
 }
@@ -100,7 +101,7 @@ function getSignedTotals(dossier) {
 export function calculateFraisFinance(dossier) {
   const fraisPartAgente = dossier?.frais_part_agente != null ? normalizePercent(dossier.frais_part_agente) : dossier?.referente?.frais_part_agente_defaut != null ? normalizePercent(dossier.referente.frais_part_agente_defaut): getPartAgente(dossier)
   const fraisTTC  = round2(toNumber(dossier?.frais_consultation))
-  const fraisHT   = round2(fraisTTC / TVA)
+  const fraisHT   = round2(fraisTTC / TVA_FRAIS)
   const royalties = round2(fraisHT * ROYALTIES_RATE)
   const net       = round2(fraisHT - royalties)
   const parts     = split(net, fraisPartAgente)
@@ -122,11 +123,11 @@ export function calculateDevisFinance(devis, dossier = {}) {
   const partAgente = getPartAgente(dossier)
   const montantHT  = round2(toNumber(devis?.montant_ht))
   const montantTTC = round2(
-    devis?.montant_ttc != null ? toNumber(devis.montant_ttc) : montantHT * TVA
+    devis?.montant_ttc != null ? toNumber(devis.montant_ttc) : montantHT * TVA_TRAVAUX
   )
   const commissionPct  = normalizePercent(devis?.commission_pourcentage, 0)
   const comHT          = round2(montantHT * commissionPct)
-  const comTTC         = round2(comHT * TVA)
+  const comTTC         = round2(comHT * TVA_FRAIS)
   const royaltiesType2 = round2(comHT * ROYALTIES_RATE)
   const netCom         = round2(comHT - royaltiesType2)
   const parts          = split(netCom, partAgente)
@@ -210,7 +211,7 @@ function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC }) {
   // La base honoraires n'est PAS amputée ; l'AMO n'est PAS affecté.
   const fraisRembourse    = dossier?.frais_statut === 'rembourse'
   const deductionFraisTTC = fraisRembourse ? round2(toNumber(dossier?.frais_consultation) || 0) : 0
-  const deductionFraisHT  = fraisRembourse ? round2((toNumber(dossier?.frais_consultation) || 0) / TVA) : 0
+  const deductionFraisHT  = fraisRembourse ? round2((toNumber(dossier?.frais_consultation) || 0) / TVA_FRAIS) : 0
 
   let courtage = { brut: 0, htBrut: 0, ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
   if (isCourtage || isAmo) {
@@ -292,7 +293,7 @@ function getActiveTotals(dossier) {
   const totalHT  = round2(active.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
   const totalTTC = round2(active.reduce((s, dv) => {
     if (dv.montant_ttc !== undefined && dv.montant_ttc !== null) return s + toNumber(dv.montant_ttc)
-    return s + toNumber(dv.montant_ht) * TVA
+    return s + toNumber(dv.montant_ht) * TVA_TRAVAUX
   }, 0))
   return { totalHT, totalTTC }
 }
@@ -324,7 +325,7 @@ function getRecuAccepteTotals(dossier) {
   const totalHT  = round2(list.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
   const totalTTC = round2(list.reduce((s, dv) => {
     if (dv.montant_ttc !== undefined && dv.montant_ttc !== null) return s + toNumber(dv.montant_ttc)
-    return s + toNumber(dv.montant_ht) * TVA
+    return s + toNumber(dv.montant_ht) * TVA_TRAVAUX
   }, 0))
   return { totalHT, totalTTC }
 }
