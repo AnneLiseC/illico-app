@@ -598,7 +598,7 @@ export default function Finances() {
     const suivi = d.suivi_financier || []
 
     // Frais consultation
-    const suiviFrais = suivi.find(s => s.type_echeance === 'frais_consultation' && s.statut_client === 'regle')
+    const suiviFrais = suivi.find(s => s.type_echeance === 'frais_consultation')
       if (c.fraisReel > 0) {
         // Priorité : date_paiement du suivi → date_signature_contrat comme fallback
         const dateFrais = suiviFrais?.date_paiement || d.date_signature_contrat
@@ -659,10 +659,15 @@ export default function Finances() {
       )) {
         const key = getKeyFromDate(sf.date_paiement, isAnnee)
         const finance = c.finance?.apporteur?.lines || []
-        const ligne = finance.find(l => {
-          const dv = (d.devis_artisans || []).find(dv => dv.id === l.devisId)
-          return (dv?.artisan_id || dv?.artisan?.id) === sf.artisan_id
-        })
+        // Routage selon le mode (un seul mode par dossier, ensembles exclusifs) :
+        // - mode total (sf.artisan_id NULL) → l'unique ligne finance 'total_chantier_ht'.
+        // - par_devis (artisan_id renseigné) → la ligne du devis de cet artisan (inchangé).
+        const ligne = sf.artisan_id === null
+          ? finance.find(l => l.type === 'total_chantier_ht')
+          : finance.find(l => {
+              const dv = (d.devis_artisans || []).find(dv => dv.id === l.devisId)
+              return (dv?.artisan_id || dv?.artisan?.id) === sf.artisan_id
+            })
         if (ligne) {
           // Côté CTP : coût Kiosque entier (CTP paie tout). Côté agente : sa PART réelle (ce qu'elle rembourse à CTP).
           addToKey(key, 'apporteurCoutTotalNet', ligne.totalHT, d.id)
@@ -1246,7 +1251,7 @@ export default function Finances() {
         const p = mapPrevi[cle] || {}; const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}
         totP.frais = round2(totP.frais + (p.frais||0)); totP.com = round2(totP.com + (p.com||0)); totP.comApport = round2(totP.comApport + (p.comApport||0)); totP.hon = round2(totP.hon + (p.hon||0)); totP.redev = round2(totP.redev + redev); totP.partAgentes = round2(totP.partAgentes + (p.partAgentes||0)); totP.royalties = round2(totP.royalties + (p.royalties||0))
         totR.frais = round2(totR.frais + (r.fraisNet||0)); totR.com = round2(totR.com + (r.comReelNet||0)); totR.comApport = round2(totR.comApport + (r.comApporteursReel||0)); totR.hon = round2(totR.hon + (r.honReel||0)); totR.redev = round2(totR.redev + redev); totR.partAgentes = round2(totR.partAgentes + (r.gainsAgenteReels||0)); totR.royalties = round2(totR.royalties + round2((r.comReelNet||0) * (0.05 / 0.95)))
-        const apporteurReel = dossiers.reduce((s, d) => { const lignes = (d.suivi_financier || []).filter(sf => sf.type_echeance === 'apporteur_agente' && sf.statut_ctp === 'rembourse' && sf.date_paiement && getKeyFromDate(sf.date_paiement, false) === cle); if (!lignes.length) return s; const c2 = calculerReel(d); return s + round2((c2.finance?.apporteur?.lines || []).reduce((sum, ligne) => { const dv = (d.devis_artisans || []).find(dv => dv.id === ligne.devisId); const artId = dv?.artisan_id || dv?.artisan?.id; const sf = (d.suivi_financier || []).find(s2 => s2.type_echeance === 'apporteur_agente' && s2.artisan_id === artId && s2.statut_ctp === 'rembourse' && s2.date_paiement && getKeyFromDate(s2.date_paiement, false) === cle); return sf ? sum + ligne.totalHT : sum }, 0)) }, 0)
+        const apporteurReel = dossiers.reduce((s, d) => { const lignes = (d.suivi_financier || []).filter(sf => sf.type_echeance === 'apporteur_agente' && sf.statut_ctp === 'rembourse' && sf.date_paiement && getKeyFromDate(sf.date_paiement, false) === cle); if (!lignes.length) return s; const c2 = calculerReel(d); return s + round2((c2.finance?.apporteur?.lines || []).reduce((sum, ligne) => { const dv = (d.devis_artisans || []).find(dv => dv.id === ligne.devisId); const artId = dv?.artisan_id || dv?.artisan?.id; const sf = (d.suivi_financier || []).find(s2 => s2.type_echeance === 'apporteur_agente' && (ligne.type === 'total_chantier_ht' ? s2.artisan_id === null : s2.artisan_id === artId) && s2.statut_ctp === 'rembourse' && s2.date_paiement && getKeyFromDate(s2.date_paiement, false) === cle); return sf ? sum + ligne.totalHT : sum }, 0)) }, 0)
         totR.apporteur = round2(totR.apporteur + apporteurReel)
       })
       const previProduits = round2(totP.frais + totP.com + totP.comApport + totP.hon + (isCTP ? totP.redev : 0))
