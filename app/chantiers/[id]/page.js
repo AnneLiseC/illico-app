@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement } from '../../lib/dossiers'
-import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA } from '../../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 
 function Svg({ children, size = 14 }) {
@@ -2207,7 +2207,7 @@ export default function FicheChantier({ params }) {
             ) : (
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
                 <Fact label="Montant TTC" value={fmt(dossier.frais_consultation || 0)} highlight />
-                <Fact label="Montant HT" value={fmt((dossier.frais_consultation || 0) / TVA)} />
+                <Fact label="Montant HT" value={fmt((dossier.frais_consultation || 0) / TVA_FRAIS)} />
               </div>
             )}
           </div>
