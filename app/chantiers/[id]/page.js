@@ -735,15 +735,19 @@ export default function FicheChantier({ params }) {
   const uploadPhotos = async (fichiers) => {
     if (!fichiers.length) return
     setUploadingPhoto(true)
-    await Promise.all(fichiers.map(async (fichier) => {
+    const resultats = await Promise.all(fichiers.map(async (fichier) => {
       const ext = fichier.name.split('.').pop()
       const chemin = `chantiers/${id}/${categorie}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error: uploadError } = await supabase.storage.from('photos').upload(chemin, fichier)
-      if (!uploadError) await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id })
+      if (uploadError) return false
+      await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id })
+      return true
     }))
     await chargerPhotos()
     setUploadingPhoto(false)
-    setSucces('Photo(s) ajoutée(s) ✓')
+    const echecs = resultats.filter(r => !r).length
+    if (echecs === 0) setSucces('Photo(s) ajoutée(s) ✓')
+    else setErreur(`${resultats.length - echecs} photo(s) ajoutée(s), ${echecs} en échec — réessayez les manquantes.`)
   }
 
   const supprimerPhoto = async (photoId, chemin) => {
@@ -957,19 +961,20 @@ export default function FicheChantier({ params }) {
   const uploadDocumentChantier = async (fichiers) => {
     if (!fichiers?.length) return
     setUploadingDocChantier(true)
+    let echecsDoc = 0
     for (const fichier of fichiers) {
       const ext = fichier.name.split('.').pop()
       const chemin = `chantiers/${id}/documents/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error } = await supabase.storage.from('documents').upload(chemin, fichier)
-      if (!error) {
-        await supabase.from('chantier_documents').insert({
-          dossier_id: id, nom: fichier.name, path: chemin,
-          type_mime: fichier.type, taille: fichier.size, dans_restitution: false,
-        })
-      }
+      if (error) { echecsDoc++; continue }
+      await supabase.from('chantier_documents').insert({
+        dossier_id: id, nom: fichier.name, path: chemin,
+        type_mime: fichier.type, taille: fichier.size, dans_restitution: false,
+      })
     }
     await chargerDocuments()
-    setSucces('Document(s) ajouté(s) ✓')
+    if (echecsDoc === 0) setSucces('Document(s) ajouté(s) ✓')
+    else setErreur(`${fichiers.length - echecsDoc} document(s) ajouté(s), ${echecsDoc} en échec — réessayez les manquants.`)
     setUploadingDocChantier(false)
   }
 
@@ -1006,13 +1011,15 @@ export default function FicheChantier({ params }) {
       libelle: libelleFinal
     }).select().single()
 
+    let uploadFactureOk = true
     if (factureInseree) {
       // E4 — upload PDF si fourni à la création
       if (nouvelleFacture.fichier) {
         const ext = nouvelleFacture.fichier.name.split('.').pop()
         const chemin = `chantiers/${id}/factures/${factureInseree.id}.${ext}`
         const { error: uploadErr } = await supabase.storage.from('documents').upload(chemin, nouvelleFacture.fichier)
-        if (!uploadErr) await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureInseree.id)
+        if (uploadErr) uploadFactureOk = false
+        else await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureInseree.id)
       }
       // E5 — synchro suivi_financier si payé à la création
       if (nouvelleFacture.statut === 'paye') {
@@ -1035,7 +1042,8 @@ export default function FicheChantier({ params }) {
       libelle: 'Facture acompte',
       libelle_autre: ''
     })
-    setSucces('Facture ajoutée ✓')
+    if (uploadFactureOk) setSucces('Facture ajoutée ✓')
+    else setErreur('Facture ajoutée, mais échec de l\'upload du PDF — réessayez via la facture.')
   }
 
   const supprimerFactureArtisan = async (factureId, pdfPath) => {
@@ -1076,7 +1084,7 @@ export default function FicheChantier({ params }) {
       await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureId)
       await chargerFactures()
       setSucces('PDF facture uploadé ✓')
-    }
+    } else { setErreur('Erreur upload : ' + error.message) }
     setUploadingFacturePdf(null)
   }
 
@@ -1338,11 +1346,13 @@ export default function FicheChantier({ params }) {
       valide: publier,
     }).select().single()
 
+    let uploadCrOk = true
     if (crInsere && crManuelForm.fichier) {
       const ext = crManuelForm.fichier.name.split('.').pop()
       const chemin = `chantiers/${id}/cr/${crInsere.id}.${ext}`
       const { error: uploadErr } = await supabase.storage.from('documents').upload(chemin, crManuelForm.fichier)
-      if (!uploadErr) await supabase.from('comptes_rendus').update({ pdf_path: chemin }).eq('id', crInsere.id)
+      if (uploadErr) uploadCrOk = false
+      else await supabase.from('comptes_rendus').update({ pdf_path: chemin }).eq('id', crInsere.id)
     }
 
     const { data } = await supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
@@ -1350,7 +1360,8 @@ export default function FicheChantier({ params }) {
     setCrManuelModal(false)
     setCrManuelForm({ type_visite: '', date_visite: '', contenu: '', fichier: null })
     setCrManuelSaving(false)
-    setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
+    if (uploadCrOk) setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
+    else setErreur('CR enregistré, mais échec de l\'upload du PDF — réessayez.')
   }
   // ── GÉNÉRER CR AVEC IA ──
   const genererCRAvecIA = async () => {

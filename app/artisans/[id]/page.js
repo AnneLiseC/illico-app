@@ -121,15 +121,17 @@ export default function FicheArtisan({ params }) {
     if (!nouvelleFiche.nom) return
     setSavingFiche(true)
     let url = null
+    let uploadFicheOk = true
     if (nouvelleFiche.fichier) {
       const ext = nouvelleFiche.fichier.name.split('.').pop()
       const chemin = `artisans/${id}/fiches/${Date.now()}.${ext}`
       const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, nouvelleFiche.fichier)
-      if (!uploadError) url = chemin
+      if (uploadError) uploadFicheOk = false
+      else url = chemin
     }
     const { error } = await supabase.from('fiches_techniques').insert({ artisan_id: id, nom: nouvelleFiche.nom, description: nouvelleFiche.description || null, url })
     if (error) { setErreur('Erreur : ' + error.message) }
-    else { await chargerFiches(); setAjouterFiche(false); setNouvelleFiche({ nom: '', description: '', fichier: null }); setSucces('Fiche ajoutée ✓') }
+    else { await chargerFiches(); setAjouterFiche(false); setNouvelleFiche({ nom: '', description: '', fichier: null }); if (uploadFicheOk) setSucces('Fiche ajoutée ✓'); else setErreur('Fiche ajoutée, mais échec de l\'upload du fichier — réessayez.') }
     setSavingFiche(false)
   }
 
