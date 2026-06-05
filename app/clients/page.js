@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { archiverClient, supprimerClient } from '../lib/clients'
+import { archiverClient, desarchiverClient, supprimerClient } from '../lib/clients'
 
 /* ── Inline SVG icons ── */
 function Svg({ size = 16, children }) {
@@ -32,6 +32,7 @@ export default function Clients() {
   const [recherche, setRecherche] = useState('')
   const [onglet, setOnglet] = useState('moi')
   const [menuOuvert, setMenuOuvert] = useState(null)
+  const [vueArchives, setVueArchives] = useState(false)
   const router = useRouter()
   const { user, profile, initialized } = useAuth()
 
@@ -50,7 +51,7 @@ export default function Clients() {
     let query = supabase
       .from('clients')
       .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role), dossiers(id, devis_artisans(id, statut, montant_ttc))')
-      .eq('archive', false)
+      .eq('archive', vueArchives)
       .order('nom', { ascending: true })
     if (profile.role === 'agente') query = query.eq('referente', profile.id)
 
@@ -67,7 +68,7 @@ export default function Clients() {
       setAgentes(agentesData || [])
       setLoading(false)
     })
-  }, [initialized, user?.id, profile?.id, router])
+  }, [initialized, user?.id, profile?.id, vueArchives, router])
 
   // Archiver un client (≥1 dossier) : le trigger DB propage sur ses dossiers.
   // Succès → retrait local de la carte (la vue Actifs ne l'affiche plus).
@@ -82,6 +83,15 @@ export default function Clients() {
   const handleSupprimerListe = async (clientId) => {
     if (!confirm('Supprimer définitivement ce client ? Cette action est irréversible.')) return
     const { error } = await supprimerClient(supabase, clientId)
+    if (error) { alert(error.message); return }
+    setClients(prev => prev.filter(c => c.id !== clientId))
+  }
+
+  // Désarchiver (vue Archivés) : le trigger DB propage le désarchivage sur les dossiers.
+  // Succès → retrait local de la carte (elle quitte la vue Archivés).
+  const handleDesarchiverListe = async (clientId) => {
+    if (!confirm('Désarchiver ce client ? Il réapparaîtra dans les vues opérationnelles.')) return
+    const { error } = await desarchiverClient(supabase, clientId)
     if (error) { alert(error.message); return }
     setClients(prev => prev.filter(c => c.id !== clientId))
   }
@@ -133,6 +143,12 @@ export default function Clients() {
           ))}
         </div>
       )}
+
+      {/* Toggle Actifs / Archivés (tous rôles) */}
+      <div className="tabs">
+        <button className={`tab ${!vueArchives ? 'active' : ''}`} onClick={() => setVueArchives(false)}>Actifs</button>
+        <button className={`tab ${vueArchives ? 'active' : ''}`} onClick={() => setVueArchives(true)}>Archivés</button>
+      </div>
 
       {/* Barre de recherche */}
       <div className="card toolbar-row" style={{padding:'14px 16px', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
@@ -237,8 +253,9 @@ export default function Clients() {
                                 : `/clients/${client.id}`
                             ),
                           },
-                          { label:'Archiver',  hide: dossierCount === 0, action: () => handleArchiverListe(client.id) },
-                          { label:'Supprimer', hide: dossierCount > 0,   action: () => handleSupprimerListe(client.id) },
+                          { label:'Archiver',    hide: vueArchives || dossierCount === 0, action: () => handleArchiverListe(client.id) },
+                          { label:'Supprimer',   hide: vueArchives || dossierCount > 0,   action: () => handleSupprimerListe(client.id) },
+                          { label:'Désarchiver', hide: !vueArchives,                      action: () => handleDesarchiverListe(client.id) },
                         ].filter(item => !item.hide).map(item => (
                           <button key={item.label} className="row-hover"
                             style={{width:'100%', textAlign:'left', padding:'10px 14px', border:0, background:'transparent', fontSize:13, cursor:'pointer', color:'var(--ink-700)'}}
