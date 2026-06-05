@@ -289,6 +289,9 @@ export function calculateHonorairesPrevi(dossier) {
     courtage: core.courtage,
     soldeAmo: core.soldeAmo,
     totalNet: core.totalNet,
+    // Asymétrie VOULUE : le prévi expose `parts` (lu par gains.netsPrevi), pas le
+    // réel — `honoraires.parts` (réel) a été retiré au nettoyage code mort (aucun
+    // lecteur). Ne pas re-ajouter `parts` côté réel « par symétrie ».
     parts: core.parts,
     totalDevisTTCRecus: totalTTC,
     standard: core.standard,
