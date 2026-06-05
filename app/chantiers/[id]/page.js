@@ -1599,6 +1599,8 @@ export default function FicheChantier({ params }) {
   const suiviCourtage = suiviFinancier.find(s => s.type_echeance === 'honoraires_courtage')
   const suiviAcompteAMO = suiviFinancier.find(s => s.type_echeance === 'acompte_amo')
   const suiviSoldeAMO = suiviFinancier.find(s => s.type_echeance === 'solde_amo')
+  // Statut frais = dossiers.frais_statut (source unique) ; date = ligne frais_consultation si réglé.
+  const suiviFrais = suiviFinancier.find(s => s.type_echeance === 'frais_consultation')
 
   // Avancement calculé depuis suivi_financier (source de vérité unique)
   const avancement = calculerAvancement({ ...dossier, suivi_financier: suiviFinancier })
@@ -3324,7 +3326,7 @@ export default function FicheChantier({ params }) {
                   label="Frais de consultation"
                   sub={`${fmt(dossier.frais_consultation)} TTC`}
                   statut={dossier.frais_statut === 'regle' || dossier.frais_statut === 'offerts' ? 'regle' : 'en_attente'}
-                  date={dossier.date_signature_contrat}
+                  date={dossier.frais_statut === 'regle' ? (suiviFrais?.date_paiement || null) : null}
                   fmtDateFn={fmtD}
                 />
               )}
@@ -3368,7 +3370,7 @@ export default function FicheChantier({ params }) {
                   label="Honoraires courtage"
                   sub={`${tauxCourtagePct}% travaux HT · ${fmt(honorairesCourtagePrev)}`}
                   statut={suiviCourtage?.statut_client || 'en_attente'}
-                  date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || dossier.date_signature_contrat}
+                  date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || null}
                   onToggle={() => {
                     const newStatut = suiviCourtage?.statut_client === 'regle' ? 'en_attente' : 'regle'
                     majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'statut_client', newStatut)
@@ -3383,7 +3385,7 @@ export default function FicheChantier({ params }) {
                   label="Honoraires AMO — solde"
                   sub={`${tauxAmoPct}% travaux HT · ${fmt(honorairesAMOPrev - honorairesCourtagePrev)}`}
                   statut={suiviSoldeAMO?.statut_client || 'en_attente'}
-                  date={(suiviSoldeAMO?.statut_client === 'regle' && suiviSoldeAMO.date_paiement) || dossier.date_fin_chantier}
+                  date={(suiviSoldeAMO?.statut_client === 'regle' && suiviSoldeAMO.date_paiement) || null}
                   onToggle={() => {
                     const newStatut = suiviSoldeAMO?.statut_client === 'regle' ? 'en_attente' : 'regle'
                     majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'statut_client', newStatut)
