@@ -151,8 +151,6 @@ export function calculateDevisFinance(devis, dossier = {}) {
     signed,
     refused,
     isApporteur: Boolean(devis?.artisan?.paiement_direct),
-    partenaire: Boolean(devis?.artisan?.partenaire),
-    paiementDirect: Boolean(devis?.artisan?.paiement_direct),
     montantHT,
     montantTTC,
     commissionPct,
@@ -261,9 +259,6 @@ export function calculateHonorairesFinance(dossier) {
   const core = honorairesCore(dossier, { totalHT, totalTTC })
 
   return {
-    typologie: dossier?.typologie || '',
-    tauxCourtage: getTauxCourtage(dossier),
-    tauxAmo: getTauxAmo(dossier),
     totalDevisHTSignes:  totalHT,
     totalDevisTTCSignes: totalTTC,
     signedDevisCount: signed.length,
@@ -484,8 +479,6 @@ export function calculateDossierFinance(dossier) {
     settings: {
       partAgente,
       partAdmin,
-      tauxCourtage: getTauxCourtage(dossier),
-      tauxAmo:      getTauxAmo(dossier),
     },
     frais,
     commissions,
