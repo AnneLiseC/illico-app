@@ -127,7 +127,6 @@ export function calculateDevisFinance(devis, dossier = {}) {
   )
   const commissionPct  = normalizePercent(devis?.commission_pourcentage, 0)
   const comHT          = round2(montantHT * commissionPct)
-  const comTTC         = round2(comHT * TVA_FRAIS)
   const royaltiesType2 = round2(comHT * ROYALTIES_RATE)
   const netCom         = round2(comHT - royaltiesType2)
   const parts          = split(netCom, partAgente)
@@ -158,7 +157,6 @@ export function calculateDevisFinance(devis, dossier = {}) {
     montantTTC,
     commissionPct,
     comHT,
-    comTTC,
     royaltiesType2,
     netCom,
     parts: { agente: parts.agente, admin: parts.admin },
@@ -174,7 +172,6 @@ export function calculateCommissionsFinance(dossier) {
   const devis  = active.map(dv => calculateDevisFinance(dv, dossier))
 
   const comHT          = round2(devis.reduce((s, d) => s + d.comHT, 0))
-  const comTTC         = round2(devis.reduce((s, d) => s + d.comTTC, 0))
   const royaltiesType2 = round2(devis.reduce((s, d) => s + d.royaltiesType2, 0))
   const netCom         = round2(devis.reduce((s, d) => s + d.netCom, 0))
   const partsAgente    = round2(devis.reduce((s, d) => s + d.parts.agente, 0))
@@ -183,7 +180,6 @@ export function calculateCommissionsFinance(dossier) {
   return {
     devis,
     comHT,
-    comTTC,
     royaltiesType2,
     netCom,
     parts: { agente: partsAgente, admin: partsAdmin },
