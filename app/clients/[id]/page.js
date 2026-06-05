@@ -3,6 +3,7 @@ import { useState, useEffect, use, Suspense } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '../../lib/auth-context'
+import { archiverClient, desarchiverClient, supprimerClient } from '../../lib/clients'
 
 function Svg({ size = 16, children }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -14,6 +15,8 @@ const PhoneIcon   = ({ size=16 }) => <Svg size={size}><path d="M22 16.92v3a2 2 0
 const MailIcon    = ({ size=16 }) => <Svg size={size}><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></Svg>
 const EditIcon    = ({ size=16 }) => <Svg size={size}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></Svg>
 const PlusIcon    = ({ size=16 }) => <Svg size={size}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></Svg>
+const ArchiveIcon = ({ size=16 }) => <Svg size={size}><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></Svg>
+const TrashIcon   = ({ size=16 }) => <Svg size={size}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></Svg>
 const CalIcon     = ({ size=16 }) => <Svg size={size}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></Svg>
 
 const fmtEur  = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
@@ -182,6 +185,31 @@ function FicheClientInner({ params }) {
     setSaving(false)
   }
 
+  // Archiver un client qui a des dossiers (le trigger DB propage sur ses dossiers).
+  const handleArchiver = async () => {
+    if (!confirm('Archiver ce client ? Ses dossiers seront masqués des vues opérationnelles (conservés en compta). Réversible.')) return
+    const { error } = await archiverClient(supabase, id)
+    if (error) { setErreur(error.message); return }
+    router.push('/clients')
+  }
+
+  // Supprimer définitivement un client SANS dossier (le helper mappe l'erreur FK 23503).
+  const handleSupprimer = async () => {
+    if (!confirm('Supprimer définitivement ce client ? Cette action est irréversible.')) return
+    const { error } = await supprimerClient(supabase, id)
+    if (error) { setErreur(error.message); return }
+    router.push('/clients')
+  }
+
+  // Désarchiver le client (le trigger DB propage sur ses dossiers). On reste sur la
+  // fiche : maj locale archive=false → la fiche redevient « active » sur place.
+  const handleDesarchiver = async () => {
+    if (!confirm('Désarchiver ce client ? Il réapparaîtra dans les vues opérationnelles.')) return
+    const { error } = await desarchiverClient(supabase, id)
+    if (error) { setErreur(error.message); return }
+    setClient(c => ({ ...c, archive: false }))
+  }
+
   const estCouple = ['M. et Mme', 'Mme et Mme', 'M. et M.'].includes(client?.civilite)
 
   if (loading) return <div className="page-loading" />
@@ -261,6 +289,16 @@ function FicheClientInner({ params }) {
           <span style={{ color: 'var(--ink-700)', fontWeight: 600 }}>{nomDisplay}</span>
         </div>
 
+        {/* Bandeau client archivé */}
+        {client.archive && (
+          <div style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12, color: '#a16207' }}>
+            <span style={{ fontSize: 20 }}>📦</span>
+            <div style={{ fontSize: 13 }}>
+              <strong>Client archivé.</strong> Ses dossiers sont masqués des vues opérationnelles (conservés en comptabilité).
+            </div>
+          </div>
+        )}
+
         {/* Hero card */}
         <div className="card" style={{ padding: 28 }}>
           <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -315,9 +353,24 @@ function FicheClientInner({ params }) {
                   <MailIcon size={14}/>
                 </a>
               )}
-              <button className="btn btn-primary" onClick={() => router.push(`/chantiers/nouveau?client=${id}`)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <PlusIcon size={14}/> Nouveau dossier
-              </button>
+              {!client.archive && (
+                <button className="btn btn-primary" onClick={() => router.push(`/chantiers/nouveau?client=${id}`)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <PlusIcon size={14}/> Nouveau dossier
+                </button>
+              )}
+              {client.archive ? (
+                <button className="btn btn-ghost" onClick={handleDesarchiver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <ArchiveIcon size={14}/> Désarchiver
+                </button>
+              ) : dossiers.length > 0 ? (
+                <button className="btn btn-ghost" onClick={handleArchiver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <ArchiveIcon size={14}/> Archiver
+                </button>
+              ) : (
+                <button className="btn btn-ghost" onClick={handleSupprimer} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--bad)' }}>
+                  <TrashIcon size={14}/> Supprimer
+                </button>
+              )}
             </div>
           </div>
         </div>
