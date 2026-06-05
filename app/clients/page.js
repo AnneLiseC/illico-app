@@ -49,6 +49,7 @@ export default function Clients() {
     let query = supabase
       .from('clients')
       .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role), dossiers(id, devis_artisans(id, statut, montant_ttc))')
+      .eq('archive', false)
       .order('nom', { ascending: true })
     if (profile.role === 'agente') query = query.eq('referente', profile.id)
 

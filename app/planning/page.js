@@ -88,15 +88,18 @@ export default function Planning() {
 
   const chargerTout = async () => {
     const [rdvRes, intRes, dosRes, artRes, devRes, agRes] = await Promise.all([
-      supabase.from('rendez_vous').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_heure'),
-      supabase.from('interventions_artisans').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_debut'),
-      supabase.from('dossiers').select('id, reference, referente_id, date_demarrage_chantier, date_fin_chantier, client:clients(civilite, prenom, nom)').order('reference'),
+      supabase.from('rendez_vous').select('*, dossier:dossiers(id, reference, referente_id, archive, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_heure'),
+      supabase.from('interventions_artisans').select('*, dossier:dossiers(id, reference, referente_id, archive, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_debut'),
+      supabase.from('dossiers').select('id, reference, referente_id, date_demarrage_chantier, date_fin_chantier, client:clients(civilite, prenom, nom)').eq('archive', false).order('reference'),
       supabase.from('artisans').select('id, entreprise').order('entreprise'),
       supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise)'),
       supabase.from('profiles').select('id, prenom, nom, role').in('role', ['admin', 'agente']).order('prenom'),
     ])
-    setRdvs(rdvRes.data || [])
-    setInterventions(intRes.data || [])
+    // Masquage archive : on retire RDV/interventions rattachés à un dossier archivé,
+    // tout en CONSERVANT ceux sans dossier (dossier?.archive === undefined → gardés :
+    // RDV prospect/standalone). Condition de retrait stricte : dossier?.archive === true.
+    setRdvs((rdvRes.data || []).filter(r => r.dossier?.archive !== true))
+    setInterventions((intRes.data || []).filter(i => i.dossier?.archive !== true))
     setDossiers(dosRes.data || [])
     setArtisans(artRes.data || [])
     setDevis(devRes.data || [])
