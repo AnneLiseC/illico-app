@@ -1148,11 +1148,14 @@ export default function FicheChantier({ params }) {
       statut: (nouveauDevis.date_reception || nouveauDevis.fichier) ? 'recu' : 'en_attente',
       ordre: prochainOrdre,
     }).select()
+    let uploadDevisOk = true
     if (!error && nouveauDevis.fichier && devisInsere?.[0]) {
       const ext = nouveauDevis.fichier.name.split('.').pop()
       const cheminDevis = `chantiers/${id}/devis/${devisInsere[0].id}.${ext}`
-      await supabase.storage.from('documents').upload(cheminDevis, nouveauDevis.fichier)
-      await supabase.from('devis_artisans').update({ devis_pdf_path: cheminDevis }).eq('id', devisInsere[0].id)
+      // Gate : on n'écrit le chemin que si l'upload réussit (sinon référence pendante).
+      const { error: uploadError } = await supabase.storage.from('documents').upload(cheminDevis, nouveauDevis.fichier)
+      if (uploadError) uploadDevisOk = false
+      else await supabase.from('devis_artisans').update({ devis_pdf_path: cheminDevis }).eq('id', devisInsere[0].id)
     }
     if (!error) {
       if (!dossier.contrat_signe) {
@@ -1163,7 +1166,8 @@ export default function FicheChantier({ params }) {
       await chargerDevis()
       setAjouterDevis(false)
       setNouveauDevis({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, date_reception: '', date_limite: '', notes: '', fichier: null })
-      setSucces('Devis ajouté ✓')
+      if (uploadDevisOk) setSucces('Devis ajouté ✓')
+      else setErreur('Devis ajouté, mais échec de l\'upload du PDF — réessayez via la fiche devis.')
     } else { setErreur('Erreur : ' + error.message) }
     setSavingDevis(false)
   }
@@ -1224,11 +1228,14 @@ export default function FicheChantier({ params }) {
         ordre: prochainOrdre,
       }).select()
       if (error) { setErreur('Erreur : ' + error.message); return }
+      let uploadDevisOk = true
       if (form.fichier && devisInsere?.[0]) {
         const ext = form.fichier.name.split('.').pop()
         const cheminDevis = `chantiers/${id}/devis/${devisInsere[0].id}.${ext}`
-        await supabase.storage.from('documents').upload(cheminDevis, form.fichier)
-        await supabase.from('devis_artisans').update({ devis_pdf_path: cheminDevis }).eq('id', devisInsere[0].id)
+        // Gate : on n'écrit le chemin que si l'upload réussit (sinon référence pendante).
+        const { error: uploadError } = await supabase.storage.from('documents').upload(cheminDevis, form.fichier)
+        if (uploadError) uploadDevisOk = false
+        else await supabase.from('devis_artisans').update({ devis_pdf_path: cheminDevis }).eq('id', devisInsere[0].id)
       }
       if (!dossier.contrat_signe) {
         const today = new Date().toISOString().slice(0, 10)
@@ -1236,7 +1243,8 @@ export default function FicheChantier({ params }) {
         setDossier(d => ({ ...d, contrat_signe: true, date_signature_contrat: today }))
       }
       await chargerDevis()
-      setSucces('Devis ajouté ✓')
+      if (uploadDevisOk) setSucces('Devis ajouté ✓')
+      else setErreur('Devis ajouté, mais échec de l\'upload du PDF — réessayez via la fiche devis.')
     }
     setDevisModal({ open: false, devis: null })
   }
