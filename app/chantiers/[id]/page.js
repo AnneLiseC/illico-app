@@ -1021,7 +1021,6 @@ export default function FicheChantier({ params }) {
         await majSuiviAvecArtisan(typeEch, artisanId, 'statut_client', 'regle')
         if (nouvelleFacture.date_paiement) {
           await majSuiviAvecArtisan(typeEch, artisanId, 'date_paiement', nouvelleFacture.date_paiement)
-          await majSuiviAvecArtisan(typeEch, artisanId, 'date_reglement_client', nouvelleFacture.date_paiement)
         }
       }
     }
@@ -1062,7 +1061,6 @@ export default function FicheChantier({ params }) {
       const statutSuivi = newStatut === 'paye' ? 'regle' : 'en_attente'
       await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'statut_client', statutSuivi)
       if (newStatut === 'paye' && datePaye) {
-        await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'date_reglement_client', datePaye)
         await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'date_paiement', datePaye)
       }
     }
@@ -1633,7 +1631,6 @@ export default function FicheChantier({ params }) {
     const statutSuivi = paye ? 'regle' : 'en_attente'
     await majSuiviAvecArtisan('acompte_artisan', artisanId, 'statut_client', statutSuivi)
     if (paye && datePaye) {
-      await majSuiviAvecArtisan('acompte_artisan', artisanId, 'date_reglement_client', datePaye)
       await majSuiviAvecArtisan('acompte_artisan', artisanId, 'date_paiement', datePaye)
     }
     // Synchroniser les factures_artisans dont le libellé contient "acompte" pour ce devis
@@ -2823,7 +2820,7 @@ export default function FicheChantier({ params }) {
                       {d.statut === 'accepte' && (() => {
                         const suiviAcompte = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && (s.artisan_id === d.artisan_id || s.artisan_id === d.artisan?.id))
                         const acomptePaye = suiviAcompte?.statut_client === 'regle'
-                        const dateAcompte = suiviAcompte?.date_reglement_client || suiviAcompte?.date_paiement
+                        const dateAcompte = suiviAcompte?.date_paiement
                         return (
                           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                             <span style={{fontSize:11, color:'var(--ink-400)'}}>
@@ -3295,10 +3292,10 @@ export default function FicheChantier({ params }) {
                       label={`Acompte client — ${dv.artisan?.entreprise || '—'}`}
                       sub={`${finDv.acompteMode === 'fixe' ? 'fixe' : finDv.acomptePct + '%'} acompte · ${fmt(acompteMontant)} TTC`}
                       statut={sf?.statut_client || 'en_attente'}
-                      date={sf?.date_reglement_client || sf?.date_paiement || null}
+                      date={sf?.date_paiement || null}
                       onToggle={() => {
                         const paye = sf?.statut_client !== 'regle'
-                        setAcompteArtisanPaye(artId, paye, sf?.date_reglement_client || sf?.date_paiement)
+                        setAcompteArtisanPaye(artId, paye, sf?.date_paiement)
                       }}
                       fmtDateFn={fmtD}
                     />
