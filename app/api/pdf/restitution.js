@@ -118,14 +118,14 @@ function Ftr({ ref: r, agenceNom }) {
 // L'acompte suivi_financier n'est affiché QUE si aucune facture n'existe pour le devis.
 export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier, dossier }) {
   const fraisTTC = toNum(dossier.frais_consultation)
-  const suiviFrais = (suiviFinancier || []).find(s => s.type_echeance === 'frais_consultation' && s.statut_client === 'regle')
+  const suiviFrais = (suiviFinancier || []).find(s => s.type_echeance === 'frais_consultation')
 
   const blocs = []
 
   // ── Bloc frais de consultation ──
   if (fraisTTC > 0 && dossier.frais_statut !== 'offerts') {
     const datePaiement = suiviFrais?.date_paiement ? new Date(suiviFrais.date_paiement).toLocaleDateString('fr-FR') : null
-    const paye = !!suiviFrais
+    const paye = dossier.frais_statut === 'regle'
     blocs.push(
       React.createElement(View, { key: 'frais', style: CS.paiementBloc },
         React.createElement(View, { style: CS.paiementHeader },

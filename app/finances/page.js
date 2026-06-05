@@ -598,7 +598,7 @@ export default function Finances() {
     const suivi = d.suivi_financier || []
 
     // Frais consultation
-    const suiviFrais = suivi.find(s => s.type_echeance === 'frais_consultation' && s.statut_client === 'regle')
+    const suiviFrais = suivi.find(s => s.type_echeance === 'frais_consultation')
       if (c.fraisReel > 0) {
         // Priorité : date_paiement du suivi → date_signature_contrat comme fallback
         const dateFrais = suiviFrais?.date_paiement || d.date_signature_contrat
