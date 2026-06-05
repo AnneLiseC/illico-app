@@ -918,7 +918,7 @@ export default function FicheChantier({ params }) {
   const set = (champ, valeur) => setDossier(d => ({ ...d, [champ]: valeur }))
   const setND = (champ, valeur) => setNouveauDevis(d => ({ ...d, [champ]: valeur }))
 
-  const estChantierMarine = dossier?.referente?.role === 'admin'
+  const referentEstAdmin = dossier?.referente?.role === 'admin'
 
 
   const chargerDocuments = async () => {
@@ -1085,7 +1085,7 @@ export default function FicheChantier({ params }) {
     setErreur('')
     setSucces('')
 
-    const newPartAgente = estChantierMarine ? 0 : (dossier.part_agente ?? 0.5)
+    const newPartAgente = referentEstAdmin ? 0 : (dossier.part_agente ?? 0.5)
 
     const { error } = await supabase.from('dossiers').update({
       typologie: dossier.typologie, statut: dossier.statut,
@@ -2433,7 +2433,7 @@ export default function FicheChantier({ params }) {
             </div>
           </div>
 
-          {!estChantierMarine && profile?.parts_agente_disponibles?.length > 1 && (
+          {!referentEstAdmin && profile?.parts_agente_disponibles?.length > 1 && (
             <div style={{paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
               <label className="eyebrow" style={{display:'block', marginBottom:8}}>Répartition commission (agente / CTP)</label>
               <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
@@ -2724,7 +2724,7 @@ export default function FicheChantier({ params }) {
                             <span>Signé le {new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
                           )}
                         </div>
-                        {!estChantierMarine && d.commission_pourcentage > 0 && (() => {
+                        {!referentEstAdmin && d.commission_pourcentage > 0 && (() => {
                           const finDevis = calculateDevisFinance(d, dossier)
                           return (
                             <div style={{marginTop:4, display:'flex', gap:14, flexWrap:'wrap', fontSize:12, color:'var(--ink-500)'}}>
@@ -2857,7 +2857,7 @@ export default function FicheChantier({ params }) {
                         <span style={{fontSize:11, color:'var(--ink-400)'}}>Commission</span>
                         <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.commission_pourcentage ? `${(d.commission_pourcentage * 100).toFixed(1)} %` : '—'}</span>
                       </div>
-                      {!estChantierMarine && (
+                      {!referentEstAdmin && (
                         <div style={{display:'flex', justifyContent:'space-between'}}>
                           <span style={{fontSize:11, color:'var(--ink-400)'}}>Répartition</span>
                           <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{`${Math.round((dossier.part_agente ?? 0.5) * 100)} / ${Math.round((1 - (dossier.part_agente ?? 0.5)) * 100)}`}</span>
@@ -3274,7 +3274,6 @@ export default function FicheChantier({ params }) {
         const gainAdmin        = fraisAdmin  + honAdmin  + comAdmin  - fin.apporteur.partsReel.admin
         const totalNet         = gainAgente + gainAdmin
         const partAgenteCfg    = fin.settings.partAgente
-        const isAdmin          = dossier?.referente?.role === 'admin'
         const fmtD = (date) => date ? new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' }) : null
 
         return (
@@ -3301,7 +3300,7 @@ export default function FicheChantier({ params }) {
               tone="brand"
             />
             <MiniKpi
-              label={isAdmin ? 'Net franchisée' : 'Net total'}
+              label={referentEstAdmin ? 'Net franchisée' : 'Net total'}
               value={fmt(totalNet)}
               sub={partAgenteCfg > 0
                 ? `Agente ${fmt(gainAgente)} · CTP ${fmt(gainAdmin)}`
