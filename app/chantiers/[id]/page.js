@@ -1653,6 +1653,32 @@ export default function FicheChantier({ params }) {
     }
   }
 
+  // Toggle « CTP a payé l'apporteur » (décaissement CTP→apporteur). F2 agrège la
+  // charge agente sur statut_ctp='rembourse' + date_paiement → on écrit ces 2 champs
+  // au coche (date = jour du clic), et on SUPPRIME la ligne au décoche (zéro résidu,
+  // cohérent avec le toggle honoraires). Les 2 modes (par_devis: artisan_id renseigné /
+  // total: artisan_id NULL) passent par le même chemin. Montant non écrit (F2 le calcule
+  // via finance.js). date_paiement est de type `date` → AAAA-MM-JJ.
+  const setApporteurPaye = async (artisanId, paye) => {
+    let q = supabase.from('suivi_financier').select('id')
+      .eq('dossier_id', id).eq('type_echeance', 'apporteur_agente')
+    q = artisanId === null ? q.is('artisan_id', null) : q.eq('artisan_id', artisanId)
+    const { data: existing } = await q.maybeSingle()
+
+    if (paye) {
+      const today = new Date().toISOString().slice(0, 10)
+      if (existing) {
+        await supabase.from('suivi_financier').update({ statut_ctp: 'rembourse', date_paiement: today }).eq('id', existing.id)
+      } else {
+        await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'apporteur_agente', artisan_id: artisanId, statut_ctp: 'rembourse', date_paiement: today })
+      }
+    } else if (existing) {
+      await supabase.from('suivi_financier').delete().eq('id', existing.id)
+    }
+    const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(data || [])
+  }
+
   const majSuiviChantier = async (type, montant, champ, valeur) => {
     // Échéances honoraires togglées par statut_client : on DATE le règlement au coche
     // (date_paiement = aujourd'hui, la date que lit l'agrégation F2) et on SUPPRIME la
@@ -3354,12 +3380,12 @@ export default function FicheChantier({ params }) {
                 const totalPaye = lignes.reduce((s, l) => {
                   if (fin.apporteur.mode === 'total_chantier_ht') {
                     const sf = suiviFinancier.find(x => x.type_echeance === 'apporteur_agente' && x.artisan_id === null)
-                    return sf?.statut_client === 'regle' ? s + l.totalHT : s
+                    return sf?.statut_ctp === 'rembourse' ? s + l.totalHT : s
                   }
                   const dv = devis.find(x => x.id === l.devisId)
                   const artId = dv?.artisan_id || dv?.artisan?.id
                   const sf = suiviFinancier.find(x => x.type_echeance === 'apporteur_agente' && x.artisan_id === artId)
-                  return sf?.statut_client === 'regle' ? s + l.totalHT : s
+                  return sf?.statut_ctp === 'rembourse' ? s + l.totalHT : s
                 }, 0)
                 const reste = Math.max(0, totalDu - totalPaye)
 
@@ -3389,7 +3415,7 @@ export default function FicheChantier({ params }) {
                         x.type_echeance === 'apporteur_agente' &&
                         (artId === null ? x.artisan_id === null : x.artisan_id === artId)
                       )
-                      const paye = sf?.statut_client === 'regle'
+                      const paye = sf?.statut_ctp === 'rembourse'
                       const labelLigne = fin.apporteur.mode === 'total_chantier_ht'
                         ? 'Règlement apporteur (total)'
                         : `Devis ${l.label || dv?.artisan?.entreprise || ''}`
@@ -3399,21 +3425,8 @@ export default function FicheChantier({ params }) {
                           label={labelLigne}
                           sub={`${pctApp}% × ${fmt(l.baseHT)} HT · ${fmt(l.totalHT)}`}
                           statut={paye ? 'regle' : 'en_attente'}
-                          date={sf?.date_reglement_client || sf?.date_paiement || null}
-                          onToggle={async () => {
-                            const newStatut = paye ? 'en_attente' : 'regle'
-                            if (artId === null) {
-                              await majSuiviChantier('apporteur_agente', l.totalHT, 'statut_client', newStatut)
-                              if (newStatut === 'regle') {
-                                await majSuiviChantier('apporteur_agente', l.totalHT, 'date_reglement_client', new Date().toISOString().slice(0,10))
-                              }
-                            } else {
-                              await majSuiviAvecArtisan('apporteur_agente', artId, 'statut_client', newStatut)
-                              if (newStatut === 'regle') {
-                                await majSuiviAvecArtisan('apporteur_agente', artId, 'date_reglement_client', new Date().toISOString().slice(0,10))
-                              }
-                            }
-                          }}
+                          date={sf?.date_paiement || null}
+                          onToggle={() => setApporteurPaye(artId, !paye)}
                           fmtDateFn={fmtD}
                         />
                       )
