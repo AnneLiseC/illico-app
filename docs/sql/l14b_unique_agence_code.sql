@@ -14,6 +14,14 @@
 -- pas de problème de NULL multiples (un index UNIQUE Postgres laisserait
 -- passer plusieurs NULL, mais le cas est exclu par les NOT NULL).
 --
+-- ⚠️ NOTE POST-APPLICATION (Lot 1-bis) : l'audit du Lot 1 ne regardait que
+-- pg_constraint, pas pg_indexes. Il s'est avéré APRÈS coup qu'un index unique
+-- PRÉEXISTANT, agences_code_par_societe_uniq, couvrait DÉJÀ le même couple
+-- (societe_id, code) — l'unicité n'était donc PAS sans protection avant cette
+-- contrainte. Notre contrainte agences_societe_code_unique a fait DOUBLON avec
+-- cet index. Le nettoyage (DROP de l'index préexistant, on garde la contrainte
+-- explicite) est traité dans docs/sql/l14b_nettoyage_doublon_unique.sql.
+--
 -- À appliquer MANUELLEMENT dans le SQL editor Supabase (jamais via MCP).
 -- ============================================================================
 
