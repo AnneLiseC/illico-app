@@ -744,21 +744,20 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
 
   // ── Devis ──
   await addSep(sepDevis)
-  if (isPreSignature) {
-    // Phase pré-signature : inclure les PDFs de devis reçus
-    for (const d of devisActifs) {
-      if (d.devis_pdf_path) {
-        const buf = await downloadPDF(supabaseAdmin, 'documents', d.devis_pdf_path)
-        await addExternalPDF(buf)
-      }
+  // Embarquement PAR DEVIS (reçu + accepté) : la version SIGNÉE si elle existe,
+  // sinon le devis d'origine (non signé) en fallback. Indépendant du stade du
+  // dossier — corrige le bug où le fichier était choisi selon dossier.statut
+  // (un non-signé pouvait être embarqué pour un devis pourtant signé).
+  for (const d of devisR3) {
+    const path = d.devis_signe_path || d.devis_pdf_path
+    if (path) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', path)
+      await addExternalPDF(buf)
     }
-  } else {
-    // Phase post-signature : devis signés + factures
+  }
+  // Factures (post-signature) — inchangé.
+  if (!isPreSignature) {
     for (const d of devisAcceptes) {
-      if (d.devis_signe_path) {
-        const buf = await downloadPDF(supabaseAdmin, 'documents', d.devis_signe_path)
-        await addExternalPDF(buf)
-      }
       if (d.facture_path) {
         const buf = await downloadPDF(supabaseAdmin, 'documents', d.facture_path)
         await addExternalPDF(buf)
