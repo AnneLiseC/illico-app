@@ -377,9 +377,8 @@ export function calculateApporteurFinance(dossier) {
     const totalHTReel = round2(baseHTReel * tauxApporteur)
     const partsReel   = split(totalHTReel, partAgente)
     lines = [{
-      type: 'total_chantier_ht', baseHT, tauxApporteur, totalHT,
+      type: 'total_chantier_ht', baseHT, totalHT,
       agente: parts.agente, admin: parts.admin,
-      debloque: baseHTReel > 0, totalHTReel,
       agenteReel: partsReel.agente, adminReel: partsReel.admin,
     }]
   } else {
@@ -392,12 +391,9 @@ export function calculateApporteurFinance(dossier) {
       return {
         type: 'par_devis',
         devisId: dv.id || null,
-        artisanId,
         label: dv?.artisan?.entreprise || 'Devis',
-        baseHT, tauxApporteur, totalHT,
+        baseHT, totalHT,
         agente: parts.agente, admin: parts.admin,
-        debloque,
-        totalHTReel: debloque ? totalHT : 0,
         agenteReel:  debloque ? parts.agente : 0,
         adminReel:   debloque ? parts.admin : 0,
       }
