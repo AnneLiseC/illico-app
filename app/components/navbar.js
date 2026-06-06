@@ -29,6 +29,7 @@ const PinIcon      = () => <Icon><line x1="12" y1="17" x2="12" y2="22"/><path d=
 const LogOutIcon   = () => <Icon d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" d2="M16 17l5-5-5-5"><line x1="21" y1="12" x2="9" y2="12"/></Icon>
 const MenuIcon     = () => <Icon><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></Icon>
 const CloseIcon    = () => <Icon><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></Icon>
+const UserIcon     = () => <Icon><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></Icon>
 
 const NAV_GROUPS = [
   {
@@ -57,6 +58,7 @@ const NAV_GROUPS = [
   {
     label: 'Système',
     items: [
+      { href: '/profil',       label: 'Mon profil',       Icon: UserIcon, agenteOnly: true },
       { href: '/parametres',   label: 'Paramètres',       Icon: SettingsIcon, adminOnly: true },
     ],
   },
@@ -169,7 +171,9 @@ export default function NavBar() {
           {/* Nav */}
           <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 0' }}>
             {NAV_GROUPS.map(group => {
-              const visibleItems = group.items.filter(item => !item.adminOnly || profile?.role === 'admin')
+              const visibleItems = group.items.filter(item =>
+                (!item.adminOnly  || profile?.role === 'admin') &&
+                (!item.agenteOnly || profile?.role === 'agente'))
               if (visibleItems.length === 0) return null
               return (
                 <div key={group.label}>
