@@ -139,29 +139,45 @@ export default function Profil() {
         {/* ── Rémunération (lecture seule — réglée par l'administrateur) ── */}
         <div className="card" style={cardStyle}>
           <div className="eyebrow">Rémunération · réglée par l'administrateur</div>
-          <div>
-            <div className="eyebrow" style={{ marginBottom: 6 }}>Paliers de commission (ma part / agence)</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {paliers.length === 0 && <span style={{ fontSize: 13, color: 'var(--ink-400)' }}>—</span>}
-              {paliers.map((p, i) => {
-                const pct = Math.round(p * 100)
-                const actuel = profile.part_agente_defaut != null && Number(p) === Number(profile.part_agente_defaut)
-                return (
-                  <span key={i} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 99,
-                    fontSize: 13, fontWeight: 600,
-                    background: actuel ? 'rgba(0,148,212,0.10)' : 'var(--ink-100)',
-                    color: actuel ? 'var(--brand-800)' : 'var(--ink-700)',
-                  }}>
-                    {pct} / {100 - pct}
-                    {actuel && <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--brand-700)' }}>actuel</span>}
-                  </span>
-                )
-              })}
-            </div>
-          </div>
+
+          {(() => {
+            const frais = profile.frais_part_agente_defaut
+            const single = paliers.length === 1
+            // Fusion seulement si UN palier identique au frais (comparaison numérique).
+            const fusion = single && frais != null && Number(paliers[0]) === Number(frais)
+
+            if (fusion) {
+              return <RO label="Part (commission et frais)" value={fmtPart(paliers[0])} />
+            }
+            if (single) {
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <RO label="Part de commission (ma part / agence)" value={fmtPart(paliers[0])} />
+                  <RO label="Frais de consultation (ma part / agence)" value={fmtPart(frais)} />
+                </div>
+              )
+            }
+            // Plusieurs paliers (ou aucun) : sections séparées, jamais de fusion.
+            return (
+              <>
+                <div>
+                  <div className="eyebrow" style={{ marginBottom: 6 }}>Part de commission (ma part / agence)</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {paliers.length === 0 && <span style={{ fontSize: 13, color: 'var(--ink-400)' }}>—</span>}
+                    {paliers.map((p, i) => (
+                      <span key={i} style={{
+                        padding: '4px 10px', borderRadius: 99, fontSize: 13, fontWeight: 600,
+                        background: 'var(--ink-100)', color: 'var(--ink-700)',
+                      }}>{fmtPart(p)}</span>
+                    ))}
+                  </div>
+                </div>
+                <RO label="Frais de consultation (ma part / agence)" value={fmtPart(frais)} />
+              </>
+            )
+          })()}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <RO label="Frais de consultation (ma part / agence)" value={fmtPart(profile.frais_part_agente_defaut)} />
             <RO label="Redevance mensuelle" value={profile.redevance_mensuelle_ht != null ? `${profile.redevance_mensuelle_ht} € HT` : '—'} />
             <RO label="Début de redevance" value={profile.redevance_debut ? new Date(profile.redevance_debut).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : '—'} />
           </div>
