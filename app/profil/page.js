@@ -91,8 +91,15 @@ export default function Profil() {
     </div>
   )
 
+  // Paliers de commission : liste des splits disponibles ; à défaut, le palier courant.
+  const paliers = (profile.parts_agente_disponibles && profile.parts_agente_disponibles.length > 0)
+    ? profile.parts_agente_disponibles
+    : (profile.part_agente_defaut != null ? [profile.part_agente_defaut] : [])
+
+  const cardStyle = { padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }
+
   return (
-    <div className="page-enter page-pad" style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 720, margin: '0 auto' }}>
+    <div className="page-enter page-pad" style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 980, margin: '0 auto' }}>
 
       {/* En-tête */}
       <div>
@@ -103,75 +110,102 @@ export default function Profil() {
       {succes && <div style={{ background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.3)', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: '#15803d' }}>{succes}</div>}
       {error  && <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: '#dc2626' }}>{error}</div>}
 
-      {/* Mes infos */}
-      <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div className="eyebrow">Mes informations</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <RO label="Prénom" value={profile.prenom} />
-          <RO label="Nom" value={profile.nom} />
-          <RO label="Email" value={profile.email} />
-          <RO label="Agence" value={displayAgenceName} />
-          <RO label="Rôle" value={roleLabel(profile.role)} />
-        </div>
-        <div>
-          <label style={LS}>Téléphone</label>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <input className="input" type="tel" value={tel} onChange={e => setTel(e.target.value)}
-              placeholder="06 00 00 00 00" style={{ height: 40, flex: 1 }} />
-            <button className="btn btn-primary" onClick={sauvegarderTel}
-              disabled={savingTel || tel === (profile.telephone || '')}>
-              {savingTel ? 'Enregistrement…' : 'Enregistrer'}
-            </button>
+      {/* Grille 2×2 — 2 colonnes desktop, 1 colonne mobile (auto-fit) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18, alignItems: 'start' }}>
+
+        {/* ── Informations ── */}
+        <div className="card" style={cardStyle}>
+          <div className="eyebrow">Mes informations</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <RO label="Prénom" value={profile.prenom} />
+            <RO label="Nom" value={profile.nom} />
+            <RO label="Email" value={profile.email} />
+            <RO label="Agence" value={displayAgenceName} />
+            <RO label="Rôle" value={roleLabel(profile.role)} />
+          </div>
+          <div>
+            <label style={LS}>Téléphone</label>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <input className="input" type="tel" value={tel} onChange={e => setTel(e.target.value)}
+                placeholder="06 00 00 00 00" style={{ height: 40, flex: 1 }} />
+              <button className="btn btn-primary" onClick={sauvegarderTel}
+                disabled={savingTel || tel === (profile.telephone || '')}>
+                {savingTel ? 'Enregistrement…' : 'Enregistrer'}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Rémunération (lecture seule — transparence ; réglée par l'administrateur) */}
-      <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div className="eyebrow">Rémunération · réglée par l'administrateur</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <RO label="Ma part / part agence (commission)" value={fmtPart(profile.part_agente_defaut)} />
-          <RO label="Ma part / part agence (frais conso)" value={fmtPart(profile.frais_part_agente_defaut)} />
-          <RO label="Redevance mensuelle" value={profile.redevance_mensuelle_ht != null ? `${profile.redevance_mensuelle_ht} € HT` : '—'} />
-          <RO label="Début de redevance" value={profile.redevance_debut ? new Date(profile.redevance_debut).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : '—'} />
-        </div>
-      </div>
-
-      {/* Mon RIB (owner : voir + remplacer) */}
-      <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div className="eyebrow">Mon RIB</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, color: profile.rib_url ? 'var(--ink-700)' : '#a16207' }}>
-            {profile.rib_url ? 'Fichier enregistré' : 'Aucun RIB enregistré'}
-          </span>
-          {profile.rib_url && (
-            <button className="btn btn-ghost" onClick={voirRib}>Voir</button>
-          )}
-          <label className="btn btn-ghost" style={{ cursor: 'pointer' }}>
-            {uploadingRib ? 'Upload…' : (profile.rib_url ? 'Remplacer' : '+ Ajouter mon RIB')}
-            <input type="file" accept=".pdf" style={{ display: 'none' }} disabled={uploadingRib}
-              onChange={e => e.target.files[0] && uploadRib(e.target.files[0])} />
-          </label>
-        </div>
-      </div>
-
-      {/* Mon Kbis (admin-only : voir seulement, pas de remplacement) */}
-      <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div className="eyebrow">Mon Kbis</div>
-        {profile.kbis_url ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 13, color: 'var(--ink-700)' }}>Fichier disponible</span>
-            <button className="btn btn-ghost" onClick={voirKbis}>Voir</button>
+        {/* ── Rémunération (lecture seule — réglée par l'administrateur) ── */}
+        <div className="card" style={cardStyle}>
+          <div className="eyebrow">Rémunération · réglée par l'administrateur</div>
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>Paliers de commission (ma part / agence)</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {paliers.length === 0 && <span style={{ fontSize: 13, color: 'var(--ink-400)' }}>—</span>}
+              {paliers.map((p, i) => {
+                const pct = Math.round(p * 100)
+                const actuel = profile.part_agente_defaut != null && Number(p) === Number(profile.part_agente_defaut)
+                return (
+                  <span key={i} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 99,
+                    fontSize: 13, fontWeight: 600,
+                    background: actuel ? 'rgba(0,148,212,0.10)' : 'var(--ink-100)',
+                    color: actuel ? 'var(--brand-800)' : 'var(--ink-700)',
+                  }}>
+                    {pct} / {100 - pct}
+                    {actuel && <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--brand-700)' }}>actuel</span>}
+                  </span>
+                )
+              })}
+            </div>
           </div>
-        ) : (
-          <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>Kbis non disponible — géré par l'administrateur.</div>
-        )}
-      </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <RO label="Frais de consultation (ma part / agence)" value={fmtPart(profile.frais_part_agente_defaut)} />
+            <RO label="Redevance mensuelle" value={profile.redevance_mensuelle_ht != null ? `${profile.redevance_mensuelle_ht} € HT` : '—'} />
+            <RO label="Début de redevance" value={profile.redevance_debut ? new Date(profile.redevance_debut).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : '—'} />
+          </div>
+        </div>
 
-      {/* Mot de passe */}
-      <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div className="eyebrow">Mot de passe</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        {/* ── Mes documents (RIB owner + Kbis lecture seule) ── */}
+        <div className="card" style={cardStyle}>
+          <div className="eyebrow">Mes documents</div>
+
+          {/* RIB */}
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)', marginBottom: 8 }}>RIB</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: profile.rib_url ? 'var(--ink-700)' : '#a16207' }}>
+                {profile.rib_url ? 'Fichier enregistré' : 'Aucun RIB enregistré'}
+              </span>
+              {profile.rib_url && <button className="btn btn-ghost" onClick={voirRib}>Voir</button>}
+              <label className="btn btn-ghost" style={{ cursor: 'pointer' }}>
+                {uploadingRib ? 'Upload…' : (profile.rib_url ? 'Remplacer' : '+ Ajouter')}
+                <input type="file" accept=".pdf" style={{ display: 'none' }} disabled={uploadingRib}
+                  onChange={e => e.target.files[0] && uploadRib(e.target.files[0])} />
+              </label>
+            </div>
+          </div>
+
+          {/* Kbis (admin-only : voir seulement) */}
+          <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)', marginBottom: 8 }}>
+              Kbis <span style={{ fontWeight: 400, color: 'var(--ink-400)', fontSize: 12 }}>· géré par l'administrateur</span>
+            </div>
+            {profile.kbis_url ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 13, color: 'var(--ink-700)' }}>Fichier disponible</span>
+                <button className="btn btn-ghost" onClick={voirKbis}>Voir</button>
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>Kbis non disponible.</div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Mot de passe ── */}
+        <div className="card" style={cardStyle}>
+          <div className="eyebrow">Mot de passe</div>
           <div>
             <label style={LS}>Nouveau mot de passe</label>
             <input className="input" type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)}
@@ -182,13 +216,13 @@ export default function Profil() {
             <input className="input" type="password" value={newPwdConfirm} onChange={e => setNewPwdConfirm(e.target.value)}
               placeholder="Retapez le mot de passe" style={{ height: 40, width: '100%' }} />
           </div>
+          <button className="btn btn-primary" onClick={changerMotDePasse} disabled={savingPwd || !newPwd || !newPwdConfirm}
+            style={{ alignSelf: 'flex-start' }}>
+            {savingPwd ? 'Enregistrement…' : 'Changer le mot de passe'}
+          </button>
         </div>
-        <button className="btn btn-primary" onClick={changerMotDePasse} disabled={savingPwd || !newPwd || !newPwdConfirm}
-          style={{ alignSelf: 'flex-start' }}>
-          {savingPwd ? 'Enregistrement…' : 'Changer le mot de passe'}
-        </button>
-      </div>
 
+      </div>
     </div>
   )
 }
