@@ -13,6 +13,7 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
   const [loading, setLoading] = useState(false)
   const [mode, setMode] = useState('signin') // 'signin' | 'forgot'
   const router = useRouter()
@@ -39,6 +40,22 @@ export default function Login() {
       setError('Erreur de connexion, veuillez réessayer')
       setLoading(false)
     }
+  }
+
+  // Mot de passe oublié : envoie un lien de réinitialisation vers /auth/set-password.
+  // Anti-énumération : message générique quel que soit le résultat (on ne révèle
+  // jamais si un compte existe ; Supabase renvoie succès dans tous les cas).
+  // Le ?type=recovery (notre query string) pilote le wording de set-password.
+  const handleForgot = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    setInfo('')
+    await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/set-password?type=recovery`,
+    })
+    setInfo("Si un compte existe avec cet email, un lien de réinitialisation vient d'être envoyé. Pensez à vérifier vos spams.")
+    setLoading(false)
   }
 
   return (
@@ -135,8 +152,8 @@ export default function Login() {
             </p>
           </form>
         ) : (
-          <div style={{display:'flex', flexDirection:'column'}}>
-            <button type="button" className="btn btn-ghost" onClick={() => setMode('signin')}
+          <form onSubmit={handleForgot} style={{display:'flex', flexDirection:'column'}}>
+            <button type="button" className="btn btn-ghost" onClick={() => { setMode('signin'); setError(''); setInfo('') }}
               style={{alignSelf:'flex-start', marginBottom:24, fontSize:12.5}}>
               ← Retour
             </button>
@@ -146,12 +163,26 @@ export default function Login() {
             </p>
             <div>
               <label style={{display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5}}>Email</label>
-              <input className="input" type="email" placeholder="ton@email.com" style={{height:44, width:'100%'}} />
+              <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)}
+                placeholder="ton@email.com" style={{height:44, width:'100%'}} required />
             </div>
-            <button type="button" className="btn btn-primary" style={{marginTop:20, height:44, width:'100%', justifyContent:'center', fontSize:14}}>
-              ✉️ Envoyer le lien
+
+            {info && (
+              <div style={{background:'rgba(22,163,74,0.06)', border:'1px solid rgba(22,163,74,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#15803d', marginTop:14}}>
+                {info}
+              </div>
+            )}
+            {error && (
+              <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c', marginTop:14}}>
+                {error}
+              </div>
+            )}
+
+            <button type="submit" className="btn btn-primary" disabled={loading}
+              style={{marginTop:20, height:44, width:'100%', justifyContent:'center', fontSize:14, opacity: loading ? 0.6 : 1}}>
+              {loading ? 'Envoi…' : '✉️ Envoyer le lien'}
             </button>
-          </div>
+          </form>
         )}
 
       </div>
