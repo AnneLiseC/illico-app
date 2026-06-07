@@ -2,6 +2,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../lib/api-auth'
+import { isAllowedStaffEmail } from '../../lib/email-validation'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -18,6 +19,13 @@ export async function POST(request) {
     // Validation
     if (!prenom || !nom || !email) {
       return NextResponse.json({ error: 'Prénom, nom et email sont requis' }, { status: 400 })
+    }
+
+    // Règle réseau : un compte staff doit utiliser une adresse @illico-travaux.com
+    // (sauf exceptions STAFF_EMAIL_EXCEPTIONS). Barrière SERVEUR — refus AVANT
+    // toute création de compte.
+    if (!isAllowedStaffEmail(email)) {
+      return NextResponse.json({ error: 'Les comptes staff doivent utiliser une adresse @illico-travaux.com' }, { status: 400 })
     }
 
     // 1. Inviter l'utilisateur via Supabase Auth — envoie l'email d'invitation

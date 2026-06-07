@@ -7,6 +7,10 @@ const AuthContext = createContext(null)
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
+  // profileStatus lève l'ambiguïté de `profile === null` :
+  //  'loading' = fetch en cours/non résolu · 'loaded' = profil présent · 'absent' = 0 ligne confirmée.
+  // État SÉPARÉ de `initialized` (qui reste posé à true immédiatement, cf. plus bas).
+  const [profileStatus, setProfileStatus] = useState('loading')
   const [displayAgenceName, setDisplayAgenceName] = useState(null)
   const [initialized, setInitialized] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
@@ -42,15 +46,28 @@ export function AuthProvider({ children }) {
   }, [])
 
   const fetchProfile = useCallback(async (uid) => {
+    setProfileStatus('loading')
     try {
-      const { data } = await supabase.from('profiles').select('*').eq('id', uid).single()
+      // maybeSingle : 0 ligne => data null sans erreur (≠ .single() qui lèverait).
+      const { data, error } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
+      if (error) {
+        // Erreur réseau : NE PAS conclure « absent ». On reste 'loading' ; le retry
+        // par page (filet existant) rejouera fetchProfile.
+        return
+      }
       if (data) {
         setProfile(data)
         loadAgenceName(data)
+        setProfileStatus('loaded')
+      } else {
+        // 0 ligne, pas d'erreur => profil confirmé absent (admin invité sans société).
+        setProfile(null)
+        setDisplayAgenceName(null)
+        setProfileStatus('absent')
       }
       loadUnread(uid)
     } catch {
-      // erreur réseau transitoire, on ne reset pas le profil
+      // erreur réseau transitoire, on ne reset pas le profil ni le statut (reste 'loading')
     }
   }, [loadUnread, loadAgenceName])
 
@@ -61,6 +78,7 @@ export function AuthProvider({ children }) {
       if (!u) {
         prevUserIdRef.current = null
         setProfile(null)
+        setProfileStatus('loading')
         setDisplayAgenceName(null)
         setUnreadCount(0)
         setInitialized(true)
@@ -116,7 +134,7 @@ export function AuthProvider({ children }) {
   }, [user?.id])
 
   return (
-    <AuthContext.Provider value={{ user, profile, displayAgenceName, initialized, unreadCount, markAllRead, loadUnread, fetchProfile }}>
+    <AuthContext.Provider value={{ user, profile, profileStatus, displayAgenceName, initialized, unreadCount, markAllRead, loadUnread, fetchProfile }}>
       {children}
     </AuthContext.Provider>
   )
