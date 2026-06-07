@@ -4,6 +4,9 @@ import { supabase } from './supabase'
 
 const AuthContext = createContext(null)
 
+// Clé localStorage de la vue active, namespacée par utilisateur.
+const agenceKey = (uid) => `batilis.agenceActive.${uid}`
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -12,6 +15,10 @@ export function AuthProvider({ children }) {
   // État SÉPARÉ de `initialized` (qui reste posé à true immédiatement, cf. plus bas).
   const [profileStatus, setProfileStatus] = useState('loading')
   const [displayAgenceName, setDisplayAgenceName] = useState(null)
+  // Multi-agence : liste des agences (admin uniquement) + vue active.
+  // agenceActive : null = Consolidé (pas de filtre) · uuid = une agence choisie.
+  const [agences, setAgences] = useState([])
+  const [agenceActive, setAgenceActiveState] = useState(null)
   const [initialized, setInitialized] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const prevUserIdRef = useRef(null)
@@ -45,6 +52,43 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  // Charge la liste des agences (admin uniquement) PUIS calcule la vue active
+  // depuis localStorage — la validation se fait une fois la liste connue (pas de race).
+  const loadAgences = useCallback(async (prof) => {
+    if (!prof || prof.role !== 'admin' || !prof.societe_id) {
+      // agente / non-admin → pas de liste, vue Consolidée (null).
+      setAgences([])
+      setAgenceActiveState(null)
+      return
+    }
+    try {
+      const { data } = await supabase.from('agences').select('id, nom, code').eq('societe_id', prof.societe_id).order('code')
+      const list = data || []
+      setAgences(list)
+      // Validation : on n'adopte la valeur stockée que si elle appartient bien
+      // aux agences de l'utilisateur courant ; sinon Consolidé (null).
+      let initial = null
+      try {
+        const stored = localStorage.getItem(agenceKey(prof.id))
+        if (stored && list.some(a => a.id === stored)) initial = stored
+      } catch { /* localStorage indisponible → Consolidé */ }
+      setAgenceActiveState(initial)
+    } catch {
+      // erreur réseau transitoire : on ne casse pas l'état existant
+    }
+  }, [])
+
+  // Setter exposé : met l'état ET persiste (uuid) ou purge (null) la clé de l'user.
+  const setAgenceActive = useCallback((idOuNull) => {
+    setAgenceActiveState(idOuNull)
+    const uid = prevUserIdRef.current
+    if (!uid) return
+    try {
+      if (idOuNull) localStorage.setItem(agenceKey(uid), idOuNull)
+      else localStorage.removeItem(agenceKey(uid))
+    } catch { /* localStorage indisponible : l'état en mémoire suffit */ }
+  }, [])
+
   const fetchProfile = useCallback(async (uid) => {
     setProfileStatus('loading')
     try {
@@ -58,6 +102,7 @@ export function AuthProvider({ children }) {
       if (data) {
         setProfile(data)
         loadAgenceName(data)
+        loadAgences(data)
         setProfileStatus('loaded')
       } else {
         // 0 ligne, pas d'erreur => profil confirmé absent (admin invité sans société).
@@ -69,17 +114,21 @@ export function AuthProvider({ children }) {
     } catch {
       // erreur réseau transitoire, on ne reset pas le profil ni le statut (reste 'loading')
     }
-  }, [loadUnread, loadAgenceName])
+  }, [loadUnread, loadAgenceName, loadAgences])
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       const u = session?.user ?? null
       setUser(u)
       if (!u) {
+        // Purge la vue active de l'utilisateur qui se déconnecte.
+        try { if (prevUserIdRef.current) localStorage.removeItem(agenceKey(prevUserIdRef.current)) } catch { /* ignore */ }
         prevUserIdRef.current = null
         setProfile(null)
         setProfileStatus('loading')
         setDisplayAgenceName(null)
+        setAgences([])
+        setAgenceActiveState(null)
         setUnreadCount(0)
         setInitialized(true)
         return
@@ -134,7 +183,7 @@ export function AuthProvider({ children }) {
   }, [user?.id])
 
   return (
-    <AuthContext.Provider value={{ user, profile, profileStatus, displayAgenceName, initialized, unreadCount, markAllRead, loadUnread, fetchProfile }}>
+    <AuthContext.Provider value={{ user, profile, profileStatus, displayAgenceName, agences, agenceActive, setAgenceActive, initialized, unreadCount, markAllRead, loadUnread, fetchProfile }}>
       {children}
     </AuthContext.Provider>
   )
