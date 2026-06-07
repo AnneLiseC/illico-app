@@ -14,7 +14,7 @@ export async function POST(request) {
   if (auth.error) return auth.error
   try {
     const body = await request.json()
-    const { prenom, nom, email, telephone, part_agente_defaut, frais_part_agente_defaut, parts_agente_disponibles, objectif } = body
+    const { prenom, nom, email, telephone, part_agente_defaut, frais_part_agente_defaut, parts_agente_disponibles, objectif, agence_id } = body
 
     // Validation
     if (!prenom || !nom || !email) {
@@ -26,6 +26,27 @@ export async function POST(request) {
     // toute création de compte.
     if (!isAllowedStaffEmail(email)) {
       return NextResponse.json({ error: 'Les comptes staff doivent utiliser une adresse @illico-travaux.com' }, { status: 400 })
+    }
+
+    // Résoudre l'agence cible AVANT toute création de compte (pas d'orphelin auth).
+    // - agence_id fourni (multi-agences) → valider qu'il appartient à la société de
+    //   l'admin (barrière : .eq('societe_id') du JWT → agence étrangère = 0 ligne = rejet).
+    // - agence_id absent (mono-agence) → déduction de l'unique agence (.order('code') déterministe).
+    let agenceId
+    if (agence_id) {
+      const { data: ag } = await supabaseAdmin
+        .from('agences').select('id').eq('id', agence_id).eq('societe_id', auth.profile.societe_id).maybeSingle()
+      if (!ag) {
+        return NextResponse.json({ error: 'Agence invalide' }, { status: 400 })
+      }
+      agenceId = ag.id
+    } else {
+      const { data: ag } = await supabaseAdmin
+        .from('agences').select('id').eq('societe_id', auth.profile.societe_id).order('code').limit(1).single()
+      if (!ag?.id) {
+        return NextResponse.json({ error: 'Aucune agence trouvée pour la société de l\'admin' }, { status: 500 })
+      }
+      agenceId = ag.id
     }
 
     // 1. Inviter l'utilisateur via Supabase Auth — envoie l'email d'invitation
@@ -44,15 +65,6 @@ export async function POST(request) {
 
     const userId = inviteData.user.id
 
-    // D18 : nouvelle agente rattachée à la société de l'admin + son unique agence (mono-agence).
-    // L15 ajoutera un sélecteur d'agence quand multi-agences sera ouvert.
-    const { data: agence } = await supabaseAdmin
-      .from('agences').select('id').eq('societe_id', auth.profile.societe_id).limit(1).single()
-    if (!agence?.id) {
-      await supabaseAdmin.auth.admin.deleteUser(userId)
-      return NextResponse.json({ error: 'Aucune agence trouvée pour la société de l\'admin' }, { status: 500 })
-    }
-
     // 2. Créer le profil dans profiles
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
@@ -64,7 +76,7 @@ export async function POST(request) {
         telephone: telephone || null,
         role: 'agente',
         societe_id: auth.profile.societe_id,
-        agence_id: agence.id,
+        agence_id: agenceId,
         part_agente_defaut: part_agente_defaut || 0.5,
         frais_part_agente_defaut: frais_part_agente_defaut || 0.5,
         parts_agente_disponibles: parts_agente_disponibles || null,
@@ -85,7 +97,7 @@ export async function POST(request) {
           annee: new Date().getFullYear(),
           cible: 'agente',
           agente_id: userId,
-          agence_id: agence.id,
+          agence_id: agenceId,
           montant: parseFloat(objectif) || 0,
         })
       } catch {
