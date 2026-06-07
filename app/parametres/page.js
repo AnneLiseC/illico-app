@@ -23,7 +23,7 @@ export default function Parametres() {
   const [loading, setLoading]             = useState(true)
   const [agentes, setAgentes]             = useState([])
   const [societe, setSociete]             = useState(null)
-  const [agence, setAgence]               = useState(null)
+  const [agences, setAgences]             = useState([])
   const [objectifs, setObjectifs]         = useState([])
   const [objAgenceVal, setObjAgenceVal]   = useState('')
   const [savingObjAgence, setSavingObjAgence] = useState(false)
@@ -54,6 +54,11 @@ export default function Parametres() {
   }
   const [form, setForm] = useState(emptyForm)
 
+  // Création d'agence (multi-agence) — état séparé de la modale agente.
+  const emptyFormAgence = { nom: '', ville: '', adresse: '', code_postal: '', telephone: '', email: '', responsable_nom: '' }
+  const [formAgence, setFormAgence] = useState(emptyFormAgence)
+  const [savingAgence, setSavingAgence] = useState(false)
+
   const chargerAgentes = async () => {
     const { data } = await supabase.from('profiles').select('*').eq('role', 'agente').order('prenom')
     setAgentes(data || [])
@@ -61,13 +66,12 @@ export default function Parametres() {
 
   const chargerAgence = async (societeId) => {
     if (!societeId) return
-    const [{ data: soc }, { data: ag }] = await Promise.all([
+    const [{ data: soc }, { data: ags }] = await Promise.all([
       supabase.from('societes').select('nom_societe, siret, rcs').eq('id', societeId).single(),
-      // L15: multi-agences — ici on prend l'unique agence de la société (mono-agence).
-      supabase.from('agences').select('id, nom, ville, adresse, code_postal, telephone').eq('societe_id', societeId).limit(1).single(),
+      supabase.from('agences').select('id, nom, ville, adresse, code_postal, telephone').eq('societe_id', societeId).order('code'),
     ])
     setSociete(soc || null)
-    setAgence(ag || null)
+    setAgences(ags || [])
   }
 
   // Objectifs de CA (grain annuel). Lecture pour pré-remplir, écriture via sauvegarderObjectif.
@@ -99,12 +103,31 @@ export default function Parametres() {
   const enregistrerObjAgence = async () => {
     setSavingObjAgence(true); setObjAgenceMsg('')
     try {
-      await sauvegarderObjectif('agence', null, agence?.id, objAgenceVal)
+      // Mono-agence : agences[0] EST l'unique agence (pas un choix arbitraire).
+      await sauvegarderObjectif('agence', null, agences[0]?.id, objAgenceVal)
       setObjAgenceMsg('Enregistré ✓')
     } catch (err) {
       setObjAgenceMsg('Erreur : ' + err.message)
     }
     setSavingObjAgence(false)
+  }
+
+  const ouvrirCreerAgence = () => { setFormAgence(emptyFormAgence); setModal('creer_agence'); setErreur(''); setSucces('') }
+
+  const creerAgence = async () => {
+    if (!formAgence.nom.trim() || !formAgence.ville.trim()) return
+    setSavingAgence(true); setErreur('')
+    try {
+      const res = await fetch('/api/create-agence', { method: 'POST', headers: await authHeaders(), body: JSON.stringify(formAgence) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setErreur(data.error || 'Erreur'); setSavingAgence(false); return }
+      setModal(false)
+      setSucces('Agence créée ✓')
+      await chargerAgence(authProfile.societe_id)
+    } catch {
+      setErreur('Erreur réseau, veuillez réessayer.')
+    }
+    setSavingAgence(false)
   }
 
   useEffect(() => {
@@ -331,20 +354,20 @@ export default function Parametres() {
           {/* ── Agence ── */}
           {section === 'agence' && (
             <div style={{display:'flex', flexDirection:'column', gap:18}}>
-              <div>
-                <h2 className="page" style={{fontSize:18, marginBottom:4}}>Agence</h2>
-                <p style={{color:'var(--ink-500)', fontSize:13}}>Informations légales · données publiques enregistrées au RCS.</p>
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end'}}>
+                <div>
+                  <h2 className="page" style={{fontSize:18, marginBottom:4}}>Agence</h2>
+                  <p style={{color:'var(--ink-500)', fontSize:13}}>Informations légales · données publiques enregistrées au RCS.</p>
+                </div>
+                <button className="btn btn-primary" onClick={ouvrirCreerAgence}>+ Ajouter une agence</button>
               </div>
+
+              {/* Société (affichée une seule fois) */}
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, maxWidth:680}}>
                 {[
-                  { l:'Raison sociale',    v:societe?.nom_societe },
-                  { l:'Franchise',         v:agence?.nom },
-                  { l:'SIRET',             v:societe?.siret },
-                  { l:'RCS',               v:societe?.rcs },
-                  { l:'Rue',               v:agence?.adresse },
-                  { l:'Code postal',       v:agence?.code_postal },
-                  { l:'Ville',             v:agence?.ville },
-                  { l:'Téléphone agence',  v:agence?.telephone },
+                  { l:'Raison sociale', v:societe?.nom_societe },
+                  { l:'SIRET',          v:societe?.siret },
+                  { l:'RCS',            v:societe?.rcs },
                 ].map(({ l, v }) => (
                   <div key={l} style={{padding:'14px 16px', background:'var(--surface-2)', borderRadius:10, border:'1px solid var(--ink-100)'}}>
                     <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>{l}</div>
@@ -352,6 +375,27 @@ export default function Parametres() {
                   </div>
                 ))}
               </div>
+
+              {/* Agence(s) — un sous-bloc par agence */}
+              {agences.map((ag) => (
+                <div key={ag.id} style={{display:'flex', flexDirection:'column', gap:8}}>
+                  <div className="eyebrow" style={{fontSize:11}}>{ag.nom}</div>
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, maxWidth:680}}>
+                    {[
+                      { l:'Rue',              v:ag.adresse },
+                      { l:'Code postal',      v:ag.code_postal },
+                      { l:'Ville',            v:ag.ville },
+                      { l:'Téléphone agence', v:ag.telephone },
+                    ].map(({ l, v }) => (
+                      <div key={l} style={{padding:'14px 16px', background:'var(--surface-2)', borderRadius:10, border:'1px solid var(--ink-100)'}}>
+                        <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>{l}</div>
+                        <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>{v || '—'}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
               <div style={{fontSize:12, color:'var(--ink-400)'}}>Pour modifier ces informations, contactez Anne-Lise à l'adresse mail suivante : anne-lise.caillet@outlook.com</div>
             </div>
           )}
@@ -368,20 +412,28 @@ export default function Parametres() {
               </div>
 
               {/* Objectif de CA de l'agence (annuel) */}
-              <div className="card" style={{padding:'16px 18px', display:'flex', flexDirection:'column', gap:10}}>
-                <div>
+              {agences.length > 1 ? (
+                // TODO lot Finances multi-agence : objectif par agence active.
+                <div className="card" style={{padding:'16px 18px'}}>
                   <div style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>Objectif de CA — agence {new Date().getFullYear()}</div>
-                  <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}}>Montant annuel (encaissements bruts). {agence?.nom || ''}</div>
+                  <div style={{fontSize:12, color:'var(--ink-500)', marginTop:4}}>Gestion des objectifs par agence : à venir.</div>
                 </div>
-                <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
-                  <input className="input" type="number" min="0" value={objAgenceVal}
-                    onChange={e => setObjAgenceVal(e.target.value)} placeholder="Objectif annuel €" style={{maxWidth:220}}/>
-                  <button className="btn btn-primary" onClick={enregistrerObjAgence} disabled={savingObjAgence || !agence?.id}>
-                    {savingObjAgence ? 'Enregistrement…' : 'Enregistrer'}
-                  </button>
-                  {objAgenceMsg && <span style={{fontSize:12.5, color: objAgenceMsg.startsWith('Erreur') ? '#b91c1c' : '#15803d'}}>{objAgenceMsg}</span>}
+              ) : (
+                <div className="card" style={{padding:'16px 18px', display:'flex', flexDirection:'column', gap:10}}>
+                  <div>
+                    <div style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>Objectif de CA — agence {new Date().getFullYear()}</div>
+                    <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}}>Montant annuel (encaissements bruts). {agences[0]?.nom || ''}</div>
+                  </div>
+                  <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                    <input className="input" type="number" min="0" value={objAgenceVal}
+                      onChange={e => setObjAgenceVal(e.target.value)} placeholder="Objectif annuel €" style={{maxWidth:220}}/>
+                    <button className="btn btn-primary" onClick={enregistrerObjAgence} disabled={savingObjAgence || !agences[0]?.id}>
+                      {savingObjAgence ? 'Enregistrement…' : 'Enregistrer'}
+                    </button>
+                    {objAgenceMsg && <span style={{fontSize:12.5, color: objAgenceMsg.startsWith('Erreur') ? '#b91c1c' : '#15803d'}}>{objAgenceMsg}</span>}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {agentes.length === 0 ? (
                 <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:24}}>Aucune agente</p>
@@ -603,6 +655,38 @@ export default function Parametres() {
 
         </div>
       </div>
+
+      {/* ── Modal ajouter une agence ── */}
+      {modal === 'creer_agence' && (
+        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
+          <div className="card" style={{padding:0, maxWidth:520, width:'100%', maxHeight:'90vh', overflow:'auto'}}>
+            <div style={{padding:'18px 22px', borderBottom:'1px solid var(--ink-200)'}}>
+              <h2 className="page" style={{fontSize:16}}>Ajouter une agence</h2>
+              <div className="eyebrow" style={{marginTop:4}}>Le code agence est généré automatiquement</div>
+            </div>
+            <div style={{padding:22, display:'flex', flexDirection:'column', gap:14}}>
+              {erreur && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c'}}>{erreur}</div>}
+              <div><label style={LS}>Nom de l&apos;agence *</label><input className="input" value={formAgence.nom} onChange={e => setFormAgence(f => ({ ...f, nom: e.target.value }))} placeholder="illiCO travaux [ville]"/></div>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+                <div><label style={LS}>Ville *</label><input className="input" value={formAgence.ville} onChange={e => setFormAgence(f => ({ ...f, ville: e.target.value }))} placeholder="Votre ville"/></div>
+                <div><label style={LS}>Code postal</label><input className="input" value={formAgence.code_postal} onChange={e => setFormAgence(f => ({ ...f, code_postal: e.target.value }))}/></div>
+              </div>
+              <div><label style={LS}>Adresse</label><input className="input" value={formAgence.adresse} onChange={e => setFormAgence(f => ({ ...f, adresse: e.target.value }))}/></div>
+              <div><label style={LS}>Téléphone</label><input className="input" type="tel" value={formAgence.telephone} onChange={e => setFormAgence(f => ({ ...f, telephone: e.target.value }))} placeholder="04 00 00 00 00"/></div>
+              <div><label style={LS}>Email</label><input className="input" type="email" value={formAgence.email} onChange={e => setFormAgence(f => ({ ...f, email: e.target.value }))} placeholder="agence@illico-travaux.com"/></div>
+              <div><label style={LS}>Nom du responsable</label><input className="input" value={formAgence.responsable_nom} onChange={e => setFormAgence(f => ({ ...f, responsable_nom: e.target.value }))}/></div>
+            </div>
+            <div style={{padding:'14px 22px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:8, justifyContent:'flex-end'}}>
+              <button className="btn btn-ghost" onClick={() => { setModal(false); setErreur('') }}>Annuler</button>
+              <button className="btn btn-primary" onClick={creerAgence}
+                disabled={savingAgence || !formAgence.nom.trim() || !formAgence.ville.trim()}
+                style={{opacity: (savingAgence || !formAgence.nom.trim() || !formAgence.ville.trim()) ? 0.5 : 1}}>
+                {savingAgence ? 'Création…' : 'Créer l\'agence'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal créer / modifier ── */}
       {(modal === 'creer' || modal === 'modifier') && (
