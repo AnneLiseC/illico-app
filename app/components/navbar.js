@@ -84,7 +84,7 @@ export default function NavBar() {
   const [hover, setHover] = useState(false)
   const [pinned, setPinned] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { profile, displayAgenceName, unreadCount } = useAuth()
+  const { profile, displayAgenceName, agences, agenceActive, setAgenceActive, unreadCount } = useAuth()
 
   // Close mobile drawer on route change
   useEffect(() => { setMobileOpen(false) }, [pathname])
@@ -110,6 +110,13 @@ export default function NavBar() {
 
   const isActive = (href) => pathname?.startsWith(href)
   const open = pinned || hover || mobileOpen
+
+  // Bi-zone : seulement pour un admin avec ≥2 agences. Sinon navbar inchangée.
+  const isMultiAdmin = profile.role === 'admin' && agences.length >= 2
+  // Sous-titre logo : en multi-agences, reflète la vue active ; sinon inchangé.
+  const subtitle = isMultiAdmin
+    ? (agenceActive ? (agences.find(a => a.id === agenceActive)?.nom ?? '') : 'Toutes les agences')
+    : displayAgenceName
 
   const initials = `${profile.prenom?.[0] ?? ''}${profile.nom?.[0] ?? ''}`.toUpperCase()
   const roleLabel = profile.role === 'admin' ? 'Franchisée' : profile.role === 'agente' ? 'Agente' : 'Membre'
@@ -148,7 +155,7 @@ export default function NavBar() {
             <div className="logo-mark">Ba</div>
             <div className="logo-text">
               BATILIS
-              <span className="muted">{displayAgenceName || ' '}</span>
+              <span className="muted">{subtitle || ' '}</span>
             </div>
             <button
               className="mobile-close-btn"
@@ -167,6 +174,31 @@ export default function NavBar() {
           >
             <PinIcon />
           </button>
+
+          {/* Zone agences (bi-zone) — admin ≥2 agences uniquement, et navbar déployée.
+              Clic = change la vue active SANS naviguer. Aucun scoping d'écran (Lot 4). */}
+          {isMultiAdmin && open && (
+            <div style={{ padding: '8px 8px 10px', borderBottom: '1px solid var(--ink-100)' }}>
+              <div className="nav-section-label">Agences</div>
+              <button
+                className={`nav-item${agenceActive === null ? ' active' : ''}`}
+                onClick={() => setAgenceActive(null)}
+                style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                <span className="nav-label">Consolidé</span>
+              </button>
+              {agences.map(ag => (
+                <button
+                  key={ag.id}
+                  className={`nav-item${agenceActive === ag.id ? ' active' : ''}`}
+                  onClick={() => setAgenceActive(ag.id)}
+                  style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  <span className="nav-label">{ag.nom}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Nav */}
           <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 0' }}>
