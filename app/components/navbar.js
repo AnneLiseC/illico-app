@@ -185,7 +185,7 @@ export default function NavBar() {
                 onClick={() => setAgenceActive(null)}
                 style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
               >
-                <span className="nav-label">Consolidé</span>
+                <span className="nav-label">Toutes les agences</span>
               </button>
               {agences.map(ag => (
                 <button
