@@ -121,18 +121,18 @@ export default function Onboarding() {
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {/* ── Votre société ── */}
         <div style={SECTION}>Votre société</div>
-        <Field label="Nom de la société" required value={form.nom_societe} onChange={set('nom_societe')} placeholder="CONSEIL TRAVAUX PROVENCE" />
+        <Field label="Nom de la société" required value={form.nom_societe} onChange={set('nom_societe')} placeholder="Nom de votre société" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="SIRET / SIREN" value={form.siret} onChange={set('siret')} placeholder="948 096 888" />
+          <Field label="SIRET / SIREN" value={form.siret} onChange={set('siret')} placeholder="123 456 789 00012" />
           <Field label="RCS" value={form.rcs} onChange={set('rcs')} />
         </div>
 
         {/* ── Votre première agence ── */}
         <div style={SECTION}>Votre première agence</div>
-        <Field label="Nom de l'agence" required value={form.agence_nom} onChange={set('agence_nom')} placeholder="illiCO travaux Martigues" />
+        <Field label="Nom de l'agence" required value={form.agence_nom} onChange={set('agence_nom')} placeholder="illiCO travaux [ville]" />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Ville" required value={form.agence_ville} onChange={set('agence_ville')} placeholder="Martigues" />
-          <Field label="Code postal" value={form.agence_cp} onChange={set('agence_cp')} placeholder="13500" />
+          <Field label="Ville" required value={form.agence_ville} onChange={set('agence_ville')} placeholder="Votre ville" />
+          <Field label="Code postal" value={form.agence_cp} onChange={set('agence_cp')} />
         </div>
         <Field label="Adresse" value={form.agence_adresse} onChange={set('agence_adresse')} />
         <Field label="Téléphone" type="tel" value={form.agence_tel} onChange={set('agence_tel')} />
