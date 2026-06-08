@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
@@ -34,7 +34,7 @@ export default function Clients() {
   const [menuOuvert, setMenuOuvert] = useState(null)
   const [vueArchives, setVueArchives] = useState(false)
   const router = useRouter()
-  const { user, profile, initialized } = useAuth()
+  const { user, profile, initialized, agenceActive } = useAuth()
 
   useEffect(() => {
     if (!menuOuvert) return
@@ -98,7 +98,14 @@ export default function Clients() {
 
   const isAdmin = profile?.role === 'admin'
 
-  const clientsFiltresOnglet = clients.filter(c => {
+  // Scoping multi-agence (UX, pas sécurité — RLS reste la frontière) :
+  // agenceActive null = tout ; uuid = seulement cette agence. Filtrage en mémoire.
+  const clientsScoped = useMemo(
+    () => (agenceActive ? clients.filter(c => c.agence_id === agenceActive) : clients),
+    [clients, agenceActive]
+  )
+
+  const clientsFiltresOnglet = clientsScoped.filter(c => {
     if (!isAdmin) return true
     if (onglet === 'tous') return true
     if (onglet === 'moi') return c.referente?.role === 'admin'
