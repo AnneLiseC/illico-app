@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
@@ -151,7 +151,7 @@ export default function Dashboard() {
   const [loading,      setLoading]      = useState(true)
   const [modaleClient, setModaleClient] = useState(false)
   const router = useRouter()
-  const { user, profile, initialized, fetchProfile } = useAuth()
+  const { user, profile, initialized, fetchProfile, agenceActive } = useAuth()
   const retriedRef = useRef(false)
 
   useEffect(() => {
@@ -178,7 +178,7 @@ export default function Dashboard() {
         supabase.from('dossiers').select(`
           id, reference, statut, date_limite_devis, date_signature_contrat,
           frais_statut, frais_consultation, part_agente, frais_part_agente,
-          honoraires_amo_taux, taux_courtage, typologie, created_at, archive,
+          honoraires_amo_taux, taux_courtage, typologie, created_at, archive, agence_id,
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
           client:clients(prenom, nom, apporteur_pourcentage, apporteur_base),
           devis_artisans(id, montant_ht, montant_ttc, commission_pourcentage, statut, date_signature, artisan:artisans(id, entreprise)),
@@ -210,6 +210,16 @@ export default function Dashboard() {
     if (role === 'agente') return 'Agente'
     return 'Client'
   }
+
+  // Scoping multi-agence (UX, pas sécurité — RLS reste la frontière). SOURCE des
+  // dérivés dossiers (KPI, CA, listes, pipeline). agenceActive null = tout.
+  // ⚠️ Le dashboard reste filtré par référente (bug #8 connu, hors périmètre) : le
+  // scoping s'applique donc aux dossiers de l'admin connecté. La carte « RDV du
+  // jour » est société-wide (RDV sans agence_id direct) → sera scopée au lot Planning.
+  const dossiersScoped = useMemo(
+    () => (agenceActive ? dossiers.filter(d => d.agence_id === agenceActive) : dossiers),
+    [dossiers, agenceActive]
+  )
 
   if (erreur) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 96 }}>
@@ -246,7 +256,7 @@ export default function Dashboard() {
   // Masquage fin (3b) : `dossiers` (tous) sert au CALCUL du CA (computeCAMensuel,
   // plus bas) — archivés inclus, compta préservée. `dossiersActifs` (archivés
   // retirés) ne sert QU'aux listes opérationnelles affichées ci-dessous.
-  const dossiersActifs = dossiers.filter(d => d.archive !== true)
+  const dossiersActifs = dossiersScoped.filter(d => d.archive !== true)
 
   const enCours    = dossiersActifs.filter(d => d.statut === 'en_cours_chantier')
   const aRelancer  = dossiersActifs.filter(d => {
@@ -256,7 +266,7 @@ export default function Dashboard() {
   }).sort((a, b) => new Date(a.date_limite_devis) - new Date(b.date_limite_devis))
   const enRetardCount = aRelancer.filter(d => (new Date(d.date_limite_devis) - today) / 86400000 < 0).length
 
-  const caParMois      = computeCAMensuel(dossiers, annee)
+  const caParMois      = computeCAMensuel(dossiersScoped, annee)
   const caMoisReel     = caParMois[moisCourant] || 0
   const objMois        = objectifs.find(o => o.mois === moisCourant)
   const caMoisObjectif = objMois?.montant || 0
