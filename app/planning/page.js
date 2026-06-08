@@ -84,13 +84,13 @@ export default function Planning() {
   const [formDateCle, setFormDateCle] = useState({ date_demarrage_chantier: '', date_fin_chantier: '' })
 
   const router = useRouter()
-  const { user, profile, initialized } = useAuth()
+  const { user, profile, initialized, agenceActive } = useAuth()
 
   const chargerTout = async () => {
     const [rdvRes, intRes, dosRes, artRes, devRes, agRes] = await Promise.all([
-      supabase.from('rendez_vous').select('*, dossier:dossiers(id, reference, referente_id, archive, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_heure'),
-      supabase.from('interventions_artisans').select('*, dossier:dossiers(id, reference, referente_id, archive, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_debut'),
-      supabase.from('dossiers').select('id, reference, referente_id, date_demarrage_chantier, date_fin_chantier, client:clients(civilite, prenom, nom)').eq('archive', false).order('reference'),
+      supabase.from('rendez_vous').select('*, dossier:dossiers(id, reference, referente_id, archive, agence_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_heure'),
+      supabase.from('interventions_artisans').select('*, dossier:dossiers(id, reference, referente_id, archive, agence_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_debut'),
+      supabase.from('dossiers').select('id, reference, referente_id, agence_id, date_demarrage_chantier, date_fin_chantier, client:clients(civilite, prenom, nom)').eq('archive', false).order('reference'),
       supabase.from('artisans').select('id, entreprise').order('entreprise'),
       supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise)'),
       supabase.from('profiles').select('id, prenom, nom, role').in('role', ['admin', 'agente']).order('prenom'),
@@ -135,9 +135,26 @@ export default function Planning() {
     return ARTISAN_COLORS[idx % ARTISAN_COLORS.length] || COLORS.slate
   }, [artisans])
 
+  // ── SCOPING MULTI-AGENCE (UX, pas sécurité — la RLS reste la frontière) ─────
+  // RDV/interventions sont filles du dossier (pas d'agence_id propre) : le filtre
+  // passe par le parent. agenceActive null = pas de filtre (Consolidé / agente).
+  // Un item SANS dossier (transverse : RDV prospect/standalone) reste TOUJOURS visible.
+  const matchAgence = useCallback(
+    (item) => !agenceActive || !item.dossier_id || item.dossier?.agence_id === agenceActive,
+    [agenceActive]
+  )
+  const rdvsScoped          = useMemo(() => rdvs.filter(matchAgence), [rdvs, matchAgence])
+  const interventionsScoped = useMemo(() => interventions.filter(matchAgence), [interventions, matchAgence])
+  // Les dossiers ont un agence_id propre (NOT NULL) → règle directe 4a, sans le cas
+  // « transverse ». Source des jalons chantier, de la stat et des dropdowns de création.
+  const dossiersScoped      = useMemo(
+    () => (agenceActive ? dossiers.filter(d => d.agence_id === agenceActive) : dossiers),
+    [dossiers, agenceActive]
+  )
+
   // ── ÉVÉNEMENTS CALENDRIER ──────────────────────────────────────────────────
 
-  const evenementsRdv = useMemo(() => rdvs
+  const evenementsRdv = useMemo(() => rdvsScoped
     .filter(r => vue === 'tous' || (vue === 'moi' && r.dossier?.referente_id === profile?.id) || (vue === 'artisan' && r.artisan_id))
     .filter(r => !typeFiltre   || r.type_rdv === typeFiltre)
     .filter(r => !artisanFiltre || r.artisan_id === artisanFiltre)
@@ -157,9 +174,9 @@ export default function Planning() {
         backgroundColor: cfg.color, borderColor: cfg.color, textColor: '#fff',
         extendedProps: { type: 'rdv', data: r, cfg },
       }
-    }), [rdvs, vue, typeFiltre, artisanFiltre, agenteFiltre, profile?.id])
+    }), [rdvsScoped, vue, typeFiltre, artisanFiltre, agenteFiltre, profile?.id])
 
-  const evenementsInterventions = useMemo(() => interventions
+  const evenementsInterventions = useMemo(() => interventionsScoped
     .filter(i => !artisanFiltre || i.artisan_id === artisanFiltre)
     .filter(i => !agenteFiltre  || i.dossier?.referente_id === agenteFiltre)
     .flatMap(i => {
@@ -175,16 +192,16 @@ export default function Planning() {
         const endD = new Date(d + 'T00:00:00'); endD.setDate(endD.getDate() + 1)
         return { id: 'int-' + i.id + '-' + idx, title: titre, start: d, end: endD.toISOString().slice(0, 10), backgroundColor: color + '28', borderColor: color, textColor: color, allDay: true, extendedProps: { type: 'intervention', data: i } }
       })
-    }), [interventions, artisanFiltre, agenteFiltre, couleurArtisan])
+    }), [interventionsScoped, artisanFiltre, agenteFiltre, couleurArtisan])
 
-  const evenementsDates = useMemo(() => dossiers
+  const evenementsDates = useMemo(() => dossiersScoped
     .filter(d => !agenteFiltre || d.referente_id === agenteFiltre)
     .flatMap(d => {
       const evts = []
       if (d.date_demarrage_chantier) evts.push({ id: 'start-' + d.id, title: `▶ ${d.reference}`, start: d.date_demarrage_chantier, allDay: true, backgroundColor: '#ECFDF5', borderColor: COLORS.mint, textColor: COLORS.mint, extendedProps: { type: 'date_cle', data: d } })
       if (d.date_fin_chantier) evts.push({ id: 'end-' + d.id, title: `■ ${d.reference}`, start: d.date_fin_chantier, allDay: true, backgroundColor: '#FFF7ED', borderColor: COLORS.amber, textColor: COLORS.gold, extendedProps: { type: 'date_cle', data: d } })
       return evts
-    }), [dossiers, agenteFiltre])
+    }), [dossiersScoped, agenteFiltre])
 
   const tousEvenements = useMemo(() => [...evenementsRdv, ...evenementsInterventions, ...evenementsDates],
     [evenementsRdv, evenementsInterventions, evenementsDates])
@@ -195,7 +212,7 @@ export default function Planning() {
     const maintenant = new Date()
     const dans30j = new Date(maintenant.getTime() + 30 * 24 * 3600000)
 
-    const rdvItems = rdvs
+    const rdvItems = rdvsScoped
       .filter(r => { const d = new Date(r.date_heure); return d >= maintenant && d <= dans30j })
       .filter(r => !artisanFiltre || r.artisan_id === artisanFiltre)
       .filter(r => !agenteFiltre  || r.dossier?.referente_id === agenteFiltre)
@@ -211,7 +228,7 @@ export default function Planning() {
         }
       })
 
-    const intItems = interventions
+    const intItems = interventionsScoped
       .filter(i => { const d = new Date(i.date_debut); return d >= maintenant && d <= dans30j })
       .filter(i => !artisanFiltre || i.artisan_id === artisanFiltre)
       .filter(i => !agenteFiltre  || i.dossier?.referente_id === agenteFiltre)
@@ -228,7 +245,7 @@ export default function Planning() {
     return [...rdvItems, ...intItems]
       .filter(item => !recherche || [item.titre, item.sous].join(' ').toLowerCase().includes(recherche.toLowerCase()))
       .sort((a, b) => a.date - b.date)
-  }, [rdvs, interventions, artisanFiltre, agenteFiltre, typeFiltre, recherche, couleurArtisan])
+  }, [rdvsScoped, interventionsScoped, artisanFiltre, agenteFiltre, typeFiltre, recherche, couleurArtisan])
 
   // ── HANDLERS ──────────────────────────────────────────────────────────────
 
@@ -376,7 +393,7 @@ export default function Planning() {
   const inputCls = "input"
   const labelCls = "eyebrow"
 
-  const rdvCeMois = rdvs.filter(r => {
+  const rdvCeMois = rdvsScoped.filter(r => {
     const d = new Date(r.date_heure), m = new Date()
     return d.getMonth() === m.getMonth() && d.getFullYear() === m.getFullYear()
   }).length
@@ -391,7 +408,7 @@ export default function Planning() {
           <h1 className="page" style={{fontSize:28}}>Planning</h1>
           <div style={{color:'var(--ink-500)', fontSize:13, marginTop:6}}>
             <strong style={{color:'var(--ink-700)'}}>{rdvCeMois}</strong> RDV ce mois ·{' '}
-            <strong style={{color:'var(--ink-700)'}}>{interventions.length}</strong> interventions ·{' '}
+            <strong style={{color:'var(--ink-700)'}}>{interventionsScoped.length}</strong> interventions ·{' '}
             <strong style={{color:'var(--ink-700)'}}>{agendaItems.length}</strong> à venir 30j
           </div>
         </div>
@@ -637,8 +654,8 @@ export default function Planning() {
           <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
             {[
               { label: 'RDV ce mois', value: rdvCeMois, color: COLORS.blue },
-              { label: 'Interventions', value: interventions.length, color: COLORS.violet },
-              { label: 'Chantiers actifs', value: dossiers.filter(d => d.date_demarrage_chantier && !d.date_fin_chantier).length, color: COLORS.mint},
+              { label: 'Interventions', value: interventionsScoped.length, color: COLORS.violet },
+              { label: 'Chantiers actifs', value: dossiersScoped.filter(d => d.date_demarrage_chantier && !d.date_fin_chantier).length, color: COLORS.mint},
               { label: 'À venir 30j', value: agendaItems.length, color: COLORS.amber },
             ].map(({ label, value, color }) => (
               <div key={label} className="card" style={{padding:12, textAlign:'center'}}>
@@ -759,7 +776,7 @@ export default function Planning() {
                   {formRdv.type_rdv !== 'autres' && !formRdv.dossier_id && <div><label className={labelCls}>Chantier *</label>
                     <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir un chantier —</option>
-                      {dossiers.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
+                      {dossiersScoped.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
                     </select>
                   </div>}
                   <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
@@ -792,7 +809,7 @@ export default function Planning() {
                   {!modeEdition && <div><label className={labelCls}>Chantier *</label>
                     <select value={formIntervention.dossier_id} onChange={e => setFormIntervention(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir un chantier —</option>
-                      {dossiers.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
+                      {dossiersScoped.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
                     </select>
                   </div>}
                   <div><label className={labelCls}>Artisan *</label>
