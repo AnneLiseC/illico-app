@@ -18,7 +18,7 @@ const NOTIFS = [
 ]
 
 export default function Parametres() {
-  const { profile: authProfile, initialized, fetchProfile } = useAuth()
+  const { profile: authProfile, initialized, fetchProfile, agenceActive, agences: agencesCtx, refreshAgences } = useAuth()
   const [profile, setProfile]             = useState(null)
   const [loading, setLoading]             = useState(true)
   const [agentes, setAgentes]             = useState([])
@@ -51,6 +51,7 @@ export default function Parametres() {
     frais_part_agente_defaut: 100,
     redevance_debut: '',
     objectif: '',
+    agence_id: '',
   }
   const [form, setForm] = useState(emptyForm)
 
@@ -124,6 +125,7 @@ export default function Parametres() {
       setModal(false)
       setSucces('Agence créée ✓')
       await chargerAgence(authProfile.societe_id)
+      await refreshAgences()   // met à jour la liste du contexte (navbar + sélecteur agente)
     } catch {
       setErreur('Erreur réseau, veuillez réessayer.')
     }
@@ -150,7 +152,8 @@ export default function Parametres() {
   }, [initialized, authProfile, router])
 
   /* ── Handlers agentes (inchangés) ── */
-  const ouvrirCreer = () => { setForm(emptyForm); setAgenteEditee(null); setModal('creer'); setErreur(''); setSucces('') }
+  // Défaut sélecteur d'agence : la vue active si une agence est sélectionnée, sinon choix forcé.
+  const ouvrirCreer = () => { setForm({ ...emptyForm, agence_id: agenceActive || '' }); setAgenteEditee(null); setModal('creer'); setErreur(''); setSucces('') }
   const ouvrirModifier = (agente) => {
     const objAgente = objectifs.find(o => o.cible === 'agente' && o.agente_id === agente.id)?.montant
     setForm({
@@ -183,7 +186,7 @@ export default function Parametres() {
     try {
       const partsArray = form.parts_agente_disponibles.split(',').map(v => parseInt(v.trim()) / 100).filter(v => !isNaN(v) && v > 0 && v <= 1)
       const partDefaut = partsArray[0] ?? 0.5
-      const res = await fetch('/api/create-agente', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ prenom: form.prenom, nom: form.nom, email: form.email, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, objectif: form.objectif !== '' ? parseFloat(form.objectif) || 0 : null }) })
+      const res = await fetch('/api/create-agente', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ prenom: form.prenom, nom: form.nom, email: form.email, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, objectif: form.objectif !== '' ? parseFloat(form.objectif) || 0 : null, agence_id: form.agence_id || null }) })
       const data = await res.json()
       if (!res.ok) { setErreur(data.error || 'Erreur') } else { setSucces(`Invitation envoyée à ${form.email} ✓`); setModal(false); await chargerAgentes(); await chargerObjectifs() }
     } catch (err) { setErreur(err.message) }
@@ -710,6 +713,15 @@ export default function Parametres() {
                   <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Un email d'invitation sera envoyé à cette adresse</div>
                 </div>
               )}
+              {modal === 'creer' && agencesCtx.length >= 2 && (
+                <div>
+                  <label style={LS}>Agence de rattachement *</label>
+                  <select className="input" value={form.agence_id} onChange={e => setForm(f => ({ ...f, agence_id: e.target.value }))}>
+                    <option value="">— Choisir une agence —</option>
+                    {agencesCtx.map(ag => <option key={ag.id} value={ag.id}>{ag.nom}</option>)}
+                  </select>
+                </div>
+              )}
               <div><label style={LS}>Téléphone</label><input className="input" type="tel" value={form.telephone} onChange={e => setForm(f => ({ ...f, telephone: e.target.value }))} placeholder="06 00 00 00 00"/></div>
               <div>
                 <label style={LS}>Début des redevances</label>
@@ -744,8 +756,8 @@ export default function Parametres() {
             <div style={{padding:'14px 22px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:8, justifyContent:'flex-end'}}>
               <button className="btn btn-ghost" onClick={() => { setModal(false); setErreur(''); setSucces('') }}>Annuler</button>
               <button className="btn btn-primary" onClick={modal === 'creer' ? creerAgente : modifierAgente}
-                disabled={saving || !form.prenom || !form.nom || (modal === 'creer' && !form.email)}
-                style={{opacity: (saving || !form.prenom || !form.nom || (modal === 'creer' && !form.email)) ? 0.5 : 1}}>
+                disabled={saving || !form.prenom || !form.nom || (modal === 'creer' && !form.email) || (modal === 'creer' && agencesCtx.length >= 2 && !form.agence_id)}
+                style={{opacity: (saving || !form.prenom || !form.nom || (modal === 'creer' && !form.email) || (modal === 'creer' && agencesCtx.length >= 2 && !form.agence_id)) ? 0.5 : 1}}>
                 {saving ? 'Enregistrement…' : modal === 'creer' ? "Envoyer l'invitation" : 'Enregistrer'}
               </button>
             </div>
