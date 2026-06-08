@@ -186,8 +186,8 @@ export default function Dashboard() {
         `).eq('referente_id', profile.id).order('created_at', { ascending: false }),
         supabase.from('objectifs_ca').select('*').eq('annee', annee).eq('agente_id', profile.id),
         supabase.from('rendez_vous').select(`
-          id, titre, type_rdv, date_heure, duree_minutes, notes,
-          dossier:dossiers(reference, archive, client:clients(prenom, nom))
+          id, dossier_id, titre, type_rdv, date_heure, duree_minutes, notes,
+          dossier:dossiers(reference, archive, agence_id, client:clients(prenom, nom))
         `).gte('date_heure', todayStart.toISOString()).lt('date_heure', tomorrowStart.toISOString()).order('date_heure', { ascending: true }),
       ])
       setDossiers(dos || [])
@@ -214,11 +214,20 @@ export default function Dashboard() {
   // Scoping multi-agence (UX, pas sécurité — RLS reste la frontière). SOURCE des
   // dérivés dossiers (KPI, CA, listes, pipeline). agenceActive null = tout.
   // ⚠️ Le dashboard reste filtré par référente (bug #8 connu, hors périmètre) : le
-  // scoping s'applique donc aux dossiers de l'admin connecté. La carte « RDV du
-  // jour » est société-wide (RDV sans agence_id direct) → sera scopée au lot Planning.
+  // scoping s'applique donc aux dossiers de l'admin connecté.
   const dossiersScoped = useMemo(
     () => (agenceActive ? dossiers.filter(d => d.agence_id === agenceActive) : dossiers),
     [dossiers, agenceActive]
+  )
+
+  // Widget « RDV du jour » (lot 4b) : même règle que le Planning. Le RDV est fille
+  // du dossier (pas d'agence_id propre) → filtre via le parent ; un RDV sans dossier
+  // (transverse) reste toujours visible. agenceActive null = pas de filtre.
+  const rdvAujourdhuiScoped = useMemo(
+    () => (agenceActive
+      ? rdvAujourdhui.filter(r => !r.dossier_id || r.dossier?.agence_id === agenceActive)
+      : rdvAujourdhui),
+    [rdvAujourdhui, agenceActive]
   )
 
   if (erreur) return (
@@ -302,7 +311,7 @@ export default function Dashboard() {
           <h1 className="page" style={{ fontSize: 28 }}>Bonjour {profile.prenom} 👋</h1>
           <p style={{ color: 'var(--ink-500)', fontSize: 14, marginTop: 6 }}>
             Tu as <strong style={{ color: 'var(--ink-700)' }}>{aRelancer.length} devis à relancer</strong> cette semaine
-            {rdvAujourdhui.length > 0 && <> et <strong style={{ color: 'var(--ink-700)' }}>{rdvAujourdhui.length} rendez-vous</strong> programmés aujourd'hui</>}.
+            {rdvAujourdhuiScoped.length > 0 && <> et <strong style={{ color: 'var(--ink-700)' }}>{rdvAujourdhuiScoped.length} rendez-vous</strong> programmés aujourd'hui</>}.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -429,20 +438,20 @@ export default function Dashboard() {
               <div>
                 <h2 className="page" style={{ fontSize: 16 }}>Aujourd'hui</h2>
                 <div className="eyebrow" style={{ marginTop: 4 }}>
-                  {loading ? '…' : rdvAujourdhui.length === 0 ? 'Aucun rendez-vous' : `${rdvAujourdhui.length} rendez-vous`}
+                  {loading ? '…' : rdvAujourdhuiScoped.length === 0 ? 'Aucun rendez-vous' : `${rdvAujourdhuiScoped.length} rendez-vous`}
                 </div>
               </div>
               <button className="btn btn-ghost" onClick={() => router.push('/planning')}>Planning →</button>
             </div>
             {loading ? (
               <div style={{ padding: '16px 0', textAlign: 'center' }}><span className="eyebrow">Chargement…</span></div>
-            ) : rdvAujourdhui.length === 0 ? (
+            ) : rdvAujourdhuiScoped.length === 0 ? (
               <div style={{ padding: '16px 0', textAlign: 'center', color: 'var(--ink-400)', fontSize: 13 }}>
                 Aucun rendez-vous programmé aujourd'hui
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 0, position: 'relative' }}>
-                {rdvAujourdhui.map((a, i) => {
+                {rdvAujourdhuiScoped.map((a, i) => {
                   const heure = new Date(a.date_heure).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
                   const tone = a.type_rdv === 'visite_technique_client' ? 'info' : a.type_rdv === 'visite_technique_artisan' ? 'ok' : a.type_rdv === 'presentation_devis' ? 'warn' : 'mute'
                   const dotColor = tone === 'info' ? '#0094d4' : tone === 'ok' ? '#16a34a' : tone === 'warn' ? '#f59e0b' : '#94a3b8'
@@ -457,7 +466,7 @@ export default function Dashboard() {
                       </div>
                       <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
                         <span style={{ width: 10, height: 10, borderRadius: 99, background: dotColor, marginTop: 6, boxShadow: '0 0 0 3px #fff, 0 0 0 4px rgba(0,148,212,0.18)', flexShrink: 0 }} />
-                        {i < rdvAujourdhui.length - 1 && <span style={{ position: 'absolute', top: 18, bottom: -4, width: 1, background: 'var(--ink-200)' }} />}
+                        {i < rdvAujourdhuiScoped.length - 1 && <span style={{ position: 'absolute', top: 18, bottom: -4, width: 1, background: 'var(--ink-200)' }} />}
                       </div>
                       <div style={{ paddingBottom: 10 }}>
                         <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink-900)' }}>{label}</div>
