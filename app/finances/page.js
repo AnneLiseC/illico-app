@@ -175,7 +175,7 @@ export default function Finances() {
   }, [])
 
   const router = useRouter()
-  const { user, profile, initialized } = useAuth()
+  const { user, profile, initialized, agenceActive } = useAuth()
 
   // ── CHARGEMENT ─────────────────────────────────────────────────────────────
 
@@ -255,8 +255,19 @@ export default function Finances() {
   const isAdmin     = profile?.role === 'admin'
   const nomReferente = (d) => d.referente ? `${d.referente.prenom} ${d.referente.nom}` : 'Agente'
 
-  const getObjectif = (cible, agenteId = null) =>
-    objectifs.find(o => o.cible === cible && o.agente_id === agenteId)?.montant || 0
+  // Objectif d'agence sensible à la vue active (4c-1) :
+  //  - agenceActive = uuid  → objectif de CETTE agence (discriminé par agence_id) ;
+  //  - agenceActive = null  → somme des objectifs d'agence de toute la société
+  //    (Consolidé / admin mono / 1 agence ; objectifs_ca chargé société-wide via RLS).
+  // La branche 'agente' (et tout autre cible) est INCHANGÉE : discriminée par agente_id.
+  const getObjectif = (cible, agenteId = null) => {
+    if (cible === 'agence') {
+      return agenceActive
+        ? (objectifs.find(o => o.cible === 'agence' && o.agence_id === agenceActive)?.montant || 0)
+        : objectifs.filter(o => o.cible === 'agence').reduce((s, o) => s + (o.montant || 0), 0)
+    }
+    return objectifs.find(o => o.cible === cible && o.agente_id === agenteId)?.montant || 0
+  }
 
   // ── CALCUL FINANCIER ───────────────────────────────────────────────────────
   // calculer() : extrait les valeurs depuis lib/finance.js — zéro calcul inline
@@ -726,7 +737,7 @@ export default function Finances() {
     const pctObjectif    = objectifAnnuel > 0 ? Math.round(totalNetCTP / objectifAnnuel * 100) : 0
     return { totPreviNet, totComHT, totFraisHT, totRoyalties, objectifAnnuel, pctObjectif }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedDossiers, objectifs])
+  }, [scopedDossiers, objectifs, agenceActive])
   const { totPreviNet, totComHT, totFraisHT, totRoyalties, objectifAnnuel, pctObjectif } = scopedKpi
 
 
