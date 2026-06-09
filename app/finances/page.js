@@ -717,10 +717,19 @@ export default function Finances() {
     return round2(keysAnnee.reduce((s, agg) => s + (agg.gainsAgenteReels || 0), 0))
   })()
 
+  // 4c-2 — Redevances alignées sur le périmètre des produits du CA net (KPI uniquement).
+  // agente : ses redevances (inchangé) · admin Consolidé (agenceActive null) : toutes
+  // les redevances société (inchangé) · admin vue agence : celles de l'agence active
+  // (r.agence_id, NOT NULL). NE concerne QUE totalNetCTP/KPI — le Suivi reste sur redevances brut (4c-3).
+  const redevancesScoped = useMemo(() => {
+    if (!isAdmin) return mesRedevances
+    return agenceActive ? redevances.filter(r => r.agence_id === agenceActive) : redevances
+  }, [isAdmin, agenceActive, redevances, mesRedevances])
+
   const totalNetCTP = (() => {
     const keysAnnee = rowsReelScoped.filter(([k]) => k.startsWith(String(anneeEnCours)))
     const reelProduits = keysAnnee.reduce((s, [, agg]) => s + round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0)), 0)
-    const reelRedev = (isAdmin ? redevances : mesRedevances).filter(r => r.statut === 'regle' && r.annee === anneeEnCours).reduce((s, r) => s + (r.montant_ht || 0), 0)
+    const reelRedev = redevancesScoped.filter(r => r.statut === 'regle' && r.annee === anneeEnCours).reduce((s, r) => s + (r.montant_ht || 0), 0)
     const reelCharges = keysAnnee.reduce((s, [, agg]) => s + (agg.gainsAgenteReels || 0), 0)
     return round2(reelProduits + reelRedev - reelCharges)
   })()
