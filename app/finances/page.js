@@ -734,7 +734,6 @@ export default function Finances() {
   // ── TOTAUX GLOBAUX ─────────────────────────────────────────────────────────
 
   const anneeEnCours = new Date().getFullYear()
-  const rowsReelAnneeEnCours = agrégerParPaiement(dossiers, false)
   const rowsReelScoped       = agrégerParPaiement(scopedDossiers, false)
   const chantiersAnneeEnCours = dossiers.filter(d => {
     const date = d.date_fin_chantier || d.date_demarrage_chantier || d.date_signature_contrat || d.created_at
@@ -1438,10 +1437,10 @@ export default function Finances() {
 
     const reelData = useMemo(() => Array.from({length:12}, (_, i) => {
       const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
-      const agg = rowsReelAnneeEnCours.find(([k]) => k === key)?.[1] || {}
+      const agg = rowsReelScoped.find(([k]) => k === key)?.[1] || {}
       return round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [rowsReelAnneeEnCours])
+    }), [rowsReelScoped])
 
     const previData = useMemo(() => {
       const map = {}
@@ -1515,6 +1514,10 @@ export default function Finances() {
 
     return (
       <div style={{display:'flex',flexDirection:'column',gap:20}}>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <span className="eyebrow">Filtré sur</span>
+          <span style={{fontSize:12,fontWeight:600,color:'var(--brand-800)',background:'var(--brand-50)',padding:'3px 10px',borderRadius:99}}>{libellePerimetre()}</span>
+        </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
           {/* LEFT : bar+line chart + totaux */}
           <div className="card" style={{padding:20}}>
