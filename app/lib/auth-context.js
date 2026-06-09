@@ -104,7 +104,7 @@ export function AuthProvider({ children }) {
     setProfileStatus('loading')
     try {
       // maybeSingle : 0 ligne => data null sans erreur (≠ .single() qui lèverait).
-      const { data, error } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
+      const { data, error } = await supabase.from('profiles').select('*, societe:societes(id, nom_societe)').eq('id', uid).maybeSingle()
       if (error) {
         // Erreur réseau : NE PAS conclure « absent ». On reste 'loading' ; le retry
         // par page (filet existant) rejouera fetchProfile.
@@ -194,7 +194,7 @@ export function AuthProvider({ children }) {
   }, [user?.id])
 
   return (
-    <AuthContext.Provider value={{ user, profile, profileStatus, displayAgenceName, agences, agenceActive, setAgenceActive, refreshAgences, initialized, unreadCount, markAllRead, loadUnread, fetchProfile }}>
+    <AuthContext.Provider value={{ user, profile, societe: profile?.societe, profileStatus, displayAgenceName, agences, agenceActive, setAgenceActive, refreshAgences, initialized, unreadCount, markAllRead, loadUnread, fetchProfile }}>
       {children}
     </AuthContext.Provider>
   )
