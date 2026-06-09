@@ -250,6 +250,14 @@ export default function Finances() {
     if (profile?.role === 'agente') setScope('moi')
   }, [profile?.role])
 
+  // Vue agence : si l'agente sélectionnée dans le pill n'appartient pas à l'agence
+  // active, réinitialiser à 'tous' (évite un périmètre vide silencieux au changement de vue).
+  useEffect(() => {
+    if (profile?.role !== 'admin' || !agenceActive) return
+    if (scope === 'tous' || scope === 'moi') return
+    if (!agentes.some(a => a.id === scope && a.agence_id === agenceActive)) setScope('tous')
+  }, [agenceActive, profile?.role, scope, agentes])
+
   // ── HELPERS PROFIL ─────────────────────────────────────────────────────────
 
   const isAdmin     = profile?.role === 'admin'
@@ -565,11 +573,19 @@ export default function Finances() {
   const mesRedevances    = profile?.id ? redevances.filter(r => r.agente_id === profile.id) : redevances
 
   // ── PÉRIMÈTRE SCOPÉ (défini tôt pour pouvoir scoper les KPI) ──────────────
+  // Périmètre unique (4c-3) : filtre agence (agenceActive) EN AMONT, puis raffinement
+  // par le pill. agenceActive null → base = tous les dossiers société (Consolidé).
   const scopedDossiers = isAdmin
-    ? (scope === 'tous' ? dossiers
-      : scope === 'moi'  ? mesDossiers
-      : dossiers.filter(d => d.referente?.id === scope))
+    ? (() => {
+        const base = agenceActive ? dossiers.filter(d => d.agence_id === agenceActive) : dossiers
+        return scope === 'tous' ? base
+          : scope === 'moi'  ? base.filter(d => d.referente?.role === 'admin')
+          : base.filter(d => d.referente?.id === scope)
+      })()
     : mesDossiers
+
+  // Options du pill agente limitées à l'agence active (Consolidé → toutes les agentes).
+  const agentesScope = agenceActive ? agentes.filter(a => a.agence_id === agenceActive) : agentes
 
 // ── AGRÉGATION PAR PÉRIODE ─────────────────────────────────────────────────
 
@@ -717,14 +733,19 @@ export default function Finances() {
     return round2(keysAnnee.reduce((s, agg) => s + (agg.gainsAgenteReels || 0), 0))
   })()
 
-  // 4c-2 — Redevances alignées sur le périmètre des produits du CA net (KPI uniquement).
-  // agente : ses redevances (inchangé) · admin Consolidé (agenceActive null) : toutes
-  // les redevances société (inchangé) · admin vue agence : celles de l'agence active
-  // (r.agence_id, NOT NULL). NE concerne QUE totalNetCTP/KPI — le Suivi reste sur redevances brut (4c-3).
+  // Redevances alignées sur le MÊME périmètre que les produits (4c-3), 4 cas :
+  //   (1) agente            → ses propres redevances (inchangé, pas de vue agence) ;
+  //   (2) admin + pill tous → toutes les redevances de l'agence active (ou société si Consolidé) ;
+  //   (3) admin + pill moi  → redevances de la franchisée (agente_id === profile.id) → ≈ 0 ;
+  //   (4) admin + pill agente → redevances de cette agente.
+  // Le filtre agence (agenceActive) s'applique EN AMONT, miroir de scopedDossiers.
   const redevancesScoped = useMemo(() => {
     if (!isAdmin) return mesRedevances
-    return agenceActive ? redevances.filter(r => r.agence_id === agenceActive) : redevances
-  }, [isAdmin, agenceActive, redevances, mesRedevances])
+    const base = agenceActive ? redevances.filter(r => r.agence_id === agenceActive) : redevances
+    if (scope === 'tous') return base
+    if (scope === 'moi')  return base.filter(r => r.agente_id === profile?.id)
+    return base.filter(r => r.agente_id === scope)
+  }, [isAdmin, agenceActive, scope, redevances, mesRedevances, profile?.id])
 
   const totalNetCTP = (() => {
     const keysAnnee = rowsReelScoped.filter(([k]) => k.startsWith(String(anneeEnCours)))
@@ -1994,7 +2015,7 @@ export default function Finances() {
                   {[
                     { key:'tous', label:'Tous' },
                     { key:'moi', label: profile?.prenom || 'Moi' },
-                    ...agentes.map(a => ({ key: a.id, label: a.prenom })),
+                    ...agentesScope.map(a => ({ key: a.id, label: a.prenom })),
                   ].map(s => (
                     <button key={s.key} onClick={() => setScope(s.key)} style={{
                       padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
@@ -2035,7 +2056,7 @@ export default function Finances() {
                   {[
                     { key:'tous', label:'Tous' },
                     { key:'moi', label: profile?.prenom || 'Moi' },
-                    ...agentes.map(a => ({ key: a.id, label: a.prenom })),
+                    ...agentesScope.map(a => ({ key: a.id, label: a.prenom })),
                   ].map(s => (
                     <button key={s.key} onClick={() => setScope(s.key)} style={{
                       padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
