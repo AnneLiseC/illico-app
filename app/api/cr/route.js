@@ -116,6 +116,35 @@ export async function POST(request) {
       .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom), client:clients(*)')
       .eq('id', dossierId).single()
 
+    // Contrôle d'appartenance — service_role contourne la RLS, on la reflète ici :
+    // admin = même société, agente = même agence. 404 uniforme (introuvable ou
+    // étranger : même réponse, ne jamais confirmer l'existence d'un dossier d'un autre tenant).
+    const dossierAutorise = dossier && (
+      auth.profile.role === 'admin'
+        ? dossier.societe_id === auth.profile.societe_id
+        : dossier.agence_id === auth.profile.agence_id
+    )
+    if (!dossierAutorise) {
+      return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
+    }
+
+    // docsPaths du body : jamais de confiance (téléchargés en service_role).
+    // Deux contrôles indépendants : (a) match EXACT contre chantier_documents de CE
+    // dossier ; (b) préfixe Storage du dossier (convention : chantiers/{dossier_id}/…).
+    // Un seul path invalide → 400, requête entière rejetée (fail loud).
+    if (docsPaths?.length) {
+      const { data: docsDossier } = await supabaseAdmin
+        .from('chantier_documents')
+        .select('path')
+        .eq('dossier_id', dossierId)
+      const pathsAutorises = new Set((docsDossier || []).map(d => d.path))
+      const prefixe = `chantiers/${dossierId}/`
+      const pathInvalide = docsPaths.some(doc => !pathsAutorises.has(doc.path) || !doc.path.startsWith(prefixe))
+      if (pathInvalide) {
+        return NextResponse.json({ error: 'Document non rattaché au dossier' }, { status: 400 })
+      }
+    }
+
     const { data: devis } = await supabaseAdmin
       .from('devis_artisans')
       .select('*, artisan:artisans(id, entreprise)')
