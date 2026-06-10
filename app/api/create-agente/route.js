@@ -166,7 +166,7 @@ export async function DELETE(request) {
     // Contrôle d'appartenance AVANT toute destruction (l'ordre est critique :
     // rien ne doit être supprimé avant la vérification). service_role contourne
     // la RLS, on la reflète : même société + bien une agente (pas un admin).
-    const { data: profil } = await supabaseAdmin.from('profiles').select('role, societe_id').eq('id', id).single()
+    const { data: profil } = await supabaseAdmin.from('profiles').select('role, societe_id, kbis_url, rib_url').eq('id', id).single()
     // 404 uniforme si introuvable OU autre société (pas de fuite d'existence cross-tenant).
     if (!profil || profil.societe_id !== auth.profile.societe_id) {
       return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 })
@@ -174,6 +174,27 @@ export async function DELETE(request) {
     // Dans SA société : on ne supprime pas un admin.
     if (profil.role !== 'agente') {
       return NextResponse.json({ error: 'Profil non supprimable' }, { status: 400 })
+    }
+
+    // Purge Storage best-effort AVANT deleteUser (l'agente est confirmée de notre
+    // société). La cascade DB efface les lignes mais pas les fichiers → on supprime
+    // ici les documents personnels (KBIS, RIB) + les factures de l'agente. Paths
+    // EXACTS lus en base, jamais de balayage par préfixe. Un échec (fichier déjà
+    // absent) est loggué mais NE bloque PAS la suppression — la cascade reste l'opération principale.
+    try {
+      const { data: facturesAg } = await supabaseAdmin
+        .from('factures_agente').select('facture_path').eq('agente_id', id)
+      const fichiers = [
+        profil.kbis_url,
+        profil.rib_url,
+        ...(facturesAg || []).map(f => f.facture_path),
+      ].filter(Boolean)
+      if (fichiers.length > 0) {
+        const { error: rmErr } = await supabaseAdmin.storage.from('documents').remove(fichiers)
+        if (rmErr) console.error('Purge Storage agente (non bloquant):', rmErr.message)
+      }
+    } catch (e) {
+      console.error('Purge Storage agente (non bloquant):', e.message)
     }
 
     // Supprimer l'utilisateur Supabase Auth (cascade vers le profil si FK configurée)
