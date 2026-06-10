@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '../../lib/auth-context'
 
 export default function NouveauClient() {
-  const { user, profile, initialized } = useAuth()
+  const { user, profile, initialized, agences, agenceActive } = useAuth()
   const [profiles, setProfiles] = useState([])
   const [loading, setLoading] = useState(false)
   const [erreur, setErreur] = useState('')
@@ -31,6 +31,7 @@ export default function NouveauClient() {
     apporteur_pourcentage: '',
     apporteur_base: 'total_chantier',
     notes: '',
+    agence_id: '',
   })
 
   useEffect(() => {
@@ -46,8 +47,8 @@ export default function NouveauClient() {
         .in('role', ['admin', 'agente'])
       setProfiles(data || [])
 
-      // Pré-sélectionner l'utilisateur connecté
-      setForm(f => ({ ...f, referente: profile.id }))
+      // Pré-sélectionner l'utilisateur connecté + défaut agence = vue active.
+      setForm(f => ({ ...f, referente: profile.id, agence_id: agenceActive || '' }))
     }
     init()
   }, [initialized, user, profile, router])
@@ -70,11 +71,22 @@ export default function NouveauClient() {
       if (referenteSel?.role === 'agente') {
         agenceId = referenteSel.agence_id
       } else if (referenteSel?.role === 'admin' && profile?.societe_id) {
-        // Admin référente d'elle-même : mono-agence → unique agence de sa société.
-        // (L15 ajoutera le sélecteur d'agence en vue consolidée multi-agences.)
-        const { data: ag } = await supabase
-          .from('agences').select('id').eq('societe_id', profile.societe_id).limit(1).single()
-        agenceId = ag?.id ?? null
+        // Admin référente d'elle-même (agence_id NULL) → pas d'agence à déduire.
+        if (agences.length >= 2) {
+          // Multi-agences : agence choisie au sélecteur, validée appartenance société
+          // (la liste agences vient de useAuth, déjà scopée société ; la RLS reste la barrière).
+          if (!form.agence_id || !agences.some(a => a.id === form.agence_id)) {
+            setErreur('Merci de choisir une agence.')
+            setLoading(false)
+            return
+          }
+          agenceId = form.agence_id
+        } else {
+          // Mono-agence : déduction de l'unique agence (comportement inchangé).
+          const { data: ag } = await supabase
+            .from('agences').select('id').eq('societe_id', profile.societe_id).order('code').limit(1).single()
+          agenceId = ag?.id ?? null
+        }
       }
     }
     if (!agenceId) {
@@ -121,6 +133,9 @@ export default function NouveauClient() {
   }
 
   const estCouple = ['M. et Mme', 'Mme et Mme', 'M. et M.'].includes(form.civilite)
+  // Sélecteur d'agence : seulement si admin, référente = admin (agence_id NULL) et ≥2 agences.
+  const referenteSel = profiles.find(p => p.id === form.referente)
+  const montrerSelectAgence = profile?.role === 'admin' && referenteSel?.role === 'admin' && agences.length >= 2
 
   if (!profile) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 96 }}>
@@ -328,6 +343,21 @@ export default function NouveauClient() {
                   />
                 )}
               </div>
+              {montrerSelectAgence && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Agence de rattachement</label>
+                  <select
+                    value={form.agence_id}
+                    onChange={e => set('agence_id', e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">— Choisir une agence —</option>
+                    {agences.map(ag => (
+                      <option key={ag.id} value={ag.id}>{ag.nom}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 
@@ -410,7 +440,7 @@ export default function NouveauClient() {
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || (montrerSelectAgence && !form.agence_id)}
               className="flex-1 bg-blue-800 text-white py-2 rounded-lg hover:bg-blue-900 text-sm font-medium disabled:opacity-50"
             >
               {loading ? 'Enregistrement...' : 'Créer le client'}

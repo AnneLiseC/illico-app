@@ -89,11 +89,22 @@ export function AuthProvider({ children }) {
     } catch { /* localStorage indisponible : l'état en mémoire suffit */ }
   }, [])
 
+  // Recharge UNIQUEMENT la liste des agences (après création d'une agence p.ex.).
+  // Ne touche PAS agenceActive (la vue active choisie reste intacte). Lit le
+  // `profile` courant du state (≠ loadAgences qui reçoit le profil tout juste fetché).
+  const refreshAgences = useCallback(async () => {
+    if (!profile || profile.role !== 'admin' || !profile.societe_id) return
+    try {
+      const { data } = await supabase.from('agences').select('id, nom, code').eq('societe_id', profile.societe_id).order('code')
+      setAgences(data || [])
+    } catch { /* erreur réseau transitoire : on garde la liste existante */ }
+  }, [profile])
+
   const fetchProfile = useCallback(async (uid) => {
     setProfileStatus('loading')
     try {
       // maybeSingle : 0 ligne => data null sans erreur (≠ .single() qui lèverait).
-      const { data, error } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
+      const { data, error } = await supabase.from('profiles').select('*, societe:societes(id, nom_societe)').eq('id', uid).maybeSingle()
       if (error) {
         // Erreur réseau : NE PAS conclure « absent ». On reste 'loading' ; le retry
         // par page (filet existant) rejouera fetchProfile.
@@ -183,7 +194,7 @@ export function AuthProvider({ children }) {
   }, [user?.id])
 
   return (
-    <AuthContext.Provider value={{ user, profile, profileStatus, displayAgenceName, agences, agenceActive, setAgenceActive, initialized, unreadCount, markAllRead, loadUnread, fetchProfile }}>
+    <AuthContext.Provider value={{ user, profile, societe: profile?.societe, profileStatus, displayAgenceName, agences, agenceActive, setAgenceActive, refreshAgences, initialized, unreadCount, markAllRead, loadUnread, fetchProfile }}>
       {children}
     </AuthContext.Provider>
   )

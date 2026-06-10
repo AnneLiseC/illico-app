@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
@@ -399,7 +399,7 @@ function ChantiersInner() {
   const [modaleClient, setModaleClient] = useState(false)
   const router        = useRouter()
   const searchParams  = useSearchParams()
-  const { user, profile, initialized } = useAuth()
+  const { user, profile, initialized, agenceActive } = useAuth()
 
   useEffect(() => {
     if (searchParams.get('nouveau') === '1') {
@@ -443,7 +443,15 @@ function ChantiersInner() {
 
   const isAdmin = profile?.role === 'admin'
 
-  const dossiersFiltresOnglet = getDossiersByScope(dossiers, profile, onglet, agentes)
+  // Scoping multi-agence (UX, pas sécurité — RLS reste la frontière) :
+  // agenceActive null = tout ; uuid = seulement cette agence. Filtrage en mémoire,
+  // SOURCE des dérivés (liste + compteurs) pour qu'ils restent cohérents.
+  const dossiersScoped = useMemo(
+    () => (agenceActive ? dossiers.filter(d => d.agence_id === agenceActive) : dossiers),
+    [dossiers, agenceActive]
+  )
+
+  const dossiersFiltresOnglet = getDossiersByScope(dossiersScoped, profile, onglet, agentes)
   const dossiersFiltres       = getFilteredDossiers(dossiersFiltresOnglet, recherche, filtreStatut, filtreTypo, nomClient)
   const compteurs             = getCompteurs(dossiersFiltresOnglet)
   const aujourdhui            = new Date()
