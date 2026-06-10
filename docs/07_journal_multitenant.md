@@ -438,6 +438,7 @@ Une fois finance.js source unique partout : construire le **comparateur de varia
 | 10/06 | Session sécurité majeure. Audit transversal routes service_role → 4 failles du même pattern. Corrigées+prouvées E2E : cr (fd2b2cd), create-agente PATCH/DELETE (ca64421), pdf (c844e60). Calendrier en quarantaine. Purge Storage soldée (219720e) — bug d'ordre purge/deleteUser rattrapé en test. Bug google_tokens (suppression agente impossible) découvert. DÉCISION PRODUIT : modèle pricing per-agence/per-agente + gating par quota acté (structure figée, montants en étude). | ✅ session |
 | 10/06 | SÉCURITÉ : surface anon auditée (fonctions + tables). Clean sauf policy INSERT notifications (TO public WITH CHECK true → forge anon possible). Re-scopée TO authenticated. Prouvé (INSERT anon → 42501). Dernier point sécurité bloc A. | ✅ SQL appliqué |
 | 10/06 | DETTE : code mort nomFranchisee (chantiers) supprimé + redevance_debut ajouté à la création d'agente (était ignoré au POST, persisté seulement au PATCH). Branche fix/dette-nomfranchisee-redevancedebut, 2 commits. | ✅ cf13a14 |
+| 10/06 |Garde-fou création profil client** | ✅  |
 ---
 
 > **Note d'archive** : les consignes process permanentes, l'état courant et la prochaine action vivent désormais dans `07_boussole_multitenant.md`. Ce journal n'est conservé que pour la traçabilité historique (commits, fichiers SQL, raisonnements de chaque lot).

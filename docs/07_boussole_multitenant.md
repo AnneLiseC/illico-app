@@ -186,8 +186,7 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [ ] **Code mort finance.js 🟠 restants** : devis.statut/montantTTC, apporteur.lines[].* — grep non concluant ou lines itéré dynamiquement. Relecture site par site requise. Pas prioritaire. 
 - [ ] **#8 dashboard admin scope** (à arbitrer selon scénario testeur).<>
 - [ ] **`espace-client/page.js:253`** « illiCO travaux Martigues » : reporté avec le dev espace-client.
-- [ ] **Garde-fou création profil client** : garantir societe_id/agence_id renseignés à la création (le titre du portail et le cloisonnement D15 en dépendent). Population actuelle saine (1 client) ; à poser avant le dev espace-client.
-- [ ] **Boutons morts Finances** : « Saisir un règlement », « Exporter le bilan », export CSV rendus sans `onClick`. Câbler ou masquer.
+- [x] **Garde-fou création profil client** ✅ (10/06). Trigger BEFORE INSERT `profile_client_derive_agence_trg` (SECURITY DEFINER) : role='client' → dérive agence_id + societe_id depuis le client métier rattaché (profiles.client_id → clients) ; exception stricte si client_id manquant. + CHECK `profiles_client_agence_not_null` (role <> 'client' OR agence_id IS NOT NULL) = filet dur, survit au retrait du trigger. Cible role='client' uniquement (admin agence_id NULL préservé, vérifié). SQL versionné docs/sql/garde_fou_profil_client_agence.sql. Dérivation + CHECK + non-régression admin prouvés en base. NB découvert : aucun chemin applicatif ne crée de profil client (lien magique acté mais non construit) → garde-fou préventif, posé AVANT le futur flux espace-client.- [ ] **Boutons morts Finances** : « Saisir un règlement », « Exporter le bilan », export CSV rendus sans `onClick`. Câbler ou masquer.
 - [ ] **L18 bug ajout intervention** : ⚠️ audit d'abord, STOP si lié à la sync Google Calendar.
 - [ ] **L22 bug synchro Google Calendar** : `Cannot access 'n' before initialization` (TDZ — `const auth` l.143 shadow l.128 dans `api/google/calendar/sync/route.js`). Fix : renommer le 2e `auth` en `oauthClient`. ⚠️ Lié au calendrier Google partagé entre agences (fuite multi-tenant à creuser).
 - [ ] **Types de RDV incomplets** : `TYPE_CONFIG` n'expose que 4 types (R1/R2/R3 + autres), manquent suivi/réception/Étude/Pro-Perso. Audit des types voulus d'abord.
@@ -306,7 +305,6 @@ Gating par QUOTA, pas par autorisation manuelle. Le franchisé crée librement D
 
 ## PROCHAINS LOTS CODE (ordre conseillé, arrêté le 10/06)
 
-1. [ ] **Garde-fou création profil client** (societe_id/agence_id renseignés à la création) — sécurité préventive, prérequis au dev espace-client (cloisonnement D15 + titre portail en dépendent). Court, à poser avant d'ouvrir.
 2. [ ] **Lot 5 — Paramètres multi-agences** : édition d'agence (nom, adresse, responsable, ville — aujourd'hui lecture seule). Dernier maillon du chantier multi-agence (Lots 1-4 faits), referme le bloc B. À tête fraîche (seul vrai morceau d'archi restant).
 3. [ ] **Template email Reset Password en français** (Supabase dashboard, déclaratif). Trivial, zéro code, zéro risque. Un reset en anglais = amateur côté franchisé.
 4. [ ] **Boutons morts Finances** : « Exporter le bilan » + export CSV → à CÂBLER ; « Saisir un règlement » → à SUPPRIMER. (rendus sans onClick aujourd'hui.)
