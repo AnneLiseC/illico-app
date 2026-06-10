@@ -105,14 +105,25 @@ export default function Parametres() {
   const sauvegarderObjectif = async (cible, agenteId, agenceId, montant) => {
     if (!agenceId) return
     const annee = new Date().getFullYear()
-    const query = supabase.from('objectifs_ca').select('id').eq('annee', annee).eq('cible', cible)
-    const { data: existing } = agenteId
-      ? await query.eq('agente_id', agenteId).maybeSingle()
-      : await query.is('agente_id', null).maybeSingle()
+    const montantNum = parseFloat(montant) || 0
+
+    // Recherche de la ligne existante scopée par la clé d'unicité RÉELLE (sinon, en
+    // multi-agence, maybeSingle voit plusieurs lignes et échoue) :
+    //  - agence : (annee, cible, agence_id) WHERE agente_id IS NULL
+    //  - agente : (annee, cible, agente_id)
+    // L'upsert PostgREST ne peut pas cibler ces index PARTIELS (ON CONFLICT sans WHERE
+    // → 42P10), d'où le select-puis-update/insert. Toute erreur est levée (plus de ✓ menteur).
+    let q = supabase.from('objectifs_ca').select('id').eq('annee', annee).eq('cible', cible)
+    q = agenteId ? q.eq('agente_id', agenteId) : q.is('agente_id', null).eq('agence_id', agenceId)
+    const { data: existing, error: selErr } = await q.maybeSingle()
+    if (selErr) throw new Error(selErr.message)
+
     if (existing) {
-      await supabase.from('objectifs_ca').update({ montant: parseFloat(montant) || 0 }).eq('id', existing.id)
+      const { error } = await supabase.from('objectifs_ca').update({ montant: montantNum }).eq('id', existing.id)
+      if (error) throw new Error(error.message)
     } else {
-      await supabase.from('objectifs_ca').insert({ annee, cible, agente_id: agenteId || null, agence_id: agenceId, montant: parseFloat(montant) || 0 })
+      const { error } = await supabase.from('objectifs_ca').insert({ annee, cible, agente_id: agenteId || null, agence_id: agenceId, montant: montantNum })
+      if (error) throw new Error(error.message)
     }
     await chargerObjectifs()
   }
