@@ -28,6 +28,11 @@ export default function Parametres() {
   const [objAgenceVal, setObjAgenceVal]   = useState('')
   const [savingObjAgence, setSavingObjAgence] = useState(false)
   const [objAgenceMsg, setObjAgenceMsg]   = useState('')
+  // Multi-agence (5b) : saisie/feedback indépendants par agence (objectif 'agence').
+  // Branche mono (objAgenceVal) inchangée.
+  const [objAbVals, setObjAbVals]         = useState({})   // { agence_id: string }
+  const [objAbSaving, setObjAbSaving]     = useState(null) // agence_id en cours, ou null
+  const [objAbMsg, setObjAbMsg]           = useState({})   // { agence_id: message }
   const [saving, setSaving]               = useState(false)
   const [erreur, setErreur]               = useState('')
   const [succes, setSucces]               = useState('')
@@ -81,6 +86,17 @@ export default function Parametres() {
     const { data } = await supabase.from('objectifs_ca').select('*').eq('annee', annee)
     setObjectifs(data || [])
     setObjAgenceVal(String(data?.find(o => o.cible === 'agence' && o.agente_id === null)?.montant || ''))
+    // Index par agence pour la branche multi-agence. Ne remplit que les agences
+    // PAS déjà en saisie (préserve les éditions en cours après un rechargement).
+    setObjAbVals(prev => {
+      const next = { ...prev }
+      for (const o of (data || [])) {
+        if (o.cible === 'agence' && o.agente_id === null && o.agence_id && !(o.agence_id in next)) {
+          next[o.agence_id] = String(o.montant ?? '')
+        }
+      }
+      return next
+    })
   }
 
   // Écriture objectif côté client : objectif d'agence ET objectif d'agente (édition).
@@ -89,14 +105,25 @@ export default function Parametres() {
   const sauvegarderObjectif = async (cible, agenteId, agenceId, montant) => {
     if (!agenceId) return
     const annee = new Date().getFullYear()
-    const query = supabase.from('objectifs_ca').select('id').eq('annee', annee).eq('cible', cible)
-    const { data: existing } = agenteId
-      ? await query.eq('agente_id', agenteId).maybeSingle()
-      : await query.is('agente_id', null).maybeSingle()
+    const montantNum = parseFloat(montant) || 0
+
+    // Recherche de la ligne existante scopée par la clé d'unicité RÉELLE (sinon, en
+    // multi-agence, maybeSingle voit plusieurs lignes et échoue) :
+    //  - agence : (annee, cible, agence_id) WHERE agente_id IS NULL
+    //  - agente : (annee, cible, agente_id)
+    // L'upsert PostgREST ne peut pas cibler ces index PARTIELS (ON CONFLICT sans WHERE
+    // → 42P10), d'où le select-puis-update/insert. Toute erreur est levée (plus de ✓ menteur).
+    let q = supabase.from('objectifs_ca').select('id').eq('annee', annee).eq('cible', cible)
+    q = agenteId ? q.eq('agente_id', agenteId) : q.is('agente_id', null).eq('agence_id', agenceId)
+    const { data: existing, error: selErr } = await q.maybeSingle()
+    if (selErr) throw new Error(selErr.message)
+
     if (existing) {
-      await supabase.from('objectifs_ca').update({ montant: parseFloat(montant) || 0 }).eq('id', existing.id)
+      const { error } = await supabase.from('objectifs_ca').update({ montant: montantNum }).eq('id', existing.id)
+      if (error) throw new Error(error.message)
     } else {
-      await supabase.from('objectifs_ca').insert({ annee, cible, agente_id: agenteId || null, agence_id: agenceId, montant: parseFloat(montant) || 0 })
+      const { error } = await supabase.from('objectifs_ca').insert({ annee, cible, agente_id: agenteId || null, agence_id: agenceId, montant: montantNum })
+      if (error) throw new Error(error.message)
     }
     await chargerObjectifs()
   }
@@ -111,6 +138,19 @@ export default function Parametres() {
       setObjAgenceMsg('Erreur : ' + err.message)
     }
     setSavingObjAgence(false)
+  }
+
+  // Enregistrement de l'objectif d'UNE agence (multi-agence). Réutilise le chemin
+  // d'écriture sécurisé sauvegarderObjectif (policy objectifs_ca_scope), non modifié.
+  const enregistrerObjAb = async (agenceId) => {
+    setObjAbSaving(agenceId); setObjAbMsg(m => ({ ...m, [agenceId]: '' }))
+    try {
+      await sauvegarderObjectif('agence', null, agenceId, objAbVals[agenceId] ?? '')
+      setObjAbMsg(m => ({ ...m, [agenceId]: 'Enregistré ✓' }))
+    } catch (err) {
+      setObjAbMsg(m => ({ ...m, [agenceId]: 'Erreur : ' + err.message }))
+    }
+    setObjAbSaving(null)
   }
 
   const ouvrirCreerAgence = () => { setFormAgence(emptyFormAgence); setModal('creer_agence'); setErreur(''); setSucces('') }
@@ -455,10 +495,23 @@ export default function Parametres() {
 
               {/* Objectif de CA de l'agence (annuel) */}
               {agences.length > 1 ? (
-                // TODO lot Finances multi-agence : objectif par agence active.
-                <div className="card" style={{padding:'16px 18px'}}>
-                  <div style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>Objectif de CA — agence {new Date().getFullYear()}</div>
-                  <div style={{fontSize:12, color:'var(--ink-500)', marginTop:4}}>Gestion des objectifs par agence : à venir.</div>
+                <div className="card" style={{padding:'16px 18px', display:'flex', flexDirection:'column', gap:14}}>
+                  <div>
+                    <div style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>Objectif de CA par agence — {new Date().getFullYear()}</div>
+                    <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}}>Montant annuel (encaissements bruts), par agence.</div>
+                  </div>
+                  {agences.map(ag => (
+                    <div key={ag.id} style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                      <div style={{minWidth:160, fontSize:13, fontWeight:600, color:'var(--ink-800)'}}>{ag.nom}</div>
+                      <input className="input" type="number" min="0" value={objAbVals[ag.id] ?? ''}
+                        onChange={e => setObjAbVals(v => ({ ...v, [ag.id]: e.target.value }))}
+                        placeholder="Objectif annuel €" style={{maxWidth:200}}/>
+                      <button className="btn btn-primary" onClick={() => enregistrerObjAb(ag.id)} disabled={objAbSaving === ag.id}>
+                        {objAbSaving === ag.id ? 'Enregistrement…' : 'Enregistrer'}
+                      </button>
+                      {objAbMsg[ag.id] && <span style={{fontSize:12.5, color: objAbMsg[ag.id].startsWith('Erreur') ? '#b91c1c' : '#15803d'}}>{objAbMsg[ag.id]}</span>}
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <div className="card" style={{padding:'16px 18px', display:'flex', flexDirection:'column', gap:10}}>
