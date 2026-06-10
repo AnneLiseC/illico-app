@@ -2455,7 +2455,7 @@ export default function FicheChantier({ params }) {
 
           {!referentEstAdmin && profile?.parts_agente_disponibles?.length > 1 && (
             <div style={{paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
-              <label className="eyebrow" style={{display:'block', marginBottom:8}}>Répartition commission (agente / CTP)</label>
+              <label className="eyebrow" style={{display:'block', marginBottom:8}}>Répartition commission (agente / Société)</label>
               <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
                 {profile.parts_agente_disponibles.map(pct => {
                   const pctFloat = parseFloat(pct)
@@ -3323,7 +3323,7 @@ export default function FicheChantier({ params }) {
               label={referentEstAdmin ? 'Net franchisée' : 'Net total'}
               value={fmt(totalNet)}
               sub={partAgenteCfg > 0
-                ? `Agente ${fmt(gainAgente)} · CTP ${fmt(gainAdmin)}`
+                ? `Agente ${fmt(gainAgente)} · Société ${fmt(gainAdmin)}`
                 : 'tout pour la franchisée'}
               tone="brand"
             />
