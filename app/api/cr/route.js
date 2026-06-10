@@ -26,12 +26,12 @@ const SECTIONS_PAR_TYPE = {
   reception:['Identification du chantier', 'Travaux réceptionnés', 'Réserves constatées', 'Délais de levée des réserves', 'Signature de réception'],
 }
 
-function buildSystemPrompt(type) {
+function buildSystemPrompt(type, agenceNom) {
   const typLabel = TYPES_VISITE[type] || 'Visite de chantier'
   const sections = (SECTIONS_PAR_TYPE[type] || SECTIONS_PAR_TYPE.suivi)
     .map((s, i) => `${i + 1}. ${s}`).join('\n')
 
-  return `Tu es un expert en gestion de chantiers BTP. Tu rédiges des comptes-rendus de visite professionnels pour illiCO travaux Martigues, agence de courtage en travaux et AMO.
+  return `Tu es un expert en gestion de chantiers BTP. Tu rédiges des comptes-rendus de visite professionnels pour ${agenceNom}, agence de courtage en travaux et AMO.
 
 TYPE DE VISITE : ${typLabel}
 
@@ -113,7 +113,7 @@ export async function POST(request) {
     // Charger dossier + devis
     const { data: dossier } = await supabaseAdmin
       .from('dossiers')
-      .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom), client:clients(*)')
+      .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom), client:clients(*), agence:agences(nom)')
       .eq('id', dossierId).single()
 
     // Contrôle d'appartenance — service_role contourne la RLS, on la reflète ici :
@@ -158,7 +158,8 @@ export async function POST(request) {
     const numeroCR = (count || 0) + 1
 
     // Construire les messages Claude
-    const systemPrompt = buildSystemPrompt(typeVisite)
+    const agenceNom = dossier.agence?.nom || 'illiCO travaux'
+    const systemPrompt = buildSystemPrompt(typeVisite, agenceNom)
     const userText = buildUserPrompt({ dossier, devis: devis || [], typeVisite, dateVisite, intervenants, notesBrutes: notesBrutes || '', numeroCR })
 
     const userContent = []
