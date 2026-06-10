@@ -26,12 +26,12 @@ const SECTIONS_PAR_TYPE = {
   reception:['Identification du chantier', 'Travaux réceptionnés', 'Réserves constatées', 'Délais de levée des réserves', 'Signature de réception'],
 }
 
-function buildSystemPrompt(type) {
+function buildSystemPrompt(type, agenceNom) {
   const typLabel = TYPES_VISITE[type] || 'Visite de chantier'
   const sections = (SECTIONS_PAR_TYPE[type] || SECTIONS_PAR_TYPE.suivi)
     .map((s, i) => `${i + 1}. ${s}`).join('\n')
 
-  return `Tu es un expert en gestion de chantiers BTP. Tu rédiges des comptes-rendus de visite professionnels pour illiCO travaux Martigues, agence de courtage en travaux et AMO.
+  return `Tu es un expert en gestion de chantiers BTP. Tu rédiges des comptes-rendus de visite professionnels pour ${agenceNom}, agence de courtage en travaux et AMO.
 
 TYPE DE VISITE : ${typLabel}
 
@@ -113,8 +113,37 @@ export async function POST(request) {
     // Charger dossier + devis
     const { data: dossier } = await supabaseAdmin
       .from('dossiers')
-      .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom), client:clients(*)')
+      .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom), client:clients(*), agence:agences(nom)')
       .eq('id', dossierId).single()
+
+    // Contrôle d'appartenance — service_role contourne la RLS, on la reflète ici :
+    // admin = même société, agente = même agence. 404 uniforme (introuvable ou
+    // étranger : même réponse, ne jamais confirmer l'existence d'un dossier d'un autre tenant).
+    const dossierAutorise = dossier && (
+      auth.profile.role === 'admin'
+        ? dossier.societe_id === auth.profile.societe_id
+        : dossier.agence_id === auth.profile.agence_id
+    )
+    if (!dossierAutorise) {
+      return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
+    }
+
+    // docsPaths du body : jamais de confiance (téléchargés en service_role).
+    // Deux contrôles indépendants : (a) match EXACT contre chantier_documents de CE
+    // dossier ; (b) préfixe Storage du dossier (convention : chantiers/{dossier_id}/…).
+    // Un seul path invalide → 400, requête entière rejetée (fail loud).
+    if (docsPaths?.length) {
+      const { data: docsDossier } = await supabaseAdmin
+        .from('chantier_documents')
+        .select('path')
+        .eq('dossier_id', dossierId)
+      const pathsAutorises = new Set((docsDossier || []).map(d => d.path))
+      const prefixe = `chantiers/${dossierId}/`
+      const pathInvalide = docsPaths.some(doc => !pathsAutorises.has(doc.path) || !doc.path.startsWith(prefixe))
+      if (pathInvalide) {
+        return NextResponse.json({ error: 'Document non rattaché au dossier' }, { status: 400 })
+      }
+    }
 
     const { data: devis } = await supabaseAdmin
       .from('devis_artisans')
@@ -129,7 +158,8 @@ export async function POST(request) {
     const numeroCR = (count || 0) + 1
 
     // Construire les messages Claude
-    const systemPrompt = buildSystemPrompt(typeVisite)
+    const agenceNom = dossier.agence?.nom || 'illiCO travaux'
+    const systemPrompt = buildSystemPrompt(typeVisite, agenceNom)
     const userText = buildUserPrompt({ dossier, devis: devis || [], typeVisite, dateVisite, intervenants, notesBrutes: notesBrutes || '', numeroCR })
 
     const userContent = []

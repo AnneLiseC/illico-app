@@ -14,7 +14,7 @@ export async function POST(request) {
   if (auth.error) return auth.error
   try {
     const body = await request.json()
-    const { prenom, nom, email, telephone, part_agente_defaut, frais_part_agente_defaut, parts_agente_disponibles, objectif, agence_id } = body
+    const { prenom, nom, email, telephone, redevance_debut, part_agente_defaut, frais_part_agente_defaut, parts_agente_disponibles, objectif, agence_id } = body
 
     // Validation
     if (!prenom || !nom || !email) {
@@ -74,6 +74,7 @@ export async function POST(request) {
         nom,
         email,
         telephone: telephone || null,
+        redevance_debut: redevance_debut || null,
         role: 'agente',
         societe_id: auth.profile.societe_id,
         agence_id: agenceId,
@@ -132,6 +133,14 @@ export async function PATCH(request) {
     if (parts_agente_disponibles !== undefined) updates.parts_agente_disponibles = parts_agente_disponibles
     if (kbis_url !== undefined)                 updates.kbis_url = kbis_url
 
+    // Contrôle d'appartenance — service_role contourne la RLS, on la reflète :
+    // un admin n'édite que les profils de SA société. 404 uniforme (introuvable
+    // ou autre société : même réponse, pas de fuite d'existence cross-tenant).
+    const { data: cible } = await supabaseAdmin.from('profiles').select('societe_id').eq('id', id).single()
+    if (!cible || cible.societe_id !== auth.profile.societe_id) {
+      return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 })
+    }
+
     const { error } = await supabaseAdmin.from('profiles').update(updates).eq('id', id)
 
     if (error) {
@@ -155,11 +164,30 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'ID requis' }, { status: 400 })
     }
 
-    // Vérifier que c'est bien une agente (pas un admin)
-    const { data: profil } = await supabaseAdmin.from('profiles').select('role').eq('id', id).single()
-    if (!profil || profil.role !== 'agente') {
-      return NextResponse.json({ error: 'Profil introuvable ou non supprimable' }, { status: 400 })
+    // Contrôle d'appartenance AVANT toute destruction (l'ordre est critique :
+    // rien ne doit être supprimé avant la vérification). service_role contourne
+    // la RLS, on la reflète : même société + bien une agente (pas un admin).
+    const { data: profil } = await supabaseAdmin.from('profiles').select('role, societe_id, kbis_url, rib_url').eq('id', id).single()
+    // 404 uniforme si introuvable OU autre société (pas de fuite d'existence cross-tenant).
+    if (!profil || profil.societe_id !== auth.profile.societe_id) {
+      return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 })
     }
+    // Dans SA société : on ne supprime pas un admin.
+    if (profil.role !== 'agente') {
+      return NextResponse.json({ error: 'Profil non supprimable' }, { status: 400 })
+    }
+
+    // Lire les paths des fichiers AVANT suppression (SELECT non destructif). La purge
+    // réelle n'aura lieu QU'APRÈS un deleteUser réussi : on ne détruit jamais de
+    // fichiers si la suppression de l'agente échoue (sinon perte de données + agente
+    // survivante). Paths EXACTS, jamais de balayage par préfixe.
+    const { data: facturesAg } = await supabaseAdmin
+      .from('factures_agente').select('facture_path').eq('agente_id', id)
+    const fichiers = [
+      profil.kbis_url,
+      profil.rib_url,
+      ...(facturesAg || []).map(f => f.facture_path),
+    ].filter(Boolean)
 
     // Supprimer l'utilisateur Supabase Auth (cascade vers le profil si FK configurée)
     const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id)
@@ -169,6 +197,19 @@ export async function DELETE(request) {
 
     // Supprimer le profil (sécurité si pas de cascade)
     await supabaseAdmin.from('profiles').delete().eq('id', id)
+
+    // Purge Storage best-effort APRÈS suppression réussie : la cascade DB a effacé les
+    // lignes, on retire maintenant les documents personnels (KBIS, RIB, factures) pour
+    // ne pas laisser d'orphelins. À ce stade l'agente est déjà supprimée → un échec de
+    // remove est seulement loggué, jamais bloquant.
+    if (fichiers.length > 0) {
+      try {
+        const { error: rmErr } = await supabaseAdmin.storage.from('documents').remove(fichiers)
+        if (rmErr) console.error('Purge Storage agente (non bloquant):', rmErr.message)
+      } catch (e) {
+        console.error('Purge Storage agente (non bloquant):', e.message)
+      }
+    }
 
     return NextResponse.json({ success: true })
   } catch (err) {

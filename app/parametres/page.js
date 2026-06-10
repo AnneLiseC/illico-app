@@ -510,12 +510,12 @@ export default function Parametres() {
                               ? agente.parts_agente_disponibles.map(p => `${Math.round(p * 100)} / ${Math.round((1 - p) * 100)}`).join(' · ')
                               : fmtPct(agente.part_agente_defaut)}
                           </div>
-                          <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>agente / CTP</div>
+                          <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>agente / Société</div>
                         </div>
                         <div style={{background:'var(--surface-2)', borderRadius:8, padding:'10px 14px'}}>
                           <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>Répartition frais</div>
                           <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:13}}>{fmtPct(agente.frais_part_agente_defaut)}</div>
-                          <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>agente / CTP</div>
+                          <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>agente / Société</div>
                         </div>
                         <div style={{background:'var(--surface-2)', borderRadius:8, padding:'10px 14px'}}>
                           <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>Redevances depuis</div>
@@ -734,7 +734,7 @@ export default function Parametres() {
                 <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Une valeur = pas de choix. Plusieurs séparées par virgule = l'agente choisit.</div>
               </div>
               <div>
-                <label style={LS}>Répartition frais de consultation — agente / CTP</label>
+                <label style={LS}>Répartition frais de consultation — agente / Société</label>
                 <div style={{display:'flex', alignItems:'center', gap:10}}>
                   <div style={{flex:1}}>
                     <input className="input" type="number" min="0" max="100" value={form.frais_part_agente_defaut} onChange={e => setForm(f => ({ ...f, frais_part_agente_defaut: parseInt(e.target.value) || 0 }))} style={{textAlign:'center'}}/>
@@ -743,7 +743,7 @@ export default function Parametres() {
                   <span style={{color:'var(--ink-400)', fontWeight:600}}>/</span>
                   <div style={{flex:1}}>
                     <input className="input" type="number" value={100 - form.frais_part_agente_defaut} disabled style={{textAlign:'center', opacity:0.5}}/>
-                    <div style={{fontSize:11, textAlign:'center', color:'var(--ink-400)', marginTop:3}}>CTP %</div>
+                    <div style={{fontSize:11, textAlign:'center', color:'var(--ink-400)', marginTop:3}}>Société %</div>
                   </div>
                 </div>
               </div>

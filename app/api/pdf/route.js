@@ -421,7 +421,16 @@ export async function POST(request) {
       if (!auth.profile.client_id || dossier.client_id !== auth.profile.client_id) {
         return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
       }
-    } else if (auth.profile.role !== 'admin' && auth.profile.role !== 'agente') {
+    } else if (auth.profile.role === 'admin' || auth.profile.role === 'agente') {
+      // Contrôle d'appartenance (service_role contourne la RLS) : admin = même
+      // société, agente = même agence. 404 uniforme (introuvable ou autre tenant).
+      const autorise = auth.profile.role === 'admin'
+        ? dossier.societe_id === auth.profile.societe_id
+        : dossier.agence_id === auth.profile.agence_id
+      if (!autorise) {
+        return NextResponse.json({ error: 'Dossier non trouvé' }, { status: 404 })
+      }
+    } else {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
     }
 
@@ -511,7 +520,8 @@ export async function POST(request) {
     } else if (type === 'cr') {
       if (!crId) return NextResponse.json({ error: 'crId manquant' }, { status: 400 })
       const { data: crData } = await supabaseAdmin.from('comptes_rendus').select('*').eq('id', crId).single()
-      if (!crData) return NextResponse.json({ error: 'CR non trouvé' }, { status: 404 })
+      // Le CR doit être rattaché au dossier validé (crId vient du body) — sinon 404.
+      if (!crData || crData.dossier_id !== dossierId) return NextResponse.json({ error: 'CR non trouvé' }, { status: 404 })
       cr = crData
 
       const sections = (cr.contenu_final || '').split(/(?=## \d+\.)/).map(block => {
