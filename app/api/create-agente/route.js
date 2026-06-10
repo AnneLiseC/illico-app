@@ -176,26 +176,17 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Profil non supprimable' }, { status: 400 })
     }
 
-    // Purge Storage best-effort AVANT deleteUser (l'agente est confirmée de notre
-    // société). La cascade DB efface les lignes mais pas les fichiers → on supprime
-    // ici les documents personnels (KBIS, RIB) + les factures de l'agente. Paths
-    // EXACTS lus en base, jamais de balayage par préfixe. Un échec (fichier déjà
-    // absent) est loggué mais NE bloque PAS la suppression — la cascade reste l'opération principale.
-    try {
-      const { data: facturesAg } = await supabaseAdmin
-        .from('factures_agente').select('facture_path').eq('agente_id', id)
-      const fichiers = [
-        profil.kbis_url,
-        profil.rib_url,
-        ...(facturesAg || []).map(f => f.facture_path),
-      ].filter(Boolean)
-      if (fichiers.length > 0) {
-        const { error: rmErr } = await supabaseAdmin.storage.from('documents').remove(fichiers)
-        if (rmErr) console.error('Purge Storage agente (non bloquant):', rmErr.message)
-      }
-    } catch (e) {
-      console.error('Purge Storage agente (non bloquant):', e.message)
-    }
+    // Lire les paths des fichiers AVANT suppression (SELECT non destructif). La purge
+    // réelle n'aura lieu QU'APRÈS un deleteUser réussi : on ne détruit jamais de
+    // fichiers si la suppression de l'agente échoue (sinon perte de données + agente
+    // survivante). Paths EXACTS, jamais de balayage par préfixe.
+    const { data: facturesAg } = await supabaseAdmin
+      .from('factures_agente').select('facture_path').eq('agente_id', id)
+    const fichiers = [
+      profil.kbis_url,
+      profil.rib_url,
+      ...(facturesAg || []).map(f => f.facture_path),
+    ].filter(Boolean)
 
     // Supprimer l'utilisateur Supabase Auth (cascade vers le profil si FK configurée)
     const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id)
@@ -205,6 +196,19 @@ export async function DELETE(request) {
 
     // Supprimer le profil (sécurité si pas de cascade)
     await supabaseAdmin.from('profiles').delete().eq('id', id)
+
+    // Purge Storage best-effort APRÈS suppression réussie : la cascade DB a effacé les
+    // lignes, on retire maintenant les documents personnels (KBIS, RIB, factures) pour
+    // ne pas laisser d'orphelins. À ce stade l'agente est déjà supprimée → un échec de
+    // remove est seulement loggué, jamais bloquant.
+    if (fichiers.length > 0) {
+      try {
+        const { error: rmErr } = await supabaseAdmin.storage.from('documents').remove(fichiers)
+        if (rmErr) console.error('Purge Storage agente (non bloquant):', rmErr.message)
+      } catch (e) {
+        console.error('Purge Storage agente (non bloquant):', e.message)
+      }
+    }
 
     return NextResponse.json({ success: true })
   } catch (err) {
