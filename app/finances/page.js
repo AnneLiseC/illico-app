@@ -158,7 +158,7 @@ export default function Finances() {
   const [redevances, setRedevances]                 = useState([])
   const [agentes, setAgentes]                       = useState([])
   const [agenteSelectionnee, setAgenteSelectionnee] = useState(null)
-  const [nomFranchisee, setNomFranchisee]           = useState('CTP')
+  const [nomFranchisee, setNomFranchisee]           = useState('—')
   const [facturesAgente, setFacturesAgente]         = useState([])
   const [objectifs, setObjectifs]                   = useState([])
   const [anneeSelectionnee, setAnneeSelectionnee]   = useState(new Date().getFullYear())
