@@ -1191,7 +1191,7 @@ export default function Finances() {
           ))}
         </div>
         <div style={{ position: 'relative', width: '100%', height: 220 }}>
-          <canvas id={chartId} role="img" aria-label="Graphique produits et charges CTP par période" />
+          <canvas id={chartId} role="img" aria-label="Graphique produits et charges Société par période" />
         </div>
       </div>
     )
@@ -1269,7 +1269,7 @@ export default function Finances() {
                 <tr key={label}><td className="px-2 py-1.5 text-gray-500">{label}</td><td className="px-2 py-1.5 text-right text-gray-500">{fmt(pv)}</td><td className="px-2 py-1.5 text-right text-red-500 font-medium">{fmt(rv)}</td><td className="px-2 py-1.5 text-right">{ecart(pv, rv)}</td></tr>
               ))}
               <tr className="bg-gray-50 border-t border-gray-200"><td className="px-2 py-1.5 font-medium text-gray-700">= Total charges</td><td className="px-2 py-1.5 text-right font-medium text-gray-700">{fmt(previCharges)}</td><td className="px-2 py-1.5 text-right font-medium text-red-500">{fmt(reelCharges)}</td><td className="px-2 py-1.5 text-right">{ecart(previCharges, reelCharges)}</td></tr></>}
-              <tr className="bg-blue-50 border-t-2 border-blue-100"><td className="px-2 py-2 font-bold text-blue-800">= {isCTP ? 'Résultat net CTP' : 'Total encaissé agence'}</td><td className="px-2 py-2 text-right font-bold text-gray-600">{fmt(previNet)}</td><td className={`px-2 py-2 text-right font-bold ${reelNet >= 0 ? 'text-blue-800' : 'text-red-600'}`}>{fmt(reelNet)}</td><td className="px-2 py-2 text-right">{ecart(previNet, reelNet)}</td></tr>
+              <tr className="bg-blue-50 border-t-2 border-blue-100"><td className="px-2 py-2 font-bold text-blue-800">= {isCTP ? 'Résultat net Société' : 'Total encaissé agence'}</td><td className="px-2 py-2 text-right font-bold text-gray-600">{fmt(previNet)}</td><td className={`px-2 py-2 text-right font-bold ${reelNet >= 0 ? 'text-blue-800' : 'text-red-600'}`}>{fmt(reelNet)}</td><td className="px-2 py-2 text-right">{ecart(previNet, reelNet)}</td></tr>
             </tbody>
           </table>
         </div>
@@ -1324,10 +1324,10 @@ export default function Finances() {
       const chartNetAnnee = clesMois.map((_, i) => round2(chartProduitsAnnee[i] + chartChargesAnnee[i]))
       return (
         <div className="space-y-5">
-          <ObjectifBar label={isCTP ? 'Objectif CA CTP (résultat net)' : 'Objectif CA agence (encaissements bruts)'} reel={reelNet} objectifMontant={getObjectif('agence')} cible="agence" canEdit={false} />
+          <ObjectifBar label={isCTP ? 'Objectif CA Société (résultat net)' : 'Objectif CA agence (encaissements bruts)'} reel={reelNet} objectifMontant={getObjectif('agence')} cible="agence" canEdit={false} />
           <div className="card" style={{overflow:'hidden'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
-              <span style={{fontSize:14,fontWeight:600,color:'var(--ink-700)'}}>Compte de résultat {isCTP ? 'CTP' : 'Agence'}</span>
+              <span style={{fontSize:14,fontWeight:600,color:'var(--ink-700)'}}>Compte de résultat {isCTP ? 'Société' : 'Agence'}</span>
               <div style={{display:'flex',alignItems:'center',gap:10}}>
                 <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,background:'rgba(22,163,74,0.1)',color:'#15803d',fontWeight:600}}>réel encaissé</span>
                 <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(parseInt(e.target.value))} className="input" style={{height:28,fontSize:12,padding:'0 8px'}}>
@@ -1355,7 +1355,7 @@ export default function Finances() {
                 {isCTP && <><tr className="bg-gray-50"><td colSpan={4} className="px-5 py-1.5 text-xs font-medium text-gray-400 uppercase">Charges</td></tr>
                 {[{ label: '(−) Royalties illiCO', p: totP.royalties, r: totR.royalties }, { label: '(−) Part agentes', p: totP.partAgentes, r: totR.partAgentes }, { label: '(−) Apporteurs remboursés', p: totP.apporteur, r: totR.apporteur }].map(({ label, p, r }) => (<tr key={label} className="hover:bg-gray-50"><td className="px-5 py-2.5 text-gray-500 text-xs">{label}</td><td className="px-4 py-2.5 text-right text-gray-500 text-xs">{fmt(p)}</td><td className="px-4 py-2.5 text-right text-red-500 text-xs font-medium">{fmt(r)}</td><td className="px-5 py-2.5 text-right">{ecart(p, r)}</td></tr>))}
                 <tr className="bg-gray-50 border-t border-gray-200"><td className="px-5 py-2.5 font-medium text-gray-700 text-xs">= Total charges</td><td className="px-4 py-2.5 text-right font-medium text-gray-700 text-xs">{fmt(previCharges)}</td><td className="px-4 py-2.5 text-right font-medium text-red-500 text-xs">{fmt(reelCharges)}</td><td className="px-5 py-2.5 text-right">{ecart(previCharges, reelCharges)}</td></tr></>}
-                <tr className="bg-blue-50 border-t-2 border-blue-100"><td className="px-5 py-3 font-bold text-blue-800 text-sm">= {isCTP ? `Résultat net CTP ${anneeSelectionnee}` : `Encaissements bruts agence ${anneeSelectionnee}`}</td><td className="px-4 py-3 text-right font-bold text-gray-600 text-sm">{fmt(previNet)}</td><td className={`px-4 py-3 text-right font-bold text-sm ${reelNet >= 0 ? 'text-blue-800' : 'text-red-600'}`}>{fmt(reelNet)}</td><td className="px-5 py-3 text-right">{ecart(previNet, reelNet)}</td></tr>
+                <tr className="bg-blue-50 border-t-2 border-blue-100"><td className="px-5 py-3 font-bold text-blue-800 text-sm">= {isCTP ? `Résultat net Société ${anneeSelectionnee}` : `Encaissements bruts agence ${anneeSelectionnee}`}</td><td className="px-4 py-3 text-right font-bold text-gray-600 text-sm">{fmt(previNet)}</td><td className={`px-4 py-3 text-right font-bold text-sm ${reelNet >= 0 ? 'text-blue-800' : 'text-red-600'}`}>{fmt(reelNet)}</td><td className="px-5 py-3 text-right">{ecart(previNet, reelNet)}</td></tr>
               </tbody>
             </table>
           </div>
@@ -1377,7 +1377,7 @@ export default function Finances() {
         />
         {sfSousOnglet === 'mois' && (
           <div className="space-y-5">
-            <ObjectifBar label={isCTP ? `Objectif mensuel CTP (${fmt(objectifMensuel)}/mois)` : `Objectif mensuel agence (${fmt(objectifMensuel)}/mois)`}
+            <ObjectifBar label={isCTP ? `Objectif mensuel Société (${fmt(objectifMensuel)}/mois)` : `Objectif mensuel agence (${fmt(objectifMensuel)}/mois)`}
               reel={(() => { const moisCourant = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`; const r = rowsReel.find(([k]) => k === moisCourant)?.[1] || {}; const redev = redevancesScoped.filter(rv => rv.statut === 'regle' && rv.annee === new Date().getFullYear() && rv.mois === new Date().getMonth() + 1).reduce((s, rv) => s + (rv.montant_ht||0), 0); return getReelNet(r, redev) })()}
               objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
             <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId={`chart_${mode}_mois`} />
@@ -1746,7 +1746,7 @@ export default function Finances() {
           <FinKpiCard label="F1 — Gains à facturer"       value={fmt(totalF1)}    sub={`Reçu ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
           <FinKpiCard label="F2 — Redevances + apporteur" value={fmt(totalF2)}    sub={`Reçu ${fmt(totalF2Paye)}`}                                              tone="warn"/>
           <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
-          <FinKpiCard label="Net à virer à l'agente"       value={(net >= 0 ? '+' : '') + fmt(Math.abs(net))} sub={net >= 0 ? 'F1 − F2' : "L'agente doit à CTP"} tone={net >= 0 ? 'brand' : 'bad'}/>
+          <FinKpiCard label="Net à virer à l'agente"       value={(net >= 0 ? '+' : '') + fmt(Math.abs(net))} sub={net >= 0 ? 'F1 − F2' : "L'agente doit à la Société"} tone={net >= 0 ? 'brand' : 'bad'}/>
         </div>
 
         {/* Tableau mensuel F1 / F2 */}
@@ -1763,9 +1763,9 @@ export default function Finances() {
             <thead style={{background:'var(--surface-2)'}}>
               <tr>
                 {thL('Mois')}
-                {thR('F1 (Agente → CTP)')}
+                {thR('F1 (Agente → Société)')}
                 <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F1</th>
-                {thR('F2 (CTP → Agente)')}
+                {thR('F2 (Société → Agente)')}
                 <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F2</th>
                 {thR('Net')}
               </tr>
@@ -1836,7 +1836,7 @@ export default function Finances() {
                       <td colSpan={6} style={{padding:'4px 16px 16px'}}>
                         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,maxWidth:720}}>
                           <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                            <div className="eyebrow" style={{color:'#15803d'}}>F1 — Agente facture CTP</div>
+                            <div className="eyebrow" style={{color:'#15803d'}}>F1 — Agente facture la Société</div>
                             {d.fraisN > 0 && <Row label="Frais de consultation" value={fmt(d.fraisN)} />}
                             {d.comN   > 0 && <Row label="Commissions artisans"   value={fmt(d.comN)} />}
                             {d.honN   > 0 && <Row label="Honoraires (courtage + AMO)" value={fmt(d.honN)} />}
@@ -1846,7 +1846,7 @@ export default function Finances() {
                             {f1?.facture_path && <button onClick={() => voirPdf(f1.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
                           </div>
                           <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                            <div className="eyebrow" style={{color:'#b91c1c'}}>F2 — CTP facture l&apos;agente</div>
+                            <div className="eyebrow" style={{color:'#b91c1c'}}>F2 — La Société facture l&apos;agente</div>
                             {d.redev     > 0 && <Row label="Redevance mensuelle (HT)" value={fmt(d.redev)} />}
                             {d.apporteur > 0 && <Row label="Apporteur remboursé"      value={fmt(d.apporteur)} />}
                             {f2m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucune charge ce mois</span>}
@@ -1885,13 +1885,13 @@ export default function Finances() {
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18}}>
           <FactureDetailCard
             title="F1 — Factures émises par l'agente"
-            subtitle="L'agente facture CTP pour ses gains du mois (frais + commissions + honoraires)"
+            subtitle="L'agente facture la Société pour ses gains du mois (frais + commissions + honoraires)"
             type="agente_vers_ctp"
             accent="#16a34a"
           />
           <FactureDetailCard
             title="F2 — Factures émises par la franchisée"
-            subtitle="CTP facture l'agente pour la redevance + apporteur remboursé"
+            subtitle="La Société facture l'agente pour la redevance + apporteur remboursé"
             type="ctp_vers_agente"
             accent="#dc2626"
           />
@@ -2108,7 +2108,7 @@ export default function Finances() {
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
           {isAdmin && (
             <PillToggle
-              options={[{key:'agence',label:'Agence — Encaissements bruts'},{key:'ctp',label:'CTP — Résultat net (charges incluses)'}]}
+              options={[{key:'agence',label:'Agence — Encaissements bruts'},{key:'ctp',label:'Société — Résultat net (charges incluses)'}]}
               active={suiviMode}
               onChange={setSuiviMode}
             />
