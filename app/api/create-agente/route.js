@@ -132,6 +132,14 @@ export async function PATCH(request) {
     if (parts_agente_disponibles !== undefined) updates.parts_agente_disponibles = parts_agente_disponibles
     if (kbis_url !== undefined)                 updates.kbis_url = kbis_url
 
+    // Contrôle d'appartenance — service_role contourne la RLS, on la reflète :
+    // un admin n'édite que les profils de SA société. 404 uniforme (introuvable
+    // ou autre société : même réponse, pas de fuite d'existence cross-tenant).
+    const { data: cible } = await supabaseAdmin.from('profiles').select('societe_id').eq('id', id).single()
+    if (!cible || cible.societe_id !== auth.profile.societe_id) {
+      return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 })
+    }
+
     const { error } = await supabaseAdmin.from('profiles').update(updates).eq('id', id)
 
     if (error) {
@@ -155,10 +163,17 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'ID requis' }, { status: 400 })
     }
 
-    // Vérifier que c'est bien une agente (pas un admin)
-    const { data: profil } = await supabaseAdmin.from('profiles').select('role').eq('id', id).single()
-    if (!profil || profil.role !== 'agente') {
-      return NextResponse.json({ error: 'Profil introuvable ou non supprimable' }, { status: 400 })
+    // Contrôle d'appartenance AVANT toute destruction (l'ordre est critique :
+    // rien ne doit être supprimé avant la vérification). service_role contourne
+    // la RLS, on la reflète : même société + bien une agente (pas un admin).
+    const { data: profil } = await supabaseAdmin.from('profiles').select('role, societe_id').eq('id', id).single()
+    // 404 uniforme si introuvable OU autre société (pas de fuite d'existence cross-tenant).
+    if (!profil || profil.societe_id !== auth.profile.societe_id) {
+      return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 })
+    }
+    // Dans SA société : on ne supprime pas un admin.
+    if (profil.role !== 'agente') {
+      return NextResponse.json({ error: 'Profil non supprimable' }, { status: 400 })
     }
 
     // Supprimer l'utilisateur Supabase Auth (cascade vers le profil si FK configurée)
