@@ -14,7 +14,7 @@ export async function POST(request) {
   if (auth.error) return auth.error
   try {
     const body = await request.json()
-    const { prenom, nom, email, telephone, part_agente_defaut, frais_part_agente_defaut, parts_agente_disponibles, objectif, agence_id } = body
+    const { prenom, nom, email, telephone, redevance_debut, part_agente_defaut, frais_part_agente_defaut, parts_agente_disponibles, objectif, agence_id } = body
 
     // Validation
     if (!prenom || !nom || !email) {
@@ -74,6 +74,7 @@ export async function POST(request) {
         nom,
         email,
         telephone: telephone || null,
+        redevance_debut: redevance_debut || null,
         role: 'agente',
         societe_id: auth.profile.societe_id,
         agence_id: agenceId,

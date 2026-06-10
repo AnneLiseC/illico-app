@@ -569,7 +569,6 @@ export default function FicheChantier({ params }) {
   const [dossier, setDossier] = useState(null)
   const [client, setClient] = useState(null)
   const [profile, setProfile] = useState(null)
-  const [nomFranchisee, setNomFranchisee] = useState('Franchisée')
   const [prenomAdmin, setPrenomAdmin] = useState('—')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -698,7 +697,7 @@ export default function FicheChantier({ params }) {
 
       const d = dossierRes.data
 
-      if (adminRes.data) { setNomFranchisee(`${adminRes.data.prenom} ${adminRes.data.nom}`); setPrenomAdmin(adminRes.data.prenom || '—') }
+      if (adminRes.data) { setPrenomAdmin(adminRes.data.prenom || '—') }
       setDossier(d)
       setClient(d?.client)
       setDevis(d?.devis_artisans || [])
