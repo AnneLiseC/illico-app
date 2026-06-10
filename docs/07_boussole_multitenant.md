@@ -111,12 +111,28 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 
 ### 🔜 RESTE À FAIRE
 
-#### Bloc A — Sécurité (avant ouverture multi-franchise réelle) — quasi soldé
-- [ ] **🔴 Purge Storage automatique à la suppression** (dette bloquante en multi-agences). Cascade DB supprime les lignes, pas les fichiers Storage → purge applicative à rendre systématique (suppression chantier OK sauf `cr/` ; suppression client à construire ; SQL directs jamais purgés). Constat 02/06 : 21 orphelins nettoyés à la main.
-- [ ] **Durcissements restants** (hygiène, faible gravité) : (a) EXECUTE anon/PUBLIC encore sur certaines fonctions trigger ; (b) policy INSERT `notifications` `WITH CHECK(true)` → resserrer avec Messagerie (bloc F) ; (c) leaked password protection (plan Pro) ; (d) captcha (optionnel).
-- [ ] **Storage placeholder `factures_agente/.emptyFolderPlaceholder` visible cross-société** (07/06) — hygiène, PAS une fuite (0 octet). Restreindre/supprimer ces placeholders.
-- [x] **Audit des index UNIQUE reliques mono-tenant** ✅ FAIT (09/06). 38 index examinés : tous sains (PK sur id, ou portent societe_id/agence_id, ou uniques par nature : siret/user_id/email/specialites). Seul `objectifs_ca` était cassé → corrigé au 4c-1. Aucune autre correction nécessaire. ⚠️ Note : `specialites_nom_key` est global VOLONTAIREMENT (référentiel commun) — à repasser en `(societe_id, nom)` SI un jour les franchisés créent leurs propres spécialités.
-- [x] **Validation finances multi-agence sur vraies données** ✅ FAIT (09/06). Agentes Marie (Marseille) + Manon (Montpellier) créées sur TEST 1 + redevances réparties (Marseille 4500€, Montpellier 1300€). Scoping prouvé à l'écran : Consolidé 5800 / Marseille 4500 / Montpellier 1300, objectif par agence correct, badge « Filtré sur » OK. Montants déjà prouvés par non-régression CTP. → Finances multi-agence validé.
+#### Bloc A — Sécurité — SOLDÉ (restants = dépendances externes / refonte calendrier)
+> La vraie surface d'attaque avant ouverture franchisé est fermée. Ce qui reste est soit bloqué par une dépendance (plan Pro), soit rattaché à la refonte calendrier dédiée, soit de l'hygiène cosmétique. Côté sécurité, l'ouverture à un franchisé est possible AVEC le garde-fou « pas de sync Google Calendar active » (cf. module calendrier ci-dessous).
+
+##### ✅ Fait
+- [x] **🔴 Purge Storage à la suppression SOLDÉE** (10/06, mergé `219720e`, branche fix/storage-purge-entites). Carte d'audit : chantier déjà purgé correctement (cr/ inclus, ordre OK), client sans objet (aucun préfixe clients/, FK NO ACTION bloque). 2 vrais gaps corrigés : (1) agente DELETE purge kbis_url/rib_url/factures_agente — ORDRE CRITIQUE corrigé après bug : purge APRÈS deleteUser réussi (sinon fichiers détruits alors que l'agente survit si deleteUser échoue) ; (2) artisan delete balaie artisans/{id}/fiches/ (scopé id exact). Prouvé E2E : agente cas échec (KBIS survit à l'échec, ×2 sur TEST AI + Manon réelles), artisan purge=0 + témoin LS TRAVAUX=20 intact. Reste (fonctionnel, pas dette) : flux RGPD orchestré « effacer client + ses dossiers + fichiers » en 1 action → backlog.
+- [x] **Faille route /api/cr corrigée + PROUVÉE E2E** (10/06, mergé `fd2b2cd`). dossierId et docsPaths du body consommés en service_role sans contrôle → lecture cross-tenant + téléchargement arbitraire du bucket documents. Fix : appartenance reflétant la RLS (admin→societe_id, agente→agence_id), 404 uniforme ; docsPaths ceinture-bretelles (match exact Set contre chantier_documents du dossier + préfixe chantiers/{dossierId}/), 400 au 1er invalide. 8 tests E2E : T4 admin TEST1→dossier CTP 404 ; T5 uuid inexistant 404 corps IDENTIQUE (pas de fuite d'existence) ; T6 agente Marseille→dossier Montpellier 404 (amendement agence) ; T7/T8a/T8b/T9 paths hostiles 400 (T8b = bon préfixe absent table → match exact prouvé) ; contre-test positif Marie→son dossier Marseille 200.
+- [x] **🔴 Audit transversal routes service_role SOLDÉ** (10/06). 12 routes cartographiées, pattern « id/path du body + service_role + pas de contrôle tenant » sur 4. Corrigées + prouvées E2E : cr (`fd2b2cd`), create-agente PATCH/DELETE (`ca64421`), pdf staff (`c844e60`). 4e (calendrier push/sync/event) → quarantaine. Routes JWT-dérivées confirmées sûres : create-agence, invite-franchise (secret), cron/relances (secret), onboarding/create-societe (self), auth/google (state HMAC). Surface service_role connue et fermée hors module calendrier (neutralisé par garde-fou).
+  - [x] **create-agente PATCH/DELETE corrigé + PROUVÉ E2E** (10/06, mergé `ca64421`). Contrôle d'appartenance (societe_id du JWT) avant toute mutation, dans les deux handlers. DELETE : check société (404) AVANT deleteUser — ordre critique ; puis check role==='agente' (400) ; 404 uniforme cross-tenant. POST intact. Tests E2E : PATCH cross-tenant 404, DELETE cross-tenant 404 (cible TEST AI intacte en base après), PATCH same-tenant 200.
+  - [x] **pdf branche staff corrigée + PROUVÉE E2E** (10/06, mergé `c844e60`). Contrôle d'appartenance staff (admin→societe_id, agente→agence_id, 404 uniforme) avant tout fetch/download lié + rattachement crId→dossierId (404 si CR d'un autre dossier). Branche client intacte. Paths Storage issus de la base scopée au dossier → contrôle dossier suffit. Tests E2E : (a) staff TEST1→dossier CTP 404 ; (b) dossier TEST1 + crId CTP 404 « CR non trouvé » ; (c) dossier TEST1 propre 200 PDF. c' (crId légitime TEST1) couvert par lecture de code (pas de CR sur dossiers TEST1).
+- [x] **Audit des index UNIQUE reliques mono-tenant** (09/06). 38 index examinés : tous sains (PK sur id, ou portent societe_id/agence_id, ou uniques par nature : siret/user_id/email/specialites). Seul `objectifs_ca` était cassé → corrigé au 4c-1. ⚠️ `specialites_nom_key` global VOLONTAIREMENT (référentiel commun) — à repasser en `(societe_id, nom)` SI un jour les franchisés créent leurs propres spécialités.
+- [x] **Validation finances multi-agence sur vraies données** (09/06). Agentes Marie (Marseille) + Manon (Montpellier) sur TEST 1 + redevances réparties (4500€/1300€). Scoping prouvé à l'écran : Consolidé 5800 / Marseille 4500 / Montpellier 1300, objectif par agence OK, badge « Filtré sur » OK. → Finances multi-agence validé.
+- [x] **EXECUTE anon/PUBLIC sur fonctions : CLEAN** (10/06). 12 fonctions public, toutes ACL explicite (aucune proacl NULL = pas de défaut PUBLIC implicite), grantees = postgres/authenticated/service_role uniquement. Déjà durci au Lot 5 (revoke_execute_triggers.sql). Seul RPC appelé = onboarding_create_societe (service_role only). RIEN à révoquer.
+- [x] **Surface ANON sur les TABLES soldée** (10/06). RLS active sur 25/25 tables, GRANT anon (défaut Supabase) neutralisé par la RLS. 24 tables sûres (policies TO authenticated → anon deny). 1 faille corrigée : policy INSERT notifications « Service role inserts notifications » était TO public WITH CHECK true (anon pouvait forger des notifs pour tout user_id) → re-scopée TO authenticated WITH CHECK (auth.uid()=user_id) via docs/sql/fix_notifications_insert_policy.sql. Prouvé : INSERT anon → 42501 RLS violation. service_role (cron) non affecté (bypass RLS). admin_invitations : 0 policy = deny total, voulu.
+
+##### 🔶 Restants — bloqués par dépendance ou refonte (PAS des trous exploitables avant ouverture)
+- [ ] **Durcissements bloqués** : (c) leaked password protection → attend le plan Pro Supabase ; (d) captcha → optionnel. [(a) EXECUTE anon et (b) policy notifications INSERT : FAITS le 10/06, voir ci-dessus.]
+- [ ] **Storage placeholder `factures_agente/.emptyFolderPlaceholder` visible cross-société** (07/06) — hygiène, PAS une fuite (0 octet). Restreindre/supprimer.
+- [ ] **🔴 Suppression agente impossible si google_tokens existe** : FK google_tokens.user_id → auth.users en NO ACTION/RESTRICT → deleteUser échoue (« Database error deleting user ») pour toute agente ayant connecté Google. Touche les agentes RÉELLES (Manon, TEST AI sur TEST 1). À corriger AVEC la refonte calendrier : FK CASCADE ou purge google_tokens avant deleteUser. NB : TEST AI a perdu son KBIS au 1er test purge (avant correctif d'ordre).
+- [~] **🔶 Module calendrier Google EN QUARANTAINE** (push/sync/event) — décision 10/06 : NON patché isolément. Défaut structurel mono-franchise (CALENDAR_ID global hérité, jamais migré multi-agence/société), pas juste un contrôle d'appartenance manquant. Patcher route par route donnerait une fausse sécurité tant que l'agenda cible reste partagé. À traiter EN BLOC lors de la refonte calendrier multi-agence (chantier dédié).
+  - Failles à corriger DANS la refonte : push (mutation google_event_id sur id du body sans contrôle tenant, route.js:125-129/141-145/208-209) ; sync (SELECT non filtrés rendez_vous/interventions/dossiers → tous tenants, route.js:175-177/200-202/238-239 + writes google_*_event_id) ; event (event du body, appartenance à reverifier).
+  - 🔴 GARDE-FOU IMMÉDIAT : NE PAS activer la sync Google Calendar pour un franchisé réel tant que le module n'est pas refait. Aujourd'hui = tes comptes uniquement, fuite non exploitable par un tiers.
+
 
 #### Bloc B — Multi-agence réel (chantier en cours, découpé en 5 lots)
 > **Principes verrouillés** : la « vue active » est un filtre d'AFFICHAGE (UX), PAS une frontière de sécurité — la RLS reste l'unique frontière (admin = toute sa société, il a le droit de tout voir). Défaut admin multi-agences = vue Consolidée (toutes agences). Agente = une seule agence, aucun sélecteur. **Garde-fou permanent** : une société à 1 agence (CTP/Marine) ne doit voir AUCUN changement à aucun lot. ⚠️ CTP reste mono-agence jusqu'à la fin du chantier ; le terrain de test multi-agence = société TEST 1 (2 agences : MA00 Marseille + MO00 Montpellier).
@@ -145,21 +161,25 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [ ] **SMTP custom pour l'onboarding en prod** : le SMTP par défaut Supabase est bridé (rate limit ~quelques emails/h, rencontré au test 07/06). Nécessaire avant d'inviter de vrais franchisés en volume (Resend/SendGrid ou Microsoft Graph déjà utilisé pour les relances).
 
 #### Bloc D — Bugs & dette (non bloquants)
+- [x] **Dynamisation des hardcodes CTP/Martigues** ✅ SOLDÉ (10/06). 5 sous-lots : 1 plomberie `b0cce09`, 2 libellés→Société `f0833fd`, 2bis fallbacks→— `59c0112`, 3 portail client `96c7362`, 4 CR `2a165b6`. Réserve restante : branding PDF sep_*.js (bloc D) — grep SANS exclusion lib/sep_ ce jour-là.  
+  - [x] **Sous-lot 1 — plomberie** ✅ FAIT (09/06, mergé `b0cce09`). `societe:societes(id, nom_societe)` embarqué dans fetchProfile + exposé `societe` dans useAuth(). ⚠️ Colonne = `nom_societe` (pas `nom`). Sert surtout aux libellés d'identité (les libellés de rôle utilisent « Société » statique).
+  - [x] **Sous-lot 2 — libellés de rôle → « Société »** ✅ FAIT (10/06, mergé `f0833fd`). 20 chaînes affichées sur 3 fichiers (finances 14, paramètres 4, chantiers 2). Zéro identifiant technique touché (isCTP, key:'ctp', totalNetCTP, SuiviCTPChart, sfSousOngletCTP intacts). Article « la/La » ajouté en prose (1749/1839/1849/1888/1894). Grep classé : catégorie « chaîne affichée résiduelle » VIDE. Toggle final : « Agence — Encaissements bruts » / « Société — Résultat net (charges incluses) ». ⚠️ 3 fallbacks 'CTP' (nom de PERSONNE : finances:161 nomFranchisee, chantiers:573/701 prenomAdmin) NON traités → sous-lot 2bis (audit des sites de rendu puis choix du fallback). ⚠️ Réserve sep_*.js : le grep excluait lib/sep_ — à l'audit branding PDF, grep SANS exclusion.
+  - [x] **Sous-lot 2bis — fallbacks nom de personne** ✅ FAIT (10/06, mergé `59c0112`). 3 littéraux `'CTP'` → `'—'` (finances:161 nomFranchisee, chantiers:573/701 prenomAdmin). Tous cas B (libellés d'identification — rendus finances:887/1137, chantiers:2752). Aucun cas A (pas de phrase adressée). Grep `'CTP'` (avec quotes) = VIDE dans app/ hors _design. Cas C signalé : chantiers nomFranchisee (useState l.572 + setter l.701) setté mais jamais rendu = code mort → bloc D.
+  - [x] **Sous-lot 3 — portail client** ✅ FAIT (10/06, mergé `96c7362`). espace-client:253 « illiCO travaux Martigues » → `{profile?.agence?.nom || 'illiCO travaux'}` (fallback = marque réseau, jamais le mauvais tenant). Embed `agence:agences(nom)` en piggyback sur le fetch profil (zéro requête en plus). Chemin RLS PROUVÉ en base : policy `agences_select_ma_societe` (authenticated) + `get_my_societe_id()` (SECURITY DEFINER, lit le profil de l'appelant) + profils clients avec societe_id renseigné. Grep « Martigues » espace-client = vide. ⚠️ Note : la policy donne au client la lecture de toutes les agences de sa société (noms seulement, anodin aujourd'hui) — à réévaluer si `agences` porte un jour des colonnes sensible
+  - [x] **Sous-lot 4 — CR généré** ✅ FAIT (10/06, mergé `2a165b6`). route.js:34 « illiCO travaux Martigues » → `${agenceNom}` (= dossier.agence?.nom || 'illiCO travaux'). Embed agence:agences(nom) en piggyback sur le fetch dossier (déjà garanti autorisé par le garde-fou d'appartenance en amont). buildSystemPrompt(type) → (type, agenceNom). Prompt système intact au caractère près hors le nom ; l.38-40 « le courtier illiCO travaux » (marque réseau) non touchées. NB : le nom est dans le prompt système, pas forcément recopié dans le JSON de sortie → vérif déterministe = diff, test live = non-régression 200.
+- [x] **Code mort chantiers/[id] nomFranchisee** ✅ (10/06, mergé `cf13a14`). useState + setter supprimés, setPrenomAdmin conservé (lu l.2752), 0 occurrence restante.
+- [x] **redevance_debut à la création d'agente** ✅ (10/06, mergé `cf13a14`). Ajouté au body POST + insert profiles (colonne profiles.redevance_debut date, même que le PATCH). L'asymétrie création/édition est résolue : le champ est persisté dès le POST.- [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
+
+- [ ] **Template email Reset Password en français** (Supabase dashboard, déclaratif).
+- [ ] **Code mort finance.js 🟠 restants** : devis.statut/montantTTC, apporteur.lines[].* — grep non concluant ou lines itéré dynamiquement. Relecture site par site requise. Pas prioritaire. 
+- [ ] **#8 dashboard admin scope** (à arbitrer selon scénario testeur).<>
+- [ ] **`espace-client/page.js:253`** « illiCO travaux Martigues » : reporté avec le dev espace-client.
+- [ ] **Garde-fou création profil client** : garantir societe_id/agence_id renseignés à la création (le titre du portail et le cloisonnement D15 en dépendent). Population actuelle saine (1 client) ; à poser avant le dev espace-client.
 - [ ] **Boutons morts Finances** : « Saisir un règlement », « Exporter le bilan », export CSV rendus sans `onClick`. Câbler ou masquer.
-- [ ] **`redevance_debut` ignoré à la création d'agente** : champ pas dans le body POST `/api/create-agente` (seule l'édition le persiste).
 - [ ] **L18 bug ajout intervention** : ⚠️ audit d'abord, STOP si lié à la sync Google Calendar.
 - [ ] **L22 bug synchro Google Calendar** : `Cannot access 'n' before initialization` (TDZ — `const auth` l.143 shadow l.128 dans `api/google/calendar/sync/route.js`). Fix : renommer le 2e `auth` en `oauthClient`. ⚠️ Lié au calendrier Google partagé entre agences (fuite multi-tenant à creuser).
 - [ ] **Types de RDV incomplets** : `TYPE_CONFIG` n'expose que 4 types (R1/R2/R3 + autres), manquent suivi/réception/Étude/Pro-Perso. Audit des types voulus d'abord.
-- [~] **Dynamisation des hardcodes CTP/Martigues** (EN COURS). Audit fait (09/06) : ~24 occurrences à traiter, distinction rôle (« CTP »=structure → terme « Société » statique) vs identité (nom franchisé → agence.nom/nom_societe). Emails propres (0 hardcode). Réserve : vérifier branding figé dans les PDF sep_*.js base64.
-    - [x] **Sous-lot 1 — plomberie** ✅ FAIT (09/06, mergé `b0cce09`). `societe:societes(id, nom_societe)` embarqué dans fetchProfile + exposé `societe` dans useAuth(). ⚠️ Colonne = `nom_societe` (pas `nom`). Sert surtout aux libellés d'identité (les libellés de rôle utilisent « Société » statique).
-    - [ ] **Sous-lot 2 — libellés de rôle → « Société »** : ~18 libellés finances/paramètres/chantiers. Statique, pas de nom dynamique.
-    - [ ] **Sous-lot 3 — portail client** (espace-client:253) → agence.nom. Client-facing.
-    - [ ] **Sous-lot 4 — CR généré** (cr/route.js:34) → agence.nom dans buildSystemPrompt. Sensible (document).
-- [ ] **Template email Reset Password en français** (Supabase dashboard, déclaratif).
-- [ ] **Code mort finance.js 🟠 restants** : devis.statut/montantTTC, apporteur.lines[].* — grep non concluant ou lines itéré dynamiquement. Relecture site par site requise. Pas prioritaire.
-- [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
-- [ ] **#8 dashboard admin scope** (à arbitrer selon scénario testeur).
-- [ ] **`espace-client/page.js:253`** « illiCO travaux Martigues » : reporté avec le dev espace-client.
+
 
 #### Bloc E — Refonte UX vues finances (post-test, à froid)
 - [ ] **Refonte des 5 onglets finances** (F1/F2/Synthèse/Suivi/Facturation se chevauchent).
@@ -207,5 +227,39 @@ artisans (société-wide), artisans_specialites, chantier_documents, chantier_fi
 ---
 
 ## 6. PROCHAINE ACTION
+Bloc A quasi soldé (audit service_role fait, purge Storage faite, calendrier en quarantaine avec garde-fou). Restants bloc A : durcissements hygiène (EXECUTE anon, policy notifications, leaked password) — faible gravité, à grouper. Puis Lot 5 paramètres multi-agences (fonctionnel, isolé). Chantier calendrier (refonte multi-agence + bug google_tokens) = dédié, pas avant.
 
-**Chantier multi-agence, Lot 2 — Vue active + navbar bi-zone.** C'est le morceau le plus architectural : créer de zéro l'état « dans quelle agence je suis » (inexistant aujourd'hui) + la navbar bi-zone. Commencer par une CONCEPTION (où vit l'état, comment il persiste, comment la navbar bascule, garde-fou « invisible si 1 agence ») avant tout code. Tester sur TEST 1 (2 agences) ET sur CTP (1 agence = aucun changement visible).
+## MODÈLE PRICING & QUOTAS — architecture actée (10/06), montants en hypothèse à valider
+
+### Décision d'enforcement (ACTÉE, à coder — étape 1)
+Gating par QUOTA, pas par autorisation manuelle. Le franchisé crée librement DANS son quota (autonome, Anne-Lise hors boucle) ; au-delà → refus + message d'upgrade. Ne JAMAIS reproduire « contactez Anne-Lise » (goulot manuel, ne facture/trace rien).
+- Champs sur `societes` : plan + quotas (max_agences + logique agentes ci-dessous).
+- `create-agence` (route service_role sécurisée) : vérifier quota agences AVANT création, sinon refus + message upgrade.
+- `create-agente` (route service_role sécurisée) : vérifier quota agentes AVANT création. POST uniquement (PATCH/DELETE ne créent pas).
+- Atout : la base compte déjà nativement (agences par societe_id, agentes par profiles role=agente) → source de vérité de facturation gratuite.
+
+### Grille tarifaire — STRUCTURE actée, MONTANTS = hypothèse (NON validée terrain)
+- **60€/mois par agence** + **50€/mois par agente**. Additif, CONSTANT, AUCUNE dégressivité, aucune agente incluse.
+- Type A (1 agence, 3 agentes) = 60 + 150 = **210€/mois**.
+- Type B (2 agences, 5 agentes) = 120 + 250 = **370€/mois**.
+- Dégressivité REJETÉE (débat tranché 10/06) : les gros franchisés tirent PLUS de valeur du multi-agences → pas de remise au volume qui sous-paierait là où on apporte le plus. Benchmark franchise (Delightree) = prix par établissement à plat.
+- → Conséquence quota CODE : prix additif simple (nb_agences × 60 + nb_agentes × 50), pas de notion de rang ni d'agente incluse → le modèle de souscription en base est un simple comptage, pas un calcul par rang.
+- ⚠️ À TRANCHER avant de coder le gating : comportement au DOWNGRADE (société passant de 3 à 1 agente : blocage de création seul, ou désactivation des agentes en trop ?).
+- ⚠️ 60/50 = hypothèse argumentée (ancre 150€, marge, coût de revient) mais NON validée terrain. Reste 1/3 du coût subi 150€/agente → marge à la hausse possible (50→60€ agente = +19% CA). À confronter au sondage avant de figer.
+
+### Étude viabilité/prix — état
+- [x] DROIT de commercialiser : OK, pas de clause non-concurrence (outils suivi/CRM autorisés).
+- [x] Risque concurrence franchise : LEVÉ — leur logiciel obligatoire ne gère ni agentes ni suivi chantier réel ; 40/40 franchisés favorables ; leur API s'ouvre → BATILIS complémentaire (sur-couche), pas concurrent.
+- [x] ANCRE : logiciel franchise = 150€/AGENTE/mois, COÛT SUBI obligatoire (franchisé → illiCO France). BATILIS = outil CHOISI, préféré, à 1/3 du prix → forte élasticité, comparaison mentale = 150€ pas 0.
+- [x] Marché : ~150 franchisés, cible réaliste ~50.
+- [x] Coût de revient CALCULÉ : API Claude (Haiku, ~0,014$/CR × 30 CR/mois) ≈ 0,40€/agente/mois. Infra (Supabase + Vercel) FIXE partagée, ~3-4€/franchisé à 50. Marge brute ~96-98%. Le prix N'EST PAS contraint par les coûts — vrai coût limitant = TEMPS d'Anne-Lise (support solo). Le prix doit financer la délégation.
+- [ ] 🔴 SONDER 5-6 franchisés favorables avec prix CONCRET (« 60€/agence + 50€/agente, soit ~210€ pour ton agence type — OK ? »). Seul vrai inconnu restant. Teste aussi l'INTENTION D'ACHAT (≠ préférence produit). À faire avant de figer.
+- [ ] 🔴 RDV COMPTABLE (prérequis bloquant) : passage en société, seuil micro, impact ARE, TVA, SASU/EURL, salaire vs dividendes.
+
+### Prévisionnel chiffré (10/06) — grille 60/50, trajectoire 5→50 sur 2 ans
+- CA état stable : 5 clients 14,5k€ | 10 : 29k€ | 25 : 72,6k€ | 50 : 145k€/an.
+- 🔴 PASSAGE EN SOCIÉTÉ dès An1 : plafond micro-BIC services ~77,7k€ dépassé dès ~25 clients. RDV comptable AVANT 1er encaissement.
+- Charges An2 (50 clients) : infra ~1,5k + API ~1k + Stripe ~2,9k + compta ~3k + outils ~1,2k ≈ 9,6k€ → marge avant rému ~135k€.
+- Avec salaire ~45k net (coût chargé ~72k) : reste ~50k résultat avant IS. Vrai business à 50 clients.
+- ⚠️ TRAVERSÉE : 5→~20 clients (An1) ne couvre PAS un salaire plein → garder AMO en parallèle / réserves jusqu'à ~25-30 clients. ~18 mois avant que ça nourrisse.
+- ⚠️ PLAFOND SUPPORT SOLO ~20-25 clients : embaucher (résultat An2 le permet) ou plafonner. Ne pas descendre socl
