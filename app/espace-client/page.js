@@ -97,7 +97,7 @@ export default function EspaceClient() {
       // Charger d'abord le profil seul (sans join pour éviter l'échec si FK manquante)
       const { data: profData } = await supabase
         .from('profiles')
-        .select('*')
+        .select('*, agence:agences(nom)')
         .eq('id', user.id)
         .single()
 
@@ -250,7 +250,7 @@ export default function EspaceClient() {
       <header className="bg-white border-b border-gray-200 px-4 py-4">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-base font-bold text-blue-900">illiCO travaux Martigues</h1>
+            <h1 className="text-base font-bold text-blue-900">{profile?.agence?.nom || 'illiCO travaux'}</h1>
             <p className="text-xs text-gray-400">
               Espace client — {profile?.client?.prenom} {profile?.client?.nom}
             </p>
