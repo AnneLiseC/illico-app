@@ -70,6 +70,17 @@ export default function Artisans() {
       const artisan = artisans.find(a => a.id === artisanId)
       const fichiers = [artisan?.kbis_url, artisan?.decennale_url, artisan?.qualification_url].filter(Boolean)
       if (fichiers.length > 0) await supabase.storage.from('documents').remove(fichiers)
+      // Balayage des fiches techniques uploadées (artisans/{id}/fiches/) — non couvertes
+      // par les 3 colonnes ci-dessus. Scopé à l'artisan_id EXACT (jamais 'artisans/' nu).
+      // Best-effort : un échec ne bloque pas la suppression de l'artisan.
+      try {
+        const dossierFiches = `artisans/${artisanId}/fiches`
+        const { data: fichesFiles } = await supabase.storage.from('documents').list(dossierFiches, { limit: 1000 })
+        const cheminsFiches = (fichesFiles || []).filter(f => f.id).map(f => `${dossierFiches}/${f.name}`)
+        if (cheminsFiches.length > 0) await supabase.storage.from('documents').remove(cheminsFiches)
+      } catch (e) {
+        console.error('Purge Storage fiches artisan (non bloquant):', e?.message)
+      }
       await supabase.from('fiches_techniques').delete().eq('artisan_id', artisanId)
       const { error } = await supabase.from('artisans').delete().eq('id', artisanId)
       if (error) erreurs.push(`${artisan?.entreprise} (${error.message})`)
