@@ -1,6 +1,6 @@
 // app/finances/page.js
 'use client'
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, ArcElement, DoughnutController, Tooltip, Legend, Filler } from 'chart.js'
 Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, ArcElement, DoughnutController, Tooltip, Legend, Filler)
 import { supabase } from '../lib/supabase'
@@ -164,6 +164,11 @@ export default function Finances() {
   const [moisOuvert, setMoisOuvert]                 = useState(null)
   const [sfSousOngletCTP, setSfSousOngletCTP]       = useState('mois')
   const [isMobile, setIsMobile]                     = useState(false)
+  // Garde de ré-entrance pour upsertFactureMoisType : les toggles F1/F2 et l'upload
+  // sont des onClick non bloquants → un double-clic partait 2× et créait un doublon
+  // (existence testée sur un état mémoire non encore rafraîchi). Ref (synchrone) :
+  // un 2e appel concurrent est ignoré tant que le 1er est en vol.
+  const fxSavingRef                                 = useRef(false)
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)')
@@ -511,43 +516,70 @@ export default function Finances() {
 
   // ── FACTURES AGENTE ────────────────────────────────────────────────────────
   const upsertFactureMoisType = async (mois, annee, montant, type, updates) => {
-    const agenteId = agenteSelectionnee || profile?.id
-    const existing = facturesAgente.find(f => f.mois === mois && f.annee === annee && f.agente_id === agenteId && f.type_facture === type)
+    if (fxSavingRef.current) return   // ignore un 2e appel concurrent (double-clic)
+    fxSavingRef.current = true
+    try {
+      const agenteId = agenteSelectionnee || profile?.id
 
-    if (existing) {
-      await supabase.from('factures_agente').update(updates).eq('id', existing.id)
-    } else {
-      await supabase.from('factures_agente').insert({
-        agente_id: agenteId, mois, annee, montant, type_facture: type, ...updates
-      })
-    }
+      // Existence testée EN BASE (pas sur l'état mémoire facturesAgente, qui peut être
+      // périmé entre deux appels). Clé d'unicité réelle = (agente_id, annee, mois, type_facture).
+      const cle = (q) => q.eq('agente_id', agenteId).eq('annee', annee).eq('mois', mois).eq('type_facture', type)
+      const { data: existing, error: selErr } = await cle(supabase.from('factures_agente').select('id')).maybeSingle()
+      if (selErr) throw new Error(selErr.message)
 
-    // La synchro redevance suit le CHANGEMENT DE STATUT F2, pas toute écriture sur la ligne.
-    // Tout appelant qui doit (dé)cocher la redevance DOIT passer `statut` dans updates.
-    // Un upload PDF (facture_path seul, sans statut) ne déclenche donc PAS la synchro — découplage voulu.
-    if (type === 'ctp_vers_agente' && 'statut' in updates) {
-      const agenteProfile = agentes.find(a => a.id === agenteId)
-      if (!agenteProfile?.agence_id) {
-        setErreur('Redevance : agence de l\'agente introuvable')
+      if (existing) {
+        // UPDATE ciblé (colonnes de `updates` uniquement — jamais de clobber du
+        // montant/statut d'une facture existante par un simple dépôt de PDF).
+        const { error } = await supabase.from('factures_agente').update(updates).eq('id', existing.id)
+        if (error) throw new Error(error.message)
       } else {
-        const montantRedevance = agenteProfile?.redevance_mensuelle_ht ?? null
-        const { error: redevErr } = await supabase.from('redevances').upsert({
-          agente_id: agenteId,
-          agence_id: agenteProfile.agence_id,
-          annee,
-          mois,
-          montant_ht: montantRedevance,
-          statut: updates.statut === 'paye' ? 'regle' : 'en_attente',
-          date_paiement: updates.statut === 'paye' ? new Date().toISOString().split('T')[0] : null,
-        }, { onConflict: 'agente_id,annee,mois' })
-        if (redevErr) setErreur('Redevance : ' + redevErr.message)
+        const { error } = await supabase.from('factures_agente').insert({
+          agente_id: agenteId, mois, annee, montant, type_facture: type, ...updates
+        })
+        if (error) {
+          if (error.code === '23505') {
+            // Conflit unique : une écriture concurrente a créé la ligne entre notre SELECT
+            // et notre INSERT. On relit l'existant et on applique l'UPDATE ciblé à sa place.
+            const { data: race } = await cle(supabase.from('factures_agente').select('id')).maybeSingle()
+            if (race?.id) {
+              const { error: updErr } = await supabase.from('factures_agente').update(updates).eq('id', race.id)
+              if (updErr) throw new Error(updErr.message)
+            }
+          } else {
+            throw new Error(error.message)
+          }
+        }
       }
-    }
 
-    const { data } = await supabase.from('factures_agente').select('*')
-      .order('annee', { ascending: false }).order('mois', { ascending: false })
-    setFacturesAgente(data || [])
-    await chargerTout()
+      // La synchro redevance suit le CHANGEMENT DE STATUT F2, pas toute écriture sur la ligne.
+      // Tout appelant qui doit (dé)cocher la redevance DOIT passer `statut` dans updates.
+      // Un upload PDF (facture_path seul, sans statut) ne déclenche donc PAS la synchro — découplage voulu.
+      if (type === 'ctp_vers_agente' && 'statut' in updates) {
+        const agenteProfile = agentes.find(a => a.id === agenteId)
+        if (!agenteProfile?.agence_id) {
+          setErreur('Redevance : agence de l\'agente introuvable')
+        } else {
+          const montantRedevance = agenteProfile?.redevance_mensuelle_ht ?? null
+          const { error: redevErr } = await supabase.from('redevances').upsert({
+            agente_id: agenteId,
+            agence_id: agenteProfile.agence_id,
+            annee,
+            mois,
+            montant_ht: montantRedevance,
+            statut: updates.statut === 'paye' ? 'regle' : 'en_attente',
+            date_paiement: updates.statut === 'paye' ? new Date().toISOString().split('T')[0] : null,
+          }, { onConflict: 'agente_id,annee,mois' })
+          if (redevErr) setErreur('Redevance : ' + redevErr.message)
+        }
+      }
+
+      const { data } = await supabase.from('factures_agente').select('*')
+        .order('annee', { ascending: false }).order('mois', { ascending: false })
+      setFacturesAgente(data || [])
+      await chargerTout()
+    } finally {
+      fxSavingRef.current = false
+    }
   }
 
 
@@ -1637,10 +1669,11 @@ export default function Finances() {
       const ext = fichier.name.split('.').pop().toLowerCase()
       const chemin = `factures_agente/${agenteSelectionnee}/${f.annee}-${String(f.mois).padStart(2,'0')}-${f.type_facture}.${ext}`
       const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
-      if (!error) {
+      if (error) { setErreur('Erreur upload : ' + error.message); return }
+      try {
         await upsertFactureMoisType(f.mois, f.annee, f.montant||0, f.type_facture, { facture_path: chemin })
         setSucces('Facture uploadée ✓')
-      } else { setErreur('Erreur upload : ' + error.message) }
+      } catch (e) { setErreur('Erreur enregistrement : ' + e.message) }
     }
 
     // Bascule du statut F1 (agente → CTP). Au clic « payé » : fige le montant LIVE
@@ -1648,11 +1681,13 @@ export default function Finances() {
     // INSERT si le mois n'a pas de ligne (montant positionnel), UPDATE sinon (montant dans updates).
     const toggleF1Statut = async (annee, mois, f1) => {
       const live = calcMois(annee, mois).montantF1
-      if (f1?.statut === 'paye') {
-        await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'a_facturer', montant: null })
-      } else {
-        await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'paye', montant: live })
-      }
+      try {
+        if (f1?.statut === 'paye') {
+          await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'a_facturer', montant: null })
+        } else {
+          await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'paye', montant: live })
+        }
+      } catch (e) { setErreur('Erreur F1 : ' + e.message) }
     }
 
     // Bascule du statut F2 (CTP → agente). ADMIN ONLY (appelé uniquement depuis la
@@ -1661,11 +1696,13 @@ export default function Finances() {
     // déclenche la synchro redevances dans upsertFactureMoisType (regle / en_attente).
     const toggleF2Statut = async (annee, mois, f2) => {
       const live = calcMois(annee, mois).montantF2
-      if (f2?.statut === 'paye') {
-        await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'a_facturer', montant: null })
-      } else {
-        await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'paye', montant: live })
-      }
+      try {
+        if (f2?.statut === 'paye') {
+          await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'a_facturer', montant: null })
+        } else {
+          await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'paye', montant: live })
+        }
+      } catch (e) { setErreur('Erreur F2 : ' + e.message) }
     }
 
     const FactureDetailCard = ({ title, subtitle, type, accent }) => {
