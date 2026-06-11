@@ -1114,15 +1114,18 @@ export default function FicheChantier({ params }) {
       if (dossier.frais_statut === 'regle') {
         const { data: existingSuivi } = await supabase
           .from('suivi_financier')
-          .select('id')
+          .select('id, date_paiement')
           .eq('dossier_id', id)
           .eq('type_echeance', 'frais_consultation')
           .is('artisan_id', null)
           .maybeSingle()
         const today = new Date().toISOString().split('T')[0]
         if (existingSuivi) {
+          // On réaffirme le statut mais on PRÉSERVE la date métier existante :
+          // le tampon `today` ne s'applique qu'à la transition vers réglé (date NULL).
+          // Sinon chaque « Enregistrer » réécraserait la date → frais reclassé au mauvais mois.
           await supabase.from('suivi_financier')
-            .update({ statut_client: 'regle', date_paiement: today })
+            .update({ statut_client: 'regle', date_paiement: existingSuivi.date_paiement || today })
             .eq('id', existingSuivi.id)
         } else {
           await supabase.from('suivi_financier').insert({
