@@ -2,8 +2,9 @@
 
 > **État vivant du projet.** Lue par Claude (binôme) et Claude Code en tête de chaque session.
 > Le détail historique (journal des commits, chantier finances) est dans `07_journal_multitenant.md`.
-> Dernière mise à jour : 07/06/2026.
-> **Statut : onboarding L14b complet + cloisonnement prouvé. Chantier MULTI-AGENCE en cours — Lots 1-2 FAITS (création d'agence + vue active/navbar bi-zone).** Phases 1-5 closes, app multi-tenant fonctionnelle et cloisonnée.
+
+> Dernière mise à jour : 11/06/2026.
+> **Statut : Multi-agence COMPLET (Lots 1-5 mergés). Bloc A sécurité soldé. Sujet F2 facturation soldé. App multi-tenant fonctionnelle, cloisonnée, sécurisée — ouvrable à un franchisé testeur (garde-fou : pas de sync Google Calendar).**
 
 ---
 
@@ -138,10 +139,14 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 #### Bloc B — Multi-agence réel (chantier en cours, découpé en 5 lots)
 > **Principes verrouillés** : la « vue active » est un filtre d'AFFICHAGE (UX), PAS une frontière de sécurité — la RLS reste l'unique frontière (admin = toute sa société, il a le droit de tout voir). Défaut admin multi-agences = vue Consolidée (toutes agences). Agente = une seule agence, aucun sélecteur. **Garde-fou permanent** : une société à 1 agence (CTP/Marine) ne doit voir AUCUN changement à aucun lot. ⚠️ CTP reste mono-agence jusqu'à la fin du chantier ; le terrain de test multi-agence = société TEST 1 (2 agences : MA00 Marseille + MO00 Montpellier).
 
-- [x] **Lot 1 — Création d'agence** ✅ FAIT (07/06, mergé `0ec94eb`). Route `/api/create-agence` (service_role, `requireRole(['admin'])`, `societe_id` dérivé du JWT jamais du body) + modale dans paramètres + `chargerAgence` corrigé (`.single()` → liste `order('code')`) + affichage liste (société une fois, N sous-blocs agence) + bloc objectif d'agence masqué si ≥2 agences. `code` LLNN auto (trigger), non affiché. Sécurité `societe_id` prouvée par lecture du code (jamais lu du body). Testé : non-régression 1 agence, création 2e agence (TEST 1 : MO00 généré), 403 agente.
-- [x] **Lot 2 — Vue active + navbar bi-zone** ✅ FAIT (07/06, mergé `c05f9c6`). État `agences`/`agenceActive`/`setAgenceActive` dans AuthContext. `agenceActive` : `null` = Consolidé/pas de filtre (agente, admin mono, admin multi par défaut) ; uuid seulement si admin multi clique un onglet (= filtre d'affichage choisi, PAS l'agence de rattachement). Persistance localStorage `batilis.agenceActive.<user.id>`, validée contre la liste réelle au montage (pas de race, calcul après chargement agences), purgée au logout. Navbar bi-zone (onglets « Toutes les agences » + une par agence) rendue uniquement si `admin && agences.length>=2` ET navbar déployée ; clic change l'état sans naviguer. Sous-titre logo reflète la vue active en cas admin-multi seulement. AUCUN écran scopé (Lot 4). Testé : non-régression CTP (1 agence, navbar inchangée), bascule + persistance F5 + validation valeur bidon sur TEST 1, agente sans onglet.
-- [x] **Lot 3a — Sélecteur d'agence (create-agente)** ✅ FAIT (08/06, mergé `f863076`). Route `create-agente` : double comportement — `agence_id` du body validé contre `societe_id` du JWT (400 « Agence invalide » si étrangère, AVANT l'invite = pas d'orphelin auth) / absent → déduction `.order('code').limit(1)`. L'agence résolue alimente profil ET objectifs_ca. Modale : `<select>` si `agences>=2` (source `useAuth()`), défaut = `agenceActive` (modifiable), choix forcé si Consolidée. + `refreshAgences()` exposé par AuthContext (recharge la liste sans toucher `agenceActive`, appelé après création d'agence Lot 1). Garde-fou CTP : à 1 agence, pas de select, route déduit, inchangé. Testé : non-régression CTP, création ciblée TEST 1, pré-remplissage, refreshAgences (3e agence sans reload), sécurité agence étrangère.
-- [x] **Lot 3b — Sélecteur d'agence (clients/nouveau)** ✅ FAIT (08/06, mergé `9d866af`). Branche référente=admin : si ≥2 agences → `<select>` (source useAuth, défaut agenceActive, choix forcé si Consolidée) ; si 1 agence → déduction `.order('code')`.Q  AAAAAAA Référente=agente → agence de l'agente (inchangé). Insertion client direct sous RLS : double barrière préexistante (policy `clients_scope` WITH CHECK societe_id + trigger `derive_societe_id_from_agence`) + validation `agences.some()` côté client. Garde-fou CTP inchangé.
+- [x] **Lot 1 — Création d'agence** ✅ FAIT (07/06, mergé `0ec94eb`). 
+  Route `/api/create-agence` (service_role, `requireRole(['admin'])`, `societe_id` dérivé du JWT jamais du body) + modale dans paramètres + `chargerAgence` corrigé (`.single()` → liste `order('code')`) + affichage liste (société une fois, N sous-blocs agence) + bloc objectif d'agence masqué si ≥2 agences. `code` LLNN auto (trigger), non affiché. Sécurité `societe_id` prouvée par lecture du code (jamais lu du body). Testé : non-régression 1 agence, création 2e agence (TEST 1 : MO00 généré), 403 agente.
+- [x] **Lot 2 — Vue active + navbar bi-zone** ✅ FAIT (07/06, mergé `c05f9c6`). 
+  État `agences`/`agenceActive`/`setAgenceActive` dans AuthContext. `agenceActive` : `null` = Consolidé/pas de filtre (agente, admin mono, admin multi par défaut) ; uuid seulement si admin multi clique un onglet (= filtre d'affichage choisi, PAS l'agence de rattachement). Persistance localStorage `batilis.agenceActive.<user.id>`, validée contre la liste réelle au montage (pas de race, calcul après chargement agences), purgée au logout. Navbar bi-zone (onglets « Toutes les agences » + une par agence) rendue uniquement si `admin && agences.length>=2` ET navbar déployée ; clic change l'état sans naviguer. Sous-titre logo reflète la vue active en cas admin-multi seulement. AUCUN écran scopé (Lot 4). Testé : non-régression CTP (1 agence, navbar inchangée), bascule + persistance F5 + validation valeur bidon sur TEST 1, agente sans onglet.
+- [x] **Lot 3a — Sélecteur d'agence (create-agente)** ✅ FAIT (08/06, mergé `f863076`). 
+  Route `create-agente` : double comportement — `agence_id` du body validé contre `societe_id` du JWT (400 « Agence invalide » si étrangère, AVANT l'invite = pas d'orphelin auth) / absent → déduction `.order('code').limit(1)`. L'agence résolue alimente profil ET objectifs_ca. Modale : `<select>` si `agences>=2` (source `useAuth()`), défaut = `agenceActive` (modifiable), choix forcé si Consolidée. + `refreshAgences()` exposé par AuthContext (recharge la liste sans toucher `agenceActive`, appelé après création d'agence Lot 1). Garde-fou CTP : à 1 agence, pas de select, route déduit, inchangé. Testé : non-régression CTP, création ciblée TEST 1, pré-remplissage, refreshAgences (3e agence sans reload), sécurité agence étrangère.
+- [x] **Lot 3b — Sélecteur d'agence (clients/nouveau)** ✅ FAIT (08/06, mergé `9d866af`). 
+  Branche référente=admin : si ≥2 agences → `<select>` (source useAuth, défaut agenceActive, choix forcé si Consolidée) ; si 1 agence → déduction `.order('code')`. Référente=agente → agence de l'agente (inchangé). Insertion client direct sous RLS : double barrière préexistante (policy `clients_scope` WITH CHECK societe_id + trigger `derive_societe_id_from_agence`) + validation `agences.some()` côté client. Garde-fou CTP inchangé.
 - [x] **Lot 4 — Scoping des écrans par `agenceActive`** ✅ FAIT (09/06). Pattern `useMemo` (null=tout, uuid=filtre). 4a dashboard/clients/chantiers, 4b planning, 4c finances complet.
   - [x] **4a — dashboard + clients + chantiers** ✅ FAIT (08/06, mergé `85ce8a2`). `agence_id` ajouté au select dashboard. Agrégats (CA, compteurs) sur données scopées. Dashboard reste « mes dossiers » (bug #8 = voulu) + filtré agence. Garde-fou CTP/agente (agenceActive null) inchangé. Testé : non-régression, bascule sans reload, cohérence agrégats.
   - [x] **4b — planning + widget RDV dashboard** ✅ FAIT (08/06, mergé `579d7d0`). RDV/interventions filtrés via dossier parent (`matchAgence` 3 cas, transverse `!dossier_id` toujours visible — 214/246 RDV sans dossier). Jalons chantier + stat « Chantiers actifs » + dropdowns création scopés via `dossiersScoped` (agence_id direct). Widget « RDV du jour » dashboard idem. Testé OK.
@@ -161,8 +166,6 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [ ] **Vue agente du suivi financier** (gros sujet de conception). Aujourd'hui `renderSuiviFinancier` n'a PAS de vue agente — l'agente voit le compte de résultat CTP scopé (apporteur total, redevance en PRODUIT au lieu de charge, royalties affichées + bug d'accès au mode CTP). Base = spec archivée ex-`renderSuiviAgenteFinancier` (récupérable git) : net agente = gains − redevance − part apporteur ; redevance en CHARGE ; apporteur en part ; royalties ABSENTES ; libellés 1ère personne. Inclut le fix du toggle mode CTP à réserver à l'admin.
 - [x] **Colonne « Marine » en dur + KPI net à virer** ✅ (10/06). Libellé colonne total + RepartRow → « Société » (valeurs intactes, code mort nomFranchisee/adminRes nettoyé). KPI « Net à virer à l'agente » (F1−F2 trompeur) supprimé.
 - [ ] **Colonne « Net » du tableau facturation mensuel** : conservée telle quelle (solde F1−F2 par mois + total). NOM à trancher selon usage terrain : garder « Net », renommer « Solde F1−F2 (indicatif) », ou supprimer si inutile. Décision reportée volontairement (pas oubliée).
-- [ ] **Détail par CHANTIER dans le dépliable facturation** : aujourd'hui décomposition par flux mais pas par dossier. Donnée déjà présente (`agrégerParPaiement` garde `d.id`). Sans refonte.
-- [ ] **Détail apporteur PAR DEVIS** (« ce que je dois au Kiosque par devis ») : pour contrôler la facture Kiosque à réception. Une ligne de coût apporteur par devis signé éligible.
 - [ ] **Timing remboursement apporteur dans F2** : `apporteurRembourseNet` garde un axe DATE distinct (facture Kiosque ~1 mois après déblocage acompte). À traiter avec les vues facturation détaillées.
 - [ ] **Chantier 2 — décalage M−1 vue admin propre** : la redevance + apporteur que l'admin ENCAISSE des agentes (= leur F2) suivent le décalage M−1, mais SON activité propre n'est pas décalée. Écran à IDENTIFIER (probablement Suivi CTP). Auditer AVANT de coder.
 - [ ] **Grille redevances 12 mois** : éventuellement relibeller en mois de facture (datée activité aujourd'hui, correct mais visuellement ambigu). À juger à l'écran.
@@ -182,18 +185,21 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
   - [x] **Sous-lot 3 — portail client** ✅ FAIT (10/06, mergé `96c7362`). espace-client:253 « illiCO travaux Martigues » → `{profile?.agence?.nom || 'illiCO travaux'}` (fallback = marque réseau, jamais le mauvais tenant). Embed `agence:agences(nom)` en piggyback sur le fetch profil (zéro requête en plus). Chemin RLS PROUVÉ en base : policy `agences_select_ma_societe` (authenticated) + `get_my_societe_id()` (SECURITY DEFINER, lit le profil de l'appelant) + profils clients avec societe_id renseigné. Grep « Martigues » espace-client = vide. ⚠️ Note : la policy donne au client la lecture de toutes les agences de sa société (noms seulement, anodin aujourd'hui) — à réévaluer si `agences` porte un jour des colonnes sensible
   - [x] **Sous-lot 4 — CR généré** ✅ FAIT (10/06, mergé `2a165b6`). route.js:34 « illiCO travaux Martigues » → `${agenceNom}` (= dossier.agence?.nom || 'illiCO travaux'). Embed agence:agences(nom) en piggyback sur le fetch dossier (déjà garanti autorisé par le garde-fou d'appartenance en amont). buildSystemPrompt(type) → (type, agenceNom). Prompt système intact au caractère près hors le nom ; l.38-40 « le courtier illiCO travaux » (marque réseau) non touchées. NB : le nom est dans le prompt système, pas forcément recopié dans le JSON de sortie → vérif déterministe = diff, test live = non-régression 200.
 - [x] **Code mort chantiers/[id] nomFranchisee** ✅ (10/06, mergé `cf13a14`). useState + setter supprimés, setPrenomAdmin conservé (lu l.2752), 0 occurrence restante.
-- [x] **redevance_debut à la création d'agente** ✅ (10/06, mergé `cf13a14`). Ajouté au body POST + insert profiles (colonne profiles.redevance_debut date, même que le PATCH). L'asymétrie création/édition est résolue : le champ est persisté dès le POST.- [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
-
+- [x] **redevance_debut à la création d'agente** ✅ (10/06, mergé `cf13a14`). Ajouté au body POST + insert profiles (colonne profiles.redevance_debut date, même que le PATCH). L'asymétrie création/édition est résolue : le champ est persisté dès le POST.
+- [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
 - [x] **Templates email FR (Reset Password + Invitation)** ✅ (10/06, dashboard Supabase, NON versionné). Corps + sujet en français, bouton stylé, ton BATILIS, signature « L'équipe BATILIS ». Variables {{ .ConfirmationURL }}/{{ .SiteURL }} préservées. ⚠️ Vit dans le dashboard, pas le repo — pas de trace git.
-
 - [x] **Doublon factures_agente** ✅ (11/06). Cause : upsertFactureMoisType select-puis-insert sans garde DB + AUCUN index unique sur factures_agente → double-insert (Anne-Lise 2026-06). Fix : DELETE doublon + UNIQUE INDEX (agente_id, annee, mois, type_facture). SQL versionné. 
 - [x] **Durcir upsertFactureMoisType** ✅ (11/06). Cause = double-clic toggle F2 non gardé + existence sur état mémoire. Fix : garde ré-entrance (useRef) + existence en base (4 clés) + .error/throw + rattrapage 23505 + UPDATE ciblé (anti-clobber PDF) + feedback erreur appelants. Sujet F2 (doublon + montant + durcissement) SOLDÉ.
-- [x] **Réglage montant redevance par agente** ✅ (11/06). Champ « Redevance mensuelle (HT) » (fixe mensuel) au formulaire agente + route create-agente POST/PATCH, saisissable création ET édition. Corrige « redevance juillet à 0 » (calcMois lit redevance_mensuelle_ht en live). ⚠️ À FAIRE : re-saisir le montant des agentes encore à NULL (Marie/Manon/TEST2) via le formulaire. 97ea172
+- [x] **Réglage montant redevance par agente** ✅ (11/06). 
+  Champ « Redevance mensuelle (HT) » (fixe mensuel) au formulaire agente + route create-agente POST/PATCH, saisissable création ET édition. Corrige « redevance juillet à 0 » (calcMois lit redevance_mensuelle_ht en live). ⚠️ À FAIRE : re-saisir le montant des agentes encore à NULL (Marie/Manon/TEST2) via le formulaire. 97ea172
+- [x] **Garde-fou création profil client** ✅ (10/06). 
+  Trigger BEFORE INSERT `profile_client_derive_agence_trg` (SECURITY DEFINER) : role='client' → dérive agence_id + societe_id depuis le client métier rattaché (profiles.client_id → clients) ; exception stricte si client_id manquant. + CHECK `profiles_client_agence_not_null` (role <> 'client' OR agence_id IS NOT NULL) = filet dur, survit au retrait du trigger. Cible role='client' uniquement (admin agence_id NULL préservé, vérifié). SQL versionné docs/sql/garde_fou_profil_client_agence.sql. Dérivation + CHECK + non-régression admin prouvés en base. NB découvert : aucun chemin applicatif ne crée de profil client (lien magique acté mais non construit) → garde-fou préventif, posé AVANT le futur flux espace-client.
+- [x] **Boutons morts Finances** ✅ (11/06). 4 boutons décoratifs (CSV, ▼, Exporter le bilan, Saisir un règlement) supprimés + conteneurs vides. Aucun handler (jamais câblés).
+  - [~] **Export CSV + bilan** : MASQUÉ, non câblé (besoin non avéré). À construire SI demandé, avec le demandeur (colonnes/périmètre/format Excel-FR). Choix volontaire.
+
 
 - [ ] **Code mort finance.js 🟠 restants** : devis.statut/montantTTC, apporteur.lines[].* — grep non concluant ou lines itéré dynamiquement. Relecture site par site requise. Pas prioritaire. 
-- [ ] **#8 dashboard admin scope** (à arbitrer selon scénario testeur).<>
-- [ ] **`espace-client/page.js:253`** « illiCO travaux Martigues » : reporté avec le dev espace-client.
-- [x] **Garde-fou création profil client** ✅ (10/06). Trigger BEFORE INSERT `profile_client_derive_agence_trg` (SECURITY DEFINER) : role='client' → dérive agence_id + societe_id depuis le client métier rattaché (profiles.client_id → clients) ; exception stricte si client_id manquant. + CHECK `profiles_client_agence_not_null` (role <> 'client' OR agence_id IS NOT NULL) = filet dur, survit au retrait du trigger. Cible role='client' uniquement (admin agence_id NULL préservé, vérifié). SQL versionné docs/sql/garde_fou_profil_client_agence.sql. Dérivation + CHECK + non-régression admin prouvés en base. NB découvert : aucun chemin applicatif ne crée de profil client (lien magique acté mais non construit) → garde-fou préventif, posé AVANT le futur flux espace-client.- [ ] **Boutons morts Finances** : « Saisir un règlement », « Exporter le bilan », export CSV rendus sans `onClick`. Câbler ou masquer.
+- [ ] **#8 dashboard admin scope** (à arbitrer selon scénario testeur).
 - [ ] **L18 bug ajout intervention** : ⚠️ audit d'abord, STOP si lié à la sync Google Calendar.
 - [ ] **L22 bug synchro Google Calendar** : `Cannot access 'n' before initialization` (TDZ — `const auth` l.143 shadow l.128 dans `api/google/calendar/sync/route.js`). Fix : renommer le 2e `auth` en `oauthClient`. ⚠️ Lié au calendrier Google partagé entre agences (fuite multi-tenant à creuser).
 - [ ] **Types de RDV incomplets** : `TYPE_CONFIG` n'expose que 4 types (R1/R2/R3 + autres), manquent suivi/réception/Étude/Pro-Perso. Audit des types voulus d'abord.
@@ -205,27 +211,30 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [ ] **Source unique libellé suppression chantier** : libellé dupliqué entre `confirm()` (~l.1772) et sous-titre bouton (~l.2502). Aligné au fix P0-11 mais une constante partagée éviterait une future divergence.
 - [ ] **Bug statut chantier←devis** : un devis « refusé » affiche « devis à modifier » au niveau chantier ; devrait s'afficher SSI un devis est « à modifier ». Mauvaise dérivation.
 
-#### Bloc E — Refonte UX vues finances (post-test, à froid)
+#### Bloc E — Refonte UX vues finances (post-test, à froid) [CONCEPTION d'abord]
+> Gros chantier de design d'écran. NE PAS patcher en isolé les points ci-dessous : ce sont des décisions de design à penser ensemble (sinon travail jeté). Cadrage maquette/structure AVANT code. Idéalement après un vrai retour d'usage terrain (facturation réelle), qui réordonnera les priorités d'affichage.
 - [ ] **Refonte des 5 onglets finances** (F1/F2/Synthèse/Suivi/Facturation se chevauchent).
   - Objectif affiché par périmètre (incohérence assumée : agente voit objectif AGENCE). Cible : objectif qui suit rôle ET périmètre.
-  - Vue « compte de résultat agente » (produits − charges = net réel agente).
-  - Barre objectif MENSUEL agence à 0 (le numérateur ne tape pas le bon calcul ; `o.mois` colonne inexistante → décision produit : objectif mensuel = annuel/12 ?).
+  - Vue « compte de résultat agente » (produits − charges = net réel agente) = ex-point 7 / ex-renderSuiviAgenteFinancier (net = gains − redevance − part apporteur ; redevance en charge ; royalties absentes). L'agente voit aujourd'hui le résultat CTP scopé, faux pour elle.
+  - Barre objectif MENSUEL agence à 0 (numérateur tape le mauvais calcul ; `o.mois` colonne inexistante → décision produit : objectif mensuel = annuel/12 ?).
+  - Détail par chantier dans les dépliables (ex-point 6) : voir quel dossier alimente chaque montant. Donnée déjà dispo (agrégerParPaiement garde d.id).
+  - Détail apporteur PAR DEVIS (ex-point 6) : contrôler la facture Kiosque ligne par ligne à réception.
+  - Nom de la colonne « Net » du tableau facturation (gardée 11/06, à trancher : « Net » / « Solde F1−F2 indicatif » / suppression).
 
-##### Dette technique / nommage / code mort (Lot E, repris du 05)
-- [ ] **Audit code mort `lib/finance.js` repo-wide** : grep de CHAQUE clé retournée par finance.js sur tout le repo (importé par finances, dashboard, chantiers/[id], statistiques…), distinguer mortes partout vs vivantes ailleurs que page.js. Le ménage finances s'était limité à page.js. Pas urgent.
-- [ ] **Renommage variables « Marine »** (1 passe globale) : `estChantierMarine`, `isMarine` (= tests de RÔLE, comportement correct mais nom évoquant une personne → piège au 2e admin). → `referentEstAdmin`/`isAdmin`. Inclut la colonne « Marine » en dur (bloc B-bis).
-- [ ] **Formulaire devis inline mort** dans chantiers/[id] : `nouveauDevis`, `ajouterDevis`, `setND`, `sauvegarderDevis` (~l.1106), `modifierDevis` (~l.1140), `devisEnEdition` — jamais rendus. Seul chemin actif = `DevisModal` + `saveDevisFromModal`. Supprimer en bloc après vérif.
-- [ ] **Convention null redevance** : lectures de ligne en `|| 0`, affichages de paramètre en `!= null ? … : 'à paramétrer'`. Deux conventions, à harmoniser. Invisible aujourd'hui.
-- [ ] **Build local échoue sans `.env.local`** : clients Supabase instanciés à la collecte des routes. Rendre l'instanciation paresseuse (lazy).
-- [ ] **Handlers qui avalent les erreurs** (`if (!res.ok) return`) : traquer ailleurs (corrigé pour le PDF client au Lot A). Toujours afficher un message.
-- [ ] **Intégrations : masquer Supabase et Claude IA** dans paramètres (intégrations dev, pas utilisateur).
+#### Bloc E-bis — Dette technique / nommage / code mort (indépendant, faisable isolément)
+- [ ] **Renommage variables « Marine »** : `estChantierMarine`, `isMarine` (tests de RÔLE, comportement correct mais nom piège au 2e admin) → `referentEstAdmin`/`isAdmin`. NB : la colonne « Marine » en dur de l'affichage est DÉJÀ traitée (point 5, `5081784`) — ne reste QUE le renommage des variables.
+- [ ] **Audit code mort `lib/finance.js` repo-wide** : grep de chaque clé retournée par finance.js sur tout le repo. Le ménage s'était limité à page.js. Pas urgent.
+- [ ] **Formulaire devis inline mort** dans chantiers/[id] : `nouveauDevis`, `ajouterDevis`, `setND`, `sauvegarderDevis` (~l.1106), `modifierDevis` (~l.1140), `devisEnEdition` — jamais rendus (seul chemin actif = DevisModal + saveDevisFromModal). Supprimer après vérif grep.
+- [ ] **Convention null redevance** : `|| 0` vs `!= null ? … : 'à paramétrer'`. Harmoniser. Invisible aujourd'hui.
+- [ ] **Build local échoue sans `.env.local`** : clients Supabase instanciés à la collecte des routes → instanciation lazy.
+- [ ] **Handlers qui avalent les erreurs** (`if (!res.ok) return`) : traquer ailleurs (PDF client corrigé au Lot A). Toujours afficher un message.
+- [ ] **Intégrations : masquer Supabase et Claude IA** dans paramètres (dev, pas utilisateur).
 - [ ] **Espace client : retirer statuts internes** « à contacter »/« à relancer ».
 - [ ] **Messages côté client : bulle grise à gauche** au lieu de bleue à droite (auteur inversé).
 - [ ] **Chantiers : résumé en panneau latéral** sans quitter la liste.
 
 #### Bloc F — En dernier : réactiver modules neutralisés
 - [ ] **Réactiver Messagerie + Statistiques** (code conservé à `3dbd6f1`). Adapter au multi-tenant (RLS agence messages, scope agence stats). + resserrer policy INSERT `notifications` ici.
-- [ ] **Réglage MONTANT redevance par agente** : Paramètres ne gère que la DATE de début ; le MONTANT n'est réglable nulle part (vivait en dur, supprimé étape 1). Construire : champ « Redevance mensuelle (HT) » au formulaire agente + transit `/api/create-agente` + écriture `profiles.redevance_mensuelle_ht`. Champ visible UNIQUEMENT pour agentes (admin = NULL). Source de vérité = ce champ, absent = « à paramétrer ».
 - [ ] **Notif mail upload facture** : agente upload F1 → mail admin ; admin upload → mail agente + redevance cochée des deux côtés ? À cadrer (déclencheur, destinataire, contenu).
 - [ ] **Automatisme cochage redevance** : statut « reçu » auto quand l'admin rentre sa facture du mois ? Lié à la notif ci-dessus.
 
@@ -271,9 +280,11 @@ artisans (société-wide), artisans_specialites, chantier_documents, chantier_fi
 ---
 
 ## 6. PROCHAINE ACTION
-Bloc A sécurité SOLDÉ (anon, garde-fou client, routes service_role). Lot 5 COMPLET (5a édition agence + 5b objectif par agence, mergés). Sujet F2 facturation SOLDÉ (doublon + montant redevance + durcissement upsertFactureMoisType). 
-Prochains lots code (cf. liste « PROCHAINS LOTS CODE ») : point 4 (boutons morts Finances) en tête, le reste = reliquat facturation + dette, à réordonner au retour terrain.
-Hors-code prioritaires : 🔴 RDV comptable, 🔴 sondage prix.
+Multi-agence COMPLET (Lots 1-5). Bloc A sécurité soldé. Sujet F2 soldé.
+Reste, par ordre : reliquat facturation (Bloc B-bis) + dette technique faisable isolément (Bloc E-bis) + bugs Bloc D. Gros chantiers à froid : refonte UX finances (Bloc E, conception d'abord, post-test) ; réactivation Messagerie/Stats (Bloc F).
+NON prioritaire (et pourquoi) : gating quota (bloqué par décision downgrade + RDV comptable, ne pas figer une grille hypothétique) ; L18/L22 + google_tokens + refonte calendrier (quarantaine, chantier dédié) ; optimisation BDD advisor (dette d'échelle, inutile au volume actuel).
+
+🔴 Hors-code prioritaires : RDV comptable, sondage prix terrain.
 
 ## MODÈLE PRICING & QUOTAS — architecture actée (10/06), montants en hypothèse à valider
 
@@ -308,18 +319,7 @@ Gating par QUOTA, pas par autorisation manuelle. Le franchisé crée librement D
 - Charges An2 (50 clients) : infra ~1,5k + API ~1k + Stripe ~2,9k + compta ~3k + outils ~1,2k ≈ 9,6k€ → marge avant rému ~135k€.
 - Avec salaire ~45k net (coût chargé ~72k) : reste ~50k résultat avant IS. Vrai business à 50 clients.
 - ⚠️ TRAVERSÉE : 5→~20 clients (An1) ne couvre PAS un salaire plein → garder AMO en parallèle / réserves jusqu'à ~25-30 clients. ~18 mois avant que ça nourrisse.
-- ⚠️ PLAFOND SUPPORT SOLO ~20-25 clients : embaucher (résultat An2 le permet) ou plafonner. Ne pas descendre socle sous 60€/agence ni l'agente sous 50€ ») pour ne pas laisser une phrase coupée.
-
-
-## PROCHAINS LOTS CODE (ordre conseillé, arrêté le 10/06)
-
-4. [ ] **Boutons morts Finances** : « Exporter le bilan » + export CSV → à CÂBLER ; « Saisir un règlement » → à SUPPRIMER. (rendus sans onClick aujourd'hui.)
-6. [ ] **Détail par chantier + détail apporteur par devis** (dépliable facturation) — la donnée existe déjà (agrégerParPaiement garde d.id), pas de refonte. Permet le contrôle au centime (quel dossier alimente chaque montant) + contrôle de la facture Kiosque à réception. Valeur réelle pour Anne-Lise, faible risque.
-7. [ ] **Vue agente du suivi financier** (gros sujet de CONCEPTION, pas du code direct) : construire la vue agente de l'onglet Suivi (aujourd'hui l'agente voit le compte de résultat CTP scopé, faux pour elle). Base = spec archivée ex-renderSuiviAgenteFinancier (net = gains − redevance − part apporteur ; redevance en charge ; royalties absentes). Inclut le fix toggle mode CTP réservé admin. → cadrage AVANT code.
-9. [ ] **Cases redevance cliquables** : brancher le clic UI → UPDATE statut (la RLS P0-9 l'autorise déjà côté base, handler UI manquant). Vérifier aussi côté admin. À faire avec le cadrage workflow redevance (lié au 8).
-10. [ ] **Renommage variables « Marine »** (1 passe globale) : estChantierMarine, isMarine → referentEstAdmin/isAdmin. Comportement correct (basé rôle) mais nom piège au 2e admin réel.
-
-
+- ⚠️ PLAFOND SUPPORT SOLO ~20-25 clients : embaucher (résultat An2 le permet) ou plafonner. Ne pas descendre le socle sous 60€/agence ni l'agente sous 50€.
 
 > NON dans ce top  (et pourquoi) : gating quota (bloqué par décision downgrade + RDV comptable, ne pas figer une grille hypothétique) ; L18/L22 + google_tokens + refonte calendrier (module en quarantaine, chantier dédié) ; optimisation BDD advisor (dette d'échelle, inutile au volume actuel).
 > Hors-code prioritaires (rappel) : 🔴 RDV comptable, 🔴 sondage prix terrain.
