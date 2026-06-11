@@ -158,7 +158,6 @@ export default function Finances() {
   const [redevances, setRedevances]                 = useState([])
   const [agentes, setAgentes]                       = useState([])
   const [agenteSelectionnee, setAgenteSelectionnee] = useState(null)
-  const [nomFranchisee, setNomFranchisee]           = useState('—')
   const [facturesAgente, setFacturesAgente]         = useState([])
   const [objectifs, setObjectifs]                   = useState([])
   const [anneeSelectionnee, setAnneeSelectionnee]   = useState(new Date().getFullYear())
@@ -188,7 +187,6 @@ export default function Finances() {
       redevancesRes,
       facturesAgenteRes,
       agentesRes,
-      adminRes,
       objectifsRes,
     ] = await Promise.all([
       supabase.from('dossiers').select(`
@@ -203,9 +201,6 @@ export default function Finances() {
       isAdmin
         ? supabase.from('profiles').select('*').eq('role', 'agente').order('prenom')
         : Promise.resolve({ data: [] }),
-      isAdmin
-        ? supabase.from('profiles').select('prenom, nom').eq('role', 'admin').maybeSingle()
-        : Promise.resolve({ data: null }),
       supabase.from('objectifs_ca').select('*').eq('annee', new Date().getFullYear()),
     ])
 
@@ -226,7 +221,6 @@ export default function Finances() {
     setFacturesAgente(facturesAgenteRes.data || [])
     setAgentes(agentesRes.data || [])
     setAgenteSelectionnee(prev => prev || (profile?.role === 'agente' ? profile.id : agentesRes.data?.[0]?.id) || null)
-    if (adminRes.data) setNomFranchisee(`${adminRes.data.prenom} ${adminRes.data.nom}`)
     setObjectifs(objectifsRes.data || [])
   }
 
@@ -884,7 +878,7 @@ export default function Finances() {
               <div style={{height:1, background:'var(--ink-200)', margin:'4px 0'}}/>
               <RepartRow label={labelNet} value={fmt(value)} bold />
               <div style={{height:1, background:'var(--ink-200)', margin:'4px 0'}}/>
-              <RepartRow label={`${c.referentEstAdmin ? 'Franchisée' : nomFranchisee} (${Math.round(partAdminRate * 100)}%)`} value={fmt(gainAdmin)} />
+              <RepartRow label={`Société (${Math.round(partAdminRate * 100)}%)`} value={fmt(gainAdmin)} />
               {partAgenteRate > 0 && (
                 <RepartRow label={`${nomReferente(d)} (${Math.round(partAgenteRate * 100)}%)`} value={fmt(gainAgente)} accent="brand" />
               )}
@@ -1134,7 +1128,7 @@ export default function Finances() {
       { label: 'Com. apport.', key: 'comApporteursNet',   type: 'normal' },
       { label: 'Hon. net',     key: 'honReel',            type: 'normal' },
       { label: 'Apporteur',    key: 'apporteurCoutTotalNet', type: 'neg' },
-      { label: nomFranchisee,  key: 'gainAdminReel',      type: 'total'  },
+      { label: 'Société',      key: 'gainAdminReel',      type: 'total'  },
     ]
     const getDossierMontant = (d, key, periodKey) => {
       const agg = agrégerParPaiement([d], periodKey?.includes('-') ? false : true)
@@ -1746,7 +1740,6 @@ export default function Finances() {
           <FinKpiCard label="F1 — Gains à facturer"       value={fmt(totalF1)}    sub={`Reçu ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
           <FinKpiCard label="F2 — Redevances + apporteur" value={fmt(totalF2)}    sub={`Reçu ${fmt(totalF2Paye)}`}                                              tone="warn"/>
           <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
-          <FinKpiCard label="Net à virer à l'agente"       value={(net >= 0 ? '+' : '') + fmt(Math.abs(net))} sub={net >= 0 ? 'F1 − F2' : "L'agente doit à la Société"} tone={net >= 0 ? 'brand' : 'bad'}/>
         </div>
 
         {/* Tableau mensuel F1 / F2 */}
