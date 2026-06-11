@@ -271,7 +271,9 @@ artisans (société-wide), artisans_specialites, chantier_documents, chantier_fi
 ---
 
 ## 6. PROCHAINE ACTION
-Bloc A quasi soldé (audit service_role fait, purge Storage faite, calendrier en quarantaine avec garde-fou). Restants bloc A : durcissements hygiène (EXECUTE anon, policy notifications, leaked password) — faible gravité, à grouper. Puis Lot 5 paramètres multi-agences (fonctionnel, isolé). Chantier calendrier (refonte multi-agence + bug google_tokens) = dédié, pas avant.
+Bloc A sécurité SOLDÉ (anon, garde-fou client, routes service_role). Lot 5 COMPLET (5a édition agence + 5b objectif par agence, mergés). Sujet F2 facturation SOLDÉ (doublon + montant redevance + durcissement upsertFactureMoisType). 
+Prochains lots code (cf. liste « PROCHAINS LOTS CODE ») : point 4 (boutons morts Finances) en tête, le reste = reliquat facturation + dette, à réordonner au retour terrain.
+Hors-code prioritaires : 🔴 RDV comptable, 🔴 sondage prix.
 
 ## MODÈLE PRICING & QUOTAS — architecture actée (10/06), montants en hypothèse à valider
 
@@ -306,19 +308,16 @@ Gating par QUOTA, pas par autorisation manuelle. Le franchisé crée librement D
 - Charges An2 (50 clients) : infra ~1,5k + API ~1k + Stripe ~2,9k + compta ~3k + outils ~1,2k ≈ 9,6k€ → marge avant rému ~135k€.
 - Avec salaire ~45k net (coût chargé ~72k) : reste ~50k résultat avant IS. Vrai business à 50 clients.
 - ⚠️ TRAVERSÉE : 5→~20 clients (An1) ne couvre PAS un salaire plein → garder AMO en parallèle / réserves jusqu'à ~25-30 clients. ~18 mois avant que ça nourrisse.
-- ⚠️ PLAFOND SUPPORT SOLO ~20-25 clients : embaucher (résultat An2 le permet) ou plafonner. Ne pas descendre socle
-
+- ⚠️ PLAFOND SUPPORT SOLO ~20-25 clients : embaucher (résultat An2 le permet) ou plafonner. Ne pas descendre socle sous 60€/agence ni l'agente sous 50€ ») pour ne pas laisser une phrase coupée.
 
 
 ## PROCHAINS LOTS CODE (ordre conseillé, arrêté le 10/06)
 
 4. [ ] **Boutons morts Finances** : « Exporter le bilan » + export CSV → à CÂBLER ; « Saisir un règlement » → à SUPPRIMER. (rendus sans onClick aujourd'hui.)
-5. [ ] **Reliquat facturation à valeur réelle** (même zone, à traiter ensemble) : colonne « Marine » en dur → adapter au périmètre (Tous/admin/agente) ; KPI « Net à virer = F1−F2 » trompeur → revoir l'affichage (deux factures séparées, pas un solde net).
 6. [ ] **Détail par chantier + détail apporteur par devis** (dépliable facturation) — la donnée existe déjà (agrégerParPaiement garde d.id), pas de refonte. Permet le contrôle au centime (quel dossier alimente chaque montant) + contrôle de la facture Kiosque à réception. Valeur réelle pour Anne-Lise, faible risque.
 7. [ ] **Vue agente du suivi financier** (gros sujet de CONCEPTION, pas du code direct) : construire la vue agente de l'onglet Suivi (aujourd'hui l'agente voit le compte de résultat CTP scopé, faux pour elle). Base = spec archivée ex-renderSuiviAgenteFinancier (net = gains − redevance − part apporteur ; redevance en charge ; royalties absentes). Inclut le fix toggle mode CTP réservé admin. → cadrage AVANT code.
-8. [ ] **Réglage MONTANT redevance par agente** (Lot F) : champ « Redevance mensuelle (HT) » au formulaire agente + transit /api/create-agente + écriture profiles.redevance_mensuelle_ht. Visible agentes uniquement (admin=NULL). Complète le redevance_debut déjà fait — referme le sujet redevance côté paramétrage.
 9. [ ] **Cases redevance cliquables** : brancher le clic UI → UPDATE statut (la RLS P0-9 l'autorise déjà côté base, handler UI manquant). Vérifier aussi côté admin. À faire avec le cadrage workflow redevance (lié au 8).
-10. [ ] **Renommage variables « Marine »** (1 passe globale) : estChantierMarine, isMarine → referentEstAdmin/isAdmin. Comportement correct (basé rôle) mais nom piège au 2e admin réel. Inclut la colonne « Marine » en dur (si pas déjà traitée au point 5). Dette de nommage, à faire en une passe propre.
+10. [ ] **Renommage variables « Marine »** (1 passe globale) : estChantierMarine, isMarine → referentEstAdmin/isAdmin. Comportement correct (basé rôle) mais nom piège au 2e admin réel.
 
 
 
