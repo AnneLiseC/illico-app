@@ -55,6 +55,7 @@ export default function Parametres() {
     parts_agente_disponibles: '60',
     frais_part_agente_defaut: 100,
     redevance_debut: '',
+    redevance_mensuelle_ht: '',
     objectif: '',
     agence_id: '',
   }
@@ -240,6 +241,7 @@ export default function Parametres() {
         ? agente.parts_agente_disponibles.map(p => Math.round(p * 100)).join(', ')
         : String(Math.round((agente.part_agente_defaut || 0.5) * 100)),
       redevance_debut: agente.redevance_debut || '',
+      redevance_mensuelle_ht: agente.redevance_mensuelle_ht != null ? String(agente.redevance_mensuelle_ht) : '',
       objectif: objAgente != null ? String(objAgente) : '',
     })
     setAgenteEditee(agente); setModal('modifier'); setErreur(''); setSucces('')
@@ -263,7 +265,7 @@ export default function Parametres() {
     try {
       const partsArray = form.parts_agente_disponibles.split(',').map(v => parseInt(v.trim()) / 100).filter(v => !isNaN(v) && v > 0 && v <= 1)
       const partDefaut = partsArray[0] ?? 0.5
-      const res = await fetch('/api/create-agente', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ prenom: form.prenom, nom: form.nom, email: form.email, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, objectif: form.objectif !== '' ? parseFloat(form.objectif) || 0 : null, agence_id: form.agence_id || null }) })
+      const res = await fetch('/api/create-agente', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ prenom: form.prenom, nom: form.nom, email: form.email, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, redevance_debut: form.redevance_debut || null, redevance_mensuelle_ht: form.redevance_mensuelle_ht !== '' ? parseFloat(form.redevance_mensuelle_ht) : null, objectif: form.objectif !== '' ? parseFloat(form.objectif) || 0 : null, agence_id: form.agence_id || null }) })
       const data = await res.json()
       if (!res.ok) { setErreur(data.error || 'Erreur') } else { setSucces(`Invitation envoyée à ${form.email} ✓`); setModal(false); await chargerAgentes(); await chargerObjectifs() }
     } catch (err) { setErreur(err.message) }
@@ -275,7 +277,7 @@ export default function Parametres() {
     try {
       const partsArray = form.parts_agente_disponibles.split(',').map(v => parseInt(v.trim()) / 100).filter(v => !isNaN(v) && v > 0 && v <= 1)
       const partDefaut = partsArray[0] ?? 0.5
-      const res = await fetch('/api/create-agente', { method: 'PATCH', headers: await authHeaders(), body: JSON.stringify({ id: agenteEditee.id, prenom: form.prenom, nom: form.nom, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, redevance_debut: form.redevance_debut || null }) })
+      const res = await fetch('/api/create-agente', { method: 'PATCH', headers: await authHeaders(), body: JSON.stringify({ id: agenteEditee.id, prenom: form.prenom, nom: form.nom, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, redevance_debut: form.redevance_debut || null, redevance_mensuelle_ht: form.redevance_mensuelle_ht !== '' ? parseFloat(form.redevance_mensuelle_ht) : null }) })
       const data = await res.json()
       if (!res.ok) { setErreur(data.error || 'Erreur'); setSaving(false); return }
       // Objectif d'agente : écriture côté client (agence_id = celle de l'agente, dispo en state).
@@ -851,6 +853,11 @@ export default function Parametres() {
                 <label style={LS}>Début des redevances</label>
                 <input className="input" type="date" value={form.redevance_debut} onChange={e => setForm(f => ({ ...f, redevance_debut: e.target.value }))}/>
                 <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Date à partir de laquelle la redevance mensuelle est due.</div>
+              </div>
+              <div>
+                <label style={LS}>Redevance mensuelle (HT)</label>
+                <input className="input" type="number" min="0" step="0.01" value={form.redevance_mensuelle_ht} onChange={e => setForm(f => ({ ...f, redevance_mensuelle_ht: e.target.value }))} placeholder="€ / mois"/>
+                <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Montant fixe dû chaque mois (à partir de la date ci-dessus). Vide = à paramétrer.</div>
               </div>
               <div>
                 <label style={LS}>Répartitions commission disponibles — agente %</label>
