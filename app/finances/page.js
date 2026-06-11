@@ -1,6 +1,6 @@
 // app/finances/page.js
 'use client'
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, ArcElement, DoughnutController, Tooltip, Legend, Filler } from 'chart.js'
 Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, ArcElement, DoughnutController, Tooltip, Legend, Filler)
 import { supabase } from '../lib/supabase'
@@ -164,6 +164,11 @@ export default function Finances() {
   const [moisOuvert, setMoisOuvert]                 = useState(null)
   const [sfSousOngletCTP, setSfSousOngletCTP]       = useState('mois')
   const [isMobile, setIsMobile]                     = useState(false)
+  // Garde de ré-entrance pour upsertFactureMoisType : les toggles F1/F2 et l'upload
+  // sont des onClick non bloquants → un double-clic partait 2× et créait un doublon
+  // (existence testée sur un état mémoire non encore rafraîchi). Ref (synchrone) :
+  // un 2e appel concurrent est ignoré tant que le 1er est en vol.
+  const fxSavingRef                                 = useRef(false)
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)')
@@ -511,43 +516,49 @@ export default function Finances() {
 
   // ── FACTURES AGENTE ────────────────────────────────────────────────────────
   const upsertFactureMoisType = async (mois, annee, montant, type, updates) => {
-    const agenteId = agenteSelectionnee || profile?.id
-    const existing = facturesAgente.find(f => f.mois === mois && f.annee === annee && f.agente_id === agenteId && f.type_facture === type)
+    if (fxSavingRef.current) return   // ignore un 2e appel concurrent (double-clic)
+    fxSavingRef.current = true
+    try {
+      const agenteId = agenteSelectionnee || profile?.id
+      const existing = facturesAgente.find(f => f.mois === mois && f.annee === annee && f.agente_id === agenteId && f.type_facture === type)
 
-    if (existing) {
-      await supabase.from('factures_agente').update(updates).eq('id', existing.id)
-    } else {
-      await supabase.from('factures_agente').insert({
-        agente_id: agenteId, mois, annee, montant, type_facture: type, ...updates
-      })
-    }
-
-    // La synchro redevance suit le CHANGEMENT DE STATUT F2, pas toute écriture sur la ligne.
-    // Tout appelant qui doit (dé)cocher la redevance DOIT passer `statut` dans updates.
-    // Un upload PDF (facture_path seul, sans statut) ne déclenche donc PAS la synchro — découplage voulu.
-    if (type === 'ctp_vers_agente' && 'statut' in updates) {
-      const agenteProfile = agentes.find(a => a.id === agenteId)
-      if (!agenteProfile?.agence_id) {
-        setErreur('Redevance : agence de l\'agente introuvable')
+      if (existing) {
+        await supabase.from('factures_agente').update(updates).eq('id', existing.id)
       } else {
-        const montantRedevance = agenteProfile?.redevance_mensuelle_ht ?? null
-        const { error: redevErr } = await supabase.from('redevances').upsert({
-          agente_id: agenteId,
-          agence_id: agenteProfile.agence_id,
-          annee,
-          mois,
-          montant_ht: montantRedevance,
-          statut: updates.statut === 'paye' ? 'regle' : 'en_attente',
-          date_paiement: updates.statut === 'paye' ? new Date().toISOString().split('T')[0] : null,
-        }, { onConflict: 'agente_id,annee,mois' })
-        if (redevErr) setErreur('Redevance : ' + redevErr.message)
+        await supabase.from('factures_agente').insert({
+          agente_id: agenteId, mois, annee, montant, type_facture: type, ...updates
+        })
       }
-    }
 
-    const { data } = await supabase.from('factures_agente').select('*')
-      .order('annee', { ascending: false }).order('mois', { ascending: false })
-    setFacturesAgente(data || [])
-    await chargerTout()
+      // La synchro redevance suit le CHANGEMENT DE STATUT F2, pas toute écriture sur la ligne.
+      // Tout appelant qui doit (dé)cocher la redevance DOIT passer `statut` dans updates.
+      // Un upload PDF (facture_path seul, sans statut) ne déclenche donc PAS la synchro — découplage voulu.
+      if (type === 'ctp_vers_agente' && 'statut' in updates) {
+        const agenteProfile = agentes.find(a => a.id === agenteId)
+        if (!agenteProfile?.agence_id) {
+          setErreur('Redevance : agence de l\'agente introuvable')
+        } else {
+          const montantRedevance = agenteProfile?.redevance_mensuelle_ht ?? null
+          const { error: redevErr } = await supabase.from('redevances').upsert({
+            agente_id: agenteId,
+            agence_id: agenteProfile.agence_id,
+            annee,
+            mois,
+            montant_ht: montantRedevance,
+            statut: updates.statut === 'paye' ? 'regle' : 'en_attente',
+            date_paiement: updates.statut === 'paye' ? new Date().toISOString().split('T')[0] : null,
+          }, { onConflict: 'agente_id,annee,mois' })
+          if (redevErr) setErreur('Redevance : ' + redevErr.message)
+        }
+      }
+
+      const { data } = await supabase.from('factures_agente').select('*')
+        .order('annee', { ascending: false }).order('mois', { ascending: false })
+      setFacturesAgente(data || [])
+      await chargerTout()
+    } finally {
+      fxSavingRef.current = false
+    }
   }
 
 
