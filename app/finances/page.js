@@ -960,10 +960,6 @@ export default function Finances() {
               {period === 'chantier' ? 'Détail par chantier' : period === 'mois' ? 'Agrégation par mois de paiement' : 'Agrégation annuelle'}
             </div>
           </div>
-          <div style={{display:'flex',gap:8}}>
-            <button className="btn btn-ghost" style={{padding:'6px 10px',fontSize:12}}>▼</button>
-            <button className="btn btn-ghost" style={{padding:'6px 10px',fontSize:12}}>📄 CSV</button>
-          </div>
         </div>
         <div className="table-scroll">
         <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -1992,10 +1988,6 @@ export default function Finances() {
             Année <strong style={{color:'var(--ink-700)'}}>{anneeEnCours}</strong> · {dossiers.length} dossiers actifs
             {saving && <span style={{marginLeft:12,color:'var(--ink-400)',fontSize:12}}>Enregistrement…</span>}
           </div>
-        </div>
-        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-          <button className="btn btn-ghost">📄 Exporter le bilan</button>
-          <button className="btn btn-primary">🪙 Saisir un règlement</button>
         </div>
       </div>
 
