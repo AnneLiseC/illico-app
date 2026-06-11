@@ -151,14 +151,16 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
     - [x] **4c-3 — Périmètre unique finances** ✅ FAIT (09/06, mergé `b25b0c4`). `scopedDossiers` filtre `agenceActive` en amont du pill (agence maître, pill raffine dedans) → corrige la dette 4c-2 (produits enfin scopés agence). `redevancesScoped` aligné sur le même double filtre (4 cas : agente / admin+tous / admin+moi / admin+agente). Pill agente filtré par agence active + réinit à 'tous' au changement de vue (anti-périmètre-vide). Modèle verrouillé : sélecteur d'agence = navbar uniquement ; un seul périmètre pilote KPI+F1/F2+Suivi+Synthèse. Validé : non-régression CTP + bascule TEST 1 ; pill/redevances par lecture de code (pas de données réparties sur TEST 1).
     - [x] **4c-4 — Scoping Suivi** ✅ FAIT (09/06, mergé `85b6143`). 5 usages `dossiers`→`scopedDossiers` (dont reduce apporteur l.1308) + 8 lignes `redevances`→`redevancesScoped`, en remplacements EXPLICITES (alias rejeté : shadowing trompeur sur du comptable). Grep de complétude : 0 occurrence nue restante dans le Suivi. Royalties inline suivent auto (via agrégats). Helper `libellePerimetre()` + badge « Filtré sur » (réutilisable 4c-5). Validé : non-régression CR CTP complet (mois + année).
     - [x] **4c-5 — Scoping Synthèse** ✅ FAIT (09/06, mergé `6ff525f`). `reelData` repointé `rowsReelAnneeEnCours`→`rowsReelScoped` (équivalence prouvée : même `agrégerParPaiement`, seule la liste diffère), global mort supprimé. `previData`/donut déjà scopés (4c-3). Badge indicateur (helper 4c-4). Synthèse = périmètre unique (B4 fermé). Validé non-régression CTP.
+- [x] **Lot 5 — Paramètres multi-agences** ✅ (10/06). merge `3776655`
+  - **5a édition agence** (mergé `ed41f57`) : route service_role /api/update-agence (PATCH), contrôle appartenance societe_id 404, whitelist stricte 7 champs. Prouvé en base.
+  - **5b objectif par agence** (mergé `ea58771`+`dfac076`) : UI éditeur par agence (≥2) + chargement indexé par agence_id. Bug multi-agence trouvé au test (sauvegarderObjectif : select non scopé agence_id → faux ✓ sans écriture) → corrigé (select scopé + throw sur .error ; upsert écarté car index partiel non ciblable PostgREST 42P10). Prouvé en base. Cas agente + mono CTP non régressés.
 
-- [ ] **Lot 5 — Paramètres multi-agences** : édition de chaque agence (aujourd'hui lecture seule), gestion fine. + le vrai « objectif par agence » (qui attend l'agence active du Lot 2). Assez isolé, peut venir tôt ou tard.
 
 #### Bloc B-bis — Facturation (reliquat fonctionnel, repris du 05)
 - [ ] **L16 Facturation scopée/consolidée** (par agence sur onglets agence ; somme société sur vue consolidée). Lié au Lot 4 finances.
 - [ ] **Vue agente du suivi financier** (gros sujet de conception). Aujourd'hui `renderSuiviFinancier` n'a PAS de vue agente — l'agente voit le compte de résultat CTP scopé (apporteur total, redevance en PRODUIT au lieu de charge, royalties affichées + bug d'accès au mode CTP). Base = spec archivée ex-`renderSuiviAgenteFinancier` (récupérable git) : net agente = gains − redevance − part apporteur ; redevance en CHARGE ; apporteur en part ; royalties ABSENTES ; libellés 1ère personne. Inclut le fix du toggle mode CTP à réserver à l'admin.
-- [ ] **Colonne « Marine » en dur** (onglets Réel/Prévisionnel) à adapter au périmètre (Tous=agence, Marine=admin, Anne-Lise=agente). Même famille de piège que isMarine. À corriger bientôt (touche l'affichage financier réel).
-- [ ] **KPI « Net à virer = F1 − F2 » trompeur** : F1 et F2 sont deux factures séparées, pas un virement net unique. Revoir l'affichage du KPI (pas le calcul).
+- [x] **Colonne « Marine » en dur + KPI net à virer** ✅ (10/06). Libellé colonne total + RepartRow → « Société » (valeurs intactes, code mort nomFranchisee/adminRes nettoyé). KPI « Net à virer à l'agente » (F1−F2 trompeur) supprimé.
+- [ ] **Colonne « Net » du tableau facturation mensuel** : conservée telle quelle (solde F1−F2 par mois + total). NOM à trancher selon usage terrain : garder « Net », renommer « Solde F1−F2 (indicatif) », ou supprimer si inutile. Décision reportée volontairement (pas oubliée).
 - [ ] **Détail par CHANTIER dans le dépliable facturation** : aujourd'hui décomposition par flux mais pas par dossier. Donnée déjà présente (`agrégerParPaiement` garde `d.id`). Sans refonte.
 - [ ] **Détail apporteur PAR DEVIS** (« ce que je dois au Kiosque par devis ») : pour contrôler la facture Kiosque à réception. Une ligne de coût apporteur par devis signé éligible.
 - [ ] **Timing remboursement apporteur dans F2** : `apporteurRembourseNet` garde un axe DATE distinct (facture Kiosque ~1 mois après déblocage acompte). À traiter avec les vues facturation détaillées.
@@ -182,7 +184,12 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **Code mort chantiers/[id] nomFranchisee** ✅ (10/06, mergé `cf13a14`). useState + setter supprimés, setPrenomAdmin conservé (lu l.2752), 0 occurrence restante.
 - [x] **redevance_debut à la création d'agente** ✅ (10/06, mergé `cf13a14`). Ajouté au body POST + insert profiles (colonne profiles.redevance_debut date, même que le PATCH). L'asymétrie création/édition est résolue : le champ est persisté dès le POST.- [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
 
-- [ ] **Template email Reset Password en français** (Supabase dashboard, déclaratif).
+- [x] **Templates email FR (Reset Password + Invitation)** ✅ (10/06, dashboard Supabase, NON versionné). Corps + sujet en français, bouton stylé, ton BATILIS, signature « L'équipe BATILIS ». Variables {{ .ConfirmationURL }}/{{ .SiteURL }} préservées. ⚠️ Vit dans le dashboard, pas le repo — pas de trace git.
+
+- [x] **Doublon factures_agente** ✅ (11/06). Cause : upsertFactureMoisType select-puis-insert sans garde DB + AUCUN index unique sur factures_agente → double-insert (Anne-Lise 2026-06). Fix : DELETE doublon + UNIQUE INDEX (agente_id, annee, mois, type_facture). SQL versionné. 
+- [x] **Durcir upsertFactureMoisType** ✅ (11/06). Cause = double-clic toggle F2 non gardé + existence sur état mémoire. Fix : garde ré-entrance (useRef) + existence en base (4 clés) + .error/throw + rattrapage 23505 + UPDATE ciblé (anti-clobber PDF) + feedback erreur appelants. Sujet F2 (doublon + montant + durcissement) SOLDÉ.
+- [x] **Réglage montant redevance par agente** ✅ (11/06). Champ « Redevance mensuelle (HT) » (fixe mensuel) au formulaire agente + route create-agente POST/PATCH, saisissable création ET édition. Corrige « redevance juillet à 0 » (calcMois lit redevance_mensuelle_ht en live). ⚠️ À FAIRE : re-saisir le montant des agentes encore à NULL (Marie/Manon/TEST2) via le formulaire. 97ea172
+
 - [ ] **Code mort finance.js 🟠 restants** : devis.statut/montantTTC, apporteur.lines[].* — grep non concluant ou lines itéré dynamiquement. Relecture site par site requise. Pas prioritaire. 
 - [ ] **#8 dashboard admin scope** (à arbitrer selon scénario testeur).<>
 - [ ] **`espace-client/page.js:253`** « illiCO travaux Martigues » : reporté avec le dev espace-client.
@@ -305,8 +312,6 @@ Gating par QUOTA, pas par autorisation manuelle. Le franchisé crée librement D
 
 ## PROCHAINS LOTS CODE (ordre conseillé, arrêté le 10/06)
 
-2. [ ] **Lot 5 — Paramètres multi-agences** : édition d'agence (nom, adresse, responsable, ville — aujourd'hui lecture seule). Dernier maillon du chantier multi-agence (Lots 1-4 faits), referme le bloc B. À tête fraîche (seul vrai morceau d'archi restant).
-3. [ ] **Template email Reset Password en français** (Supabase dashboard, déclaratif). Trivial, zéro code, zéro risque. Un reset en anglais = amateur côté franchisé.
 4. [ ] **Boutons morts Finances** : « Exporter le bilan » + export CSV → à CÂBLER ; « Saisir un règlement » → à SUPPRIMER. (rendus sans onClick aujourd'hui.)
 5. [ ] **Reliquat facturation à valeur réelle** (même zone, à traiter ensemble) : colonne « Marine » en dur → adapter au périmètre (Tous/admin/agente) ; KPI « Net à virer = F1−F2 » trompeur → revoir l'affichage (deux factures séparées, pas un solde net).
 6. [ ] **Détail par chantier + détail apporteur par devis** (dépliable facturation) — la donnée existe déjà (agrégerParPaiement garde d.id), pas de refonte. Permet le contrôle au centime (quel dossier alimente chaque montant) + contrôle de la facture Kiosque à réception. Valeur réelle pour Anne-Lise, faible risque.
