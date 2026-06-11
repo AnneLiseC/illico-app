@@ -14,7 +14,7 @@ export async function POST(request) {
   if (auth.error) return auth.error
   try {
     const body = await request.json()
-    const { prenom, nom, email, telephone, redevance_debut, part_agente_defaut, frais_part_agente_defaut, parts_agente_disponibles, objectif, agence_id } = body
+    const { prenom, nom, email, telephone, redevance_debut, redevance_mensuelle_ht, part_agente_defaut, frais_part_agente_defaut, parts_agente_disponibles, objectif, agence_id } = body
 
     // Validation
     if (!prenom || !nom || !email) {
@@ -26,6 +26,12 @@ export async function POST(request) {
     // toute création de compte.
     if (!isAllowedStaffEmail(email)) {
       return NextResponse.json({ error: 'Les comptes staff doivent utiliser une adresse @illico-travaux.com' }, { status: 400 })
+    }
+
+    // Redevance mensuelle (HT) : optionnelle (NULL = à paramétrer). Si fournie,
+    // doit être un nombre >= 0.
+    if (redevance_mensuelle_ht != null && (isNaN(Number(redevance_mensuelle_ht)) || Number(redevance_mensuelle_ht) < 0)) {
+      return NextResponse.json({ error: 'Redevance mensuelle invalide (nombre positif attendu)' }, { status: 400 })
     }
 
     // Résoudre l'agence cible AVANT toute création de compte (pas d'orphelin auth).
@@ -75,6 +81,7 @@ export async function POST(request) {
         email,
         telephone: telephone || null,
         redevance_debut: redevance_debut || null,
+        redevance_mensuelle_ht: redevance_mensuelle_ht != null ? Number(redevance_mensuelle_ht) : null,
         role: 'agente',
         societe_id: auth.profile.societe_id,
         agence_id: agenceId,
@@ -117,10 +124,16 @@ export async function PATCH(request) {
   if (auth.error) return auth.error
   try {
     const body = await request.json()
-    const { id, prenom, nom, telephone, redevance_debut, part_agente_defaut, frais_part_agente_defaut, kbis_url, parts_agente_disponibles } = body
+    const { id, prenom, nom, telephone, redevance_debut, redevance_mensuelle_ht, part_agente_defaut, frais_part_agente_defaut, kbis_url, parts_agente_disponibles } = body
 
     if (!id) {
       return NextResponse.json({ error: 'ID requis' }, { status: 400 })
+    }
+
+    // Redevance mensuelle (HT) : optionnelle (NULL = à paramétrer). Si fournie
+    // (non null), doit être un nombre >= 0.
+    if (redevance_mensuelle_ht != null && (isNaN(Number(redevance_mensuelle_ht)) || Number(redevance_mensuelle_ht) < 0)) {
+      return NextResponse.json({ error: 'Redevance mensuelle invalide (nombre positif attendu)' }, { status: 400 })
     }
 
     const updates = {}
@@ -128,6 +141,7 @@ export async function PATCH(request) {
     if (nom !== undefined)                      updates.nom = nom
     if (telephone !== undefined)                updates.telephone = telephone
     if (redevance_debut !== undefined)          updates.redevance_debut = redevance_debut
+    if (redevance_mensuelle_ht !== undefined)   updates.redevance_mensuelle_ht = redevance_mensuelle_ht != null ? Number(redevance_mensuelle_ht) : null
     if (part_agente_defaut !== undefined)       updates.part_agente_defaut = part_agente_defaut
     if (frais_part_agente_defaut !== undefined) updates.frais_part_agente_defaut = frais_part_agente_defaut
     if (parts_agente_disponibles !== undefined) updates.parts_agente_disponibles = parts_agente_disponibles
