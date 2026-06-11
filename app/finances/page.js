@@ -520,14 +520,35 @@ export default function Finances() {
     fxSavingRef.current = true
     try {
       const agenteId = agenteSelectionnee || profile?.id
-      const existing = facturesAgente.find(f => f.mois === mois && f.annee === annee && f.agente_id === agenteId && f.type_facture === type)
+
+      // Existence testée EN BASE (pas sur l'état mémoire facturesAgente, qui peut être
+      // périmé entre deux appels). Clé d'unicité réelle = (agente_id, annee, mois, type_facture).
+      const cle = (q) => q.eq('agente_id', agenteId).eq('annee', annee).eq('mois', mois).eq('type_facture', type)
+      const { data: existing, error: selErr } = await cle(supabase.from('factures_agente').select('id')).maybeSingle()
+      if (selErr) throw new Error(selErr.message)
 
       if (existing) {
-        await supabase.from('factures_agente').update(updates).eq('id', existing.id)
+        // UPDATE ciblé (colonnes de `updates` uniquement — jamais de clobber du
+        // montant/statut d'une facture existante par un simple dépôt de PDF).
+        const { error } = await supabase.from('factures_agente').update(updates).eq('id', existing.id)
+        if (error) throw new Error(error.message)
       } else {
-        await supabase.from('factures_agente').insert({
+        const { error } = await supabase.from('factures_agente').insert({
           agente_id: agenteId, mois, annee, montant, type_facture: type, ...updates
         })
+        if (error) {
+          if (error.code === '23505') {
+            // Conflit unique : une écriture concurrente a créé la ligne entre notre SELECT
+            // et notre INSERT. On relit l'existant et on applique l'UPDATE ciblé à sa place.
+            const { data: race } = await cle(supabase.from('factures_agente').select('id')).maybeSingle()
+            if (race?.id) {
+              const { error: updErr } = await supabase.from('factures_agente').update(updates).eq('id', race.id)
+              if (updErr) throw new Error(updErr.message)
+            }
+          } else {
+            throw new Error(error.message)
+          }
+        }
       }
 
       // La synchro redevance suit le CHANGEMENT DE STATUT F2, pas toute écriture sur la ligne.
@@ -1648,10 +1669,11 @@ export default function Finances() {
       const ext = fichier.name.split('.').pop().toLowerCase()
       const chemin = `factures_agente/${agenteSelectionnee}/${f.annee}-${String(f.mois).padStart(2,'0')}-${f.type_facture}.${ext}`
       const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
-      if (!error) {
+      if (error) { setErreur('Erreur upload : ' + error.message); return }
+      try {
         await upsertFactureMoisType(f.mois, f.annee, f.montant||0, f.type_facture, { facture_path: chemin })
         setSucces('Facture uploadée ✓')
-      } else { setErreur('Erreur upload : ' + error.message) }
+      } catch (e) { setErreur('Erreur enregistrement : ' + e.message) }
     }
 
     // Bascule du statut F1 (agente → CTP). Au clic « payé » : fige le montant LIVE
@@ -1659,11 +1681,13 @@ export default function Finances() {
     // INSERT si le mois n'a pas de ligne (montant positionnel), UPDATE sinon (montant dans updates).
     const toggleF1Statut = async (annee, mois, f1) => {
       const live = calcMois(annee, mois).montantF1
-      if (f1?.statut === 'paye') {
-        await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'a_facturer', montant: null })
-      } else {
-        await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'paye', montant: live })
-      }
+      try {
+        if (f1?.statut === 'paye') {
+          await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'a_facturer', montant: null })
+        } else {
+          await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'paye', montant: live })
+        }
+      } catch (e) { setErreur('Erreur F1 : ' + e.message) }
     }
 
     // Bascule du statut F2 (CTP → agente). ADMIN ONLY (appelé uniquement depuis la
@@ -1672,11 +1696,13 @@ export default function Finances() {
     // déclenche la synchro redevances dans upsertFactureMoisType (regle / en_attente).
     const toggleF2Statut = async (annee, mois, f2) => {
       const live = calcMois(annee, mois).montantF2
-      if (f2?.statut === 'paye') {
-        await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'a_facturer', montant: null })
-      } else {
-        await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'paye', montant: live })
-      }
+      try {
+        if (f2?.statut === 'paye') {
+          await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'a_facturer', montant: null })
+        } else {
+          await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'paye', montant: live })
+        }
+      } catch (e) { setErreur('Erreur F2 : ' + e.message) }
     }
 
     const FactureDetailCard = ({ title, subtitle, type, accent }) => {
