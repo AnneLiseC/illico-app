@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { calcStatut, STATUT_CONFIG } from '../lib/dossiers'
 import { authHeaders } from '../lib/api-auth-client'
+import MarkdownCR from '../components/MarkdownCR'
 
 // Vue client : les statuts internes de prospection (à contacter / à relancer)
 // sont fondus dans une étape neutre « Préparation ».
@@ -225,33 +226,6 @@ export default function EspaceClient() {
     { key: 'cr',        label: `Comptes-rendus (${comptesRendus.length})`,          icon: '📄' },
     { key: 'messages',  label: `Messages${nbMsgNonLus > 0 ? ` (${nbMsgNonLus})` : ''}`, icon: '💬' },
   ]
-
-  // ── Rendu markdown simplifié ──
-  const renderInline = (text) => {
-    const parts = text.split(/\*\*(.+?)\*\*/g)
-    return parts.map((part, i) => i % 2 === 1 ? <strong key={i}>{part}</strong> : part)
-  }
-  const renderMarkdown = (text) => {
-    if (!text) return null
-    const lines = text.split('\n')
-    const els = []
-    let listItems = []
-    const flushList = () => {
-      if (!listItems.length) return
-      els.push(<ul key={`l${els.length}`} className="list-disc list-inside space-y-1 ml-2 mb-3">{listItems.map((it, i) => <li key={i} className="text-sm text-gray-700">{renderInline(it)}</li>)}</ul>)
-      listItems = []
-    }
-    lines.forEach((line, i) => {
-      const h = line.match(/^## +(?:\d+\.\s*)?(.+)/)
-      if (h) { flushList(); els.push(<p key={i} className="font-bold text-blue-900 text-sm mt-4 mb-1 pb-1 border-b border-gray-100">{h[1].trim()}</p>); return }
-      if (line.match(/^[-–] /)) { listItems.push(line.slice(2)); return }
-      if (!line.trim()) { flushList(); return }
-      flushList()
-      els.push(<p key={i} className="text-sm text-gray-700 mb-2 leading-relaxed">{renderInline(line)}</p>)
-    })
-    flushList()
-    return els
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -492,11 +466,15 @@ export default function EspaceClient() {
                     </div>
                     <span className="text-gray-400 text-sm">{crOuvert === cr.id ? '▲' : '▼'}</span>
                   </div>
-                  {crOuvert === cr.id && (cr.contenu_final || cr.notes_brutes) && (
+                  {crOuvert === cr.id && (
                     <div className="border-t border-gray-100 px-4 py-4 space-y-3">
-                      <div className="prose prose-sm max-w-none">
-                        {renderMarkdown(cr.contenu_final || cr.notes_brutes)}
-                      </div>
+                      {cr.contenu_final ? (
+                        <div className="prose prose-sm max-w-none">
+                          <MarkdownCR text={cr.contenu_final} variant="client" />
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-400 italic">Compte-rendu en cours de rédaction.</p>
+                      )}
                       {cr.contenu_final && (
                         <div className="space-y-2">
                           <button
