@@ -8,6 +8,17 @@ import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../
 import { calculerAvancement } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
+import MarkdownCR from '../../components/MarkdownCR'
+
+// Aperçu texte nu d'un CR : retire la syntaxe markdown (## titres, **gras**, puces).
+function stripMarkdown(text) {
+  return (text || '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/## +(?:\d+\.\s*)?/g, ' ')
+    .replace(/^[-–] /gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
 function Svg({ children, size = 14 }) {
   return (
@@ -605,6 +616,7 @@ export default function FicheChantier({ params }) {
   const [uploadingFacturePdf, setUploadingFacturePdf] = useState(null)
 
   // CR avec IA
+  const [crOuvert, setCrOuvert] = useState(null) // id du CR déplié dans la liste
   const [crModal, setCrModal] = useState(false)
   const [crManuelModal, setCrManuelModal] = useState(false)
   const [crManuelForm, setCrManuelForm] = useState({ type_visite: '', date_visite: '', contenu: '', fichier: null })
@@ -1342,9 +1354,7 @@ export default function FicheChantier({ params }) {
   const sauvegarderCRGenere = async (publier = false) => {
     if (!crGenere) return
     setCrSavingFinal(true)
-    const contenuFinal = crSectionsEditees.map(s => `## ${s.numero}. ${s.titre}
-
-  ${s.contenu}`).join('')
+    const contenuFinal = crSectionsEditees.map(s => `## ${s.numero}. ${s.titre}\n\n${s.contenu}`).join('\n\n')
     const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('')
     await supabase.from('comptes_rendus').insert({
       dossier_id: id,
@@ -4114,6 +4124,7 @@ export default function FicheChantier({ params }) {
               {comptesRendus.map(cr => {
                 const meta = typeMeta[cr.type_visite] || { color: '#94a3b8', label: cr.type_visite, long: cr.type_visite }
                 const fmtD = cr.date_visite ? new Date(cr.date_visite).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' }) : null
+                const apercu = stripMarkdown(cr.contenu_final)
                 return (
                   <div key={cr.id} style={{
                     padding:16, border:'1px solid var(--ink-200)', borderRadius:12, background:'#fff', position:'relative',
@@ -4138,11 +4149,19 @@ export default function FicheChantier({ params }) {
                         <span className="tnum" style={{fontSize:11.5, color:'var(--ink-400)'}}>{fmtD}</span>
                       )}
                     </div>
-                    {cr.contenu_final && (
-                      <p className="clip-2" style={{fontSize:13, color:'var(--ink-700)', lineHeight:1.55, margin:0}}>
-                        {cr.contenu_final.slice(0, 300)}{cr.contenu_final.length > 300 ? '…' : ''}
+                    {cr.contenu_final && (crOuvert === cr.id ? (
+                      <div>
+                        <MarkdownCR text={cr.contenu_final} variant="staff" />
+                        <button onClick={() => setCrOuvert(null)} className="btn btn-ghost" style={{padding:'3px 10px', fontSize:11, marginTop:8}}>
+                          ▲ Replier
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="clip-2" onClick={() => setCrOuvert(cr.id)} title="Voir le CR complet"
+                        style={{fontSize:13, color:'var(--ink-700)', lineHeight:1.55, margin:0, cursor:'pointer'}}>
+                        {apercu.slice(0, 200)}{apercu.length > 200 ? '…' : ''} <span style={{color:'var(--ink-400)'}}>▼</span>
                       </p>
-                    )}
+                    ))}
                     <div style={{
                       display:'flex', gap:8, marginTop:12, paddingTop:10,
                       borderTop:'1px solid var(--ink-100)', fontSize:11, color:'var(--ink-500)',
