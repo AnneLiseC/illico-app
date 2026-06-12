@@ -6,9 +6,10 @@ import { useRouter } from 'next/navigation'
 import { calcStatut, STATUT_CONFIG } from '../lib/dossiers'
 import { authHeaders } from '../lib/api-auth-client'
 
+// Vue client : les statuts internes de prospection (à contacter / à relancer)
+// sont fondus dans une étape neutre « Préparation ».
 const ETAPES = [
-  { key: 'a_contacter',       label: 'À contacter',  icon: '📞' },
-  { key: 'a_relancer',        label: 'À relancer',    icon: '🔄' },
+  { key: 'preparation',       label: 'Préparation',   icon: '📂' },
   { key: 'devis_en_attente',  label: 'Devis',         icon: '📋' },
   { key: 'en_cours_chantier', label: 'Travaux',       icon: '🔨' },
   { key: 'termine',           label: 'Terminé',       icon: '✅' },
@@ -17,8 +18,14 @@ const ETAPES = [
 function calcEtape(dossier) {
   if (!dossier) return 0
   const s = calcStatut(dossier)
-  const map = { a_contacter: 0, a_relancer: 1, devis_en_attente: 2, devis_a_modifier: 2, en_cours_chantier: 3, termine: 4 }
+  const map = { a_contacter: 0, a_relancer: 0, devis_en_attente: 1, devis_a_modifier: 1, en_cours_chantier: 2, termine: 3 }
   return map[s] ?? 0
+}
+
+// Badge statut côté client : libellé neutre à la place des statuts internes.
+const STATUT_CLIENT_OVERRIDE = {
+  a_contacter: { label: 'Dossier en préparation', color: 'bg-blue-100 text-blue-700' },
+  a_relancer:  { label: 'Dossier en préparation', color: 'bg-blue-100 text-blue-700' },
 }
 
 const CAT_LABELS = {
@@ -207,6 +214,7 @@ export default function EspaceClient() {
   // comptes_rendus chargés séparément → on les intègre dans le dossier pour calcStatut
   const dossierComplet    = dossier ? { ...dossier, comptes_rendus: comptesRendus } : null
   const etapeActuelle     = calcEtape(dossierComplet)
+  const statutClient      = STATUT_CLIENT_OVERRIDE[calcStatut(dossierComplet)] || STATUT_CONFIG[calcStatut(dossierComplet)]
   const photosCatActuelle = photos.filter(p => p.categorie === categoriePhoto)
   const nbMsgNonLus       = messages.filter(m => m.auteur_role !== 'client' && !m.lu).length
   const devisAcceptes     = (dossier.devis_artisans || []).filter(d => d.statut === 'accepte')
@@ -281,8 +289,8 @@ export default function EspaceClient() {
                   <p className="text-xs text-gray-400 mb-1">Référence dossier</p>
                   <p className="font-bold text-blue-900 text-lg">{dossier.reference}</p>
                 </div>
-                <span className={`text-xs px-3 py-1 rounded-full font-medium ${STATUT_CONFIG[calcStatut(dossierComplet)].color}`}>
-                  {STATUT_CONFIG[calcStatut(dossierComplet)].label}
+                <span className={`text-xs px-3 py-1 rounded-full font-medium ${statutClient.color}`}>
+                  {statutClient.label}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm">
@@ -326,7 +334,7 @@ export default function EspaceClient() {
                       const done   = idx < etapeActuelle
                       const active = idx === etapeActuelle
                       return (
-                        <div key={etape.key} className="flex flex-col items-center gap-2" style={{ width: '20%' }}>
+                        <div key={etape.key} className="flex flex-col items-center gap-2" style={{ width: '25%' }}>
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg border-2 transition-all ${
                             done   ? 'bg-blue-600 border-blue-600 text-white' :
                             active ? 'bg-white border-blue-600' :
