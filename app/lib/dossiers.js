@@ -30,13 +30,14 @@ export function calcStatut(dossier) {
   const comptes  = dossier.comptes_rendus || []
   const devis    = dossier.devis_artisans || []
   const hasR2    = comptes.some(cr => cr.type_visite === 'r2')
-  const hasR3    = comptes.some(cr => cr.type_visite === 'r3')
-  const hasRefuse = devis.some(d => d.statut === 'refuse')
+  const hasAModifier = devis.some(d => d.statut === 'a_modifier')
+  const tousRefuses  = devis.length > 0 && devis.every(d => d.statut === 'refuse')
 
-  // Devis à modifier : R3 effectuée OU au moins un devis refusé
-  if (hasR3 || hasRefuse) return 'devis_a_modifier'
+  // Devis à modifier : au moins un devis explicitement « à modifier »,
+  // OU tous les devis refusés (plus rien de vivant → à retravailler).
+  if (hasAModifier || tousRefuses) return 'devis_a_modifier'
 
-  // Devis en attente : R2 effectuée
+  // Devis en attente : R2 effectuée (devis présentés / en cours, dont après R3)
   if (hasR2) return 'devis_en_attente'
 
   // À relancer : frais de consultation renseignés mais pas réglés ni offerts
