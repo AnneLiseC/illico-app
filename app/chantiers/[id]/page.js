@@ -953,7 +953,8 @@ export default function FicheChantier({ params }) {
     const chemin = `chantiers/${id}/contrat/contrat.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (error) { setErreur('Erreur upload : ' + error.message); setUploadingContrat(false); return }
-    await supabase.from('dossiers').update({ contrat_url: chemin }).eq('id', id)
+    const { error: updErr } = await supabase.from('dossiers').update({ contrat_url: chemin }).eq('id', id)
+    if (updErr) { setErreur('Erreur : ' + updErr.message); setUploadingContrat(false); return }
     setDossier(d => ({ ...d, contrat_url: chemin }))
     setSucces('Contrat ajouté ✓')
     setUploadingContrat(false)
@@ -967,8 +968,12 @@ export default function FicheChantier({ params }) {
 
   const supprimerContrat = async () => {
     if (!confirm('Supprimer le document du contrat ?')) return
-    if (dossier?.contrat_url) await supabase.storage.from('documents').remove([dossier.contrat_url])
-    await supabase.from('dossiers').update({ contrat_url: null }).eq('id', id)
+    if (dossier?.contrat_url) {
+      const { error: rmErr } = await supabase.storage.from('documents').remove([dossier.contrat_url])
+      if (rmErr) console.error('Suppression fichier contrat (non bloquant) :', rmErr.message)
+    }
+    const { error } = await supabase.from('dossiers').update({ contrat_url: null }).eq('id', id)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     setDossier(d => ({ ...d, contrat_url: null }))
     setSucces('Document supprimé ✓')
   }
@@ -2529,8 +2534,10 @@ export default function FicheChantier({ params }) {
                   checked={dossier.apporteur_actif || false}
                   onChange={async e => {
                     const v = e.target.checked
+                    const ancien = dossier.apporteur_actif
                     set('apporteur_actif', v)
-                    await supabase.from('dossiers').update({ apporteur_actif: v }).eq('id', id)
+                    const { error } = await supabase.from('dossiers').update({ apporteur_actif: v }).eq('id', id)
+                    if (error) { setErreur('Erreur : ' + error.message); set('apporteur_actif', ancien) }
                   }}
                   style={{width:14, height:14, accentColor:'var(--brand-700)'}} />
                 <span style={{fontSize:13, fontWeight:600, color: dossier.apporteur_actif ? 'var(--brand-800)' : 'var(--ink-500)'}}>
@@ -2651,8 +2658,10 @@ export default function FicheChantier({ params }) {
                       value={(dossier.taux_courtage ?? COURTAGE_STANDARD) * 100}
                       onChange={async e => {
                         const taux = parseFloat(e.target.value || 0) / 100
+                        const ancien = dossier.taux_courtage
                         set('taux_courtage', taux)
-                        await supabase.from('dossiers').update({ taux_courtage: taux }).eq('id', id)
+                        const { error } = await supabase.from('dossiers').update({ taux_courtage: taux }).eq('id', id)
+                        if (error) { setErreur('Erreur : ' + error.message); set('taux_courtage', ancien) }
                       }}
                       className="input"
                       style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
@@ -2689,8 +2698,10 @@ export default function FicheChantier({ params }) {
                       value={dossier.honoraires_amo_taux ?? AMO_STANDARD * 100}
                       onChange={async e => {
                         const taux = parseFloat(e.target.value || 0)
+                        const ancien = dossier.honoraires_amo_taux
                         set('honoraires_amo_taux', taux)
-                        await supabase.from('dossiers').update({ honoraires_amo_taux: taux }).eq('id', id)
+                        const { error } = await supabase.from('dossiers').update({ honoraires_amo_taux: taux }).eq('id', id)
+                        if (error) { setErreur('Erreur : ' + error.message); set('honoraires_amo_taux', ancien) }
                       }}
                       className="input"
                       style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
