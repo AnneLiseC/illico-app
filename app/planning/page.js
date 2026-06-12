@@ -364,8 +364,10 @@ export default function Planning() {
         body: JSON.stringify({ googleEventId }),
       })).catch(() => {})
     }
-    if (elementSelectionne.type === 'rdv') await supabase.from('rendez_vous').delete().eq('id', elementSelectionne.data.id)
-    else await supabase.from('interventions_artisans').delete().eq('id', elementSelectionne.data.id)
+    const { error } = elementSelectionne.type === 'rdv'
+      ? await supabase.from('rendez_vous').delete().eq('id', elementSelectionne.data.id)
+      : await supabase.from('interventions_artisans').delete().eq('id', elementSelectionne.data.id)
+    if (error) { setErreur(error.message); return }
     fermerModal()
     chargerTout()
   }

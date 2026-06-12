@@ -54,6 +54,7 @@ export default function EspaceClient() {
   const [categoriePhoto, setCategoriePhoto] = useState('avant')
   const [lightbox, setLightbox]       = useState({ open: false, index: 0 })
   const [nouveauMessage, setNouveauMessage] = useState('')
+  const [msgErreur, setMsgErreur]     = useState('')
   const [sendingMsg, setSendingMsg]   = useState(false)
   const [crOuvert, setCrOuvert]       = useState(null)
   const [pdfErreur, setPdfErreur]     = useState('')
@@ -163,7 +164,8 @@ export default function EspaceClient() {
   const envoyerMessage = async () => {
     if (!nouveauMessage.trim() || !dossier || !profile) return
     setSendingMsg(true)
-    await supabase.from('messages').insert({
+    setMsgErreur('')
+    const { error } = await supabase.from('messages').insert({
       dossier_id: dossier.id,
       auteur_id: profile.id,
       auteur_role: 'client',
@@ -171,6 +173,12 @@ export default function EspaceClient() {
       lu: true,       // lu par le client (lui-même)
       lu_agence: false,
     })
+    if (error) {
+      // On garde le texte saisi pour que le client puisse réessayer.
+      setMsgErreur('Votre message n\'a pas pu être envoyé — réessayez.')
+      setSendingMsg(false)
+      return
+    }
     setNouveauMessage('')
     await chargerMessages(dossier.id, profile.id)
     setSendingMsg(false)
@@ -567,6 +575,9 @@ export default function EspaceClient() {
                   {sendingMsg ? 'Envoi...' : 'Envoyer →'}
                 </button>
               </div>
+              {msgErreur && (
+                <p className="text-xs text-red-600 mt-2">{msgErreur}</p>
+              )}
             </div>
           </div>
         )}
