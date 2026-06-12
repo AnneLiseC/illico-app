@@ -81,7 +81,8 @@ export default function Artisans() {
       } catch (e) {
         console.error('Purge Storage fiches artisan (non bloquant):', e?.message)
       }
-      await supabase.from('fiches_techniques').delete().eq('artisan_id', artisanId)
+      const { error: fichesErr } = await supabase.from('fiches_techniques').delete().eq('artisan_id', artisanId)
+      if (fichesErr) { erreurs.push(`${artisan?.entreprise} (${fichesErr.message})`); continue }
       const { error } = await supabase.from('artisans').delete().eq('id', artisanId)
       if (error) erreurs.push(`${artisan?.entreprise} (${error.message})`)
     }

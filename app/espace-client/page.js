@@ -5,10 +5,12 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { calcStatut, STATUT_CONFIG } from '../lib/dossiers'
 import { authHeaders } from '../lib/api-auth-client'
+import MarkdownCR from '../components/MarkdownCR'
 
+// Vue client : les statuts internes de prospection (à contacter / à relancer)
+// sont fondus dans une étape neutre « Préparation ».
 const ETAPES = [
-  { key: 'a_contacter',       label: 'À contacter',  icon: '📞' },
-  { key: 'a_relancer',        label: 'À relancer',    icon: '🔄' },
+  { key: 'preparation',       label: 'Préparation',   icon: '📂' },
   { key: 'devis_en_attente',  label: 'Devis',         icon: '📋' },
   { key: 'en_cours_chantier', label: 'Travaux',       icon: '🔨' },
   { key: 'termine',           label: 'Terminé',       icon: '✅' },
@@ -17,8 +19,14 @@ const ETAPES = [
 function calcEtape(dossier) {
   if (!dossier) return 0
   const s = calcStatut(dossier)
-  const map = { a_contacter: 0, a_relancer: 1, devis_en_attente: 2, devis_a_modifier: 2, en_cours_chantier: 3, termine: 4 }
+  const map = { a_contacter: 0, a_relancer: 0, devis_en_attente: 1, devis_a_modifier: 1, en_cours_chantier: 2, termine: 3 }
   return map[s] ?? 0
+}
+
+// Badge statut côté client : libellé neutre à la place des statuts internes.
+const STATUT_CLIENT_OVERRIDE = {
+  a_contacter: { label: 'Dossier en préparation', color: 'bg-blue-100 text-blue-700' },
+  a_relancer:  { label: 'Dossier en préparation', color: 'bg-blue-100 text-blue-700' },
 }
 
 const CAT_LABELS = {
@@ -46,6 +54,7 @@ export default function EspaceClient() {
   const [categoriePhoto, setCategoriePhoto] = useState('avant')
   const [lightbox, setLightbox]       = useState({ open: false, index: 0 })
   const [nouveauMessage, setNouveauMessage] = useState('')
+  const [msgErreur, setMsgErreur]     = useState('')
   const [sendingMsg, setSendingMsg]   = useState(false)
   const [crOuvert, setCrOuvert]       = useState(null)
   const [pdfErreur, setPdfErreur]     = useState('')
@@ -155,7 +164,8 @@ export default function EspaceClient() {
   const envoyerMessage = async () => {
     if (!nouveauMessage.trim() || !dossier || !profile) return
     setSendingMsg(true)
-    await supabase.from('messages').insert({
+    setMsgErreur('')
+    const { error } = await supabase.from('messages').insert({
       dossier_id: dossier.id,
       auteur_id: profile.id,
       auteur_role: 'client',
@@ -163,6 +173,12 @@ export default function EspaceClient() {
       lu: true,       // lu par le client (lui-même)
       lu_agence: false,
     })
+    if (error) {
+      // On garde le texte saisi pour que le client puisse réessayer.
+      setMsgErreur('Votre message n\'a pas pu être envoyé — réessayez.')
+      setSendingMsg(false)
+      return
+    }
     setNouveauMessage('')
     await chargerMessages(dossier.id, profile.id)
     setSendingMsg(false)
@@ -207,6 +223,7 @@ export default function EspaceClient() {
   // comptes_rendus chargés séparément → on les intègre dans le dossier pour calcStatut
   const dossierComplet    = dossier ? { ...dossier, comptes_rendus: comptesRendus } : null
   const etapeActuelle     = calcEtape(dossierComplet)
+  const statutClient      = STATUT_CLIENT_OVERRIDE[calcStatut(dossierComplet)] || STATUT_CONFIG[calcStatut(dossierComplet)]
   const photosCatActuelle = photos.filter(p => p.categorie === categoriePhoto)
   const nbMsgNonLus       = messages.filter(m => m.auteur_role !== 'client' && !m.lu).length
   const devisAcceptes     = (dossier.devis_artisans || []).filter(d => d.statut === 'accepte')
@@ -217,33 +234,6 @@ export default function EspaceClient() {
     { key: 'cr',        label: `Comptes-rendus (${comptesRendus.length})`,          icon: '📄' },
     { key: 'messages',  label: `Messages${nbMsgNonLus > 0 ? ` (${nbMsgNonLus})` : ''}`, icon: '💬' },
   ]
-
-  // ── Rendu markdown simplifié ──
-  const renderInline = (text) => {
-    const parts = text.split(/\*\*(.+?)\*\*/g)
-    return parts.map((part, i) => i % 2 === 1 ? <strong key={i}>{part}</strong> : part)
-  }
-  const renderMarkdown = (text) => {
-    if (!text) return null
-    const lines = text.split('\n')
-    const els = []
-    let listItems = []
-    const flushList = () => {
-      if (!listItems.length) return
-      els.push(<ul key={`l${els.length}`} className="list-disc list-inside space-y-1 ml-2 mb-3">{listItems.map((it, i) => <li key={i} className="text-sm text-gray-700">{renderInline(it)}</li>)}</ul>)
-      listItems = []
-    }
-    lines.forEach((line, i) => {
-      const h = line.match(/^## +(?:\d+\.\s*)?(.+)/)
-      if (h) { flushList(); els.push(<p key={i} className="font-bold text-blue-900 text-sm mt-4 mb-1 pb-1 border-b border-gray-100">{h[1].trim()}</p>); return }
-      if (line.match(/^[-–] /)) { listItems.push(line.slice(2)); return }
-      if (!line.trim()) { flushList(); return }
-      flushList()
-      els.push(<p key={i} className="text-sm text-gray-700 mb-2 leading-relaxed">{renderInline(line)}</p>)
-    })
-    flushList()
-    return els
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -281,8 +271,8 @@ export default function EspaceClient() {
                   <p className="text-xs text-gray-400 mb-1">Référence dossier</p>
                   <p className="font-bold text-blue-900 text-lg">{dossier.reference}</p>
                 </div>
-                <span className={`text-xs px-3 py-1 rounded-full font-medium ${STATUT_CONFIG[calcStatut(dossierComplet)].color}`}>
-                  {STATUT_CONFIG[calcStatut(dossierComplet)].label}
+                <span className={`text-xs px-3 py-1 rounded-full font-medium ${statutClient.color}`}>
+                  {statutClient.label}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm">
@@ -326,7 +316,7 @@ export default function EspaceClient() {
                       const done   = idx < etapeActuelle
                       const active = idx === etapeActuelle
                       return (
-                        <div key={etape.key} className="flex flex-col items-center gap-2" style={{ width: '20%' }}>
+                        <div key={etape.key} className="flex flex-col items-center gap-2" style={{ width: '25%' }}>
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg border-2 transition-all ${
                             done   ? 'bg-blue-600 border-blue-600 text-white' :
                             active ? 'bg-white border-blue-600' :
@@ -484,11 +474,15 @@ export default function EspaceClient() {
                     </div>
                     <span className="text-gray-400 text-sm">{crOuvert === cr.id ? '▲' : '▼'}</span>
                   </div>
-                  {crOuvert === cr.id && (cr.contenu_final || cr.notes_brutes) && (
+                  {crOuvert === cr.id && (
                     <div className="border-t border-gray-100 px-4 py-4 space-y-3">
-                      <div className="prose prose-sm max-w-none">
-                        {renderMarkdown(cr.contenu_final || cr.notes_brutes)}
-                      </div>
+                      {cr.contenu_final ? (
+                        <div className="prose prose-sm max-w-none">
+                          <MarkdownCR text={cr.contenu_final} variant="client" />
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-400 italic">Compte-rendu en cours de rédaction.</p>
+                      )}
                       {cr.contenu_final && (
                         <div className="space-y-2">
                           <button
@@ -547,8 +541,8 @@ export default function EspaceClient() {
                   messages.map(msg => {
                     const isClient = msg.auteur_role === 'client'
                     return (
-                      <div key={msg.id} className={`flex ${isClient ? 'justify-start' : 'justify-end'}`}>
-                        <div className={`max-w-xs rounded-2xl px-4 py-2.5 ${isClient ? 'bg-gray-100 text-gray-800' : 'bg-blue-800 text-white'}`}>
+                      <div key={msg.id} className={`flex ${isClient ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-xs rounded-2xl px-4 py-2.5 ${isClient ? 'bg-blue-800 text-white' : 'bg-gray-100 text-gray-800'}`}>
                           {!isClient && (
                             <p className="text-xs font-medium mb-1 opacity-70">{msg.auteur?.prenom || 'Équipe illiCO'}</p>
                           )}
@@ -581,6 +575,9 @@ export default function EspaceClient() {
                   {sendingMsg ? 'Envoi...' : 'Envoyer →'}
                 </button>
               </div>
+              {msgErreur && (
+                <p className="text-xs text-red-600 mt-2">{msgErreur}</p>
+              )}
             </div>
           </div>
         )}
