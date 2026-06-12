@@ -921,8 +921,9 @@ export default function FicheChantier({ params }) {
     if (swapIdx < 0 || swapIdx >= devis.length) return
     const a = devis[idx], b = devis[swapIdx]
     const ordreA = a.ordre ?? idx + 1, ordreB = b.ordre ?? swapIdx + 1
-    await supabase.from('devis_artisans').update({ ordre: ordreB }).eq('id', a.id)
-    await supabase.from('devis_artisans').update({ ordre: ordreA }).eq('id', b.id)
+    const { error: errA } = await supabase.from('devis_artisans').update({ ordre: ordreB }).eq('id', a.id)
+    const { error: errB } = await supabase.from('devis_artisans').update({ ordre: ordreA }).eq('id', b.id)
+    if (errA || errB) setErreur('Erreur : ' + (errA || errB).message)
     await chargerDevis()
   }
   
@@ -1197,8 +1198,9 @@ export default function FicheChantier({ params }) {
       acompte_montant_fixe: acompteMontant,
     }
     if (devisModal.devis) {
-      // Edit
-      await supabase.from('devis_artisans').update(payload).eq('id', devisModal.devis.id)
+      // Edit — sur erreur, la modale reste ouverte avec la saisie (return avant fermeture).
+      const { error } = await supabase.from('devis_artisans').update(payload).eq('id', devisModal.devis.id)
+      if (error) { setErreur('Erreur : ' + error.message); return }
       await chargerDevis()
       setSucces('Devis modifié ✓')
     } else {
@@ -1220,12 +1222,15 @@ export default function FicheChantier({ params }) {
         // Gate : on n'écrit le chemin que si l'upload réussit (sinon référence pendante).
         const { error: uploadError } = await supabase.storage.from('documents').upload(cheminDevis, form.fichier)
         if (uploadError) uploadDevisOk = false
-        else await supabase.from('devis_artisans').update({ devis_pdf_path: cheminDevis }).eq('id', devisInsere[0].id)
+        else {
+          const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_pdf_path: cheminDevis }).eq('id', devisInsere[0].id)
+          if (pathErr) uploadDevisOk = false
+        }
       }
       if (!dossier.contrat_signe) {
         const today = new Date().toISOString().slice(0, 10)
-        await supabase.from('dossiers').update({ contrat_signe: true, date_signature_contrat: today }).eq('id', id)
-        setDossier(d => ({ ...d, contrat_signe: true, date_signature_contrat: today }))
+        const { error: contratErr } = await supabase.from('dossiers').update({ contrat_signe: true, date_signature_contrat: today }).eq('id', id)
+        if (!contratErr) setDossier(d => ({ ...d, contrat_signe: true, date_signature_contrat: today }))
       }
       await chargerDevis()
       if (uploadDevisOk) setSucces('Devis ajouté ✓')
@@ -1244,21 +1249,24 @@ export default function FicheChantier({ params }) {
   }
 
   const changerStatutDevis = async (devisId, statut) => {
+    let error
     if (statut === 'accepte') {
       const aujourd_hui = new Date().toISOString().slice(0, 10)
       const [annee, mois, jour] = aujourd_hui.split('-')
       const dateSignature = prompt('Date de signature du devis (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
       const dateParsee = parseDateFR(dateSignature)
       if (dateSignature && dateParsee) {
-        await supabase.from('devis_artisans').update({ statut, date_signature: dateParsee }).eq('id', devisId)
+        ({ error } = await supabase.from('devis_artisans').update({ statut, date_signature: dateParsee }).eq('id', devisId))
       } else {
-        await supabase.from('devis_artisans').update({ statut: 'recu' }).eq('id', devisId)
+        ({ error } = await supabase.from('devis_artisans').update({ statut: 'recu' }).eq('id', devisId))
       }
     } else {
-      await supabase.from('devis_artisans').update({ statut }).eq('id', devisId)
+      ({ error } = await supabase.from('devis_artisans').update({ statut }).eq('id', devisId))
     }
+    if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
     if (statut === 'a_modifier') {
-      await supabase.from('dossiers').update({ statut: 'devis_a_modifier' }).eq('id', id)
+      const { error: dossierErr } = await supabase.from('dossiers').update({ statut: 'devis_a_modifier' }).eq('id', id)
+      if (dossierErr) { setErreur('Erreur : ' + dossierErr.message); await chargerDevis(); return }
       setDossier(prev => prev ? { ...prev, statut: 'devis_a_modifier' } : prev)
     }
     await chargerDevis()
@@ -1266,7 +1274,8 @@ export default function FicheChantier({ params }) {
 
   const supprimerDevis = async (devisId) => {
     if (!confirm('Supprimer ce devis ?')) return
-    await supabase.from('devis_artisans').delete().eq('id', devisId)
+    const { error } = await supabase.from('devis_artisans').delete().eq('id', devisId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerDevis()
   }
 
@@ -1278,7 +1287,9 @@ export default function FicheChantier({ params }) {
     const chemin = `chantiers/${id}/devis_signes/${devisId}.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (!error) {
-      await supabase.from('devis_artisans').update({ devis_signe_path: chemin }).eq('id', devisId)
+      const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_signe_path: chemin }).eq('id', devisId)
+      if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
+      let statutOk = true
       const devisActuel = devis.find(d => d.id === devisId)
       if (devisActuel && devisActuel.statut !== 'accepte') {
         const aujourd_hui = new Date().toISOString().slice(0, 10)
@@ -1286,21 +1297,27 @@ export default function FicheChantier({ params }) {
         const dateSignature = prompt('Date de signature du devis (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
         const dateParsee = parseDateFR(dateSignature)
         if (dateSignature && dateParsee) {
-          await supabase.from('devis_artisans').update({
+          const { error: statutErr } = await supabase.from('devis_artisans').update({
             statut: 'accepte',
             date_signature: dateParsee,
           }).eq('id', devisId)
+          if (statutErr) statutOk = false
         }
       }
       await chargerDevis()
-      setSucces('Devis signé uploadé ✓')
+      if (statutOk) setSucces('Devis signé uploadé ✓')
+      else setErreur('Devis signé enregistré, mais le statut n\'a pas pu être mis à jour — réessayez.')
     } else { setErreur('Erreur upload : ' + error.message) }
     setUploadingDoc(null)
   }
   const supprimerDevisSigne = async (devisId, path) => {
     if (!confirm('Supprimer le devis signé ?')) return
-    await supabase.storage.from('documents').remove([path])
-    await supabase.from('devis_artisans').update({ devis_signe_path: null }).eq('id', devisId)
+    // Storage best-effort : un fichier qui résiste ne bloque pas le retrait de la
+    // référence (orphelin sans gravité), mais on le signale.
+    const { error: rmErr } = await supabase.storage.from('documents').remove([path])
+    if (rmErr) console.error('Suppression PDF devis signé (non bloquant) :', rmErr.message)
+    const { error } = await supabase.from('devis_artisans').update({ devis_signe_path: null }).eq('id', devisId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerDevis()
     setSucces('Devis signé supprimé ✓')
   }
@@ -2854,7 +2871,8 @@ export default function FicheChantier({ params }) {
                                   return
                                 }
                               }
-                              await supabase.from('devis_artisans').update({ acompte_pourcentage: newVal }).eq('id', d.id)
+                              const { error } = await supabase.from('devis_artisans').update({ acompte_pourcentage: newVal }).eq('id', d.id)
+                              if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
                               await chargerDevis()
                             }}
                             className="input" style={{height:26, fontSize:11, padding:'0 6px', minWidth:80}}>
@@ -2867,7 +2885,8 @@ export default function FicheChantier({ params }) {
                             <input type="number" step="0.01" placeholder="Montant TTC" defaultValue={d.acompte_montant_fixe || ''}
                               onBlur={async e => {
                                 const v = e.target.value !== '' && Number.isFinite(parseFloat(e.target.value)) ? parseFloat(e.target.value) : null
-                                await supabase.from('devis_artisans').update({ acompte_montant_fixe: v }).eq('id', d.id)
+                                const { error } = await supabase.from('devis_artisans').update({ acompte_montant_fixe: v }).eq('id', d.id)
+                                if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
                                 await chargerDevis()
                               }}
                               className="input" style={{width:96, height:26, fontSize:11, padding:'0 6px'}} />
@@ -2954,8 +2973,10 @@ export default function FicheChantier({ params }) {
                                 style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>Voir PDF</button>
                               <button onClick={async () => {
                                 if (!confirm('Supprimer le PDF du devis ?')) return
-                                await supabase.storage.from('documents').remove([d.devis_pdf_path])
-                                await supabase.from('devis_artisans').update({ devis_pdf_path: null }).eq('id', d.id)
+                                const { error: rmErr } = await supabase.storage.from('documents').remove([d.devis_pdf_path])
+                                if (rmErr) console.error('Suppression PDF devis (non bloquant) :', rmErr.message)
+                                const { error } = await supabase.from('devis_artisans').update({ devis_pdf_path: null }).eq('id', d.id)
+                                if (error) { setErreur('Erreur : ' + error.message); return }
                                 await chargerDevis()
                               }} style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
                             </>
@@ -2977,7 +2998,8 @@ export default function FicheChantier({ params }) {
                                   const chemin = `chantiers/${id}/devis/${d.id}.${ext}`
                                   const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
                                   if (!error) {
-                                    await supabase.from('devis_artisans').update({ devis_pdf_path: chemin }).eq('id', d.id)
+                                    const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_pdf_path: chemin }).eq('id', d.id)
+                                    if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
                                     await chargerDevis()
                                     setSucces('Devis artisan uploadé ✓')
                                   } else { setErreur('Erreur upload : ' + error.message) }
