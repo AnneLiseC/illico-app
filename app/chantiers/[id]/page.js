@@ -747,7 +747,8 @@ export default function FicheChantier({ params }) {
       const chemin = `chantiers/${id}/${categorie}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error: uploadError } = await supabase.storage.from('photos').upload(chemin, fichier)
       if (uploadError) return false
-      await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id })
+      const { error: insertErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id })
+      if (insertErr) return false
       return true
     }))
     await chargerPhotos()
@@ -759,8 +760,10 @@ export default function FicheChantier({ params }) {
 
   const supprimerPhoto = async (photoId, chemin) => {
     if (!confirm('Supprimer cette photo ?')) return
-    await supabase.storage.from('photos').remove([chemin])
-    await supabase.from('photos').delete().eq('id', photoId)
+    const { error: rmErr } = await supabase.storage.from('photos').remove([chemin])
+    if (rmErr) console.error('Suppression fichier photo (non bloquant) :', rmErr.message)
+    const { error } = await supabase.from('photos').delete().eq('id', photoId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerPhotos()
   }
 
@@ -783,7 +786,7 @@ export default function FicheChantier({ params }) {
       setModalRdvOuvert(false)
       setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client' })
       setSucces('RDV créé ✓')
-    }
+    } else { setErreur('Erreur : ' + error.message) }
   }
 
   const deleteGoogleEvent = async (googleEventId) => {
@@ -802,19 +805,21 @@ export default function FicheChantier({ params }) {
   const supprimerRdvDossier = async (rdvId) => {
     if (!confirm('Supprimer ce RDV ?')) return
     const rdv = rdvsDossier.find(r => r.id === rdvId)
-    await supabase.from('rendez_vous').delete().eq('id', rdvId)
+    const { error } = await supabase.from('rendez_vous').delete().eq('id', rdvId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     if (rdv?.google_event_id) await deleteGoogleEvent(rdv.google_event_id)
     await chargerRdvsDossier()
   }
 
   const modifierRdvDossier = async () => {
     if (!rdvEnEdition) return
-    await supabase.from('rendez_vous').update({
+    const { error } = await supabase.from('rendez_vous').update({
       type_rdv: rdvEnEdition.type_rdv, date_heure: rdvEnEdition.date_heure,
       duree_minutes: parseInt(rdvEnEdition.duree_minutes), artisan_id: rdvEnEdition.artisan_id || null, notes: rdvEnEdition.notes || null,
       titre: rdvEnEdition.type_rdv === 'autres' ? (rdvEnEdition.titre || null) : null,
       lieu: rdvEnEdition.lieu || 'client',
     }).eq('id', rdvEnEdition.id)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerRdvsDossier()
     setModalRdvOuvert(false)
     setRdvEnEdition(null)
@@ -883,7 +888,8 @@ export default function FicheChantier({ params }) {
   const supprimerInterventionDossier = async (intId) => {
     if (!confirm('Supprimer cette intervention ?')) return
     const intervention = interventionsDossier.find(i => i.id === intId)
-    await supabase.from('interventions_artisans').delete().eq('id', intId)
+    const { error } = await supabase.from('interventions_artisans').delete().eq('id', intId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     if (intervention?.google_event_id) await deleteGoogleEvent(intervention.google_event_id)
     const { data } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
     setInterventionsDossier(data || [])
@@ -903,9 +909,11 @@ export default function FicheChantier({ params }) {
     const dejaCochee = fichesTechChantier[artisanId]?.some(f => f.fiche_technique_id === ficheId)
     if (dejaCochee) {
       const item = fichesTechChantier[artisanId].find(f => f.fiche_technique_id === ficheId)
-      await supabase.from('chantier_fiches_techniques').delete().eq('id', item.id)
+      const { error } = await supabase.from('chantier_fiches_techniques').delete().eq('id', item.id)
+      if (error) { setErreur('Erreur : ' + error.message); return }
     } else {
-      await supabase.from('chantier_fiches_techniques').insert({ dossier_id: id, fiche_technique_id: ficheId, artisan_id: artisanId })
+      const { error } = await supabase.from('chantier_fiches_techniques').insert({ dossier_id: id, fiche_technique_id: ficheId, artisan_id: artisanId })
+      if (error) { setErreur('Erreur : ' + error.message); return }
     }
     await chargerFichesTechChantier()
   }
@@ -974,10 +982,11 @@ export default function FicheChantier({ params }) {
       const chemin = `chantiers/${id}/documents/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error } = await supabase.storage.from('documents').upload(chemin, fichier)
       if (error) { echecsDoc++; continue }
-      await supabase.from('chantier_documents').insert({
+      const { error: insertErr } = await supabase.from('chantier_documents').insert({
         dossier_id: id, nom: fichier.name, path: chemin,
         type_mime: fichier.type, taille: fichier.size, dans_restitution: false,
       })
+      if (insertErr) { echecsDoc++; continue }
     }
     await chargerDocuments()
     if (echecsDoc === 0) setSucces('Document(s) ajouté(s) ✓')
@@ -987,13 +996,16 @@ export default function FicheChantier({ params }) {
 
   const supprimerDocumentChantier = async (docId, path) => {
     if (!confirm('Supprimer ce document ?')) return
-    await supabase.storage.from('documents').remove([path])
-    await supabase.from('chantier_documents').delete().eq('id', docId)
+    const { error: rmErr } = await supabase.storage.from('documents').remove([path])
+    if (rmErr) console.error('Suppression fichier document (non bloquant) :', rmErr.message)
+    const { error } = await supabase.from('chantier_documents').delete().eq('id', docId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerDocuments()
   }
 
   const toggleDansRestitution = async (docId, valeur) => {
-    await supabase.from('chantier_documents').update({ dans_restitution: valeur }).eq('id', docId)
+    const { error } = await supabase.from('chantier_documents').update({ dans_restitution: valeur }).eq('id', docId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     setDocuments(prev => prev.map(d => d.id === docId ? { ...d, dans_restitution: valeur } : d))
   }
 
@@ -1332,13 +1344,15 @@ export default function FicheChantier({ params }) {
   const sauvegarderCRManuel = async (publier = false) => {
     if (!crManuelForm.contenu.trim()) return
     setCrManuelSaving(true)
-    const { data: crInsere } = await supabase.from('comptes_rendus').insert({
+    const { data: crInsere, error: insertErr } = await supabase.from('comptes_rendus').insert({
       dossier_id: id,
       type_visite: crManuelForm.type_visite || null,
       date_visite: crManuelForm.date_visite || null,
       contenu_final: crManuelForm.contenu,
       valide: publier,
     }).select().single()
+    // Échec de l'insert : on garde la saisie (modale ouverte) pour réessayer.
+    if (insertErr) { setErreur('Erreur : ' + insertErr.message); setCrManuelSaving(false); return }
 
     let uploadCrOk = true
     if (crInsere && crManuelForm.fichier) {
@@ -1392,7 +1406,7 @@ export default function FicheChantier({ params }) {
     setCrSavingFinal(true)
     const contenuFinal = crSectionsEditees.map(s => `## ${s.numero}. ${s.titre}\n\n${s.contenu}`).join('\n\n')
     const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('')
-    await supabase.from('comptes_rendus').insert({
+    const { error: insertErr } = await supabase.from('comptes_rendus').insert({
       dossier_id: id,
       type_visite: crForm.type_visite,
       date_visite: crForm.date_visite || null,
@@ -1400,6 +1414,8 @@ export default function FicheChantier({ params }) {
       contenu_final: contenuFinal,
       valide: publier,
     })
+    // Échec de l'insert : on garde la modale ouverte (sections éditées conservées).
+    if (insertErr) { setErreur('Erreur : ' + insertErr.message); setCrSavingFinal(false); return }
     const { data } = await supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
     setComptesRendus(data || [])
     setCrModal(false)
@@ -1445,12 +1461,14 @@ export default function FicheChantier({ params }) {
 
   const supprimerCR = async (crId) => {
     if (!confirm('Supprimer ce compte-rendu ?')) return
-    await supabase.from('comptes_rendus').delete().eq('id', crId)
+    const { error } = await supabase.from('comptes_rendus').delete().eq('id', crId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     setComptesRendus(prev => prev.filter(c => c.id !== crId))
   }
 
   const toggleValide = async (crId, valide) => {
-    await supabase.from('comptes_rendus').update({ valide }).eq('id', crId)
+    const { error } = await supabase.from('comptes_rendus').update({ valide }).eq('id', crId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     setComptesRendus(prev => prev.map(c => c.id === crId ? { ...c, valide } : c))
   }
 
@@ -1561,10 +1579,12 @@ export default function FicheChantier({ params }) {
     } else if (inserted) {
       setMessages(prev => prev.map(m => m.id === tempId ? inserted : m))
     }
-    // Marquer les messages client comme lus par l'agence (au cas où)
-    await supabase.from('messages').update({ lu_agence: true })
+    // Marquer les messages client comme lus par l'agence (au cas où).
+    // Bénin : en cas d'échec, on garde le compteur (pas de message utilisateur).
+    const { error: luErr } = await supabase.from('messages').update({ lu_agence: true })
       .eq('dossier_id', id).eq('auteur_role', 'client').eq('lu_agence', false)
-    setNbMsgNonLus(0)
+    if (luErr) console.error('Marquage messages lus (non bloquant) :', luErr.message)
+    else setNbMsgNonLus(0)
     setSendingMsg(false)
   }
 
