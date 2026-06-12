@@ -1342,9 +1342,7 @@ export default function FicheChantier({ params }) {
   const sauvegarderCRGenere = async (publier = false) => {
     if (!crGenere) return
     setCrSavingFinal(true)
-    const contenuFinal = crSectionsEditees.map(s => `## ${s.numero}. ${s.titre}
-
-  ${s.contenu}`).join('')
+    const contenuFinal = crSectionsEditees.map(s => `## ${s.numero}. ${s.titre}\n\n${s.contenu}`).join('\n\n')
     const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('')
     await supabase.from('comptes_rendus').insert({
       dossier_id: id,
