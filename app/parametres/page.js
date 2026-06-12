@@ -694,7 +694,6 @@ export default function Parametres() {
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, maxWidth:680}}>
                 {[
                   { l:'Google Calendar', desc:'Sync des RDV et interventions',   connected: gcalConnected },
-                  { l:'Google Drive',    desc:'Stockage documents chantier',      connected: false },
                 ].map(int => (
                   <div key={int.l} style={{padding:18, border:'1px solid var(--ink-200)', borderRadius:12, display:'flex', flexDirection:'column', gap:8}}>
                     <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
