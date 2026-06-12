@@ -1738,52 +1738,26 @@ export default function FicheChantier({ params }) {
     setSuiviFinancier(data || [])
   }
 
-  const majSuiviChantier = async (type, montant, champ, valeur) => {
-    // Échéances honoraires togglées par statut_client : on DATE le règlement au coche
-    // (date_paiement = aujourd'hui, la date que lit l'agrégation F2) et on SUPPRIME la
-    // ligne au décoche (zéro résidu, pas de date périmée). Tout autre cas (apporteur,
-    // autres champs) garde l'upsert d'origine. date_paiement est de type `date` → AAAA-MM-JJ.
-    const honoToggle = champ === 'statut_client' &&
-      ['honoraires_courtage', 'acompte_amo', 'solde_amo'].includes(type)
+  const majSuiviChantier = async (type, montant, valeur) => {
+    // Toggle d'une échéance honoraire : coche = réglé + date du jour, décoche = suppression.
+    // Sur AMO, honoraires_courtage et acompte_amo représentent le MÊME encaissement
+    // (la part courtage, vue AMO) → togglés ensemble. La fonction Postgres
+    // suivi_toggle_honoraires écrit les 1-2 lignes de façon ATOMIQUE (tout-ou-rien)
+    // sous la RLS de l'appelant (SECURITY INVOKER).
+    const types = [type]
+    if (dossier?.typologie === 'amo') {
+      if (type === 'honoraires_courtage') types.push('acompte_amo')
+      else if (type === 'acompte_amo') types.push('honoraires_courtage')
+    }
     const today = new Date().toISOString().slice(0, 10)
-
-    const upsertOne = async (t, m) => {
-      // Interroger la BDD directement (pas le state) pour éviter les problèmes de double appel
-      const { data: existing, error: selectErr } = await supabase
-        .from('suivi_financier')
-        .select('id')
-        .eq('dossier_id', id)
-        .eq('type_echeance', t)
-        .is('artisan_id', null)
-        .maybeSingle()
-      if (selectErr) return selectErr
-
-      if (honoToggle && valeur === 'en_attente') {
-        // Décoche : supprimer la ligne (élimine le résidu + la date périmée).
-        if (existing) {
-          const { error } = await supabase.from('suivi_financier').delete().eq('id', existing.id)
-          return error
-        }
-        return null
-      }
-
-      const payload = honoToggle ? { statut_client: 'regle', date_paiement: today } : { [champ]: valeur }
-      const { error } = existing
-        ? await supabase.from('suivi_financier').update(payload).eq('id', existing.id)
-        : await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: t, montant_ttc: m, ...payload })
-      return error
-    }
-    // FILET temporaire — atomicité à venir (lot dédié, transaction Postgres) :
-    // le couple courtage/acompte AMO représente le MÊME encaissement ; si la 1re
-    // écriture passe et la 2e échoue, on signale la désync + refetch, sans rollback.
-    const err1 = await upsertOne(type, montant)
-    let err2 = null
-    if (!err1) {
-      if (type === 'honoraires_courtage' && dossier?.typologie === 'amo') err2 = await upsertOne('acompte_amo', montant)
-      if (type === 'acompte_amo' && dossier?.typologie === 'amo') err2 = await upsertOne('honoraires_courtage', montant)
-    }
-    if (err1) setErreur('Erreur : ' + err1.message)
-    else if (err2) setErreur('Échéance enregistrée, mais échec sur la part liée courtage/AMO : ' + err2.message + ' — vérifiez et réessayez.')
+    const { error } = await supabase.rpc('suivi_toggle_honoraires', {
+      p_dossier_id: id,
+      p_types: types,
+      p_montant: montant,
+      p_regle: valeur === 'regle',
+      p_today: today,
+    })
+    if (error) setErreur('Erreur : ' + error.message)
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -3439,7 +3413,7 @@ export default function FicheChantier({ params }) {
                   date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || null}
                   onToggle={() => {
                     const newStatut = suiviCourtage?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                    majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'statut_client', newStatut)
+                    majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, newStatut)
                   }}
                   fmtDateFn={fmtD}
                 />
@@ -3454,7 +3428,7 @@ export default function FicheChantier({ params }) {
                   date={(suiviSoldeAMO?.statut_client === 'regle' && suiviSoldeAMO.date_paiement) || null}
                   onToggle={() => {
                     const newStatut = suiviSoldeAMO?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                    majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'statut_client', newStatut)
+                    majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, newStatut)
                   }}
                   fmtDateFn={fmtD}
                 />
