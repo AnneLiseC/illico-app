@@ -1007,7 +1007,7 @@ export default function FicheChantier({ params }) {
       ? (nouvelleFacture.libelle_autre || 'Facture').trim()
       : nouvelleFacture.libelle
 
-    const { data: factureInseree } = await supabase.from('factures_artisans').insert({
+    const { data: factureInseree, error } = await supabase.from('factures_artisans').insert({
       dossier_id: id,
       devis_id: devisId,
       artisan_id: artisanId,
@@ -1016,6 +1016,8 @@ export default function FicheChantier({ params }) {
       statut: nouvelleFacture.statut,
       libelle: libelleFinal
     }).select().single()
+    // Échec de l'insert : on garde la saisie (pas de reset) pour réessayer.
+    if (error) { setErreur('Erreur : ' + error.message); return }
 
     let uploadFactureOk = true
     if (factureInseree) {
@@ -1054,8 +1056,14 @@ export default function FicheChantier({ params }) {
 
   const supprimerFactureArtisan = async (factureId, pdfPath) => {
     if (!confirm('Supprimer cette facture ?')) return
-    if (pdfPath) await supabase.storage.from('documents').remove([pdfPath])
-    await supabase.from('factures_artisans').delete().eq('id', factureId)
+    // Storage best-effort : un fichier qui résiste ne doit pas bloquer la suppression
+    // de la ligne (l'orphelin éventuel est sans gravité), mais on le signale.
+    if (pdfPath) {
+      const { error: rmErr } = await supabase.storage.from('documents').remove([pdfPath])
+      if (rmErr) console.error('Suppression PDF facture (non bloquant) :', rmErr.message)
+    }
+    const { error } = await supabase.from('factures_artisans').delete().eq('id', factureId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerFactures()
   }
 
@@ -1063,10 +1071,11 @@ export default function FicheChantier({ params }) {
     const newStatut = statut === 'paye' ? 'en_attente' : 'paye'
     const facture = factures.find(f => f.id === factureId)
     const datePaye = facture?.date_paiement || (newStatut === 'paye' ? new Date().toISOString().slice(0, 10) : null)
-    await supabase.from('factures_artisans').update({
+    const { error } = await supabase.from('factures_artisans').update({
       statut: newStatut,
       date_paiement: newStatut === 'paye' ? datePaye : null,
     }).eq('id', factureId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     setFactures(prev => prev.map(f => f.id === factureId ? { ...f, statut: newStatut, date_paiement: newStatut === 'paye' ? datePaye : null } : f))
     // E5 — synchro suivi_financier (acompte_artisan si libellé 'acompte', sinon facture_finale)
     if (facture?.artisan_id) {
@@ -1087,7 +1096,8 @@ export default function FicheChantier({ params }) {
     const chemin = `chantiers/${id}/factures/${factureId}.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (!error) {
-      await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureId)
+      const { error: updErr } = await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureId)
+      if (updErr) { setErreur('Erreur : ' + updErr.message); setUploadingFacturePdf(null); return }
       await chargerFactures()
       setSucces('PDF facture uploadé ✓')
     } else { setErreur('Erreur upload : ' + error.message) }
