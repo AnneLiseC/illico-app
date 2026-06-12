@@ -695,8 +695,6 @@ export default function Parametres() {
                 {[
                   { l:'Google Calendar', desc:'Sync des RDV et interventions',   connected: gcalConnected },
                   { l:'Google Drive',    desc:'Stockage documents chantier',      connected: false },
-                  { l:'Supabase',        desc:'Base de données principale',       connected: true },
-                  { l:'IA Claude',       desc:'Génération comptes-rendus IA',     connected: true },
                 ].map(int => (
                   <div key={int.l} style={{padding:18, border:'1px solid var(--ink-200)', borderRadius:12, display:'flex', flexDirection:'column', gap:8}}>
                     <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
