@@ -1119,7 +1119,7 @@ export default function FicheChantier({ params }) {
     } else {
       // Si frais réglés, créer/màj la ligne suivi_financier
       if (dossier.frais_statut === 'regle') {
-        const { data: existingSuivi } = await supabase
+        const { data: existingSuivi, error: fraisSelErr } = await supabase
           .from('suivi_financier')
           .select('id, date_paiement')
           .eq('dossier_id', id)
@@ -1127,21 +1127,30 @@ export default function FicheChantier({ params }) {
           .is('artisan_id', null)
           .maybeSingle()
         const today = new Date().toISOString().split('T')[0]
-        if (existingSuivi) {
-          // On réaffirme le statut mais on PRÉSERVE la date métier existante :
-          // le tampon `today` ne s'applique qu'à la transition vers réglé (date NULL).
-          // Sinon chaque « Enregistrer » réécraserait la date → frais reclassé au mauvais mois.
-          await supabase.from('suivi_financier')
-            .update({ statut_client: 'regle', date_paiement: existingSuivi.date_paiement || today })
-            .eq('id', existingSuivi.id)
-        } else {
-          await supabase.from('suivi_financier').insert({
-            dossier_id: id,
-            type_echeance: 'frais_consultation',
-            artisan_id: null,
-            statut_client: 'regle',
-            date_paiement: today,
-          })
+        let fraisErr = fraisSelErr
+        if (!fraisErr) {
+          if (existingSuivi) {
+            // On réaffirme le statut mais on PRÉSERVE la date métier existante :
+            // le tampon `today` ne s'applique qu'à la transition vers réglé (date NULL).
+            // Sinon chaque « Enregistrer » réécraserait la date → frais reclassé au mauvais mois.
+            ({ error: fraisErr } = await supabase.from('suivi_financier')
+              .update({ statut_client: 'regle', date_paiement: existingSuivi.date_paiement || today })
+              .eq('id', existingSuivi.id))
+          } else {
+            ({ error: fraisErr } = await supabase.from('suivi_financier').insert({
+              dossier_id: id,
+              type_echeance: 'frais_consultation',
+              artisan_id: null,
+              statut_client: 'regle',
+              date_paiement: today,
+            }))
+          }
+        }
+        if (fraisErr) {
+          // Le dossier EST enregistré ; on reste en édition pour signaler le reliquat.
+          setErreur('Dossier enregistré, mais échec de la ligne de frais : ' + fraisErr.message)
+          setSaving(false)
+          return
         }
       }
 
@@ -1589,17 +1598,18 @@ export default function FicheChantier({ params }) {
     x.type_echeance === 'facture_finale' && x.artisan_id === dv.artisan_id && x.statut_illico === 'recu')).length
 
   const majSuiviAvecArtisan = async (type, artisanId, champ, valeur) => {
-    const { data: existing } = await supabase
+    const { data: existing, error: selectErr } = await supabase
       .from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', type).eq('artisan_id', artisanId)
       .maybeSingle()
-    if (existing) {
-      await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
-    } else {
-      await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: type, artisan_id: artisanId, [champ]: valeur })
-    }
+    if (selectErr) { setErreur('Erreur : ' + selectErr.message); return false }
+    const { error } = existing
+      ? await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
+      : await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: type, artisan_id: artisanId, [champ]: valeur })
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
+    if (error) { setErreur('Erreur : ' + error.message); return false }
+    return true
   }
 
   // Quand acompte_artisan est togglé côté suivi, propager aux factures_artisans acompte de cet artisan
@@ -1638,18 +1648,21 @@ export default function FicheChantier({ params }) {
   // PAS de DELETE : la ligne est partagée avec l'acompte client (statut_client/date_paiement),
   // qui reste intact. date_deblocage est de type `date` → AAAA-MM-JJ.
   const setDeblocagePaye = async (artisanId, recu) => {
-    const { data: existing } = await supabase
+    const { data: existing, error: selectErr } = await supabase
       .from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', 'acompte_artisan').eq('artisan_id', artisanId)
       .maybeSingle()
+    if (selectErr) { setErreur('Erreur : ' + selectErr.message); return }
     const payload = recu
       ? { statut_illico: 'recu', date_deblocage: new Date().toISOString().slice(0, 10) }
       : { statut_illico: 'en_attente', date_deblocage: null }
+    let error = null
     if (existing) {
-      await supabase.from('suivi_financier').update(payload).eq('id', existing.id)
+      ({ error } = await supabase.from('suivi_financier').update(payload).eq('id', existing.id))
     } else if (recu) {
-      await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'acompte_artisan', artisan_id: artisanId, ...payload })
+      ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'acompte_artisan', artisan_id: artisanId, ...payload }))
     }
+    if (error) { setErreur('Erreur : ' + error.message); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -1664,18 +1677,21 @@ export default function FicheChantier({ params }) {
     let q = supabase.from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', 'apporteur_agente')
     q = artisanId === null ? q.is('artisan_id', null) : q.eq('artisan_id', artisanId)
-    const { data: existing } = await q.maybeSingle()
+    const { data: existing, error: selectErr } = await q.maybeSingle()
+    if (selectErr) { setErreur('Erreur : ' + selectErr.message); return }
 
+    let error = null
     if (paye) {
       const today = new Date().toISOString().slice(0, 10)
       if (existing) {
-        await supabase.from('suivi_financier').update({ statut_ctp: 'rembourse', date_paiement: today }).eq('id', existing.id)
+        ({ error } = await supabase.from('suivi_financier').update({ statut_ctp: 'rembourse', date_paiement: today }).eq('id', existing.id))
       } else {
-        await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'apporteur_agente', artisan_id: artisanId, statut_ctp: 'rembourse', date_paiement: today })
+        ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'apporteur_agente', artisan_id: artisanId, statut_ctp: 'rembourse', date_paiement: today }))
       }
     } else if (existing) {
-      await supabase.from('suivi_financier').delete().eq('id', existing.id)
+      ({ error } = await supabase.from('suivi_financier').delete().eq('id', existing.id))
     }
+    if (error) { setErreur('Erreur : ' + error.message); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -1691,30 +1707,41 @@ export default function FicheChantier({ params }) {
 
     const upsertOne = async (t, m) => {
       // Interroger la BDD directement (pas le state) pour éviter les problèmes de double appel
-      const { data: existing } = await supabase
+      const { data: existing, error: selectErr } = await supabase
         .from('suivi_financier')
         .select('id')
         .eq('dossier_id', id)
         .eq('type_echeance', t)
         .is('artisan_id', null)
         .maybeSingle()
+      if (selectErr) return selectErr
 
       if (honoToggle && valeur === 'en_attente') {
         // Décoche : supprimer la ligne (élimine le résidu + la date périmée).
-        if (existing) await supabase.from('suivi_financier').delete().eq('id', existing.id)
-        return
+        if (existing) {
+          const { error } = await supabase.from('suivi_financier').delete().eq('id', existing.id)
+          return error
+        }
+        return null
       }
 
       const payload = honoToggle ? { statut_client: 'regle', date_paiement: today } : { [champ]: valeur }
-      if (existing) {
-        await supabase.from('suivi_financier').update(payload).eq('id', existing.id)
-      } else {
-        await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: t, montant_ttc: m, ...payload })
-      }
+      const { error } = existing
+        ? await supabase.from('suivi_financier').update(payload).eq('id', existing.id)
+        : await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: t, montant_ttc: m, ...payload })
+      return error
     }
-    await upsertOne(type, montant)
-    if (type === 'honoraires_courtage' && dossier?.typologie === 'amo') await upsertOne('acompte_amo', montant)
-    if (type === 'acompte_amo' && dossier?.typologie === 'amo') await upsertOne('honoraires_courtage', montant)
+    // FILET temporaire — atomicité à venir (lot dédié, transaction Postgres) :
+    // le couple courtage/acompte AMO représente le MÊME encaissement ; si la 1re
+    // écriture passe et la 2e échoue, on signale la désync + refetch, sans rollback.
+    const err1 = await upsertOne(type, montant)
+    let err2 = null
+    if (!err1) {
+      if (type === 'honoraires_courtage' && dossier?.typologie === 'amo') err2 = await upsertOne('acompte_amo', montant)
+      if (type === 'acompte_amo' && dossier?.typologie === 'amo') err2 = await upsertOne('honoraires_courtage', montant)
+    }
+    if (err1) setErreur('Erreur : ' + err1.message)
+    else if (err2) setErreur('Échéance enregistrée, mais échec sur la part liée courtage/AMO : ' + err2.message + ' — vérifiez et réessayez.')
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -1732,27 +1759,33 @@ export default function FicheChantier({ params }) {
     setSaving(true)
     try {
       // Mettre à jour la typologie + taux AMO si non défini
-      await supabase.from('dossiers').update({
+      // (supabase ne throw pas : on lit { error } et on throw pour activer le catch existant)
+      const { error: dossierErr } = await supabase.from('dossiers').update({
         typologie: 'amo',
         honoraires_amo_taux: dossier.honoraires_amo_taux ?? AMO_STANDARD * 100,
       }).eq('id', id)
+      if (dossierErr) throw new Error(dossierErr.message)
 
       // Migrer la ligne honoraires_courtage → acompte_amo
-      const { data: ligneCourtage } = await supabase
+      const { data: ligneCourtage, error: selErr } = await supabase
         .from('suivi_financier').select('*')
         .eq('dossier_id', id).eq('type_echeance', 'honoraires_courtage').is('artisan_id', null).maybeSingle()
+      if (selErr) throw new Error(selErr.message)
 
       if (ligneCourtage) {
-        await supabase.from('suivi_financier').update({ type_echeance: 'acompte_amo' }).eq('id', ligneCourtage.id)
+        const { error: migErr } = await supabase.from('suivi_financier').update({ type_echeance: 'acompte_amo' }).eq('id', ligneCourtage.id)
+        if (migErr) throw new Error(migErr.message)
         // Créer la ligne solde_amo si elle n'existe pas
-        const { data: ligneSolde } = await supabase
+        const { data: ligneSolde, error: soldeSelErr } = await supabase
           .from('suivi_financier').select('id')
           .eq('dossier_id', id).eq('type_echeance', 'solde_amo').is('artisan_id', null).maybeSingle()
+        if (soldeSelErr) throw new Error(soldeSelErr.message)
         if (!ligneSolde) {
-          await supabase.from('suivi_financier').insert({
+          const { error: soldeErr } = await supabase.from('suivi_financier').insert({
             dossier_id: id, type_echeance: 'solde_amo',
             montant_ttc: 0, statut_client: 'en_attente',
           })
+          if (soldeErr) throw new Error(soldeErr.message)
         }
       }
 
@@ -1778,18 +1811,23 @@ export default function FicheChantier({ params }) {
     if (!ok) return
     setSaving(true)
     try {
-      await supabase.from('dossiers').update({ typologie: 'courtage' }).eq('id', id)
+      // (supabase ne throw pas : on lit { error } et on throw pour activer le catch existant)
+      const { error: dossierErr } = await supabase.from('dossiers').update({ typologie: 'courtage' }).eq('id', id)
+      if (dossierErr) throw new Error(dossierErr.message)
 
-      const { data: ligneAMO } = await supabase
+      const { data: ligneAMO, error: selErr } = await supabase
         .from('suivi_financier').select('*')
         .eq('dossier_id', id).eq('type_echeance', 'acompte_amo').is('artisan_id', null).maybeSingle()
+      if (selErr) throw new Error(selErr.message)
 
       if (ligneAMO) {
-        await supabase.from('suivi_financier').update({ type_echeance: 'honoraires_courtage' }).eq('id', ligneAMO.id)
+        const { error: migErr } = await supabase.from('suivi_financier').update({ type_echeance: 'honoraires_courtage' }).eq('id', ligneAMO.id)
+        if (migErr) throw new Error(migErr.message)
       }
 
-      await supabase.from('suivi_financier').delete()
+      const { error: delErr } = await supabase.from('suivi_financier').delete()
         .eq('dossier_id', id).eq('type_echeance', 'solde_amo').is('artisan_id', null)
+      if (delErr) throw new Error(delErr.message)
 
       setDossier(d => ({ ...d, typologie: 'courtage' }))
       const { data: newSuivi } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
