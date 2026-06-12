@@ -578,7 +578,6 @@ export default function FicheChantier({ params }) {
   const [mode, setMode] = useState('lecture')
   const [devis, setDevis] = useState([])
   const [artisans, setArtisans] = useState([])
-  const [ajouterDevis, setAjouterDevis] = useState(false)
   const [devisModal, setDevisModal] = useState({ open: false, devis: null })
   const [devisExpanded, setDevisExpanded] = useState(() => new Set())
   const toggleDevisExpand = (id) => setDevisExpanded(s => {
@@ -586,8 +585,6 @@ export default function FicheChantier({ params }) {
     if (next.has(id)) next.delete(id); else next.add(id)
     return next
   })
-  const [savingDevis, setSavingDevis] = useState(false)
-  const [devisEnEdition, setDevisEnEdition] = useState(null)
   const [photos, setPhotos] = useState([])
   const [categorie, setCategorie] = useState('all')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
@@ -641,7 +638,6 @@ export default function FicheChantier({ params }) {
   const [uploadingDocChantier, setUploadingDocChantier] = useState(false)
   const [uploadingContrat, setUploadingContrat] = useState(false)
   const [docViewer, setDocViewer] = useState(null) // { url, nom }
-  const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, date_reception: '', date_limite: '', notes: '', fichier: null })
   const [suiviFinancier, setSuiviFinancier] = useState([])
   const router = useRouter()
 
@@ -919,7 +915,6 @@ export default function FicheChantier({ params }) {
   }
   
   const set = (champ, valeur) => setDossier(d => ({ ...d, [champ]: valeur }))
-  const setND = (champ, valeur) => setNouveauDevis(d => ({ ...d, [champ]: valeur }))
 
   const referentEstAdmin = dossier?.referente?.role === 'admin'
 
@@ -1142,57 +1137,6 @@ export default function FicheChantier({ params }) {
       setMode('lecture')
     }
     setSaving(false)
-  }
-
-  const sauvegarderDevis = async () => {
-    if (!nouveauDevis.artisan_id) return
-    setSavingDevis(true)
-    const prochainOrdre = devis.length > 0 ? Math.max(...devis.map(d => d.ordre ?? 0)) + 1 : 1
-    const { data: devisInsere, error } = await supabase.from('devis_artisans').insert({
-      dossier_id: id, artisan_id: nouveauDevis.artisan_id,
-      montant_ht: nouveauDevis.montant_ht ? parseFloat(nouveauDevis.montant_ht) : null,
-      montant_ttc: nouveauDevis.montant_ttc ? parseFloat(nouveauDevis.montant_ttc) : null,
-      commission_pourcentage: nouveauDevis.sans_commission ? 0 : (nouveauDevis.commission_pourcentage ? parseFloat(nouveauDevis.commission_pourcentage) / 100 : null),
-      date_reception: nouveauDevis.date_reception || null, date_limite: nouveauDevis.date_limite || null,
-      notes: nouveauDevis.notes || null,
-      statut: (nouveauDevis.date_reception || nouveauDevis.fichier) ? 'recu' : 'en_attente',
-      ordre: prochainOrdre,
-    }).select()
-    let uploadDevisOk = true
-    if (!error && nouveauDevis.fichier && devisInsere?.[0]) {
-      const ext = nouveauDevis.fichier.name.split('.').pop()
-      const cheminDevis = `chantiers/${id}/devis/${devisInsere[0].id}.${ext}`
-      // Gate : on n'écrit le chemin que si l'upload réussit (sinon référence pendante).
-      const { error: uploadError } = await supabase.storage.from('documents').upload(cheminDevis, nouveauDevis.fichier)
-      if (uploadError) uploadDevisOk = false
-      else await supabase.from('devis_artisans').update({ devis_pdf_path: cheminDevis }).eq('id', devisInsere[0].id)
-    }
-    if (!error) {
-      if (!dossier.contrat_signe) {
-        const today = new Date().toISOString().slice(0, 10)
-        await supabase.from('dossiers').update({ contrat_signe: true, date_signature_contrat: today }).eq('id', id)
-        setDossier(d => ({ ...d, contrat_signe: true, date_signature_contrat: today }))
-      }
-      await chargerDevis()
-      setAjouterDevis(false)
-      setNouveauDevis({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, date_reception: '', date_limite: '', notes: '', fichier: null })
-      if (uploadDevisOk) setSucces('Devis ajouté ✓')
-      else setErreur('Devis ajouté, mais échec de l\'upload du PDF — réessayez via la fiche devis.')
-    } else { setErreur('Erreur : ' + error.message) }
-    setSavingDevis(false)
-  }
-
-  const modifierDevis = async (devisId, updates) => {
-    await supabase.from('devis_artisans').update({
-      montant_ht: updates.montant_ht ? parseFloat(updates.montant_ht) : null,
-      montant_ttc: updates.montant_ttc ? parseFloat(updates.montant_ttc) : null,
-      commission_pourcentage: updates.sans_commission ? 0 : (updates.commission_pourcentage ? parseFloat(updates.commission_pourcentage) / 100 : null),
-      date_reception: updates.date_reception || null, date_limite: updates.date_limite || null,
-      notes: updates.notes || null,
-    }).eq('id', devisId)
-    await chargerDevis()
-    setDevisEnEdition(null)
-    setSucces('Devis modifié ✓')
   }
 
   // Handler unique du DevisModal (create + edit, inclut acompte custom)
