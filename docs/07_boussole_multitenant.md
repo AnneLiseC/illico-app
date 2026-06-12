@@ -172,12 +172,15 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [ ] **3a-bis — Alerte écart figé/live** : badge ⚠️ signalant un écart entre montant figé (au clic « Reçu ») et live. PARKÉ — arbitrage Marine : le cas (activité d'un mois facturé qui bouge) est-il assez fréquent pour justifier un filet ? Sans traçabilité des modifs post-figement, un badge seul = bruit non actionnable.
 - [ ] **Cases redevance non cliquables (agente ET peut-être admin)** : la section affiche des cases mensuelles mais le clic ne fait rien (handler UI absent). La RLS P0-9 autorise pourtant l'agente à cocher SA redevance. Brancher clic → UPDATE.
 - [ ] **Hygiène : dropper `factures_agente_backup_b7b`** une fois la facturation validée.
+- [ ] **Atomicité conversions AMO↔courtage** : convertirEnAMO/convertirEnCourtage font une séquence multi-écritures (rename type_echeance + create/delete solde_amo + update dossiers) NON atomique, protégée seulement par try/catch+throw (Lot 1, 12/06). Même famille que K. Candidate à une fonction Postgres transactionnelle (INVOKER, comme suivi_toggle_honoraires). Lot dédié, après-K.
+- [ ] **Couples AMO legacy à dates incohérentes** (AM-002, AM-009) : acompte_amo a date_paiement NULL alors que statut=regle, et date diverge de la part courtage du même couple (écritures antérieures au code actuel qui, lui, aligne les dates). Inerte aujourd'hui (F2 lit la part courtage), mais une ligne regle sans date peut fausser un calcul par période si un jour une vue lit acompte_amo.date_paiement. Même profil que le bug frais JADRAS (11/06). À aligner via UPDATE versionné APRÈS avoir confirmé la bonne date. Pas urgent.
 
 #### Bloc C — Onboarding self-service (reste)
 - [ ] **3d page stats plateforme** — reportée backlog (pas utile tant qu'un seul franchisé ; compteurs visibles via dashboard Supabase).
 - [ ] **SMTP custom pour l'onboarding en prod** : le SMTP par défaut Supabase est bridé (rate limit ~quelques emails/h, rencontré au test 07/06). Nécessaire avant d'inviter de vrais franchisés en volume (Resend/SendGrid ou Microsoft Graph déjà utilisé pour les relances).
 
 #### Bloc D — Bugs & dette (non bloquants)
+##### ✅ FAIT (closes)
 - [x] **Dynamisation des hardcodes CTP/Martigues** ✅ SOLDÉ (10/06). 5 sous-lots : 1 plomberie `b0cce09`, 2 libellés→Société `f0833fd`, 2bis fallbacks→— `59c0112`, 3 portail client `96c7362`, 4 CR `2a165b6`. Réserve restante : branding PDF sep_*.js (bloc D) — grep SANS exclusion lib/sep_ ce jour-là.  
   - [x] **Sous-lot 1 — plomberie** ✅ FAIT (09/06, mergé `b0cce09`). `societe:societes(id, nom_societe)` embarqué dans fetchProfile + exposé `societe` dans useAuth(). ⚠️ Colonne = `nom_societe` (pas `nom`). Sert surtout aux libellés d'identité (les libellés de rôle utilisent « Société » statique).
   - [x] **Sous-lot 2 — libellés de rôle → « Société »** ✅ FAIT (10/06, mergé `f0833fd`). 20 chaînes affichées sur 3 fichiers (finances 14, paramètres 4, chantiers 2). Zéro identifiant technique touché (isCTP, key:'ctp', totalNetCTP, SuiviCTPChart, sfSousOngletCTP intacts). Article « la/La » ajouté en prose (1749/1839/1849/1888/1894). Grep classé : catégorie « chaîne affichée résiduelle » VIDE. Toggle final : « Agence — Encaissements bruts » / « Société — Résultat net (charges incluses) ». ⚠️ 3 fallbacks 'CTP' (nom de PERSONNE : finances:161 nomFranchisee, chantiers:573/701 prenomAdmin) NON traités → sous-lot 2bis (audit des sites de rendu puis choix du fallback). ⚠️ Réserve sep_*.js : le grep excluait lib/sep_ — à l'audit branding PDF, grep SANS exclusion.
@@ -186,7 +189,6 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
   - [x] **Sous-lot 4 — CR généré** ✅ FAIT (10/06, mergé `2a165b6`). route.js:34 « illiCO travaux Martigues » → `${agenceNom}` (= dossier.agence?.nom || 'illiCO travaux'). Embed agence:agences(nom) en piggyback sur le fetch dossier (déjà garanti autorisé par le garde-fou d'appartenance en amont). buildSystemPrompt(type) → (type, agenceNom). Prompt système intact au caractère près hors le nom ; l.38-40 « le courtier illiCO travaux » (marque réseau) non touchées. NB : le nom est dans le prompt système, pas forcément recopié dans le JSON de sortie → vérif déterministe = diff, test live = non-régression 200.
 - [x] **Code mort chantiers/[id] nomFranchisee** ✅ (10/06, mergé `cf13a14`). useState + setter supprimés, setPrenomAdmin conservé (lu l.2752), 0 occurrence restante.
 - [x] **redevance_debut à la création d'agente** ✅ (10/06, mergé `cf13a14`). Ajouté au body POST + insert profiles (colonne profiles.redevance_debut date, même que le PATCH). L'asymétrie création/édition est résolue : le champ est persisté dès le POST.
-- [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
 - [x] **Templates email FR (Reset Password + Invitation)** ✅ (10/06, dashboard Supabase, NON versionné). Corps + sujet en français, bouton stylé, ton BATILIS, signature « L'équipe BATILIS ». Variables {{ .ConfirmationURL }}/{{ .SiteURL }} préservées. ⚠️ Vit dans le dashboard, pas le repo — pas de trace git.
 - [x] **Doublon factures_agente** ✅ (11/06). Cause : upsertFactureMoisType select-puis-insert sans garde DB + AUCUN index unique sur factures_agente → double-insert (Anne-Lise 2026-06). Fix : DELETE doublon + UNIQUE INDEX (agente_id, annee, mois, type_facture). SQL versionné. 
 - [x] **Durcir upsertFactureMoisType** ✅ (11/06). Cause = double-clic toggle F2 non gardé + existence sur état mémoire. Fix : garde ré-entrance (useRef) + existence en base (4 clés) + .error/throw + rattrapage 23505 + UPDATE ciblé (anti-clobber PDF) + feedback erreur appelants. Sujet F2 (doublon + montant + durcissement) SOLDÉ.
@@ -196,8 +198,14 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
   Trigger BEFORE INSERT `profile_client_derive_agence_trg` (SECURITY DEFINER) : role='client' → dérive agence_id + societe_id depuis le client métier rattaché (profiles.client_id → clients) ; exception stricte si client_id manquant. + CHECK `profiles_client_agence_not_null` (role <> 'client' OR agence_id IS NOT NULL) = filet dur, survit au retrait du trigger. Cible role='client' uniquement (admin agence_id NULL préservé, vérifié). SQL versionné docs/sql/garde_fou_profil_client_agence.sql. Dérivation + CHECK + non-régression admin prouvés en base. NB découvert : aucun chemin applicatif ne crée de profil client (lien magique acté mais non construit) → garde-fou préventif, posé AVANT le futur flux espace-client.
 - [x] **Boutons morts Finances** ✅ (11/06). 4 boutons décoratifs (CSV, ▼, Exporter le bilan, Saisir un règlement) supprimés + conteneurs vides. Aucun handler (jamais câblés).
   - [~] **Export CSV + bilan** : MASQUÉ, non câblé (besoin non avéré). À construire SI demandé, avec le demandeur (colonnes/périmètre/format Excel-FR). Choix volontaire.
+- [x] **CR markdown→rendu** ✅ (12/06). 
+  Composant partagé MarkdownCR (client + agente, variant). Cause racine corrigée (join('\n\n') + template désindenté). 5 CR legacy migrés (SQL versionné, backup rollback). Filet renderer tolère un legacy non migré. Fallback notes_brutes retiré côté client (« CR en cours de rédaction »). Bonus : vue agente complète (aperçu strippé + dépliable) qui n'existait pas. f385f27
+- [x] **comptes_rendus.pdf_path mort** ✅ (12/06, `b866d73`). Feature morte supprimée (colonne inexistante, 0 lecteur, uploads orphelins). CR reste texte + PDF à la volée.
+- [x] **Erreurs avalées chantiers/[id] — non-💰 + dossiers** ✅ (12/06, Lot 2). Tout le fichier couvert (💰 Lot 1 + non-💰 + taux rollback + contrat_url).
 
 
+##### A FAIRE
+- [ ] **Branding PDF sep_*.js** : les grep hardcodes excluaient lib/sep_. Refaire un grep SANS exclusion sur lib/sep_*.js pour débusquer un éventuel « Martigues »/« CTP » en dur dans les PDF générés. Réserve des sous-lots hardcodes.
 - [ ] **Code mort finance.js 🟠 restants** : devis.statut/montantTTC, apporteur.lines[].* — grep non concluant ou lines itéré dynamiquement. Relecture site par site requise. Pas prioritaire. 
 - [ ] **#8 dashboard admin scope** (à arbitrer selon scénario testeur).
 - [ ] **L18 bug ajout intervention** : ⚠️ audit d'abord, STOP si lié à la sync Google Calendar.
@@ -206,10 +214,10 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [ ] **Messagerie AMO : aucun dossier affiché** : la page lit `clients.raison_sociale` (colonne cible jamais créée — cf. doc 02). Créer la colonne OU rebrancher la lecture. ⚠️ lié à la réactivation Messagerie (bloc F).
 - [ ] **CR côté client visible seulement après refresh** : manque refetch temps réel après publication.
 - [ ] **Avancement projet pas à jour côté client** : colonne `dossiers.avancement` jamais alimentée → barres grises. Vérifier source/calcul. (STAND-BY, non bloquant.)
-- [ ] **CR affiché en markdown brut** (`## 1.`, `**gras**`) côté agente et client : rendre markdown→HTML à l'affichage + revoir les consignes de structure données à Claude.
-- [ ] **comptes_rendus.pdf_path mort (l.1334)** : la table n'a PAS de colonne fichier ; le code tente d'écrire `pdf_path` dessus (écriture morte ou branche jamais exécutée). À auditer → soit supprimer la ligne morte (CR reste texte pur), soit ajouter la vraie feature PDF de CR (conception). À inclure dans l'audit finance.js repo-wide.
+- [ ] **Taux écrits par frappe (onChange)** : taux_courtage/honoraires_amo_taux/apporteur_actif → UPDATE par caractère. onBlur souhaitable. Dette préexistante, non urgente.
 - [ ] **Source unique libellé suppression chantier** : libellé dupliqué entre `confirm()` (~l.1772) et sous-titre bouton (~l.2502). Aligné au fix P0-11 mais une constante partagée éviterait une future divergence.
 - [ ] **Bug statut chantier←devis** : un devis « refusé » affiche « devis à modifier » au niveau chantier ; devrait s'afficher SSI un devis est « à modifier ». Mauvaise dérivation.
+- [ ] **prenomAdmin avec maybeSingle()** (chantiers/[id]:708) : le fetch du prénom admin fait .eq('role','admin').maybeSingle() → si une société a 2 admins un jour, maybeSingle échoue (>1 ligne) et le libellé reste '—'. Sans gravité (affichage), mais à corriger au moment du multi-admin (prendre le 1er, ou gérer la liste).
 
 #### Bloc E — Refonte UX vues finances (post-test, à froid) [CONCEPTION d'abord]
 > Gros chantier de design d'écran. NE PAS patcher en isolé les points ci-dessous : ce sont des décisions de design à penser ensemble (sinon travail jeté). Cadrage maquette/structure AVANT code. Idéalement après un vrai retour d'usage terrain (facturation réelle), qui réordonnera les priorités d'affichage.
@@ -222,21 +230,27 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
   - Nom de la colonne « Net » du tableau facturation (gardée 11/06, à trancher : « Net » / « Solde F1−F2 indicatif » / suppression).
 
 #### Bloc E-bis — Dette technique / nommage / code mort (indépendant, faisable isolément)
-- [ ] **Renommage variables « Marine »** : `estChantierMarine`, `isMarine` (tests de RÔLE, comportement correct mais nom piège au 2e admin) → `referentEstAdmin`/`isAdmin`. NB : la colonne « Marine » en dur de l'affichage est DÉJÀ traitée (point 5, `5081784`) — ne reste QUE le renommage des variables.
+- [x] **Formulaire devis inline mort** ✅ (12/06, `63b0cd9 `). Cluster mort autoréférent supprimé (7 symboles, −56 l.) après audit prouvant 0 lien vivant. DevisModal = seul chemin actif, intact. contrat_signe préservé (dupliqué dans saveDevisFromModal).
+- [x] **Intégrations : masquer Supabase et Claude IA** ✅ (12/06). + Google Drive retiré (bouton mort). Reste 1 carte : Google Calendar (vraie intégration).
+- [x] **Espace client : statuts internes masqués** ✅ (12/06). Badge « Dossier en préparation » + stepper 4 étapes (« Préparation » fond a_contacter/a_relancer). Côté staff (lib/dossiers.js) intact.
+- [x] **Messages côté client : bulle corrigée** ✅ (12/06). Client = bleu à droite, agence = gris à gauche (styles étaient permutés).
+- [x] **Renommage variables « Marine »** ✅ (fait le 05/06, `456f1d4`, ~32 occ. / 4 fichiers). isMarine→isAdmin, estChantierMarine→referentEstAdmin (basés rôle). prenomAdmin NON renommé (variable de personne légitime). Item avait survécu par erreur à la réorg du 11/06.
+- [x] **Convention null redevance** ✅ (résolu de fait au 11/06, lot redevance). Règle déjà respectée : calcul → garde !=null ou ||0 ; affichage paramètre → « à paramétrer ». Aucun bug. (item décrivait l'état d'avant 97ea172). ⚠️ Reste : re-saisir montants Marie/Manon/TEST2 (données, déjà tracé).
+- [x] **Handlers qui avalent les erreurs** ✅ SOLDÉ (12/06). Toute l'app couverte hors quarantaine : chantiers/[id] complet (💰 Lot1 5efbe04 + non-💰/pdf_path/dossiers Lot2 49953e4), espace-client/planning/artisans (Lot3 6e7ad64), atomicité K (62086ec). Faux ✓ éliminés, maybeSingle capturés (anti-doublon), feedback client non technique, couple AMO atomique. RESTE hors scope : 🟢 lectures (priorité basse) ; module calendrier (quarantaine).
+- [x] **K — atomicité majSuiviChantier** ✅ (12/06, 62086ec). Fonction Postgres suivi_toggle_honoraires (SECURITY INVOKER, upsert index partiel, atomique). Le couple courtage/acompte_amo est désormais tout-ou-rien (T5 prouvé : échec partiel → rollback total). Filet temporaire retiré. Cloisonnement RLS héritée (T6). DO UPDATE préserve montant_ttc.
+
 - [ ] **Audit code mort `lib/finance.js` repo-wide** : grep de chaque clé retournée par finance.js sur tout le repo. Le ménage s'était limité à page.js. Pas urgent.
-- [ ] **Formulaire devis inline mort** dans chantiers/[id] : `nouveauDevis`, `ajouterDevis`, `setND`, `sauvegarderDevis` (~l.1106), `modifierDevis` (~l.1140), `devisEnEdition` — jamais rendus (seul chemin actif = DevisModal + saveDevisFromModal). Supprimer après vérif grep.
-- [ ] **Convention null redevance** : `|| 0` vs `!= null ? … : 'à paramétrer'`. Harmoniser. Invisible aujourd'hui.
-- [ ] **Build local échoue sans `.env.local`** : clients Supabase instanciés à la collecte des routes → instanciation lazy.
-- [ ] **Handlers qui avalent les erreurs** (`if (!res.ok) return`) : traquer ailleurs (PDF client corrigé au Lot A). Toujours afficher un message.
-- [ ] **Intégrations : masquer Supabase et Claude IA** dans paramètres (dev, pas utilisateur).
-- [ ] **Espace client : retirer statuts internes** « à contacter »/« à relancer ».
-- [ ] **Messages côté client : bulle grise à gauche** au lieu de bleue à droite (auteur inversé).
 - [ ] **Chantiers : résumé en panneau latéral** sans quitter la liste.
 
 #### Bloc F — En dernier : réactiver modules neutralisés
 - [ ] **Réactiver Messagerie + Statistiques** (code conservé à `3dbd6f1`). Adapter au multi-tenant (RLS agence messages, scope agence stats). + resserrer policy INSERT `notifications` ici.
 - [ ] **Notif mail upload facture** : agente upload F1 → mail admin ; admin upload → mail agente + redevance cochée des deux côtés ? À cadrer (déclencheur, destinataire, contenu).
 - [ ] **Automatisme cochage redevance** : statut « reçu » auto quand l'admin rentre sa facture du mois ? Lié à la notif ci-dessus.
+- [ ] **Intégration Google Drive** (piste future) : connecter les documents chantier à Drive. Carte retirée le 12/06 (bouton mort). À construire si besoin confirmé.
+- [ ] **Bouton « Connecter » générique mort** (paramètres l.708, sert Google Calendar) : à câbler/retirer DANS la refonte calendrier (module en quarantaine).
+- [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
+- [ ] **Couples AMO legacy à dates incohérentes** : sur dossiers AMO antérieurs au code actuel (AM-002, AM-009), la ligne acompte_amo a date_paiement NULL alors que statut=regle, et la date diverge de la part courtage du même couple. Inerte aujourd'hui (F2 lit la part courtage), mais une ligne regle sans date peut fausser un calcul par période si un jour une vue lit acompte_amo.date_paiement. Même profil que le bug frais JADRAS (11/06). À aligner (acompte_amo.date = courtage.date 
+- [ ] **page chantier** kpis : montant devis prévu et réel 
 
 #### Optimisation BDD — dette d'échelle (PAS urgent, future-proofing)
 Relevés par l'advisor Supabase. PAS la cause de lenteur actuelle (mesuré <1,5ms/requête ; vraie cause = allers-retours PostgREST, traitée par l'embedding). Utile à partir de milliers de lignes.
