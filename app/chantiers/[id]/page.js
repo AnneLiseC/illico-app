@@ -619,7 +619,7 @@ export default function FicheChantier({ params }) {
   const [crOuvert, setCrOuvert] = useState(null) // id du CR déplié dans la liste
   const [crModal, setCrModal] = useState(false)
   const [crManuelModal, setCrManuelModal] = useState(false)
-  const [crManuelForm, setCrManuelForm] = useState({ type_visite: '', date_visite: '', contenu: '', fichier: null })
+  const [crManuelForm, setCrManuelForm] = useState({ type_visite: '', date_visite: '', contenu: '' })
   const [crManuelSaving, setCrManuelSaving] = useState(false)
   const [crEtape, setCrEtape] = useState(1) // 1=config, 2=notes, 3=relecture
   const [crForm, setCrForm] = useState({ type_visite: '', date_visite: '', intervenants: '' })
@@ -1344,32 +1344,22 @@ export default function FicheChantier({ params }) {
   const sauvegarderCRManuel = async (publier = false) => {
     if (!crManuelForm.contenu.trim()) return
     setCrManuelSaving(true)
-    const { data: crInsere, error: insertErr } = await supabase.from('comptes_rendus').insert({
+    const { error: insertErr } = await supabase.from('comptes_rendus').insert({
       dossier_id: id,
       type_visite: crManuelForm.type_visite || null,
       date_visite: crManuelForm.date_visite || null,
       contenu_final: crManuelForm.contenu,
       valide: publier,
-    }).select().single()
+    })
     // Échec de l'insert : on garde la saisie (modale ouverte) pour réessayer.
     if (insertErr) { setErreur('Erreur : ' + insertErr.message); setCrManuelSaving(false); return }
-
-    let uploadCrOk = true
-    if (crInsere && crManuelForm.fichier) {
-      const ext = crManuelForm.fichier.name.split('.').pop()
-      const chemin = `chantiers/${id}/cr/${crInsere.id}.${ext}`
-      const { error: uploadErr } = await supabase.storage.from('documents').upload(chemin, crManuelForm.fichier)
-      if (uploadErr) uploadCrOk = false
-      else await supabase.from('comptes_rendus').update({ pdf_path: chemin }).eq('id', crInsere.id)
-    }
 
     const { data } = await supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
     setComptesRendus(data || [])
     setCrManuelModal(false)
-    setCrManuelForm({ type_visite: '', date_visite: '', contenu: '', fichier: null })
+    setCrManuelForm({ type_visite: '', date_visite: '', contenu: '' })
     setCrManuelSaving(false)
-    if (uploadCrOk) setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
-    else setErreur('CR enregistré, mais échec de l\'upload du PDF — réessayez.')
+    setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
   }
   // ── GÉNÉRER CR AVEC IA ──
   const genererCRAvecIA = async () => {
@@ -4370,17 +4360,6 @@ export default function FicheChantier({ params }) {
                 className="input" style={{minHeight:200, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
             </ModalField>
 
-            <ModalField label="Document PDF (optionnel)">
-              <label style={{
-                display:'inline-flex', alignItems:'center', gap:8, fontSize:12, color:'var(--ink-600)',
-                border:'1px solid var(--ink-200)', borderRadius:8, padding:'8px 12px',
-                cursor:'pointer', alignSelf:'flex-start', background:'#fff',
-              }}>
-                {crManuelForm.fichier ? `✓ ${crManuelForm.fichier.name}` : '+ Joindre un PDF'}
-                <input type="file" accept=".pdf" style={{display:'none'}}
-                  onChange={e => setCrManuelForm(f => ({ ...f, fichier: e.target.files[0] || null }))} />
-              </label>
-            </ModalField>
           </div>
         </ModalShell>
       )}
