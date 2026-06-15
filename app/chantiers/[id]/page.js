@@ -698,7 +698,7 @@ export default function FicheChantier({ params }) {
           .order('created_at', { referencedTable: 'messages' })
           .single(),
         isAdmin
-          ? supabase.from('profiles').select('prenom, nom').eq('role', 'admin').maybeSingle()
+          ? supabase.from('profiles').select('prenom, nom').eq('role', 'admin').order('prenom').limit(1).maybeSingle()
           : Promise.resolve({ data: null }),
         supabase.from('artisans').select('id, entreprise, metier, partenaire').order('entreprise'),
       ])
