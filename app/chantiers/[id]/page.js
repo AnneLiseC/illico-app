@@ -1970,7 +1970,7 @@ export default function FicheChantier({ params }) {
                 {dossier.reference}
               </span>
               <TypoBadge typo={dossier.typologie}/>
-              <StatutBadge statut={dossier.statut}/>
+              <StatutBadge dossier={{ ...dossier, devis_artisans: devis, rendez_vous: rdvsDossier }}/>
               {dossier.contrat_signe && (
                 <span style={{display:'inline-flex',alignItems:'center',gap:4,
                   fontSize:11.5,color:'#15803d',fontWeight:600}}>
