@@ -1,16 +1,6 @@
 'use client'
 import { STATUT_CONFIG, calcStatut } from '../lib/dossiers'
 
-const STATUT_TONES = {
-  a_contacter:       'info',
-  a_relancer:        'warn',
-  devis_en_attente:  'warn',
-  devis_a_modifier:  'bad',
-  en_cours_chantier: 'ok',
-  termine:           'mute',
-  annule:            'mute',
-}
-
 const TYPOLOGIES = {
   courtage:          'Courtage',
   amo:               'AMO',
@@ -57,7 +47,14 @@ export function StatutBadge({ statut, dossier }) {
   if (!s) return null
   const cfg = STATUT_CONFIG[s]
   if (!cfg) return null
-  return <Badge tone={STATUT_TONES[s] || 'mute'}>{cfg.label}</Badge>
+  // Style via les couleurs Tailwind de STATUT_CONFIG (11 teintes distinctes),
+  // sur la base .badge (forme/pastille). Indépendant du Badge générique/tones.
+  return (
+    <span className={`badge ${cfg.color}`}>
+      <span className="dot" />
+      {cfg.label}
+    </span>
+  )
 }
 
 export function TypoBadge({ typo }) {
