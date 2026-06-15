@@ -17,9 +17,11 @@
 -- pg_policies (état live). Après correction, TOUT chemin (placeholder compris)
 -- est soumis au scoping tenant normal.
 --
--- + Suppression du fichier traînant documents/factures_agente/.emptyFolderPlaceholder
---   (0 octet, seul placeholder existant — reconfirmé avant DELETE). L'app ne
---   crée AUCUN placeholder (grep app/ = 0) → retrait sans régression.
+-- Le fichier traînant documents/factures_agente/.emptyFolderPlaceholder
+-- (0 octet, seul placeholder existant) se supprime via l'UI Storage (le DELETE
+-- SQL direct est bloqué par Supabase — storage.protect_delete). Non bloquant :
+-- l'exemption retirée, ce placeholder est désormais soumis au scoping tenant
+-- normal (plus aucun privilège cross-tenant). L'app n'en crée AUCUN (grep app/ = 0).
 --
 -- NON TOUCHÉ : client_read_photos + Remplacement factures agente (pas
 -- d'exemption). Pur Storage, aucun code applicatif.
@@ -174,18 +176,15 @@ CREATE POLICY "Suppression photos" ON storage.objects
           OR ((d.referente_id = (SELECT auth.uid() AS uid)) AND (d.agence_id = (SELECT get_my_agence_id() AS get_my_agence_id))))))))
   );
 
--- ----------------------------------------------------------------------------
--- Suppression du fichier placeholder traînant (0 octet, seul existant).
--- Attendu : DELETE 1.
--- ----------------------------------------------------------------------------
-DELETE FROM storage.objects
-WHERE bucket_id = 'documents'
-  AND name = 'factures_agente/.emptyFolderPlaceholder';
+-- NB : le placeholder documents/factures_agente/.emptyFolderPlaceholder (0 octet)
+-- ne se supprime PAS en SQL (DELETE bloqué par Supabase — storage.protect_delete).
+-- À supprimer via l'UI Storage : dashboard → Storage → documents →
+-- factures_agente → supprimer le placeholder. Non bloquant : l'exemption étant
+-- retirée, ce fichier est déjà soumis au scoping tenant normal (aucun privilège
+-- cross-tenant ne subsiste, qu'il soit présent ou non).
 
 -- ----------------------------------------------------------------------------
--- CONTRÔLE APRÈS (avant COMMIT) :
---   • a_exemption = false sur les 8 policies ;
---   • plus aucun .emptyFolderPlaceholder.
+-- CONTRÔLE APRÈS (avant COMMIT) : a_exemption = false sur les 8 policies.
 -- ----------------------------------------------------------------------------
 SELECT policyname, cmd,
   (position('emptyFolderPlaceholder' in (coalesce(qual,'') || coalesce(with_check,''))) > 0) AS a_exemption
@@ -193,23 +192,18 @@ FROM pg_policies
 WHERE schemaname='storage' AND tablename='objects'
 ORDER BY cmd, policyname;
 
-SELECT count(*) AS placeholders_restants
-FROM storage.objects
-WHERE name ~~ '%.emptyFolderPlaceholder';
-
 -- ⚠️ DÉCISION MANUELLE :
---   • Contrôle APRÈS conforme (0 exemption, 0 placeholder) →  COMMIT;
+--   • Contrôle APRÈS conforme (0 exemption sur les 8 policies) →  COMMIT;
 --   • Sinon →  ROLLBACK;
 -- COMMIT;
 -- ROLLBACK;
 
 
 -- ============================================================================
--- ROLLBACK APRÈS COMMIT (restaurer l'exemption + recréer le placeholder).
+-- ROLLBACK APRÈS COMMIT (restaurer l'exemption sur les 6 policies).
 -- En pratique : ré-appliquer la version des policies d'AVANT #7. Le fichier
 -- storage_policies.sql à la révision précédant #7 (git) contient les 6 policies
 -- AVEC l'exemption ; les 2 DELETE manquaient (omission #5). Pour un rollback
 -- strict, reprendre depuis git la version pré-#7 + re-CREATE manuel des 2
--- DELETE avec exemption. Le placeholder vide se recrée automatiquement via
--- l'UI Storage si un dossier vide est refait (non nécessaire au fonctionnement).
+-- DELETE avec exemption.
 -- ============================================================================
