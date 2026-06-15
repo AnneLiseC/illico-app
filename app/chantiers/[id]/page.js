@@ -2321,6 +2321,9 @@ export default function FicheChantier({ params }) {
                       visite_technique_client: '#0094d4',
                       visite_technique_artisan: '#16a34a',
                       presentation_devis: '#f59e0b',
+                      suivi: '#7c3aed',
+                      reception: '#10b981',
+                      etude: '#e05252',
                     }[r.type_rdv] || '#94a3b8'
                     return (
                       <div key={r.id} style={{display:'grid', gridTemplateColumns:'44px 4px 1fr', gap:10, alignItems:'center', padding:'8px 0'}}>
@@ -3737,6 +3740,9 @@ export default function FicheChantier({ params }) {
                   visite_technique_client:  { label:'R1 — Visite client',         color:'#0094d4' },
                   visite_technique_artisan: { label:'R2 — Visite artisan',        color:'#16a34a' },
                   presentation_devis:       { label:'R3 — Présentation devis',    color:'#f59e0b' },
+                  suivi:                    { label:'Suivi de chantier',          color:'#7c3aed' },
+                  reception:                { label:'Réception',                  color:'#10b981' },
+                  etude:                    { label:'Étude/conception',           color:'#e05252' },
                   autres:                   { label: r.titre || 'Autre RDV',      color:'#94a3b8' },
                 }[r.type_rdv] || { label:r.type_rdv, color:'#94a3b8' }
                 return (
@@ -3837,10 +3843,13 @@ export default function FicheChantier({ params }) {
             ? (patch) => setRdvEnEdition(r => ({ ...r, ...(typeof patch === 'function' ? patch(r) : patch) }))
             : (patch) => setNouveauRdvDossier(f => ({ ...f, ...(typeof patch === 'function' ? patch(f) : patch) }))
           const types = [
-            { k: 'visite_technique_client',  l: 'R1',    sub: 'Visite client',        color: '#0094d4' },
-            { k: 'visite_technique_artisan', l: 'R2',    sub: 'Visite artisan',       color: '#16a34a' },
-            { k: 'presentation_devis',       l: 'R3',    sub: 'Présentation devis',   color: '#f59e0b' },
-            { k: 'autres',                   l: 'Autre', sub: 'RDV libre',            color: '#94a3b8' },
+            { k: 'visite_technique_client',  l: 'R1',       sub: 'Visite client',        color: '#0094d4' },
+            { k: 'visite_technique_artisan', l: 'R2',       sub: 'Visite artisan',       color: '#16a34a' },
+            { k: 'presentation_devis',       l: 'R3',       sub: 'Présentation devis',   color: '#f59e0b' },
+            { k: 'suivi',                    l: 'Suivi',    sub: 'Suivi de chantier',    color: '#7c3aed' },
+            { k: 'reception',                l: 'Réception',sub: 'Réception',            color: '#10b981' },
+            { k: 'etude',                    l: 'Étude',    sub: 'Étude/conception',     color: '#e05252' },
+            { k: 'autres',                   l: 'Autre',    sub: 'RDV libre',            color: '#94a3b8' },
           ]
           const dateOnly = (form.date_heure || '').slice(0, 10)
           const timeOnly = (form.date_heure || '').slice(11, 16)
@@ -3872,7 +3881,7 @@ export default function FicheChantier({ params }) {
                     {types.map(t => {
                       const active = form.type_rdv === t.k
                       return (
-                        <button key={t.k} type="button" onClick={() => setForm({ type_rdv: t.k })}
+                        <button key={t.k} type="button" onClick={() => setForm(f => ({ type_rdv: t.k, artisan_id: ['visite_technique_artisan', 'reception'].includes(t.k) ? f.artisan_id : '' }))}
                           style={{
                             padding:'10px 6px', borderRadius:8, border:'1px solid',
                             borderColor: active ? t.color : 'var(--ink-200)',
@@ -3930,7 +3939,7 @@ export default function FicheChantier({ params }) {
                   </ModalField>
                 </div>
 
-                {form.type_rdv === 'visite_technique_artisan' && (
+                {['visite_technique_artisan', 'reception'].includes(form.type_rdv) && (
                   <ModalField label="Artisan présent">
                     <select className="input"
                       value={form.artisan_id || ''}
