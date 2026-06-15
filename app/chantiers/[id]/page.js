@@ -10,6 +10,10 @@ import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFin
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
 
+// Liste des entités supprimées avec un chantier — source unique des 2 libellés
+// (confirm de suppression + sous-titre du bouton), pour éviter qu'ils divergent.
+const ENTITES_CHANTIER = 'devis, factures, photos, comptes-rendus, documents, RDV, interventions, suivis financiers, messages, contrat'
+
 // Aperçu texte nu d'un CR : retire la syntaxe markdown (## titres, **gras**, puces).
 function stripMarkdown(text) {
   return (text || '')
@@ -1822,7 +1826,7 @@ export default function FicheChantier({ params }) {
 
   const supprimerChantier = async () => {
     const ok = confirm(
-      'Supprimer définitivement ce chantier et tout ce qui lui est rattaché (devis, factures, photos, comptes-rendus, documents, RDV, interventions, suivis financiers, messages, contrat) ? Cette action est irréversible.'
+      `Supprimer définitivement ce chantier et tout ce qui lui est rattaché (${ENTITES_CHANTIER}) ? Cette action est irréversible.`
     )
     if (!ok) return
 
@@ -2541,7 +2545,7 @@ export default function FicheChantier({ params }) {
           <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap'}}>
             <div>
               <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)', marginBottom:2}}>Supprimer définitivement ce chantier</div>
-              <div style={{fontSize:12, color:'var(--ink-500)'}}>Cette action est irréversible — supprime le dossier et toutes ses données (devis, factures, photos, CR, documents, RDV, interventions, suivis, messages, contrat).</div>
+              <div style={{fontSize:12, color:'var(--ink-500)'}}>Cette action est irréversible — supprime le dossier et toutes ses données ({ENTITES_CHANTIER}).</div>
             </div>
             <button onClick={supprimerChantier} disabled={saving} className="btn btn-ghost"
               style={{fontSize:12.5, color:'#b91c1c', borderColor:'rgba(239,68,68,0.3)'}}>
