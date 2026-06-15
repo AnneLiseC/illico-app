@@ -941,6 +941,19 @@ export default function FicheChantier({ params }) {
   
   const set = (champ, valeur) => setDossier(d => ({ ...d, [champ]: valeur }))
 
+  // Taux (courtage/AMO) : la frappe met à jour l'état (UI + recalcul live) ;
+  // l'écriture DB se fait au blur / Enter (pas à chaque caractère). Rollback de
+  // l'état vers la valeur d'avant édition (capturée au focus) si l'UPDATE échoue.
+  const tauxAvantEditRef = useRef({})
+  const persistTaux = async (champ, valeur) => {
+    const { error } = await supabase.from('dossiers').update({ [champ]: valeur }).eq('id', id)
+    if (error) {
+      setErreur('Erreur : ' + error.message)
+      const ancien = tauxAvantEditRef.current[champ]
+      if (ancien !== undefined) set(champ, ancien)
+    }
+  }
+
   const referentEstAdmin = dossier?.referente?.role === 'admin'
 
 
@@ -2596,13 +2609,10 @@ export default function FicheChantier({ params }) {
                     <input
                       type="number" step="0.1" min="0" max="20"
                       value={(dossier.taux_courtage ?? COURTAGE_STANDARD) * 100}
-                      onChange={async e => {
-                        const taux = parseFloat(e.target.value || 0) / 100
-                        const ancien = dossier.taux_courtage
-                        set('taux_courtage', taux)
-                        const { error } = await supabase.from('dossiers').update({ taux_courtage: taux }).eq('id', id)
-                        if (error) { setErreur('Erreur : ' + error.message); set('taux_courtage', ancien) }
-                      }}
+                      onFocus={() => { tauxAvantEditRef.current.taux_courtage = dossier.taux_courtage }}
+                      onChange={e => set('taux_courtage', parseFloat(e.target.value || 0) / 100)}
+                      onBlur={e => persistTaux('taux_courtage', parseFloat(e.target.value || 0) / 100)}
+                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                       className="input"
                       style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
                     />
@@ -2636,13 +2646,10 @@ export default function FicheChantier({ params }) {
                     <input
                       type="number" step="0.1" min="0" max="20"
                       value={dossier.honoraires_amo_taux ?? AMO_STANDARD * 100}
-                      onChange={async e => {
-                        const taux = parseFloat(e.target.value || 0)
-                        const ancien = dossier.honoraires_amo_taux
-                        set('honoraires_amo_taux', taux)
-                        const { error } = await supabase.from('dossiers').update({ honoraires_amo_taux: taux }).eq('id', id)
-                        if (error) { setErreur('Erreur : ' + error.message); set('honoraires_amo_taux', ancien) }
-                      }}
+                      onFocus={() => { tauxAvantEditRef.current.honoraires_amo_taux = dossier.honoraires_amo_taux }}
+                      onChange={e => set('honoraires_amo_taux', parseFloat(e.target.value || 0))}
+                      onBlur={e => persistTaux('honoraires_amo_taux', parseFloat(e.target.value || 0))}
+                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                       className="input"
                       style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
                     />
