@@ -29,7 +29,7 @@ Les statuts **calculés** ne sont JAMAIS persistés (dérivés à la volée).
 | devis `a_modifier` | devis_artisans.statut | À retravailler |
 | RDV R3 | rendez_vous.type_rdv='presentation_devis' | Présentation des devis. **Anne-Lise planifie TOUJOURS un RDV R3** (fiable). CR R3 PAS fiable (pas systématique). |
 | RDV étude | rendez_vous.type_rdv='etude' | Phase étude/conception (amont) |
-| CR R2 | comptes_rendus.type_visite='r2' | Visite technique artisan faite |
+| RDV R2 | rendez_vous.type_rdv='visite_technique_artisan' | Visite technique artisan. Signal = le RDV (pas le CR r2), symétrie avec R3. Lu PASSÉ uniquement. |
 | date_demarrage_chantier | dossiers | Démarrage chantier |
 | frais_statut='offerts' | dossiers | Frais offerts = rien à relancer (exclu de a_relancer) |
 
@@ -49,7 +49,7 @@ Les statuts **calculés** ne sont JAMAIS persistés (dérivés à la volée).
 | 5 | devis 'a_modifier' OU (≥1 devis ET tous 'refuse') | devis_a_modifier | calculé |
 | 6 | RDV R3 PASSÉ (date<aujourd'hui) ET il reste ≥1 devis 'recu' | **en_attente_signature** | calculé ✨NEW |
 | 7 | RDV R3 FUTUR (date≥aujourd'hui) | **devis_prets** | calculé ✨NEW |
-| 8 | CR R2 existe (sans RDV R3) | devis_en_attente | calculé |
+| 8 | RDV R2 PASSÉ (visite_technique_artisan, date<auj) sans RDV R3 | devis_en_attente | calculé |
 | 9 | RDV 'etude' existe (planifié ou passé) | **en_etude** | calculé ✨NEW |
 | 10 | frais définis non réglés (≠'offerts',≠'regle') + 0 devis | a_relancer | calculé |
 | 11 | défaut | a_contacter | calculé |
@@ -68,13 +68,23 @@ Post-signature AMO (réception/solde) : reste MANUEL (termine) pour l'instant �
 
 ---
 
-## 5. PLAN DES LOTS (ordre contraint)
+## 5. PLAN DES LOTS — ORDRE RÉVISÉ (Lot 2 AVANT Lot 1)
 
-- **Lot 1 — Rattrapage data** : NULLer les calculables persistés, garder annule/termine. Liste à valider via audit data cascade-v2. Cas ouverts : CT-014 (CR R2 Marine à saisir), AM-006 (à clarifier). Backup+transaction.
-- **Lot 2 — Réécriture calcStatut + schéma** : nouvelle cascade (11 lignes, lit rendez_vous) + CHECK strict (NULL/annule/termine) + défaut colonne→NULL + création dossier écrit NULL + suppression auto-push devis_a_modifier (l.1301). ⚠️ CHECK strict posé APRÈS Lot 1 (données propres).
-- **Lot 3 — Éditeur manuel** : UI fiche pour annule/termine SEULEMENT (+ retirer=NULL=ré-ouvrir). Écrit le brut.
-- **Lot 4 — Réconciliation lecteurs** : basculer fiche/dashboard/clients/finances/espace-client/PDF sur calcStatut + s'assurer que chaque écran charge rendez_vous+comptes_rendus+devis_artisans.
-- **Lot 5 — STATUT_CONFIG + stepper** : libellés/couleurs des 4 nouveaux + mapping calcEtape (en_attente_signature/devis_prets sur étape "devis" ; en_etude tôt ; chantier_a_venir → étape chantier ?).
+Raison : NULLer n'a de sens que si calcStatut sait déjà calculer la nouvelle cascade. Sinon fenêtre où le calcul est faux. Donc calcStatut d'abord, NULL ensuite.
+
+- **ÉTAPE A (= ex-Lot 2 code)** : réécrire calcStatut (cascade v2, 11 lignes, lit rendez_vous) + création dossier écrit NULL + suppression auto-push devis_a_modifier (chantiers/[id]:1301). PAS encore CHECK strict ni NULL en base.
+- **ÉTAPE B (= ex-Lot 1)** : NULLer les 28 du groupe A (annule/termine gardés). calcStatut prend le relais avec la bonne valeur.
+- **ÉTAPE C (= ex-Lot 4)** : réconciliation écrans (fiche/dashboard/clients/finances/espace-client/PDF → calcStatut) + charger rendez_vous+comptes_rendus+devis_artisans partout.
+- **ÉTAPE D (= CHECK strict)** : ALTER colonne → NULL autorisé + défaut NULL + CHECK strict (NULL/annule/termine). APRÈS le NULL (données propres).
+- **ÉTAPE E (= ex-Lot 3)** : éditeur manuel fiche (annule/termine + retirer=NULL).
+- **ÉTAPE F (= ex-Lot 5)** : STATUT_CONFIG (libellés/couleurs 4 nouveaux) + mapping calcEtape stepper (en_attente_signature/devis_prets sur "devis" ; en_etude tôt ; chantier_a_venir → chantier).
+
+## 5bis. ÉTAT RÉGULARISATION DATA (fait le 15/06)
+- 11 RDV legacy Marine insérés (10 R3 passés + 1 R2 ODDOS), merge 2841c78. → 10 dossiers en_attente_signature, ODDOS devis_en_attente.
+- THOBY (AM-027) : dates chantier ajoutées → en_cours_chantier.
+- CT-014 (KARCHAOUI courtage, Marine) : R3 signé 01/06 mais devis accepté inconnu → MIS DE CÔTÉ, reste a_contacter jusqu'à info.
+- Classement final validé : groupe A = 28 à NULLer, groupe B = 3 gardés (AM-003/CT-004 annule, CT-005 termine).
+- États vides légitimes : devis_a_modifier (0), a_relancer (0) — pas de cas réel.
 
 ## 6. POINTS OUVERTS À RÉSOUDRE AVANT CHECK STRICT (Lot 2)
 - CT-014 (Marine) : R2 réellement faite, CR pas saisi → Marine saisit, OU on accepte a_contacter.
