@@ -1773,46 +1773,20 @@ export default function FicheChantier({ params }) {
     )
     if (!ok) return
     setSaving(true)
-    try {
-      // Mettre à jour la typologie + taux AMO si non défini
-      // (supabase ne throw pas : on lit { error } et on throw pour activer le catch existant)
-      const { error: dossierErr } = await supabase.from('dossiers').update({
-        typologie: 'amo',
-        honoraires_amo_taux: dossier.honoraires_amo_taux ?? AMO_STANDARD * 100,
-      }).eq('id', id)
-      if (dossierErr) throw new Error(dossierErr.message)
-
-      // Migrer la ligne honoraires_courtage → acompte_amo
-      const { data: ligneCourtage, error: selErr } = await supabase
-        .from('suivi_financier').select('*')
-        .eq('dossier_id', id).eq('type_echeance', 'honoraires_courtage').is('artisan_id', null).maybeSingle()
-      if (selErr) throw new Error(selErr.message)
-
-      if (ligneCourtage) {
-        const { error: migErr } = await supabase.from('suivi_financier').update({ type_echeance: 'acompte_amo' }).eq('id', ligneCourtage.id)
-        if (migErr) throw new Error(migErr.message)
-        // Créer la ligne solde_amo si elle n'existe pas
-        const { data: ligneSolde, error: soldeSelErr } = await supabase
-          .from('suivi_financier').select('id')
-          .eq('dossier_id', id).eq('type_echeance', 'solde_amo').is('artisan_id', null).maybeSingle()
-        if (soldeSelErr) throw new Error(soldeSelErr.message)
-        if (!ligneSolde) {
-          const { error: soldeErr } = await supabase.from('suivi_financier').insert({
-            dossier_id: id, type_echeance: 'solde_amo',
-            montant_ttc: 0, statut_client: 'en_attente',
-          })
-          if (soldeErr) throw new Error(soldeErr.message)
-        }
-      }
-
-      // Recharger état
-      setDossier(d => ({ ...d, typologie: 'amo', honoraires_amo_taux: d.honoraires_amo_taux ?? AMO_STANDARD * 100 }))
-      const { data: newSuivi } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
-      setSuiviFinancier(newSuivi || [])
-      setSucces('Dossier converti en AMO ✓')
-    } catch (e) {
-      setErreur('Erreur lors de la conversion : ' + e.message)
+    // Conversion atomique côté base (fonction Postgres transactionnelle).
+    const { error } = await supabase.rpc('convertir_dossier_en_amo', {
+      p_dossier_id: id,
+      p_taux_amo: AMO_STANDARD * 100,
+    })
+    if (error) {
+      setErreur('Erreur lors de la conversion : ' + error.message)
+      setSaving(false)
+      return
     }
+    setDossier(d => ({ ...d, typologie: 'amo', honoraires_amo_taux: d.honoraires_amo_taux ?? AMO_STANDARD * 100 }))
+    const { data: newSuivi } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(newSuivi || [])
+    setSucces('Dossier converti en AMO ✓')
     setSaving(false)
   }
 
@@ -1826,32 +1800,19 @@ export default function FicheChantier({ params }) {
     )
     if (!ok) return
     setSaving(true)
-    try {
-      // (supabase ne throw pas : on lit { error } et on throw pour activer le catch existant)
-      const { error: dossierErr } = await supabase.from('dossiers').update({ typologie: 'courtage' }).eq('id', id)
-      if (dossierErr) throw new Error(dossierErr.message)
-
-      const { data: ligneAMO, error: selErr } = await supabase
-        .from('suivi_financier').select('*')
-        .eq('dossier_id', id).eq('type_echeance', 'acompte_amo').is('artisan_id', null).maybeSingle()
-      if (selErr) throw new Error(selErr.message)
-
-      if (ligneAMO) {
-        const { error: migErr } = await supabase.from('suivi_financier').update({ type_echeance: 'honoraires_courtage' }).eq('id', ligneAMO.id)
-        if (migErr) throw new Error(migErr.message)
-      }
-
-      const { error: delErr } = await supabase.from('suivi_financier').delete()
-        .eq('dossier_id', id).eq('type_echeance', 'solde_amo').is('artisan_id', null)
-      if (delErr) throw new Error(delErr.message)
-
-      setDossier(d => ({ ...d, typologie: 'courtage' }))
-      const { data: newSuivi } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
-      setSuiviFinancier(newSuivi || [])
-      setSucces('Dossier converti en Courtage ✓')
-    } catch (e) {
-      setErreur('Erreur lors de la conversion : ' + e.message)
+    // Conversion atomique côté base (fonction Postgres transactionnelle).
+    const { error } = await supabase.rpc('convertir_dossier_en_courtage', {
+      p_dossier_id: id,
+    })
+    if (error) {
+      setErreur('Erreur lors de la conversion : ' + error.message)
+      setSaving(false)
+      return
     }
+    setDossier(d => ({ ...d, typologie: 'courtage' }))
+    const { data: newSuivi } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(newSuivi || [])
+    setSucces('Dossier converti en Courtage ✓')
     setSaving(false)
   }
 
