@@ -254,8 +254,21 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [ ] **Bouton « Connecter » générique mort** (paramètres l.708, sert Google Calendar) : à câbler/retirer DANS la refonte calendrier (module en quarantaine).
 - [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
 - [ ] **page chantier** kpis : montant devis prévu et réel 
-- [ ] **Statut chantier « devis présentés / en attente signature »** : il manque un statut entre devis_en_attente (= pas encore reçus) et la signature. Phase réelle : R3 faite, devis reçus, en attente décision/signature client. Aujourd'hui replié sur devis_en_attente (libellé imparfait, perd l'alerte de relance post-R3). Lot dédié : nouvelle valeur CHECK dossiers.statut + STATUT_CONFIG (libellé/couleur) + place cascade calcStatut + mapping stepper client + compteurs. Décision produit (libellé) avant code.
-- [ ] **Réconciliation statut calculé vs persisté** : calcStatut (liste, espace-client) et dossier.statut (fiche, dashboard) peuvent se contredire (ex. devis a_modifier reflété par la colonne mais ignoré par calcStatut avant le fix #1). Décider une source unique ou faire calcStatut honorer le persisté. Fond du désaccord, séparé du bug #1.
+- [~] **Statut chantier** :  "en attente signature" — FAIT (calculé via RDV R3 passé, cascade v2)
+- [~] **Réconciliation** : statut calculé vs persisté — FAIT sur 5/6 écrans (liste, fiche, clients, dashboard, finances). Reste : espace-client (C7, bloqué par RLS client).
+
+### Reliquats chantier statut (après edc21cf)
+- [ ] C7 + RLS CLIENT (espace-client) — LOT SÉCURITÉ DÉDIÉ. Policies client-read : rendez_vous (type+date, stepper) + devis_artisans filtré statut='accepte' + storage PDF devis signé. Stepper calcEtape piloté par RDV (4 étapes : Préparation/Devis/Travaux/Terminé). Décisions privacy actées : client voit ses RDV + devis SIGNÉS seulement (pas recu/refuse). ⚠️ Audit read-only d'abord, test étanchéité inter-client (un client ne lit jamais les RDV/devis d'un autre).
+- [ ] D — CHECK strict dossiers.statut (NULL/annule/termine seulement) + défaut colonne NULL. SQL, APRÈS C complet.
+- [ ] E — Éditeur manuel fiche : poser/retirer annule/termine (retirer=NULL=ré-ouvrir).
+- [ ] DROP TABLE backup_statut_rattrapage_20260615 (après étape D, garder qq jours)
+
+- en_etude/devis_en_attente : phase précoce, BASSE dans la cascade (le R2 la dépasse)
+- devis_a_modifier AVANT chantier_a_venir (un devis à retravailler prime sur un signé)
+- chantier_a_venir = ≥1 devis accepte ET 0 recu (tout tranché). Discipline : refuser les devis non retenus.
+- frais 'offerts' exclu de a_relancer (rien à relancer)
+- Pipeline dashboard 6 buckets : À traiter / En étude / En attente signature / Chantier à venir / En chantier / Terminé (annule exclu)
+- Stepper espace-client piloté par RDV (pas statuts devis fins — RLS client)
 
 #### Optimisation BDD — dette d'échelle (PAS urgent, future-proofing)
 Relevés par l'advisor Supabase. PAS la cause de lenteur actuelle (mesuré <1,5ms/requête ; vraie cause = allers-retours PostgREST, traitée par l'embedding). Utile à partir de milliers de lignes.
