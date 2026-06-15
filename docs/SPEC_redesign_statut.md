@@ -45,8 +45,10 @@ Les statuts **calculés** ne sont JAMAIS persistés (dérivés à la volée).
 | 1 | statut = 'annule' | annule | manuel |
 | 2 | statut = 'termine' | termine | manuel |
 | 3 | date_demarrage_chantier ≤ aujourd'hui | en_cours_chantier | calculé |
-| 4 | ≥1 devis 'accepte' ET 0 devis 'recu' | **chantier_a_venir** | calculé ✨NEW |
-| 5 | devis 'a_modifier' OU (≥1 devis ET tous 'refuse') | devis_a_modifier | calculé |
+| 4 | devis 'a_modifier' OU (≥1 devis ET tous 'refuse') | devis_a_modifier | calculé |
+| 5 | ≥1 devis 'accepte' ET 0 devis 'recu' | **chantier_a_venir** | calculé ✨NEW |
+
+> ⚠️ devis_a_modifier (4) AVANT chantier_a_venir (5) : un devis à retravailler prime sur un autre déjà signé (décision métier 15/06). tousRefuses exige TOUS refusés, donc un mix accepté+refusé tombe bien en chantier_a_venir.
 | 6 | RDV R3 PASSÉ (date<aujourd'hui) ET il reste ≥1 devis 'recu' | **en_attente_signature** | calculé ✨NEW |
 | 7 | RDV R3 FUTUR (date≥aujourd'hui) | **devis_prets** | calculé ✨NEW |
 | 8 | RDV R2 PASSÉ (visite_technique_artisan, date<auj) sans RDV R3 | devis_en_attente | calculé |
