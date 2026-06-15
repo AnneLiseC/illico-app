@@ -195,7 +195,7 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **Doublon factures_agente** ✅ (11/06). Cause : upsertFactureMoisType select-puis-insert sans garde DB + AUCUN index unique sur factures_agente → double-insert (Anne-Lise 2026-06). Fix : DELETE doublon + UNIQUE INDEX (agente_id, annee, mois, type_facture). SQL versionné. 
 - [x] **Durcir upsertFactureMoisType** ✅ (11/06). Cause = double-clic toggle F2 non gardé + existence sur état mémoire. Fix : garde ré-entrance (useRef) + existence en base (4 clés) + .error/throw + rattrapage 23505 + UPDATE ciblé (anti-clobber PDF) + feedback erreur appelants. Sujet F2 (doublon + montant + durcissement) SOLDÉ.
 - [x] **Réglage montant redevance par agente** ✅ (11/06). 
-  Champ « Redevance mensuelle (HT) » (fixe mensuel) au formulaire agente + route create-agente POST/PATCH, saisissable création ET édition. Corrige « redevance juillet à 0 » (calcMois lit redevance_mensuelle_ht en live). ⚠️ À FAIRE : re-saisir le montant des agentes encore à NULL (Marie/Manon/TEST2) via le formulaire. 97ea172
+  Champ « Redevance mensuelle (HT) » (fixe mensuel) au formulaire agente + route create-agente POST/PATCH, saisissable création ET édition. Corrige « redevance juillet à 0 » (calcMois lit redevance_mensuelle_ht en live) 97ea172
 - [x] **Garde-fou création profil client** ✅ (10/06). 
   Trigger BEFORE INSERT `profile_client_derive_agence_trg` (SECURITY DEFINER) : role='client' → dérive agence_id + societe_id depuis le client métier rattaché (profiles.client_id → clients) ; exception stricte si client_id manquant. + CHECK `profiles_client_agence_not_null` (role <> 'client' OR agence_id IS NOT NULL) = filet dur, survit au retrait du trigger. Cible role='client' uniquement (admin agence_id NULL préservé, vérifié). SQL versionné docs/sql/garde_fou_profil_client_agence.sql. Dérivation + CHECK + non-régression admin prouvés en base. NB découvert : aucun chemin applicatif ne crée de profil client (lien magique acté mais non construit) → garde-fou préventif, posé AVANT le futur flux espace-client.
 - [x] **Boutons morts Finances** ✅ (11/06). 4 boutons décoratifs (CSV, ▼, Exporter le bilan, Saisir un règlement) supprimés + conteneurs vides. Aucun handler (jamais câblés).
@@ -211,6 +211,10 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **Avancement client (#9)** ✅ (15/06, 92043cf). Barre morte retirée (colonne dossiers.avancement jamais alimentée, vestige _design ; gate >0 → jamais affichée). Stepper 4 étapes = seule progression client. Colonne orpheline en base (candidate DROP COLUMN futur, non urgent).
 - [x] **DROP COLUMN dossiers.avancement** ✅ (15/06). Colonne orpheline supprimée (0 dépendance vérifiée : vue/fonction/index/route _design). Clôt définitivement #9.
 - [x] **Types de RDV (#10)** ✅ (15/06, e5c6da0). 3 types ajoutés (suivi, reception, etude) au CHECK type_rdv + TYPE_CONFIG + select des 2 formulaires (planning + fiche chantier). Règles : les 3 exigent un dossier ; reception active l'artisan (comme R2) ; suivi/etude sans artisan. Nettoyage artisan_id au changement de type. Désengorge le 'autres' (était 72%). type_rdv et type_visite restent indépendants.
+- [x] **Taux onChange→onBlur** ✅ (15/06, 92c2ce5). taux_courtage + honoraires_amo_taux : écriture DB au blur/Enter au lieu de par caractère. set() state gardé en onChange (recalcul live OK), persistTaux() factorisé, rollback préservé. apporteur_actif (toggle) non concerné.
+- [x] **Source unique libellé suppression chantier** ✅ (15/06, 92c2ce5). Constante ENTITES_CHANTIER aux 2 endroits (divergence réelle CR/suivis fermée).
+- [x] **prenomAdmin maybeSingle** ✅ (15/06, 92c2ce5). .order('prenom').limit(1) → ne casse plus si 2 admins. RLS cloisonne (pas de filtre societe_id ajouté).
+- [x] **suiviAcompteAMO vestige mort** ✅ (15/06, 92c2ce5). Supprimé (0 usage).
 
 ##### A FAIRE
 - [ ] **Code mort finance.js 🟠 restants** : devis.statut/montantTTC, apporteur.lines[].* — grep non concluant ou lines itéré dynamiquement. Relecture site par site requise. Pas prioritaire. 
@@ -218,11 +222,6 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [ ] **L18 bug ajout intervention** : ⚠️ audit d'abord, STOP si lié à la sync Google Calendar.
 - [ ] **L22 bug synchro Google Calendar** : `Cannot access 'n' before initialization` (TDZ — `const auth` l.143 shadow l.128 dans `api/google/calendar/sync/route.js`). Fix : renommer le 2e `auth` en `oauthClient`. ⚠️ Lié au calendrier Google partagé entre agences (fuite multi-tenant à creuser).
 - [ ] **Messagerie AMO : aucun dossier affiché** : la page lit `clients.raison_sociale` (colonne cible jamais créée — cf. doc 02). Créer la colonne OU rebrancher la lecture. ⚠️ lié à la réactivation Messagerie (bloc F).
-
-- [ ] **Taux écrits par frappe (onChange)** : taux_courtage/honoraires_amo_taux/apporteur_actif → UPDATE par caractère. onBlur souhaitable. Dette préexistante, non urgente.
-- [ ] **Source unique libellé suppression chantier** : libellé dupliqué entre `confirm()` (~l.1772) et sous-titre bouton (~l.2502). Aligné au fix P0-11 mais une constante partagée éviterait une future divergence.
-- [ ] **prenomAdmin avec maybeSingle()** (chantiers/[id]:708) : le fetch du prénom admin fait .eq('role','admin').maybeSingle() → si une société a 2 admins un jour, maybeSingle échoue (>1 ligne) et le libellé reste '—'. Sans gravité (affichage), mais à corriger au moment du multi-admin (prendre le 1er, ou gérer la liste).
-- [ ] **suiviAcompteAMO vestige mort** (chantiers/[id]:1626) : variable définie mais jamais utilisée. Code mort à retirer. Trivial, hors urgence.
 
 #### Bloc E — Refonte UX vues finances (post-test, à froid) [CONCEPTION d'abord]
 > Gros chantier de design d'écran. NE PAS patcher en isolé les points ci-dessous : ce sont des décisions de design à penser ensemble (sinon travail jeté). Cadrage maquette/structure AVANT code. Idéalement après un vrai retour d'usage terrain (facturation réelle), qui réordonnera les priorités d'affichage.
@@ -240,7 +239,7 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **Espace client : statuts internes masqués** ✅ (12/06). Badge « Dossier en préparation » + stepper 4 étapes (« Préparation » fond a_contacter/a_relancer). Côté staff (lib/dossiers.js) intact.
 - [x] **Messages côté client : bulle corrigée** ✅ (12/06). Client = bleu à droite, agence = gris à gauche (styles étaient permutés).
 - [x] **Renommage variables « Marine »** ✅ (fait le 05/06, `456f1d4`, ~32 occ. / 4 fichiers). isMarine→isAdmin, estChantierMarine→referentEstAdmin (basés rôle). prenomAdmin NON renommé (variable de personne légitime). Item avait survécu par erreur à la réorg du 11/06.
-- [x] **Convention null redevance** ✅ (résolu de fait au 11/06, lot redevance). Règle déjà respectée : calcul → garde !=null ou ||0 ; affichage paramètre → « à paramétrer ». Aucun bug. (item décrivait l'état d'avant 97ea172). ⚠️ Reste : re-saisir montants Marie/Manon/TEST2 (données, déjà tracé).
+- [x] **Convention null redevance** ✅ (résolu de fait au 11/06, lot redevance). Règle déjà respectée : calcul → garde !=null ou ||0 ; affichage paramètre → « à paramétrer ». Aucun bug. (item décrivait l'état d'avant 97ea172). 
 - [x] **Handlers qui avalent les erreurs** ✅ SOLDÉ (12/06). Toute l'app couverte hors quarantaine : chantiers/[id] complet (💰 Lot1 5efbe04 + non-💰/pdf_path/dossiers Lot2 49953e4), espace-client/planning/artisans (Lot3 6e7ad64), atomicité K (62086ec). Faux ✓ éliminés, maybeSingle capturés (anti-doublon), feedback client non technique, couple AMO atomique. RESTE hors scope : 🟢 lectures (priorité basse) ; module calendrier (quarantaine).
 - [x] **K — atomicité majSuiviChantier** ✅ (12/06, 62086ec). Fonction Postgres suivi_toggle_honoraires (SECURITY INVOKER, upsert index partiel, atomique). Le couple courtage/acompte_amo est désormais tout-ou-rien (T5 prouvé : échec partiel → rollback total). Filet temporaire retiré. Cloisonnement RLS héritée (T6). DO UPDATE préserve montant_ttc.
 
