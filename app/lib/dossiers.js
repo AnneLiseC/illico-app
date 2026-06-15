@@ -1,13 +1,17 @@
 // app/lib/dossiers.js
 
 export const STATUT_CONFIG = {
-  a_contacter:       { label: 'À contacter',          color: 'bg-blue-100 text-blue-700' },
-  a_relancer:        { label: 'À relancer',            color: 'bg-orange-100 text-orange-700' },
-  devis_en_attente:  { label: 'Devis en attente',      color: 'bg-yellow-100 text-yellow-700' },
-  devis_a_modifier:  { label: 'Devis à modifier',      color: 'bg-red-100 text-red-600' },
-  en_cours_chantier: { label: 'En cours de chantier',  color: 'bg-green-100 text-green-700' },
-  termine:           { label: 'Terminé',               color: 'bg-gray-100 text-gray-600' },
-  annule:            { label: 'Annulé',                color: 'bg-red-100 text-red-600' },
+  a_contacter:          { label: 'À contacter',          color: 'bg-blue-100 text-blue-700' },
+  a_relancer:           { label: 'À relancer',            color: 'bg-orange-100 text-orange-700' },
+  en_etude:             { label: 'En étude',              color: 'bg-slate-100 text-slate-700' },
+  devis_en_attente:     { label: 'Devis en attente',      color: 'bg-yellow-100 text-yellow-700' },
+  devis_prets:          { label: 'Devis prêts',           color: 'bg-teal-100 text-teal-700' },
+  en_attente_signature: { label: 'En attente signature',  color: 'bg-amber-100 text-amber-700' },
+  devis_a_modifier:     { label: 'Devis à modifier',      color: 'bg-red-100 text-red-600' },
+  chantier_a_venir:     { label: 'Chantier à venir',      color: 'bg-indigo-100 text-indigo-700' },
+  en_cours_chantier:    { label: 'En cours de chantier',  color: 'bg-green-100 text-green-700' },
+  termine:              { label: 'Terminé',               color: 'bg-gray-100 text-gray-600' },
+  annule:               { label: 'Annulé',                color: 'bg-red-100 text-red-600' },
 }
 
 // Calcul du statut dossier — SOURCE DE VÉRITÉ UNIQUE (cascade v2, cf.
