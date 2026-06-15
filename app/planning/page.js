@@ -26,10 +26,13 @@ const COLORS = {
 }
 
 const TYPE_CONFIG = {
-  visite_technique_client:  { label: 'R1 — Visite client',      short: 'R1',    color: COLORS.blue,   bg: '#EFF6FF' },
-  visite_technique_artisan: { label: 'R2 — Visite artisan',     short: 'R2',    color: COLORS.teal,   bg: '#F0FDF9' },
-  presentation_devis:       { label: 'R3 — Présentation devis', short: 'R3',    color: COLORS.amber,  bg: '#FFFBEB' },
-  autres:                   { label: 'Autre RDV',               short: 'Autre', color: '#64748B',     bg: '#F8FAFC' },
+  visite_technique_client:  { label: 'R1 — Visite client',      short: 'R1',     color: COLORS.blue,   bg: '#EFF6FF' },
+  visite_technique_artisan: { label: 'R2 — Visite artisan',     short: 'R2',     color: COLORS.teal,   bg: '#F0FDF9' },
+  presentation_devis:       { label: 'R3 — Présentation devis', short: 'R3',     color: COLORS.amber,  bg: '#FFFBEB' },
+  suivi:                    { label: 'Suivi de chantier',       short: 'Suivi',  color: COLORS.violet, bg: '#F5F3FF' },
+  reception:                { label: 'Réception',               short: 'Récept.',color: COLORS.mint,   bg: '#ECFDF5' },
+  etude:                    { label: 'Étude/conception',        short: 'Étude',  color: COLORS.coral,  bg: '#FEF2F2' },
+  autres:                   { label: 'Autre RDV',               short: 'Autre',  color: '#64748B',     bg: '#F8FAFC' },
 }
 
 const ARTISAN_COLORS = [COLORS.violet, COLORS.coral, COLORS.mint, COLORS.gold, COLORS.sky, COLORS.teal, '#9333EA', '#0891B2']
@@ -764,11 +767,15 @@ export default function Planning() {
                         type_rdv: newType,
                         titre: newType !== 'autres' ? '' : f.titre,
                         dossier_id: newType === 'autres' ? '' : (f.type_rdv === 'autres' ? '' : f.dossier_id),
+                        artisan_id: ['visite_technique_artisan', 'reception'].includes(newType) ? f.artisan_id : '',
                       }))
                     }} className={inputCls} style={{marginTop:6}}>
                       <option value="visite_technique_client">R1 — Visite technique client</option>
                       <option value="visite_technique_artisan">R2 — Visite technique avec artisan</option>
                       <option value="presentation_devis">R3 — Présentation devis</option>
+                      <option value="suivi">Suivi de chantier</option>
+                      <option value="reception">Réception</option>
+                      <option value="etude">Étude/conception</option>
                       <option value="autres">Autre rendez-vous</option>
                     </select>
                   </div>
@@ -789,7 +796,7 @@ export default function Planning() {
                       </select>
                     </div>
                   </div>
-                  {formRdv.type_rdv === 'visite_technique_artisan' && <div><label className={labelCls}>Artisan</label>
+                  {['visite_technique_artisan', 'reception'].includes(formRdv.type_rdv) && <div><label className={labelCls}>Artisan</label>
                     <select value={formRdv.artisan_id} onChange={e => setFormRdv(f => ({ ...f, artisan_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir —</option>
                       {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
