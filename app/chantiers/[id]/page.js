@@ -1622,7 +1622,6 @@ export default function FicheChantier({ params }) {
   const honorairesCourtagePrev = finDossier.honorairesPrevi.courtage.ttc
   const honorairesAMOPrev      = finDossier.honorairesPrevi.courtage.ttc + finDossier.honorairesPrevi.soldeAmo.ttc
   const suiviCourtage = suiviFinancier.find(s => s.type_echeance === 'honoraires_courtage')
-  const suiviAcompteAMO = suiviFinancier.find(s => s.type_echeance === 'acompte_amo')
   const suiviSoldeAMO = suiviFinancier.find(s => s.type_echeance === 'solde_amo')
   // Statut frais = dossiers.frais_statut (source unique) ; date = ligne frais_consultation si réglé.
   const suiviFrais = suiviFinancier.find(s => s.type_echeance === 'frais_consultation')
