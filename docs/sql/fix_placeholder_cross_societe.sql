@@ -1,39 +1,57 @@
 -- ============================================================================
--- storage_policies.sql — Source de vérité des policies RLS Storage
+-- fix_placeholder_cross_societe.sql — Fermer la brèche placeholder (#7)
 -- ============================================================================
--- État FIDÈLE et COMPLET au 15/06/2026 : 8 policies sur storage.objects,
--- 2 buckets privés (documents + photos). Nouvelle source de vérité après
--- recréation dashboard (#5) et fermeture de la brèche placeholder (#7).
+-- CONTEXTE (audit #5) : 6 policies sur storage.objects (Lecture documents,
+-- Lecture photos, Upload documents, Upload photos, Suppression documents,
+-- Suppression photos) contiennent une exemption
+--     (name ~~ '%.emptyFolderPlaceholder'::text) OR ...
+-- placée en TÊTE du bloc de scoping, qui court-circuite le cloisonnement tenant
+-- pour ces fichiers : n'importe quel staff de n'importe quelle société peut
+-- lister / créer / supprimer un .emptyFolderPlaceholder dans le chemin d'un
+-- AUTRE tenant. Inoffensif aujourd'hui (0 octet, ne révèle que l'existence d'un
+-- dossier) mais c'est une capacité cross-tenant inutile.
 --
--- ⚠️ À TENIR À JOUR : toute modification d'une policy Storage (dashboard ou SQL)
--- DOIT être répercutée ici. Sinon le repo redevient obsolète.
+-- CORRECTION : recréer ces 6 policies SANS la clause d'exemption. On retire
+-- UNIQUEMENT « (name ~~ '%.emptyFolderPlaceholder'::text) OR » — les jointures
+-- de scoping (chantiers/artisans/perso) sont reprises À L'IDENTIQUE depuis
+-- pg_policies (état live). Après correction, TOUT chemin (placeholder compris)
+-- est soumis au scoping tenant normal.
 --
--- HISTORIQUE :
---   #5 (mergé) : export initial — il manquait les 2 policies DELETE
---     (Suppression documents/photos), omission corrigée ici.
---   #7 : retrait de l'exemption « .emptyFolderPlaceholder » sur les 6 policies
---     qui la portaient (Lecture/Upload/Suppression documents & photos). Cette
---     exemption court-circuitait le scoping tenant → fermée. TOUT chemin
---     (placeholder compris) suit désormais le cloisonnement société/agence.
+-- Le fichier traînant documents/factures_agente/.emptyFolderPlaceholder
+-- (0 octet, seul placeholder existant) se supprime via l'UI Storage (le DELETE
+-- SQL direct est bloqué par Supabase — storage.protect_delete). Non bloquant :
+-- l'exemption retirée, ce placeholder est désormais soumis au scoping tenant
+-- normal (plus aucun privilège cross-tenant). L'app n'en crée AUCUN (grep app/ = 0).
 --
--- 8 policies : Lecture documents/photos (SELECT), client_read_photos (SELECT),
--- Upload documents/photos (INSERT), Suppression documents/photos (DELETE),
--- Remplacement factures agente (UPDATE). Plus AUCUNE exemption placeholder.
+-- NON TOUCHÉ : client_read_photos + Remplacement factures agente (pas
+-- d'exemption). Pur Storage, aucun code applicatif.
 --
--- Aucune policy sur storage.buckets (vérifié : 0). RLS uniquement sur
--- storage.objects.
---
--- IDEMPOTENT : DROP POLICY IF EXISTS + CREATE. Reflète l'état live APRÈS #7 ;
--- ré-exécuté sur cette base, ne change rien.
--- À appliquer dans le SQL editor Supabase (RESET ROLE en tête) SI besoin de
--- reconstruire les policies à l'identique.
+-- À appliquer dans le SQL editor Supabase (RESET ROLE en tête). BEGIN/COMMIT :
+-- lire le contrôle APRÈS avant de COMMIT.
 -- ============================================================================
 
 RESET ROLE;
 
 -- ----------------------------------------------------------------------------
--- SELECT
+-- CONTRÔLE AVANT — attendu : 6 policies avec exemption = true.
 -- ----------------------------------------------------------------------------
+SELECT policyname, cmd,
+  (position('emptyFolderPlaceholder' in (coalesce(qual,'') || coalesce(with_check,''))) > 0) AS a_exemption
+FROM pg_policies
+WHERE schemaname='storage' AND tablename='objects'
+ORDER BY cmd, policyname;
+
+-- Reconfirmer le placeholder traînant — attendu : 1 ligne, 0 octet.
+SELECT bucket_id, name, (metadata->>'size') AS size_bytes
+FROM storage.objects
+WHERE name ~~ '%.emptyFolderPlaceholder';
+
+
+BEGIN;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- SELECT
+-- ════════════════════════════════════════════════════════════════════════════
 
 DROP POLICY IF EXISTS "Lecture documents" ON storage.objects;
 CREATE POLICY "Lecture documents" ON storage.objects
@@ -72,21 +90,9 @@ CREATE POLICY "Lecture photos" ON storage.objects
           OR ((d.referente_id = (SELECT auth.uid() AS uid)) AND (d.agence_id = (SELECT get_my_agence_id() AS get_my_agence_id))))))))
   );
 
--- Branche CLIENT : un client lit les photos de SON dossier (profiles.client_id).
-DROP POLICY IF EXISTS "client_read_photos" ON storage.objects;
-CREATE POLICY "client_read_photos" ON storage.objects
-  FOR SELECT TO public
-  USING (
-    (bucket_id = 'photos'::text)
-    AND (EXISTS (
-      SELECT 1 FROM (profiles me JOIN dossiers d ON ((d.client_id = me.client_id)))
-      WHERE ((me.id = auth.uid()) AND (me.role = 'client'::text) AND (me.client_id IS NOT NULL)
-        AND ((d.id)::text = split_part(objects.name, '/'::text, 2)))))
-  );
-
--- ----------------------------------------------------------------------------
+-- ════════════════════════════════════════════════════════════════════════════
 -- INSERT (WITH CHECK uniquement)
--- ----------------------------------------------------------------------------
+-- ════════════════════════════════════════════════════════════════════════════
 
 DROP POLICY IF EXISTS "Upload documents" ON storage.objects;
 CREATE POLICY "Upload documents" ON storage.objects
@@ -129,9 +135,9 @@ CREATE POLICY "Upload photos" ON storage.objects
           OR ((d.referente_id = (SELECT auth.uid() AS uid)) AND (d.agence_id = (SELECT get_my_agence_id() AS get_my_agence_id))))))))
   );
 
--- ----------------------------------------------------------------------------
+-- ════════════════════════════════════════════════════════════════════════════
 -- DELETE (USING uniquement)
--- ----------------------------------------------------------------------------
+-- ════════════════════════════════════════════════════════════════════════════
 
 DROP POLICY IF EXISTS "Suppression documents" ON storage.objects;
 CREATE POLICY "Suppression documents" ON storage.objects
@@ -170,48 +176,34 @@ CREATE POLICY "Suppression photos" ON storage.objects
           OR ((d.referente_id = (SELECT auth.uid() AS uid)) AND (d.agence_id = (SELECT get_my_agence_id() AS get_my_agence_id))))))))
   );
 
--- ----------------------------------------------------------------------------
--- UPDATE (remplacement factures_agente / rib / kbis) — USING + WITH CHECK
--- (jamais d'exemption placeholder sur cette policy)
--- ----------------------------------------------------------------------------
-
-DROP POLICY IF EXISTS "Remplacement factures agente" ON storage.objects;
-CREATE POLICY "Remplacement factures agente" ON storage.objects
-  FOR UPDATE TO public
-  USING (
-    (bucket_id = 'documents'::text)
-    AND ((SELECT get_my_role() AS get_my_role) = ANY (ARRAY['admin'::text, 'agente'::text]))
-    AND (
-      (((storage.foldername(name))[1] = ANY (ARRAY['factures_agente'::text, 'rib'::text])) AND (EXISTS (
-        SELECT 1 FROM profiles p
-        WHERE (((p.id)::text = split_part(split_part(objects.name, '/'::text, 2), '.'::text, 1))
-          AND ((p.id = (SELECT auth.uid() AS uid))
-            OR (((SELECT get_my_role() AS get_my_role) = 'admin'::text) AND (p.societe_id = (SELECT get_my_societe_id() AS get_my_societe_id))))))))
-      OR (((storage.foldername(name))[1] = 'kbis'::text) AND ((SELECT get_my_role() AS get_my_role) = 'admin'::text) AND (EXISTS (
-        SELECT 1 FROM profiles p
-        WHERE (((p.id)::text = split_part(split_part(objects.name, '/'::text, 2), '.'::text, 1))
-          AND (p.societe_id = (SELECT get_my_societe_id() AS get_my_societe_id))))))
-    )
-  )
-  WITH CHECK (
-    (bucket_id = 'documents'::text)
-    AND ((SELECT get_my_role() AS get_my_role) = ANY (ARRAY['admin'::text, 'agente'::text]))
-    AND (
-      (((storage.foldername(name))[1] = ANY (ARRAY['factures_agente'::text, 'rib'::text])) AND (EXISTS (
-        SELECT 1 FROM profiles p
-        WHERE (((p.id)::text = split_part(split_part(objects.name, '/'::text, 2), '.'::text, 1))
-          AND ((p.id = (SELECT auth.uid() AS uid))
-            OR (((SELECT get_my_role() AS get_my_role) = 'admin'::text) AND (p.societe_id = (SELECT get_my_societe_id() AS get_my_societe_id))))))))
-      OR (((storage.foldername(name))[1] = 'kbis'::text) AND ((SELECT get_my_role() AS get_my_role) = 'admin'::text) AND (EXISTS (
-        SELECT 1 FROM profiles p
-        WHERE (((p.id)::text = split_part(split_part(objects.name, '/'::text, 2), '.'::text, 1))
-          AND (p.societe_id = (SELECT get_my_societe_id() AS get_my_societe_id))))))
-    )
-  );
+-- NB : le placeholder documents/factures_agente/.emptyFolderPlaceholder (0 octet)
+-- ne se supprime PAS en SQL (DELETE bloqué par Supabase — storage.protect_delete).
+-- À supprimer via l'UI Storage : dashboard → Storage → documents →
+-- factures_agente → supprimer le placeholder. Non bloquant : l'exemption étant
+-- retirée, ce fichier est déjà soumis au scoping tenant normal (aucun privilège
+-- cross-tenant ne subsiste, qu'il soit présent ou non).
 
 -- ----------------------------------------------------------------------------
--- CONTRÔLE (lecture seule) : doit renvoyer les 8 policies ci-dessus,
--- AUCUNE avec exemption placeholder.
+-- CONTRÔLE APRÈS (avant COMMIT) : a_exemption = false sur les 8 policies.
 -- ----------------------------------------------------------------------------
--- SELECT policyname, cmd FROM pg_policies
---   WHERE schemaname='storage' AND tablename='objects' ORDER BY cmd, policyname;
+SELECT policyname, cmd,
+  (position('emptyFolderPlaceholder' in (coalesce(qual,'') || coalesce(with_check,''))) > 0) AS a_exemption
+FROM pg_policies
+WHERE schemaname='storage' AND tablename='objects'
+ORDER BY cmd, policyname;
+
+-- ⚠️ DÉCISION MANUELLE :
+--   • Contrôle APRÈS conforme (0 exemption sur les 8 policies) →  COMMIT;
+--   • Sinon →  ROLLBACK;
+-- COMMIT;
+-- ROLLBACK;
+
+
+-- ============================================================================
+-- ROLLBACK APRÈS COMMIT (restaurer l'exemption sur les 6 policies).
+-- En pratique : ré-appliquer la version des policies d'AVANT #7. Le fichier
+-- storage_policies.sql à la révision précédant #7 (git) contient les 6 policies
+-- AVEC l'exemption ; les 2 DELETE manquaient (omission #5). Pour un rollback
+-- strict, reprendre depuis git la version pré-#7 + re-CREATE manuel des 2
+-- DELETE avec exemption.
+-- ============================================================================
