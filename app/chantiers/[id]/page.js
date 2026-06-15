@@ -1297,11 +1297,9 @@ export default function FicheChantier({ params }) {
       ({ error } = await supabase.from('devis_artisans').update({ statut }).eq('id', devisId))
     }
     if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
-    if (statut === 'a_modifier') {
-      const { error: dossierErr } = await supabase.from('dossiers').update({ statut: 'devis_a_modifier' }).eq('id', id)
-      if (dossierErr) { setErreur('Erreur : ' + dossierErr.message); await chargerDevis(); return }
-      setDossier(prev => prev ? { ...prev, statut: 'devis_a_modifier' } : prev)
-    }
+    // Plus d'auto-push dossiers.statut='devis_a_modifier' : calcStatut le dérive
+    // désormais des devis (cascade v2). La colonne ne porte que les overrides
+    // manuels (NULL/annule/termine). Persister le calculé la re-périmerait.
     await chargerDevis()
   }
 
