@@ -80,7 +80,7 @@ function NouveauChantierForm() {
         referente_id: client?.referente_id || profile?.id,
         agence_id: client.agence_id,
         typologie: form.typologie,
-        statut: 'a_contacter',
+        statut: null, // NULL = pas d'override manuel → calcStatut décide (a_contacter à la création)
         frais_consultation: form.frais_consultation ? parseFloat(form.frais_consultation) : null,
         description: form.description || null,
         frais_statut: form.frais_statut,
