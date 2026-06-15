@@ -1139,7 +1139,6 @@ export default function FicheChantier({ params }) {
       description: dossier.description || null,
       part_agente: newPartAgente,
       frais_part_agente: dossier.frais_part_agente ?? null,
-      avancement: dossier.avancement ?? 0,
     }).eq('id', id)
 
     if (error) {
