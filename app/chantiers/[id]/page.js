@@ -10,6 +10,10 @@ import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFin
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
 
+// Liste des entités supprimées avec un chantier — source unique des 2 libellés
+// (confirm de suppression + sous-titre du bouton), pour éviter qu'ils divergent.
+const ENTITES_CHANTIER = 'devis, factures, photos, comptes-rendus, documents, RDV, interventions, suivis financiers, messages, contrat'
+
 // Aperçu texte nu d'un CR : retire la syntaxe markdown (## titres, **gras**, puces).
 function stripMarkdown(text) {
   return (text || '')
@@ -698,7 +702,7 @@ export default function FicheChantier({ params }) {
           .order('created_at', { referencedTable: 'messages' })
           .single(),
         isAdmin
-          ? supabase.from('profiles').select('prenom, nom').eq('role', 'admin').maybeSingle()
+          ? supabase.from('profiles').select('prenom, nom').eq('role', 'admin').order('prenom').limit(1).maybeSingle()
           : Promise.resolve({ data: null }),
         supabase.from('artisans').select('id, entreprise, metier, partenaire').order('entreprise'),
       ])
@@ -936,6 +940,19 @@ export default function FicheChantier({ params }) {
   }
   
   const set = (champ, valeur) => setDossier(d => ({ ...d, [champ]: valeur }))
+
+  // Taux (courtage/AMO) : la frappe met à jour l'état (UI + recalcul live) ;
+  // l'écriture DB se fait au blur / Enter (pas à chaque caractère). Rollback de
+  // l'état vers la valeur d'avant édition (capturée au focus) si l'UPDATE échoue.
+  const tauxAvantEditRef = useRef({})
+  const persistTaux = async (champ, valeur) => {
+    const { error } = await supabase.from('dossiers').update({ [champ]: valeur }).eq('id', id)
+    if (error) {
+      setErreur('Erreur : ' + error.message)
+      const ancien = tauxAvantEditRef.current[champ]
+      if (ancien !== undefined) set(champ, ancien)
+    }
+  }
 
   const referentEstAdmin = dossier?.referente?.role === 'admin'
 
@@ -1622,7 +1639,6 @@ export default function FicheChantier({ params }) {
   const honorairesCourtagePrev = finDossier.honorairesPrevi.courtage.ttc
   const honorairesAMOPrev      = finDossier.honorairesPrevi.courtage.ttc + finDossier.honorairesPrevi.soldeAmo.ttc
   const suiviCourtage = suiviFinancier.find(s => s.type_echeance === 'honoraires_courtage')
-  const suiviAcompteAMO = suiviFinancier.find(s => s.type_echeance === 'acompte_amo')
   const suiviSoldeAMO = suiviFinancier.find(s => s.type_echeance === 'solde_amo')
   // Statut frais = dossiers.frais_statut (source unique) ; date = ligne frais_consultation si réglé.
   const suiviFrais = suiviFinancier.find(s => s.type_echeance === 'frais_consultation')
@@ -1823,7 +1839,7 @@ export default function FicheChantier({ params }) {
 
   const supprimerChantier = async () => {
     const ok = confirm(
-      'Supprimer définitivement ce chantier et tout ce qui lui est rattaché (devis, factures, photos, comptes-rendus, documents, RDV, interventions, suivis financiers, messages, contrat) ? Cette action est irréversible.'
+      `Supprimer définitivement ce chantier et tout ce qui lui est rattaché (${ENTITES_CHANTIER}) ? Cette action est irréversible.`
     )
     if (!ok) return
 
@@ -2542,7 +2558,7 @@ export default function FicheChantier({ params }) {
           <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap'}}>
             <div>
               <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)', marginBottom:2}}>Supprimer définitivement ce chantier</div>
-              <div style={{fontSize:12, color:'var(--ink-500)'}}>Cette action est irréversible — supprime le dossier et toutes ses données (devis, factures, photos, CR, documents, RDV, interventions, suivis, messages, contrat).</div>
+              <div style={{fontSize:12, color:'var(--ink-500)'}}>Cette action est irréversible — supprime le dossier et toutes ses données ({ENTITES_CHANTIER}).</div>
             </div>
             <button onClick={supprimerChantier} disabled={saving} className="btn btn-ghost"
               style={{fontSize:12.5, color:'#b91c1c', borderColor:'rgba(239,68,68,0.3)'}}>
@@ -2593,13 +2609,10 @@ export default function FicheChantier({ params }) {
                     <input
                       type="number" step="0.1" min="0" max="20"
                       value={(dossier.taux_courtage ?? COURTAGE_STANDARD) * 100}
-                      onChange={async e => {
-                        const taux = parseFloat(e.target.value || 0) / 100
-                        const ancien = dossier.taux_courtage
-                        set('taux_courtage', taux)
-                        const { error } = await supabase.from('dossiers').update({ taux_courtage: taux }).eq('id', id)
-                        if (error) { setErreur('Erreur : ' + error.message); set('taux_courtage', ancien) }
-                      }}
+                      onFocus={() => { tauxAvantEditRef.current.taux_courtage = dossier.taux_courtage }}
+                      onChange={e => set('taux_courtage', parseFloat(e.target.value || 0) / 100)}
+                      onBlur={e => persistTaux('taux_courtage', parseFloat(e.target.value || 0) / 100)}
+                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                       className="input"
                       style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
                     />
@@ -2633,13 +2646,10 @@ export default function FicheChantier({ params }) {
                     <input
                       type="number" step="0.1" min="0" max="20"
                       value={dossier.honoraires_amo_taux ?? AMO_STANDARD * 100}
-                      onChange={async e => {
-                        const taux = parseFloat(e.target.value || 0)
-                        const ancien = dossier.honoraires_amo_taux
-                        set('honoraires_amo_taux', taux)
-                        const { error } = await supabase.from('dossiers').update({ honoraires_amo_taux: taux }).eq('id', id)
-                        if (error) { setErreur('Erreur : ' + error.message); set('honoraires_amo_taux', ancien) }
-                      }}
+                      onFocus={() => { tauxAvantEditRef.current.honoraires_amo_taux = dossier.honoraires_amo_taux }}
+                      onChange={e => set('honoraires_amo_taux', parseFloat(e.target.value || 0))}
+                      onBlur={e => persistTaux('honoraires_amo_taux', parseFloat(e.target.value || 0))}
+                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                       className="input"
                       style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
                     />
