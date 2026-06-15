@@ -3,9 +3,8 @@
 > **État vivant du projet.** Lue par Claude (binôme) et Claude Code en tête de chaque session.
 > Le détail historique (journal des commits, chantier finances) est dans `07_journal_multitenant.md`.
 
-> Dernière mise à jour : 11/06/2026.
-> **Statut : Multi-agence COMPLET (Lots 1-5 mergés). Bloc A sécurité soldé. Sujet F2 facturation soldé. App multi-tenant fonctionnelle, cloisonnée, sécurisée — ouvrable à un franchisé testeur (garde-fou : pas de sync Google Calendar).**
-
+> Dernière mise à jour : 15/06/2026.
+> Statut : Multi-agence COMPLET. Bloc A sécurité soldé. Sujet erreurs avalées SOLDÉ (capture toute l'app + atomicité AMO). Famille AMO close (toggle K + conversions #3 + rattrapage data #4). Ménage infra fait (#5 policies Storage versionnées, #7 brèche placeholder fermée). App multi-tenant fonctionnelle, cloisonnée, sécurisée.
 ---
 
 ## 0. CADRE
@@ -162,17 +161,21 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 
 
 #### Bloc B-bis — Facturation (reliquat fonctionnel, repris du 05)
+- [x] **Colonne « Marine » en dur + KPI net à virer** ✅ (10/06). Libellé colonne total + RepartRow → « Société » (valeurs intactes, code mort nomFranchisee/adminRes nettoyé). KPI « Net à virer à l'agente » (F1−F2 trompeur) supprimé.
+- [x] **Couples AMO legacy à dates incohérentes** ✅ (15/06). AM-002 + AM-009 rattrapés (acompte_amo.date ← courtage.date ; + montant courtage AM-002 ← acompte). Backup + transaction + COMMIT manuel sur avant/après. Préventif (rien ne lit cette date). NB : anomalie montant AM-002 traitée dans le même lot (groupée).
+- [x] **Cases redevance cliquables (agente)** ✅ FERMÉ SANS CODE (14/06). Décision : le besoin n'existe pas. Dans le flux réel, c'est l'ADMIN qui constate les redevances reçues (il a déjà son chemin via le toggle F2 → upsertFactureMoisType synchronise redevances.statut). L'agente paie par virement, pas par clic — la grille redevances est de l'AFFICHAGE pour elle (consultation), pas un pilotage. Pas de route INSERT agente, pas de pré-création, pas de policy à ajouter. L'item décrivait un faux manque (hypothèse « les cases devraient être cliquables » invalidée par le flux métier). NB structure pour mémoire : redevances = 1 statut binaire en_attente/regle, INSERT admin-only, UPDATE agente(sa ligne)+admin(société), trigger protège montant en UPDATE seulement.
+- [x] **Atomicité conversions AMO↔courtage (#3)** ✅ (15/06, 2d56011). 2 fonctions Postgres convertir_dossier_en_amo / _en_courtage (SECURITY INVOKER, patron K). Séquence multi-écritures rendue atomique. Montant/date/statut préservés au rename. Collision = rollback total. Famille AMO close (avec K + #4).
+- [x] **Hygiène : dropper `factures_agente_backup_b7b`** ✅ 
+
 - [ ] **L16 Facturation scopée/consolidée** (par agence sur onglets agence ; somme société sur vue consolidée). Lié au Lot 4 finances.
 - [ ] **Vue agente du suivi financier** (gros sujet de conception). Aujourd'hui `renderSuiviFinancier` n'a PAS de vue agente — l'agente voit le compte de résultat CTP scopé (apporteur total, redevance en PRODUIT au lieu de charge, royalties affichées + bug d'accès au mode CTP). Base = spec archivée ex-`renderSuiviAgenteFinancier` (récupérable git) : net agente = gains − redevance − part apporteur ; redevance en CHARGE ; apporteur en part ; royalties ABSENTES ; libellés 1ère personne. Inclut le fix du toggle mode CTP à réserver à l'admin.
-- [x] **Colonne « Marine » en dur + KPI net à virer** ✅ (10/06). Libellé colonne total + RepartRow → « Société » (valeurs intactes, code mort nomFranchisee/adminRes nettoyé). KPI « Net à virer à l'agente » (F1−F2 trompeur) supprimé.
 - [ ] **Colonne « Net » du tableau facturation mensuel** : conservée telle quelle (solde F1−F2 par mois + total). NOM à trancher selon usage terrain : garder « Net », renommer « Solde F1−F2 (indicatif) », ou supprimer si inutile. Décision reportée volontairement (pas oubliée).
 - [ ] **Timing remboursement apporteur dans F2** : `apporteurRembourseNet` garde un axe DATE distinct (facture Kiosque ~1 mois après déblocage acompte). À traiter avec les vues facturation détaillées.
 - [ ] **Chantier 2 — décalage M−1 vue admin propre** : la redevance + apporteur que l'admin ENCAISSE des agentes (= leur F2) suivent le décalage M−1, mais SON activité propre n'est pas décalée. Écran à IDENTIFIER (probablement Suivi CTP). Auditer AVANT de coder.
 - [ ] **Grille redevances 12 mois** : éventuellement relibeller en mois de facture (datée activité aujourd'hui, correct mais visuellement ambigu). À juger à l'écran.
 - [ ] **3a-bis — Alerte écart figé/live** : badge ⚠️ signalant un écart entre montant figé (au clic « Reçu ») et live. PARKÉ — arbitrage Marine : le cas (activité d'un mois facturé qui bouge) est-il assez fréquent pour justifier un filet ? Sans traçabilité des modifs post-figement, un badge seul = bruit non actionnable.
-- [x] **Cases redevance cliquables (agente)** ✅ FERMÉ SANS CODE (14/06). Décision : le besoin n'existe pas. Dans le flux réel, c'est l'ADMIN qui constate les redevances reçues (il a déjà son chemin via le toggle F2 → upsertFactureMoisType synchronise redevances.statut). L'agente paie par virement, pas par clic — la grille redevances est de l'AFFICHAGE pour elle (consultation), pas un pilotage. Pas de route INSERT agente, pas de pré-création, pas de policy à ajouter. L'item décrivait un faux manque (hypothèse « les cases devraient être cliquables » invalidée par le flux métier). NB structure pour mémoire : redevances = 1 statut binaire en_attente/regle, INSERT admin-only, UPDATE agente(sa ligne)+admin(société), trigger protège montant en UPDATE seulement.
-- [ ] **Hygiène : dropper `factures_agente_backup_b7b`** une fois la facturation validée.
-- [x] **Atomicité conversions AMO↔courtage** ✅ (15/06) 2d56011. 2 fonctions Postgres (convertir_dossier_en_amo / _en_courtage, SECURITY INVOKER, patron K). Séquence multi-écritures rendue atomique. Montant/date/statut préservés au rename (encaissement conservé). Collision = rollback total. Famille K close (avec suivi_toggle_honoraires).
+
+
 
 #### Bloc C — Onboarding self-service (reste)
 - [ ] **3d page stats plateforme** — reportée backlog (pas utile tant qu'un seul franchisé ; compteurs visibles via dashboard Supabase).
@@ -202,20 +205,22 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **comptes_rendus.pdf_path mort** ✅ (12/06, `b866d73`). Feature morte supprimée (colonne inexistante, 0 lecteur, uploads orphelins). CR reste texte + PDF à la volée.
 - [x] **Erreurs avalées chantiers/[id] — non-💰 + dossiers** ✅ (12/06, Lot 2). Tout le fichier couvert (💰 Lot 1 + non-💰 + taux rollback + contrat_url).
 
+- [x] **Branding PDF sep_*.js (#6)** ✅ CLOS SANS CODE (15/06). Les 9 lib/sep_*.js sont des images base64 (pages de séparation PDF), aucun texte paramétrable. Zéro branding en dur. Exclusion lib/sep_ aux sous-lots hardcodes était inoffensive.
+- [x] **Bug statut chantier←devis** ✅ (12/06, ddfaf72). calcStatut : devis_a_modifier ⟸ a_modifier (enfin branché) OU tous refusés ; refusé isolé retombe en cascade ; hasR3 retiré (→ devis_en_attente). 2 items de fond posés en backlog : statut « en attente signature » manquant + réconciliation calculé/persisté.
+- [x] **CR côté client temps réel (#8)** ✅ (15/06, 5f7e3cd). Realtime sur comptes_rendus (ajouté à la publication supabase_realtime + abonnement sur le channel client existant, event:'*' pour publier/dé-publier). CR apparaît sans refresh. Cloisonné RLS + filter dossier_id.
+- [x] **Avancement client (#9)** ✅ (15/06, 92043cf). Barre morte retirée (colonne dossiers.avancement jamais alimentée, vestige _design ; gate >0 → jamais affichée). Stepper 4 étapes = seule progression client. Colonne orpheline en base (candidate DROP COLUMN futur, non urgent).
+- [x] **DROP COLUMN dossiers.avancement** ✅ (15/06). Colonne orpheline supprimée (0 dépendance vérifiée : vue/fonction/index/route _design). Clôt définitivement #9.
+- [x] **Types de RDV (#10)** ✅ (15/06, e5c6da0). 3 types ajoutés (suivi, reception, etude) au CHECK type_rdv + TYPE_CONFIG + select des 2 formulaires (planning + fiche chantier). Règles : les 3 exigent un dossier ; reception active l'artisan (comme R2) ; suivi/etude sans artisan. Nettoyage artisan_id au changement de type. Désengorge le 'autres' (était 72%). type_rdv et type_visite restent indépendants.
 
 ##### A FAIRE
-- [x] **Branding PDF sep_*.js (#6)** ✅ CLOS SANS CODE (15/06). Les 9 lib/sep_*.js sont des images base64 (pages de séparation PDF), aucun texte paramétrable. Zéro branding en dur. Exclusion lib/sep_ aux sous-lots hardcodes était inoffensive.
 - [ ] **Code mort finance.js 🟠 restants** : devis.statut/montantTTC, apporteur.lines[].* — grep non concluant ou lines itéré dynamiquement. Relecture site par site requise. Pas prioritaire. 
 - [ ] **#8 dashboard admin scope** (à arbitrer selon scénario testeur).
 - [ ] **L18 bug ajout intervention** : ⚠️ audit d'abord, STOP si lié à la sync Google Calendar.
 - [ ] **L22 bug synchro Google Calendar** : `Cannot access 'n' before initialization` (TDZ — `const auth` l.143 shadow l.128 dans `api/google/calendar/sync/route.js`). Fix : renommer le 2e `auth` en `oauthClient`. ⚠️ Lié au calendrier Google partagé entre agences (fuite multi-tenant à creuser).
-- [ ] **Types de RDV incomplets** : `TYPE_CONFIG` n'expose que 4 types (R1/R2/R3 + autres), manquent suivi/réception/Étude/Pro-Perso. Audit des types voulus d'abord.
 - [ ] **Messagerie AMO : aucun dossier affiché** : la page lit `clients.raison_sociale` (colonne cible jamais créée — cf. doc 02). Créer la colonne OU rebrancher la lecture. ⚠️ lié à la réactivation Messagerie (bloc F).
-- [ ] **CR côté client visible seulement après refresh** : manque refetch temps réel après publication.
-- [ ] **Avancement projet pas à jour côté client** : colonne `dossiers.avancement` jamais alimentée → barres grises. Vérifier source/calcul. (STAND-BY, non bloquant.)
+
 - [ ] **Taux écrits par frappe (onChange)** : taux_courtage/honoraires_amo_taux/apporteur_actif → UPDATE par caractère. onBlur souhaitable. Dette préexistante, non urgente.
 - [ ] **Source unique libellé suppression chantier** : libellé dupliqué entre `confirm()` (~l.1772) et sous-titre bouton (~l.2502). Aligné au fix P0-11 mais une constante partagée éviterait une future divergence.
-- [x] **Bug statut chantier←devis** ✅ (12/06, ddfaf72). calcStatut : devis_a_modifier ⟸ a_modifier (enfin branché) OU tous refusés ; refusé isolé retombe en cascade ; hasR3 retiré (→ devis_en_attente). 2 items de fond posés en backlog : statut « en attente signature » manquant + réconciliation calculé/persisté.
 - [ ] **prenomAdmin avec maybeSingle()** (chantiers/[id]:708) : le fetch du prénom admin fait .eq('role','admin').maybeSingle() → si une société a 2 admins un jour, maybeSingle échoue (>1 ligne) et le libellé reste '—'. Sans gravité (affichage), mais à corriger au moment du multi-admin (prendre le 1er, ou gérer la liste).
 - [ ] **suiviAcompteAMO vestige mort** (chantiers/[id]:1626) : variable définie mais jamais utilisée. Code mort à retirer. Trivial, hors urgence.
 
@@ -249,8 +254,6 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [ ] **Intégration Google Drive** (piste future) : connecter les documents chantier à Drive. Carte retirée le 12/06 (bouton mort). À construire si besoin confirmé.
 - [ ] **Bouton « Connecter » générique mort** (paramètres l.708, sert Google Calendar) : à câbler/retirer DANS la refonte calendrier (module en quarantaine).
 - [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
-- [x] **Couples AMO legacy à dates incohérentes** ✅ (15/06). AM-002 + AM-009 rattrapés (acompte_amo.date ← courtage.date ; + montant courtage AM-002 ← acompte). Backup + transaction + COMMIT manuel sur avant/après. Préventif (rien ne lit cette date). NB : anomalie montant AM-002 traitée dans le même lot (groupée).
-
 - [ ] **page chantier** kpis : montant devis prévu et réel 
 - [ ] **Statut chantier « devis présentés / en attente signature »** : il manque un statut entre devis_en_attente (= pas encore reçus) et la signature. Phase réelle : R3 faite, devis reçus, en attente décision/signature client. Aujourd'hui replié sur devis_en_attente (libellé imparfait, perd l'alerte de relance post-R3). Lot dédié : nouvelle valeur CHECK dossiers.statut + STATUT_CONFIG (libellé/couleur) + place cascade calcStatut + mapping stepper client + compteurs. Décision produit (libellé) avant code.
 - [ ] **Réconciliation statut calculé vs persisté** : calcStatut (liste, espace-client) et dossier.statut (fiche, dashboard) peuvent se contredire (ex. devis a_modifier reflété par la colonne mais ignoré par calcStatut avant le fix #1). Décider une source unique ou faire calcStatut honorer le persisté. Fond du désaccord, séparé du bug #1.
