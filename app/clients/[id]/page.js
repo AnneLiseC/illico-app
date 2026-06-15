@@ -4,6 +4,8 @@ import { supabase } from '../../lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '../../lib/auth-context'
 import { archiverClient, desarchiverClient, supprimerClient } from '../../lib/clients'
+import { StatutBadge } from '../../components/shared'
+import { calcStatut } from '../../lib/dossiers'
 
 function Svg({ size = 16, children }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -29,16 +31,6 @@ const diffJours = (d) => {
   return Math.round((Date.now() - new Date(d)) / 86400000)
 }
 
-const STATUTS = {
-  a_contacter:       { label: 'À contacter',    bg: 'rgba(234,179,8,0.1)',  color: '#a16207' },
-  a_relancer:        { label: 'À relancer',      bg: 'rgba(249,115,22,0.1)', color: '#c2410c' },
-  devis_en_attente:  { label: 'Devis en attente', bg: 'rgba(234,179,8,0.1)', color: '#a16207' },
-  devis_a_modifier:  { label: 'Devis à modifier', bg: 'rgba(249,115,22,0.1)', color: '#c2410c' },
-  en_cours_chantier: { label: 'En cours',        bg: 'rgba(22,163,74,0.1)', color: '#15803d' },
-  termine:           { label: 'Terminé',          bg: 'var(--ink-100)',      color: 'var(--ink-500)' },
-  annule:            { label: 'Annulé',           bg: 'rgba(239,68,68,0.1)', color: '#dc2626' },
-}
-
 const TYPOLOGIES = {
   courtage:          { label: 'Courtage',           bg: 'rgba(0,148,212,0.1)',   color: 'var(--brand-800)' },
   amo:               { label: 'AMO',                bg: 'rgba(124,58,237,0.1)', color: '#7c3aed' },
@@ -46,17 +38,6 @@ const TYPOLOGIES = {
   merad:             { label: 'MERAD',              bg: 'rgba(249,115,22,0.1)', color: '#c2410c' },
   audit_energetique: { label: 'Audit énergétique',  bg: 'rgba(22,163,74,0.1)', color: '#15803d' },
   studio_jardin:     { label: 'Studio de jardin',   bg: 'rgba(236,72,153,0.1)', color: '#be185d' },
-}
-
-function StatutBadge({ statut }) {
-  const s = STATUTS[statut] || { label: statut, bg: 'var(--ink-100)', color: 'var(--ink-500)' }
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', padding: '2px 10px',
-      borderRadius: 99, fontSize: 11.5, fontWeight: 700,
-      background: s.bg, color: s.color, whiteSpace: 'nowrap',
-    }}>{s.label}</span>
-  )
 }
 
 function TypoBadge({ typo }) {
@@ -235,7 +216,7 @@ function FicheClientInner({ params }) {
   const dernierRdv = allRdvs[allRdvs.length - 1] || null
 
   const signesCount = dossiers.filter(d => d.contrat_signe === true).length
-  const clientActif = dossiers.some(d => d.statut === 'en_cours_chantier')
+  const clientActif = dossiers.some(d => calcStatut(d) === 'en_cours_chantier')
 
   const ECHEANCE_LABELS = {
     acompte_amo:         'Acompte AMO reçu',
@@ -428,7 +409,7 @@ function FicheClientInner({ params }) {
                     {montantDossier > 0 && (
                       <div className="tnum" style={{ fontWeight: 700, color: 'var(--ink-900)' }}>{fmtEur(montantDossier)}</div>
                     )}
-                    <StatutBadge statut={d.statut}/>
+                    <StatutBadge dossier={d}/>
                   </div>
                 )
               })

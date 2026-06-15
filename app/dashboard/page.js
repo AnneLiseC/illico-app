@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { calculateDossierFinance, calculateDevisFinance, getActiveDevis } from '../lib/finance'
 import { KpiCard, Progress } from '../components/shared'
+import { calcStatut } from '../lib/dossiers'
 import ModaleChoixClient from '../components/ModaleChoixClient'
 
 /* ── Icônes KPI ── */
@@ -67,12 +68,15 @@ function CABarChart({ data }) {
 
 function Pipeline({ dossiers }) {
   const buckets = [
-    { key: 'a_traiter', label: 'À traiter',  tone: '#0094d4', match: s => ['a_contacter','a_relancer'].includes(s) },
-    { key: 'en_devis',  label: 'En devis',   tone: '#f59e0b', match: s => ['devis_en_attente','devis_a_modifier'].includes(s) },
-    { key: 'chantier',  label: 'En chantier',tone: '#16a34a', match: s => s === 'en_cours_chantier' },
-    { key: 'termine',   label: 'Terminés',   tone: '#94a3b8', match: s => s === 'termine' },
+    { key: 'a_traiter', label: 'À traiter',            tone: '#0094d4', match: s => ['a_contacter','a_relancer'].includes(s) },
+    { key: 'etude',     label: 'En étude',             tone: '#8b5cf6', match: s => ['en_etude','devis_en_attente','devis_prets','devis_a_modifier'].includes(s) },
+    { key: 'signature', label: 'En attente signature', tone: '#f59e0b', match: s => s === 'en_attente_signature' },
+    { key: 'a_venir',   label: 'Chantier à venir',     tone: '#6366f1', match: s => s === 'chantier_a_venir' },
+    { key: 'chantier',  label: 'En chantier',          tone: '#16a34a', match: s => s === 'en_cours_chantier' },
+    { key: 'termine',   label: 'Terminés',             tone: '#94a3b8', match: s => s === 'termine' },
   ]
-  const counts = buckets.map(b => dossiers.filter(d => b.match(d.statut)).length)
+  // annule : volontairement dans aucun bucket (exclu du pipeline, comme avant).
+  const counts = buckets.map(b => dossiers.filter(d => b.match(calcStatut(d))).length)
   const total  = counts.reduce((a, b) => a + b, 0) || 1
   return (
     <div>
@@ -178,10 +182,11 @@ export default function Dashboard() {
         supabase.from('dossiers').select(`
           id, reference, statut, date_limite_devis, date_signature_contrat,
           frais_statut, frais_consultation, part_agente, frais_part_agente,
-          honoraires_amo_taux, taux_courtage, typologie, created_at, archive, agence_id,
+          honoraires_amo_taux, taux_courtage, typologie, created_at, archive, agence_id, date_demarrage_chantier, contrat_signe,
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
           client:clients(prenom, nom, apporteur_pourcentage, apporteur_base),
           devis_artisans(id, montant_ht, montant_ttc, commission_pourcentage, statut, date_signature, artisan:artisans(id, entreprise)),
+          rendez_vous(type_rdv, date_heure),
           suivi_financier(*)
         `).eq('referente_id', profile.id).order('created_at', { ascending: false }),
         supabase.from('objectifs_ca').select('*').eq('annee', annee).eq('agente_id', profile.id),
@@ -267,11 +272,11 @@ export default function Dashboard() {
   // retirés) ne sert QU'aux listes opérationnelles affichées ci-dessous.
   const dossiersActifs = dossiersScoped.filter(d => d.archive !== true)
 
-  const enCours    = dossiersActifs.filter(d => d.statut === 'en_cours_chantier')
+  const enCours    = dossiersActifs.filter(d => calcStatut(d) === 'en_cours_chantier')
   const aRelancer  = dossiersActifs.filter(d => {
     if (!d.date_limite_devis) return false
     const diff = (new Date(d.date_limite_devis) - today) / 86400000
-    return diff <= 7 && diff >= -2 && !['termine','annule'].includes(d.statut)
+    return diff <= 7 && diff >= -2 && !['termine','annule'].includes(calcStatut(d))
   }).sort((a, b) => new Date(a.date_limite_devis) - new Date(b.date_limite_devis))
   const enRetardCount = aRelancer.filter(d => (new Date(d.date_limite_devis) - today) / 86400000 < 0).length
 
@@ -290,16 +295,6 @@ export default function Dashboard() {
     objectif:   objectifs.find(o => o.mois === i + 1)?.montant || 0,
     inProgress: i + 1 === moisCourant,
   }))
-
-  const STATUT_STYLE = {
-    'a_contacter':       { bg: 'rgba(0,148,212,0.08)',   color: '#0094d4',  label: 'À contacter' },
-    'a_relancer':        { bg: 'rgba(0,148,212,0.08)',   color: '#0094d4',  label: 'À relancer' },
-    'devis_en_attente':  { bg: 'rgba(245,158,11,0.10)',  color: '#a16207',  label: 'En devis' },
-    'devis_a_modifier':  { bg: 'rgba(245,158,11,0.10)',  color: '#a16207',  label: 'Devis à revoir' },
-    'en_cours_chantier': { bg: 'rgba(22,163,74,0.08)',   color: '#15803d',  label: 'En chantier' },
-    'termine':           { bg: 'rgba(148,163,184,0.12)', color: '#64748b',  label: 'Terminé' },
-    'annule':            { bg: 'rgba(220,38,38,0.08)',   color: '#b91c1c',  label: 'Annulé' },
-  }
 
   return (
     <div className="page-enter page-pad" style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 1400, margin: '0 auto' }}>
@@ -323,7 +318,7 @@ export default function Dashboard() {
       {/* ── KPI Row ── */}
       <div className="kpi-grid">
         <KpiCard label="Chantiers en cours" value={loading ? '—' : enCours.length}
-          sub={`${dossiersActifs.filter(d => !['termine','annule'].includes(d.statut)).length} dossiers actifs`}
+          sub={`${dossiersActifs.filter(d => !['termine','annule'].includes(calcStatut(d))).length} dossiers actifs`}
           icon={<BuildingIcon />} tone="brand" />
         <KpiCard label="Devis à relancer <7j" value={loading ? '—' : aRelancer.length}
           sub={enRetardCount > 0 ? `${enRetardCount} en retard` : 'aucun en retard'}
@@ -499,13 +494,13 @@ export default function Dashboard() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {loading ? <span className="eyebrow">Chargement…</span> : dossiersActifs.slice(0, 5).map(d => {
                 const nomClient = d.client ? `${d.client.prenom || ''} ${d.client.nom || ''}`.trim() : '—'
-                const s = STATUT_STYLE[d.statut] || { bg: 'var(--surface-2)', color: 'var(--ink-500)', label: d.statut }
-                const actionLabel = d.statut === 'en_cours_chantier' ? 'chantier en cours' : d.statut === 'termine' ? 'chantier terminé' : ['devis_en_attente','devis_a_modifier'].includes(d.statut) ? 'devis en attente' : d.statut === 'annule' ? 'dossier annulé' : 'à contacter'
+                const cs = calcStatut(d)
+                const actionLabel = cs === 'en_cours_chantier' ? 'chantier en cours' : cs === 'termine' ? 'chantier terminé' : cs === 'chantier_a_venir' ? 'chantier à venir' : cs === 'en_attente_signature' ? 'en attente signature' : ['en_etude','devis_en_attente','devis_prets','devis_a_modifier'].includes(cs) ? 'devis en cours' : cs === 'annule' ? 'dossier annulé' : 'à contacter'
                 return (
                   <button key={d.id} onClick={() => router.push(`/chantiers/${d.id}`)}
                     style={{ display: 'flex', gap: 12, alignItems: 'flex-start', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, width: '100%' }}>
                     <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--brand-50)', color: 'var(--brand-800)', display: 'grid', placeItems: 'center', flex: '0 0 32px', fontSize: 14 }}>
-                      {d.statut === 'en_cours_chantier' ? '🔨' : d.statut === 'termine' ? '✅' : ['devis_en_attente','devis_a_modifier'].includes(d.statut) ? '📄' : '📁'}
+                      {cs === 'en_cours_chantier' || cs === 'chantier_a_venir' ? '🔨' : cs === 'termine' ? '✅' : ['en_etude','devis_en_attente','devis_prets','devis_a_modifier','en_attente_signature'].includes(cs) ? '📄' : '📁'}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.4 }}>

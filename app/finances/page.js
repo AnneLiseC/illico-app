@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { calculateDossierFinance, getActiveDevis, getSignedDevis, ROYALTIES_RATE } from '../lib/finance'
+import { calcStatut } from '../lib/dossiers'
 import { Avatar } from '../components/shared'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -199,6 +200,7 @@ export default function Finances() {
         referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
         client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
         devis_artisans(*, artisan:artisans(id, entreprise, partenaire, paiement_direct)),
+        rendez_vous(type_rdv, date_heure),
         suivi_financier(*)
       `).order('created_at', { ascending: false }),
       supabase.from('redevances').select('*').order('annee', { ascending: false }).order('mois', { ascending: false }),
@@ -985,6 +987,7 @@ export default function Finances() {
               const net      = isReel ? netReel : netPrevi
               const avancement = netPrevi > 0 ? Math.min(100, Math.round(netReel / netPrevi * 100)) : 0
               const isOpen   = dossierOuvert === d.id
+              const cs       = calcStatut(d)
               const nbAlertes = [
                 d.contrat_signe && d.frais_statut !== 'regle' && alerte48h(d.date_signature_contrat),
                 ...c.devisAcceptes.map(dv => {
@@ -1013,9 +1016,9 @@ export default function Finances() {
                     </Td>
                     <Td>
                       <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,
-                        background:d.statut==='annule'?'rgba(220,38,38,0.1)':d.statut==='termine'?'rgba(22,163,74,0.1)':'rgba(0,87,142,0.1)',
-                        color:d.statut==='annule'?'#b91c1c':d.statut==='termine'?'#15803d':'var(--brand-700)'}}>
-                        {d.statut === 'annule' ? 'Annulé' : d.statut === 'termine' ? 'Terminé' : 'En cours'}
+                        background:cs==='annule'?'rgba(220,38,38,0.1)':cs==='termine'?'rgba(22,163,74,0.1)':'rgba(0,87,142,0.1)',
+                        color:cs==='annule'?'#b91c1c':cs==='termine'?'#15803d':'var(--brand-700)'}}>
+                        {cs === 'annule' ? 'Annulé' : cs === 'termine' ? 'Terminé' : 'En cours'}
                       </span>
                       {nbAlertes > 0 && <span style={{fontSize:10,marginLeft:4,color:'#b91c1c'}}>⚠️ {nbAlertes}</span>}
                     </Td>
