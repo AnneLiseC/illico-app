@@ -124,16 +124,16 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **Validation finances multi-agence sur vraies données** (09/06). Agentes Marie (Marseille) + Manon (Montpellier) sur TEST 1 + redevances réparties (4500€/1300€). Scoping prouvé à l'écran : Consolidé 5800 / Marseille 4500 / Montpellier 1300, objectif par agence OK, badge « Filtré sur » OK. → Finances multi-agence validé.
 - [x] **EXECUTE anon/PUBLIC sur fonctions : CLEAN** (10/06). 12 fonctions public, toutes ACL explicite (aucune proacl NULL = pas de défaut PUBLIC implicite), grantees = postgres/authenticated/service_role uniquement. Déjà durci au Lot 5 (revoke_execute_triggers.sql). Seul RPC appelé = onboarding_create_societe (service_role only). RIEN à révoquer.
 - [x] **Surface ANON sur les TABLES soldée** (10/06). RLS active sur 25/25 tables, GRANT anon (défaut Supabase) neutralisé par la RLS. 24 tables sûres (policies TO authenticated → anon deny). 1 faille corrigée : policy INSERT notifications « Service role inserts notifications » était TO public WITH CHECK true (anon pouvait forger des notifs pour tout user_id) → re-scopée TO authenticated WITH CHECK (auth.uid()=user_id) via docs/sql/fix_notifications_insert_policy.sql. Prouvé : INSERT anon → 42501 RLS violation. service_role (cron) non affecté (bypass RLS). admin_invitations : 0 policy = deny total, voulu.
+- [x] **Policies Storage versionnées (#5)** ✅ (15/06, f06bb0, complété par #7). docs/sql/storage_policies.sql = source de vérité. NB : l'export #5 initial avait omis les 2 policies DELETE (réparé en #7 → fichier complet à 8). 5 anciens fichiers obsolètes supprimés. Cloisonnement tenant confirmé solide (pas de sécurité par obscurité).
+- [x] **Placeholder cross-société (#7)** ✅ (15/06, 0ee864c). Exemption .emptyFolderPlaceholder retirée des 6 policies Storage (scoping tenant désormais appliqué à tout chemin) — vérifié 8 policies a_exemption=false en base, T1 non-régression OK (lecture/upload/suppression docs intacts). Au passage : réparé l'omission #5 (storage_policies.sql avait 6/8 policies, les 2 DELETE manquaient → désormais complet à 8 sans exemption). Reste geste manuel cosmétique : supprimer le placeholder 0 octet via UI Storage (DELETE SQL bloqué par Supabase ; inerte car soumis au scoping normal).
 
 ##### 🔶 Restants — bloqués par dépendance ou refonte (PAS des trous exploitables avant ouverture)
 - [ ] **Durcissements bloqués** : (c) leaked password protection → attend le plan Pro Supabase ; (d) captcha → optionnel. [(a) EXECUTE anon et (b) policy notifications INSERT : FAITS le 10/06, voir ci-dessus.]
-- [x] **Placeholder cross-société (#7)** ✅ (15/06, 0ee864c). Exemption .emptyFolderPlaceholder retirée des 6 policies Storage (scoping tenant désormais appliqué à tout chemin) — vérifié 8 policies a_exemption=false en base, T1 non-régression OK (lecture/upload/suppression docs intacts). Au passage : réparé l'omission #5 (storage_policies.sql avait 6/8 policies, les 2 DELETE manquaient → désormais complet à 8 sans exemption). Reste geste manuel cosmétique : supprimer le placeholder 0 octet via UI Storage (DELETE SQL bloqué par Supabase ; inerte car soumis au scoping normal).
 - [ ] **🔴 Suppression agente impossible si google_tokens existe** : FK google_tokens.user_id → auth.users en NO ACTION/RESTRICT → deleteUser échoue (« Database error deleting user ») pour toute agente ayant connecté Google. Touche les agentes RÉELLES (Manon, TEST AI sur TEST 1). À corriger AVEC la refonte calendrier : FK CASCADE ou purge google_tokens avant deleteUser. NB : TEST AI a perdu son KBIS au 1er test purge (avant correctif d'ordre).
 - [~] **🔶 Module calendrier Google EN QUARANTAINE** (push/sync/event) — décision 10/06 : NON patché isolément. Défaut structurel mono-franchise (CALENDAR_ID global hérité, jamais migré multi-agence/société), pas juste un contrôle d'appartenance manquant. Patcher route par route donnerait une fausse sécurité tant que l'agenda cible reste partagé. À traiter EN BLOC lors de la refonte calendrier multi-agence (chantier dédié).
   - Failles à corriger DANS la refonte : push (mutation google_event_id sur id du body sans contrôle tenant, route.js:125-129/141-145/208-209) ; sync (SELECT non filtrés rendez_vous/interventions/dossiers → tous tenants, route.js:175-177/200-202/238-239 + writes google_*_event_id) ; event (event du body, appartenance à reverifier).
   - 🔴 GARDE-FOU IMMÉDIAT : NE PAS activer la sync Google Calendar pour un franchisé réel tant que le module n'est pas refait. Aujourd'hui = tes comptes uniquement, fuite non exploitable par un tiers.
 - [ ] **Policy UPDATE bucket `photos` manquante** : `photos` a INSERT/SELECT/DELETE sans UPDATE (même trou que `documents` avant le fix factures). Si remplacement de photo voulu → upsert refusé en silence. Policy UPDATE ciblée à ajouter le jour où la feature existe.
-- [x] **Policies Storage versionnées (#5)** ✅ (15/06, f06bb0, complété par #7). docs/sql/storage_policies.sql = source de vérité. NB : l'export #5 initial avait omis les 2 policies DELETE (réparé en #7 → fichier complet à 8). 5 anciens fichiers obsolètes supprimés. Cloisonnement tenant confirmé solide (pas de sécurité par obscurité).
 
 #### Bloc B — Multi-agence réel (chantier en cours, découpé en 5 lots)
 > **Principes verrouillés** : la « vue active » est un filtre d'AFFICHAGE (UX), PAS une frontière de sécurité — la RLS reste l'unique frontière (admin = toute sa société, il a le droit de tout voir). Défaut admin multi-agences = vue Consolidée (toutes agences). Agente = une seule agence, aucun sélecteur. **Garde-fou permanent** : une société à 1 agence (CTP/Marine) ne doit voir AUCUN changement à aucun lot. ⚠️ CTP reste mono-agence jusqu'à la fin du chantier ; le terrain de test multi-agence = société TEST 1 (2 agences : MA00 Marseille + MO00 Montpellier).
@@ -215,9 +215,10 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **Source unique libellé suppression chantier** ✅ (15/06, 92c2ce5). Constante ENTITES_CHANTIER aux 2 endroits (divergence réelle CR/suivis fermée).
 - [x] **prenomAdmin maybeSingle** ✅ (15/06, 92c2ce5). .order('prenom').limit(1) → ne casse plus si 2 admins. RLS cloisonne (pas de filtre societe_id ajouté).
 - [x] **suiviAcompteAMO vestige mort** ✅ (15/06, 92c2ce5). Supprimé (0 usage).
+- [x] **Code mort** finance.js restants ✅ 16/06 (b4d7ae2)
+
 
 ##### A FAIRE
-- [x] Code mort finance.js restants (devis.statut/montantTTC, apporteur.lines) — FAIT 16/06. apporteur.lines VIVANT (faux suspect). Retirés : getPartAdmin + clés statut/montantTTC/totalDevisHTRecuAccepte.
 - [ ] **#8 dashboard admin scope** (à arbitrer selon scénario testeur).
 - [ ] **L18 bug ajout intervention** : ⚠️ audit d'abord, STOP si lié à la sync Google Calendar.
 - [ ] **L22 bug synchro Google Calendar** : `Cannot access 'n' before initialization` (TDZ — `const auth` l.143 shadow l.128 dans `api/google/calendar/sync/route.js`). Fix : renommer le 2e `auth` en `oauthClient`. ⚠️ Lié au calendrier Google partagé entre agences (fuite multi-tenant à creuser).
@@ -242,7 +243,7 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **Convention null redevance** ✅ (résolu de fait au 11/06, lot redevance). Règle déjà respectée : calcul → garde !=null ou ||0 ; affichage paramètre → « à paramétrer ». Aucun bug. (item décrivait l'état d'avant 97ea172). 
 - [x] **Handlers qui avalent les erreurs** ✅ SOLDÉ (12/06). Toute l'app couverte hors quarantaine : chantiers/[id] complet (💰 Lot1 5efbe04 + non-💰/pdf_path/dossiers Lot2 49953e4), espace-client/planning/artisans (Lot3 6e7ad64), atomicité K (62086ec). Faux ✓ éliminés, maybeSingle capturés (anti-doublon), feedback client non technique, couple AMO atomique. RESTE hors scope : 🟢 lectures (priorité basse) ; module calendrier (quarantaine).
 - [x] **K — atomicité majSuiviChantier** ✅ (12/06, 62086ec). Fonction Postgres suivi_toggle_honoraires (SECURITY INVOKER, upsert index partiel, atomique). Le couple courtage/acompte_amo est désormais tout-ou-rien (T5 prouvé : échec partiel → rollback total). Filet temporaire retiré. Cloisonnement RLS héritée (T6). DO UPDATE préserve montant_ttc.
-- [x] Audit code mort lib/finance.js repo-wide — FAIT 16/06. finance.js globalement propre. Mort réel modeste (1 fonction + 3 clés). .ht honoraires + export superflus laissés (non concluant / cosmétique sans bénéfice).
+- [x] **Audit code mort** finance.js repo-wide ✅ 16/06
 
 - [ ] **Chantiers : résumé en panneau latéral** sans quitter la liste.
 
@@ -254,14 +255,17 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [ ] **Bouton « Connecter » générique mort** (paramètres l.708, sert Google Calendar) : à câbler/retirer DANS la refonte calendrier (module en quarantaine).
 - [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
 - [ ] **page chantier** kpis : montant devis prévu et réel 
-- [x] Statut chantier "en attente signature" — FAIT (calculé, cascade v2)
-- [x] Réconciliation statut calculé vs persisté — FAIT staff (5 écrans + CHECK strict scellé). Reste espace-client (bloc dédié).
 - [ ] dossier de fin : factures, pv de reception, zip des photos 
 - [ ]fiche technique  -> possibilité de la créer depuis le dossier chantier (récupérer artisans depuis devis)
-- [ ] ajout du CR dans documents si "CR" ou "Compte-rendu" alors les considérer comme COMPTE RENDU
-- [ ] modifier dossier -> modal
-- [ ] Client : nom + prénom - nom + prénom ou nom + prénom(s) pas de "null"
 - [ ] comparateur dans les dossiers
+
+- [x] CR dans documents ✅ 16/06 (86f529c)
+- [x] Modifier dossier → modal ✅ 16/06 (31a20c5)
+- [x] Client nom sans « null » ✅ 16/06 (843eac6)
+- [x] Double-clic chantier = ouvrir dossier ✅ 16/06 (f607ef7)
+- [x] Statut chantier "en attente signature" — FAIT (calculé, cascade v2)
+- [x] Réconciliation statut calculé vs persisté — FAIT staff (5 écrans + CHECK strict scellé). Reste espace-client (bloc dédié).
+
 
 ### Chantier statut STAFF — CLOS le 16/06
 A→E mergés. calcStatut v2 = source unique, CHECK strict (NULL/annule/termine), éditeur manuel terminé/annulé/ré-ouvrir.
@@ -281,7 +285,8 @@ Reste hors staff : C7 espace-client + RLS client → BLOC ESPACE CLIENT dédié 
 Relevés par l'advisor Supabase. PAS la cause de lenteur actuelle (mesuré <1,5ms/requête ; vraie cause = allers-retours PostgREST, traitée par l'embedding). Utile à partir de milliers de lignes.
 - [ ] **auth_rls_initplan (32×)** : `auth.uid()`/`get_my_role()` réévalués par ligne dans les policies P0-9. Encapsuler en `(select get_my_role())` → évalué une fois (InitPlan). Ne change PAS la logique de sécurité.
 - [ ] **multiple_permissive_policies (51×)** : plusieurs policies permissives par table/action, toutes OR-ées. Consolider.
-- [ ] **unindexed_foreign_keys (29×)** : FK sans index (dont `devis_artisans.dossier_id`, `suivi_financier.dossier_id`). Ajouter les index.
+- [x] unindexed_foreign_keys (29×) ✅ 16/06 (fa86b34) — advisor nettoyé
+
 ---
 
 ## 4. CONVENTIONS & RÉFÉRENCES TECHNIQUES
