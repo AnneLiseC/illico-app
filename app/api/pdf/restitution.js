@@ -4,6 +4,7 @@
 import React from 'react'
 import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
 import RecapHonoraires from '../../lib/pdf/RecapHonoraires.js'
+import { formatNomClient } from '../../lib/clients.js'
 import { PDFDocument, degrees, rgb, StandardFonts } from 'pdf-lib'
 import { SEP_PAGE_GARDE } from '../../lib/sep_page_garde.js'
 import { SEP_DESCRIPTIF }    from '../../lib/sep_descriptif.js'
@@ -293,9 +294,7 @@ async function makeCoverPage({ nomRef, telRef, agence }) {
 async function buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo, resumeGenere }) {
   const client = dossier.client
   const ref = dossier.referente
-  const nomClient = client
-    ? [client.civilite, client.prenom, client.nom, client.prenom2 ? `& ${client.prenom2} ${client.nom2}` : null].filter(Boolean).join(' ')
-    : '—'
+  const nomClient = formatNomClient(client, { civilite: true })
   const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
   const nomRef = getNomRef(ref)
   const dateAuj = new Date().toLocaleDateString('fr-FR')
@@ -535,9 +534,7 @@ async function downloadPDF(supabaseAdmin, bucket, path) {
 async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
   const client = dossier.client
   const ref = dossier.referente
-  const nomClient = client
-    ? [client.civilite, client.prenom, client.nom, client.prenom2 ? `& ${client.prenom2} ${client.nom2}` : null].filter(Boolean).join(' ')
-    : '—'
+  const nomClient = formatNomClient(client, { civilite: true })
   const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
   const nomRef = getNomRef(ref)
   const dateAuj = new Date().toLocaleDateString('fr-FR')

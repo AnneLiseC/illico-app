@@ -4,6 +4,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../lib/api-auth'
+import { formatNomClient } from '../../lib/clients'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -72,9 +73,7 @@ RÉPONSE : JSON strict uniquement, aucun texte avant ou après :
 
 function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants, notesBrutes, numeroCR }) {
   const client = dossier.client
-  const nomClient = client
-    ? [client.civilite, client.prenom, client.nom, client.prenom2 ? `& ${client.prenom2} ${client.nom2}` : null].filter(Boolean).join(' ')
-    : 'Client inconnu'
+  const nomClient = client ? formatNomClient(client, { civilite: true }) : 'Client inconnu'
 
   const artisansChantier = (devis || [])
     .filter(d => d.statut === 'accepte').map(d => d.artisan?.entreprise).filter(Boolean)

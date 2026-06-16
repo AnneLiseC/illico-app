@@ -3,7 +3,7 @@ import { useState, useEffect, use, Suspense } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '../../lib/auth-context'
-import { archiverClient, desarchiverClient, supprimerClient } from '../../lib/clients'
+import { archiverClient, desarchiverClient, supprimerClient, formatNomClient } from '../../lib/clients'
 import { StatutBadge } from '../../components/shared'
 import { calcStatut } from '../../lib/dossiers'
 
@@ -202,9 +202,7 @@ function FicheClientInner({ params }) {
   const isPro = client.type_client === 'professionnel'
   const initials = `${(client.prenom || '').charAt(0)}${(client.nom || '').charAt(0)}`.toUpperCase()
 
-  const nomDisplay = estCouple
-    ? `${client.civilite} ${client.prenom} ${(client.nom || '').toUpperCase()} & ${client.prenom2 || ''} ${(client.nom2 || '').toUpperCase()}`.trim()
-    : `${client.civilite} ${client.prenom} ${(client.nom || '').toUpperCase()}`
+  const nomDisplay = formatNomClient(client, { civilite: true, upper: true })
 
   const montantTotal = dossiers.reduce((s, d) =>
     s + (d.devis_artisans || []).filter(dv => dv.statut === 'accepte')

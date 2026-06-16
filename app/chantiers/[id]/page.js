@@ -3,6 +3,7 @@
 'use client'
 import { useState, useEffect, useRef, use } from 'react'
 import { supabase } from '../../lib/supabase'
+import { formatNomClient } from '../../lib/clients'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement } from '../../lib/dossiers'
@@ -1845,7 +1846,7 @@ export default function FicheChantier({ params }) {
   if (loading) return <div className="page-loading" />
   if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-400)'}}>Chantier introuvable</div>
 
-  const nomComplet = client ? `${client.civilite} ${client.prenom} ${client.nom}${client.prenom2 ? ` & ${client.prenom2} ${client.nom2}` : ''}` : ''
+  const nomComplet = formatNomClient(client, { civilite: true })
   const f = fraisStatutConfig[dossier.frais_statut] ?? { label: dossier.frais_statut ?? '—' }
 
   const supprimerChantier = async () => {
