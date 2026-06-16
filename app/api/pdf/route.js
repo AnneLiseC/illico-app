@@ -91,9 +91,7 @@ const styles = StyleSheet.create({
 // ── RÉCAPITULATIF FINANCIER CLIENT ──
 function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = false }) {
   const client = dossier.client
-  const nomClient = client
-    ? `${client.civilite || ''} ${client.prenom || ''} ${client.nom || ''}`.trim()
-    : '—'
+  const nomClient = formatNomClient(client, { civilite: true })
   const referente = dossier.referente
     ? `${dossier.referente.prenom || ''} ${dossier.referente.nom || ''}`.trim()
     : '—'

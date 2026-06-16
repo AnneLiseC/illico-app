@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, ArcElement, DoughnutController, Tooltip, Legend, Filler } from 'chart.js'
 Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, ArcElement, DoughnutController, Tooltip, Legend, Filler)
 import { supabase } from '../lib/supabase'
+import { formatNomClient } from '../lib/clients'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { calculateDossierFinance, getActiveDevis, getSignedDevis, ROYALTIES_RATE } from '../lib/finance'
@@ -1113,7 +1114,7 @@ export default function Finances() {
                 </tr>
                 {/* Lignes dossiers */}
                 {dossierspériode.map(d => {
-                  const nomClient = d.client ? `${d.client.prenom} ${d.client.nom}` : '—'
+                  const nomClient = formatNomClient(d.client)
                   return (
                     <tr key={d.id} className="hover:bg-blue-50 border-t border-gray-100">
                       <td className="px-3 py-1.5 text-gray-500">
