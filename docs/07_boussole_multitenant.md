@@ -217,7 +217,7 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **suiviAcompteAMO vestige mort** ✅ (15/06, 92c2ce5). Supprimé (0 usage).
 
 ##### A FAIRE
-- [ ] **Code mort finance.js 🟠 restants** : devis.statut/montantTTC, apporteur.lines[].* — grep non concluant ou lines itéré dynamiquement. Relecture site par site requise. Pas prioritaire. 
+- [x] Code mort finance.js restants (devis.statut/montantTTC, apporteur.lines) — FAIT 16/06. apporteur.lines VIVANT (faux suspect). Retirés : getPartAdmin + clés statut/montantTTC/totalDevisHTRecuAccepte.
 - [ ] **#8 dashboard admin scope** (à arbitrer selon scénario testeur).
 - [ ] **L18 bug ajout intervention** : ⚠️ audit d'abord, STOP si lié à la sync Google Calendar.
 - [ ] **L22 bug synchro Google Calendar** : `Cannot access 'n' before initialization` (TDZ — `const auth` l.143 shadow l.128 dans `api/google/calendar/sync/route.js`). Fix : renommer le 2e `auth` en `oauthClient`. ⚠️ Lié au calendrier Google partagé entre agences (fuite multi-tenant à creuser).
@@ -242,8 +242,8 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **Convention null redevance** ✅ (résolu de fait au 11/06, lot redevance). Règle déjà respectée : calcul → garde !=null ou ||0 ; affichage paramètre → « à paramétrer ». Aucun bug. (item décrivait l'état d'avant 97ea172). 
 - [x] **Handlers qui avalent les erreurs** ✅ SOLDÉ (12/06). Toute l'app couverte hors quarantaine : chantiers/[id] complet (💰 Lot1 5efbe04 + non-💰/pdf_path/dossiers Lot2 49953e4), espace-client/planning/artisans (Lot3 6e7ad64), atomicité K (62086ec). Faux ✓ éliminés, maybeSingle capturés (anti-doublon), feedback client non technique, couple AMO atomique. RESTE hors scope : 🟢 lectures (priorité basse) ; module calendrier (quarantaine).
 - [x] **K — atomicité majSuiviChantier** ✅ (12/06, 62086ec). Fonction Postgres suivi_toggle_honoraires (SECURITY INVOKER, upsert index partiel, atomique). Le couple courtage/acompte_amo est désormais tout-ou-rien (T5 prouvé : échec partiel → rollback total). Filet temporaire retiré. Cloisonnement RLS héritée (T6). DO UPDATE préserve montant_ttc.
+- [x] Audit code mort lib/finance.js repo-wide — FAIT 16/06. finance.js globalement propre. Mort réel modeste (1 fonction + 3 clés). .ht honoraires + export superflus laissés (non concluant / cosmétique sans bénéfice).
 
-- [ ] **Audit code mort `lib/finance.js` repo-wide** : grep de chaque clé retournée par finance.js sur tout le repo. Le ménage s'était limité à page.js. Pas urgent.
 - [ ] **Chantiers : résumé en panneau latéral** sans quitter la liste.
 
 #### Bloc F — En dernier : réactiver modules neutralisés
@@ -254,14 +254,21 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [ ] **Bouton « Connecter » générique mort** (paramètres l.708, sert Google Calendar) : à câbler/retirer DANS la refonte calendrier (module en quarantaine).
 - [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
 - [ ] **page chantier** kpis : montant devis prévu et réel 
-- [~] **Statut chantier** :  "en attente signature" — FAIT (calculé via RDV R3 passé, cascade v2)
-- [~] **Réconciliation** : statut calculé vs persisté — FAIT sur 5/6 écrans (liste, fiche, clients, dashboard, finances). Reste : espace-client (C7, bloqué par RLS client).
+- [x] Statut chantier "en attente signature" — FAIT (calculé, cascade v2)
+- [x] Réconciliation statut calculé vs persisté — FAIT staff (5 écrans + CHECK strict scellé). Reste espace-client (bloc dédié).
+- [ ] dossier de fin : factures, pv de reception, zip des photos 
+- [ ]fiche technique  -> possibilité de la créer depuis le dossier chantier (récupérer artisans depuis devis)
+- [ ] ajout du CR dans documents si "CR" ou "Compte-rendu" alors les considérer comme COMPTE RENDU
+- [ ] modifier dossier -> modal
+- [ ] Client : nom + prénom - nom + prénom ou nom + prénom(s) pas de "null"
+- [ ] comparateur dans les dossiers
+
+### Chantier statut STAFF — CLOS le 16/06
+A→E mergés. calcStatut v2 = source unique, CHECK strict (NULL/annule/termine), éditeur manuel terminé/annulé/ré-ouvrir.
+Reste hors staff : C7 espace-client + RLS client → BLOC ESPACE CLIENT dédié (lien magique → RLS → front). Reporté.
 
 ### Reliquats chantier statut (après edc21cf)
 - [ ] C7 + RLS CLIENT (espace-client) — LOT SÉCURITÉ DÉDIÉ. Policies client-read : rendez_vous (type+date, stepper) + devis_artisans filtré statut='accepte' + storage PDF devis signé. Stepper calcEtape piloté par RDV (4 étapes : Préparation/Devis/Travaux/Terminé). Décisions privacy actées : client voit ses RDV + devis SIGNÉS seulement (pas recu/refuse). ⚠️ Audit read-only d'abord, test étanchéité inter-client (un client ne lit jamais les RDV/devis d'un autre).
-- [ ] D — CHECK strict dossiers.statut (NULL/annule/termine seulement) + défaut colonne NULL. SQL, APRÈS C complet.
-- [ ] E — Éditeur manuel fiche : poser/retirer annule/termine (retirer=NULL=ré-ouvrir).
-- [ ] DROP TABLE backup_statut_rattrapage_20260615 (après étape D, garder qq jours)
 
 - en_etude/devis_en_attente : phase précoce, BASSE dans la cascade (le R2 la dépasse)
 - devis_a_modifier AVANT chantier_a_venir (un devis à retravailler prime sur un signé)
@@ -310,13 +317,6 @@ artisans (société-wide), artisans_specialites, chantier_documents, chantier_fi
 5. **Tests sécu = bidirectionnels.** SQL : appliquer + tester en base AVANT de committer le fichier.
 
 ---
-
-## 6. PROCHAINE ACTION
-Multi-agence COMPLET (Lots 1-5). Bloc A sécurité soldé. Sujet F2 soldé.
-Reste, par ordre : reliquat facturation (Bloc B-bis) + dette technique faisable isolément (Bloc E-bis) + bugs Bloc D. Gros chantiers à froid : refonte UX finances (Bloc E, conception d'abord, post-test) ; réactivation Messagerie/Stats (Bloc F).
-NON prioritaire (et pourquoi) : gating quota (bloqué par décision downgrade + RDV comptable, ne pas figer une grille hypothétique) ; L18/L22 + google_tokens + refonte calendrier (quarantaine, chantier dédié) ; optimisation BDD advisor (dette d'échelle, inutile au volume actuel).
-
-🔴 Hors-code prioritaires : RDV comptable, sondage prix terrain.
 
 ## MODÈLE PRICING & QUOTAS — architecture actée (10/06), montants en hypothèse à valider
 
