@@ -956,6 +956,19 @@ export default function FicheChantier({ params }) {
 
   const referentEstAdmin = dossier?.referente?.role === 'admin'
 
+  // Override MANUEL du statut (annule/termine) ou retour au calcul auto (null).
+  // dossier.statut ne porte que ces 3 valeurs (CHECK strict, ÉTAPE D) ; sinon
+  // calcStatut décide. Écriture immédiate + optimiste + rollback (pattern persistTaux).
+  const majStatutManuel = async (valeur) => {
+    if (valeur === 'annule' && !confirm('Annuler ce dossier ? Il sera marqué « Annulé » (réversible via « Ré-ouvrir »).')) return
+    const ancien = dossier.statut ?? null
+    set('statut', valeur)
+    setErreur(''); setSucces('')
+    const { error } = await supabase.from('dossiers').update({ statut: valeur }).eq('id', id)
+    if (error) { setErreur('Erreur : ' + error.message); set('statut', ancien); return }
+    setSucces(valeur === 'termine' ? 'Dossier marqué terminé ✓' : valeur === 'annule' ? 'Dossier annulé ✓' : 'Dossier ré-ouvert (statut automatique) ✓')
+  }
+
 
   const chargerDocuments = async () => {
     const { data } = await supabase.from('chantier_documents').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
@@ -1971,6 +1984,25 @@ export default function FicheChantier({ params }) {
               </span>
               <TypoBadge typo={dossier.typologie}/>
               <StatutBadge dossier={{ ...dossier, devis_artisans: devis, rendez_vous: rdvsDossier }}/>
+              {/* Override manuel du statut — sinon calcStatut décide */}
+              {!dossier.statut && (
+                <>
+                  <button onClick={() => majStatutManuel('termine')} disabled={saving}
+                    className="btn btn-ghost" style={{fontSize:11.5, padding:'3px 10px', borderColor:'rgba(22,163,74,0.35)', color:'#15803d'}}>
+                    ✓ Marquer terminé
+                  </button>
+                  <button onClick={() => majStatutManuel('annule')} disabled={saving}
+                    className="btn btn-ghost" style={{fontSize:11.5, padding:'3px 10px', borderColor:'rgba(239,68,68,0.3)', color:'#b91c1c'}}>
+                    Annuler le dossier
+                  </button>
+                </>
+              )}
+              {(dossier.statut === 'termine' || dossier.statut === 'annule') && (
+                <button onClick={() => majStatutManuel(null)} disabled={saving}
+                  className="btn btn-ghost" style={{fontSize:11.5, padding:'3px 10px'}}>
+                  ↺ Ré-ouvrir le dossier
+                </button>
+              )}
               {dossier.contrat_signe && (
                 <span style={{display:'inline-flex',alignItems:'center',gap:4,
                   fontSize:11.5,color:'#15803d',fontWeight:600}}>
