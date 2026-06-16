@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { formatNomClient } from '../../lib/clients'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
-import { calculerAvancement } from '../../lib/dossiers'
+import { calculerAvancement, detecterCategorieCR } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
@@ -1021,6 +1021,7 @@ export default function FicheChantier({ params }) {
       const { error: insertErr } = await supabase.from('chantier_documents').insert({
         dossier_id: id, nom: fichier.name, path: chemin,
         type_mime: fichier.type, taille: fichier.size, dans_restitution: false,
+        categorie: detecterCategorieCR(fichier.name),
       })
       if (insertErr) { echecsDoc++; continue }
     }
@@ -1043,6 +1044,18 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.from('chantier_documents').update({ dans_restitution: valeur }).eq('id', docId)
     if (error) { setErreur('Erreur : ' + error.message); return }
     setDocuments(prev => prev.map(d => d.id === docId ? { ...d, dans_restitution: valeur } : d))
+  }
+
+  // Tague / dé-tague un document comme compte-rendu (NULL ↔ 'compte_rendu').
+  // Maj optimiste + rollback si l'update échoue.
+  const toggleCategorieCR = async (docId, estCR) => {
+    const categorie = estCR ? 'compte_rendu' : null
+    setDocuments(prev => prev.map(d => d.id === docId ? { ...d, categorie } : d))
+    const { error } = await supabase.from('chantier_documents').update({ categorie }).eq('id', docId)
+    if (error) {
+      setDocuments(prev => prev.map(d => d.id === docId ? { ...d, categorie: estCR ? null : 'compte_rendu' } : d))
+      setErreur('Erreur : ' + error.message)
+    }
   }
 
   const chargerFactures = async () => {
@@ -3719,7 +3732,12 @@ export default function FicheChantier({ params }) {
                           }}>
                           {doc.nom}
                         </button>
-                        <div style={{fontSize:11, color:'var(--ink-500)', marginTop:2, textTransform:'uppercase', letterSpacing:0.04}}>{meta.label}</div>
+                        <div style={{display:'flex', alignItems:'center', gap:6, marginTop:2}}>
+                          <span style={{fontSize:11, color:'var(--ink-500)', textTransform:'uppercase', letterSpacing:0.04}}>{meta.label}</span>
+                          {doc.categorie === 'compte_rendu' && (
+                            <span style={{fontSize:10, fontWeight:800, letterSpacing:0.04, padding:'1px 6px', borderRadius:5, background:'rgba(0,148,212,0.12)', color:'#0094d4'}}>Compte-rendu</span>
+                          )}
+                        </div>
                       </div>
                       <label style={{display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:11, color:'var(--ink-500)'}}>
                         <input type="checkbox" checked={doc.dans_restitution || false}
@@ -3731,6 +3749,12 @@ export default function FicheChantier({ params }) {
                         {doc.taille ? fmtSize(doc.taille / 1024) : '—'}
                       </div>
                       <div style={{display:'flex', gap:4}}>
+                        <button onClick={() => toggleCategorieCR(doc.id, doc.categorie !== 'compte_rendu')}
+                          className="btn btn-ghost"
+                          style={{padding:'4px 8px', fontSize:11, fontWeight:700, color: doc.categorie === 'compte_rendu' ? '#0094d4' : 'var(--ink-400)'}}
+                          title={doc.categorie === 'compte_rendu' ? 'Retirer de la catégorie Compte-rendu' : 'Marquer comme compte-rendu'}>
+                          {doc.categorie === 'compte_rendu' ? '✓ CR' : 'CR'}
+                        </button>
                         <button onClick={() => ouvrirDocument(doc.path, doc.nom)}
                           className="btn btn-ghost" style={{padding:'4px 8px'}} title="Voir">
                           <EyeIcon />
