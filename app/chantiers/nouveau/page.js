@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { formatNomClient } from '../../lib/clients'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 
@@ -104,9 +105,7 @@ function NouveauChantierForm() {
     }
   }
 
-  const nomComplet = client
-    ? `${client.civilite} ${client.prenom} ${client.nom}${client.prenom2 ? ` & ${client.prenom2} ${client.nom2}` : ''}`
-    : ''
+  const nomComplet = formatNomClient(client, { civilite: true })
 
   return (
     <div className="page-enter min-h-screen bg-gray-50">

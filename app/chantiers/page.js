@@ -1,6 +1,7 @@
 'use client'
 import { Suspense, useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
+import { formatNomClient } from '../lib/clients'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { getDossiersByScope, getFilteredDossiers, getCompteurs, calcStatut, calculerAvancement, STATUT_CONFIG } from '../lib/dossiers'
@@ -42,9 +43,7 @@ const villeFromAddr = (addr) => {
   const parts = addr.split(',')
   return parts[parts.length - 1]?.trim() || addr
 }
-const nomClient = (c) => c
-  ? `${c.civilite || ''} ${c.prenom} ${c.nom}${c.prenom2 ? ` & ${c.prenom2} ${c.nom2}` : ''}`.trim()
-  : '—'
+const nomClient = (c) => formatNomClient(c, { civilite: true })
 
 const TYPOLOGIES = {
   courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo',

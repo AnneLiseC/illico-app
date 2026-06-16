@@ -3,6 +3,7 @@
 
 import React from 'react'
 import { buildDossierSuivi, buildSuiviPaiementsSection } from './restitution.js'
+import { formatNomClient } from '../../lib/clients.js'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
@@ -90,9 +91,7 @@ const styles = StyleSheet.create({
 // ── RÉCAPITULATIF FINANCIER CLIENT ──
 function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = false }) {
   const client = dossier.client
-  const nomClient = client
-    ? `${client.civilite || ''} ${client.prenom || ''} ${client.nom || ''}`.trim()
-    : '—'
+  const nomClient = formatNomClient(client, { civilite: true })
   const referente = dossier.referente
     ? `${dossier.referente.prenom || ''} ${dossier.referente.nom || ''}`.trim()
     : '—'
@@ -263,9 +262,7 @@ function buildRecapitulatifDocument({ dossier, devis, suiviFinancier, factures, 
 // ── COMPTE-RENDU PDF ──
 function buildCRDocument({ dossier, cr, sections, logo }) {
   const client = dossier.client
-  const nomClient = client
-    ? [client.civilite, client.prenom, client.nom, client.prenom2 ? '& ' + client.prenom2 + ' ' + client.nom2 : null].filter(Boolean).join(' ')
-    : '—'
+  const nomClient = formatNomClient(client, { civilite: true })
   const ref = dossier.referente
   const nomRef = ref ? (ref.prenom + ' ' + ref.nom) : ''
 

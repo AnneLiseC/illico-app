@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
+import { formatNomClient } from '../lib/clients'
 import { useAuth } from '../lib/auth-context'
 
 export default function ModaleChoixClient({ open, onClose }) {
@@ -29,8 +30,7 @@ export default function ModaleChoixClient({ open, onClose }) {
     return txt.includes(recherche.toLowerCase())
   })
 
-  const nomComplet = (c) =>
-    `${c.civilite || ''} ${c.prenom || ''} ${c.nom || ''}${c.prenom2 ? ` & ${c.prenom2} ${c.nom2 || ''}` : ''}`.trim()
+  const nomComplet = (c) => formatNomClient(c, { civilite: true })
 
   const choisir = (id) => { onClose(); router.push(`/chantiers/nouveau?client=${id}`) }
   const creerClient = () => { onClose(); router.push('/clients/nouveau') }
