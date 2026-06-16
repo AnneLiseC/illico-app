@@ -49,10 +49,6 @@ export function getPartAgente(dossier) {
   return 0.5
 }
 
-export function getPartAdmin(dossier) {
-  return round2(1 - getPartAgente(dossier))
-}
-
 export function getTauxCourtage(dossier) {
   return normalizePercent(dossier?.taux_courtage, COURTAGE_STANDARD)
 }
@@ -146,11 +142,9 @@ export function calculateDevisFinance(devis, dossier = {}) {
 
   return {
     id: devis?.id || null,
-    statut: devis?.statut || null,
     signed,
     refused,
     isApporteur: Boolean(devis?.artisan?.paiement_direct),
-    montantTTC,
     commissionPct,
     comHT,
     royaltiesType2,
@@ -323,7 +317,6 @@ export function calculateHonorairesRecuAccepte(dossier) {
     soldeAmo: core.soldeAmo,
     totalNet: core.totalNet,
     parts: core.parts,
-    totalDevisHTRecuAccepte:  totalHT,
     totalDevisTTCRecuAccepte: totalTTC,
     totalTTC: core.totalTTC,
     standard: core.standard,
