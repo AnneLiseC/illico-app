@@ -591,7 +591,7 @@ export default function FicheChantier({ params }) {
   const [generatingPDF, setGeneratingPDF] = useState(null) // 'recapitulatif' | 'dossier_fin'
   const [erreur, setErreur] = useState('')
   const [succes, setSucces] = useState('')
-  const [mode, setMode] = useState('lecture')
+  const [modalModif, setModalModif] = useState(false)
   const [devis, setDevis] = useState([])
   const [artisans, setArtisans] = useState([])
   const [devisModal, setDevisModal] = useState({ open: false, devis: null })
@@ -1226,7 +1226,7 @@ export default function FicheChantier({ params }) {
       }
 
       setSucces('Modifications enregistrées ✓')
-      setMode('lecture')
+      setModalModif(false)
     }
     setSaving(false)
   }
@@ -2058,48 +2058,35 @@ export default function FicheChantier({ params }) {
         {/* Action strip */}
         <div style={{padding:'14px 28px',borderTop:'1px solid var(--ink-100)',
           background:'var(--surface-2)',display:'flex',gap:8,flexWrap:'wrap'}}>
-          {mode === 'lecture' ? (
-            <>
-              <button onClick={() => setMode('edition')} className="btn btn-primary"
-                style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                <EditIcon /> Modifier
-              </button>
-              {client?.telephone && (
-                <a href={`tel:${client.telephone}`} className="btn btn-ghost"
-                  style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                  <PhoneIcon /> {client.telephone}
-                </a>
-              )}
-              {client?.email && (
-                <a href={`mailto:${client.email}`} className="btn btn-ghost"
-                  style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                  <MailIcon /> Email
-                </a>
-              )}
-              <div style={{flex:1}}/>
-              <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
-                className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                <DlIcon /> {generatingPDF === 'recapitulatif_prev' ? '...' : 'Récap. financier'}
-              </button>
-              <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
-                className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                <DlIcon /> {generatingPDF === 'recapitulatif' ? '...' : 'Suivi financier'}
-              </button>
-              <button onClick={() => generatePDF('dossier_suivi')} disabled={!!generatingPDF}
-                className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                <DocIcon /> {generatingPDF === 'dossier_suivi' ? '...' : 'Dossier de suivi'}
-              </button>
-            </>
-          ) : (
-            <>
-              <button onClick={handleSave} disabled={saving} className="btn btn-primary"
-                style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                <CheckIcon /> {saving ? '...' : 'Enregistrer'}
-              </button>
-              <button onClick={() => setMode('lecture')} className="btn btn-ghost"
-                style={{fontSize:12.5}}>Annuler</button>
-            </>
+          <button onClick={() => setModalModif(true)} className="btn btn-primary"
+            style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+            <EditIcon /> Modifier
+          </button>
+          {client?.telephone && (
+            <a href={`tel:${client.telephone}`} className="btn btn-ghost"
+              style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+              <PhoneIcon /> {client.telephone}
+            </a>
           )}
+          {client?.email && (
+            <a href={`mailto:${client.email}`} className="btn btn-ghost"
+              style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+              <MailIcon /> Email
+            </a>
+          )}
+          <div style={{flex:1}}/>
+          <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
+            className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+            <DlIcon /> {generatingPDF === 'recapitulatif_prev' ? '...' : 'Récap. financier'}
+          </button>
+          <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
+            className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+            <DlIcon /> {generatingPDF === 'recapitulatif' ? '...' : 'Suivi financier'}
+          </button>
+          <button onClick={() => generatePDF('dossier_suivi')} disabled={!!generatingPDF}
+            className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+            <DocIcon /> {generatingPDF === 'dossier_suivi' ? '...' : 'Dossier de suivi'}
+          </button>
         </div>
       </div>
 
@@ -2185,7 +2172,7 @@ export default function FicheChantier({ params }) {
 
 
       {/* ── APERÇU ── */}
-      {onglet === 'apercu' && mode === 'lecture' && (
+      {onglet === 'apercu' && (
       <div style={{display:'grid', gridTemplateColumns:'1.4fr 1fr', gap:20}}>
 
         {/* LEFT */}
@@ -2421,14 +2408,26 @@ export default function FicheChantier({ params }) {
       </div>
       )}
 
-      {/* ── ÉDITION dossier (depuis bouton "Modifier" du hero) ── */}
-      {onglet === 'apercu' && mode === 'edition' && (
-      <div style={{display:'flex',flexDirection:'column',gap:18}}>
+      {/* ── ÉDITION dossier — modale ouverte par le bouton "Modifier" du hero,
+             accessible depuis n'importe quel onglet (avant : swap inline de l'onglet Aperçu). ── */}
+      {modalModif && (
+        <ModalShell
+          title="Modifier le dossier"
+          subtitle={dossier.reference}
+          width={760}
+          onClose={() => setModalModif(false)}
+          footer={<>
+            <button onClick={() => setModalModif(false)} className="btn btn-ghost" style={{fontSize:12.5}}>Annuler</button>
+            <button onClick={handleSave} disabled={saving} className="btn btn-primary"
+              style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+              <CheckIcon /> {saving ? '...' : 'Enregistrer'}
+            </button>
+          </>}
+        >
+      <div style={{display:'flex',flexDirection:'column',gap:18, padding:24}}>
 
         {/* Form principal */}
         <div className="card" style={{padding:24, display:'flex',flexDirection:'column',gap:16}}>
-          <h2 className="page" style={{fontSize:15}}>Modifier le dossier</h2>
-
           <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
             <div>
               <label className="eyebrow" style={{display:'block', marginBottom:6}}>Typologie</label>
@@ -2612,6 +2611,7 @@ export default function FicheChantier({ params }) {
         </div>
 
       </div>
+        </ModalShell>
       )}
 
       {/* ── DEVIS & ARTISANS ── */}
