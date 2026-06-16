@@ -984,9 +984,14 @@ export default function FicheChantier({ params }) {
     const chemin = `chantiers/${id}/contrat/contrat.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (error) { setErreur('Erreur upload : ' + error.message); setUploadingContrat(false); return }
-    const { error: updErr } = await supabase.from('dossiers').update({ contrat_url: chemin }).eq('id', id)
+    // Auto-signature : déposer le PDF du contrat coche le mandat (sauf s'il l'est déjà).
+    const today = new Date().toISOString().slice(0, 10)
+    const payload = dossier.contrat_signe
+      ? { contrat_url: chemin }
+      : { contrat_url: chemin, contrat_signe: true, date_signature_contrat: today }
+    const { error: updErr } = await supabase.from('dossiers').update(payload).eq('id', id)
     if (updErr) { setErreur('Erreur : ' + updErr.message); setUploadingContrat(false); return }
-    setDossier(d => ({ ...d, contrat_url: chemin }))
+    setDossier(d => ({ ...d, ...payload }))
     setSucces('Contrat ajouté ✓')
     setUploadingContrat(false)
   }
@@ -1003,9 +1008,10 @@ export default function FicheChantier({ params }) {
       const { error: rmErr } = await supabase.storage.from('documents').remove([dossier.contrat_url])
       if (rmErr) console.error('Suppression fichier contrat (non bloquant) :', rmErr.message)
     }
-    const { error } = await supabase.from('dossiers').update({ contrat_url: null }).eq('id', id)
+    // Retirer le PDF décoche le mandat (symétrique de l'auto-signature à l'upload).
+    const { error } = await supabase.from('dossiers').update({ contrat_url: null, contrat_signe: false, date_signature_contrat: null }).eq('id', id)
     if (error) { setErreur('Erreur : ' + error.message); return }
-    setDossier(d => ({ ...d, contrat_url: null }))
+    setDossier(d => ({ ...d, contrat_url: null, contrat_signe: false, date_signature_contrat: null }))
     setSucces('Document supprimé ✓')
   }
 
