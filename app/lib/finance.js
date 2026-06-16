@@ -49,10 +49,6 @@ export function getPartAgente(dossier) {
   return 0.5
 }
 
-export function getPartAdmin(dossier) {
-  return round2(1 - getPartAgente(dossier))
-}
-
 export function getTauxCourtage(dossier) {
   return normalizePercent(dossier?.taux_courtage, COURTAGE_STANDARD)
 }
