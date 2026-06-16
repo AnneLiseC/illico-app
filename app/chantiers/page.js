@@ -67,7 +67,7 @@ function FactRow({ label, value, highlight, mono }) {
 }
 
 /* ── Colonne liste ── */
-function ChantiersList({ items, selectedId, onSelect, aujourdhui, isMobile }) {
+function ChantiersList({ items, selectedId, onSelect, onOpen, aujourdhui, isMobile }) {
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: isMobile ? 'auto' : '100%' }}>
       <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--ink-200)', flexShrink: 0 }}>
@@ -91,9 +91,10 @@ function ChantiersList({ items, selectedId, onSelect, aujourdhui, isMobile }) {
             const isSel    = d.id === selectedId
             return (
               <button key={d.id} onClick={() => onSelect(d.id)}
+                onDoubleClick={() => onOpen(d.id)}
                 className={!isSel ? 'row-hover' : ''}
                 style={{
-                  textAlign: 'left', padding: '14px 14px', borderRadius: 12,
+                  textAlign: 'left', padding: '14px 14px', borderRadius: 12, userSelect: 'none',
                   border: '1px solid', borderColor: isSel ? 'var(--brand-500)' : 'transparent',
                   background: isSel ? 'var(--brand-50)' : 'transparent',
                   boxShadow: isSel ? '0 0 0 3px rgba(0,148,212,0.10)' : 'none',
@@ -566,13 +567,13 @@ function ChantiersInner() {
       {isMobile ? (
         <div>
           {!showPreview
-            ? <ChantiersList items={dossiersFiltres} selectedId={selected?.id} onSelect={handleSelect} aujourdhui={aujourdhui} isMobile />
+            ? <ChantiersList items={dossiersFiltres} selectedId={selected?.id} onSelect={handleSelect} onOpen={(id) => router.push(`/chantiers/${id}`)} aujourdhui={aujourdhui} isMobile />
             : <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} onBack={() => setShowPreview(false)} isMobile />
           }
         </div>
       ) : (
         <div className="grid-list" style={{ height: panelHeight }}>
-          <ChantiersList items={dossiersFiltres} selectedId={selected?.id} onSelect={handleSelect} aujourdhui={aujourdhui} />
+          <ChantiersList items={dossiersFiltres} selectedId={selected?.id} onSelect={handleSelect} onOpen={(id) => router.push(`/chantiers/${id}`)} aujourdhui={aujourdhui} />
           <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} />
         </div>
       )}
