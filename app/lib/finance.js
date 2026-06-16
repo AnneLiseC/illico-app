@@ -142,11 +142,9 @@ export function calculateDevisFinance(devis, dossier = {}) {
 
   return {
     id: devis?.id || null,
-    statut: devis?.statut || null,
     signed,
     refused,
     isApporteur: Boolean(devis?.artisan?.paiement_direct),
-    montantTTC,
     commissionPct,
     comHT,
     royaltiesType2,
@@ -319,7 +317,6 @@ export function calculateHonorairesRecuAccepte(dossier) {
     soldeAmo: core.soldeAmo,
     totalNet: core.totalNet,
     parts: core.parts,
-    totalDevisHTRecuAccepte:  totalHT,
     totalDevisTTCRecuAccepte: totalTTC,
     totalTTC: core.totalTTC,
     standard: core.standard,
