@@ -4281,6 +4281,59 @@ export default function FicheChantier({ params }) {
                 )
               })}
             </div>
+
+            {/* ── Section : documents uploadés marqués compte-rendu (Lot 3) ──
+                Vue additionnelle (pas une fusion) : on liste les chantier_documents
+                tagués 'compte_rendu', distincts des CR générés ci-dessus. Filtre
+                réactif sur le state `documents` → dé-taguer fait disparaître la ligne. */}
+            {(() => {
+              const docTypeLabel = (doc) => {
+                const m = (doc.type_mime || '').toLowerCase()
+                const n = (doc.nom || '').toLowerCase()
+                if (m.includes('pdf') || n.endsWith('.pdf')) return 'pdf'
+                if (m.startsWith('image') || /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(n)) return 'image'
+                if (m.includes('word') || /\.(doc|docx)$/i.test(n)) return 'word'
+                if (m.includes('excel') || /\.(xls|xlsx)$/i.test(n)) return 'tableur'
+                return 'fichier'
+              }
+              const docsCR = documents.filter(d => d.categorie === 'compte_rendu')
+              return (
+                <div style={{borderTop:'1px solid var(--ink-200)', padding:'14px 22px'}}>
+                  <h3 className="page" style={{fontSize:13.5}}>Documents joints marqués compte-rendu</h3>
+                  <div className="eyebrow" style={{marginTop:4, marginBottom:10}}>
+                    Fichiers uploadés dans l'onglet Documents et tagués CR ({docsCR.length})
+                  </div>
+                  {docsCR.length === 0 ? (
+                    <div style={{fontSize:12.5, color:'var(--ink-400)'}}>
+                      Aucun document marqué compte-rendu — taguez un fichier depuis l'onglet Documents (bouton « CR »).
+                    </div>
+                  ) : docsCR.map(doc => (
+                    <div key={doc.id} className="row-hover" style={{
+                      display:'flex', alignItems:'center', gap:12, padding:'10px 6px', borderBottom:'1px solid var(--ink-100)',
+                    }}>
+                      <div style={{width:32, height:32, borderRadius:8, background:'rgba(0,148,212,0.12)', color:'#0094d4', display:'grid', placeItems:'center', flex:'0 0 32px'}}>
+                        <DocIcon />
+                      </div>
+                      <button onClick={() => ouvrirDocument(doc.path, doc.nom)} className="clip-1" style={{
+                        flex:1, minWidth:0, fontSize:13, fontWeight:600, color:'var(--ink-900)',
+                        background:'none', border:'none', cursor:'pointer', padding:0, textAlign:'left',
+                      }}>
+                        {doc.nom}
+                      </button>
+                      <span style={{fontSize:11, color:'var(--ink-500)', textTransform:'uppercase', letterSpacing:0.04}}>{docTypeLabel(doc)}</span>
+                      <button onClick={() => ouvrirDocument(doc.path, doc.nom)} className="btn btn-ghost" style={{padding:'4px 8px'}} title="Voir">
+                        <EyeIcon />
+                      </button>
+                      <button onClick={() => toggleCategorieCR(doc.id, false)} className="btn btn-ghost"
+                        style={{padding:'4px 8px', fontSize:11, fontWeight:700, color:'#0094d4'}}
+                        title="Retirer de la catégorie Compte-rendu">
+                        ✓ CR
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
           </div>
 
           {/* Sidebar IA */}
