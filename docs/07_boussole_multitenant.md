@@ -161,11 +161,14 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 
 
 #### Bloc B-bis — Facturation (reliquat fonctionnel, repris du 05)
+##### ✅ Fait
 - [x] **Colonne « Marine » en dur + KPI net à virer** ✅ (10/06). Libellé colonne total + RepartRow → « Société » (valeurs intactes, code mort nomFranchisee/adminRes nettoyé). KPI « Net à virer à l'agente » (F1−F2 trompeur) supprimé.
 - [x] **Couples AMO legacy à dates incohérentes** ✅ (15/06). AM-002 + AM-009 rattrapés (acompte_amo.date ← courtage.date ; + montant courtage AM-002 ← acompte). Backup + transaction + COMMIT manuel sur avant/après. Préventif (rien ne lit cette date). NB : anomalie montant AM-002 traitée dans le même lot (groupée).
 - [x] **Cases redevance cliquables (agente)** ✅ FERMÉ SANS CODE (14/06). Décision : le besoin n'existe pas. Dans le flux réel, c'est l'ADMIN qui constate les redevances reçues (il a déjà son chemin via le toggle F2 → upsertFactureMoisType synchronise redevances.statut). L'agente paie par virement, pas par clic — la grille redevances est de l'AFFICHAGE pour elle (consultation), pas un pilotage. Pas de route INSERT agente, pas de pré-création, pas de policy à ajouter. L'item décrivait un faux manque (hypothèse « les cases devraient être cliquables » invalidée par le flux métier). NB structure pour mémoire : redevances = 1 statut binaire en_attente/regle, INSERT admin-only, UPDATE agente(sa ligne)+admin(société), trigger protège montant en UPDATE seulement.
 - [x] **Atomicité conversions AMO↔courtage (#3)** ✅ (15/06, 2d56011). 2 fonctions Postgres convertir_dossier_en_amo / _en_courtage (SECURITY INVOKER, patron K). Séquence multi-écritures rendue atomique. Montant/date/statut préservés au rename. Collision = rollback total. Famille AMO close (avec K + #4).
 - [x] **Hygiène : dropper `factures_agente_backup_b7b`** ✅ 
+
+##### A FAIRE
 
 - [ ] **L16 Facturation scopée/consolidée** (par agence sur onglets agence ; somme société sur vue consolidée). Lié au Lot 4 finances.
 - [ ] **Vue agente du suivi financier** (gros sujet de conception). Aujourd'hui `renderSuiviFinancier` n'a PAS de vue agente — l'agente voit le compte de résultat CTP scopé (apporteur total, redevance en PRODUIT au lieu de charge, royalties affichées + bug d'accès au mode CTP). Base = spec archivée ex-`renderSuiviAgenteFinancier` (récupérable git) : net agente = gains − redevance − part apporteur ; redevance en CHARGE ; apporteur en part ; royalties ABSENTES ; libellés 1ère personne. Inclut le fix du toggle mode CTP à réserver à l'admin.
@@ -245,7 +248,6 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **K — atomicité majSuiviChantier** ✅ (12/06, 62086ec). Fonction Postgres suivi_toggle_honoraires (SECURITY INVOKER, upsert index partiel, atomique). Le couple courtage/acompte_amo est désormais tout-ou-rien (T5 prouvé : échec partiel → rollback total). Filet temporaire retiré. Cloisonnement RLS héritée (T6). DO UPDATE préserve montant_ttc.
 - [x] **Audit code mort** finance.js repo-wide ✅ 16/06
 
-- [ ] **Chantiers : résumé en panneau latéral** sans quitter la liste.
 
 #### Bloc F — En dernier : réactiver modules neutralisés
 - [ ] **Réactiver Messagerie + Statistiques** (code conservé à `3dbd6f1`). Adapter au multi-tenant (RLS agence messages, scope agence stats). + resserrer policy INSERT `notifications` ici.
@@ -254,17 +256,26 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [ ] **Intégration Google Drive** (piste future) : connecter les documents chantier à Drive. Carte retirée le 12/06 (bouton mort). À construire si besoin confirmé.
 - [ ] **Bouton « Connecter » générique mort** (paramètres l.708, sert Google Calendar) : à câbler/retirer DANS la refonte calendrier (module en quarantaine).
 - [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
-- [ ] **page chantier** kpis : montant devis prévu et réel 
-- [ ] dossier de fin : factures, pv de reception, zip des photos 
-- [ ]fiche technique  -> possibilité de la créer depuis le dossier chantier (récupérer artisans depuis devis)
 - [ ] comparateur dans les dossiers
+- [ ] **Chantiers : résumé en panneau latéral** sans quitter la liste.
 
+
+- [x] KPIs page chantier : montant prévu + réel ✅ 17/06 (3401841)
+- [x] Restitution : factures artisans + RIB/KBIS franchisé ✅ 17/06 (6ef0cfd)
+- [x] Dossier de fin — Lot 1 (factures + RIB/KBIS franchisé) ✅ 17/06 (6ef0cfd)
+- [x] Dossier de fin — Lot 2 (ZIP photos côté client) ✅ 17/06 (aa3d8b6)
+- [x] Dossier de fin — PV de réception ✅ 17/06 (a763a14)
+- [x] Fiche technique créable depuis dossier chantier ✅ 17/06 (235ae45)
 - [x] CR dans documents ✅ 16/06 (86f529c)
 - [x] Modifier dossier → modal ✅ 16/06 (31a20c5)
 - [x] Client nom sans « null » ✅ 16/06 (843eac6)
 - [x] Double-clic chantier = ouvrir dossier ✅ 16/06 (f607ef7)
 - [x] Statut chantier "en attente signature" — FAIT (calculé, cascade v2)
 - [x] Réconciliation statut calculé vs persisté — FAIT staff (5 écrans + CHECK strict scellé). Reste espace-client (bloc dédié).
+- [x] Contrat auto-signé ✅ 16/06 (044d464)
+- [x] Factures honoraires restitution (catégorie dédiée + position correcte) ✅ 17/06 (9d8bdbc)
+- [x] Bouton facture honoraires + badge FACT ✅ 17/06 (75f70a8)
+- [x] KBIS franchisée dans paramètres ✅ 17/06 (f1e8545)
 
 
 ### Chantier statut STAFF — CLOS le 16/06
@@ -272,7 +283,7 @@ A→E mergés. calcStatut v2 = source unique, CHECK strict (NULL/annule/termine)
 Reste hors staff : C7 espace-client + RLS client → BLOC ESPACE CLIENT dédié (lien magique → RLS → front). Reporté.
 
 ### Reliquats chantier statut (après edc21cf)
-- [ ] C7 + RLS CLIENT (espace-client) — LOT SÉCURITÉ DÉDIÉ. Policies client-read : rendez_vous (type+date, stepper) + devis_artisans filtré statut='accepte' + storage PDF devis signé. Stepper calcEtape piloté par RDV (4 étapes : Préparation/Devis/Travaux/Terminé). Décisions privacy actées : client voit ses RDV + devis SIGNÉS seulement (pas recu/refuse). ⚠️ Audit read-only d'abord, test étanchéité inter-client (un client ne lit jamais les RDV/devis d'un autre).
+- [ ] **C7 + RLS CLIENT** (espace-client) — LOT SÉCURITÉ DÉDIÉ. Policies client-read : rendez_vous (type+date, stepper) + devis_artisans filtré statut='accepte' + storage PDF devis signé. Stepper calcEtape piloté par RDV (4 étapes : Préparation/Devis/Travaux/Terminé). Décisions privacy actées : client voit ses RDV + devis SIGNÉS seulement (pas recu/refuse). ⚠️ Audit read-only d'abord, test étanchéité inter-client (un client ne lit jamais les RDV/devis d'un autre).
 
 - en_etude/devis_en_attente : phase précoce, BASSE dans la cascade (le R2 la dépasse)
 - devis_a_modifier AVANT chantier_a_venir (un devis à retravailler prime sur un signé)
@@ -282,10 +293,10 @@ Reste hors staff : C7 espace-client + RLS client → BLOC ESPACE CLIENT dédié 
 - Stepper espace-client piloté par RDV (pas statuts devis fins — RLS client)
 
 #### Optimisation BDD — dette d'échelle (PAS urgent, future-proofing)
-Relevés par l'advisor Supabase. PAS la cause de lenteur actuelle (mesuré <1,5ms/requête ; vraie cause = allers-retours PostgREST, traitée par l'embedding). Utile à partir de milliers de lignes.
-- [ ] **auth_rls_initplan (32×)** : `auth.uid()`/`get_my_role()` réévalués par ligne dans les policies P0-9. Encapsuler en `(select get_my_role())` → évalué une fois (InitPlan). Ne change PAS la logique de sécurité.
-- [ ] **multiple_permissive_policies (51×)** : plusieurs policies permissives par table/action, toutes OR-ées. Consolider.
+- [x] **auth_rls_initplan (3×)** ✅ 17/06 (e5cd604) — 3 policies notifications encapsulées. Reste du schéma déjà encapsulé depuis MT/L5.
+- [x] multiple_permissive_policies (51×) — déjà résolu par migrations antérieures, vérifié 17/06
 - [x] unindexed_foreign_keys (29×) ✅ 16/06 (fa86b34) — advisor nettoyé
+
 
 ---
 
