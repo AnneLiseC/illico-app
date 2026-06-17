@@ -40,8 +40,8 @@ const normalizeDossier = (d) => ({
 // HELPERS TABLEAU
 // ─────────────────────────────────────────────────────────────────────────────
 
-const thL = (label) => <th key={label} className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</th>
-const thR = (label) => <th key={label} className="text-right px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</th>
+const thL = (label) => <th key={label} style={{textAlign:'left',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>{label}</th>
+const thR = (label) => <th key={label} style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>{label}</th>
 
 function Th({ children, right }) {
   return <th style={{padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',textAlign:right?'right':'left',whiteSpace:'nowrap'}}>{children}</th>
@@ -175,15 +175,15 @@ function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) 
 
   return (
     <div className="card" style={{padding:20}}>
-      <div className="flex gap-4 mb-4 flex-wrap">
+      <div style={{display:'flex',gap:16,marginBottom:16,flexWrap:'wrap'}}>
         {[
           { color: '#3B7DD8', label: 'Gains encaissés' },
           { color: '#E24B4A', label: 'Charges' },
           { color: '#1F5FA6', label: 'Résultat', dashed: true },
         ].map(({ color, label, dashed }) => (
-          <div key={label} className="flex items-center gap-2">
+          <div key={label} style={{display:'flex',alignItems:'center',gap:8}}>
             <div style={{ width: 10, height: 10, borderRadius: 2, background: dashed ? 'transparent' : color, border: dashed ? `2px dashed ${color}` : 'none' }} />
-            <span className="text-xs text-gray-500">{label}</span>
+            <span style={{fontSize:11,color:'var(--ink-500)'}}>{label}</span>
           </div>
         ))}
       </div>
@@ -470,7 +470,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                 <StatutFacture f={f}/>
                 <label style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid var(--ink-200)',cursor:'pointer',color:'var(--ink-600)',background:'#fff'}}>
                   {f.facture_path ? '📤 Remplacer le PDF' : '📤 Déposer un PDF'}
-                  <input type="file" accept=".pdf" className="hidden" onChange={e => e.target.files[0] && uploadPdf(f, e.target.files[0])}/>
+                  <input type="file" accept=".pdf" style={{display:'none'}} onChange={e => e.target.files[0] && uploadPdf(f, e.target.files[0])}/>
                 </label>
               </div>
             </div>
@@ -1640,14 +1640,14 @@ export default function Finances() {
 
   const renderTableauPeriode = (listeDossiers, rows, colLabel, colonnes, getMontant, getDossierMontant) => (
     <div className="card" style={{overflow:'hidden'}}>
-      <table className="w-full text-sm">
+      <table style={{width:'100%',fontSize:13}}>
         <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
           <tr>
             <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',whiteSpace:'nowrap'}}>{colLabel}</th>
             {colonnes.map(c => <th key={c.key} style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',whiteSpace:'nowrap'}}>{c.label}</th>)}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody>
           {rows.map(([key, agg]) => {
             const label = (() => {
               if (!key.includes('-')) return key
@@ -1658,30 +1658,30 @@ export default function Finances() {
             return (
               <React.Fragment key={key}>
                 {/* Ligne période */}
-                <tr className="bg-gray-50 border-t-2 border-gray-200">
-                  <td className="px-3 py-2 font-bold text-gray-800">{label}</td>
+                <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-200)'}}>
+                  <td style={{padding:'8px 12px',fontWeight:700,color:'var(--ink-800)'}}>{label}</td>
                   {colonnes.map(col => {
                     const val = getMontant(agg, col.key)
-                    if (col.type === 'neg') return <td key={col.key} className="px-3 py-2 text-right text-red-400 text-sm font-bold">{val > 0 ? `— ${fmt(val)}` : '—'}</td>
-                    if (col.type === 'total') return <td key={col.key} className={`px-3 py-2 text-right text-sm font-bold ${(val || 0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(val)}</td>
-                    return <td key={col.key} className="px-3 py-2 text-right text-sm font-bold text-gray-700">{fmt(val)}</td>
+                    if (col.type === 'neg') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',color:'#f87171',fontSize:13,fontWeight:700}}>{val > 0 ? `— ${fmt(val)}` : '—'}</td>
+                    if (col.type === 'total') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:(val || 0) >= 0 ? '#15803d' : '#dc2626'}}>{fmt(val)}</td>
+                    return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:'var(--ink-700)'}}>{fmt(val)}</td>
                   })}
                 </tr>
                 {/* Lignes dossiers */}
                 {dossierspériode.map(d => {
                   const nomClient = formatNomClient(d.client)
                   return (
-                    <tr key={d.id} className="hover:bg-blue-50 border-t border-gray-100">
-                      <td className="px-3 py-1.5 text-gray-500">
-                        <span className="text-gray-300 mr-2">└</span>
-                        <span className="font-medium text-blue-800 text-xs">{d.reference}</span>
-                        <span className="text-gray-500 text-xs ml-2">— {nomClient}</span>
+                    <tr key={d.id} className="row-hover" style={{borderTop:'1px solid var(--ink-100)'}}>
+                      <td style={{padding:'6px 12px',color:'var(--ink-500)'}}>
+                        <span style={{color:'var(--ink-300)',marginRight:8}}>└</span>
+                        <span style={{fontWeight:500,color:'var(--brand-800)',fontSize:11}}>{d.reference}</span>
+                        <span style={{color:'var(--ink-500)',fontSize:11,marginLeft:8}}>— {nomClient}</span>
                       </td>
                       {colonnes.map(col => {
                         const val = getDossierMontant(d, col.key, key)
-                        if (col.type === 'neg') return <td key={col.key} className="px-3 py-1.5 text-right text-red-300 text-xs">{val > 0 ? `— ${fmt(val)}` : '—'}</td>
-                        if (col.type === 'total') return <td key={col.key} className={`px-3 py-1.5 text-right text-xs font-medium ${(val || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmt(val)}</td>
-                        return <td key={col.key} className="px-3 py-1.5 text-right text-xs text-gray-500">{fmt(val)}</td>
+                        if (col.type === 'neg') return <td key={col.key} style={{padding:'6px 12px',textAlign:'right',color:'#fca5a5',fontSize:11}}>{val > 0 ? `— ${fmt(val)}` : '—'}</td>
+                        if (col.type === 'total') return <td key={col.key} style={{padding:'6px 12px',textAlign:'right',fontSize:11,fontWeight:500,color:(val || 0) >= 0 ? '#16a34a' : '#ef4444'}}>{fmt(val)}</td>
+                        return <td key={col.key} style={{padding:'6px 12px',textAlign:'right',fontSize:11,color:'var(--ink-500)'}}>{fmt(val)}</td>
                       })}
                     </tr>
                   )
@@ -1689,16 +1689,16 @@ export default function Finances() {
               </React.Fragment>
             )
           })}
-          {rows.length === 0 && <tr><td colSpan={colonnes.length + 1} className="px-3 py-8 text-center text-gray-400">Aucune donnée</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={colonnes.length + 1} style={{padding:'32px 12px',textAlign:'center',color:'var(--ink-400)'}}>Aucune donnée</td></tr>}
         </tbody>
-        <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-bold">
+        <tfoot style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-300)',fontWeight:700}}>
           <tr>
-            <td className="px-3 py-2">Total</td>
+            <td style={{padding:'8px 12px'}}>Total</td>
             {colonnes.map(col => {
               const total = rows.reduce((s, [, agg]) => s + (getMontant(agg, col.key) || 0), 0)
-              if (col.type === 'neg') return <td key={col.key} className="px-3 py-2 text-right text-red-400 text-sm font-bold">— {fmt(total)}</td>
-              if (col.type === 'total') return <td key={col.key} className={`px-3 py-2 text-right text-sm font-bold ${total >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(total)}</td>
-              return <td key={col.key} className="px-3 py-2 text-right text-sm">{fmt(total)}</td>
+              if (col.type === 'neg') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',color:'#f87171',fontSize:13,fontWeight:700}}>— {fmt(total)}</td>
+              if (col.type === 'total') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:total >= 0 ? '#15803d' : '#dc2626'}}>{fmt(total)}</td>
+              return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13}}>{fmt(total)}</td>
             })}
           </tr>
         </tfoot>
@@ -1766,7 +1766,7 @@ export default function Finances() {
       const reelProduits  = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redevMois : 0))
       const reelCharges   = isCTP ? round2((r.gainsAgenteReels||0) + round2((r.comReelNet||0) * (ROYALTIES_RATE / (1 - ROYALTIES_RATE))) + (r.apporteurCoutTotalNet||0)) : 0
       const reelNet       = round2(reelProduits - reelCharges)
-      const ecart = (pv, rv) => { const e = round2(rv - pv); return <span className={`text-xs font-medium ${e >= 0 ? 'text-green-600' : 'text-red-500'}`}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
+      const ecart = (pv, rv) => { const e = round2(rv - pv); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
       const lignesProduits = [
         { label: '(+) Frais consultation', p: p.frais||0, r: r.fraisNet||0 },
         { label: '(+) Commissions',        p: p.com||0,   r: r.comReelNet||0 },
@@ -1780,26 +1780,26 @@ export default function Finances() {
         { label: '(−) Apporteurs remboursés', p: p.apporteur||0,   r: r.apporteurCoutTotalNet||0 },
       ] : []
       return (
-        <div className="mt-3 border-t border-gray-100 pt-3">
-          <table className="w-full text-xs">
-            <thead><tr className="border-b border-gray-100">
-              <th className="text-left px-2 py-1 text-gray-400 uppercase w-1/2">Ligne</th>
-              <th className="text-right px-2 py-1 text-gray-400 uppercase">Prévi</th>
-              <th className="text-right px-2 py-1 text-gray-400 uppercase">Réel</th>
-              <th className="text-right px-2 py-1 text-gray-400 uppercase">Écart</th>
+        <div style={{marginTop:12,borderTop:'1px solid var(--ink-100)',paddingTop:12}}>
+          <table style={{width:'100%',fontSize:11}}>
+            <thead><tr style={{borderBottom:'1px solid var(--ink-100)'}}>
+              <th style={{textAlign:'left',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase',width:'50%'}}>Ligne</th>
+              <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Prévi</th>
+              <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Réel</th>
+              <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Écart</th>
             </tr></thead>
-            <tbody className="divide-y divide-gray-50">
-              <tr className="bg-gray-50"><td colSpan={4} className="px-2 py-1 text-xs font-medium text-gray-400 uppercase">Gains</td></tr>
+            <tbody>
+              <tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Gains</td></tr>
               {lignesProduits.map(({ label, p: pv, r: rv }) => (
-                <tr key={label}><td className="px-2 py-1.5 text-gray-500">{label}</td><td className="px-2 py-1.5 text-right text-gray-500">{fmt(pv)}</td><td className="px-2 py-1.5 text-right text-green-700 font-medium">{fmt(rv)}</td><td className="px-2 py-1.5 text-right">{ecart(pv, rv)}</td></tr>
+                <tr key={label}><td style={{padding:'6px 8px',color:'var(--ink-500)'}}>{label}</td><td style={{padding:'6px 8px',textAlign:'right',color:'var(--ink-500)'}}>{fmt(pv)}</td><td style={{padding:'6px 8px',textAlign:'right',color:'#15803d',fontWeight:500}}>{fmt(rv)}</td><td style={{padding:'6px 8px',textAlign:'right'}}>{ecart(pv, rv)}</td></tr>
               ))}
-              <tr className="bg-gray-50 border-t border-gray-200"><td className="px-2 py-1.5 font-medium text-gray-700">= Total gains</td><td className="px-2 py-1.5 text-right font-medium text-gray-700">{fmt(previProduits)}</td><td className="px-2 py-1.5 text-right font-medium text-green-700">{fmt(reelProduits)}</td><td className="px-2 py-1.5 text-right">{ecart(previProduits, reelProduits)}</td></tr>
-              {isCTP && <><tr className="bg-gray-50"><td colSpan={4} className="px-2 py-1 text-xs font-medium text-gray-400 uppercase">Charges</td></tr>
+              <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{padding:'6px 8px',fontWeight:500,color:'var(--ink-700)'}}>= Total gains</td><td style={{padding:'6px 8px',textAlign:'right',fontWeight:500,color:'var(--ink-700)'}}>{fmt(previProduits)}</td><td style={{padding:'6px 8px',textAlign:'right',fontWeight:500,color:'#15803d'}}>{fmt(reelProduits)}</td><td style={{padding:'6px 8px',textAlign:'right'}}>{ecart(previProduits, reelProduits)}</td></tr>
+              {isCTP && <><tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Charges</td></tr>
               {lignesCharges.map(({ label, p: pv, r: rv }) => (
-                <tr key={label}><td className="px-2 py-1.5 text-gray-500">{label}</td><td className="px-2 py-1.5 text-right text-gray-500">{fmt(pv)}</td><td className="px-2 py-1.5 text-right text-red-500 font-medium">{fmt(rv)}</td><td className="px-2 py-1.5 text-right">{ecart(pv, rv)}</td></tr>
+                <tr key={label}><td style={{padding:'6px 8px',color:'var(--ink-500)'}}>{label}</td><td style={{padding:'6px 8px',textAlign:'right',color:'var(--ink-500)'}}>{fmt(pv)}</td><td style={{padding:'6px 8px',textAlign:'right',color:'#ef4444',fontWeight:500}}>{fmt(rv)}</td><td style={{padding:'6px 8px',textAlign:'right'}}>{ecart(pv, rv)}</td></tr>
               ))}
-              <tr className="bg-gray-50 border-t border-gray-200"><td className="px-2 py-1.5 font-medium text-gray-700">= Total charges</td><td className="px-2 py-1.5 text-right font-medium text-gray-700">{fmt(previCharges)}</td><td className="px-2 py-1.5 text-right font-medium text-red-500">{fmt(reelCharges)}</td><td className="px-2 py-1.5 text-right">{ecart(previCharges, reelCharges)}</td></tr></>}
-              <tr className="bg-blue-50 border-t-2 border-blue-100"><td className="px-2 py-2 font-bold text-blue-800">= {isCTP ? 'Résultat net Société' : 'Total encaissé agence'}</td><td className="px-2 py-2 text-right font-bold text-gray-600">{fmt(previNet)}</td><td className={`px-2 py-2 text-right font-bold ${reelNet >= 0 ? 'text-blue-800' : 'text-red-600'}`}>{fmt(reelNet)}</td><td className="px-2 py-2 text-right">{ecart(previNet, reelNet)}</td></tr>
+              <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{padding:'6px 8px',fontWeight:500,color:'var(--ink-700)'}}>= Total charges</td><td style={{padding:'6px 8px',textAlign:'right',fontWeight:500,color:'var(--ink-700)'}}>{fmt(previCharges)}</td><td style={{padding:'6px 8px',textAlign:'right',fontWeight:500,color:'#ef4444'}}>{fmt(reelCharges)}</td><td style={{padding:'6px 8px',textAlign:'right'}}>{ecart(previCharges, reelCharges)}</td></tr></>}
+              <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>= {isCTP ? 'Résultat net Société' : 'Total encaissé agence'}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:'var(--ink-600)'}}>{fmt(previNet)}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(reelNet)}</td><td style={{padding:'8px',textAlign:'right'}}>{ecart(previNet, reelNet)}</td></tr>
             </tbody>
           </table>
         </div>
@@ -1847,13 +1847,13 @@ export default function Finances() {
       const reelProduits  = round2(totR.frais + totR.com + totR.comApport + totR.hon + (isCTP ? totR.redev : 0))
       const reelCharges   = isCTP ? round2(totR.partAgentes + totR.royalties + totR.apporteur) : 0
       const reelNet       = round2(reelProduits - reelCharges)
-      const ecart = (p, r) => { const e = round2(r - p); return <span className={`text-xs font-medium ${e >= 0 ? 'text-green-600' : 'text-red-500'}`}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
+      const ecart = (p, r) => { const e = round2(r - p); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
       const chartLabelsAnnee = clesMois.map(cle => { const [, m] = cle.split('-'); return MOIS[parseInt(m)].slice(0, 3) })
       const chartProduitsAnnee = clesMois.map(cle => { const [, m] = cle.split('-'); const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}; const redev = redevancesScoped.filter(rv => rv.statut === 'regle' && rv.annee === anneeSelectionnee && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ht||0), 0); return round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0)) })
       const chartChargesAnnee = clesMois.map(cle => { const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}; return isCTP ? -round2((r.gainsAgenteReels||0) + (r.apporteurCoutTotalNet||0)) : 0 })
       const chartNetAnnee = clesMois.map((_, i) => round2(chartProduitsAnnee[i] + chartChargesAnnee[i]))
       return (
-        <div className="space-y-5">
+        <div style={{display:'flex',flexDirection:'column',gap:20}}>
           <ObjectifBar label={isCTP ? 'Objectif CA Société (résultat net)' : 'Objectif CA agence (encaissements bruts)'} reel={reelNet} objectifMontant={getObjectif('agence')} cible="agence" canEdit={false} />
           <div className="card" style={{overflow:'hidden'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
@@ -1865,27 +1865,27 @@ export default function Finances() {
                 </select>
               </div>
             </div>
-            <table className="w-full text-sm">
-              <thead><tr className="border-b border-gray-100">
-                <th className="text-left px-5 py-2 text-xs font-medium text-gray-400 uppercase w-1/2">Ligne</th>
-                <th className="text-right px-4 py-2 text-xs font-medium text-gray-400 uppercase">Prévisionnel</th>
-                <th className="text-right px-4 py-2 text-xs font-medium text-gray-400 uppercase">Réel</th>
-                <th className="text-right px-5 py-2 text-xs font-medium text-gray-400 uppercase">Écart</th>
+            <table style={{width:'100%',fontSize:13}}>
+              <thead><tr style={{borderBottom:'1px solid var(--ink-100)'}}>
+                <th style={{textAlign:'left',padding:'8px 20px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase',width:'50%'}}>Ligne</th>
+                <th style={{textAlign:'right',padding:'8px 16px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Prévisionnel</th>
+                <th style={{textAlign:'right',padding:'8px 16px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Réel</th>
+                <th style={{textAlign:'right',padding:'8px 20px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Écart</th>
               </tr></thead>
-              <tbody className="divide-y divide-gray-50">
-                <tr className="bg-gray-50"><td colSpan={4} className="px-5 py-1.5 text-xs font-medium text-gray-400 uppercase">Gains</td></tr>
+              <tbody>
+                <tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'6px 20px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Gains</td></tr>
                 {[
                   { label: '(+) Frais consultation', p: totP.frais, r: totR.frais },
                   { label: '(+) Commissions', p: totP.com, r: totR.com },
                   { label: '(+) Honoraires', p: totP.hon, r: totR.hon },
                   { label: '(+) Com. apporteurs', p: totP.comApport, r: totR.comApport },
                   ...(isCTP ? [{ label: '(+) Redevances agentes', p: totP.redev, r: totR.redev }] : []),
-                ].map(({ label, p, r }) => (<tr key={label} className="hover:bg-gray-50"><td className="px-5 py-2.5 text-gray-500 text-xs">{label}</td><td className="px-4 py-2.5 text-right text-gray-500 text-xs">{fmt(p)}</td><td className="px-4 py-2.5 text-right text-green-700 text-xs font-medium">{fmt(r)}</td><td className="px-5 py-2.5 text-right">{ecart(p, r)}</td></tr>))}
-                <tr className="bg-gray-50 border-t border-gray-200"><td className="px-5 py-2.5 font-medium text-gray-700 text-xs">= Total gains</td><td className="px-4 py-2.5 text-right font-medium text-gray-700 text-xs">{fmt(previProduits)}</td><td className="px-4 py-2.5 text-right font-medium text-green-700 text-xs">{fmt(reelProduits)}</td><td className="px-5 py-2.5 text-right">{ecart(previProduits, reelProduits)}</td></tr>
-                {isCTP && <><tr className="bg-gray-50"><td colSpan={4} className="px-5 py-1.5 text-xs font-medium text-gray-400 uppercase">Charges</td></tr>
-                {[{ label: '(−) Royalties illiCO', p: totP.royalties, r: totR.royalties }, { label: '(−) Part agentes', p: totP.partAgentes, r: totR.partAgentes }, { label: '(−) Apporteurs remboursés', p: totP.apporteur, r: totR.apporteur }].map(({ label, p, r }) => (<tr key={label} className="hover:bg-gray-50"><td className="px-5 py-2.5 text-gray-500 text-xs">{label}</td><td className="px-4 py-2.5 text-right text-gray-500 text-xs">{fmt(p)}</td><td className="px-4 py-2.5 text-right text-red-500 text-xs font-medium">{fmt(r)}</td><td className="px-5 py-2.5 text-right">{ecart(p, r)}</td></tr>))}
-                <tr className="bg-gray-50 border-t border-gray-200"><td className="px-5 py-2.5 font-medium text-gray-700 text-xs">= Total charges</td><td className="px-4 py-2.5 text-right font-medium text-gray-700 text-xs">{fmt(previCharges)}</td><td className="px-4 py-2.5 text-right font-medium text-red-500 text-xs">{fmt(reelCharges)}</td><td className="px-5 py-2.5 text-right">{ecart(previCharges, reelCharges)}</td></tr></>}
-                <tr className="bg-blue-50 border-t-2 border-blue-100"><td className="px-5 py-3 font-bold text-blue-800 text-sm">= {isCTP ? `Résultat net Société ${anneeSelectionnee}` : `Encaissements bruts agence ${anneeSelectionnee}`}</td><td className="px-4 py-3 text-right font-bold text-gray-600 text-sm">{fmt(previNet)}</td><td className={`px-4 py-3 text-right font-bold text-sm ${reelNet >= 0 ? 'text-blue-800' : 'text-red-600'}`}>{fmt(reelNet)}</td><td className="px-5 py-3 text-right">{ecart(previNet, reelNet)}</td></tr>
+                ].map(({ label, p, r }) => (<tr key={label} className="row-hover"><td style={{padding:'10px 20px',color:'var(--ink-500)',fontSize:11}}>{label}</td><td style={{padding:'10px 16px',textAlign:'right',color:'var(--ink-500)',fontSize:11}}>{fmt(p)}</td><td style={{padding:'10px 16px',textAlign:'right',color:'#15803d',fontSize:11,fontWeight:500}}>{fmt(r)}</td><td style={{padding:'10px 20px',textAlign:'right'}}>{ecart(p, r)}</td></tr>))}
+                <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{padding:'10px 20px',fontWeight:500,color:'var(--ink-700)',fontSize:11}}>= Total gains</td><td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:'var(--ink-700)',fontSize:11}}>{fmt(previProduits)}</td><td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:'#15803d',fontSize:11}}>{fmt(reelProduits)}</td><td style={{padding:'10px 20px',textAlign:'right'}}>{ecart(previProduits, reelProduits)}</td></tr>
+                {isCTP && <><tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'6px 20px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Charges</td></tr>
+                {[{ label: '(−) Royalties illiCO', p: totP.royalties, r: totR.royalties }, { label: '(−) Part agentes', p: totP.partAgentes, r: totR.partAgentes }, { label: '(−) Apporteurs remboursés', p: totP.apporteur, r: totR.apporteur }].map(({ label, p, r }) => (<tr key={label} className="row-hover"><td style={{padding:'10px 20px',color:'var(--ink-500)',fontSize:11}}>{label}</td><td style={{padding:'10px 16px',textAlign:'right',color:'var(--ink-500)',fontSize:11}}>{fmt(p)}</td><td style={{padding:'10px 16px',textAlign:'right',color:'#ef4444',fontSize:11,fontWeight:500}}>{fmt(r)}</td><td style={{padding:'10px 20px',textAlign:'right'}}>{ecart(p, r)}</td></tr>))}
+                <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{padding:'10px 20px',fontWeight:500,color:'var(--ink-700)',fontSize:11}}>= Total charges</td><td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:'var(--ink-700)',fontSize:11}}>{fmt(previCharges)}</td><td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:'#ef4444',fontSize:11}}>{fmt(reelCharges)}</td><td style={{padding:'10px 20px',textAlign:'right'}}>{ecart(previCharges, reelCharges)}</td></tr></>}
+                <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'12px 20px',fontWeight:700,color:'var(--brand-800)',fontSize:13}}>= {isCTP ? `Résultat net Société ${anneeSelectionnee}` : `Encaissements bruts agence ${anneeSelectionnee}`}</td><td style={{padding:'12px 16px',textAlign:'right',fontWeight:700,color:'var(--ink-600)',fontSize:13}}>{fmt(previNet)}</td><td style={{padding:'12px 16px',textAlign:'right',fontWeight:700,fontSize:13,color:reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(reelNet)}</td><td style={{padding:'12px 20px',textAlign:'right'}}>{ecart(previNet, reelNet)}</td></tr>
               </tbody>
             </table>
           </div>
@@ -1906,13 +1906,13 @@ export default function Finances() {
           onChange={setSfSousOnglet}
         />
         {sfSousOnglet === 'mois' && (
-          <div className="space-y-5">
+          <div style={{display:'flex',flexDirection:'column',gap:20}}>
             <ObjectifBar label={isCTP ? `Objectif mensuel Société (${fmt(objectifMensuel)}/mois)` : `Objectif mensuel agence (${fmt(objectifMensuel)}/mois)`}
               reel={(() => { const moisCourant = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`; const r = rowsReel.find(([k]) => k === moisCourant)?.[1] || {}; const redev = redevancesScoped.filter(rv => rv.statut === 'regle' && rv.annee === new Date().getFullYear() && rv.mois === new Date().getMonth() + 1).reduce((s, rv) => s + (rv.montant_ht||0), 0); return getReelNet(r, redev) })()}
               objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
             <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId={`chart_${mode}_mois`} />
             <div className="card" style={{overflow:'hidden'}}>
-              <table className="w-full text-xs">
+              <table style={{width:'100%',fontSize:11}}>
                 <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
                   <tr>
                     <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Mois</th>
@@ -1921,7 +1921,7 @@ export default function Finances() {
                     <th style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>vs Objectif</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody>
                   {cles.map((cle, i) => {
                     const [a, m] = cle.split('-')
                     const label = `${MOIS[parseInt(m)].slice(0, 3)}. ${a}`
@@ -1930,24 +1930,27 @@ export default function Finances() {
                     const reelNet = getReelNet(r, redev)
                     const ecartObj = round2(reelNet - objectifMensuel)
                     const isOpen = moisOuvert === `${mode}_${cle}`
-                    const bg = i % 2 === 0 ? '' : 'bg-gray-50'
+                    const bg = i % 2 === 0 ? 'transparent' : 'var(--surface-2)'
                     return (
                       <React.Fragment key={cle}>
-                        <tr className={`cursor-pointer hover:bg-blue-50 ${bg}`} onClick={() => setMoisOuvert(isOpen ? null : `${mode}_${cle}`)}>
-                          <td className="px-4 py-2.5 font-medium text-gray-700 flex items-center gap-2"><span>{label}</span><span className="text-gray-300 text-xs">{isOpen ? '▲' : '▼'}</span></td>
-                          <td className={`px-3 py-2.5 text-right font-medium ${reelNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(reelNet)}</td>
-                          <td className="px-3 py-2.5 text-right text-gray-400">{fmt(objectifMensuel)}</td>
-                          <td className={`px-4 py-2.5 text-right font-medium ${ecartObj >= 0 ? 'text-green-600' : 'text-red-500'}`}>{ecartObj >= 0 ? '+' : ''}{fmt(ecartObj)}</td>
+                        <tr style={{cursor:'pointer',background:bg}}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'var(--brand-50)' }}
+                          onMouseLeave={e => { e.currentTarget.style.background = bg }}
+                          onClick={() => setMoisOuvert(isOpen ? null : `${mode}_${cle}`)}>
+                          <td style={{padding:'10px 16px',fontWeight:500,color:'var(--ink-700)',display:'flex',alignItems:'center',gap:8}}><span>{label}</span><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></td>
+                          <td style={{padding:'10px 12px',textAlign:'right',fontWeight:500,color:reelNet >= 0 ? '#15803d' : '#dc2626'}}>{fmt(reelNet)}</td>
+                          <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{fmt(objectifMensuel)}</td>
+                          <td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:ecartObj >= 0 ? '#16a34a' : '#ef4444'}}>{ecartObj >= 0 ? '+' : ''}{fmt(ecartObj)}</td>
                         </tr>
-                        {isOpen && (<tr className={bg}><td colSpan={4} className="px-4 pb-3">{crPourCle(cle)}</td></tr>)}
+                        {isOpen && (<tr style={{background:bg}}><td colSpan={4} style={{padding:'0 16px 12px'}}>{crPourCle(cle)}</td></tr>)}
                       </React.Fragment>
                     )
                   })}
-                  <tr className="bg-gray-50 border-t-2 border-gray-300 font-bold text-xs">
-                    <td className="px-4 py-2.5 text-gray-700">Total</td>
-                    <td className={`px-3 py-2.5 text-right ${cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevancesScoped.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ht||0),0);return s+getReelNet(r,redev)},0)>=0?'text-green-700':'text-red-600'}`}>{fmt(cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevancesScoped.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ht||0),0);return s+getReelNet(r,redev)},0))}</td>
-                    <td className="px-3 py-2.5 text-right text-gray-400">{fmt(objectifMensuel * cles.length)}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-500">—</td>
+                  <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-300)',fontWeight:700,fontSize:11}}>
+                    <td style={{padding:'10px 16px',color:'var(--ink-700)'}}>Total</td>
+                    <td style={{padding:'10px 12px',textAlign:'right',color:cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevancesScoped.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ht||0),0);return s+getReelNet(r,redev)},0)>=0?'#15803d':'#dc2626'}}>{fmt(cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevancesScoped.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ht||0),0);return s+getReelNet(r,redev)},0))}</td>
+                    <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{fmt(objectifMensuel * cles.length)}</td>
+                    <td style={{padding:'10px 16px',textAlign:'right',color:'var(--ink-500)'}}>—</td>
                   </tr>
                 </tbody>
               </table>
