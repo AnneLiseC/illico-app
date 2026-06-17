@@ -1760,12 +1760,6 @@ export default function FicheChantier({ params }) {
     refuse:     { label: 'Refusé',     tone: 'bad'  },
     a_modifier: { label: 'À modifier', tone: 'warn' },
   }
-  const fraisStatutConfig = {
-    offerts:                   { label: 'Offerts' },
-    factures:                  { label: 'Facturés — en attente' },
-    regle:                     { label: 'Réglés' },
-    rembourse:                 { label: 'Remboursé' },
-  }
   // Couleurs tone → classes badge (pour les boutons quick statut)
   const TONE_BG = { ok: 'rgba(22,163,74,0.12)', warn: 'rgba(245,158,11,0.13)', bad: 'rgba(220,38,38,0.10)', info: 'rgba(0,148,212,0.12)', mute: 'rgba(148,163,184,0.15)' }
   const TONE_FG = { ok: '#15803d', warn: '#a16207', bad: '#b91c1c', info: '#0078ad', mute: '#475569' }
@@ -1987,7 +1981,6 @@ export default function FicheChantier({ params }) {
   if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-400)'}}>Chantier introuvable</div>
 
   const nomComplet = formatNomClient(client, { civilite: true })
-  const f = fraisStatutConfig[dossier.frais_statut] ?? { label: dossier.frais_statut ?? '—' }
 
   const supprimerChantier = async () => {
     const ok = confirm(
@@ -2220,16 +2213,15 @@ export default function FicheChantier({ params }) {
       {/* KPI strip */}
       <div className="kpi-grid">
         <MiniKpi
-          label="Montant chantier"
+          label="Montant prévu"
+          value={totalDevisTTCRecus > 0 ? fmt(totalDevisTTCRecus) : '—'}
+          sub={`${devisRecus.length} devis reçus`}
+        />
+        <MiniKpi
+          label="Montant réel"
           value={totalDevisTTCSignes > 0 ? fmt(totalDevisTTCSignes) : '—'}
           sub={`${devisSignes.length} devis signés`}
           tone="brand"
-        />
-        <MiniKpi
-          label="Frais consultation TTC"
-          value={fraisTTC > 0 ? `${fmt(fraisTTC)} TTC` : 'Offerts'}
-          sub={f.label}
-          tone="warn"
         />
         <MiniKpi
           label="Acomptes reçus"
