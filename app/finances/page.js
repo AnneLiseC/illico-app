@@ -154,7 +154,7 @@ function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) 
         labels,
         datasets: [
           { type: 'bar', label: 'Gains', data: produitsData, backgroundColor: '#3B7DD8', borderRadius: 3, order: 2 },
-          { type: 'bar', label: 'Charges', data: chargesData, backgroundColor: '#E24B4A', borderRadius: 3, order: 2 },
+          { type: 'bar', label: 'Reversements', data: chargesData, backgroundColor: '#E24B4A', borderRadius: 3, order: 2 },
           { type: 'line', label: 'Résultats', data: netData, borderColor: '#1F5FA6', backgroundColor: 'rgba(31,95,166,0.06)', borderWidth: 2, borderDash: [4, 3], pointRadius: 4, pointBackgroundColor: '#1F5FA6', tension: 0.3, order: 1 }
         ]
       },
@@ -178,7 +178,7 @@ function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) 
       <div style={{display:'flex',gap:16,marginBottom:16,flexWrap:'wrap'}}>
         {[
           { color: '#3B7DD8', label: 'Gains encaissés' },
-          { color: '#E24B4A', label: 'Charges' },
+          { color: '#E24B4A', label: 'Reversements' },
           { color: '#1F5FA6', label: 'Résultat', dashed: true },
         ].map(({ color, label, dashed }) => (
           <div key={label} style={{display:'flex',alignItems:'center',gap:8}}>
@@ -194,62 +194,9 @@ function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) 
   )
 }
 
-function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKeyFromDate, calculer, objectifAnnuel, pctObjectif }) {
-  const chartId = 'suivi_monthly_chart'
+function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKeyFromDate, calculer }) {
   const donutReelId = 'suivi_donut_reel'
   const donutPreviId = 'suivi_donut_previ'
-
-  const reelData = useMemo(() => Array.from({length:12}, (_, i) => {
-    const key = `${anneeSelectionnee}-${String(i+1).padStart(2,'0')}`
-    const agg = rowsReelScoped.find(([k]) => k === key)?.[1] || {}
-    return round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [rowsReelScoped, anneeSelectionnee])
-
-  const previData = useMemo(() => {
-    const map = {}
-    scopedDossiers.forEach(d => {
-      const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
-      if (!key || !key.startsWith(String(anneeSelectionnee))) return
-      if (!map[key]) map[key] = 0
-      const c = calculer(d)
-      map[key] = round2(map[key] + c.gainsAdminPreviTotal + c.gainsAgentePreviTotal)
-    })
-    return Array.from({length:12}, (_, i) => {
-      const key = `${anneeSelectionnee}-${String(i+1).padStart(2,'0')}`
-      return map[key] || 0
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedDossiers, anneeSelectionnee])
-
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const el = document.getElementById(chartId)
-    if (!el) return
-    if (el._chartInstance) el._chartInstance.destroy()
-    el._chartInstance = new Chart(el, {
-      data: {
-        labels: MOIS_LABELS,
-        datasets: [
-          { type: 'bar', label: 'Réel', data: reelData, backgroundColor: 'rgba(0, 123, 255, 0.7)', borderColor: 'rgba(0, 123, 255, 1)', borderWidth: 1, barPercentage: 0.5,categoryPercentage: 0.5, yAxisID: 'y', },
-          { type: 'bar', label: 'Prévi', data: previData, backgroundColor: 'rgba(0, 123, 255, 0.1)',borderColor: 'rgba(0, 123, 255, 0.5)', borderDash: [5, 5], pointRadius: 0, yAxisID: 'y',}
-        ]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: ctx => ctx.dataset.label + ' : ' + Math.abs(ctx.parsed.y).toLocaleString('fr-FR') + ' €' } }
-        },
-        scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#888', maxRotation: 30 } },
-          y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 }, color: '#888', callback: v => Math.abs(v).toLocaleString('fr-FR') + ' €' } }
-        }
-      }
-    })
-    return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
-  }, [reelData, previData])
 
   // Répartition par catégorie (nets) sur l'année sélectionnée — prévi (scopedDossiers) et réel (agrégats payés).
   const donutPrevi = useMemo(() => {
@@ -307,56 +254,29 @@ function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKe
 
   const totalReel  = round2(donutReel.com + donutReel.frais + donutReel.hon)
   const totalPrevi = round2(donutPrevi.com + donutPrevi.frais + donutPrevi.hon)
-  const reelTotal  = reelData.reduce((s,v) => s+v, 0)
-  const previTotal = previData.reduce((s,v) => s+v, 0)
 
   return (
-    <div style={{display:'flex',flexDirection:'column',gap:16,marginBottom:16}}>
-      {/* Évolution mensuelle réel vs prévi (pleine largeur) */}
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
       <div className="card" style={{padding:20}}>
-        <div className="eyebrow" style={{marginBottom:12}}>Évolution mensuelle {anneeSelectionnee}<br />CA RÉEL NET VS PRÉVISIONNEL</div>
-        <div style={{display:'flex',gap:16,marginBottom:12,flexWrap:'wrap'}}>
-          <div style={{display:'flex',alignItems:'center',gap:6}}>
-            <div style={{width:10,height:10,borderRadius:2,background:'#3B7DD8'}}/>
-            <span style={{fontSize:11,color:'var(--ink-500)'}}>Réel</span>
-          </div>
-          <div style={{display:'flex',alignItems:'center',gap:6}}>
-            <div style={{width:10,height:10,borderRadius:2,border:'2px dashed #94a3b8',background:'transparent'}}/>
-            <span style={{fontSize:11,color:'var(--ink-500)'}}>Prévi</span>
-          </div>
+        <div className="eyebrow" style={{marginBottom:12}}>Répartition réel {anneeSelectionnee}</div>
+        <div style={{position:'relative',height:200}}>
+          <canvas id={donutReelId} role="img" aria-label="Répartition réel" />
         </div>
-        <div style={{position:'relative',height:220}}>
-          <canvas id={chartId} role="img" aria-label="Gains mensuels" />
-        </div>
-        <div style={{marginTop:16,display:'flex',flexDirection:'column',gap:6}}>
-          <Row label="Total réel" value={fmt(reelTotal)} bold accent />
-          <Row label="Total prévi" value={fmt(previTotal)} dim />
-          {pctObjectif > 0 && <Row label={`Objectif ${anneeSelectionnee} (${pctObjectif}%)`} value={fmt(objectifAnnuel)} dim />}
+        <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
+          <LegendRow color="#00578e" label="Commissions illiCO"    value={fmt(donutReel.com)}   pct={totalReel>0?Math.round(donutReel.com/totalReel*100):0} />
+          <LegendRow color="#0094d4" label="Frais de consultation" value={fmt(donutReel.frais)} pct={totalReel>0?Math.round(donutReel.frais/totalReel*100):0} />
+          <LegendRow color="#94a3b8" label="Honoraires"            value={fmt(donutReel.hon)}   pct={totalReel>0?Math.round(donutReel.hon/totalReel*100):0} />
         </div>
       </div>
-      {/* Deux donuts côte à côte : Réel | Prévisionnel */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-        <div className="card" style={{padding:20}}>
-          <div className="eyebrow" style={{marginBottom:12}}>Répartition réel</div>
-          <div style={{position:'relative',height:160}}>
-            <canvas id={donutReelId} role="img" aria-label="Répartition réel" />
-          </div>
-          <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
-            <LegendRow color="#00578e" label="Commissions illiCO"    value={fmt(donutReel.com)}   pct={totalReel>0?Math.round(donutReel.com/totalReel*100):0} />
-            <LegendRow color="#0094d4" label="Frais de consultation" value={fmt(donutReel.frais)} pct={totalReel>0?Math.round(donutReel.frais/totalReel*100):0} />
-            <LegendRow color="#94a3b8" label="Honoraires"            value={fmt(donutReel.hon)}   pct={totalReel>0?Math.round(donutReel.hon/totalReel*100):0} />
-          </div>
+      <div className="card" style={{padding:20}}>
+        <div className="eyebrow" style={{marginBottom:12}}>Répartition prévisionnel {anneeSelectionnee}</div>
+        <div style={{position:'relative',height:200}}>
+          <canvas id={donutPreviId} role="img" aria-label="Répartition prévisionnel" />
         </div>
-        <div className="card" style={{padding:20}}>
-          <div className="eyebrow" style={{marginBottom:12}}>Répartition prévisionnel</div>
-          <div style={{position:'relative',height:160}}>
-            <canvas id={donutPreviId} role="img" aria-label="Répartition prévisionnel" />
-          </div>
-          <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
-            <LegendRow color="#00578e" label="Commissions illiCO"    value={fmt(donutPrevi.com)}   pct={totalPrevi>0?Math.round(donutPrevi.com/totalPrevi*100):0} />
-            <LegendRow color="#0094d4" label="Frais de consultation" value={fmt(donutPrevi.frais)} pct={totalPrevi>0?Math.round(donutPrevi.frais/totalPrevi*100):0} />
-            <LegendRow color="#94a3b8" label="Honoraires"            value={fmt(donutPrevi.hon)}   pct={totalPrevi>0?Math.round(donutPrevi.hon/totalPrevi*100):0} />
-          </div>
+        <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
+          <LegendRow color="#00578e" label="Commissions illiCO"    value={fmt(donutPrevi.com)}   pct={totalPrevi>0?Math.round(donutPrevi.com/totalPrevi*100):0} />
+          <LegendRow color="#0094d4" label="Frais de consultation" value={fmt(donutPrevi.frais)} pct={totalPrevi>0?Math.round(donutPrevi.frais/totalPrevi*100):0} />
+          <LegendRow color="#94a3b8" label="Honoraires"            value={fmt(donutPrevi.hon)}   pct={totalPrevi>0?Math.round(donutPrevi.hon/totalPrevi*100):0} />
         </div>
       </div>
     </div>
@@ -2018,17 +1938,26 @@ export default function Finances() {
     )
 
     const cles = Array.from(new Set([...rowsReel.map(([k]) => k), ...redevancesScoped.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`)])).sort((a, b) => b.localeCompare(a))
-    const chartLabels = cles.map(cle => { const [a, m] = cle.split('-'); return `${MOIS[parseInt(m)].slice(0,3)}. ${a}` })
-    const chartProduits = cles.map(cle => comptePourCle(cle).reelProduits)
-    const chartCharges = cles.map(cle => -comptePourCle(cle).reelCharges)
-    const chartNet = cles.map(cle => comptePourCle(cle).reelNet)
+    const clesAsc = [...cles].reverse()   // graphe : plus ancien à gauche -> plus récent à droite (le tableau reste en DESC)
+    const chartLabels = clesAsc.map(cle => { const [a, m] = cle.split('-'); return `${MOIS[parseInt(m)].slice(0,3)}. ${a}` })
+    const chartProduits = clesAsc.map(cle => comptePourCle(cle).reelProduits)
+    const chartCharges = clesAsc.map(cle => -comptePourCle(cle).reelCharges)
+    const chartNet = clesAsc.map(cle => comptePourCle(cle).reelNet)
     const sfSousOnglet = sfSousOngletCTP; const setSfSousOnglet = setSfSousOngletCTP
 
     // Vue Année : tableau plat (Année | Prévi | Réel | Écart) → déplier en mois.
     const renderAnnuel = () => {
       const annees = []; for (let a = new Date().getFullYear(); a >= anneeMin; a--) annees.push(a)
+      // Graphe annuel (ASC : année la plus ancienne à gauche). Produits / Reversements / Net par année.
+      const anneesAsc = [...annees].reverse()
+      const sumAnnee = (y, champ) => round2(cles.filter(c => c.startsWith(String(y))).reduce((s, c) => s + comptePourCle(c)[champ], 0))
+      const chartLabelsAnnee = anneesAsc.map(String)
+      const chartProduitsAnnee = anneesAsc.map(y => sumAnnee(y, 'reelProduits'))
+      const chartChargesAnnee = anneesAsc.map(y => -sumAnnee(y, 'reelCharges'))
+      const chartNetAnnee = anneesAsc.map(y => sumAnnee(y, 'reelNet'))
       return (
-        <div className="card" style={{overflow:'hidden'}}>
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          <div className="card" style={{overflow:'hidden'}}>
           <table style={{width:'100%',fontSize:13}}>
             <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
               <tr>
@@ -2068,6 +1997,8 @@ export default function Finances() {
               })}
             </tbody>
           </table>
+          </div>
+          <SuiviCTPChart labels={chartLabelsAnnee} produitsData={chartProduitsAnnee} chargesData={chartChargesAnnee} netData={chartNetAnnee} chartId={`chart_${mode}_annee`} />
         </div>
       )
     }
@@ -2315,7 +2246,7 @@ export default function Finances() {
           {renderSuiviFinancier(!isAdmin ? 'agent' : suiviMode)}
 
           {/* ZONE 3 — graphe barres Réel/Prévi + deux donuts côte à côte */}
-          <SuiviGraphes anneeSelectionnee={anneeSelectionnee} rowsReelScoped={rowsReelScoped} scopedDossiers={scopedDossiers} getKeyFromDate={getKeyFromDate} calculer={calculer} objectifAnnuel={objectifAnnuel} pctObjectif={pctObjectif} />
+          <SuiviGraphes anneeSelectionnee={anneeSelectionnee} rowsReelScoped={rowsReelScoped} scopedDossiers={scopedDossiers} getKeyFromDate={getKeyFromDate} calculer={calculer} />
         </div>
       )}
 
