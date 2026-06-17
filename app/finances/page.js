@@ -1825,41 +1825,39 @@ export default function Finances() {
     }
     const ecart = (pv, rv) => { const e = round2(rv - pv); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
 
-    // Détail compte de résultat (prévi / réel / écart) d'un mois.
+    // Détail compte de résultat (RÉEL uniquement) d'un mois — vue groupée par encaissement.
     const crPourCle = (cle) => {
       const x = comptePourCle(cle)
       const lignesProduits = [
-        { label: '(+) Frais de consultation', p: x.p.frais||0, r: x.r.fraisNet||0 },
-        { label: '(+) Commissions illiCO',    p: x.p.com||0,   r: x.r.comReelNet||0 },
-        { label: '(+) Honoraires',            p: x.p.hon||0,   r: x.r.honReel||0 },
-        { label: '(+) Commissions apporteurs', p: x.p.comApport||0, r: x.r.comApporteursReel||0 },
-        ...(isCTP ? [{ label: '(+) Redevances agentes', p: x.redev, r: x.redev }] : []),
+        { label: '(+) Frais de consultation',  r: x.r.fraisNet||0 },
+        { label: '(+) Commissions illiCO',     r: x.r.comReelNet||0 },
+        { label: '(+) Honoraires',             r: x.r.honReel||0 },
+        { label: '(+) Commissions apporteurs', r: x.r.comApporteursReel||0 },
+        ...(isCTP ? [{ label: '(+) Redevances agentes', r: x.redev }] : []),
       ]
       const lignesReversements = isCTP
         ? [
-            { label: '(−) Royalties illiCO',      p: x.p.royalties||0,   r: royaltiesReelVal(x.r) },
-            { label: '(−) Parts agentes',         p: x.p.partAgentes||0, r: x.r.gainsAgenteReels||0 },
-            { label: '(−) Apporteurs remboursés', p: x.previApporteur,   r: x.reelApporteur },
+            { label: '(−) Royalties illiCO',      r: royaltiesReelVal(x.r) },
+            { label: '(−) Parts agentes',         r: x.r.gainsAgenteReels||0 },
+            { label: '(−) Apporteurs remboursés', r: x.reelApporteur },
           ]
-        : [{ label: '(−) Apporteurs remboursés', p: x.previApporteur, r: x.reelApporteur }]
+        : [{ label: '(−) Apporteurs remboursés', r: x.reelApporteur }]
       const tdL = { padding:'6px 8px', color:'var(--ink-500)' }
       const tdR = { padding:'6px 8px', textAlign:'right' }
       return (
         <table style={{width:'100%',fontSize:11}}>
           <thead><tr style={{borderBottom:'1px solid var(--ink-100)'}}>
-            <th style={{textAlign:'left',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase',width:'46%'}}>Ligne</th>
-            <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Prévi</th>
+            <th style={{textAlign:'left',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase',width:'70%'}}>Ligne</th>
             <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Réel</th>
-            <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Écart</th>
           </tr></thead>
           <tbody>
-            <tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Gains</td></tr>
-            {lignesProduits.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'var(--ink-500)'}}>{fmt(l.p)}</td><td style={{...tdR,color:'#15803d',fontWeight:500}}>{fmt(l.r)}</td><td style={tdR}>{ecart(l.p, l.r)}</td></tr>))}
-            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>= Total gains</td><td style={{...tdR,fontWeight:500,color:'var(--ink-700)'}}>{fmt(x.previProduits)}</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td><td style={tdR}>{ecart(x.previProduits, x.reelProduits)}</td></tr>
-            <tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Reversements</td></tr>
-            {lignesReversements.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'var(--ink-500)'}}>{fmt(l.p)}</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{fmt(l.r)}</td><td style={tdR}>{ecart(l.p, l.r)}</td></tr>))}
-            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>= Total reversements</td><td style={{...tdR,fontWeight:500,color:'var(--ink-700)'}}>{fmt(x.previCharges)}</td><td style={{...tdR,fontWeight:500,color:'#ef4444'}}>{fmt(x.reelCharges)}</td><td style={tdR}>{ecart(x.previCharges, x.reelCharges)}</td></tr>
-            <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>= Résultat net {netLabel}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:'var(--ink-600)'}}>{fmt(x.previNet)}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:x.reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(x.reelNet)}</td><td style={{padding:'8px',textAlign:'right'}}>{ecart(x.previNet, x.reelNet)}</td></tr>
+            <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Gains</td></tr>
+            {lignesProduits.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#15803d',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
+            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>= Total gains</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td></tr>
+            <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Reversements</td></tr>
+            {lignesReversements.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
+            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>= Total reversements</td><td style={{...tdR,fontWeight:500,color:'#ef4444'}}>{fmt(x.reelCharges)}</td></tr>
+            <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>= Résultat net {netLabel}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:x.reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(x.reelNet)}</td></tr>
           </tbody>
         </table>
       )
