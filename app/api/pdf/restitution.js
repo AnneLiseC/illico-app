@@ -659,7 +659,7 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
 //   - Phase avant signature (devis_en_attente, devis_a_modifier…) → style R3 : devis reçus + récap
 //   - en_cours_chantier → devis signés + KBIS/assurances + FT
 //   - termine → restitution complète avec photos, planning, etc.
-export async function buildDossierSuivi({ dossier, devis, photos, interventions, fichesTech, docsRestitution, factures, suiviFinancier, logo, supabaseAdmin }) {
+export async function buildDossierSuivi({ dossier, devis, photos, interventions, fichesTech, docsRestitution, factures, suiviFinancier, adminFranchise, logo, supabaseAdmin }) {
   const statut = dossier.statut || 'en_cours_chantier'
   const isPreSignature = ['a_contacter', 'a_relancer', 'devis_en_attente', 'devis_a_modifier'].includes(statut)
   const isTermine = statut === 'termine'
@@ -673,6 +673,11 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
   const hasFichesTech = (fichesTech || []).length > 0
   const hasQualif = devisAcceptes.some(d => d.artisan?.qualification_url)
+
+  // Factures honoraires (CTP→client) : à embarquer dans le bloc Factures, pas
+  // dans le bloc générique « autres documents ». categorie='facture_honoraire'.
+  const facturesHonoraires = (docsRestitution || []).filter(d => d.categorie === 'facture_honoraire')
+  const autresDocs = (docsRestitution || []).filter(d => d.categorie !== 'facture_honoraire')
 
   const loadSep = async (b64) => PDFDocument.load(Buffer.from(b64, 'base64'))
   const [sepDescriptif, sepIllustrations, sepRecap, sepDevis, sepPlanning, sepRefs, sepKbis, sepQualification] = await Promise.all([
@@ -739,24 +744,41 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     await addContent()  // page suivi des paiements
   }
 
-  // ── Devis ──
+  // ── Devis / Factures / PV — groupés PAR DEVIS ──
+  // Post-signature : pour chaque devis accepté → devis signé (ou original) →
+  //   ses factures (liées par devis_id) → son PV de réception.
+  // Pré-signature : seulement les devis reçus/acceptés (ni factures ni PV).
   await addSep(sepDevis)
-  // Embarquement PAR DEVIS (reçu + accepté) : la version SIGNÉE si elle existe,
-  // sinon le devis d'origine (non signé) en fallback. Indépendant du stade du
-  // dossier — corrige le bug où le fichier était choisi selon dossier.statut
-  // (un non-signé pouvait être embarqué pour un devis pourtant signé).
-  for (const d of devisR3) {
-    const path = d.devis_signe_path || d.devis_pdf_path
-    if (path) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', path)
+  if (!isPreSignature) {
+    for (const d of devisR3) {
+      const pathDevis = d.devis_signe_path || d.devis_pdf_path
+      if (pathDevis) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', pathDevis)
+        await addExternalPDF(buf)
+      }
+      const facturesDevis = (factures || []).filter(f => f.devis_id === d.id)
+      for (const f of facturesDevis) {
+        if (f.pdf_path) {
+          const buf = await downloadPDF(supabaseAdmin, 'documents', f.pdf_path)
+          await addExternalPDF(buf)
+        }
+      }
+      if (d.pv_path) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', d.pv_path)
+        await addExternalPDF(buf)
+      }
+    }
+    // Factures honoraires (CTP→client) — chantier_documents categorie='facture_honoraire'
+    // cochés dans_restitution. Bloc séparé (vient de docsRestitution, pas factures_artisans).
+    for (const d of facturesHonoraires) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', d.path)
       await addExternalPDF(buf)
     }
-  }
-  // Factures (post-signature) — inchangé.
-  if (!isPreSignature) {
-    for (const d of devisAcceptes) {
-      if (d.facture_path) {
-        const buf = await downloadPDF(supabaseAdmin, 'documents', d.facture_path)
+  } else {
+    for (const d of devisR3) {
+      const path = d.devis_signe_path || d.devis_pdf_path
+      if (path) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', path)
         await addExternalPDF(buf)
       }
     }
@@ -800,14 +822,6 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     }
   }
 
-  // ── Documents chantier cochés "dans_restitution" ──
-  if ((docsRestitution || []).length > 0) {
-    for (const doc of docsRestitution) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path)
-      await addExternalPDF(buf)
-    }
-  }
-
   // ── KBIS + Assurances (post-signature) ──
   if (!isPreSignature) {
     await addSep(sepKbis)
@@ -821,6 +835,26 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
         const buf = await downloadPDF(supabaseAdmin, 'documents', art.decennale_url)
         await addExternalPDF(buf)
       }
+    }
+  }
+
+  // ── KBIS + RIB du franchisé (admin de la société) — post-signature, sans séparateur. Non bloquant. ──
+  if (!isPreSignature) {
+    if (adminFranchise?.kbis_url) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', adminFranchise.kbis_url)
+      await addExternalPDF(buf)
+    }
+    if (adminFranchise?.rib_url) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', adminFranchise.rib_url)
+      await addExternalPDF(buf)
+    }
+  }
+
+  // ── Autres documents chantier cochés "dans_restitution" (hors factures honoraires) ──
+  if (autresDocs.length > 0) {
+    for (const doc of autresDocs) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path)
+      await addExternalPDF(buf)
     }
   }
 
