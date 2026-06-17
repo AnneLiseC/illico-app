@@ -40,8 +40,8 @@ const normalizeDossier = (d) => ({
 // HELPERS TABLEAU
 // ─────────────────────────────────────────────────────────────────────────────
 
-const thL = (label) => <th key={label} className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</th>
-const thR = (label) => <th key={label} className="text-right px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</th>
+const thL = (label) => <th key={label} style={{textAlign:'left',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>{label}</th>
+const thR = (label) => <th key={label} style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>{label}</th>
 
 function Th({ children, right }) {
   return <th style={{padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',textAlign:right?'right':'left',whiteSpace:'nowrap'}}>{children}</th>
@@ -142,6 +142,555 @@ function ObjectifBar({ label, reel, objectifMontant, cible, agenteId = null, can
 // COMPOSANT PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
 
+
+function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) {
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof Chart === 'undefined') return
+    const el = document.getElementById(chartId)
+    if (!el) return
+    if (el._chartInstance) el._chartInstance.destroy()
+    el._chartInstance = new Chart(el, {
+      data: {
+        labels,
+        datasets: [
+          { type: 'bar', label: 'Gains', data: produitsData, backgroundColor: '#3B7DD8', borderRadius: 3, order: 2 },
+          { type: 'bar', label: 'Charges', data: chargesData, backgroundColor: '#E24B4A', borderRadius: 3, order: 2 },
+          { type: 'line', label: 'Résultats', data: netData, borderColor: '#1F5FA6', backgroundColor: 'rgba(31,95,166,0.06)', borderWidth: 2, borderDash: [4, 3], pointRadius: 4, pointBackgroundColor: '#1F5FA6', tension: 0.3, order: 1 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ctx.dataset.label + ' : ' + Math.abs(ctx.parsed.y).toLocaleString('fr-FR') + ' €' } }
+        },
+        scales: {
+          x: { stacked: false, grid: { display: false }, ticks: { font: { size: 11 }, color: '#888', maxRotation: 30, autoSkip: false } },
+          y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 }, color: '#888', callback: v => Math.abs(v).toLocaleString('fr-FR') + ' €' } }
+        }
+      }
+    })
+    return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+  }, [labels, produitsData, chargesData, netData, chartId])
+
+  return (
+    <div className="card" style={{padding:20}}>
+      <div style={{display:'flex',gap:16,marginBottom:16,flexWrap:'wrap'}}>
+        {[
+          { color: '#3B7DD8', label: 'Gains encaissés' },
+          { color: '#E24B4A', label: 'Charges' },
+          { color: '#1F5FA6', label: 'Résultat', dashed: true },
+        ].map(({ color, label, dashed }) => (
+          <div key={label} style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{ width: 10, height: 10, borderRadius: 2, background: dashed ? 'transparent' : color, border: dashed ? `2px dashed ${color}` : 'none' }} />
+            <span style={{fontSize:11,color:'var(--ink-500)'}}>{label}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ position: 'relative', width: '100%', height: 220 }}>
+        <canvas id={chartId} role="img" aria-label="Graphique produits et charges Société par période" />
+      </div>
+    </div>
+  )
+}
+
+function SyntheseView({ anneeEnCours, rowsReelScoped, scopedDossiers, getKeyFromDate, calculer, totComHT, totFraisHT, totRoyalties, totPreviNet, objectifAnnuel, pctObjectif, libellePerimetre }) {
+  const chartId = 'synthese_monthly_chart'
+  const donutId = 'synthese_donut_chart'
+
+  const reelData = useMemo(() => Array.from({length:12}, (_, i) => {
+    const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
+    const agg = rowsReelScoped.find(([k]) => k === key)?.[1] || {}
+    return round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [rowsReelScoped])
+
+  const previData = useMemo(() => {
+    const map = {}
+    scopedDossiers.forEach(d => {
+      const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
+      if (!key || !key.startsWith(String(anneeEnCours))) return
+      if (!map[key]) map[key] = 0
+      const c = calculer(d)
+      map[key] = round2(map[key] + c.gainsAdminPreviTotal + c.gainsAgentePreviTotal)
+    })
+    return Array.from({length:12}, (_, i) => {
+      const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
+      return map[key] || 0
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedDossiers])
+
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const el = document.getElementById(chartId)
+    if (!el) return
+    if (el._chartInstance) el._chartInstance.destroy()
+    el._chartInstance = new Chart(el, {
+      data: {
+        labels: MOIS_LABELS,
+        datasets: [
+          { type: 'bar', label: 'Réel', data: reelData, backgroundColor: 'rgba(0, 123, 255, 0.7)', borderColor: 'rgba(0, 123, 255, 1)', borderWidth: 1, barPercentage: 0.5,categoryPercentage: 0.5, yAxisID: 'y', },
+          { type: 'bar', label: 'Prévi', data: previData, backgroundColor: 'rgba(0, 123, 255, 0.1)',borderColor: 'rgba(0, 123, 255, 0.5)', borderDash: [5, 5], pointRadius: 0, yAxisID: 'y',}
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ctx.dataset.label + ' : ' + Math.abs(ctx.parsed.y).toLocaleString('fr-FR') + ' €' } }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#888', maxRotation: 30 } },
+          y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 }, color: '#888', callback: v => Math.abs(v).toLocaleString('fr-FR') + ' €' } }
+        }
+      }
+    })
+    return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+  }, [reelData, previData])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const el = document.getElementById(donutId)
+    if (!el) return
+    if (el._chartInstance) el._chartInstance.destroy()
+    el._chartInstance = new Chart(el, {
+      type: 'doughnut',
+      data: {
+        labels: ['Commissions HT', 'Frais HT', 'Royalties'],
+        datasets: [{ data: [totComHT, totFraisHT, totRoyalties], backgroundColor: ['#00578e','#0094d4','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
+      },
+      options: {
+        cutout: '70%', responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ctx.label + ' : ' + (ctx.parsed).toLocaleString('fr-FR') + ' €' } }
+        }
+      }
+    })
+    return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+  }, [totComHT, totFraisHT, totRoyalties])
+
+  const totalDonut = totComHT + totFraisHT + totRoyalties
+  const reelTotal  = reelData.reduce((s,v) => s+v, 0)
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:20}}>
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <span className="eyebrow">Filtré sur</span>
+        <span style={{fontSize:12,fontWeight:600,color:'var(--brand-800)',background:'var(--brand-50)',padding:'3px 10px',borderRadius:99}}>{libellePerimetre()}</span>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+        {/* LEFT : bar+line chart + totaux */}
+        <div className="card" style={{padding:20}}>
+          <div className="eyebrow" style={{marginBottom:12}}>Évolution mensuelle {anneeEnCours}<br />CA RÉEL NET VS PRÉVISIONNEL</div>
+          <div style={{display:'flex',gap:16,marginBottom:12,flexWrap:'wrap'}}>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <div style={{width:10,height:10,borderRadius:2,background:'#3B7DD8'}}/>
+              <span style={{fontSize:11,color:'var(--ink-500)'}}>Réel</span>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <div style={{width:10,height:10,borderRadius:2,border:'2px dashed #94a3b8',background:'transparent'}}/>
+              <span style={{fontSize:11,color:'var(--ink-500)'}}>Prévi</span>
+            </div>
+          </div>
+          <div style={{position:'relative',height:220}}>
+            <canvas id={chartId} role="img" aria-label="Gains mensuels" />
+          </div>
+          <div style={{marginTop:16,display:'flex',flexDirection:'column',gap:6}}>
+            <Row label="Total réel" value={fmt(reelTotal)} bold accent />
+            <Row label="Total prévi" value={fmt(totPreviNet)} dim />
+            {pctObjectif > 0 && <Row label={`Objectif ${anneeEnCours} (${pctObjectif}%)`} value={fmt(objectifAnnuel)} dim />}
+          </div>
+        </div>
+        {/* RIGHT : donut + répartition */}
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          <div className="card" style={{padding:20}}>
+            <div className="eyebrow" style={{marginBottom:12}}>Répartition prévisionnel</div>
+            <div style={{position:'relative',height:160}}>
+              <canvas id={donutId} role="img" aria-label="Répartition" />
+            </div>
+            <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
+              <LegendRow color="#00578e" label="Commissions HT" value={fmt(totComHT)} pct={totalDonut>0?Math.round(totComHT/totalDonut*100):0} />
+              <LegendRow color="#0094d4" label="Frais HT"       value={fmt(totFraisHT)} pct={totalDonut>0?Math.round(totFraisHT/totalDonut*100):0} />
+              <LegendRow color="#94a3b8" label="Royalties"      value={fmt(totRoyalties)} pct={totalDonut>0?Math.round(totRoyalties/totalDonut*100):0} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelectionnee, redevancesAgente, agrégerParPaiement, dossiersAgente, agenteActuelle, erreur, succes, setErreur, setSucces, upsertFactureMoisType, isAdmin, agentes, anneeEnCours }) {
+  const facturesAg  = facturesAgente.filter(f => f.agente_id === agenteSelectionnee)
+  const redevAg     = redevancesAgente
+  const [moisDeplie, setMoisDeplie] = useState(null)
+
+  // Montants F1/F2 calculés EN LIVE (source unique : agrégerParPaiement → finance.js).
+  // Le snapshot factures_agente ne sert plus qu'à lire le statut + le PDF (read-only ici).
+  const rowsReel   = agrégerParPaiement(dossiersAgente, false)
+  const aggParMois = new Map(rowsReel)
+  // Seuil de redevance dérivé de la CHAÎNE "YYYY-MM-DD" (zéro Date → zéro fuseau).
+  const debutIndex = agenteActuelle?.redevance_debut
+    ? (() => { const [y, m] = agenteActuelle.redevance_debut.split('-').map(Number); return y * 12 + (m - 1) })()
+    : null
+  const redevParam = agenteActuelle?.redevance_mensuelle_ht   // paramètre, jamais de littéral
+
+  // F1 (agente → CTP) = frais + commissions + honoraires + part partenaire (= gainsAgenteReels)
+  // F2 (CTP → agente) = redevance HT datée (param) + apporteur remboursé
+  const calcMois = (annee, mois) => {
+    const agg = aggParMois.get(`${annee}-${String(mois).padStart(2, '0')}`) || {}
+    const fraisN = round2(agg.fraisAgenteNet || 0)
+    const comN   = round2(agg.comAgenteNet || 0)
+    const honN   = round2(agg.honAgenteNet || 0)
+    const partN  = round2(agg.comApporteursAgenteNet || 0)
+    const montantF1 = round2(fraisN + comN + honN + partN)
+    const moisIndex = annee * 12 + (mois - 1)
+    const redev = (debutIndex != null && redevParam != null && moisIndex >= debutIndex) ? round2(redevParam) : 0
+    const apporteur = round2(agg.apporteurPartAgenteNet || 0)
+    const montantF2 = round2(redev + apporteur)
+    return { fraisN, comN, honN, partN, montantF1, redev, apporteur, montantF2 }
+  }
+
+  // F1/F2 effectif : figé (snapshot factures_agente.montant) si payé, sinon live.
+  const f1Eff = (f, liveF1) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF1
+  const f2Eff = (f, liveF2) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF2
+
+  // Facturation décalée : la facture du mois M porte sur l'activité du mois M−1.
+  // P2 : on persiste / apparie / toggle sur le mois d'ACTIVITÉ ; seul le libellé est décalé.
+  const shiftMoisKey = (key, delta) => {
+    const [y, m] = key.split('-').map(Number)
+    const dt = new Date(y, m - 1 + delta, 1)            // Date gère le rollover d'année
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+  }
+
+  // Tous les mois de redevance due : de debutIndex au mois courant (activité) INCLUS, même creux.
+  const now = new Date()
+  const moisCourantIndex = now.getFullYear() * 12 + now.getMonth()    // getMonth() 0-based = (mois-1), cohérent avec debutIndex
+  const redevanceDueKeys = []
+  if (debutIndex != null) {
+    for (let i = debutIndex; i <= moisCourantIndex; i++) {
+      redevanceDueKeys.push(`${Math.floor(i / 12)}-${String(i % 12 + 1).padStart(2, '0')}`)   // clé activité "YYYY-MM"
+    }
+  }
+
+  // Lignes = mois de FACTURE (= activité + 1). Sources activité : rowsReel + factures persistées (P2) + redevances dues.
+  const months = [...new Set([
+    ...rowsReel.map(([k]) => shiftMoisKey(k, +1)),
+    ...facturesAg.map(f => shiftMoisKey(`${f.annee}-${String(f.mois).padStart(2, '0')}`, +1)),
+    ...redevanceDueKeys.map(k => shiftMoisKey(k, +1)),
+  ])].sort((a, b) => b.localeCompare(a))
+
+  let totalF1 = 0, totalF1Paye = 0, totalF2 = 0, totalF2Paye = 0
+  months.forEach(key => {
+    const [aStr, mStr] = shiftMoisKey(key, -1).split('-')   // mois d'activité (M−1)
+    const annee = parseInt(aStr), mois = parseInt(mStr)
+    const { montantF1, montantF2 } = calcMois(annee, mois)
+    const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
+    const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
+    const f1eff = f1Eff(f1, montantF1)
+    const f2eff = f2Eff(f2, montantF2)
+    totalF1 = round2(totalF1 + f1eff); totalF2 = round2(totalF2 + f2eff)
+    if (f1?.statut === 'paye') totalF1Paye = round2(totalF1Paye + f1eff)
+    if (f2?.statut === 'paye') totalF2Paye = round2(totalF2Paye + f2eff)
+  })
+  const totalRedev = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => round2(s + (r.montant_ht || 0)), 0)
+  const net        = round2(totalF1 - totalF2)
+
+  const uploadPdf = async (f, fichier) => {
+    setErreur(''); setSucces('')
+    const ext = fichier.name.split('.').pop().toLowerCase()
+    const chemin = `factures_agente/${agenteSelectionnee}/${f.annee}-${String(f.mois).padStart(2,'0')}-${f.type_facture}.${ext}`
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+    if (error) { setErreur('Erreur upload : ' + error.message); return }
+    try {
+      await upsertFactureMoisType(f.mois, f.annee, f.montant||0, f.type_facture, { facture_path: chemin })
+      setSucces('Facture uploadée ✓')
+    } catch (e) { setErreur('Erreur enregistrement : ' + e.message) }
+  }
+
+  // Bascule du statut F1 (agente → CTP). Au clic « payé » : fige le montant LIVE
+  // (calcMois, jamais f.montant). Au déclic : montant remis à NULL → le live reprend.
+  // INSERT si le mois n'a pas de ligne (montant positionnel), UPDATE sinon (montant dans updates).
+  const toggleF1Statut = async (annee, mois, f1) => {
+    const live = calcMois(annee, mois).montantF1
+    try {
+      if (f1?.statut === 'paye') {
+        await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'a_facturer', montant: null })
+      } else {
+        await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'paye', montant: live })
+      }
+    } catch (e) { setErreur('Erreur F1 : ' + e.message) }
+  }
+
+  // Bascule du statut F2 (CTP → agente). ADMIN ONLY (appelé uniquement depuis la
+  // branche isAdmin de la cellule). Fige le montant LIVE (calcMois().montantF2,
+  // jamais f.montant) au clic « reçu », NULL au déclic. Le type 'ctp_vers_agente'
+  // déclenche la synchro redevances dans upsertFactureMoisType (regle / en_attente).
+  const toggleF2Statut = async (annee, mois, f2) => {
+    const live = calcMois(annee, mois).montantF2
+    try {
+      if (f2?.statut === 'paye') {
+        await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'a_facturer', montant: null })
+      } else {
+        await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'paye', montant: live })
+      }
+    } catch (e) { setErreur('Erreur F2 : ' + e.message) }
+  }
+
+  const FactureDetailCard = ({ title, subtitle, type, accent }) => {
+    const fs = facturesAg.filter(f => f.type_facture === type)
+    return (
+      <div className="card" style={{padding:0,overflow:'hidden'}}>
+        <div style={{padding:'14px 18px',borderBottom:'1px solid var(--ink-200)',borderLeft:`4px solid ${accent}`}}>
+          <div style={{fontSize:14,fontWeight:700,color:'var(--ink-900)'}}>{title}</div>
+          <div style={{fontSize:11.5,color:'var(--ink-500)',marginTop:4,lineHeight:1.4}}>{subtitle}</div>
+        </div>
+        <div>
+          {fs.map(f => {
+            const m = calcMois(f.annee, f.mois)
+            const montant = type === 'agente_vers_ctp' ? f1Eff(f, m.montantF1) : f2Eff(f, m.montantF2)
+            const [fFaStr, fFmStr] = shiftMoisKey(`${f.annee}-${String(f.mois).padStart(2, '0')}`, +1).split('-')
+            return (
+            <div key={f.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:12,alignItems:'center',padding:'12px 18px',borderTop:'1px solid var(--ink-100)'}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:600,color:'var(--ink-900)'}}>{MOIS[parseInt(fFmStr)]} {fFaStr}</div>
+                <div style={{fontSize:10,color:'var(--ink-400)'}}>activité de {MOIS[f.mois]} {f.annee}</div>
+                <div style={{fontSize:11,color:'var(--ink-500)',marginTop:2}}>
+                  {f.facture_path
+                    ? <button onClick={async () => { const { data } = await supabase.storage.from('documents').createSignedUrl(f.facture_path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }}
+                        style={{fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>
+                    : <span style={{color:'var(--ink-400)'}}>Pas de PDF déposé</span>}
+                </div>
+              </div>
+              <div style={{fontWeight:700,color:'var(--ink-900)',fontVariantNumeric:'tabular-nums'}}>{fmt(montant)}</div>
+              <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                <StatutFacture f={f}/>
+                <label style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid var(--ink-200)',cursor:'pointer',color:'var(--ink-600)',background:'#fff'}}>
+                  {f.facture_path ? '📤 Remplacer le PDF' : '📤 Déposer un PDF'}
+                  <input type="file" accept=".pdf" style={{display:'none'}} onChange={e => e.target.files[0] && uploadPdf(f, e.target.files[0])}/>
+                </label>
+              </div>
+            </div>
+            )
+          })}
+          {fs.length === 0 && <div style={{padding:24,textAlign:'center',color:'var(--ink-400)',fontSize:13}}>Aucune facture</div>}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:18}}>
+      {succes && <div style={{background:'rgba(22,163,74,0.07)',border:'1px solid rgba(22,163,74,0.25)',borderRadius:10,padding:'10px 16px',fontSize:13,color:'#15803d'}}>{succes}</div>}
+      {erreur && <div style={{background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:10,padding:'10px 16px',fontSize:13,color:'#b91c1c'}}>{erreur}</div>}
+      {/* Sélecteur agente — admin uniquement (agente voit sa propre facturation) */}
+      {isAdmin && (
+        <div className="card" style={{padding:'14px 18px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+          <div className="eyebrow">Agente :</div>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            {agentes.filter(a => a.role === 'agente').map(a => (
+              <button key={a.id} onClick={() => setAgenteSelectionnee(a.id)} style={{
+                display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:99,
+                border:'1px solid',borderColor: agenteSelectionnee === a.id ? 'var(--brand-500)' : 'var(--ink-200)',
+                background: agenteSelectionnee === a.id ? 'var(--brand-50)' : '#fff',
+                color: agenteSelectionnee === a.id ? 'var(--brand-800)' : 'var(--ink-700)',
+                fontSize:12,fontWeight:600,cursor:'pointer',
+              }}>
+                <Avatar name={`${a.prenom} ${a.nom}`} size={20}/>
+                {a.prenom} {a.nom}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* KPI strip */}
+      <div className="kpi-grid">
+        <FinKpiCard label="F1 — Gains à facturer"       value={fmt(totalF1)}    sub={`Reçu ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
+        <FinKpiCard label="F2 — Redevances + apporteur" value={fmt(totalF2)}    sub={`Reçu ${fmt(totalF2Paye)}`}                                              tone="warn"/>
+        <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
+      </div>
+
+      {/* Tableau mensuel F1 / F2 */}
+      <div className="card" style={{padding:0,overflow:'hidden'}}>
+        <div style={{padding:'14px 22px',borderBottom:'1px solid var(--ink-200)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)'}}>
+              Facturation mensuelle · {agenteActuelle ? `${agenteActuelle.prenom} ${agenteActuelle.nom}` : '—'}
+            </div>
+            <div className="eyebrow" style={{marginTop:4}}>F1 = facture émise par l&apos;agente · F2 = facture émise par la franchisée</div>
+          </div>
+        </div>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+          <thead style={{background:'var(--surface-2)'}}>
+            <tr>
+              {thL('Mois')}
+              {thR('F1 (Agente → Société)')}
+              <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F1</th>
+              {thR('F2 (Société → Agente)')}
+              <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F2</th>
+              {thR('Net')}
+            </tr>
+          </thead>
+          <tbody>
+            {months.map(key => {
+              const [faStr, fmStr] = key.split('-')
+              const fMois = parseInt(fmStr); const fAnnee = parseInt(faStr)        // mois de FACTURE (libellé)
+              const [aStr, mStr] = shiftMoisKey(key, -1).split('-')
+              const mois = parseInt(mStr); const annee = parseInt(aStr)            // mois d'ACTIVITÉ (M−1) : données, appariement, toggle
+              const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
+              const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
+              const d   = calcMois(annee, mois)
+              const f1m = f1Eff(f1, d.montantF1)
+              const f2m = f2Eff(f2, d.montantF2)
+              const n   = round2(f1m - f2m)
+              const isOpen = moisDeplie === key
+              const voirPdf = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }
+              return (
+                <React.Fragment key={key}>
+                <tr style={{borderTop:'1px solid var(--ink-100)',cursor:'pointer'}} className="row-hover" onClick={() => setMoisDeplie(isOpen ? null : key)}>
+                  <td style={{padding:'14px 16px',fontWeight:700,color:'var(--ink-900)'}}>
+                    <span style={{display:'inline-block',width:14,color:'var(--ink-400)'}}>{isOpen ? '▾' : '▸'}</span>{MOIS[fMois]} {fAnnee}
+                    <div style={{fontSize:11,fontWeight:500,color:'var(--ink-400)',marginLeft:14}}>activité de {MOIS[mois]} {annee}</div>
+                  </td>
+                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f1m>0?'#15803d':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
+                    {f1m > 0 ? fmt(f1m) : '—'}
+                  </td>
+                  <td style={{padding:'14px 16px',textAlign:'center'}}>
+                    {(f1m === 0 && f1?.statut !== 'paye') ? (
+                      <span style={{color:'var(--ink-400)'}}>—</span>
+                    ) : (
+                      <span
+                        onClick={(e) => { e.stopPropagation(); toggleF1Statut(annee, mois, f1) }}
+                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
+                        title={f1?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
+                        style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
+                        <StatutFacture f={f1}/>
+                      </span>
+                    )}
+                  </td>
+                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f2m>0?'#b91c1c':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
+                    {f2m > 0 ? fmt(f2m) : '—'}
+                  </td>
+                  <td style={{padding:'14px 16px',textAlign:'center'}}>
+                    {(f2m === 0 && f2?.statut !== 'paye') ? (
+                      <span style={{color:'var(--ink-400)'}}>—</span>
+                    ) : isAdmin ? (
+                      <span
+                        onClick={(e) => { e.stopPropagation(); toggleF2Statut(annee, mois, f2) }}
+                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
+                        title={f2?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
+                        style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
+                        <StatutFacture f={f2}/>
+                      </span>
+                    ) : (
+                      <StatutFacture f={f2}/>
+                    )}
+                  </td>
+                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:n>=0?'var(--brand-800)':'#b91c1c',fontVariantNumeric:'tabular-nums'}}>
+                    {n >= 0 ? '+' : ''}{fmt(n)}
+                  </td>
+                </tr>
+                {isOpen && (
+                  <tr style={{background:'var(--surface-2)'}}>
+                    <td colSpan={6} style={{padding:'4px 16px 16px'}}>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,maxWidth:720}}>
+                        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                          <div className="eyebrow" style={{color:'#15803d'}}>F1 — Agente facture la Société</div>
+                          {d.fraisN > 0 && <Row label="Frais de consultation" value={fmt(d.fraisN)} />}
+                          {d.comN   > 0 && <Row label="Commissions artisans"   value={fmt(d.comN)} />}
+                          {d.honN   > 0 && <Row label="Honoraires (courtage + AMO)" value={fmt(d.honN)} />}
+                          {d.partN  > 0 && <Row label="Part partenaire"         value={fmt(d.partN)} />}
+                          {f1m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucun gain encaissé ce mois</span>}
+                          <Row label="Total F1" value={fmt(f1m)} bold accent />
+                          {f1?.facture_path && <button onClick={() => voirPdf(f1.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
+                        </div>
+                        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                          <div className="eyebrow" style={{color:'#b91c1c'}}>F2 — La Société facture l&apos;agente</div>
+                          {d.redev     > 0 && <Row label="Redevance mensuelle (HT)" value={fmt(d.redev)} />}
+                          {d.apporteur > 0 && <Row label="Apporteur remboursé"      value={fmt(d.apporteur)} />}
+                          {f2m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucune charge ce mois</span>}
+                          <Row label="Total F2" value={fmt(f2m)} bold accent />
+                          {f2?.facture_path && <button onClick={() => voirPdf(f2.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
+              )
+            })}
+            {months.length === 0 && (
+              <tr><td colSpan={6} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-400)'}}>Aucune facturation à afficher</td></tr>
+            )}
+          </tbody>
+          {months.length > 0 && (
+            <tfoot>
+              <tr style={{borderTop:'2px solid var(--ink-200)',background:'var(--surface-2)'}}>
+                <td style={{padding:'14px 16px',fontWeight:800,color:'var(--ink-900)'}}>Total</td>
+                <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#15803d',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF1)}</td>
+                <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF1Paye)} reçu</td>
+                <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#b91c1c',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF2)}</td>
+                <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF2Paye)} reçu</td>
+                <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,fontSize:15,fontVariantNumeric:'tabular-nums',color:net>=0?'var(--brand-800)':'#b91c1c'}}>
+                  {net >= 0 ? '+' : ''}{fmt(net)}
+                </td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+
+      {/* Détail factures F1 + F2 côte à côte */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18}}>
+        <FactureDetailCard
+          title="F1 — Factures émises par l'agente"
+          subtitle="L'agente facture la Société pour ses gains du mois (frais + commissions + honoraires)"
+          type="agente_vers_ctp"
+          accent="#16a34a"
+        />
+        <FactureDetailCard
+          title="F2 — Factures émises par la franchisée"
+          subtitle="La Société facture l'agente pour la redevance + apporteur remboursé"
+          type="ctp_vers_agente"
+          accent="#dc2626"
+        />
+      </div>
+
+      {/* Redevances 12 mois */}
+      <div className="card" style={{padding:22}}>
+        <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)',marginBottom:14}}>Redevances mensuelles · {agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} € HT` : 'montant à paramétrer'}</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(12,1fr)',gap:6}}>
+          {MOIS_LABELS.map((mLabel, i) => {
+            const r = redevAg.find(rv => rv.mois === i+1 && rv.annee === anneeEnCours)
+            const isPast = new Date(anneeEnCours, i, 1) < new Date()
+            return (
+              <div key={i} style={{
+                padding:'10px 6px',textAlign:'center',borderRadius:8,
+                background:  r?.statut === 'regle' ? 'rgba(22,163,74,0.10)' : isPast ? 'rgba(245,158,11,0.13)' : 'var(--ink-50)',
+                border:'1px solid',borderColor: r?.statut === 'regle' ? 'rgba(22,163,74,0.2)' : isPast ? 'rgba(245,158,11,0.3)' : 'var(--ink-200)',
+              }}>
+                <div style={{fontSize:10,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>{mLabel.slice(0,3)}</div>
+                <div style={{marginTop:6,fontSize:11.5,fontWeight:700,color:r?.statut==='regle'?'#15803d':isPast?'#a16207':'var(--ink-300)'}}>
+                  {r?.statut === 'regle' ? '✓' : isPast ? '⌛' : '—'}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <div style={{marginTop:14,fontSize:12.5,color:'var(--ink-500)'}}>
+          {redevAg.filter(r => r.statut === 'regle').length} mois réglés ·
+          <span style={{fontWeight:700,color:'var(--brand-800)',marginLeft:6,fontVariantNumeric:'tabular-nums'}}>{fmt(totalRedev)}</span> sur l&apos;année
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function Finances() {
 
@@ -1091,14 +1640,14 @@ export default function Finances() {
 
   const renderTableauPeriode = (listeDossiers, rows, colLabel, colonnes, getMontant, getDossierMontant) => (
     <div className="card" style={{overflow:'hidden'}}>
-      <table className="w-full text-sm">
+      <table style={{width:'100%',fontSize:13}}>
         <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
           <tr>
             <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',whiteSpace:'nowrap'}}>{colLabel}</th>
             {colonnes.map(c => <th key={c.key} style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',whiteSpace:'nowrap'}}>{c.label}</th>)}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody>
           {rows.map(([key, agg]) => {
             const label = (() => {
               if (!key.includes('-')) return key
@@ -1109,30 +1658,30 @@ export default function Finances() {
             return (
               <React.Fragment key={key}>
                 {/* Ligne période */}
-                <tr className="bg-gray-50 border-t-2 border-gray-200">
-                  <td className="px-3 py-2 font-bold text-gray-800">{label}</td>
+                <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-200)'}}>
+                  <td style={{padding:'8px 12px',fontWeight:700,color:'var(--ink-800)'}}>{label}</td>
                   {colonnes.map(col => {
                     const val = getMontant(agg, col.key)
-                    if (col.type === 'neg') return <td key={col.key} className="px-3 py-2 text-right text-red-400 text-sm font-bold">{val > 0 ? `— ${fmt(val)}` : '—'}</td>
-                    if (col.type === 'total') return <td key={col.key} className={`px-3 py-2 text-right text-sm font-bold ${(val || 0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(val)}</td>
-                    return <td key={col.key} className="px-3 py-2 text-right text-sm font-bold text-gray-700">{fmt(val)}</td>
+                    if (col.type === 'neg') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',color:'#f87171',fontSize:13,fontWeight:700}}>{val > 0 ? `— ${fmt(val)}` : '—'}</td>
+                    if (col.type === 'total') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:(val || 0) >= 0 ? '#15803d' : '#dc2626'}}>{fmt(val)}</td>
+                    return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:'var(--ink-700)'}}>{fmt(val)}</td>
                   })}
                 </tr>
                 {/* Lignes dossiers */}
                 {dossierspériode.map(d => {
                   const nomClient = formatNomClient(d.client)
                   return (
-                    <tr key={d.id} className="hover:bg-blue-50 border-t border-gray-100">
-                      <td className="px-3 py-1.5 text-gray-500">
-                        <span className="text-gray-300 mr-2">└</span>
-                        <span className="font-medium text-blue-800 text-xs">{d.reference}</span>
-                        <span className="text-gray-500 text-xs ml-2">— {nomClient}</span>
+                    <tr key={d.id} className="row-hover" style={{borderTop:'1px solid var(--ink-100)'}}>
+                      <td style={{padding:'6px 12px',color:'var(--ink-500)'}}>
+                        <span style={{color:'var(--ink-300)',marginRight:8}}>└</span>
+                        <span style={{fontWeight:500,color:'var(--brand-800)',fontSize:11}}>{d.reference}</span>
+                        <span style={{color:'var(--ink-500)',fontSize:11,marginLeft:8}}>— {nomClient}</span>
                       </td>
                       {colonnes.map(col => {
                         const val = getDossierMontant(d, col.key, key)
-                        if (col.type === 'neg') return <td key={col.key} className="px-3 py-1.5 text-right text-red-300 text-xs">{val > 0 ? `— ${fmt(val)}` : '—'}</td>
-                        if (col.type === 'total') return <td key={col.key} className={`px-3 py-1.5 text-right text-xs font-medium ${(val || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmt(val)}</td>
-                        return <td key={col.key} className="px-3 py-1.5 text-right text-xs text-gray-500">{fmt(val)}</td>
+                        if (col.type === 'neg') return <td key={col.key} style={{padding:'6px 12px',textAlign:'right',color:'#fca5a5',fontSize:11}}>{val > 0 ? `— ${fmt(val)}` : '—'}</td>
+                        if (col.type === 'total') return <td key={col.key} style={{padding:'6px 12px',textAlign:'right',fontSize:11,fontWeight:500,color:(val || 0) >= 0 ? '#16a34a' : '#ef4444'}}>{fmt(val)}</td>
+                        return <td key={col.key} style={{padding:'6px 12px',textAlign:'right',fontSize:11,color:'var(--ink-500)'}}>{fmt(val)}</td>
                       })}
                     </tr>
                   )
@@ -1140,16 +1689,16 @@ export default function Finances() {
               </React.Fragment>
             )
           })}
-          {rows.length === 0 && <tr><td colSpan={colonnes.length + 1} className="px-3 py-8 text-center text-gray-400">Aucune donnée</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={colonnes.length + 1} style={{padding:'32px 12px',textAlign:'center',color:'var(--ink-400)'}}>Aucune donnée</td></tr>}
         </tbody>
-        <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-bold">
+        <tfoot style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-300)',fontWeight:700}}>
           <tr>
-            <td className="px-3 py-2">Total</td>
+            <td style={{padding:'8px 12px'}}>Total</td>
             {colonnes.map(col => {
               const total = rows.reduce((s, [, agg]) => s + (getMontant(agg, col.key) || 0), 0)
-              if (col.type === 'neg') return <td key={col.key} className="px-3 py-2 text-right text-red-400 text-sm font-bold">— {fmt(total)}</td>
-              if (col.type === 'total') return <td key={col.key} className={`px-3 py-2 text-right text-sm font-bold ${total >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(total)}</td>
-              return <td key={col.key} className="px-3 py-2 text-right text-sm">{fmt(total)}</td>
+              if (col.type === 'neg') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',color:'#f87171',fontSize:13,fontWeight:700}}>— {fmt(total)}</td>
+              if (col.type === 'total') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:total >= 0 ? '#15803d' : '#dc2626'}}>{fmt(total)}</td>
+              return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13}}>{fmt(total)}</td>
             })}
           </tr>
         </tfoot>
@@ -1177,57 +1726,6 @@ export default function Finances() {
     return renderTableauPeriode(listeDossiers, rows, colLabel, colonnes, (agg, key) => agg[key] || 0, getDossierMontant)
   }
 
-  // ── GRAPHIQUE CTP ──────────────────────────────────────────────────────────
-  function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) {
-    useEffect(() => {
-      if (typeof window === 'undefined' || typeof Chart === 'undefined') return
-      const el = document.getElementById(chartId)
-      if (!el) return
-      if (el._chartInstance) el._chartInstance.destroy()
-      el._chartInstance = new Chart(el, {
-        data: {
-          labels,
-          datasets: [
-            { type: 'bar', label: 'Gains', data: produitsData, backgroundColor: '#3B7DD8', borderRadius: 3, order: 2 },
-            { type: 'bar', label: 'Charges', data: chargesData, backgroundColor: '#E24B4A', borderRadius: 3, order: 2 },
-            { type: 'line', label: 'Résultats', data: netData, borderColor: '#1F5FA6', backgroundColor: 'rgba(31,95,166,0.06)', borderWidth: 2, borderDash: [4, 3], pointRadius: 4, pointBackgroundColor: '#1F5FA6', tension: 0.3, order: 1 }
-          ]
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: { label: ctx => ctx.dataset.label + ' : ' + Math.abs(ctx.parsed.y).toLocaleString('fr-FR') + ' €' } }
-          },
-          scales: {
-            x: { stacked: false, grid: { display: false }, ticks: { font: { size: 11 }, color: '#888', maxRotation: 30, autoSkip: false } },
-            y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 }, color: '#888', callback: v => Math.abs(v).toLocaleString('fr-FR') + ' €' } }
-          }
-        }
-      })
-      return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
-    }, [labels, produitsData, chargesData, netData, chartId])
-
-    return (
-      <div className="card" style={{padding:20}}>
-        <div className="flex gap-4 mb-4 flex-wrap">
-          {[
-            { color: '#3B7DD8', label: 'Gains encaissés' },
-            { color: '#E24B4A', label: 'Charges' },
-            { color: '#1F5FA6', label: 'Résultat', dashed: true },
-          ].map(({ color, label, dashed }) => (
-            <div key={label} className="flex items-center gap-2">
-              <div style={{ width: 10, height: 10, borderRadius: 2, background: dashed ? 'transparent' : color, border: dashed ? `2px dashed ${color}` : 'none' }} />
-              <span className="text-xs text-gray-500">{label}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{ position: 'relative', width: '100%', height: 220 }}>
-          <canvas id={chartId} role="img" aria-label="Graphique produits et charges Société par période" />
-        </div>
-      </div>
-    )
-  }
   
   // ── SUIVI FINANCIER (Agence et CTP) ──────────────────────────────────────
 
@@ -1268,7 +1766,7 @@ export default function Finances() {
       const reelProduits  = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redevMois : 0))
       const reelCharges   = isCTP ? round2((r.gainsAgenteReels||0) + round2((r.comReelNet||0) * (ROYALTIES_RATE / (1 - ROYALTIES_RATE))) + (r.apporteurCoutTotalNet||0)) : 0
       const reelNet       = round2(reelProduits - reelCharges)
-      const ecart = (pv, rv) => { const e = round2(rv - pv); return <span className={`text-xs font-medium ${e >= 0 ? 'text-green-600' : 'text-red-500'}`}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
+      const ecart = (pv, rv) => { const e = round2(rv - pv); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
       const lignesProduits = [
         { label: '(+) Frais consultation', p: p.frais||0, r: r.fraisNet||0 },
         { label: '(+) Commissions',        p: p.com||0,   r: r.comReelNet||0 },
@@ -1282,26 +1780,26 @@ export default function Finances() {
         { label: '(−) Apporteurs remboursés', p: p.apporteur||0,   r: r.apporteurCoutTotalNet||0 },
       ] : []
       return (
-        <div className="mt-3 border-t border-gray-100 pt-3">
-          <table className="w-full text-xs">
-            <thead><tr className="border-b border-gray-100">
-              <th className="text-left px-2 py-1 text-gray-400 uppercase w-1/2">Ligne</th>
-              <th className="text-right px-2 py-1 text-gray-400 uppercase">Prévi</th>
-              <th className="text-right px-2 py-1 text-gray-400 uppercase">Réel</th>
-              <th className="text-right px-2 py-1 text-gray-400 uppercase">Écart</th>
+        <div style={{marginTop:12,borderTop:'1px solid var(--ink-100)',paddingTop:12}}>
+          <table style={{width:'100%',fontSize:11}}>
+            <thead><tr style={{borderBottom:'1px solid var(--ink-100)'}}>
+              <th style={{textAlign:'left',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase',width:'50%'}}>Ligne</th>
+              <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Prévi</th>
+              <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Réel</th>
+              <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Écart</th>
             </tr></thead>
-            <tbody className="divide-y divide-gray-50">
-              <tr className="bg-gray-50"><td colSpan={4} className="px-2 py-1 text-xs font-medium text-gray-400 uppercase">Gains</td></tr>
+            <tbody>
+              <tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Gains</td></tr>
               {lignesProduits.map(({ label, p: pv, r: rv }) => (
-                <tr key={label}><td className="px-2 py-1.5 text-gray-500">{label}</td><td className="px-2 py-1.5 text-right text-gray-500">{fmt(pv)}</td><td className="px-2 py-1.5 text-right text-green-700 font-medium">{fmt(rv)}</td><td className="px-2 py-1.5 text-right">{ecart(pv, rv)}</td></tr>
+                <tr key={label}><td style={{padding:'6px 8px',color:'var(--ink-500)'}}>{label}</td><td style={{padding:'6px 8px',textAlign:'right',color:'var(--ink-500)'}}>{fmt(pv)}</td><td style={{padding:'6px 8px',textAlign:'right',color:'#15803d',fontWeight:500}}>{fmt(rv)}</td><td style={{padding:'6px 8px',textAlign:'right'}}>{ecart(pv, rv)}</td></tr>
               ))}
-              <tr className="bg-gray-50 border-t border-gray-200"><td className="px-2 py-1.5 font-medium text-gray-700">= Total gains</td><td className="px-2 py-1.5 text-right font-medium text-gray-700">{fmt(previProduits)}</td><td className="px-2 py-1.5 text-right font-medium text-green-700">{fmt(reelProduits)}</td><td className="px-2 py-1.5 text-right">{ecart(previProduits, reelProduits)}</td></tr>
-              {isCTP && <><tr className="bg-gray-50"><td colSpan={4} className="px-2 py-1 text-xs font-medium text-gray-400 uppercase">Charges</td></tr>
+              <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{padding:'6px 8px',fontWeight:500,color:'var(--ink-700)'}}>= Total gains</td><td style={{padding:'6px 8px',textAlign:'right',fontWeight:500,color:'var(--ink-700)'}}>{fmt(previProduits)}</td><td style={{padding:'6px 8px',textAlign:'right',fontWeight:500,color:'#15803d'}}>{fmt(reelProduits)}</td><td style={{padding:'6px 8px',textAlign:'right'}}>{ecart(previProduits, reelProduits)}</td></tr>
+              {isCTP && <><tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Charges</td></tr>
               {lignesCharges.map(({ label, p: pv, r: rv }) => (
-                <tr key={label}><td className="px-2 py-1.5 text-gray-500">{label}</td><td className="px-2 py-1.5 text-right text-gray-500">{fmt(pv)}</td><td className="px-2 py-1.5 text-right text-red-500 font-medium">{fmt(rv)}</td><td className="px-2 py-1.5 text-right">{ecart(pv, rv)}</td></tr>
+                <tr key={label}><td style={{padding:'6px 8px',color:'var(--ink-500)'}}>{label}</td><td style={{padding:'6px 8px',textAlign:'right',color:'var(--ink-500)'}}>{fmt(pv)}</td><td style={{padding:'6px 8px',textAlign:'right',color:'#ef4444',fontWeight:500}}>{fmt(rv)}</td><td style={{padding:'6px 8px',textAlign:'right'}}>{ecart(pv, rv)}</td></tr>
               ))}
-              <tr className="bg-gray-50 border-t border-gray-200"><td className="px-2 py-1.5 font-medium text-gray-700">= Total charges</td><td className="px-2 py-1.5 text-right font-medium text-gray-700">{fmt(previCharges)}</td><td className="px-2 py-1.5 text-right font-medium text-red-500">{fmt(reelCharges)}</td><td className="px-2 py-1.5 text-right">{ecart(previCharges, reelCharges)}</td></tr></>}
-              <tr className="bg-blue-50 border-t-2 border-blue-100"><td className="px-2 py-2 font-bold text-blue-800">= {isCTP ? 'Résultat net Société' : 'Total encaissé agence'}</td><td className="px-2 py-2 text-right font-bold text-gray-600">{fmt(previNet)}</td><td className={`px-2 py-2 text-right font-bold ${reelNet >= 0 ? 'text-blue-800' : 'text-red-600'}`}>{fmt(reelNet)}</td><td className="px-2 py-2 text-right">{ecart(previNet, reelNet)}</td></tr>
+              <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{padding:'6px 8px',fontWeight:500,color:'var(--ink-700)'}}>= Total charges</td><td style={{padding:'6px 8px',textAlign:'right',fontWeight:500,color:'var(--ink-700)'}}>{fmt(previCharges)}</td><td style={{padding:'6px 8px',textAlign:'right',fontWeight:500,color:'#ef4444'}}>{fmt(reelCharges)}</td><td style={{padding:'6px 8px',textAlign:'right'}}>{ecart(previCharges, reelCharges)}</td></tr></>}
+              <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>= {isCTP ? 'Résultat net Société' : 'Total encaissé agence'}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:'var(--ink-600)'}}>{fmt(previNet)}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(reelNet)}</td><td style={{padding:'8px',textAlign:'right'}}>{ecart(previNet, reelNet)}</td></tr>
             </tbody>
           </table>
         </div>
@@ -1349,13 +1847,13 @@ export default function Finances() {
       const reelProduits  = round2(totR.frais + totR.com + totR.comApport + totR.hon + (isCTP ? totR.redev : 0))
       const reelCharges   = isCTP ? round2(totR.partAgentes + totR.royalties + totR.apporteur) : 0
       const reelNet       = round2(reelProduits - reelCharges)
-      const ecart = (p, r) => { const e = round2(r - p); return <span className={`text-xs font-medium ${e >= 0 ? 'text-green-600' : 'text-red-500'}`}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
+      const ecart = (p, r) => { const e = round2(r - p); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
       const chartLabelsAnnee = clesMois.map(cle => { const [, m] = cle.split('-'); return MOIS[parseInt(m)].slice(0, 3) })
       const chartProduitsAnnee = clesMois.map(cle => { const [, m] = cle.split('-'); const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}; const redev = redevancesScoped.filter(rv => rv.statut === 'regle' && rv.annee === anneeSelectionnee && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ht||0), 0); return round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0)) })
       const chartChargesAnnee = clesMois.map(cle => { const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}; return isCTP ? -round2((r.gainsAgenteReels||0) + (r.apporteurCoutTotalNet||0)) : 0 })
       const chartNetAnnee = clesMois.map((_, i) => round2(chartProduitsAnnee[i] + chartChargesAnnee[i]))
       return (
-        <div className="space-y-5">
+        <div style={{display:'flex',flexDirection:'column',gap:20}}>
           <ObjectifBar label={isCTP ? 'Objectif CA Société (résultat net)' : 'Objectif CA agence (encaissements bruts)'} reel={reelNet} objectifMontant={getObjectif('agence')} cible="agence" canEdit={false} />
           <div className="card" style={{overflow:'hidden'}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
@@ -1367,27 +1865,27 @@ export default function Finances() {
                 </select>
               </div>
             </div>
-            <table className="w-full text-sm">
-              <thead><tr className="border-b border-gray-100">
-                <th className="text-left px-5 py-2 text-xs font-medium text-gray-400 uppercase w-1/2">Ligne</th>
-                <th className="text-right px-4 py-2 text-xs font-medium text-gray-400 uppercase">Prévisionnel</th>
-                <th className="text-right px-4 py-2 text-xs font-medium text-gray-400 uppercase">Réel</th>
-                <th className="text-right px-5 py-2 text-xs font-medium text-gray-400 uppercase">Écart</th>
+            <table style={{width:'100%',fontSize:13}}>
+              <thead><tr style={{borderBottom:'1px solid var(--ink-100)'}}>
+                <th style={{textAlign:'left',padding:'8px 20px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase',width:'50%'}}>Ligne</th>
+                <th style={{textAlign:'right',padding:'8px 16px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Prévisionnel</th>
+                <th style={{textAlign:'right',padding:'8px 16px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Réel</th>
+                <th style={{textAlign:'right',padding:'8px 20px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Écart</th>
               </tr></thead>
-              <tbody className="divide-y divide-gray-50">
-                <tr className="bg-gray-50"><td colSpan={4} className="px-5 py-1.5 text-xs font-medium text-gray-400 uppercase">Gains</td></tr>
+              <tbody>
+                <tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'6px 20px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Gains</td></tr>
                 {[
                   { label: '(+) Frais consultation', p: totP.frais, r: totR.frais },
                   { label: '(+) Commissions', p: totP.com, r: totR.com },
                   { label: '(+) Honoraires', p: totP.hon, r: totR.hon },
                   { label: '(+) Com. apporteurs', p: totP.comApport, r: totR.comApport },
                   ...(isCTP ? [{ label: '(+) Redevances agentes', p: totP.redev, r: totR.redev }] : []),
-                ].map(({ label, p, r }) => (<tr key={label} className="hover:bg-gray-50"><td className="px-5 py-2.5 text-gray-500 text-xs">{label}</td><td className="px-4 py-2.5 text-right text-gray-500 text-xs">{fmt(p)}</td><td className="px-4 py-2.5 text-right text-green-700 text-xs font-medium">{fmt(r)}</td><td className="px-5 py-2.5 text-right">{ecart(p, r)}</td></tr>))}
-                <tr className="bg-gray-50 border-t border-gray-200"><td className="px-5 py-2.5 font-medium text-gray-700 text-xs">= Total gains</td><td className="px-4 py-2.5 text-right font-medium text-gray-700 text-xs">{fmt(previProduits)}</td><td className="px-4 py-2.5 text-right font-medium text-green-700 text-xs">{fmt(reelProduits)}</td><td className="px-5 py-2.5 text-right">{ecart(previProduits, reelProduits)}</td></tr>
-                {isCTP && <><tr className="bg-gray-50"><td colSpan={4} className="px-5 py-1.5 text-xs font-medium text-gray-400 uppercase">Charges</td></tr>
-                {[{ label: '(−) Royalties illiCO', p: totP.royalties, r: totR.royalties }, { label: '(−) Part agentes', p: totP.partAgentes, r: totR.partAgentes }, { label: '(−) Apporteurs remboursés', p: totP.apporteur, r: totR.apporteur }].map(({ label, p, r }) => (<tr key={label} className="hover:bg-gray-50"><td className="px-5 py-2.5 text-gray-500 text-xs">{label}</td><td className="px-4 py-2.5 text-right text-gray-500 text-xs">{fmt(p)}</td><td className="px-4 py-2.5 text-right text-red-500 text-xs font-medium">{fmt(r)}</td><td className="px-5 py-2.5 text-right">{ecart(p, r)}</td></tr>))}
-                <tr className="bg-gray-50 border-t border-gray-200"><td className="px-5 py-2.5 font-medium text-gray-700 text-xs">= Total charges</td><td className="px-4 py-2.5 text-right font-medium text-gray-700 text-xs">{fmt(previCharges)}</td><td className="px-4 py-2.5 text-right font-medium text-red-500 text-xs">{fmt(reelCharges)}</td><td className="px-5 py-2.5 text-right">{ecart(previCharges, reelCharges)}</td></tr></>}
-                <tr className="bg-blue-50 border-t-2 border-blue-100"><td className="px-5 py-3 font-bold text-blue-800 text-sm">= {isCTP ? `Résultat net Société ${anneeSelectionnee}` : `Encaissements bruts agence ${anneeSelectionnee}`}</td><td className="px-4 py-3 text-right font-bold text-gray-600 text-sm">{fmt(previNet)}</td><td className={`px-4 py-3 text-right font-bold text-sm ${reelNet >= 0 ? 'text-blue-800' : 'text-red-600'}`}>{fmt(reelNet)}</td><td className="px-5 py-3 text-right">{ecart(previNet, reelNet)}</td></tr>
+                ].map(({ label, p, r }) => (<tr key={label} className="row-hover"><td style={{padding:'10px 20px',color:'var(--ink-500)',fontSize:11}}>{label}</td><td style={{padding:'10px 16px',textAlign:'right',color:'var(--ink-500)',fontSize:11}}>{fmt(p)}</td><td style={{padding:'10px 16px',textAlign:'right',color:'#15803d',fontSize:11,fontWeight:500}}>{fmt(r)}</td><td style={{padding:'10px 20px',textAlign:'right'}}>{ecart(p, r)}</td></tr>))}
+                <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{padding:'10px 20px',fontWeight:500,color:'var(--ink-700)',fontSize:11}}>= Total gains</td><td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:'var(--ink-700)',fontSize:11}}>{fmt(previProduits)}</td><td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:'#15803d',fontSize:11}}>{fmt(reelProduits)}</td><td style={{padding:'10px 20px',textAlign:'right'}}>{ecart(previProduits, reelProduits)}</td></tr>
+                {isCTP && <><tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'6px 20px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Charges</td></tr>
+                {[{ label: '(−) Royalties illiCO', p: totP.royalties, r: totR.royalties }, { label: '(−) Part agentes', p: totP.partAgentes, r: totR.partAgentes }, { label: '(−) Apporteurs remboursés', p: totP.apporteur, r: totR.apporteur }].map(({ label, p, r }) => (<tr key={label} className="row-hover"><td style={{padding:'10px 20px',color:'var(--ink-500)',fontSize:11}}>{label}</td><td style={{padding:'10px 16px',textAlign:'right',color:'var(--ink-500)',fontSize:11}}>{fmt(p)}</td><td style={{padding:'10px 16px',textAlign:'right',color:'#ef4444',fontSize:11,fontWeight:500}}>{fmt(r)}</td><td style={{padding:'10px 20px',textAlign:'right'}}>{ecart(p, r)}</td></tr>))}
+                <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{padding:'10px 20px',fontWeight:500,color:'var(--ink-700)',fontSize:11}}>= Total charges</td><td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:'var(--ink-700)',fontSize:11}}>{fmt(previCharges)}</td><td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:'#ef4444',fontSize:11}}>{fmt(reelCharges)}</td><td style={{padding:'10px 20px',textAlign:'right'}}>{ecart(previCharges, reelCharges)}</td></tr></>}
+                <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'12px 20px',fontWeight:700,color:'var(--brand-800)',fontSize:13}}>= {isCTP ? `Résultat net Société ${anneeSelectionnee}` : `Encaissements bruts agence ${anneeSelectionnee}`}</td><td style={{padding:'12px 16px',textAlign:'right',fontWeight:700,color:'var(--ink-600)',fontSize:13}}>{fmt(previNet)}</td><td style={{padding:'12px 16px',textAlign:'right',fontWeight:700,fontSize:13,color:reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(reelNet)}</td><td style={{padding:'12px 20px',textAlign:'right'}}>{ecart(previNet, reelNet)}</td></tr>
               </tbody>
             </table>
           </div>
@@ -1408,13 +1906,13 @@ export default function Finances() {
           onChange={setSfSousOnglet}
         />
         {sfSousOnglet === 'mois' && (
-          <div className="space-y-5">
+          <div style={{display:'flex',flexDirection:'column',gap:20}}>
             <ObjectifBar label={isCTP ? `Objectif mensuel Société (${fmt(objectifMensuel)}/mois)` : `Objectif mensuel agence (${fmt(objectifMensuel)}/mois)`}
               reel={(() => { const moisCourant = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`; const r = rowsReel.find(([k]) => k === moisCourant)?.[1] || {}; const redev = redevancesScoped.filter(rv => rv.statut === 'regle' && rv.annee === new Date().getFullYear() && rv.mois === new Date().getMonth() + 1).reduce((s, rv) => s + (rv.montant_ht||0), 0); return getReelNet(r, redev) })()}
               objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
             <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId={`chart_${mode}_mois`} />
             <div className="card" style={{overflow:'hidden'}}>
-              <table className="w-full text-xs">
+              <table style={{width:'100%',fontSize:11}}>
                 <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
                   <tr>
                     <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Mois</th>
@@ -1423,7 +1921,7 @@ export default function Finances() {
                     <th style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>vs Objectif</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody>
                   {cles.map((cle, i) => {
                     const [a, m] = cle.split('-')
                     const label = `${MOIS[parseInt(m)].slice(0, 3)}. ${a}`
@@ -1432,24 +1930,27 @@ export default function Finances() {
                     const reelNet = getReelNet(r, redev)
                     const ecartObj = round2(reelNet - objectifMensuel)
                     const isOpen = moisOuvert === `${mode}_${cle}`
-                    const bg = i % 2 === 0 ? '' : 'bg-gray-50'
+                    const bg = i % 2 === 0 ? 'transparent' : 'var(--surface-2)'
                     return (
                       <React.Fragment key={cle}>
-                        <tr className={`cursor-pointer hover:bg-blue-50 ${bg}`} onClick={() => setMoisOuvert(isOpen ? null : `${mode}_${cle}`)}>
-                          <td className="px-4 py-2.5 font-medium text-gray-700 flex items-center gap-2"><span>{label}</span><span className="text-gray-300 text-xs">{isOpen ? '▲' : '▼'}</span></td>
-                          <td className={`px-3 py-2.5 text-right font-medium ${reelNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(reelNet)}</td>
-                          <td className="px-3 py-2.5 text-right text-gray-400">{fmt(objectifMensuel)}</td>
-                          <td className={`px-4 py-2.5 text-right font-medium ${ecartObj >= 0 ? 'text-green-600' : 'text-red-500'}`}>{ecartObj >= 0 ? '+' : ''}{fmt(ecartObj)}</td>
+                        <tr style={{cursor:'pointer',background:bg}}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'var(--brand-50)' }}
+                          onMouseLeave={e => { e.currentTarget.style.background = bg }}
+                          onClick={() => setMoisOuvert(isOpen ? null : `${mode}_${cle}`)}>
+                          <td style={{padding:'10px 16px',fontWeight:500,color:'var(--ink-700)',display:'flex',alignItems:'center',gap:8}}><span>{label}</span><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></td>
+                          <td style={{padding:'10px 12px',textAlign:'right',fontWeight:500,color:reelNet >= 0 ? '#15803d' : '#dc2626'}}>{fmt(reelNet)}</td>
+                          <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{fmt(objectifMensuel)}</td>
+                          <td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:ecartObj >= 0 ? '#16a34a' : '#ef4444'}}>{ecartObj >= 0 ? '+' : ''}{fmt(ecartObj)}</td>
                         </tr>
-                        {isOpen && (<tr className={bg}><td colSpan={4} className="px-4 pb-3">{crPourCle(cle)}</td></tr>)}
+                        {isOpen && (<tr style={{background:bg}}><td colSpan={4} style={{padding:'0 16px 12px'}}>{crPourCle(cle)}</td></tr>)}
                       </React.Fragment>
                     )
                   })}
-                  <tr className="bg-gray-50 border-t-2 border-gray-300 font-bold text-xs">
-                    <td className="px-4 py-2.5 text-gray-700">Total</td>
-                    <td className={`px-3 py-2.5 text-right ${cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevancesScoped.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ht||0),0);return s+getReelNet(r,redev)},0)>=0?'text-green-700':'text-red-600'}`}>{fmt(cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevancesScoped.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ht||0),0);return s+getReelNet(r,redev)},0))}</td>
-                    <td className="px-3 py-2.5 text-right text-gray-400">{fmt(objectifMensuel * cles.length)}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-500">—</td>
+                  <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-300)',fontWeight:700,fontSize:11}}>
+                    <td style={{padding:'10px 16px',color:'var(--ink-700)'}}>Total</td>
+                    <td style={{padding:'10px 12px',textAlign:'right',color:cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevancesScoped.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ht||0),0);return s+getReelNet(r,redev)},0)>=0?'#15803d':'#dc2626'}}>{fmt(cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevancesScoped.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ht||0),0);return s+getReelNet(r,redev)},0))}</td>
+                    <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{fmt(objectifMensuel * cles.length)}</td>
+                    <td style={{padding:'10px 16px',textAlign:'right',color:'var(--ink-500)'}}>—</td>
                   </tr>
                 </tbody>
               </table>
@@ -1461,507 +1962,9 @@ export default function Finances() {
     )
   }
 
-  // ── SYNTHESE VIEW ──────────────────────────────────────────────────────────
-
-  function SyntheseView() {
-    const chartId = 'synthese_monthly_chart'
-    const donutId = 'synthese_donut_chart'
-
-    const reelData = useMemo(() => Array.from({length:12}, (_, i) => {
-      const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
-      const agg = rowsReelScoped.find(([k]) => k === key)?.[1] || {}
-      return round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [rowsReelScoped])
-
-    const previData = useMemo(() => {
-      const map = {}
-      scopedDossiers.forEach(d => {
-        const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
-        if (!key || !key.startsWith(String(anneeEnCours))) return
-        if (!map[key]) map[key] = 0
-        const c = calculer(d)
-        map[key] = round2(map[key] + c.gainsAdminPreviTotal + c.gainsAgentePreviTotal)
-      })
-      return Array.from({length:12}, (_, i) => {
-        const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
-        return map[key] || 0
-      })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [scopedDossiers])
 
 
-    useEffect(() => {
-      if (typeof window === 'undefined') return
-      const el = document.getElementById(chartId)
-      if (!el) return
-      if (el._chartInstance) el._chartInstance.destroy()
-      el._chartInstance = new Chart(el, {
-        data: {
-          labels: MOIS_LABELS,
-          datasets: [
-            { type: 'bar', label: 'Réel', data: reelData, backgroundColor: 'rgba(0, 123, 255, 0.7)', borderColor: 'rgba(0, 123, 255, 1)', borderWidth: 1, barPercentage: 0.5,categoryPercentage: 0.5, yAxisID: 'y', },
-            { type: 'bar', label: 'Prévi', data: previData, backgroundColor: 'rgba(0, 123, 255, 0.1)',borderColor: 'rgba(0, 123, 255, 0.5)', borderDash: [5, 5], pointRadius: 0, yAxisID: 'y',}
-          ]
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: { label: ctx => ctx.dataset.label + ' : ' + Math.abs(ctx.parsed.y).toLocaleString('fr-FR') + ' €' } }
-          },
-          scales: {
-            x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#888', maxRotation: 30 } },
-            y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 }, color: '#888', callback: v => Math.abs(v).toLocaleString('fr-FR') + ' €' } }
-          }
-        }
-      })
-      return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
-    }, [reelData, previData])
 
-    useEffect(() => {
-      if (typeof window === 'undefined') return
-      const el = document.getElementById(donutId)
-      if (!el) return
-      if (el._chartInstance) el._chartInstance.destroy()
-      el._chartInstance = new Chart(el, {
-        type: 'doughnut',
-        data: {
-          labels: ['Commissions HT', 'Frais HT', 'Royalties'],
-          datasets: [{ data: [totComHT, totFraisHT, totRoyalties], backgroundColor: ['#00578e','#0094d4','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
-        },
-        options: {
-          cutout: '70%', responsive: true, maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: { label: ctx => ctx.label + ' : ' + (ctx.parsed).toLocaleString('fr-FR') + ' €' } }
-          }
-        }
-      })
-      return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
-    }, [totComHT, totFraisHT, totRoyalties])
-
-    const totalDonut = totComHT + totFraisHT + totRoyalties
-    const reelTotal  = reelData.reduce((s,v) => s+v, 0)
-
-    return (
-      <div style={{display:'flex',flexDirection:'column',gap:20}}>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <span className="eyebrow">Filtré sur</span>
-          <span style={{fontSize:12,fontWeight:600,color:'var(--brand-800)',background:'var(--brand-50)',padding:'3px 10px',borderRadius:99}}>{libellePerimetre()}</span>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-          {/* LEFT : bar+line chart + totaux */}
-          <div className="card" style={{padding:20}}>
-            <div className="eyebrow" style={{marginBottom:12}}>Évolution mensuelle {anneeEnCours}<br />CA RÉEL NET VS PRÉVISIONNEL</div>
-            <div style={{display:'flex',gap:16,marginBottom:12,flexWrap:'wrap'}}>
-              <div style={{display:'flex',alignItems:'center',gap:6}}>
-                <div style={{width:10,height:10,borderRadius:2,background:'#3B7DD8'}}/>
-                <span style={{fontSize:11,color:'var(--ink-500)'}}>Réel</span>
-              </div>
-              <div style={{display:'flex',alignItems:'center',gap:6}}>
-                <div style={{width:10,height:10,borderRadius:2,border:'2px dashed #94a3b8',background:'transparent'}}/>
-                <span style={{fontSize:11,color:'var(--ink-500)'}}>Prévi</span>
-              </div>
-            </div>
-            <div style={{position:'relative',height:220}}>
-              <canvas id={chartId} role="img" aria-label="Gains mensuels" />
-            </div>
-            <div style={{marginTop:16,display:'flex',flexDirection:'column',gap:6}}>
-              <Row label="Total réel" value={fmt(reelTotal)} bold accent />
-              <Row label="Total prévi" value={fmt(totPreviNet)} dim />
-              {pctObjectif > 0 && <Row label={`Objectif ${anneeEnCours} (${pctObjectif}%)`} value={fmt(objectifAnnuel)} dim />}
-            </div>
-          </div>
-          {/* RIGHT : donut + répartition */}
-          <div style={{display:'flex',flexDirection:'column',gap:16}}>
-            <div className="card" style={{padding:20}}>
-              <div className="eyebrow" style={{marginBottom:12}}>Répartition prévisionnel</div>
-              <div style={{position:'relative',height:160}}>
-                <canvas id={donutId} role="img" aria-label="Répartition" />
-              </div>
-              <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
-                <LegendRow color="#00578e" label="Commissions HT" value={fmt(totComHT)} pct={totalDonut>0?Math.round(totComHT/totalDonut*100):0} />
-                <LegendRow color="#0094d4" label="Frais HT"       value={fmt(totFraisHT)} pct={totalDonut>0?Math.round(totFraisHT/totalDonut*100):0} />
-                <LegendRow color="#94a3b8" label="Royalties"      value={fmt(totRoyalties)} pct={totalDonut>0?Math.round(totRoyalties/totalDonut*100):0} />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // ── FACTURATION AGENTES (INNER COMPONENT) ────────────────────────────────
-
-  function FacturationAgentes() {
-    const facturesAg  = facturesAgente.filter(f => f.agente_id === agenteSelectionnee)
-    const redevAg     = redevancesAgente
-    const [moisDeplie, setMoisDeplie] = useState(null)
-
-    // Montants F1/F2 calculés EN LIVE (source unique : agrégerParPaiement → finance.js).
-    // Le snapshot factures_agente ne sert plus qu'à lire le statut + le PDF (read-only ici).
-    const rowsReel   = agrégerParPaiement(dossiersAgente, false)
-    const aggParMois = new Map(rowsReel)
-    // Seuil de redevance dérivé de la CHAÎNE "YYYY-MM-DD" (zéro Date → zéro fuseau).
-    const debutIndex = agenteActuelle?.redevance_debut
-      ? (() => { const [y, m] = agenteActuelle.redevance_debut.split('-').map(Number); return y * 12 + (m - 1) })()
-      : null
-    const redevParam = agenteActuelle?.redevance_mensuelle_ht   // paramètre, jamais de littéral
-
-    // F1 (agente → CTP) = frais + commissions + honoraires + part partenaire (= gainsAgenteReels)
-    // F2 (CTP → agente) = redevance HT datée (param) + apporteur remboursé
-    const calcMois = (annee, mois) => {
-      const agg = aggParMois.get(`${annee}-${String(mois).padStart(2, '0')}`) || {}
-      const fraisN = round2(agg.fraisAgenteNet || 0)
-      const comN   = round2(agg.comAgenteNet || 0)
-      const honN   = round2(agg.honAgenteNet || 0)
-      const partN  = round2(agg.comApporteursAgenteNet || 0)
-      const montantF1 = round2(fraisN + comN + honN + partN)
-      const moisIndex = annee * 12 + (mois - 1)
-      const redev = (debutIndex != null && redevParam != null && moisIndex >= debutIndex) ? round2(redevParam) : 0
-      const apporteur = round2(agg.apporteurPartAgenteNet || 0)
-      const montantF2 = round2(redev + apporteur)
-      return { fraisN, comN, honN, partN, montantF1, redev, apporteur, montantF2 }
-    }
-
-    // F1/F2 effectif : figé (snapshot factures_agente.montant) si payé, sinon live.
-    const f1Eff = (f, liveF1) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF1
-    const f2Eff = (f, liveF2) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF2
-
-    // Facturation décalée : la facture du mois M porte sur l'activité du mois M−1.
-    // P2 : on persiste / apparie / toggle sur le mois d'ACTIVITÉ ; seul le libellé est décalé.
-    const shiftMoisKey = (key, delta) => {
-      const [y, m] = key.split('-').map(Number)
-      const dt = new Date(y, m - 1 + delta, 1)            // Date gère le rollover d'année
-      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
-    }
-
-    // Tous les mois de redevance due : de debutIndex au mois courant (activité) INCLUS, même creux.
-    const now = new Date()
-    const moisCourantIndex = now.getFullYear() * 12 + now.getMonth()    // getMonth() 0-based = (mois-1), cohérent avec debutIndex
-    const redevanceDueKeys = []
-    if (debutIndex != null) {
-      for (let i = debutIndex; i <= moisCourantIndex; i++) {
-        redevanceDueKeys.push(`${Math.floor(i / 12)}-${String(i % 12 + 1).padStart(2, '0')}`)   // clé activité "YYYY-MM"
-      }
-    }
-
-    // Lignes = mois de FACTURE (= activité + 1). Sources activité : rowsReel + factures persistées (P2) + redevances dues.
-    const months = [...new Set([
-      ...rowsReel.map(([k]) => shiftMoisKey(k, +1)),
-      ...facturesAg.map(f => shiftMoisKey(`${f.annee}-${String(f.mois).padStart(2, '0')}`, +1)),
-      ...redevanceDueKeys.map(k => shiftMoisKey(k, +1)),
-    ])].sort((a, b) => b.localeCompare(a))
-
-    let totalF1 = 0, totalF1Paye = 0, totalF2 = 0, totalF2Paye = 0
-    months.forEach(key => {
-      const [aStr, mStr] = shiftMoisKey(key, -1).split('-')   // mois d'activité (M−1)
-      const annee = parseInt(aStr), mois = parseInt(mStr)
-      const { montantF1, montantF2 } = calcMois(annee, mois)
-      const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
-      const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
-      const f1eff = f1Eff(f1, montantF1)
-      const f2eff = f2Eff(f2, montantF2)
-      totalF1 = round2(totalF1 + f1eff); totalF2 = round2(totalF2 + f2eff)
-      if (f1?.statut === 'paye') totalF1Paye = round2(totalF1Paye + f1eff)
-      if (f2?.statut === 'paye') totalF2Paye = round2(totalF2Paye + f2eff)
-    })
-    const totalRedev = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => round2(s + (r.montant_ht || 0)), 0)
-    const net        = round2(totalF1 - totalF2)
-
-    const uploadPdf = async (f, fichier) => {
-      setErreur(''); setSucces('')
-      const ext = fichier.name.split('.').pop().toLowerCase()
-      const chemin = `factures_agente/${agenteSelectionnee}/${f.annee}-${String(f.mois).padStart(2,'0')}-${f.type_facture}.${ext}`
-      const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
-      if (error) { setErreur('Erreur upload : ' + error.message); return }
-      try {
-        await upsertFactureMoisType(f.mois, f.annee, f.montant||0, f.type_facture, { facture_path: chemin })
-        setSucces('Facture uploadée ✓')
-      } catch (e) { setErreur('Erreur enregistrement : ' + e.message) }
-    }
-
-    // Bascule du statut F1 (agente → CTP). Au clic « payé » : fige le montant LIVE
-    // (calcMois, jamais f.montant). Au déclic : montant remis à NULL → le live reprend.
-    // INSERT si le mois n'a pas de ligne (montant positionnel), UPDATE sinon (montant dans updates).
-    const toggleF1Statut = async (annee, mois, f1) => {
-      const live = calcMois(annee, mois).montantF1
-      try {
-        if (f1?.statut === 'paye') {
-          await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'a_facturer', montant: null })
-        } else {
-          await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'paye', montant: live })
-        }
-      } catch (e) { setErreur('Erreur F1 : ' + e.message) }
-    }
-
-    // Bascule du statut F2 (CTP → agente). ADMIN ONLY (appelé uniquement depuis la
-    // branche isAdmin de la cellule). Fige le montant LIVE (calcMois().montantF2,
-    // jamais f.montant) au clic « reçu », NULL au déclic. Le type 'ctp_vers_agente'
-    // déclenche la synchro redevances dans upsertFactureMoisType (regle / en_attente).
-    const toggleF2Statut = async (annee, mois, f2) => {
-      const live = calcMois(annee, mois).montantF2
-      try {
-        if (f2?.statut === 'paye') {
-          await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'a_facturer', montant: null })
-        } else {
-          await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'paye', montant: live })
-        }
-      } catch (e) { setErreur('Erreur F2 : ' + e.message) }
-    }
-
-    const FactureDetailCard = ({ title, subtitle, type, accent }) => {
-      const fs = facturesAg.filter(f => f.type_facture === type)
-      return (
-        <div className="card" style={{padding:0,overflow:'hidden'}}>
-          <div style={{padding:'14px 18px',borderBottom:'1px solid var(--ink-200)',borderLeft:`4px solid ${accent}`}}>
-            <div style={{fontSize:14,fontWeight:700,color:'var(--ink-900)'}}>{title}</div>
-            <div style={{fontSize:11.5,color:'var(--ink-500)',marginTop:4,lineHeight:1.4}}>{subtitle}</div>
-          </div>
-          <div>
-            {fs.map(f => {
-              const m = calcMois(f.annee, f.mois)
-              const montant = type === 'agente_vers_ctp' ? f1Eff(f, m.montantF1) : f2Eff(f, m.montantF2)
-              const [fFaStr, fFmStr] = shiftMoisKey(`${f.annee}-${String(f.mois).padStart(2, '0')}`, +1).split('-')
-              return (
-              <div key={f.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:12,alignItems:'center',padding:'12px 18px',borderTop:'1px solid var(--ink-100)'}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:600,color:'var(--ink-900)'}}>{MOIS[parseInt(fFmStr)]} {fFaStr}</div>
-                  <div style={{fontSize:10,color:'var(--ink-400)'}}>activité de {MOIS[f.mois]} {f.annee}</div>
-                  <div style={{fontSize:11,color:'var(--ink-500)',marginTop:2}}>
-                    {f.facture_path
-                      ? <button onClick={async () => { const { data } = await supabase.storage.from('documents').createSignedUrl(f.facture_path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }}
-                          style={{fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>
-                      : <span style={{color:'var(--ink-400)'}}>Pas de PDF déposé</span>}
-                  </div>
-                </div>
-                <div style={{fontWeight:700,color:'var(--ink-900)',fontVariantNumeric:'tabular-nums'}}>{fmt(montant)}</div>
-                <div style={{display:'flex',gap:6,alignItems:'center'}}>
-                  <StatutFacture f={f}/>
-                  <label style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid var(--ink-200)',cursor:'pointer',color:'var(--ink-600)',background:'#fff'}}>
-                    {f.facture_path ? '📤 Remplacer le PDF' : '📤 Déposer un PDF'}
-                    <input type="file" accept=".pdf" className="hidden" onChange={e => e.target.files[0] && uploadPdf(f, e.target.files[0])}/>
-                  </label>
-                </div>
-              </div>
-              )
-            })}
-            {fs.length === 0 && <div style={{padding:24,textAlign:'center',color:'var(--ink-400)',fontSize:13}}>Aucune facture</div>}
-          </div>
-        </div>
-      )
-    }
-
-    return (
-      <div style={{display:'flex',flexDirection:'column',gap:18}}>
-        {succes && <div style={{background:'rgba(22,163,74,0.07)',border:'1px solid rgba(22,163,74,0.25)',borderRadius:10,padding:'10px 16px',fontSize:13,color:'#15803d'}}>{succes}</div>}
-        {erreur && <div style={{background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:10,padding:'10px 16px',fontSize:13,color:'#b91c1c'}}>{erreur}</div>}
-        {/* Sélecteur agente — admin uniquement (agente voit sa propre facturation) */}
-        {isAdmin && (
-          <div className="card" style={{padding:'14px 18px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
-            <div className="eyebrow">Agente :</div>
-            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-              {agentes.filter(a => a.role === 'agente').map(a => (
-                <button key={a.id} onClick={() => setAgenteSelectionnee(a.id)} style={{
-                  display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:99,
-                  border:'1px solid',borderColor: agenteSelectionnee === a.id ? 'var(--brand-500)' : 'var(--ink-200)',
-                  background: agenteSelectionnee === a.id ? 'var(--brand-50)' : '#fff',
-                  color: agenteSelectionnee === a.id ? 'var(--brand-800)' : 'var(--ink-700)',
-                  fontSize:12,fontWeight:600,cursor:'pointer',
-                }}>
-                  <Avatar name={`${a.prenom} ${a.nom}`} size={20}/>
-                  {a.prenom} {a.nom}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* KPI strip */}
-        <div className="kpi-grid">
-          <FinKpiCard label="F1 — Gains à facturer"       value={fmt(totalF1)}    sub={`Reçu ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
-          <FinKpiCard label="F2 — Redevances + apporteur" value={fmt(totalF2)}    sub={`Reçu ${fmt(totalF2Paye)}`}                                              tone="warn"/>
-          <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
-        </div>
-
-        {/* Tableau mensuel F1 / F2 */}
-        <div className="card" style={{padding:0,overflow:'hidden'}}>
-          <div style={{padding:'14px 22px',borderBottom:'1px solid var(--ink-200)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <div>
-              <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)'}}>
-                Facturation mensuelle · {agenteActuelle ? `${agenteActuelle.prenom} ${agenteActuelle.nom}` : '—'}
-              </div>
-              <div className="eyebrow" style={{marginTop:4}}>F1 = facture émise par l&apos;agente · F2 = facture émise par la franchisée</div>
-            </div>
-          </div>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
-            <thead style={{background:'var(--surface-2)'}}>
-              <tr>
-                {thL('Mois')}
-                {thR('F1 (Agente → Société)')}
-                <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F1</th>
-                {thR('F2 (Société → Agente)')}
-                <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F2</th>
-                {thR('Net')}
-              </tr>
-            </thead>
-            <tbody>
-              {months.map(key => {
-                const [faStr, fmStr] = key.split('-')
-                const fMois = parseInt(fmStr); const fAnnee = parseInt(faStr)        // mois de FACTURE (libellé)
-                const [aStr, mStr] = shiftMoisKey(key, -1).split('-')
-                const mois = parseInt(mStr); const annee = parseInt(aStr)            // mois d'ACTIVITÉ (M−1) : données, appariement, toggle
-                const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
-                const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
-                const d   = calcMois(annee, mois)
-                const f1m = f1Eff(f1, d.montantF1)
-                const f2m = f2Eff(f2, d.montantF2)
-                const n   = round2(f1m - f2m)
-                const isOpen = moisDeplie === key
-                const voirPdf = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }
-                return (
-                  <React.Fragment key={key}>
-                  <tr style={{borderTop:'1px solid var(--ink-100)',cursor:'pointer'}} className="row-hover" onClick={() => setMoisDeplie(isOpen ? null : key)}>
-                    <td style={{padding:'14px 16px',fontWeight:700,color:'var(--ink-900)'}}>
-                      <span style={{display:'inline-block',width:14,color:'var(--ink-400)'}}>{isOpen ? '▾' : '▸'}</span>{MOIS[fMois]} {fAnnee}
-                      <div style={{fontSize:11,fontWeight:500,color:'var(--ink-400)',marginLeft:14}}>activité de {MOIS[mois]} {annee}</div>
-                    </td>
-                    <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f1m>0?'#15803d':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
-                      {f1m > 0 ? fmt(f1m) : '—'}
-                    </td>
-                    <td style={{padding:'14px 16px',textAlign:'center'}}>
-                      {(f1m === 0 && f1?.statut !== 'paye') ? (
-                        <span style={{color:'var(--ink-400)'}}>—</span>
-                      ) : (
-                        <span
-                          onClick={(e) => { e.stopPropagation(); toggleF1Statut(annee, mois, f1) }}
-                          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
-                          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
-                          title={f1?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
-                          style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
-                          <StatutFacture f={f1}/>
-                        </span>
-                      )}
-                    </td>
-                    <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f2m>0?'#b91c1c':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
-                      {f2m > 0 ? fmt(f2m) : '—'}
-                    </td>
-                    <td style={{padding:'14px 16px',textAlign:'center'}}>
-                      {(f2m === 0 && f2?.statut !== 'paye') ? (
-                        <span style={{color:'var(--ink-400)'}}>—</span>
-                      ) : isAdmin ? (
-                        <span
-                          onClick={(e) => { e.stopPropagation(); toggleF2Statut(annee, mois, f2) }}
-                          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
-                          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
-                          title={f2?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
-                          style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
-                          <StatutFacture f={f2}/>
-                        </span>
-                      ) : (
-                        <StatutFacture f={f2}/>
-                      )}
-                    </td>
-                    <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:n>=0?'var(--brand-800)':'#b91c1c',fontVariantNumeric:'tabular-nums'}}>
-                      {n >= 0 ? '+' : ''}{fmt(n)}
-                    </td>
-                  </tr>
-                  {isOpen && (
-                    <tr style={{background:'var(--surface-2)'}}>
-                      <td colSpan={6} style={{padding:'4px 16px 16px'}}>
-                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,maxWidth:720}}>
-                          <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                            <div className="eyebrow" style={{color:'#15803d'}}>F1 — Agente facture la Société</div>
-                            {d.fraisN > 0 && <Row label="Frais de consultation" value={fmt(d.fraisN)} />}
-                            {d.comN   > 0 && <Row label="Commissions artisans"   value={fmt(d.comN)} />}
-                            {d.honN   > 0 && <Row label="Honoraires (courtage + AMO)" value={fmt(d.honN)} />}
-                            {d.partN  > 0 && <Row label="Part partenaire"         value={fmt(d.partN)} />}
-                            {f1m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucun gain encaissé ce mois</span>}
-                            <Row label="Total F1" value={fmt(f1m)} bold accent />
-                            {f1?.facture_path && <button onClick={() => voirPdf(f1.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
-                          </div>
-                          <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                            <div className="eyebrow" style={{color:'#b91c1c'}}>F2 — La Société facture l&apos;agente</div>
-                            {d.redev     > 0 && <Row label="Redevance mensuelle (HT)" value={fmt(d.redev)} />}
-                            {d.apporteur > 0 && <Row label="Apporteur remboursé"      value={fmt(d.apporteur)} />}
-                            {f2m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucune charge ce mois</span>}
-                            <Row label="Total F2" value={fmt(f2m)} bold accent />
-                            {f2?.facture_path && <button onClick={() => voirPdf(f2.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  </React.Fragment>
-                )
-              })}
-              {months.length === 0 && (
-                <tr><td colSpan={6} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-400)'}}>Aucune facturation à afficher</td></tr>
-              )}
-            </tbody>
-            {months.length > 0 && (
-              <tfoot>
-                <tr style={{borderTop:'2px solid var(--ink-200)',background:'var(--surface-2)'}}>
-                  <td style={{padding:'14px 16px',fontWeight:800,color:'var(--ink-900)'}}>Total</td>
-                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#15803d',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF1)}</td>
-                  <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF1Paye)} reçu</td>
-                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#b91c1c',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF2)}</td>
-                  <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF2Paye)} reçu</td>
-                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,fontSize:15,fontVariantNumeric:'tabular-nums',color:net>=0?'var(--brand-800)':'#b91c1c'}}>
-                    {net >= 0 ? '+' : ''}{fmt(net)}
-                  </td>
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-
-        {/* Détail factures F1 + F2 côte à côte */}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18}}>
-          <FactureDetailCard
-            title="F1 — Factures émises par l'agente"
-            subtitle="L'agente facture la Société pour ses gains du mois (frais + commissions + honoraires)"
-            type="agente_vers_ctp"
-            accent="#16a34a"
-          />
-          <FactureDetailCard
-            title="F2 — Factures émises par la franchisée"
-            subtitle="La Société facture l'agente pour la redevance + apporteur remboursé"
-            type="ctp_vers_agente"
-            accent="#dc2626"
-          />
-        </div>
-
-        {/* Redevances 12 mois */}
-        <div className="card" style={{padding:22}}>
-          <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)',marginBottom:14}}>Redevances mensuelles · {agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} € HT` : 'montant à paramétrer'}</div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(12,1fr)',gap:6}}>
-            {MOIS_LABELS.map((mLabel, i) => {
-              const r = redevAg.find(rv => rv.mois === i+1 && rv.annee === anneeEnCours)
-              const isPast = new Date(anneeEnCours, i, 1) < new Date()
-              return (
-                <div key={i} style={{
-                  padding:'10px 6px',textAlign:'center',borderRadius:8,
-                  background:  r?.statut === 'regle' ? 'rgba(22,163,74,0.10)' : isPast ? 'rgba(245,158,11,0.13)' : 'var(--ink-50)',
-                  border:'1px solid',borderColor: r?.statut === 'regle' ? 'rgba(22,163,74,0.2)' : isPast ? 'rgba(245,158,11,0.3)' : 'var(--ink-200)',
-                }}>
-                  <div style={{fontSize:10,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>{mLabel.slice(0,3)}</div>
-                  <div style={{marginTop:6,fontSize:11.5,fontWeight:700,color:r?.statut==='regle'?'#15803d':isPast?'#a16207':'var(--ink-300)'}}>
-                    {r?.statut === 'regle' ? '✓' : isPast ? '⌛' : '—'}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          <div style={{marginTop:14,fontSize:12.5,color:'var(--ink-500)'}}>
-            {redevAg.filter(r => r.statut === 'regle').length} mois réglés ·
-            <span style={{fontWeight:700,color:'var(--brand-800)',marginLeft:6,fontVariantNumeric:'tabular-nums'}}>{fmt(totalRedev)}</span> sur l&apos;année
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // RENDU PRINCIPAL
@@ -2135,7 +2138,7 @@ export default function Finances() {
       )}
 
       {/* ── SYNTHÈSE ── */}
-      {tab === 'synthese' && <SyntheseView />}
+      {tab === 'synthese' && <SyntheseView anneeEnCours={anneeEnCours} rowsReelScoped={rowsReelScoped} scopedDossiers={scopedDossiers} getKeyFromDate={getKeyFromDate} calculer={calculer} totComHT={totComHT} totFraisHT={totFraisHT} totRoyalties={totRoyalties} totPreviNet={totPreviNet} objectifAnnuel={objectifAnnuel} pctObjectif={pctObjectif} libellePerimetre={libellePerimetre} />}
 
       {/* ── SUIVI FINANCIER — toggle Agence/CTP admin-only ; agente : mode agence forcé ── */}
       {tab === 'suivi' && (
@@ -2154,7 +2157,7 @@ export default function Finances() {
       {/* ── FACTURATION — même composant, données filtrées sur agente connectée ── */}
       {tab === 'facturation' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <FacturationAgentes />
+          <FacturationAgentes facturesAgente={facturesAgente} agenteSelectionnee={agenteSelectionnee} setAgenteSelectionnee={setAgenteSelectionnee} redevancesAgente={redevancesAgente} agrégerParPaiement={agrégerParPaiement} dossiersAgente={dossiersAgente} agenteActuelle={agenteActuelle} erreur={erreur} succes={succes} setErreur={setErreur} setSucces={setSucces} upsertFactureMoisType={upsertFactureMoisType} isAdmin={isAdmin} agentes={agentes} anneeEnCours={anneeEnCours} />
         </div>
       )}
 
