@@ -2329,23 +2329,32 @@ export default function FicheChantier({ params }) {
             </div>
             <Progress value={avancement} height={10} />
             <div style={{display:'grid', gridTemplateColumns:'repeat(5, 1fr)', marginTop:18, gap:10}}>
-              {[
-                { l:'Contact',   done: true },
-                { l:'Devis',     done: devis.length > 0 },
-                { l:'Signature', done: !!dossier.contrat_signe },
-                { l:'Chantier',  done: !!dossier.date_demarrage_chantier },
-                { l:'Livraison', done: avancement >= 100 },
-              ].map((s, i) => (
-                <div key={i} style={{textAlign:'center'}}>
-                  <div style={{
-                    width:28, height:28, borderRadius:99, margin:'0 auto',
-                    background: s.done ? 'var(--ok)' : 'var(--ink-100)',
-                    color: s.done ? '#fff' : 'var(--ink-400)',
-                    display:'grid', placeItems:'center', fontSize:13, fontWeight:700,
-                  }}>{s.done ? '✓' : i+1}</div>
-                  <div style={{fontSize:11, color:'var(--ink-500)', marginTop:6, fontWeight:600}}>{s.l}</div>
-                </div>
-              ))}
+              {(() => {
+                const step1 = !!dossier.contrat_signe                                   // Mandat R1 signé
+                const step2 = devis.length > 0                                          // ≥1 devis (tout statut)
+                const step3 = devis.length > 0 && devis.every(d => d.statut !== 'recu')  // 0 devis 'recu' (tous tranchés)
+                const step4 = !!(dossier.date_demarrage_chantier || dossier.statut === 'en_cours_chantier') // chantier démarré
+                const step5 = dossier.statut === 'termine'                              // chantier terminé
+                // Monotonicité : étape N cochée ⇒ étapes 1..N-1 cochées.
+                const done = [
+                  step1 || step2 || step3 || step4 || step5,
+                  step2 || step3 || step4 || step5,
+                  step3 || step4 || step5,
+                  step4 || step5,
+                  step5,
+                ]
+                return ['Contact', 'Devis', 'Signature', 'Chantier', 'Livraison'].map((l, i) => (
+                  <div key={i} style={{textAlign:'center'}}>
+                    <div style={{
+                      width:28, height:28, borderRadius:99, margin:'0 auto',
+                      background: done[i] ? 'var(--ok)' : 'var(--ink-100)',
+                      color: done[i] ? '#fff' : 'var(--ink-400)',
+                      display:'grid', placeItems:'center', fontSize:13, fontWeight:700,
+                    }}>{done[i] ? '✓' : i+1}</div>
+                    <div style={{fontSize:11, color:'var(--ink-500)', marginTop:6, fontWeight:600}}>{l}</div>
+                  </div>
+                ))
+              })()}
             </div>
           </div>
 
