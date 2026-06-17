@@ -2026,8 +2026,8 @@ export default function Finances() {
 
       {/* KPI strip — même layout pour admin et agente, données scopées */}
       <div className="kpi-grid">
-        <FinKpiCard label={isAdmin ? `CA réel net ${anneeEnCours}` : 'Mes gains'} value={fmt(isAdmin ? totalNetCTP : totalGainsAgentesReels)} tone="brand">
-          {isAdmin && (
+        {isAdmin && (
+          <FinKpiCard label={`CA réel net ${anneeEnCours}`} value={fmt(totalNetCTP)} tone="brand">
             <div style={{marginTop:8}}>
               <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
                 <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
@@ -2036,8 +2036,8 @@ export default function Finances() {
                 Objectif <span style={{fontWeight:600,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(objectifAnnuel)}</span> · {pctObjectif}%
               </div>
             </div>
-          )}
-        </FinKpiCard>
+          </FinKpiCard>
+        )}
         <FinKpiCard label="CA prévisionnel"
           value={fmt(totPreviNet)}
           sub={`${fmt(round2(totComHT+totFraisHT))} brut · ${fmt(totRoyalties)} royalties`}
