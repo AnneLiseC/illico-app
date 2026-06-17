@@ -6,6 +6,7 @@ export const TVA_TRAVAUX = 1.1    // devis travaux = TVA 10% (fallback TTC si mo
 export const ROYALTIES_RATE = 0.05
 export const COURTAGE_STANDARD = 0.06
 export const AMO_STANDARD = 0.09
+export const DEFAULT_PART_AGENTE = 0.5   // part agente par défaut (référent non-admin)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILITAIRES
@@ -46,7 +47,7 @@ export function getPartAgente(dossier) {
   const v = dossier?.part_agente
   if (v !== undefined && v !== null) return normalizePercent(v, 0)
   if (dossier?.referente?.role === 'admin') return 0
-  return 0.5
+  return DEFAULT_PART_AGENTE
 }
 
 export function getTauxCourtage(dossier) {
