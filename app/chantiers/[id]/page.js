@@ -10,6 +10,7 @@ import { calculerAvancement, detecterCategorieCR } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
+import JSZip from 'jszip'
 
 // Liste des entités supprimées avec un chantier — source unique des 2 libellés
 // (confirm de suppression + sous-titre du bouton), pour éviter qu'ils divergent.
@@ -602,6 +603,7 @@ export default function FicheChantier({ params }) {
     return next
   })
   const [photos, setPhotos] = useState([])
+  const [zippingPhotos, setZippingPhotos] = useState(false)
   const [categorie, setCategorie] = useState('all')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photosAffichees, setPhotosAffichees] = useState(3)
@@ -742,6 +744,35 @@ export default function FicheChantier({ params }) {
   const chargerPhotos = async () => {
     const { data } = await supabase.from('photos').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
     setPhotos(await signerPhotos(data))
+  }
+
+  // Télécharge toutes les photos du dossier en un ZIP, rangées par catégorie.
+  // Signed URLs régénérées au clic (60s), côté client uniquement (pas de route API).
+  const telechargerZipPhotos = async () => {
+    if (photos.length === 0) return
+    setZippingPhotos(true)
+    try {
+      const { data: signed } = await supabase.storage.from('photos').createSignedUrls(photos.map(p => p.url), 60)
+      const parChemin = new Map((signed || []).map(u => [u.path, u.signedUrl]))
+      const zip = new JSZip()
+      for (const p of photos) {
+        const url = parChemin.get(p.url)
+        if (!url) continue
+        const blob = await (await fetch(url)).blob()
+        const cat = ['avant', 'pendant', 'apres', 'maquette'].includes(p.categorie) ? p.categorie : 'autres'
+        zip.folder(cat).file(`${cat}_${p.id}.jpg`, blob)
+      }
+      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      const href = URL.createObjectURL(zipBlob)
+      const a = document.createElement('a')
+      a.href = href
+      a.download = `Photos_${dossier.reference}.zip`
+      a.click()
+      URL.revokeObjectURL(href)
+    } catch (e) {
+      setErreur('Erreur ZIP : ' + e.message)
+    }
+    setZippingPhotos(false)
   }
 
   const uploadPhotos = async (fichiers) => {
@@ -3567,14 +3598,22 @@ export default function FicheChantier({ params }) {
                 )
               })}
             </div>
-            <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingPhoto ? 'wait' : 'pointer', opacity: uploadingPhoto ? 0.6 : 1}}>
-              <CamIcon /> {uploadingPhoto
-                ? 'Upload en cours…'
-                : `Ajouter des photos${categorie !== 'all' ? ` (${CATS.find(c => c.k === categorie)?.l})` : ''}`}
-              <input type="file" accept="image/*" multiple style={{display:'none'}}
-                disabled={uploadingPhoto || categorie === 'all'}
-                onChange={e => uploadPhotos(Array.from(e.target.files))} />
-            </label>
+            <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+              {photos.length > 0 && (
+                <button onClick={telechargerZipPhotos} disabled={zippingPhotos}
+                  className="btn btn-ghost" style={{fontSize:12.5}}>
+                  <DlIcon /> {zippingPhotos ? 'Préparation…' : 'Télécharger les photos'}
+                </button>
+              )}
+              <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingPhoto ? 'wait' : 'pointer', opacity: uploadingPhoto ? 0.6 : 1}}>
+                <CamIcon /> {uploadingPhoto
+                  ? 'Upload en cours…'
+                  : `Ajouter des photos${categorie !== 'all' ? ` (${CATS.find(c => c.k === categorie)?.l})` : ''}`}
+                <input type="file" accept="image/*" multiple style={{display:'none'}}
+                  disabled={uploadingPhoto || categorie === 'all'}
+                  onChange={e => uploadPhotos(Array.from(e.target.files))} />
+              </label>
+            </div>
           </div>
 
           {categorie === 'all' && (
