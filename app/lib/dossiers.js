@@ -127,18 +127,20 @@ export function calculerAvancement(dossier) {
   return Math.min(100, Math.max(0, pct))
 }
 
-// 🔹 Détection de catégorie « compte-rendu » depuis un nom de fichier (upload).
-// Anti-faux-positifs : on normalise (sans accents, minuscules, sans extension)
+// 🔹 Détection de catégorie d'un document depuis son nom de fichier (upload).
+// Anti-faux-positifs CR : on normalise (sans accents, minuscules, sans extension)
 // puis on exige soit « compte[-_ ]rendu », soit « CR/C.R. » comme JETON délimité
 // (précédé d'un début/non-lettre et non suivi d'une lettre) → « DECRET », « MACRON »,
-// « CROQUIS » ne matchent pas. Retourne 'compte_rendu' ou null.
-export function detecterCategorieCR(nom) {
+// « CROQUIS » ne matchent pas. Facture honoraires : « facture » + « honorai(re) ».
+// Priorité au CR. Retourne 'compte_rendu' | 'facture_honoraire' | null.
+export function detecterCategorie(nom) {
   const base = (nom || '').normalize('NFD').replace(/\p{Diacritic}/gu, '')
     .toLowerCase().replace(/\.[^.]+$/, '')
   const estCR =
     /compte[\s_-]?rendus?/.test(base) ||
     /(^|[^a-z])c\.?r(?![a-z])/.test(base)
-  return estCR ? 'compte_rendu' : null
+  const estFactureHonoraire = /facture/.test(base) && /honorai/.test(base)
+  return estCR ? 'compte_rendu' : estFactureHonoraire ? 'facture_honoraire' : null
 }
 
 // 🔹 Compteurs
