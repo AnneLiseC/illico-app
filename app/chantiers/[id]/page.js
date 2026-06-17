@@ -1418,6 +1418,32 @@ export default function FicheChantier({ params }) {
     setSucces('Devis signé supprimé ✓')
   }
 
+  // PV de réception (1 par devis). Calqué sur uploadDevisSigne / supprimerDevisSigne,
+  // SANS la logique de changement de statut/date (le PV n'affecte pas le statut du devis).
+  const uploadPV = async (devisId, fichier) => {
+    if (!fichier) return
+    setUploadingDoc(devisId)
+    const ext = fichier.name.split('.').pop()
+    const chemin = `chantiers/${id}/pv/${devisId}.${ext}`
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+    if (!error) {
+      const { error: pathErr } = await supabase.from('devis_artisans').update({ pv_path: chemin }).eq('id', devisId)
+      if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
+      await chargerDevis()
+      setSucces('PV uploadé ✓')
+    } else { setErreur('Erreur upload PV : ' + error.message) }
+    setUploadingDoc(null)
+  }
+  const supprimerPV = async (devisId, path) => {
+    if (!confirm('Supprimer le PV de réception ?')) return
+    const { error: rmErr } = await supabase.storage.from('documents').remove([path])
+    if (rmErr) console.error('Suppression PDF PV (non bloquant) :', rmErr.message)
+    const { error } = await supabase.from('devis_artisans').update({ pv_path: null }).eq('id', devisId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    await chargerDevis()
+    setSucces('PV supprimé ✓')
+  }
+
   // ── URL SIGNÉE DOCUMENT ──
   const ouvrirDocument = async (path, nom) => {
     const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600)
@@ -3080,6 +3106,31 @@ export default function FicheChantier({ params }) {
                               {uploadingDoc === d.id ? 'Upload…' : '+ Uploader'}
                               <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id}
                                 onChange={e => e.target.files[0] && uploadDevisSigne(d.id, e.target.files[0])} />
+                            </label>
+                          )}
+                        </div>
+                      </div>
+                      {/* PV de réception */}
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                        <span style={{fontSize:11, color:'var(--ink-500)', fontWeight:600}}>📋 PV de réception</span>
+                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                          {d.pv_path ? (
+                            <>
+                              <button onClick={() => ouvrirDocument(d.pv_path, `PV réception ${d.artisan?.entreprise || ''}.pdf`)}
+                                style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>Voir PDF</button>
+                              <button onClick={() => supprimerPV(d.id, d.pv_path)}
+                                style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
+                            </>
+                          ) : (
+                            <label style={{
+                              fontSize:11, cursor: uploadingDoc === d.id ? 'wait' : 'pointer',
+                              padding:'3px 10px', borderRadius:6, border:'1px solid',
+                              color: uploadingDoc === d.id ? 'var(--ink-400)' : 'var(--brand-700)',
+                              borderColor: uploadingDoc === d.id ? 'var(--ink-200)' : 'var(--brand-200)',
+                            }}>
+                              {uploadingDoc === d.id ? 'Upload…' : '+ Uploader'}
+                              <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id}
+                                onChange={e => e.target.files[0] && uploadPV(d.id, e.target.files[0])} />
                             </label>
                           )}
                         </div>

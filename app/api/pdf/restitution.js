@@ -744,33 +744,43 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     await addContent()  // page suivi des paiements
   }
 
-  // ── Devis ──
+  // ── Devis / Factures / PV — groupés PAR DEVIS ──
+  // Post-signature : pour chaque devis accepté → devis signé (ou original) →
+  //   ses factures (liées par devis_id) → son PV de réception.
+  // Pré-signature : seulement les devis reçus/acceptés (ni factures ni PV).
   await addSep(sepDevis)
-  // Embarquement PAR DEVIS (reçu + accepté) : la version SIGNÉE si elle existe,
-  // sinon le devis d'origine (non signé) en fallback. Indépendant du stade du
-  // dossier — corrige le bug où le fichier était choisi selon dossier.statut
-  // (un non-signé pouvait être embarqué pour un devis pourtant signé).
-  for (const d of devisR3) {
-    const path = d.devis_signe_path || d.devis_pdf_path
-    if (path) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', path)
-      await addExternalPDF(buf)
-    }
-  }
-  // Factures artisans (post-signature) — source = factures_artisans.pdf_path
-  // (plusieurs par dossier : acompte, intermédiaire, finale). Erreurs non bloquantes.
   if (!isPreSignature) {
-    for (const f of (factures || [])) {
-      if (f.pdf_path) {
-        const buf = await downloadPDF(supabaseAdmin, 'documents', f.pdf_path)
+    for (const d of devisR3) {
+      const pathDevis = d.devis_signe_path || d.devis_pdf_path
+      if (pathDevis) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', pathDevis)
+        await addExternalPDF(buf)
+      }
+      const facturesDevis = (factures || []).filter(f => f.devis_id === d.id)
+      for (const f of facturesDevis) {
+        if (f.pdf_path) {
+          const buf = await downloadPDF(supabaseAdmin, 'documents', f.pdf_path)
+          await addExternalPDF(buf)
+        }
+      }
+      if (d.pv_path) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', d.pv_path)
         await addExternalPDF(buf)
       }
     }
     // Factures honoraires (CTP→client) — chantier_documents categorie='facture_honoraire'
-    // cochés dans_restitution. Même bloc que les factures artisans. Non bloquant.
+    // cochés dans_restitution. Bloc séparé (vient de docsRestitution, pas factures_artisans).
     for (const d of facturesHonoraires) {
       const buf = await downloadPDF(supabaseAdmin, 'documents', d.path)
       await addExternalPDF(buf)
+    }
+  } else {
+    for (const d of devisR3) {
+      const path = d.devis_signe_path || d.devis_pdf_path
+      if (path) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', path)
+        await addExternalPDF(buf)
+      }
     }
   }
 
