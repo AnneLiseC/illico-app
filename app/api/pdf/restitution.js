@@ -659,7 +659,7 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
 //   - Phase avant signature (devis_en_attente, devis_a_modifier…) → style R3 : devis reçus + récap
 //   - en_cours_chantier → devis signés + KBIS/assurances + FT
 //   - termine → restitution complète avec photos, planning, etc.
-export async function buildDossierSuivi({ dossier, devis, photos, interventions, fichesTech, docsRestitution, factures, suiviFinancier, logo, supabaseAdmin }) {
+export async function buildDossierSuivi({ dossier, devis, photos, interventions, fichesTech, docsRestitution, factures, suiviFinancier, adminFranchise, logo, supabaseAdmin }) {
   const statut = dossier.statut || 'en_cours_chantier'
   const isPreSignature = ['a_contacter', 'a_relancer', 'devis_en_attente', 'devis_a_modifier'].includes(statut)
   const isTermine = statut === 'termine'
@@ -752,11 +752,12 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
       await addExternalPDF(buf)
     }
   }
-  // Factures (post-signature) — inchangé.
+  // Factures artisans (post-signature) — source = factures_artisans.pdf_path
+  // (plusieurs par dossier : acompte, intermédiaire, finale). Erreurs non bloquantes.
   if (!isPreSignature) {
-    for (const d of devisAcceptes) {
-      if (d.facture_path) {
-        const buf = await downloadPDF(supabaseAdmin, 'documents', d.facture_path)
+    for (const f of (factures || [])) {
+      if (f.pdf_path) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', f.pdf_path)
         await addExternalPDF(buf)
       }
     }
@@ -821,6 +822,18 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
         const buf = await downloadPDF(supabaseAdmin, 'documents', art.decennale_url)
         await addExternalPDF(buf)
       }
+    }
+  }
+
+  // ── KBIS + RIB du franchisé (admin de la société) — post-signature, sans séparateur. Non bloquant. ──
+  if (!isPreSignature) {
+    if (adminFranchise?.kbis_url) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', adminFranchise.kbis_url)
+      await addExternalPDF(buf)
+    }
+    if (adminFranchise?.rib_url) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', adminFranchise.rib_url)
+      await addExternalPDF(buf)
     }
   }
 
