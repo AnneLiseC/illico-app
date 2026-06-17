@@ -1799,7 +1799,10 @@ export default function Finances() {
 
     // Apporteur remboursé (réel) selon le mode : Société/Agence = coût total, Agente = sa part.
     const apporteurReelVal = (r) => round2(mode === 'agent' ? (r?.apporteurPartAgenteNet || 0) : (r?.apporteurCoutTotalNet || 0))
-    const royaltiesReelVal = (r) => round2((r?.comReelNet || 0) * (ROYALTIES_RATE / (1 - ROYALTIES_RATE)))
+    const royaltiesReelVal = (r) => round2(
+      ((r?.fraisNet || 0) + (r?.comReelNet || 0) + (r?.honReel || 0))
+      * (ROYALTIES_RATE / (1 - ROYALTIES_RATE))
+    )
 
     // Prévisionnel agrégé par mois (clé signature/création) — source unique.
     const mapPreviMois = {}
