@@ -194,32 +194,33 @@ function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) 
   )
 }
 
-function SyntheseView({ anneeEnCours, rowsReelScoped, scopedDossiers, getKeyFromDate, calculer, totComHT, totFraisHT, totRoyalties, totPreviNet, objectifAnnuel, pctObjectif, libellePerimetre }) {
-  const chartId = 'synthese_monthly_chart'
-  const donutId = 'synthese_donut_chart'
+function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKeyFromDate, calculer, objectifAnnuel, pctObjectif }) {
+  const chartId = 'suivi_monthly_chart'
+  const donutReelId = 'suivi_donut_reel'
+  const donutPreviId = 'suivi_donut_previ'
 
   const reelData = useMemo(() => Array.from({length:12}, (_, i) => {
-    const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
+    const key = `${anneeSelectionnee}-${String(i+1).padStart(2,'0')}`
     const agg = rowsReelScoped.find(([k]) => k === key)?.[1] || {}
     return round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [rowsReelScoped])
+  }), [rowsReelScoped, anneeSelectionnee])
 
   const previData = useMemo(() => {
     const map = {}
     scopedDossiers.forEach(d => {
       const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
-      if (!key || !key.startsWith(String(anneeEnCours))) return
+      if (!key || !key.startsWith(String(anneeSelectionnee))) return
       if (!map[key]) map[key] = 0
       const c = calculer(d)
       map[key] = round2(map[key] + c.gainsAdminPreviTotal + c.gainsAgentePreviTotal)
     })
     return Array.from({length:12}, (_, i) => {
-      const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
+      const key = `${anneeSelectionnee}-${String(i+1).padStart(2,'0')}`
       return map[key] || 0
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedDossiers])
+  }, [scopedDossiers, anneeSelectionnee])
 
 
   useEffect(() => {
@@ -250,72 +251,111 @@ function SyntheseView({ anneeEnCours, rowsReelScoped, scopedDossiers, getKeyFrom
     return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
   }, [reelData, previData])
 
+  // Répartition par catégorie (nets) sur l'année sélectionnée — prévi (scopedDossiers) et réel (agrégats payés).
+  const donutPrevi = useMemo(() => {
+    let frais = 0, com = 0, hon = 0
+    scopedDossiers.forEach(d => {
+      const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
+      if (!key || !key.startsWith(String(anneeSelectionnee))) return
+      const c = calculer(d); frais += c.fraisNetPrevi; com += c.netComTous; hon += c.honPreviNet
+    })
+    return { frais: round2(frais), com: round2(com), hon: round2(hon) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedDossiers, anneeSelectionnee])
+
+  const donutReel = useMemo(() => {
+    let frais = 0, com = 0, hon = 0
+    rowsReelScoped.forEach(([k, agg]) => { if (!k.startsWith(String(anneeSelectionnee))) return; frais += (agg.fraisNet||0); com += (agg.comReelNet||0); hon += (agg.honReel||0) })
+    return { frais: round2(frais), com: round2(com), hon: round2(hon) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowsReelScoped, anneeSelectionnee])
+
+  const donutBase = {
+    type: 'doughnut',
+    options: {
+      cutout: '70%', responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ctx.label + ' : ' + (ctx.parsed).toLocaleString('fr-FR') + ' €' } }
+      }
+    }
+  }
+  const donutDataset = (d) => ({
+    labels: ['Commissions illiCO', 'Frais de consultation', 'Honoraires'],
+    datasets: [{ data: [d.com, d.frais, d.hon], backgroundColor: ['#00578e','#0094d4','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
+  })
+
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const el = document.getElementById(donutId)
+    const el = document.getElementById(donutReelId)
     if (!el) return
     if (el._chartInstance) el._chartInstance.destroy()
-    el._chartInstance = new Chart(el, {
-      type: 'doughnut',
-      data: {
-        labels: ['Commissions HT', 'Frais HT', 'Royalties'],
-        datasets: [{ data: [totComHT, totFraisHT, totRoyalties], backgroundColor: ['#00578e','#0094d4','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
-      },
-      options: {
-        cutout: '70%', responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: ctx => ctx.label + ' : ' + (ctx.parsed).toLocaleString('fr-FR') + ' €' } }
-        }
-      }
-    })
+    el._chartInstance = new Chart(el, { ...donutBase, data: donutDataset(donutReel) })
     return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
-  }, [totComHT, totFraisHT, totRoyalties])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [donutReel])
 
-  const totalDonut = totComHT + totFraisHT + totRoyalties
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const el = document.getElementById(donutPreviId)
+    if (!el) return
+    if (el._chartInstance) el._chartInstance.destroy()
+    el._chartInstance = new Chart(el, { ...donutBase, data: donutDataset(donutPrevi) })
+    return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [donutPrevi])
+
+  const totalReel  = round2(donutReel.com + donutReel.frais + donutReel.hon)
+  const totalPrevi = round2(donutPrevi.com + donutPrevi.frais + donutPrevi.hon)
   const reelTotal  = reelData.reduce((s,v) => s+v, 0)
+  const previTotal = previData.reduce((s,v) => s+v, 0)
 
   return (
-    <div style={{display:'flex',flexDirection:'column',gap:20}}>
-      <div style={{display:'flex',alignItems:'center',gap:8}}>
-        <span className="eyebrow">Filtré sur</span>
-        <span style={{fontSize:12,fontWeight:600,color:'var(--brand-800)',background:'var(--brand-50)',padding:'3px 10px',borderRadius:99}}>{libellePerimetre()}</span>
-      </div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-        {/* LEFT : bar+line chart + totaux */}
-        <div className="card" style={{padding:20}}>
-          <div className="eyebrow" style={{marginBottom:12}}>Évolution mensuelle {anneeEnCours}<br />CA RÉEL NET VS PRÉVISIONNEL</div>
-          <div style={{display:'flex',gap:16,marginBottom:12,flexWrap:'wrap'}}>
-            <div style={{display:'flex',alignItems:'center',gap:6}}>
-              <div style={{width:10,height:10,borderRadius:2,background:'#3B7DD8'}}/>
-              <span style={{fontSize:11,color:'var(--ink-500)'}}>Réel</span>
-            </div>
-            <div style={{display:'flex',alignItems:'center',gap:6}}>
-              <div style={{width:10,height:10,borderRadius:2,border:'2px dashed #94a3b8',background:'transparent'}}/>
-              <span style={{fontSize:11,color:'var(--ink-500)'}}>Prévi</span>
-            </div>
+    <div style={{display:'flex',flexDirection:'column',gap:16,marginBottom:16}}>
+      {/* Évolution mensuelle réel vs prévi (pleine largeur) */}
+      <div className="card" style={{padding:20}}>
+        <div className="eyebrow" style={{marginBottom:12}}>Évolution mensuelle {anneeSelectionnee}<br />CA RÉEL NET VS PRÉVISIONNEL</div>
+        <div style={{display:'flex',gap:16,marginBottom:12,flexWrap:'wrap'}}>
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <div style={{width:10,height:10,borderRadius:2,background:'#3B7DD8'}}/>
+            <span style={{fontSize:11,color:'var(--ink-500)'}}>Réel</span>
           </div>
-          <div style={{position:'relative',height:220}}>
-            <canvas id={chartId} role="img" aria-label="Gains mensuels" />
-          </div>
-          <div style={{marginTop:16,display:'flex',flexDirection:'column',gap:6}}>
-            <Row label="Total réel" value={fmt(reelTotal)} bold accent />
-            <Row label="Total prévi" value={fmt(totPreviNet)} dim />
-            {pctObjectif > 0 && <Row label={`Objectif ${anneeEnCours} (${pctObjectif}%)`} value={fmt(objectifAnnuel)} dim />}
+          <div style={{display:'flex',alignItems:'center',gap:6}}>
+            <div style={{width:10,height:10,borderRadius:2,border:'2px dashed #94a3b8',background:'transparent'}}/>
+            <span style={{fontSize:11,color:'var(--ink-500)'}}>Prévi</span>
           </div>
         </div>
-        {/* RIGHT : donut + répartition */}
-        <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <div className="card" style={{padding:20}}>
-            <div className="eyebrow" style={{marginBottom:12}}>Répartition prévisionnel</div>
-            <div style={{position:'relative',height:160}}>
-              <canvas id={donutId} role="img" aria-label="Répartition" />
-            </div>
-            <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
-              <LegendRow color="#00578e" label="Commissions HT" value={fmt(totComHT)} pct={totalDonut>0?Math.round(totComHT/totalDonut*100):0} />
-              <LegendRow color="#0094d4" label="Frais HT"       value={fmt(totFraisHT)} pct={totalDonut>0?Math.round(totFraisHT/totalDonut*100):0} />
-              <LegendRow color="#94a3b8" label="Royalties"      value={fmt(totRoyalties)} pct={totalDonut>0?Math.round(totRoyalties/totalDonut*100):0} />
-            </div>
+        <div style={{position:'relative',height:220}}>
+          <canvas id={chartId} role="img" aria-label="Gains mensuels" />
+        </div>
+        <div style={{marginTop:16,display:'flex',flexDirection:'column',gap:6}}>
+          <Row label="Total réel" value={fmt(reelTotal)} bold accent />
+          <Row label="Total prévi" value={fmt(previTotal)} dim />
+          {pctObjectif > 0 && <Row label={`Objectif ${anneeSelectionnee} (${pctObjectif}%)`} value={fmt(objectifAnnuel)} dim />}
+        </div>
+      </div>
+      {/* Deux donuts côte à côte : Réel | Prévisionnel */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        <div className="card" style={{padding:20}}>
+          <div className="eyebrow" style={{marginBottom:12}}>Répartition réel</div>
+          <div style={{position:'relative',height:160}}>
+            <canvas id={donutReelId} role="img" aria-label="Répartition réel" />
+          </div>
+          <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
+            <LegendRow color="#00578e" label="Commissions illiCO"    value={fmt(donutReel.com)}   pct={totalReel>0?Math.round(donutReel.com/totalReel*100):0} />
+            <LegendRow color="#0094d4" label="Frais de consultation" value={fmt(donutReel.frais)} pct={totalReel>0?Math.round(donutReel.frais/totalReel*100):0} />
+            <LegendRow color="#94a3b8" label="Honoraires"            value={fmt(donutReel.hon)}   pct={totalReel>0?Math.round(donutReel.hon/totalReel*100):0} />
+          </div>
+        </div>
+        <div className="card" style={{padding:20}}>
+          <div className="eyebrow" style={{marginBottom:12}}>Répartition prévisionnel</div>
+          <div style={{position:'relative',height:160}}>
+            <canvas id={donutPreviId} role="img" aria-label="Répartition prévisionnel" />
+          </div>
+          <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
+            <LegendRow color="#00578e" label="Commissions illiCO"    value={fmt(donutPrevi.com)}   pct={totalPrevi>0?Math.round(donutPrevi.com/totalPrevi*100):0} />
+            <LegendRow color="#0094d4" label="Frais de consultation" value={fmt(donutPrevi.frais)} pct={totalPrevi>0?Math.round(donutPrevi.frais/totalPrevi*100):0} />
+            <LegendRow color="#94a3b8" label="Honoraires"            value={fmt(donutPrevi.hon)}   pct={totalPrevi>0?Math.round(donutPrevi.hon/totalPrevi*100):0} />
           </div>
         </div>
       </div>
@@ -700,7 +740,7 @@ export default function Finances() {
   const [saving, setSaving]                         = useState(false)
   const [erreur, setErreur]                         = useState('')
   const [succes, setSucces]                         = useState('')
-  const [tab, setTab]                               = useState('synthese')
+  const [tab, setTab]                               = useState('suivi')
   const [period, setPeriod]                         = useState('chantier')
   const [scope, setScope]                           = useState('tous')
   const [suiviMode, setSuiviMode]                   = useState('ctp')
@@ -1526,7 +1566,7 @@ export default function Finances() {
               <Th>Dossier</Th>
               <Th>Référente</Th>
               <Th>Statut</Th>
-              <Th right>Frais HT</Th>
+              <Th right>Frais de consultation</Th>
               <Th right>Commissions HT</Th>
               <Th right>Royalties</Th>
               <Th right>Net {isReel ? 'réel' : 'prévisionnel'}</Th>
@@ -1896,10 +1936,6 @@ export default function Finances() {
 
     return (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <span className="eyebrow">Filtré sur</span>
-          <span style={{fontSize:12,fontWeight:600,color:'var(--brand-800)',background:'var(--brand-50)',padding:'3px 10px',borderRadius:99}}>{libellePerimetre()}</span>
-        </div>
         <PillToggle
           options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
           active={sfSousOnglet}
@@ -1910,7 +1946,6 @@ export default function Finances() {
             <ObjectifBar label={isCTP ? `Objectif mensuel Société (${fmt(objectifMensuel)}/mois)` : `Objectif mensuel agence (${fmt(objectifMensuel)}/mois)`}
               reel={(() => { const moisCourant = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`; const r = rowsReel.find(([k]) => k === moisCourant)?.[1] || {}; const redev = redevancesScoped.filter(rv => rv.statut === 'regle' && rv.annee === new Date().getFullYear() && rv.mois === new Date().getMonth() + 1).reduce((s, rv) => s + (rv.montant_ht||0), 0); return getReelNet(r, redev) })()}
               objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
-            <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId={`chart_${mode}_mois`} />
             <div className="card" style={{overflow:'hidden'}}>
               <table style={{width:'100%',fontSize:11}}>
                 <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
@@ -1955,6 +1990,7 @@ export default function Finances() {
                 </tbody>
               </table>
             </div>
+            <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId={`chart_${mode}_mois`} />
           </div>
         )}
         {sfSousOnglet === 'annee' && renderAnnuel()}
@@ -2022,7 +2058,6 @@ export default function Finances() {
             Réel
           </span>
         </button>
-        <button className={`tab ${tab==='synthese'?'active':''}`} onClick={() => setTab('synthese')}>Synthèse</button>
         <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => setTab('suivi')}>📈Suivi financier</button>
         <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => setTab('facturation')}>🗒️Facturation agentes</button>
       </div>
@@ -2137,20 +2172,40 @@ export default function Finances() {
         </div>
       )}
 
-      {/* ── SYNTHÈSE ── */}
-      {tab === 'synthese' && <SyntheseView anneeEnCours={anneeEnCours} rowsReelScoped={rowsReelScoped} scopedDossiers={scopedDossiers} getKeyFromDate={getKeyFromDate} calculer={calculer} totComHT={totComHT} totFraisHT={totFraisHT} totRoyalties={totRoyalties} totPreviNet={totPreviNet} objectifAnnuel={objectifAnnuel} pctObjectif={pctObjectif} libellePerimetre={libellePerimetre} />}
-
-      {/* ── SUIVI FINANCIER — toggle Agence/CTP admin-only ; agente : mode agence forcé ── */}
+      {/* ── SUIVI FINANCIER — Synthèse fusionnée : graphes + compte de résultat ── */}
       {tab === 'suivi' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {isAdmin && (
-            <PillToggle
-              options={[{key:'agence',label:'Agence — Encaissements bruts'},{key:'ctp',label:'Société — Résultat net (charges incluses)'}]}
-              active={suiviMode}
-              onChange={setSuiviMode}
-            />
-          )}
-          {renderSuiviFinancier(isAdmin ? suiviMode : 'agence')}
+          {/* ZONE 1 — contrôles : toggle Agence/Société (multi-agence) + année */}
+          <div style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap',marginBottom:16}}>
+            {isAdmin && (
+              <div style={{display:'flex',gap:0,borderRadius:8,border:'1px solid var(--ink-200)',overflow:'hidden'}}>
+                <button onClick={() => setSuiviMode('agence')}
+                  style={{padding:'6px 14px',fontSize:12.5,fontWeight:600,border:'none',cursor:'pointer',
+                    background: suiviMode === 'agence' ? 'var(--brand-700)' : 'transparent',
+                    color: suiviMode === 'agence' ? '#fff' : 'var(--ink-600)'}}>
+                  Agence
+                </button>
+                <button onClick={() => setSuiviMode('ctp')}
+                  style={{padding:'6px 14px',fontSize:12.5,fontWeight:600,border:'none',cursor:'pointer',
+                    background: suiviMode === 'ctp' ? 'var(--brand-700)' : 'transparent',
+                    color: suiviMode === 'ctp' ? '#fff' : 'var(--ink-600)'}}>
+                  Société
+                </button>
+              </div>
+            )}
+            <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(Number(e.target.value))}
+              style={{fontSize:12.5,padding:'6px 10px',borderRadius:8,border:'1px solid var(--ink-200)',
+                background:'var(--surface-1)',color:'var(--ink-700)'}}>
+              {(() => { const ans = []; for (let a = new Date().getFullYear(); a >= anneeMin; a--) ans.push(a); return ans })()
+                .map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+
+          {/* ZONE 2 — sous-onglet Mois/Année + objectif + compte de résultat + graphe Gains/Charges */}
+          {renderSuiviFinancier(!isAdmin ? 'agent' : suiviMode)}
+
+          {/* ZONE 3 — graphe barres Réel/Prévi + deux donuts côte à côte */}
+          <SuiviGraphes anneeSelectionnee={anneeSelectionnee} rowsReelScoped={rowsReelScoped} scopedDossiers={scopedDossiers} getKeyFromDate={getKeyFromDate} calculer={calculer} objectifAnnuel={objectifAnnuel} pctObjectif={pctObjectif} />
         </div>
       )}
 
