@@ -194,33 +194,33 @@ function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) 
   )
 }
 
-function SuiviGraphes({ anneeEnCours, rowsReelScoped, scopedDossiers, getKeyFromDate, calculer, totPreviNet, objectifAnnuel, pctObjectif }) {
+function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKeyFromDate, calculer, objectifAnnuel, pctObjectif }) {
   const chartId = 'suivi_monthly_chart'
   const donutReelId = 'suivi_donut_reel'
   const donutPreviId = 'suivi_donut_previ'
 
   const reelData = useMemo(() => Array.from({length:12}, (_, i) => {
-    const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
+    const key = `${anneeSelectionnee}-${String(i+1).padStart(2,'0')}`
     const agg = rowsReelScoped.find(([k]) => k === key)?.[1] || {}
     return round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [rowsReelScoped])
+  }), [rowsReelScoped, anneeSelectionnee])
 
   const previData = useMemo(() => {
     const map = {}
     scopedDossiers.forEach(d => {
       const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
-      if (!key || !key.startsWith(String(anneeEnCours))) return
+      if (!key || !key.startsWith(String(anneeSelectionnee))) return
       if (!map[key]) map[key] = 0
       const c = calculer(d)
       map[key] = round2(map[key] + c.gainsAdminPreviTotal + c.gainsAgentePreviTotal)
     })
     return Array.from({length:12}, (_, i) => {
-      const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
+      const key = `${anneeSelectionnee}-${String(i+1).padStart(2,'0')}`
       return map[key] || 0
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedDossiers])
+  }, [scopedDossiers, anneeSelectionnee])
 
 
   useEffect(() => {
@@ -251,19 +251,24 @@ function SuiviGraphes({ anneeEnCours, rowsReelScoped, scopedDossiers, getKeyFrom
     return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
   }, [reelData, previData])
 
-  // Répartition par catégorie (nets) — prévisionnel (scopedDossiers) et réel (agrégats payés).
+  // Répartition par catégorie (nets) sur l'année sélectionnée — prévi (scopedDossiers) et réel (agrégats payés).
   const donutPrevi = useMemo(() => {
     let frais = 0, com = 0, hon = 0
-    scopedDossiers.forEach(d => { const c = calculer(d); frais += c.fraisNetPrevi; com += c.netComTous; hon += c.honPreviNet })
+    scopedDossiers.forEach(d => {
+      const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
+      if (!key || !key.startsWith(String(anneeSelectionnee))) return
+      const c = calculer(d); frais += c.fraisNetPrevi; com += c.netComTous; hon += c.honPreviNet
+    })
     return { frais: round2(frais), com: round2(com), hon: round2(hon) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedDossiers])
+  }, [scopedDossiers, anneeSelectionnee])
 
   const donutReel = useMemo(() => {
     let frais = 0, com = 0, hon = 0
-    rowsReelScoped.forEach(([, agg]) => { frais += (agg.fraisNet||0); com += (agg.comReelNet||0); hon += (agg.honReel||0) })
+    rowsReelScoped.forEach(([k, agg]) => { if (!k.startsWith(String(anneeSelectionnee))) return; frais += (agg.fraisNet||0); com += (agg.comReelNet||0); hon += (agg.honReel||0) })
     return { frais: round2(frais), com: round2(com), hon: round2(hon) }
-  }, [rowsReelScoped])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowsReelScoped, anneeSelectionnee])
 
   const donutBase = {
     type: 'doughnut',
@@ -303,12 +308,13 @@ function SuiviGraphes({ anneeEnCours, rowsReelScoped, scopedDossiers, getKeyFrom
   const totalReel  = round2(donutReel.com + donutReel.frais + donutReel.hon)
   const totalPrevi = round2(donutPrevi.com + donutPrevi.frais + donutPrevi.hon)
   const reelTotal  = reelData.reduce((s,v) => s+v, 0)
+  const previTotal = previData.reduce((s,v) => s+v, 0)
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:16,marginBottom:16}}>
       {/* Évolution mensuelle réel vs prévi (pleine largeur) */}
       <div className="card" style={{padding:20}}>
-        <div className="eyebrow" style={{marginBottom:12}}>Évolution mensuelle {anneeEnCours}<br />CA RÉEL NET VS PRÉVISIONNEL</div>
+        <div className="eyebrow" style={{marginBottom:12}}>Évolution mensuelle {anneeSelectionnee}<br />CA RÉEL NET VS PRÉVISIONNEL</div>
         <div style={{display:'flex',gap:16,marginBottom:12,flexWrap:'wrap'}}>
           <div style={{display:'flex',alignItems:'center',gap:6}}>
             <div style={{width:10,height:10,borderRadius:2,background:'#3B7DD8'}}/>
@@ -324,8 +330,8 @@ function SuiviGraphes({ anneeEnCours, rowsReelScoped, scopedDossiers, getKeyFrom
         </div>
         <div style={{marginTop:16,display:'flex',flexDirection:'column',gap:6}}>
           <Row label="Total réel" value={fmt(reelTotal)} bold accent />
-          <Row label="Total prévi" value={fmt(totPreviNet)} dim />
-          {pctObjectif > 0 && <Row label={`Objectif ${anneeEnCours} (${pctObjectif}%)`} value={fmt(objectifAnnuel)} dim />}
+          <Row label="Total prévi" value={fmt(previTotal)} dim />
+          {pctObjectif > 0 && <Row label={`Objectif ${anneeSelectionnee} (${pctObjectif}%)`} value={fmt(objectifAnnuel)} dim />}
         </div>
       </div>
       {/* Deux donuts côte à côte : Réel | Prévisionnel */}
@@ -2200,7 +2206,7 @@ export default function Finances() {
           </div>
 
           {/* ZONE 2 — graphes côte à côte (issus de l'ancienne Synthèse) */}
-          <SuiviGraphes anneeEnCours={anneeEnCours} rowsReelScoped={rowsReelScoped} scopedDossiers={scopedDossiers} getKeyFromDate={getKeyFromDate} calculer={calculer} totPreviNet={totPreviNet} objectifAnnuel={objectifAnnuel} pctObjectif={pctObjectif} />
+          <SuiviGraphes anneeSelectionnee={anneeSelectionnee} rowsReelScoped={rowsReelScoped} scopedDossiers={scopedDossiers} getKeyFromDate={getKeyFromDate} calculer={calculer} objectifAnnuel={objectifAnnuel} pctObjectif={pctObjectif} />
 
           {/* ZONE 3 — graphe Suivi + compte de résultat (logique inchangée) */}
           {renderSuiviFinancier(!isAdmin ? 'agent' : suiviMode)}
