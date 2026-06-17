@@ -756,6 +756,12 @@ export default function Finances() {
   const [anneeOuverte, setAnneeOuverte]             = useState(null)
   const [periodeOuverte, setPeriodeOuverte]         = useState(null)
   const [sfSousOngletCTP, setSfSousOngletCTP]       = useState('mois')
+  // Changement d'onglet : Suivi/Facturation n'ont pas le pill Périmètre →
+  // on réinitialise le scope à 'tous' pour éviter un filtre invisible hérité de F1/F2.
+  const handleTab = (key) => {
+    if (key === 'suivi' || key === 'facturation') setScope('tous')
+    setTab(key)
+  }
   const [isMobile, setIsMobile]                     = useState(false)
   // Garde de ré-entrance pour upsertFactureMoisType : les toggles F1/F2 et l'upload
   // sont des onClick non bloquants → un double-clic partait 2× et créait un doublon
@@ -2067,7 +2073,7 @@ export default function Finances() {
 
       {/* Tab bar */}
       <div className="tabs">
-        <button className={`tab ${tab==='previsionnel'?'active':''}`} onClick={() => setTab('previsionnel')}>
+        <button className={`tab ${tab==='previsionnel'?'active':''}`} onClick={() => handleTab('previsionnel')}>
           <span style={{display:'inline-flex',gap:8,alignItems:'center'}}>
             <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
               background:tab==='previsionnel'?'var(--brand-800)':'var(--ink-100)',
@@ -2075,7 +2081,7 @@ export default function Finances() {
             Prévisionnel
           </span>
         </button>
-        <button className={`tab ${tab==='reel'?'active':''}`} onClick={() => setTab('reel')}>
+        <button className={`tab ${tab==='reel'?'active':''}`} onClick={() => handleTab('reel')}>
           <span style={{display:'inline-flex',gap:8,alignItems:'center'}}>
             <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
               background:tab==='reel'?'var(--brand-800)':'var(--ink-100)',
@@ -2083,8 +2089,8 @@ export default function Finances() {
             Réel
           </span>
         </button>
-        <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => setTab('suivi')}>📈Suivi financier</button>
-        <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => setTab('facturation')}>🗒️Facturation agentes</button>
+        <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => handleTab('suivi')}>📈Suivi financier</button>
+        <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => handleTab('facturation')}>🗒️Facturation agentes</button>
       </div>
 
       {/* KPI strip — même layout pour admin et agente, données scopées */}
