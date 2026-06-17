@@ -334,10 +334,14 @@ function DocViewer({ url, nom, onClose }) {
 }
 
 // ─── Panel fiches techniques artisan ─────────────────────────────────────────
-function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
+function FichesTechPanel({ artisanId, dossierId, fichesCochees, onToggle, onCreated }) {
   const [fiches, setFiches] = useState([])
   const [loading, setLoading] = useState(true)
   const [viewer, setViewer] = useState(null) // { url, nom }
+  const [showForm, setShowForm] = useState(false)
+  const [nouvelleFiche, setNouvelleFiche] = useState({ nom: '', description: '' })
+  const [fichierFiche, setFichierFiche] = useState(null)
+  const [savingFiche, setSavingFiche] = useState(false)
 
   useEffect(() => {
     const charger = async () => {
@@ -353,16 +357,41 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
     if (data?.signedUrl) setViewer({ url: data.signedUrl, nom })
   }
 
+  // Création d'une fiche technique depuis le chantier : crée la fiche pour
+  // l'artisan puis l'auto-lie au dossier (chantier_fiches_techniques).
+  const creerFiche = async () => {
+    if (!nouvelleFiche.nom.trim()) return
+    setSavingFiche(true)
+    let url = null
+    if (fichierFiche) {
+      const ext = fichierFiche.name.split('.').pop()
+      const chemin = `artisans/${artisanId}/fiches/${Date.now()}.${ext}`
+      const { error: uploadErr } = await supabase.storage.from('documents').upload(chemin, fichierFiche)
+      if (!uploadErr) url = chemin
+    }
+    const { data: nouvelle, error } = await supabase
+      .from('fiches_techniques')
+      .insert({ artisan_id: artisanId, nom: nouvelleFiche.nom.trim(), description: nouvelleFiche.description || null, url })
+      .select().single()
+    if (error || !nouvelle) { setSavingFiche(false); return }
+    await supabase.from('chantier_fiches_techniques')
+      .insert({ dossier_id: dossierId, fiche_technique_id: nouvelle.id, artisan_id: artisanId })
+    const { data } = await supabase.from('fiches_techniques').select('*').eq('artisan_id', artisanId).order('nom')
+    setFiches(data || [])
+    await onCreated?.()
+    setNouvelleFiche({ nom: '', description: '' })
+    setFichierFiche(null)
+    setShowForm(false)
+    setSavingFiche(false)
+  }
+
   if (loading) return <div className="page-loading" />
-  if (fiches.length === 0) return (
-    <p style={{fontSize:11.5, color:'var(--ink-400)', marginTop:8}}>
-      Aucune fiche technique pour cet artisan
-      <a href={`/artisans/${artisanId}`} target="_blank" style={{color:'var(--brand-700)', textDecoration:'underline', marginLeft:6}}>En ajouter →</a>
-    </p>
-  )
   return (
     <>
       {viewer && <DocViewer url={viewer.url} nom={viewer.nom} onClose={() => setViewer(null)} />}
+      {fiches.length === 0 ? (
+        <p style={{fontSize:11.5, color:'var(--ink-400)', marginTop:8}}>Aucune fiche technique pour cet artisan</p>
+      ) : (
       <div style={{marginTop:8, padding:12, background:'var(--surface-2)', border:'1px solid var(--ink-200)', borderRadius:10, display:'flex', flexDirection:'column', gap:6}}>
         {fiches.map(fiche => {
           const cochee = fichesCochees.some(f => f.fiche_technique_id === fiche.id)
@@ -391,6 +420,40 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
           )
         })}
       </div>
+      )}
+      {!showForm ? (
+        <button onClick={() => setShowForm(true)} className="btn btn-ghost" style={{fontSize:11, marginTop:8, alignSelf:'flex-start'}}>
+          + Créer une fiche technique
+        </button>
+      ) : (
+        <div style={{display:'flex', flexDirection:'column', gap:8, padding:'10px 12px', marginTop:8, background:'var(--surface-1)', borderRadius:8, border:'1px solid var(--ink-100)'}}>
+          <input
+            placeholder="Nom de la fiche *"
+            value={nouvelleFiche.nom}
+            onChange={e => setNouvelleFiche(p => ({...p, nom: e.target.value}))}
+            style={{fontSize:12, padding:'5px 8px', borderRadius:6, border:'1px solid var(--ink-200)', outline:'none'}} />
+          <textarea
+            placeholder="Description (optionnel)"
+            value={nouvelleFiche.description}
+            onChange={e => setNouvelleFiche(p => ({...p, description: e.target.value}))}
+            rows={2}
+            style={{fontSize:12, padding:'5px 8px', borderRadius:6, border:'1px solid var(--ink-200)', resize:'vertical', outline:'none'}} />
+          <label style={{fontSize:11, color:'var(--ink-500)', cursor:'pointer'}}>
+            📎 {fichierFiche ? fichierFiche.name : 'Joindre un PDF (optionnel)'}
+            <input type="file" accept=".pdf" style={{display:'none'}}
+              onChange={e => setFichierFiche(e.target.files[0] || null)} />
+          </label>
+          <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
+            <button onClick={() => { setShowForm(false); setNouvelleFiche({nom:'',description:''}); setFichierFiche(null) }}
+              className="btn btn-ghost" style={{fontSize:11}}>Annuler</button>
+            <button onClick={creerFiche}
+              disabled={!nouvelleFiche.nom.trim() || savingFiche}
+              className="btn btn-primary" style={{fontSize:11}}>
+              {savingFiche ? 'Création…' : 'Créer et lier'}
+            </button>
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -3261,7 +3324,7 @@ export default function FicheChantier({ params }) {
                         🗂 Fiches techniques ({fichesTechChantier[d.artisan_id]?.length || 0})
                       </button>
                       {fichesPanelOuvert === d.id && (
-                        <FichesTechPanel artisanId={d.artisan_id} fichesCochees={fichesTechChantier[d.artisan_id] || []} onToggle={toggleFicheTech} />
+                        <FichesTechPanel artisanId={d.artisan_id} dossierId={id} fichesCochees={fichesTechChantier[d.artisan_id] || []} onToggle={toggleFicheTech} onCreated={chargerFichesTechChantier} />
                       )}
                     </div>
                     {/* Bouton intervention rapide sur devis accepté */}
