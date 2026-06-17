@@ -258,7 +258,7 @@ function SuiviGraphes({ anneeEnCours, rowsReelScoped, scopedDossiers, getKeyFrom
     el._chartInstance = new Chart(el, {
       type: 'doughnut',
       data: {
-        labels: ['Commissions HT', 'Frais HT', 'Honoraires AMO'],
+        labels: ['Commissions HT', 'Frais HT', 'Honoraires'],
         datasets: [{ data: [totComHT, totFraisHT, totHonNet], backgroundColor: ['#00578e','#0094d4','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
       },
       options: {
@@ -309,7 +309,7 @@ function SuiviGraphes({ anneeEnCours, rowsReelScoped, scopedDossiers, getKeyFrom
             <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
               <LegendRow color="#00578e" label="Commissions HT" value={fmt(totComHT)} pct={totalDonut>0?Math.round(totComHT/totalDonut*100):0} />
               <LegendRow color="#0094d4" label="Frais HT"       value={fmt(totFraisHT)} pct={totalDonut>0?Math.round(totFraisHT/totalDonut*100):0} />
-              <LegendRow color="#94a3b8" label="Honoraires AMO" value={fmt(totHonNet)} pct={totalDonut>0?Math.round(totHonNet/totalDonut*100):0} />
+              <LegendRow color="#94a3b8" label="Honoraires"     value={fmt(totHonNet)} pct={totalDonut>0?Math.round(totHonNet/totalDonut*100):0} />
             </div>
           </div>
         </div>
@@ -1355,7 +1355,11 @@ export default function Finances() {
     const totComHT     = scopedDossiers.reduce((s, d) => s + calculer(d).comHT, 0)
     const totFraisHT   = scopedDossiers.reduce((s, d) => s + calculer(d).fraisHT, 0)
     const totRoyalties = scopedDossiers.reduce((s, d) => s + calculer(d).royaltiesTotal, 0)
-    const totHonNet    = scopedDossiers.reduce((s, d) => s + calculer(d).honPreviNet, 0)
+    const totHonNet    = scopedDossiers.reduce((s, d) => {
+      if (d.typologie === 'courtage') return s + calculer(d).courtNet      // honoraires courtage net
+      if (d.typologie === 'amo')      return s + calculer(d).honPreviNet   // acompte + solde AMO nets
+      return s
+    }, 0)
     const objectifAnnuel = getObjectif('agence')
     const pctObjectif    = objectifAnnuel > 0 ? Math.round(totalNetCTP / objectifAnnuel * 100) : 0
     return { totPreviNet, totComHT, totFraisHT, totRoyalties, totHonNet, objectifAnnuel, pctObjectif }
@@ -2164,7 +2168,7 @@ export default function Finances() {
           <SuiviGraphes anneeEnCours={anneeEnCours} rowsReelScoped={rowsReelScoped} scopedDossiers={scopedDossiers} getKeyFromDate={getKeyFromDate} calculer={calculer} totComHT={totComHT} totFraisHT={totFraisHT} totHonNet={totHonNet} totPreviNet={totPreviNet} objectifAnnuel={objectifAnnuel} pctObjectif={pctObjectif} />
 
           {/* ZONE 3 — graphe Suivi + compte de résultat (logique inchangée) */}
-          {renderSuiviFinancier(isAdmin && agences.length > 1 ? suiviMode : 'agence')}
+          {renderSuiviFinancier(!isAdmin ? 'agent' : agences.length > 1 ? suiviMode : 'ctp')}
         </div>
       )}
 
