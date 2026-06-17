@@ -50,6 +50,7 @@ const FolderIcon   = () => <Svg><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2H19.5A1
 const MsgIcon      = () => <Svg><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4 3v-3h-.5A2.5 2.5 0 0 1 3 14.5z" transform="translate(0.5,0.5)"/></Svg>
 const MoreIcon     = () => <Svg><circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/></Svg>
 const PlusIcon     = () => <Svg><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></Svg>
+const ChartIcon    = () => <Svg><path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/></Svg>
 
 // ─── Helpers Aperçu ───────────────────────────────────────────────────────────
 function Fact({ label, value, highlight, mono }) {
@@ -634,6 +635,23 @@ const fmt = (n) => {
   return int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + '.' + dec + ' €'
 }
 
+// Édition inline des taux d'une simulation (courtage % + AMO %) — comparateur.
+function TauxEditor({ sim, onSave, onCancel }) {
+  const [tc, setTc] = useState(String(sim.taux_courtage ?? ''))
+  const [ta, setTa] = useState(String(sim.taux_amo ?? ''))
+  const inp = { width:46, fontSize:11, padding:'2px 4px', border:'1px solid var(--ink-200)', borderRadius:6, textAlign:'center' }
+  return (
+    <div style={{display:'flex', gap:4, alignItems:'center', flexWrap:'wrap', justifyContent:'center'}}>
+      <input type="number" value={tc} onChange={e => setTc(e.target.value)} style={inp} title="Courtage %" />
+      <span style={{fontSize:10, color:'var(--ink-400)'}}>C</span>
+      <input type="number" value={ta} onChange={e => setTa(e.target.value)} style={inp} title="AMO %" />
+      <span style={{fontSize:10, color:'var(--ink-400)'}}>A</span>
+      <button onClick={() => onSave(sim.id, tc, ta)} style={{border:'none', background:'none', cursor:'pointer', color:'#15803d', fontSize:13}} title="Valider">✓</button>
+      <button onClick={onCancel} style={{border:'none', background:'none', cursor:'pointer', color:'#b91c1c', fontSize:13}} title="Annuler">✗</button>
+    </div>
+  )
+}
+
 
 // Signature groupée des photos : 1 appel createSignedUrls au lieu de N appels.
 async function signerPhotos(rows) {
@@ -657,6 +675,11 @@ export default function FicheChantier({ params }) {
   const [succes, setSucces] = useState('')
   const [modalModif, setModalModif] = useState(false)
   const [devis, setDevis] = useState([])
+  // Comparateur de devis (onglet dédié, lazy)
+  const [simulations, setSimulations] = useState([])          // [{ id, nom, taux_courtage, taux_amo, lignes:[...] }]
+  const [loadingComparateur, setLoadingComparateur] = useState(false)
+  const [editingTaux, setEditingTaux] = useState(null)        // simulation_id en cours d'édition
+  const [editingMontant, setEditingMontant] = useState(null)  // ligne_id en cours d'édition
   const [artisans, setArtisans] = useState([])
   const [devisModal, setDevisModal] = useState({ open: false, devis: null })
   const [devisExpanded, setDevisExpanded] = useState(() => new Set())
@@ -1020,6 +1043,85 @@ export default function FicheChantier({ params }) {
   const chargerDevis = async () => {
     const { data } = await supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier, partenaire, paiement_direct)').eq('dossier_id', id).order('ordre').order('created_at')
     setDevis(data || [])
+  }
+
+  // ── Comparateur de devis : chargement + CRUD (sauvegarde auto, erreurs silencieuses) ──
+  const chargerComparateur = async (skipSync = false) => {
+    setLoadingComparateur(true)
+    const { data, error } = await supabase
+      .from('comparateur_simulations')
+      .select('*, lignes:comparateur_lignes(*)')
+      .eq('dossier_id', id)
+      .order('created_at')
+    if (error) { console.error('chargerComparateur :', error.message); setLoadingComparateur(false); return }
+
+    // Synchro : crée les lignes manquantes pour les devis ajoutés après la création
+    // d'une simulation. skipSync évite la récursion infinie (1 seul re-chargement).
+    if (!skipSync && (data || []).length > 0 && devis.length > 0) {
+      const aInserer = []
+      for (const sim of data) {
+        const devisManquants = devis.filter(d => !(sim.lignes || []).some(l => l.devis_artisan_id === d.id))
+        for (const d of devisManquants) {
+          aInserer.push({ simulation_id: sim.id, devis_artisan_id: d.id, inclus: true, montant_ttc_override: null })
+        }
+      }
+      if (aInserer.length > 0) {
+        const { error: errIns } = await supabase.from('comparateur_lignes').insert(aInserer)
+        if (errIns) console.error('chargerComparateur (sync lignes) :', errIns.message)
+        else { await chargerComparateur(true); return }   // re-charge une fois, sans re-synchroniser
+      }
+    }
+
+    setSimulations(data || [])
+    setLoadingComparateur(false)
+  }
+
+  const ajouterSimulation = async () => {
+    const nom = `Simul ${simulations.length + 1}`
+    const { data: sim, error } = await supabase
+      .from('comparateur_simulations')
+      .insert({ dossier_id: id, nom, taux_courtage: 6, taux_amo: 9 })
+      .select().single()
+    if (error || !sim) { console.error('ajouterSimulation :', error?.message); return }
+    if (devis.length > 0) {
+      const lignes = devis.map(d => ({ simulation_id: sim.id, devis_artisan_id: d.id, inclus: true, montant_ttc_override: null }))
+      const { error: errL } = await supabase.from('comparateur_lignes').insert(lignes)
+      if (errL) console.error('ajouterSimulation (lignes) :', errL.message)
+    }
+    await chargerComparateur()
+  }
+
+  const saveTaux = async (simId, taux_courtage, taux_amo) => {
+    const tc = parseFloat(taux_courtage), ta = parseFloat(taux_amo)
+    const payload = { taux_courtage: isNaN(tc) ? 0 : tc, taux_amo: isNaN(ta) ? 0 : ta }
+    setSimulations(prev => prev.map(s => s.id === simId ? { ...s, ...payload } : s))
+    setEditingTaux(null)
+    const { error } = await supabase.from('comparateur_simulations').update(payload).eq('id', simId)
+    if (error) console.error('saveTaux :', error.message)
+  }
+
+  const toggleInclus = async (simId, ligneId, valeur) => {
+    setSimulations(prev => prev.map(s => s.id === simId
+      ? { ...s, lignes: (s.lignes || []).map(l => l.id === ligneId ? { ...l, inclus: valeur } : l) } : s))
+    const { error } = await supabase.from('comparateur_lignes').update({ inclus: valeur }).eq('id', ligneId)
+    if (error) console.error('toggleInclus :', error.message)
+  }
+
+  const saveMontant = async (simId, ligneId, valeur) => {
+    const v = (valeur === '' || valeur == null) ? null : parseFloat(valeur)
+    const override = (v == null || isNaN(v)) ? null : v
+    setSimulations(prev => prev.map(s => s.id === simId
+      ? { ...s, lignes: (s.lignes || []).map(l => l.id === ligneId ? { ...l, montant_ttc_override: override } : l) } : s))
+    setEditingMontant(null)
+    const { error } = await supabase.from('comparateur_lignes').update({ montant_ttc_override: override }).eq('id', ligneId)
+    if (error) console.error('saveMontant :', error.message)
+  }
+
+  const supprimerSimulation = async (simId) => {
+    if (!confirm('Supprimer cette simulation ?')) return
+    setSimulations(prev => prev.filter(s => s.id !== simId))   // optimiste (CASCADE supprime les lignes)
+    const { error } = await supabase.from('comparateur_simulations').delete().eq('id', simId)
+    if (error) { console.error('supprimerSimulation :', error.message); await chargerComparateur() }
   }
 
   const deplacerDevis = async (devisId, direction) => {
@@ -1711,6 +1813,12 @@ export default function FicheChantier({ params }) {
     })()
   }, [onglet, id, messages.length])
 
+  // Chargement paresseux du comparateur à l'ouverture de l'onglet
+  useEffect(() => {
+    if (onglet === 'comparateur') chargerComparateur()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onglet, id])
+
   const envoyerReponse = async () => {
     if (!reponseMsg.trim()) return
     setSendingMsg(true)
@@ -2266,6 +2374,7 @@ export default function FicheChantier({ params }) {
         {[
           { key:'apercu',    label:'Aperçu',           icon:<EyeIcon /> },
           { key:'devis',     label:'Devis & artisans', icon:<HammerIcon />, count: devis.length },
+          { key:'comparateur', label:'Comparateur',    icon:<ChartIcon /> },
           { key:'planning',  label:'Planning',         icon:<CalIcon />,    count: rdvsDossier.length + interventionsDossier.length },
           { key:'photos',    label:'Photos',           icon:<CamIcon />,    count: photos.length },
           { key:'cr',        label:'Comptes-rendus',   icon:<DocIcon />,    count: comptesRendus.length },
@@ -2329,23 +2438,32 @@ export default function FicheChantier({ params }) {
             </div>
             <Progress value={avancement} height={10} />
             <div style={{display:'grid', gridTemplateColumns:'repeat(5, 1fr)', marginTop:18, gap:10}}>
-              {[
-                { l:'Contact',   done: true },
-                { l:'Devis',     done: devis.length > 0 },
-                { l:'Signature', done: !!dossier.contrat_signe },
-                { l:'Chantier',  done: !!dossier.date_demarrage_chantier },
-                { l:'Livraison', done: avancement >= 100 },
-              ].map((s, i) => (
-                <div key={i} style={{textAlign:'center'}}>
-                  <div style={{
-                    width:28, height:28, borderRadius:99, margin:'0 auto',
-                    background: s.done ? 'var(--ok)' : 'var(--ink-100)',
-                    color: s.done ? '#fff' : 'var(--ink-400)',
-                    display:'grid', placeItems:'center', fontSize:13, fontWeight:700,
-                  }}>{s.done ? '✓' : i+1}</div>
-                  <div style={{fontSize:11, color:'var(--ink-500)', marginTop:6, fontWeight:600}}>{s.l}</div>
-                </div>
-              ))}
+              {(() => {
+                const step1 = !!dossier.contrat_signe                                   // Mandat R1 signé
+                const step2 = devis.length > 0                                          // ≥1 devis (tout statut)
+                const step3 = devis.length > 0 && devis.every(d => d.statut !== 'recu')  // 0 devis 'recu' (tous tranchés)
+                const step4 = !!(dossier.date_demarrage_chantier || dossier.statut === 'en_cours_chantier') // chantier démarré
+                const step5 = dossier.statut === 'termine'                              // chantier terminé
+                // Monotonicité : étape N cochée ⇒ étapes 1..N-1 cochées.
+                const done = [
+                  step1 || step2 || step3 || step4 || step5,
+                  step2 || step3 || step4 || step5,
+                  step3 || step4 || step5,
+                  step4 || step5,
+                  step5,
+                ]
+                return ['Contact', 'Devis', 'Signature', 'Chantier', 'Livraison'].map((l, i) => (
+                  <div key={i} style={{textAlign:'center'}}>
+                    <div style={{
+                      width:28, height:28, borderRadius:99, margin:'0 auto',
+                      background: done[i] ? 'var(--ok)' : 'var(--ink-100)',
+                      color: done[i] ? '#fff' : 'var(--ink-400)',
+                      display:'grid', placeItems:'center', fontSize:13, fontWeight:700,
+                    }}>{done[i] ? '✓' : i+1}</div>
+                    <div style={{fontSize:11, color:'var(--ink-500)', marginTop:6, fontWeight:600}}>{l}</div>
+                  </div>
+                ))
+              })()}
             </div>
           </div>
 
@@ -3941,6 +4059,148 @@ export default function FicheChantier({ params }) {
               </div>
             )}
           </div>
+        </div>
+        )
+      })()}
+
+      {/* ── COMPARATEUR DE DEVIS ── */}
+      {onglet === 'comparateur' && (() => {
+        const thStyle = { padding:'10px 12px', textAlign:'center', fontSize:11, color:'var(--ink-500)', fontWeight:600, borderBottom:'1px solid var(--ink-200)', whiteSpace:'nowrap' }
+        const tdStyle = { padding:'8px 12px', textAlign:'center', color:'var(--ink-700)', whiteSpace:'nowrap' }
+        const linkBtn = { border:'none', background:'none', cursor:'pointer', fontSize:11, color:'var(--brand-700)', textDecoration:'underline' }
+
+        const devisById   = Object.fromEntries(devis.map(d => [d.id, d]))
+        const montantLigne = (l) => {
+          if (l.montant_ttc_override != null) return Number(l.montant_ttc_override) || 0
+          return Number(devisById[l.devis_artisan_id]?.montant_ttc) || 0
+        }
+        const ligneFor = (sim, devisId) => (sim.lignes || []).find(l => l.devis_artisan_id === devisId)
+        const totauxSim = (sim) => {
+          const totalTTC = (sim.lignes || []).filter(l => l.inclus).reduce((s, l) => s + montantLigne(l), 0)
+          const honCourtage = totalTTC * (Number(sim.taux_courtage) || 0) / 100
+          const honAMO      = totalTTC * (Number(sim.taux_amo) || 0) / 100
+          return { totalTTC, honCourtage, honAMO, totalCourtage: totalTTC + honCourtage, totalAMO: totalTTC + honAMO }
+        }
+        const totalBaseTTC = devis.reduce((s, d) => s + (Number(d.montant_ttc) || 0), 0)
+
+        return (
+        <div style={{display:'flex', flexDirection:'column', gap:14}}>
+          <div className="card" style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap'}}>
+            <div>
+              <h2 className="page" style={{fontSize:15}}>Comparateur de devis</h2>
+              <div className="eyebrow" style={{marginTop:4}}>Simule des scénarios : inclusion des devis, montants ajustés, taux d'honoraires.</div>
+            </div>
+            <button onClick={ajouterSimulation} className="btn btn-primary" style={{fontSize:12.5}}>
+              <PlusIcon /> Nouvelle simulation
+            </button>
+          </div>
+
+          {loadingComparateur ? (
+            <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Chargement…</div>
+          ) : devis.length === 0 ? (
+            <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucun devis à comparer — ajoute des devis dans l'onglet « Devis & artisans ».</div>
+          ) : simulations.length === 0 ? (
+            <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucune simulation — clique « Nouvelle simulation ».</div>
+          ) : (
+            <div className="card" style={{padding:0, overflowX:'auto'}}>
+              <table style={{width:'100%', borderCollapse:'collapse', fontSize:12.5, minWidth: 320 + simulations.length * 180}}>
+                <thead>
+                  <tr>
+                    <th style={{...thStyle, textAlign:'left', minWidth:190}}>Devis / artisan</th>
+                    <th style={{...thStyle, minWidth:110}}>Base</th>
+                    {simulations.map(sim => (
+                      <th key={sim.id} style={{...thStyle, minWidth:170}}>
+                        <div style={{display:'flex', flexDirection:'column', gap:4, alignItems:'center'}}>
+                          <span style={{fontWeight:700, color:'var(--ink-900)', fontSize:12.5}}>{sim.nom}</span>
+                          {editingTaux === sim.id ? (
+                            <TauxEditor sim={sim} onSave={saveTaux} onCancel={() => setEditingTaux(null)} />
+                          ) : (
+                            <button onClick={() => setEditingTaux(sim.id)} style={linkBtn}>
+                              Courtage&nbsp;{sim.taux_courtage}% · AMO&nbsp;{sim.taux_amo}%
+                            </button>
+                          )}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {devis.map(d => (
+                    <tr key={d.id} style={{borderTop:'1px solid var(--ink-100)'}}>
+                      <td style={{...tdStyle, textAlign:'left', whiteSpace:'normal'}}>
+                        <div style={{fontWeight:600, color:'var(--ink-900)'}}>{d.artisan?.entreprise || '—'}</div>
+                        {d.artisan?.metier && <div style={{fontSize:11, color:'var(--ink-500)'}}>{d.artisan.metier}</div>}
+                      </td>
+                      <td style={{...tdStyle, fontWeight:600}} className="tnum">{fmt(d.montant_ttc || 0)}</td>
+                      {simulations.map(sim => {
+                        const l = ligneFor(sim, d.id)
+                        if (!l) return <td key={sim.id} style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                        return (
+                          <td key={sim.id} style={{...tdStyle, opacity: l.inclus ? 1 : 0.45}}>
+                            <div style={{display:'flex', alignItems:'center', justifyContent:'center', gap:6}}>
+                              <button onClick={() => toggleInclus(sim.id, l.id, !l.inclus)}
+                                title={l.inclus ? 'Exclure de la simulation' : 'Inclure dans la simulation'}
+                                style={{border:'none', background:'none', cursor:'pointer', fontSize:13, fontWeight:700, color: l.inclus ? '#15803d' : '#b91c1c'}}>
+                                {l.inclus ? '✓' : '✗'}
+                              </button>
+                              {editingMontant === l.id ? (
+                                <input type="number" autoFocus defaultValue={l.montant_ttc_override ?? ''}
+                                  placeholder={String(d.montant_ttc ?? '')}
+                                  onBlur={e => saveMontant(sim.id, l.id, e.target.value)}
+                                  onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                                  style={{width:90, fontSize:12, padding:'2px 4px', border:'1px solid var(--ink-200)', borderRadius:6, textAlign:'right'}} />
+                              ) : (
+                                <button onClick={() => setEditingMontant(l.id)} className="tnum"
+                                  title="Modifier le montant pour cette simulation"
+                                  style={{border:'none', background:'none', cursor:'pointer', color: l.montant_ttc_override != null ? '#0094d4' : 'var(--ink-700)', fontWeight: l.montant_ttc_override != null ? 700 : 400}}>
+                                  {fmt(montantLigne(l))}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+
+                  <tr style={{borderTop:'2px solid var(--ink-300)', background:'var(--surface-2)'}}>
+                    <td style={{...tdStyle, textAlign:'left', fontWeight:700}}>Total TTC</td>
+                    <td style={{...tdStyle, fontWeight:700}} className="tnum">{fmt(totalBaseTTC)}</td>
+                    {simulations.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700}} className="tnum">{fmt(totauxSim(sim).totalTTC)}</td>)}
+                  </tr>
+                  <tr style={{borderTop:'1px solid var(--ink-100)'}}>
+                    <td style={{...tdStyle, textAlign:'left'}}>Honoraires courtage</td>
+                    <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                    {simulations.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honCourtage)}</td>)}
+                  </tr>
+                  <tr>
+                    <td style={{...tdStyle, textAlign:'left'}}>Honoraires AMO</td>
+                    <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                    {simulations.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honAMO)}</td>)}
+                  </tr>
+                  <tr style={{borderTop:'1px solid var(--ink-200)'}}>
+                    <td style={{...tdStyle, textAlign:'left', fontWeight:700, color:'var(--brand-800)'}}>Total chantier courtage</td>
+                    <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                    {simulations.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--brand-800)'}} className="tnum">{fmt(totauxSim(sim).totalCourtage)}</td>)}
+                  </tr>
+                  <tr>
+                    <td style={{...tdStyle, textAlign:'left', fontWeight:700, color:'var(--brand-800)'}}>Total chantier AMO</td>
+                    <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                    {simulations.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--brand-800)'}} className="tnum">{fmt(totauxSim(sim).totalAMO)}</td>)}
+                  </tr>
+                  <tr style={{borderTop:'1px solid var(--ink-100)'}}>
+                    <td style={tdStyle}></td>
+                    <td style={tdStyle}></td>
+                    {simulations.map(sim => (
+                      <td key={sim.id} style={tdStyle}>
+                        <button onClick={() => supprimerSimulation(sim.id)} className="btn btn-ghost" style={{fontSize:11, color:'#b91c1c'}}>Supprimer</button>
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
         )
       })()}

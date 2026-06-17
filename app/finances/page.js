@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import { formatNomClient } from '../lib/clients'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { calculateDossierFinance, getActiveDevis, getSignedDevis, ROYALTIES_RATE } from '../lib/finance'
+import { calculateDossierFinance, getActiveDevis, getSignedDevis, ROYALTIES_RATE, DEFAULT_PART_AGENTE } from '../lib/finance'
 import { calcStatut } from '../lib/dossiers'
 import { Avatar } from '../components/shared'
 
@@ -30,7 +30,7 @@ const fmt = (n) => {
 }
 const normalizeDossier = (d) => ({
   ...d,
-  part_agente: d.part_agente ?? (d.referente?.role === 'admin' ? 0 : 0.5),
+  part_agente: d.part_agente ?? (d.referente?.role === 'admin' ? 0 : DEFAULT_PART_AGENTE),
   frais_part_agente: d.frais_part_agente ?? null,
   taux_amo: d?.taux_amo ?? d?.honoraires_amo_taux,
   client: d?.client || null,
@@ -40,8 +40,8 @@ const normalizeDossier = (d) => ({
 // HELPERS TABLEAU
 // ─────────────────────────────────────────────────────────────────────────────
 
-const thL = (label) => <th key={label} className="text-left px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</th>
-const thR = (label) => <th key={label} className="text-right px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</th>
+const thL = (label) => <th key={label} style={{textAlign:'left',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>{label}</th>
+const thR = (label) => <th key={label} style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>{label}</th>
 
 function Th({ children, right }) {
   return <th style={{padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',textAlign:right?'right':'left',whiteSpace:'nowrap'}}>{children}</th>
@@ -143,6 +143,515 @@ function ObjectifBar({ label, reel, objectifMontant, cible, agenteId = null, can
 // ─────────────────────────────────────────────────────────────────────────────
 
 
+function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) {
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof Chart === 'undefined') return
+    const el = document.getElementById(chartId)
+    if (!el) return
+    if (el._chartInstance) el._chartInstance.destroy()
+    el._chartInstance = new Chart(el, {
+      data: {
+        labels,
+        datasets: [
+          { type: 'bar', label: 'Gains', data: produitsData, backgroundColor: '#3B7DD8', borderRadius: 3, order: 2 },
+          { type: 'bar', label: 'Reversements', data: chargesData, backgroundColor: '#E24B4A', borderRadius: 3, order: 2 },
+          { type: 'line', label: 'Résultats', data: netData, borderColor: '#1F5FA6', backgroundColor: 'rgba(31,95,166,0.06)', borderWidth: 2, borderDash: [4, 3], pointRadius: 4, pointBackgroundColor: '#1F5FA6', tension: 0.3, order: 1 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ctx.dataset.label + ' : ' + Math.abs(ctx.parsed.y).toLocaleString('fr-FR') + ' €' } }
+        },
+        scales: {
+          x: { stacked: false, grid: { display: false }, ticks: { font: { size: 11 }, color: '#888', maxRotation: 30, autoSkip: false } },
+          y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 }, color: '#888', callback: v => Math.abs(v).toLocaleString('fr-FR') + ' €' } }
+        }
+      }
+    })
+    return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+  }, [labels, produitsData, chargesData, netData, chartId])
+
+  return (
+    <div className="card" style={{padding:20}}>
+      <div style={{display:'flex',gap:16,marginBottom:16,flexWrap:'wrap'}}>
+        {[
+          { color: '#3B7DD8', label: 'Gains encaissés' },
+          { color: '#E24B4A', label: 'Reversements' },
+          { color: '#1F5FA6', label: 'Résultat', dashed: true },
+        ].map(({ color, label, dashed }) => (
+          <div key={label} style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{ width: 10, height: 10, borderRadius: 2, background: dashed ? 'transparent' : color, border: dashed ? `2px dashed ${color}` : 'none' }} />
+            <span style={{fontSize:11,color:'var(--ink-500)'}}>{label}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ position: 'relative', width: '100%', height: 220 }}>
+        <canvas id={chartId} role="img" aria-label="Graphique produits et charges Société par période" />
+      </div>
+    </div>
+  )
+}
+
+function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKeyFromDate, calculer }) {
+  const donutReelId = 'suivi_donut_reel'
+  const donutPreviId = 'suivi_donut_previ'
+
+  // Répartition par catégorie (nets) sur l'année sélectionnée — prévi (scopedDossiers) et réel (agrégats payés).
+  const donutPrevi = useMemo(() => {
+    let frais = 0, com = 0, hon = 0
+    scopedDossiers.forEach(d => {
+      const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
+      if (!key || !key.startsWith(String(anneeSelectionnee))) return
+      const c = calculer(d); frais += c.fraisNetPrevi; com += c.netComTous; hon += c.honPreviNet
+    })
+    return { frais: round2(frais), com: round2(com), hon: round2(hon) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedDossiers, anneeSelectionnee])
+
+  const donutReel = useMemo(() => {
+    let frais = 0, com = 0, hon = 0
+    rowsReelScoped.forEach(([k, agg]) => { if (!k.startsWith(String(anneeSelectionnee))) return; frais += (agg.fraisNet||0); com += (agg.comReelNet||0); hon += (agg.honReel||0) })
+    return { frais: round2(frais), com: round2(com), hon: round2(hon) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowsReelScoped, anneeSelectionnee])
+
+  const donutBase = {
+    type: 'doughnut',
+    options: {
+      cutout: '70%', responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ctx.label + ' : ' + (ctx.parsed).toLocaleString('fr-FR') + ' €' } }
+      }
+    }
+  }
+  const donutDataset = (d) => ({
+    labels: ['Commissions illiCO', 'Frais de consultation', 'Honoraires'],
+    datasets: [{ data: [d.com, d.frais, d.hon], backgroundColor: ['#00578e','#0094d4','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const el = document.getElementById(donutReelId)
+    if (!el) return
+    if (el._chartInstance) el._chartInstance.destroy()
+    el._chartInstance = new Chart(el, { ...donutBase, data: donutDataset(donutReel) })
+    return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [donutReel])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const el = document.getElementById(donutPreviId)
+    if (!el) return
+    if (el._chartInstance) el._chartInstance.destroy()
+    el._chartInstance = new Chart(el, { ...donutBase, data: donutDataset(donutPrevi) })
+    return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [donutPrevi])
+
+  const totalReel  = round2(donutReel.com + donutReel.frais + donutReel.hon)
+  const totalPrevi = round2(donutPrevi.com + donutPrevi.frais + donutPrevi.hon)
+
+  return (
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
+      <div className="card" style={{padding:20}}>
+        <div className="eyebrow" style={{marginBottom:12}}>Répartition réel {anneeSelectionnee}</div>
+        <div style={{position:'relative',height:200}}>
+          <canvas id={donutReelId} role="img" aria-label="Répartition réel" />
+        </div>
+        <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
+          <LegendRow color="#00578e" label="Commissions illiCO"    value={fmt(donutReel.com)}   pct={totalReel>0?Math.round(donutReel.com/totalReel*100):0} />
+          <LegendRow color="#0094d4" label="Frais de consultation" value={fmt(donutReel.frais)} pct={totalReel>0?Math.round(donutReel.frais/totalReel*100):0} />
+          <LegendRow color="#94a3b8" label="Honoraires"            value={fmt(donutReel.hon)}   pct={totalReel>0?Math.round(donutReel.hon/totalReel*100):0} />
+        </div>
+      </div>
+      <div className="card" style={{padding:20}}>
+        <div className="eyebrow" style={{marginBottom:12}}>Répartition prévisionnel {anneeSelectionnee}</div>
+        <div style={{position:'relative',height:200}}>
+          <canvas id={donutPreviId} role="img" aria-label="Répartition prévisionnel" />
+        </div>
+        <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
+          <LegendRow color="#00578e" label="Commissions illiCO"    value={fmt(donutPrevi.com)}   pct={totalPrevi>0?Math.round(donutPrevi.com/totalPrevi*100):0} />
+          <LegendRow color="#0094d4" label="Frais de consultation" value={fmt(donutPrevi.frais)} pct={totalPrevi>0?Math.round(donutPrevi.frais/totalPrevi*100):0} />
+          <LegendRow color="#94a3b8" label="Honoraires"            value={fmt(donutPrevi.hon)}   pct={totalPrevi>0?Math.round(donutPrevi.hon/totalPrevi*100):0} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelectionnee, redevancesAgente, agrégerParPaiement, dossiersAgente, agenteActuelle, erreur, succes, setErreur, setSucces, upsertFactureMoisType, isAdmin, agentes, anneeEnCours }) {
+  const facturesAg  = facturesAgente.filter(f => f.agente_id === agenteSelectionnee)
+  const redevAg     = redevancesAgente
+  const [moisDeplie, setMoisDeplie] = useState(null)
+
+  // Montants F1/F2 calculés EN LIVE (source unique : agrégerParPaiement → finance.js).
+  // Le snapshot factures_agente ne sert plus qu'à lire le statut + le PDF (read-only ici).
+  const rowsReel   = agrégerParPaiement(dossiersAgente, false)
+  const aggParMois = new Map(rowsReel)
+  // Seuil de redevance dérivé de la CHAÎNE "YYYY-MM-DD" (zéro Date → zéro fuseau).
+  const debutIndex = agenteActuelle?.redevance_debut
+    ? (() => { const [y, m] = agenteActuelle.redevance_debut.split('-').map(Number); return y * 12 + (m - 1) })()
+    : null
+  const redevParam = agenteActuelle?.redevance_mensuelle_ht   // paramètre, jamais de littéral
+
+  // F1 (agente → CTP) = frais + commissions + honoraires + part partenaire (= gainsAgenteReels)
+  // F2 (CTP → agente) = redevance HT datée (param) + apporteur remboursé
+  const calcMois = (annee, mois) => {
+    const agg = aggParMois.get(`${annee}-${String(mois).padStart(2, '0')}`) || {}
+    const fraisN = round2(agg.fraisAgenteNet || 0)
+    const comN   = round2(agg.comAgenteNet || 0)
+    const honN   = round2(agg.honAgenteNet || 0)
+    const partN  = round2(agg.comApporteursAgenteNet || 0)
+    const montantF1 = round2(fraisN + comN + honN + partN)
+    const moisIndex = annee * 12 + (mois - 1)
+    const redev = (debutIndex != null && redevParam != null && moisIndex >= debutIndex) ? round2(redevParam) : 0
+    const apporteur = round2(agg.apporteurPartAgenteNet || 0)
+    const montantF2 = round2(redev + apporteur)
+    return { fraisN, comN, honN, partN, montantF1, redev, apporteur, montantF2 }
+  }
+
+  // F1/F2 effectif : figé (snapshot factures_agente.montant) si payé, sinon live.
+  const f1Eff = (f, liveF1) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF1
+  const f2Eff = (f, liveF2) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF2
+
+  // Facturation décalée : la facture du mois M porte sur l'activité du mois M−1.
+  // P2 : on persiste / apparie / toggle sur le mois d'ACTIVITÉ ; seul le libellé est décalé.
+  const shiftMoisKey = (key, delta) => {
+    const [y, m] = key.split('-').map(Number)
+    const dt = new Date(y, m - 1 + delta, 1)            // Date gère le rollover d'année
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+  }
+
+  // Tous les mois de redevance due : de debutIndex au mois courant (activité) INCLUS, même creux.
+  const now = new Date()
+  const moisCourantIndex = now.getFullYear() * 12 + now.getMonth()    // getMonth() 0-based = (mois-1), cohérent avec debutIndex
+  const redevanceDueKeys = []
+  if (debutIndex != null) {
+    for (let i = debutIndex; i <= moisCourantIndex; i++) {
+      redevanceDueKeys.push(`${Math.floor(i / 12)}-${String(i % 12 + 1).padStart(2, '0')}`)   // clé activité "YYYY-MM"
+    }
+  }
+
+  // Lignes = mois de FACTURE (= activité + 1). Sources activité : rowsReel + factures persistées (P2) + redevances dues.
+  const months = [...new Set([
+    ...rowsReel.map(([k]) => shiftMoisKey(k, +1)),
+    ...facturesAg.map(f => shiftMoisKey(`${f.annee}-${String(f.mois).padStart(2, '0')}`, +1)),
+    ...redevanceDueKeys.map(k => shiftMoisKey(k, +1)),
+  ])].sort((a, b) => b.localeCompare(a))
+
+  let totalF1 = 0, totalF1Paye = 0, totalF2 = 0, totalF2Paye = 0
+  months.forEach(key => {
+    const [aStr, mStr] = shiftMoisKey(key, -1).split('-')   // mois d'activité (M−1)
+    const annee = parseInt(aStr), mois = parseInt(mStr)
+    const { montantF1, montantF2 } = calcMois(annee, mois)
+    const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
+    const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
+    const f1eff = f1Eff(f1, montantF1)
+    const f2eff = f2Eff(f2, montantF2)
+    totalF1 = round2(totalF1 + f1eff); totalF2 = round2(totalF2 + f2eff)
+    if (f1?.statut === 'paye') totalF1Paye = round2(totalF1Paye + f1eff)
+    if (f2?.statut === 'paye') totalF2Paye = round2(totalF2Paye + f2eff)
+  })
+  const totalRedev = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => round2(s + (r.montant_ht || 0)), 0)
+  const net        = round2(totalF1 - totalF2)
+
+  const uploadPdf = async (f, fichier) => {
+    setErreur(''); setSucces('')
+    const ext = fichier.name.split('.').pop().toLowerCase()
+    const chemin = `factures_agente/${agenteSelectionnee}/${f.annee}-${String(f.mois).padStart(2,'0')}-${f.type_facture}.${ext}`
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+    if (error) { setErreur('Erreur upload : ' + error.message); return }
+    try {
+      await upsertFactureMoisType(f.mois, f.annee, f.montant||0, f.type_facture, { facture_path: chemin })
+      setSucces('Facture uploadée ✓')
+    } catch (e) { setErreur('Erreur enregistrement : ' + e.message) }
+  }
+
+  // Bascule du statut F1 (agente → CTP). Au clic « payé » : fige le montant LIVE
+  // (calcMois, jamais f.montant). Au déclic : montant remis à NULL → le live reprend.
+  // INSERT si le mois n'a pas de ligne (montant positionnel), UPDATE sinon (montant dans updates).
+  const toggleF1Statut = async (annee, mois, f1) => {
+    const live = calcMois(annee, mois).montantF1
+    try {
+      if (f1?.statut === 'paye') {
+        await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'a_facturer', montant: null })
+      } else {
+        await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'paye', montant: live })
+      }
+    } catch (e) { setErreur('Erreur F1 : ' + e.message) }
+  }
+
+  // Bascule du statut F2 (CTP → agente). ADMIN ONLY (appelé uniquement depuis la
+  // branche isAdmin de la cellule). Fige le montant LIVE (calcMois().montantF2,
+  // jamais f.montant) au clic « reçu », NULL au déclic. Le type 'ctp_vers_agente'
+  // déclenche la synchro redevances dans upsertFactureMoisType (regle / en_attente).
+  const toggleF2Statut = async (annee, mois, f2) => {
+    const live = calcMois(annee, mois).montantF2
+    try {
+      if (f2?.statut === 'paye') {
+        await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'a_facturer', montant: null })
+      } else {
+        await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'paye', montant: live })
+      }
+    } catch (e) { setErreur('Erreur F2 : ' + e.message) }
+  }
+
+  const FactureDetailCard = ({ title, subtitle, type, accent }) => {
+    const fs = facturesAg.filter(f => f.type_facture === type)
+    return (
+      <div className="card" style={{padding:0,overflow:'hidden'}}>
+        <div style={{padding:'14px 18px',borderBottom:'1px solid var(--ink-200)',borderLeft:`4px solid ${accent}`}}>
+          <div style={{fontSize:14,fontWeight:700,color:'var(--ink-900)'}}>{title}</div>
+          <div style={{fontSize:11.5,color:'var(--ink-500)',marginTop:4,lineHeight:1.4}}>{subtitle}</div>
+        </div>
+        <div>
+          {fs.map(f => {
+            const m = calcMois(f.annee, f.mois)
+            const montant = type === 'agente_vers_ctp' ? f1Eff(f, m.montantF1) : f2Eff(f, m.montantF2)
+            const [fFaStr, fFmStr] = shiftMoisKey(`${f.annee}-${String(f.mois).padStart(2, '0')}`, +1).split('-')
+            return (
+            <div key={f.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:12,alignItems:'center',padding:'12px 18px',borderTop:'1px solid var(--ink-100)'}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:600,color:'var(--ink-900)'}}>{MOIS[parseInt(fFmStr)]} {fFaStr}</div>
+                <div style={{fontSize:10,color:'var(--ink-400)'}}>activité de {MOIS[f.mois]} {f.annee}</div>
+                <div style={{fontSize:11,color:'var(--ink-500)',marginTop:2}}>
+                  {f.facture_path
+                    ? <button onClick={async () => { const { data } = await supabase.storage.from('documents').createSignedUrl(f.facture_path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }}
+                        style={{fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>
+                    : <span style={{color:'var(--ink-400)'}}>Pas de PDF déposé</span>}
+                </div>
+              </div>
+              <div style={{fontWeight:700,color:'var(--ink-900)',fontVariantNumeric:'tabular-nums'}}>{fmt(montant)}</div>
+              <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                <StatutFacture f={f}/>
+                <label style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid var(--ink-200)',cursor:'pointer',color:'var(--ink-600)',background:'#fff'}}>
+                  {f.facture_path ? '📤 Remplacer le PDF' : '📤 Déposer un PDF'}
+                  <input type="file" accept=".pdf" style={{display:'none'}} onChange={e => e.target.files[0] && uploadPdf(f, e.target.files[0])}/>
+                </label>
+              </div>
+            </div>
+            )
+          })}
+          {fs.length === 0 && <div style={{padding:24,textAlign:'center',color:'var(--ink-400)',fontSize:13}}>Aucune facture</div>}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:18}}>
+      {succes && <div style={{background:'rgba(22,163,74,0.07)',border:'1px solid rgba(22,163,74,0.25)',borderRadius:10,padding:'10px 16px',fontSize:13,color:'#15803d'}}>{succes}</div>}
+      {erreur && <div style={{background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:10,padding:'10px 16px',fontSize:13,color:'#b91c1c'}}>{erreur}</div>}
+      {/* Sélecteur agente — admin uniquement (agente voit sa propre facturation) */}
+      {isAdmin && (
+        <div className="card" style={{padding:'14px 18px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+          <div className="eyebrow">Agente :</div>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            {agentes.filter(a => a.role === 'agente').map(a => (
+              <button key={a.id} onClick={() => setAgenteSelectionnee(a.id)} style={{
+                display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:99,
+                border:'1px solid',borderColor: agenteSelectionnee === a.id ? 'var(--brand-500)' : 'var(--ink-200)',
+                background: agenteSelectionnee === a.id ? 'var(--brand-50)' : '#fff',
+                color: agenteSelectionnee === a.id ? 'var(--brand-800)' : 'var(--ink-700)',
+                fontSize:12,fontWeight:600,cursor:'pointer',
+              }}>
+                <Avatar name={`${a.prenom} ${a.nom}`} size={20}/>
+                {a.prenom} {a.nom}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* KPI strip */}
+      <div className="kpi-grid">
+        <FinKpiCard label="F1 — Gains à facturer"       value={fmt(totalF1)}    sub={`Reçu ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
+        <FinKpiCard label="F2 — Redevances + apporteur" value={fmt(totalF2)}    sub={`Reçu ${fmt(totalF2Paye)}`}                                              tone="warn"/>
+        <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
+      </div>
+
+      {/* Tableau mensuel F1 / F2 */}
+      <div className="card" style={{padding:0,overflow:'hidden'}}>
+        <div style={{padding:'14px 22px',borderBottom:'1px solid var(--ink-200)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)'}}>
+              Facturation mensuelle · {agenteActuelle ? `${agenteActuelle.prenom} ${agenteActuelle.nom}` : '—'}
+            </div>
+            <div className="eyebrow" style={{marginTop:4}}>F1 = facture émise par l&apos;agente · F2 = facture émise par la franchisée</div>
+          </div>
+        </div>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+          <thead style={{background:'var(--surface-2)'}}>
+            <tr>
+              {thL('Mois')}
+              {thR('F1 (Agente → Société)')}
+              <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F1</th>
+              {thR('F2 (Société → Agente)')}
+              <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F2</th>
+              {thR('Net')}
+            </tr>
+          </thead>
+          <tbody>
+            {months.map(key => {
+              const [faStr, fmStr] = key.split('-')
+              const fMois = parseInt(fmStr); const fAnnee = parseInt(faStr)        // mois de FACTURE (libellé)
+              const [aStr, mStr] = shiftMoisKey(key, -1).split('-')
+              const mois = parseInt(mStr); const annee = parseInt(aStr)            // mois d'ACTIVITÉ (M−1) : données, appariement, toggle
+              const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
+              const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
+              const d   = calcMois(annee, mois)
+              const f1m = f1Eff(f1, d.montantF1)
+              const f2m = f2Eff(f2, d.montantF2)
+              const n   = round2(f1m - f2m)
+              const isOpen = moisDeplie === key
+              const voirPdf = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }
+              return (
+                <React.Fragment key={key}>
+                <tr style={{borderTop:'1px solid var(--ink-100)',cursor:'pointer'}} className="row-hover" onClick={() => setMoisDeplie(isOpen ? null : key)}>
+                  <td style={{padding:'14px 16px',fontWeight:700,color:'var(--ink-900)'}}>
+                    <span style={{display:'inline-block',width:14,color:'var(--ink-400)'}}>{isOpen ? '▾' : '▸'}</span>{MOIS[fMois]} {fAnnee}
+                    <div style={{fontSize:11,fontWeight:500,color:'var(--ink-400)',marginLeft:14}}>activité de {MOIS[mois]} {annee}</div>
+                  </td>
+                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f1m>0?'#15803d':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
+                    {f1m > 0 ? fmt(f1m) : '—'}
+                  </td>
+                  <td style={{padding:'14px 16px',textAlign:'center'}}>
+                    {(f1m === 0 && f1?.statut !== 'paye') ? (
+                      <span style={{color:'var(--ink-400)'}}>—</span>
+                    ) : (
+                      <span
+                        onClick={(e) => { e.stopPropagation(); toggleF1Statut(annee, mois, f1) }}
+                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
+                        title={f1?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
+                        style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
+                        <StatutFacture f={f1}/>
+                      </span>
+                    )}
+                  </td>
+                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f2m>0?'#b91c1c':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
+                    {f2m > 0 ? fmt(f2m) : '—'}
+                  </td>
+                  <td style={{padding:'14px 16px',textAlign:'center'}}>
+                    {(f2m === 0 && f2?.statut !== 'paye') ? (
+                      <span style={{color:'var(--ink-400)'}}>—</span>
+                    ) : isAdmin ? (
+                      <span
+                        onClick={(e) => { e.stopPropagation(); toggleF2Statut(annee, mois, f2) }}
+                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
+                        title={f2?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
+                        style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
+                        <StatutFacture f={f2}/>
+                      </span>
+                    ) : (
+                      <StatutFacture f={f2}/>
+                    )}
+                  </td>
+                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:n>=0?'var(--brand-800)':'#b91c1c',fontVariantNumeric:'tabular-nums'}}>
+                    {n >= 0 ? '+' : ''}{fmt(n)}
+                  </td>
+                </tr>
+                {isOpen && (
+                  <tr style={{background:'var(--surface-2)'}}>
+                    <td colSpan={6} style={{padding:'4px 16px 16px'}}>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,maxWidth:720}}>
+                        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                          <div className="eyebrow" style={{color:'#15803d'}}>F1 — Agente facture la Société</div>
+                          {d.fraisN > 0 && <Row label="Frais de consultation" value={fmt(d.fraisN)} />}
+                          {d.comN   > 0 && <Row label="Commissions artisans"   value={fmt(d.comN)} />}
+                          {d.honN   > 0 && <Row label="Honoraires (courtage + AMO)" value={fmt(d.honN)} />}
+                          {d.partN  > 0 && <Row label="Part partenaire"         value={fmt(d.partN)} />}
+                          {f1m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucun gain encaissé ce mois</span>}
+                          <Row label="Total F1" value={fmt(f1m)} bold accent />
+                          {f1?.facture_path && <button onClick={() => voirPdf(f1.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
+                        </div>
+                        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                          <div className="eyebrow" style={{color:'#b91c1c'}}>F2 — La Société facture l&apos;agente</div>
+                          {d.redev     > 0 && <Row label="Redevance mensuelle (HT)" value={fmt(d.redev)} />}
+                          {d.apporteur > 0 && <Row label="Apporteur remboursé"      value={fmt(d.apporteur)} />}
+                          {f2m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucune charge ce mois</span>}
+                          <Row label="Total F2" value={fmt(f2m)} bold accent />
+                          {f2?.facture_path && <button onClick={() => voirPdf(f2.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
+              )
+            })}
+            {months.length === 0 && (
+              <tr><td colSpan={6} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-400)'}}>Aucune facturation à afficher</td></tr>
+            )}
+          </tbody>
+          {months.length > 0 && (
+            <tfoot>
+              <tr style={{borderTop:'2px solid var(--ink-200)',background:'var(--surface-2)'}}>
+                <td style={{padding:'14px 16px',fontWeight:800,color:'var(--ink-900)'}}>Total</td>
+                <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#15803d',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF1)}</td>
+                <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF1Paye)} reçu</td>
+                <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#b91c1c',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF2)}</td>
+                <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF2Paye)} reçu</td>
+                <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,fontSize:15,fontVariantNumeric:'tabular-nums',color:net>=0?'var(--brand-800)':'#b91c1c'}}>
+                  {net >= 0 ? '+' : ''}{fmt(net)}
+                </td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+
+      {/* Détail factures F1 + F2 côte à côte */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18}}>
+        <FactureDetailCard
+          title="F1 — Factures émises par l'agente"
+          subtitle="L'agente facture la Société pour ses gains du mois (frais + commissions + honoraires)"
+          type="agente_vers_ctp"
+          accent="#16a34a"
+        />
+        <FactureDetailCard
+          title="F2 — Factures émises par la franchisée"
+          subtitle="La Société facture l'agente pour la redevance + apporteur remboursé"
+          type="ctp_vers_agente"
+          accent="#dc2626"
+        />
+      </div>
+
+      {/* Redevances 12 mois */}
+      <div className="card" style={{padding:22}}>
+        <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)',marginBottom:14}}>Redevances mensuelles · {agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} € HT` : 'montant à paramétrer'}</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(12,1fr)',gap:6}}>
+          {MOIS_LABELS.map((mLabel, i) => {
+            const r = redevAg.find(rv => rv.mois === i+1 && rv.annee === anneeEnCours)
+            const isPast = new Date(anneeEnCours, i, 1) < new Date()
+            return (
+              <div key={i} style={{
+                padding:'10px 6px',textAlign:'center',borderRadius:8,
+                background:  r?.statut === 'regle' ? 'rgba(22,163,74,0.10)' : isPast ? 'rgba(245,158,11,0.13)' : 'var(--ink-50)',
+                border:'1px solid',borderColor: r?.statut === 'regle' ? 'rgba(22,163,74,0.2)' : isPast ? 'rgba(245,158,11,0.3)' : 'var(--ink-200)',
+              }}>
+                <div style={{fontSize:10,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>{mLabel.slice(0,3)}</div>
+                <div style={{marginTop:6,fontSize:11.5,fontWeight:700,color:r?.statut==='regle'?'#15803d':isPast?'#a16207':'var(--ink-300)'}}>
+                  {r?.statut === 'regle' ? '✓' : isPast ? '⌛' : '—'}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <div style={{marginTop:14,fontSize:12.5,color:'var(--ink-500)'}}>
+          {redevAg.filter(r => r.statut === 'regle').length} mois réglés ·
+          <span style={{fontWeight:700,color:'var(--brand-800)',marginLeft:6,fontVariantNumeric:'tabular-nums'}}>{fmt(totalRedev)}</span> sur l&apos;année
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Finances() {
 
   // ── STATE ──────────────────────────────────────────────────────────────────
@@ -151,7 +660,7 @@ export default function Finances() {
   const [saving, setSaving]                         = useState(false)
   const [erreur, setErreur]                         = useState('')
   const [succes, setSucces]                         = useState('')
-  const [tab, setTab]                               = useState('synthese')
+  const [tab, setTab]                               = useState('suivi')
   const [period, setPeriod]                         = useState('chantier')
   const [scope, setScope]                           = useState('tous')
   const [suiviMode, setSuiviMode]                   = useState('ctp')
@@ -164,7 +673,15 @@ export default function Finances() {
   const [objectifs, setObjectifs]                   = useState([])
   const [anneeSelectionnee, setAnneeSelectionnee]   = useState(new Date().getFullYear())
   const [moisOuvert, setMoisOuvert]                 = useState(null)
+  const [anneeOuverte, setAnneeOuverte]             = useState(null)
+  const [periodeOuverte, setPeriodeOuverte]         = useState(null)
   const [sfSousOngletCTP, setSfSousOngletCTP]       = useState('mois')
+  // Changement d'onglet : Suivi/Facturation n'ont pas le pill Périmètre →
+  // on réinitialise le scope à 'tous' pour éviter un filtre invisible hérité de F1/F2.
+  const handleTab = (key) => {
+    if (key === 'suivi' || key === 'facturation') setScope('tous')
+    setTab(key)
+  }
   const [isMobile, setIsMobile]                     = useState(false)
   // Garde de ré-entrance pour upsertFactureMoisType : les toggles F1/F2 et l'upload
   // sont des onClick non bloquants → un double-clic partait 2× et créait un doublon
@@ -181,7 +698,7 @@ export default function Finances() {
   }, [])
 
   const router = useRouter()
-  const { user, profile, initialized, agenceActive, agences } = useAuth()
+  const { user, profile, initialized, agenceActive } = useAuth()
 
   // ── CHARGEMENT ─────────────────────────────────────────────────────────────
 
@@ -199,7 +716,7 @@ export default function Finances() {
       supabase.from('dossiers').select(`
         *,
         referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
-        client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
+        client:clients(civilite, prenom, nom, apporteur_pourcentage, apporteur_base),
         devis_artisans(*, artisan:artisans(id, entreprise, partenaire, paiement_direct)),
         rendez_vous(type_rdv, date_heure),
         suivi_financier(*)
@@ -251,6 +768,11 @@ export default function Finances() {
   useEffect(() => {
     if (profile?.role === 'agente') setScope('moi')
   }, [profile?.role])
+
+  // Prévisionnel n'a pas de vue 'Par mois' : si l'état est resté sur 'mois' (venant du Réel), forcer 'chantier'.
+  useEffect(() => {
+    if (tab === 'previsionnel' && period === 'mois') setPeriod('chantier')
+  }, [tab, period])
 
   // Vue agence : si l'agente sélectionnée dans le pill n'appartient pas à l'agence
   // active, réinitialiser à 'tous' (évite un périmètre vide silencieux au changement de vue).
@@ -616,20 +1138,6 @@ export default function Finances() {
   // Options du pill agente limitées à l'agence active (Consolidé → toutes les agentes).
   const agentesScope = agenceActive ? agentes.filter(a => a.agence_id === agenceActive) : agentes
 
-  // Libellé du périmètre actif (réutilisé Suivi 4c-4 + Synthèse 4c-5) : agence (navbar) + pill.
-  // Le pill n'est pas rendu dans ces onglets mais les affecte → indicateur indispensable.
-  const libellePerimetre = () => {
-    if (!isAdmin) return 'Mon activité'
-    const agencePart = agenceActive
-      ? `Agence ${agences.find(a => a.id === agenceActive)?.nom || '—'}`
-      : 'Toutes agences'
-    const pillPart = scope === 'tous'
-      ? (agenceActive ? 'toutes les agentes' : '')
-      : scope === 'moi'
-        ? (profile?.prenom || 'Moi')
-        : (agentes.find(a => a.id === scope)?.prenom || '—')
-    return pillPart ? `${agencePart} · ${pillPart}` : agencePart
-  }
 
 // ── AGRÉGATION PAR PÉRIODE ─────────────────────────────────────────────────
 
@@ -760,14 +1268,41 @@ export default function Finances() {
   }
 
 
+  // Agrégation PRÉVISIONNELLE par période (clé signature/création) — mêmes clés de
+  // champs que les buckets réels (fraisNet/comReelNet/honReel) pour réutiliser les colonnes.
+  const agrégerPrevi = (listeDossiers, isAnnee = false) => {
+    const map = {}
+    listeDossiers.forEach(d => {
+      const key = getKeyFromDate(d.date_signature_contrat || d.created_at, isAnnee)
+      if (!key) return
+      if (!map[key]) map[key] = { fraisNet: 0, comReelNet: 0, honReel: 0, dossierIds: new Set() }
+      const c = calculer(d)
+      map[key].fraisNet   = round2(map[key].fraisNet   + c.fraisNetPrevi)
+      map[key].comReelNet = round2(map[key].comReelNet + c.netComTous)
+      map[key].honReel    = round2(map[key].honReel    + c.honPreviNet)
+      map[key].dossierIds.add(d.id)
+    })
+    return Object.entries(map).map(([k, agg]) => [k, { ...agg, dossierIds: Array.from(agg.dossierIds) }]).sort((a, b) => b[0].localeCompare(a[0]))
+  }
+
   // ── TOTAUX GLOBAUX ─────────────────────────────────────────────────────────
 
   const anneeEnCours = new Date().getFullYear()
-  const rowsReelScoped       = agrégerParPaiement(scopedDossiers, false)
-  const chantiersAnneeEnCours = dossiers.filter(d => {
-    const date = d.date_fin_chantier || d.date_demarrage_chantier || d.date_signature_contrat || d.created_at
-    return date && new Date(date).getFullYear() === anneeEnCours
-  }).length
+  // Année plancher des sélecteurs : dérivée du dossier le plus ancien chargé,
+  // avec repli à l'année courante − 2 (zéro littéral d'année en dur).
+  const anneeMin = dossiers.length > 0
+    ? Math.min(...dossiers.map(d => new Date(d.created_at).getFullYear()))
+    : new Date().getFullYear() - 2
+  // Agrégats par paiement (réel) mémoïsés : false = par mois, true = par année.
+  // Évite 6 recalculs identiques par rendu. agrégerParPaiement est pur (aucun effet de bord).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rowsReelScoped  = useMemo(() => agrégerParPaiement(scopedDossiers, false), [scopedDossiers])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rowsAnneeScoped = useMemo(() => agrégerParPaiement(scopedDossiers, true), [scopedDossiers])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rowsPreviMoisScoped  = useMemo(() => agrégerPrevi(scopedDossiers, false), [scopedDossiers])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rowsPreviAnneeScoped = useMemo(() => agrégerPrevi(scopedDossiers, true), [scopedDossiers])
 
   const totalGainsAgentesReels = (() => {
     const keysAnnee = rowsReelScoped
@@ -971,7 +1506,7 @@ export default function Finances() {
               <Th>Dossier</Th>
               <Th>Référente</Th>
               <Th>Statut</Th>
-              <Th right>Frais HT</Th>
+              <Th right>Frais de consultation</Th>
               <Th right>Commissions HT</Th>
               <Th right>Royalties</Th>
               <Th right>Net {isReel ? 'réel' : 'prévisionnel'}</Th>
@@ -1085,14 +1620,14 @@ export default function Finances() {
 
   const renderTableauPeriode = (listeDossiers, rows, colLabel, colonnes, getMontant, getDossierMontant) => (
     <div className="card" style={{overflow:'hidden'}}>
-      <table className="w-full text-sm">
+      <table style={{width:'100%',fontSize:13}}>
         <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
           <tr>
             <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',whiteSpace:'nowrap'}}>{colLabel}</th>
             {colonnes.map(c => <th key={c.key} style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase',whiteSpace:'nowrap'}}>{c.label}</th>)}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody>
           {rows.map(([key, agg]) => {
             const label = (() => {
               if (!key.includes('-')) return key
@@ -1100,33 +1635,36 @@ export default function Finances() {
               return `${MOIS[parseInt(m)]} ${a}`
             })()
             const dossierspériode = listeDossiers.filter(d => agg.dossierIds?.includes(d.id))
+            const isOpen = periodeOuverte === key
             return (
               <React.Fragment key={key}>
-                {/* Ligne période */}
-                <tr className="bg-gray-50 border-t-2 border-gray-200">
-                  <td className="px-3 py-2 font-bold text-gray-800">{label}</td>
+                {/* Ligne période — cliquable */}
+                <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-200)',cursor:'pointer'}}
+                  onClick={() => setPeriodeOuverte(isOpen ? null : key)}>
+                  <td style={{padding:'8px 12px',fontWeight:700,color:'var(--ink-800)'}}>
+                    <span style={{display:'inline-block',width:14,color:'var(--ink-400)'}}>{isOpen ? '▾' : '▸'}</span>{label}
+                  </td>
                   {colonnes.map(col => {
                     const val = getMontant(agg, col.key)
-                    if (col.type === 'neg') return <td key={col.key} className="px-3 py-2 text-right text-red-400 text-sm font-bold">{val > 0 ? `— ${fmt(val)}` : '—'}</td>
-                    if (col.type === 'total') return <td key={col.key} className={`px-3 py-2 text-right text-sm font-bold ${(val || 0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(val)}</td>
-                    return <td key={col.key} className="px-3 py-2 text-right text-sm font-bold text-gray-700">{fmt(val)}</td>
+                    if (col.type === 'count') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:'var(--ink-600)'}}>{val}</td>
+                    if (col.type === 'neg') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',color:'#f87171',fontSize:13,fontWeight:700}}>{val > 0 ? `— ${fmt(val)}` : '—'}</td>
+                    if (col.type === 'total') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:(val || 0) >= 0 ? '#15803d' : '#dc2626'}}>{fmt(val)}</td>
+                    return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:'var(--ink-700)'}}>{fmt(val)}</td>
                   })}
                 </tr>
-                {/* Lignes dossiers */}
-                {dossierspériode.map(d => {
+                {/* Lignes chantiers (dépliable) : référence + client + Total HT */}
+                {isOpen && dossierspériode.map(d => {
                   const nomClient = formatNomClient(d.client)
                   return (
-                    <tr key={d.id} className="hover:bg-blue-50 border-t border-gray-100">
-                      <td className="px-3 py-1.5 text-gray-500">
-                        <span className="text-gray-300 mr-2">└</span>
-                        <span className="font-medium text-blue-800 text-xs">{d.reference}</span>
-                        <span className="text-gray-500 text-xs ml-2">— {nomClient}</span>
+                    <tr key={d.id} className="row-hover" style={{borderTop:'1px solid var(--ink-100)'}}>
+                      <td style={{padding:'6px 12px',color:'var(--ink-500)'}}>
+                        <span style={{color:'var(--ink-300)',marginRight:8}}>└</span>
+                        <span style={{fontWeight:500,color:'var(--brand-800)',fontSize:11}}>{d.reference}</span>
+                        <span style={{color:'var(--ink-500)',fontSize:11,marginLeft:8}}>— {nomClient}</span>
                       </td>
                       {colonnes.map(col => {
-                        const val = getDossierMontant(d, col.key, key)
-                        if (col.type === 'neg') return <td key={col.key} className="px-3 py-1.5 text-right text-red-300 text-xs">{val > 0 ? `— ${fmt(val)}` : '—'}</td>
-                        if (col.type === 'total') return <td key={col.key} className={`px-3 py-1.5 text-right text-xs font-medium ${(val || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmt(val)}</td>
-                        return <td key={col.key} className="px-3 py-1.5 text-right text-xs text-gray-500">{fmt(val)}</td>
+                        if (col.type !== 'total') return <td key={col.key} />
+                        return <td key={col.key} style={{padding:'6px 12px',textAlign:'right',fontSize:11,fontWeight:500,color:'var(--ink-600)'}}>{fmt(getDossierMontant(d, col.key, key))}</td>
                       })}
                     </tr>
                   )
@@ -1134,16 +1672,17 @@ export default function Finances() {
               </React.Fragment>
             )
           })}
-          {rows.length === 0 && <tr><td colSpan={colonnes.length + 1} className="px-3 py-8 text-center text-gray-400">Aucune donnée</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={colonnes.length + 1} style={{padding:'32px 12px',textAlign:'center',color:'var(--ink-400)'}}>Aucune donnée</td></tr>}
         </tbody>
-        <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-bold">
+        <tfoot style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-300)',fontWeight:700}}>
           <tr>
-            <td className="px-3 py-2">Total</td>
+            <td style={{padding:'8px 12px'}}>Total</td>
             {colonnes.map(col => {
               const total = rows.reduce((s, [, agg]) => s + (getMontant(agg, col.key) || 0), 0)
-              if (col.type === 'neg') return <td key={col.key} className="px-3 py-2 text-right text-red-400 text-sm font-bold">— {fmt(total)}</td>
-              if (col.type === 'total') return <td key={col.key} className={`px-3 py-2 text-right text-sm font-bold ${total >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(total)}</td>
-              return <td key={col.key} className="px-3 py-2 text-right text-sm">{fmt(total)}</td>
+              if (col.type === 'count') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700}}>{total}</td>
+              if (col.type === 'neg') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',color:'#f87171',fontSize:13,fontWeight:700}}>— {fmt(total)}</td>
+              if (col.type === 'total') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:total >= 0 ? '#15803d' : '#dc2626'}}>{fmt(total)}</td>
+              return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13}}>{fmt(total)}</td>
             })}
           </tr>
         </tfoot>
@@ -1153,75 +1692,99 @@ export default function Finances() {
 
   // ── TOUS LES CHANTIERS par période (admin) ─────────────────────────────────
 
-  const renderTousPeriode = (listeDossiers, rows, colLabel) => {
+  const renderTousPeriode = (listeDossiers, rows, colLabel, isPrevi = false) => {
+    // CORRECTION 4 — Réel + vue Année : drill-down année → mois → chantiers (dédié, n'affecte pas le Prévi ni les vues mois).
+    if (!isPrevi && colLabel === 'Année') {
+      const totHT = (agg) => round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0))
+      const cols = [
+        { label: 'Frais consultation', key: 'fraisNet' },
+        { label: 'Commissions',        key: 'comReelNet' },
+        { label: 'Honoraires',         key: 'honReel' },
+        { label: 'Total HT',           key: '__total', total: true },
+      ]
+      const cell = (agg, c) => c.total ? totHT(agg) : (agg[c.key] || 0)
+      const thR = { textAlign:'right', padding:'12px 16px', fontSize:11, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', whiteSpace:'nowrap' }
+      return (
+        <div className="card" style={{overflow:'hidden'}}>
+          <table style={{width:'100%',fontSize:13}}>
+            <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
+              <tr>
+                <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Année</th>
+                {cols.map(c => <th key={c.key} style={thR}>{c.label}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(([y, aggY]) => {
+                const isYOpen = periodeOuverte === `ry_${y}`
+                const moisY = rowsReelScoped.filter(([k]) => k.startsWith(`${y}-`))
+                return (
+                  <React.Fragment key={y}>
+                    <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-200)',cursor:'pointer'}}
+                      onClick={() => setPeriodeOuverte(isYOpen ? null : `ry_${y}`)}>
+                      <td style={{padding:'8px 12px',fontWeight:700,color:'var(--ink-800)'}}>
+                        <span style={{display:'inline-block',width:14,color:'var(--ink-400)'}}>{isYOpen ? '▾' : '▸'}</span>{y}
+                      </td>
+                      {cols.map(c => <td key={c.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:c.total ? '#15803d' : 'var(--ink-700)'}}>{fmt(cell(aggY, c))}</td>)}
+                    </tr>
+                    {isYOpen && moisY.map(([cle, aggM]) => {
+                      const isMOpen = moisOuvert === `rm_${cle}`
+                      const [a, m] = cle.split('-')
+                      const moisLabel = `${MOIS[parseInt(m)]} ${a}`
+                      const chantiers = (aggM.dossierIds || []).map(id => listeDossiers.find(d => d.id === id)).filter(Boolean)
+                      return (
+                        <React.Fragment key={cle}>
+                          <tr style={{borderTop:'1px solid var(--ink-100)',cursor:'pointer'}} className="row-hover"
+                            onClick={() => setMoisOuvert(isMOpen ? null : `rm_${cle}`)}>
+                            <td style={{padding:'6px 12px 6px 28px',fontWeight:600,color:'var(--ink-700)',fontSize:12}}>
+                              <span style={{display:'inline-block',width:12,color:'var(--ink-400)'}}>{isMOpen ? '▾' : '▸'}</span>{moisLabel}
+                            </td>
+                            {cols.map(c => <td key={c.key} style={{padding:'6px 12px',textAlign:'right',fontSize:12,fontWeight:600,color:c.total ? '#15803d' : 'var(--ink-600)'}}>{fmt(cell(aggM, c))}</td>)}
+                          </tr>
+                          {isMOpen && chantiers.map(d => {
+                            const aggD = agrégerParPaiement([d], false).find(([k]) => k === cle)?.[1] || {}
+                            return (
+                              <tr key={d.id} style={{borderTop:'1px solid var(--ink-100)'}}>
+                                <td style={{padding:'5px 12px 5px 44px',color:'var(--ink-500)',fontSize:11}}>
+                                  <span style={{color:'var(--ink-300)',marginRight:6}}>└</span>
+                                  <span style={{fontWeight:500,color:'var(--brand-800)'}}>{d.reference}</span>
+                                  <span style={{marginLeft:8}}>— {formatNomClient(d.client)}</span>
+                                </td>
+                                {cols.map(c => c.total
+                                  ? <td key={c.key} style={{padding:'5px 12px',textAlign:'right',fontSize:11,fontWeight:500,color:'var(--ink-600)'}}>{fmt(totHT(aggD))}</td>
+                                  : <td key={c.key} />)}
+                              </tr>
+                            )
+                          })}
+                        </React.Fragment>
+                      )
+                    })}
+                  </React.Fragment>
+                )
+              })}
+              {rows.length === 0 && <tr><td colSpan={cols.length + 1} style={{padding:'32px 12px',textAlign:'center',color:'var(--ink-400)'}}>Aucune donnée</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
     const colonnes = [
-      { label: 'Frais net',    key: 'fraisNet',          type: 'normal' },
-      { label: 'Com. net',     key: 'comNet',             type: 'normal' },
-      { label: 'Com. apport.', key: 'comApporteursNet',   type: 'normal' },
-      { label: 'Hon. net',     key: 'honReel',            type: 'normal' },
-      { label: 'Apporteur',    key: 'apporteurCoutTotalNet', type: 'neg' },
-      { label: 'Société',      key: 'gainAdminReel',      type: 'total'  },
+      { label: 'Frais consultation', key: 'fraisNet',   type: 'normal' },
+      { label: 'Commissions',        key: 'comReelNet', type: 'normal' },
+      { label: 'Honoraires',         key: 'honReel',    type: 'normal' },
+      { label: 'Total HT',           key: '__total',    type: 'total'  },
+      { label: 'Nb chantiers',       key: '__nb',       type: 'count'  },
     ]
+    const totalHT = (agg) => round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0))
+    const getMontant = (agg, key) => key === '__total' ? totalHT(agg) : key === '__nb' ? (agg.dossierIds?.length || 0) : (agg[key] || 0)
     const getDossierMontant = (d, key, periodKey) => {
-      const agg = agrégerParPaiement([d], periodKey?.includes('-') ? false : true)
+      const agg = (isPrevi ? agrégerPrevi([d], !periodKey.includes('-')) : agrégerParPaiement([d], !periodKey.includes('-')))
         .find(([k]) => k === periodKey)?.[1]
       if (!agg) return 0
-      return agg[key] || 0
+      return key === '__total' ? totalHT(agg) : (agg[key] || 0)
     }
-    return renderTableauPeriode(listeDossiers, rows, colLabel, colonnes, (agg, key) => agg[key] || 0, getDossierMontant)
+    return renderTableauPeriode(listeDossiers, rows, colLabel, colonnes, getMontant, getDossierMontant)
   }
 
-  // ── GRAPHIQUE CTP ──────────────────────────────────────────────────────────
-  function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) {
-    useEffect(() => {
-      if (typeof window === 'undefined' || typeof Chart === 'undefined') return
-      const el = document.getElementById(chartId)
-      if (!el) return
-      if (el._chartInstance) el._chartInstance.destroy()
-      el._chartInstance = new Chart(el, {
-        data: {
-          labels,
-          datasets: [
-            { type: 'bar', label: 'Gains', data: produitsData, backgroundColor: '#3B7DD8', borderRadius: 3, order: 2 },
-            { type: 'bar', label: 'Charges', data: chargesData, backgroundColor: '#E24B4A', borderRadius: 3, order: 2 },
-            { type: 'line', label: 'Résultats', data: netData, borderColor: '#1F5FA6', backgroundColor: 'rgba(31,95,166,0.06)', borderWidth: 2, borderDash: [4, 3], pointRadius: 4, pointBackgroundColor: '#1F5FA6', tension: 0.3, order: 1 }
-          ]
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: { label: ctx => ctx.dataset.label + ' : ' + Math.abs(ctx.parsed.y).toLocaleString('fr-FR') + ' €' } }
-          },
-          scales: {
-            x: { stacked: false, grid: { display: false }, ticks: { font: { size: 11 }, color: '#888', maxRotation: 30, autoSkip: false } },
-            y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 }, color: '#888', callback: v => Math.abs(v).toLocaleString('fr-FR') + ' €' } }
-          }
-        }
-      })
-      return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
-    }, [labels, produitsData, chargesData, netData, chartId])
-
-    return (
-      <div className="card" style={{padding:20}}>
-        <div className="flex gap-4 mb-4 flex-wrap">
-          {[
-            { color: '#3B7DD8', label: 'Gains encaissés' },
-            { color: '#E24B4A', label: 'Charges' },
-            { color: '#1F5FA6', label: 'Résultat', dashed: true },
-          ].map(({ color, label, dashed }) => (
-            <div key={label} className="flex items-center gap-2">
-              <div style={{ width: 10, height: 10, borderRadius: 2, background: dashed ? 'transparent' : color, border: dashed ? `2px dashed ${color}` : 'none' }} />
-              <span className="text-xs text-gray-500">{label}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{ position: 'relative', width: '100%', height: 220 }}>
-          <canvas id={chartId} role="img" aria-label="Graphique produits et charges Société par période" />
-        </div>
-      </div>
-    )
-  }
   
   // ── SUIVI FINANCIER (Agence et CTP) ──────────────────────────────────────
 
@@ -1230,224 +1793,248 @@ export default function Finances() {
   // Les royalties inline (fonction pure de comReelNet, issu des agrégats) suivent.
   const renderSuiviFinancier = (mode) => {
     const isCTP = mode === 'ctp'
-    const rowsReel = agrégerParPaiement(scopedDossiers, false)
+    const rowsReel = rowsReelScoped
     const objectifMensuel = round2(getObjectif('agence') / 12)
-    const getReelNet = (r, redev) => {
-      const brut = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + redev)
-      if (isCTP) return round2(brut - (r.gainsAgenteReels||0) - (r.apporteurCoutTotalNet||0))
-      return brut
-    }
-    const crPourCle = (cle) => {
-      const mapPrevi = {}
-      scopedDossiers.forEach(d => {
-        const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
-        if (!key) return
-        if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, comApport: 0, hon: 0, partAgentes: 0, apporteur: 0, royalties: 0 }
-        const c = calculer(d)
-        mapPrevi[key].frais       = round2(mapPrevi[key].frais       + c.fraisNetPrevi)
-        mapPrevi[key].com         = round2(mapPrevi[key].com         + c.netComTous)
-        mapPrevi[key].comApport   = round2(mapPrevi[key].comApport   + c.comApporteursPrevi)
-        mapPrevi[key].hon         = round2(mapPrevi[key].hon         + c.honPreviNet)
-        mapPrevi[key].partAgentes = round2(mapPrevi[key].partAgentes + c.gainsAgentePreviTotal)
-        mapPrevi[key].apporteur   = round2(mapPrevi[key].apporteur   + c.apporteurTotalHT)
-        mapPrevi[key].royalties   = round2(mapPrevi[key].royalties   + c.royaltiesTotal)
-      })
-      const [annee, mois] = cle.split('-')
-      const redevMois = redevancesScoped.filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois)).reduce((s, r) => s + (r.montant_ht || 0), 0)
-      const p = mapPrevi[cle] || {}
+    const netLabel = isCTP ? 'Société' : (mode === 'agent' ? 'Agente' : 'Agence')
+
+    // Apporteur remboursé (réel) selon le mode : Société/Agence = coût total, Agente = sa part.
+    const apporteurReelVal = (r) => round2(mode === 'agent' ? (r?.apporteurPartAgenteNet || 0) : (r?.apporteurCoutTotalNet || 0))
+    const royaltiesReelVal = (r) => round2(
+      ((r?.fraisNet || 0) + (r?.comReelNet || 0) + (r?.honReel || 0))
+      * (ROYALTIES_RATE / (1 - ROYALTIES_RATE))
+    )
+
+    // Prévisionnel agrégé par mois (clé signature/création) — source unique.
+    const mapPreviMois = {}
+    scopedDossiers.forEach(d => {
+      const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
+      if (!key) return
+      if (!mapPreviMois[key]) mapPreviMois[key] = { frais:0, com:0, comApport:0, hon:0, partAgentes:0, apporteurTotal:0, apporteurAgente:0, royalties:0 }
+      const c = calculer(d); const M = mapPreviMois[key]
+      M.frais = round2(M.frais + c.fraisNetPrevi); M.com = round2(M.com + c.netComTous); M.comApport = round2(M.comApport + c.comApporteursPrevi)
+      M.hon = round2(M.hon + c.honPreviNet); M.partAgentes = round2(M.partAgentes + c.gainsAgentePreviTotal)
+      M.apporteurTotal = round2(M.apporteurTotal + c.apporteurTotalHT); M.apporteurAgente = round2(M.apporteurAgente + c.apporteurAgente)
+      M.royalties = round2(M.royalties + c.royaltiesTotal)
+    })
+    const redevPourCle = (cle) => { const [a, m] = cle.split('-'); return redevancesScoped.filter(r => r.statut === 'regle' && r.annee === parseInt(a) && r.mois === parseInt(m)).reduce((sum, r) => sum + (r.montant_ht || 0), 0) }
+
+    // Compte de résultat (prévi + réel) d'un mois, selon le mode.
+    const comptePourCle = (cle) => {
+      const p = mapPreviMois[cle] || {}
       const r = rowsReel.find(([k]) => k === cle)?.[1] || {}
-      const previProduits = round2((p.frais||0) + (p.com||0) + (p.hon||0) + (p.comApport||0) + (isCTP ? redevMois : 0))
-      const previCharges  = isCTP ? round2((p.partAgentes||0) + (p.apporteur||0) + (p.royalties||0)) : 0
-      const previNet      = round2(previProduits - previCharges)
-      const reelProduits  = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redevMois : 0))
-      const reelCharges   = isCTP ? round2((r.gainsAgenteReels||0) + round2((r.comReelNet||0) * (ROYALTIES_RATE / (1 - ROYALTIES_RATE))) + (r.apporteurCoutTotalNet||0)) : 0
-      const reelNet       = round2(reelProduits - reelCharges)
-      const ecart = (pv, rv) => { const e = round2(rv - pv); return <span className={`text-xs font-medium ${e >= 0 ? 'text-green-600' : 'text-red-500'}`}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
+      const redev = redevPourCle(cle)
+      const previProduits = round2((p.frais||0) + (p.com||0) + (p.hon||0) + (p.comApport||0) + (isCTP ? redev : 0))
+      const reelProduits  = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0))
+      const previApporteur = round2(mode === 'agent' ? (p.apporteurAgente||0) : (p.apporteurTotal||0))
+      const reelApporteur  = apporteurReelVal(r)
+      const previCharges = isCTP ? round2((p.partAgentes||0) + previApporteur + (p.royalties||0)) : previApporteur
+      const reelCharges  = isCTP ? round2((r.gainsAgenteReels||0) + royaltiesReelVal(r) + reelApporteur) : reelApporteur
+      return { p, r, redev, previProduits, reelProduits, previApporteur, reelApporteur, previCharges, reelCharges, previNet: round2(previProduits - previCharges), reelNet: round2(reelProduits - reelCharges) }
+    }
+    const ecart = (pv, rv) => { const e = round2(rv - pv); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
+
+    // Détail compte de résultat (RÉEL uniquement) d'un mois — vue groupée par encaissement.
+    const crPourCle = (cle) => {
+      const x = comptePourCle(cle)
       const lignesProduits = [
-        { label: '(+) Frais consultation', p: p.frais||0, r: r.fraisNet||0 },
-        { label: '(+) Commissions',        p: p.com||0,   r: r.comReelNet||0 },
-        { label: '(+) Honoraires',         p: p.hon||0,   r: r.honReel||0 },
-        { label: '(+) Com. apporteurs',    p: p.comApport||0, r: r.comApporteursReel||0 },
-        ...(isCTP ? [{ label: '(+) Redevances agentes', p: redevMois, r: redevMois }] : []),
+        { label: 'Frais de consultation',  r: x.r.fraisNet||0 },
+        { label: 'Commissions illiCO',     r: x.r.comReelNet||0 },
+        { label: 'Honoraires',             r: x.r.honReel||0 },
+        { label: 'Commissions apporteurs', r: x.r.comApporteursReel||0 },
+        ...(isCTP ? [{ label: 'Redevances agentes', r: x.redev }] : []),
       ]
-      const lignesCharges = isCTP ? [
-        { label: '(−) Royalties illiCO',      p: p.royalties||0,   r: round2((r.comReelNet||0) * (ROYALTIES_RATE / (1 - ROYALTIES_RATE))) },
-        { label: '(−) Part agentes',          p: p.partAgentes||0, r: r.gainsAgenteReels||0 },
-        { label: '(−) Apporteurs remboursés', p: p.apporteur||0,   r: r.apporteurCoutTotalNet||0 },
-      ] : []
+      const lignesReversements = isCTP
+        ? [
+            { label: 'Royalties illiCO',      r: royaltiesReelVal(x.r) },
+            { label: 'Parts agentes',         r: x.r.gainsAgenteReels||0 },
+            { label: 'Apporteurs remboursés', r: x.reelApporteur },
+          ]
+        : [{ label: 'Apporteurs remboursés', r: x.reelApporteur }]
+      const tdL = { padding:'6px 8px', color:'var(--ink-500)' }
+      const tdR = { padding:'6px 8px', textAlign:'right' }
       return (
-        <div className="mt-3 border-t border-gray-100 pt-3">
-          <table className="w-full text-xs">
-            <thead><tr className="border-b border-gray-100">
-              <th className="text-left px-2 py-1 text-gray-400 uppercase w-1/2">Ligne</th>
-              <th className="text-right px-2 py-1 text-gray-400 uppercase">Prévi</th>
-              <th className="text-right px-2 py-1 text-gray-400 uppercase">Réel</th>
-              <th className="text-right px-2 py-1 text-gray-400 uppercase">Écart</th>
-            </tr></thead>
-            <tbody className="divide-y divide-gray-50">
-              <tr className="bg-gray-50"><td colSpan={4} className="px-2 py-1 text-xs font-medium text-gray-400 uppercase">Gains</td></tr>
-              {lignesProduits.map(({ label, p: pv, r: rv }) => (
-                <tr key={label}><td className="px-2 py-1.5 text-gray-500">{label}</td><td className="px-2 py-1.5 text-right text-gray-500">{fmt(pv)}</td><td className="px-2 py-1.5 text-right text-green-700 font-medium">{fmt(rv)}</td><td className="px-2 py-1.5 text-right">{ecart(pv, rv)}</td></tr>
-              ))}
-              <tr className="bg-gray-50 border-t border-gray-200"><td className="px-2 py-1.5 font-medium text-gray-700">= Total gains</td><td className="px-2 py-1.5 text-right font-medium text-gray-700">{fmt(previProduits)}</td><td className="px-2 py-1.5 text-right font-medium text-green-700">{fmt(reelProduits)}</td><td className="px-2 py-1.5 text-right">{ecart(previProduits, reelProduits)}</td></tr>
-              {isCTP && <><tr className="bg-gray-50"><td colSpan={4} className="px-2 py-1 text-xs font-medium text-gray-400 uppercase">Charges</td></tr>
-              {lignesCharges.map(({ label, p: pv, r: rv }) => (
-                <tr key={label}><td className="px-2 py-1.5 text-gray-500">{label}</td><td className="px-2 py-1.5 text-right text-gray-500">{fmt(pv)}</td><td className="px-2 py-1.5 text-right text-red-500 font-medium">{fmt(rv)}</td><td className="px-2 py-1.5 text-right">{ecart(pv, rv)}</td></tr>
-              ))}
-              <tr className="bg-gray-50 border-t border-gray-200"><td className="px-2 py-1.5 font-medium text-gray-700">= Total charges</td><td className="px-2 py-1.5 text-right font-medium text-gray-700">{fmt(previCharges)}</td><td className="px-2 py-1.5 text-right font-medium text-red-500">{fmt(reelCharges)}</td><td className="px-2 py-1.5 text-right">{ecart(previCharges, reelCharges)}</td></tr></>}
-              <tr className="bg-blue-50 border-t-2 border-blue-100"><td className="px-2 py-2 font-bold text-blue-800">= {isCTP ? 'Résultat net Société' : 'Total encaissé agence'}</td><td className="px-2 py-2 text-right font-bold text-gray-600">{fmt(previNet)}</td><td className={`px-2 py-2 text-right font-bold ${reelNet >= 0 ? 'text-blue-800' : 'text-red-600'}`}>{fmt(reelNet)}</td><td className="px-2 py-2 text-right">{ecart(previNet, reelNet)}</td></tr>
-            </tbody>
-          </table>
+        <table style={{width:'100%',fontSize:11}}>
+          <thead><tr style={{borderBottom:'1px solid var(--ink-100)'}}>
+            <th style={{textAlign:'left',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase',width:'70%'}}>Ligne</th>
+            <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Réel</th>
+          </tr></thead>
+          <tbody>
+            <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Gains</td></tr>
+            {lignesProduits.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#15803d',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
+            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total gains</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td></tr>
+            <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Reversements</td></tr>
+            {lignesReversements.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
+            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total reversements</td><td style={{...tdR,fontWeight:500,color:'#ef4444'}}>{fmt(x.reelCharges)}</td></tr>
+            <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>Résultat net {netLabel}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:x.reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(x.reelNet)}</td></tr>
+          </tbody>
+        </table>
+      )
+    }
+
+    // Chantiers encaissés un mois donné (HT net du mois par dossier).
+    const dossiersDuMois = (cle) => {
+      const ids = (rowsReel.find(([k]) => k === cle)?.[1]?.dossierIds) || []
+      return ids.map(id => {
+        const d = scopedDossiers.find(x => x.id === id)
+        if (!d) return null
+        const aggD = agrégerParPaiement([d], false).find(([k]) => k === cle)?.[1] || {}
+        const htNet = round2((aggD.fraisNet||0) + (aggD.comReelNet||0) + (aggD.honReel||0) + (aggD.comApporteursReel||0))
+        return { d, htNet }
+      }).filter(Boolean)
+    }
+
+    // Détail mois déplié : chantiers (gauche) + répartition (droite).
+    const renderMoisDetail = (cle) => {
+      const liste = dossiersDuMois(cle)
+      return (
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginTop:12,paddingTop:12,borderTop:'1px solid var(--ink-100)'}}>
+          <div>
+            <div className="eyebrow" style={{marginBottom:8}}>Chantiers du mois</div>
+            {liste.length === 0
+              ? <div style={{fontSize:12,color:'var(--ink-400)'}}>Aucun chantier encaissé ce mois</div>
+              : liste.map(({ d, htNet }) => (
+                  <div key={d.id} style={{display:'flex',justifyContent:'space-between',gap:8,padding:'4px 0',fontSize:12,borderBottom:'1px solid var(--ink-100)'}}>
+                    <span><span style={{fontWeight:600,color:'var(--brand-800)'}}>{d.reference}</span> <span style={{color:'var(--ink-500)'}}>— {formatNomClient(d.client)}</span></span>
+                    <span style={{color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(htNet)}</span>
+                  </div>
+                ))}
+          </div>
+          <div>
+            <div className="eyebrow" style={{marginBottom:8}}>Répartition</div>
+            {crPourCle(cle)}
+          </div>
         </div>
       )
     }
-    const allKeys = new Set([...rowsReel.map(([k]) => k), ...redevancesScoped.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`)])
-    const cles = Array.from(allKeys).sort((a, b) => b.localeCompare(a))
-    const chartLabels = cles.map(cle => { const [a, m] = cle.split('-'); return `${MOIS[parseInt(m)].slice(0,3)}. ${a}` })
-    const chartProduits = cles.map(cle => { const [a, m] = cle.split('-'); const r = rowsReel.find(([k]) => k === cle)?.[1] || {}; const redev = redevancesScoped.filter(rv => rv.statut === 'regle' && rv.annee === parseInt(a) && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ht||0), 0); return round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0)) })
-    const chartCharges = cles.map(cle => { const r = rowsReel.find(([k]) => k === cle)?.[1] || {}; return isCTP ? -round2((r.gainsAgenteReels||0) + (r.apporteurCoutTotalNet||0)) : 0 })
-    const chartNet = cles.map((_, i) => round2(chartProduits[i] + chartCharges[i]))
+
+    // Ligne mois (réutilisée vue Mois + vue Année dépliée).
+    const renderMoisRow = (cle, bg) => {
+      const x = comptePourCle(cle)
+      const [a, m] = cle.split('-')
+      const label = `${MOIS[parseInt(m)].slice(0, 3)}. ${a}`
+      const ecartObj = round2(x.reelNet - objectifMensuel)
+      const isOpen = moisOuvert === `${mode}_${cle}`
+      return (
+        <React.Fragment key={cle}>
+          <tr style={{cursor:'pointer',background:bg}}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--brand-50)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = bg }}
+            onClick={() => setMoisOuvert(isOpen ? null : `${mode}_${cle}`)}>
+            <td style={{padding:'10px 16px',fontWeight:500,color:'var(--ink-700)',display:'flex',alignItems:'center',gap:8}}><span>{label}</span><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></td>
+            <td style={{padding:'10px 12px',textAlign:'right',fontWeight:500,color:x.reelNet >= 0 ? '#15803d' : '#dc2626'}}>{fmt(x.reelNet)}</td>
+            <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{fmt(objectifMensuel)}</td>
+            <td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:ecartObj >= 0 ? '#16a34a' : '#ef4444'}}>{ecartObj >= 0 ? '+' : ''}{fmt(ecartObj)}</td>
+          </tr>
+          {isOpen && (<tr style={{background:bg}}><td colSpan={4} style={{padding:'0 16px 12px'}}>{renderMoisDetail(cle)}</td></tr>)}
+        </React.Fragment>
+      )
+    }
+    const moisTableHead = (
+      <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
+        <tr>
+          <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Mois</th>
+          <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Réel net</th>
+          <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Objectif mois</th>
+          <th style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>vs Objectif</th>
+        </tr>
+      </thead>
+    )
+
+    const cles = Array.from(new Set([...rowsReel.map(([k]) => k), ...redevancesScoped.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`)])).sort((a, b) => b.localeCompare(a))
+    const clesAsc = [...cles].reverse()   // graphe : plus ancien à gauche -> plus récent à droite (le tableau reste en DESC)
+    const chartLabels = clesAsc.map(cle => { const [a, m] = cle.split('-'); return `${MOIS[parseInt(m)].slice(0,3)}. ${a}` })
+    const chartProduits = clesAsc.map(cle => comptePourCle(cle).reelProduits)
+    const chartCharges = clesAsc.map(cle => -comptePourCle(cle).reelCharges)
+    const chartNet = clesAsc.map(cle => comptePourCle(cle).reelNet)
     const sfSousOnglet = sfSousOngletCTP; const setSfSousOnglet = setSfSousOngletCTP
 
+    // Vue Année : tableau plat (Année | Prévi | Réel | Écart) → déplier en mois.
     const renderAnnuel = () => {
-      const annees = []; for (let a = new Date().getFullYear(); a >= 2024; a--) annees.push(a)
-      const rowsReelAnnee = agrégerParPaiement(scopedDossiers, false)
-      const clesMois = Array.from(new Set([...rowsReelAnnee.map(([k]) => k), ...redevancesScoped.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`)])).filter(k => k.startsWith(String(anneeSelectionnee))).sort()
-      const mapPrevi = {}
-      scopedDossiers.forEach(d => {
-        const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
-        if (!key || !key.startsWith(String(anneeSelectionnee))) return
-        if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, comApport: 0, hon: 0, partAgentes: 0, apporteur: 0, royalties: 0 }
-        const c = calculer(d)
-        mapPrevi[key].frais       = round2(mapPrevi[key].frais       + c.fraisNetPrevi)
-        mapPrevi[key].com         = round2(mapPrevi[key].com         + c.netComTous)
-        mapPrevi[key].comApport   = round2(mapPrevi[key].comApport   + c.comApporteursPrevi)
-        mapPrevi[key].hon         = round2(mapPrevi[key].hon         + c.honPreviNet)
-        mapPrevi[key].partAgentes = round2(mapPrevi[key].partAgentes + c.gainsAgentePreviTotal)
-        mapPrevi[key].royalties   = round2(mapPrevi[key].royalties   + c.royaltiesTotal)
-      })
-      const totP = { frais: 0, com: 0, comApport: 0, hon: 0, redev: 0, partAgentes: 0, apporteur: 0, royalties: 0 }
-      const totR = { frais: 0, com: 0, comApport: 0, hon: 0, redev: 0, partAgentes: 0, royalties: 0, apporteur: 0 }
-      clesMois.forEach(cle => {
-        const [, m] = cle.split('-')
-        const redev = redevancesScoped.filter(r => r.statut === 'regle' && r.annee === anneeSelectionnee && r.mois === parseInt(m)).reduce((s, r) => s + (r.montant_ht || 0), 0)
-        const p = mapPrevi[cle] || {}; const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}
-        totP.frais = round2(totP.frais + (p.frais||0)); totP.com = round2(totP.com + (p.com||0)); totP.comApport = round2(totP.comApport + (p.comApport||0)); totP.hon = round2(totP.hon + (p.hon||0)); totP.redev = round2(totP.redev + redev); totP.partAgentes = round2(totP.partAgentes + (p.partAgentes||0)); totP.royalties = round2(totP.royalties + (p.royalties||0))
-        totR.frais = round2(totR.frais + (r.fraisNet||0)); totR.com = round2(totR.com + (r.comReelNet||0)); totR.comApport = round2(totR.comApport + (r.comApporteursReel||0)); totR.hon = round2(totR.hon + (r.honReel||0)); totR.redev = round2(totR.redev + redev); totR.partAgentes = round2(totR.partAgentes + (r.gainsAgenteReels||0)); totR.royalties = round2(totR.royalties + round2((r.comReelNet||0) * (ROYALTIES_RATE / (1 - ROYALTIES_RATE))))
-        const apporteurReel = scopedDossiers.reduce((s, d) => { const lignes = (d.suivi_financier || []).filter(sf => sf.type_echeance === 'apporteur_agente' && sf.statut_ctp === 'rembourse' && sf.date_paiement && getKeyFromDate(sf.date_paiement, false) === cle); if (!lignes.length) return s; const c2 = calculerReel(d); return s + round2((c2.finance?.apporteur?.lines || []).reduce((sum, ligne) => { const dv = (d.devis_artisans || []).find(dv => dv.id === ligne.devisId); const artId = dv?.artisan_id || dv?.artisan?.id; const sf = (d.suivi_financier || []).find(s2 => s2.type_echeance === 'apporteur_agente' && (ligne.type === 'total_chantier_ht' ? s2.artisan_id === null : s2.artisan_id === artId) && s2.statut_ctp === 'rembourse' && s2.date_paiement && getKeyFromDate(s2.date_paiement, false) === cle); return sf ? sum + ligne.totalHT : sum }, 0)) }, 0)
-        totR.apporteur = round2(totR.apporteur + apporteurReel)
-      })
-      const previProduits = round2(totP.frais + totP.com + totP.comApport + totP.hon + (isCTP ? totP.redev : 0))
-      const previCharges  = isCTP ? round2(totP.partAgentes + totP.apporteur + totP.royalties) : 0
-      const previNet      = round2(previProduits - previCharges)
-      const reelProduits  = round2(totR.frais + totR.com + totR.comApport + totR.hon + (isCTP ? totR.redev : 0))
-      const reelCharges   = isCTP ? round2(totR.partAgentes + totR.royalties + totR.apporteur) : 0
-      const reelNet       = round2(reelProduits - reelCharges)
-      const ecart = (p, r) => { const e = round2(r - p); return <span className={`text-xs font-medium ${e >= 0 ? 'text-green-600' : 'text-red-500'}`}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
-      const chartLabelsAnnee = clesMois.map(cle => { const [, m] = cle.split('-'); return MOIS[parseInt(m)].slice(0, 3) })
-      const chartProduitsAnnee = clesMois.map(cle => { const [, m] = cle.split('-'); const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}; const redev = redevancesScoped.filter(rv => rv.statut === 'regle' && rv.annee === anneeSelectionnee && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ht||0), 0); return round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0)) })
-      const chartChargesAnnee = clesMois.map(cle => { const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}; return isCTP ? -round2((r.gainsAgenteReels||0) + (r.apporteurCoutTotalNet||0)) : 0 })
-      const chartNetAnnee = clesMois.map((_, i) => round2(chartProduitsAnnee[i] + chartChargesAnnee[i]))
+      const annees = []; for (let a = new Date().getFullYear(); a >= anneeMin; a--) annees.push(a)
+      // Graphe annuel (ASC : année la plus ancienne à gauche). Produits / Reversements / Net par année.
+      const anneesAsc = [...annees].reverse()
+      const sumAnnee = (y, champ) => round2(cles.filter(c => c.startsWith(String(y))).reduce((s, c) => s + comptePourCle(c)[champ], 0))
+      const chartLabelsAnnee = anneesAsc.map(String)
+      const chartProduitsAnnee = anneesAsc.map(y => sumAnnee(y, 'reelProduits'))
+      const chartChargesAnnee = anneesAsc.map(y => -sumAnnee(y, 'reelCharges'))
+      const chartNetAnnee = anneesAsc.map(y => sumAnnee(y, 'reelNet'))
       return (
-        <div className="space-y-5">
-          <ObjectifBar label={isCTP ? 'Objectif CA Société (résultat net)' : 'Objectif CA agence (encaissements bruts)'} reel={reelNet} objectifMontant={getObjectif('agence')} cible="agence" canEdit={false} />
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
           <div className="card" style={{overflow:'hidden'}}>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
-              <span style={{fontSize:14,fontWeight:600,color:'var(--ink-700)'}}>Compte de résultat {isCTP ? 'Société' : 'Agence'}</span>
-              <div style={{display:'flex',alignItems:'center',gap:10}}>
-                <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,background:'rgba(22,163,74,0.1)',color:'#15803d',fontWeight:600}}>réel encaissé</span>
-                <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(parseInt(e.target.value))} className="input" style={{height:28,fontSize:12,padding:'0 8px'}}>
-                  {annees.map(a => <option key={a} value={a}>{a}</option>)}
-                </select>
-              </div>
-            </div>
-            <table className="w-full text-sm">
-              <thead><tr className="border-b border-gray-100">
-                <th className="text-left px-5 py-2 text-xs font-medium text-gray-400 uppercase w-1/2">Ligne</th>
-                <th className="text-right px-4 py-2 text-xs font-medium text-gray-400 uppercase">Prévisionnel</th>
-                <th className="text-right px-4 py-2 text-xs font-medium text-gray-400 uppercase">Réel</th>
-                <th className="text-right px-5 py-2 text-xs font-medium text-gray-400 uppercase">Écart</th>
-              </tr></thead>
-              <tbody className="divide-y divide-gray-50">
-                <tr className="bg-gray-50"><td colSpan={4} className="px-5 py-1.5 text-xs font-medium text-gray-400 uppercase">Gains</td></tr>
-                {[
-                  { label: '(+) Frais consultation', p: totP.frais, r: totR.frais },
-                  { label: '(+) Commissions', p: totP.com, r: totR.com },
-                  { label: '(+) Honoraires', p: totP.hon, r: totR.hon },
-                  { label: '(+) Com. apporteurs', p: totP.comApport, r: totR.comApport },
-                  ...(isCTP ? [{ label: '(+) Redevances agentes', p: totP.redev, r: totR.redev }] : []),
-                ].map(({ label, p, r }) => (<tr key={label} className="hover:bg-gray-50"><td className="px-5 py-2.5 text-gray-500 text-xs">{label}</td><td className="px-4 py-2.5 text-right text-gray-500 text-xs">{fmt(p)}</td><td className="px-4 py-2.5 text-right text-green-700 text-xs font-medium">{fmt(r)}</td><td className="px-5 py-2.5 text-right">{ecart(p, r)}</td></tr>))}
-                <tr className="bg-gray-50 border-t border-gray-200"><td className="px-5 py-2.5 font-medium text-gray-700 text-xs">= Total gains</td><td className="px-4 py-2.5 text-right font-medium text-gray-700 text-xs">{fmt(previProduits)}</td><td className="px-4 py-2.5 text-right font-medium text-green-700 text-xs">{fmt(reelProduits)}</td><td className="px-5 py-2.5 text-right">{ecart(previProduits, reelProduits)}</td></tr>
-                {isCTP && <><tr className="bg-gray-50"><td colSpan={4} className="px-5 py-1.5 text-xs font-medium text-gray-400 uppercase">Charges</td></tr>
-                {[{ label: '(−) Royalties illiCO', p: totP.royalties, r: totR.royalties }, { label: '(−) Part agentes', p: totP.partAgentes, r: totR.partAgentes }, { label: '(−) Apporteurs remboursés', p: totP.apporteur, r: totR.apporteur }].map(({ label, p, r }) => (<tr key={label} className="hover:bg-gray-50"><td className="px-5 py-2.5 text-gray-500 text-xs">{label}</td><td className="px-4 py-2.5 text-right text-gray-500 text-xs">{fmt(p)}</td><td className="px-4 py-2.5 text-right text-red-500 text-xs font-medium">{fmt(r)}</td><td className="px-5 py-2.5 text-right">{ecart(p, r)}</td></tr>))}
-                <tr className="bg-gray-50 border-t border-gray-200"><td className="px-5 py-2.5 font-medium text-gray-700 text-xs">= Total charges</td><td className="px-4 py-2.5 text-right font-medium text-gray-700 text-xs">{fmt(previCharges)}</td><td className="px-4 py-2.5 text-right font-medium text-red-500 text-xs">{fmt(reelCharges)}</td><td className="px-5 py-2.5 text-right">{ecart(previCharges, reelCharges)}</td></tr></>}
-                <tr className="bg-blue-50 border-t-2 border-blue-100"><td className="px-5 py-3 font-bold text-blue-800 text-sm">= {isCTP ? `Résultat net Société ${anneeSelectionnee}` : `Encaissements bruts agence ${anneeSelectionnee}`}</td><td className="px-4 py-3 text-right font-bold text-gray-600 text-sm">{fmt(previNet)}</td><td className={`px-4 py-3 text-right font-bold text-sm ${reelNet >= 0 ? 'text-blue-800' : 'text-red-600'}`}>{fmt(reelNet)}</td><td className="px-5 py-3 text-right">{ecart(previNet, reelNet)}</td></tr>
-              </tbody>
-            </table>
+          <table style={{width:'100%',fontSize:13}}>
+            <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
+              <tr>
+                <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Année</th>
+                <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Prévisionnel</th>
+                <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Réel net</th>
+                <th style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Écart</th>
+              </tr>
+            </thead>
+            <tbody>
+              {annees.map((y, i) => {
+                const cs = cles.filter(c => c.startsWith(String(y)))
+                const previ = round2(cs.reduce((sum, c) => sum + comptePourCle(c).previNet, 0))
+                const reel  = round2(cs.reduce((sum, c) => sum + comptePourCle(c).reelNet, 0))
+                const isOpen = anneeOuverte === `${mode}_${y}`
+                const bg = i % 2 === 0 ? 'transparent' : 'var(--surface-2)'
+                return (
+                  <React.Fragment key={y}>
+                    <tr style={{cursor:'pointer',background:bg}}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--brand-50)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = bg }}
+                      onClick={() => setAnneeOuverte(isOpen ? null : `${mode}_${y}`)}>
+                      <td style={{padding:'10px 16px',fontWeight:600,color:'var(--ink-800)',display:'flex',alignItems:'center',gap:8}}><span>{y}</span><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></td>
+                      <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-600)'}}>{fmt(previ)}</td>
+                      <td style={{padding:'10px 12px',textAlign:'right',fontWeight:600,color:reel >= 0 ? '#15803d' : '#dc2626'}}>{fmt(reel)}</td>
+                      <td style={{padding:'10px 16px',textAlign:'right'}}>{ecart(previ, reel)}</td>
+                    </tr>
+                    {isOpen && (
+                      <tr style={{background:bg}}><td colSpan={4} style={{padding:'0 12px 12px'}}>
+                        {cs.length === 0
+                          ? <div style={{fontSize:12,color:'var(--ink-400)',padding:'8px 4px'}}>Aucune activité cette année</div>
+                          : <table style={{width:'100%',fontSize:11}}><tbody>{cs.map((c, j) => renderMoisRow(c, j % 2 === 0 ? 'transparent' : 'var(--surface-2)'))}</tbody></table>}
+                      </td></tr>
+                    )}
+                  </React.Fragment>
+                )
+              })}
+            </tbody>
+          </table>
           </div>
-          <SuiviCTPChart labels={chartLabelsAnnee} produitsData={chartProduitsAnnee} chargesData={chartChargesAnnee} netData={chartNetAnnee} chartId={`chart_${mode}_annee_${anneeSelectionnee}`} />
+          <SuiviCTPChart labels={chartLabelsAnnee} produitsData={chartProduitsAnnee} chargesData={chartChargesAnnee} netData={chartNetAnnee} chartId={`chart_${mode}_annee`} />
         </div>
       )
     }
 
+    const moisCourantCle = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+    const totalReelMois = round2(cles.reduce((sum, c) => sum + comptePourCle(c).reelNet, 0))
     return (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <span className="eyebrow">Filtré sur</span>
-          <span style={{fontSize:12,fontWeight:600,color:'var(--brand-800)',background:'var(--brand-50)',padding:'3px 10px',borderRadius:99}}>{libellePerimetre()}</span>
-        </div>
         <PillToggle
           options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
           active={sfSousOnglet}
           onChange={setSfSousOnglet}
         />
         {sfSousOnglet === 'mois' && (
-          <div className="space-y-5">
-            <ObjectifBar label={isCTP ? `Objectif mensuel Société (${fmt(objectifMensuel)}/mois)` : `Objectif mensuel agence (${fmt(objectifMensuel)}/mois)`}
-              reel={(() => { const moisCourant = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`; const r = rowsReel.find(([k]) => k === moisCourant)?.[1] || {}; const redev = redevancesScoped.filter(rv => rv.statut === 'regle' && rv.annee === new Date().getFullYear() && rv.mois === new Date().getMonth() + 1).reduce((s, rv) => s + (rv.montant_ht||0), 0); return getReelNet(r, redev) })()}
+          <div style={{display:'flex',flexDirection:'column',gap:20}}>
+            <ObjectifBar label={`Objectif mensuel ${netLabel} (${fmt(objectifMensuel)}/mois)`}
+              reel={comptePourCle(moisCourantCle).reelNet}
               objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
-            <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId={`chart_${mode}_mois`} />
             <div className="card" style={{overflow:'hidden'}}>
-              <table className="w-full text-xs">
-                <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
-                  <tr>
-                    <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Mois</th>
-                    <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Réel encaissé</th>
-                    <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Objectif mois</th>
-                    <th style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>vs Objectif</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {cles.map((cle, i) => {
-                    const [a, m] = cle.split('-')
-                    const label = `${MOIS[parseInt(m)].slice(0, 3)}. ${a}`
-                    const r = rowsReel.find(([k]) => k === cle)?.[1] || {}
-                    const redev = redevancesScoped.filter(rv => rv.statut === 'regle' && rv.annee === parseInt(a) && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ht||0), 0)
-                    const reelNet = getReelNet(r, redev)
-                    const ecartObj = round2(reelNet - objectifMensuel)
-                    const isOpen = moisOuvert === `${mode}_${cle}`
-                    const bg = i % 2 === 0 ? '' : 'bg-gray-50'
-                    return (
-                      <React.Fragment key={cle}>
-                        <tr className={`cursor-pointer hover:bg-blue-50 ${bg}`} onClick={() => setMoisOuvert(isOpen ? null : `${mode}_${cle}`)}>
-                          <td className="px-4 py-2.5 font-medium text-gray-700 flex items-center gap-2"><span>{label}</span><span className="text-gray-300 text-xs">{isOpen ? '▲' : '▼'}</span></td>
-                          <td className={`px-3 py-2.5 text-right font-medium ${reelNet >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmt(reelNet)}</td>
-                          <td className="px-3 py-2.5 text-right text-gray-400">{fmt(objectifMensuel)}</td>
-                          <td className={`px-4 py-2.5 text-right font-medium ${ecartObj >= 0 ? 'text-green-600' : 'text-red-500'}`}>{ecartObj >= 0 ? '+' : ''}{fmt(ecartObj)}</td>
-                        </tr>
-                        {isOpen && (<tr className={bg}><td colSpan={4} className="px-4 pb-3">{crPourCle(cle)}</td></tr>)}
-                      </React.Fragment>
-                    )
-                  })}
-                  <tr className="bg-gray-50 border-t-2 border-gray-300 font-bold text-xs">
-                    <td className="px-4 py-2.5 text-gray-700">Total</td>
-                    <td className={`px-3 py-2.5 text-right ${cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevancesScoped.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ht||0),0);return s+getReelNet(r,redev)},0)>=0?'text-green-700':'text-red-600'}`}>{fmt(cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevancesScoped.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ht||0),0);return s+getReelNet(r,redev)},0))}</td>
-                    <td className="px-3 py-2.5 text-right text-gray-400">{fmt(objectifMensuel * cles.length)}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-500">—</td>
+              <table style={{width:'100%',fontSize:11}}>
+                {moisTableHead}
+                <tbody>
+                  {cles.map((cle, i) => renderMoisRow(cle, i % 2 === 0 ? 'transparent' : 'var(--surface-2)'))}
+                  <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-300)',fontWeight:700,fontSize:11}}>
+                    <td style={{padding:'10px 16px',color:'var(--ink-700)'}}>Total</td>
+                    <td style={{padding:'10px 12px',textAlign:'right',color:totalReelMois >= 0 ? '#15803d' : '#dc2626'}}>{fmt(totalReelMois)}</td>
+                    <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{fmt(objectifMensuel * cles.length)}</td>
+                    <td style={{padding:'10px 16px',textAlign:'right',color:'var(--ink-500)'}}>—</td>
                   </tr>
                 </tbody>
               </table>
             </div>
+            <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId={`chart_${mode}_mois`} />
           </div>
         )}
         {sfSousOnglet === 'annee' && renderAnnuel()}
@@ -1455,507 +2042,9 @@ export default function Finances() {
     )
   }
 
-  // ── SYNTHESE VIEW ──────────────────────────────────────────────────────────
-
-  function SyntheseView() {
-    const chartId = 'synthese_monthly_chart'
-    const donutId = 'synthese_donut_chart'
-
-    const reelData = useMemo(() => Array.from({length:12}, (_, i) => {
-      const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
-      const agg = rowsReelScoped.find(([k]) => k === key)?.[1] || {}
-      return round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [rowsReelScoped])
-
-    const previData = useMemo(() => {
-      const map = {}
-      scopedDossiers.forEach(d => {
-        const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
-        if (!key || !key.startsWith(String(anneeEnCours))) return
-        if (!map[key]) map[key] = 0
-        const c = calculer(d)
-        map[key] = round2(map[key] + c.gainsAdminPreviTotal + c.gainsAgentePreviTotal)
-      })
-      return Array.from({length:12}, (_, i) => {
-        const key = `${anneeEnCours}-${String(i+1).padStart(2,'0')}`
-        return map[key] || 0
-      })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [scopedDossiers])
 
 
-    useEffect(() => {
-      if (typeof window === 'undefined') return
-      const el = document.getElementById(chartId)
-      if (!el) return
-      if (el._chartInstance) el._chartInstance.destroy()
-      el._chartInstance = new Chart(el, {
-        data: {
-          labels: MOIS_LABELS,
-          datasets: [
-            { type: 'bar', label: 'Réel', data: reelData, backgroundColor: 'rgba(0, 123, 255, 0.7)', borderColor: 'rgba(0, 123, 255, 1)', borderWidth: 1, barPercentage: 0.5,categoryPercentage: 0.5, yAxisID: 'y', },
-            { type: 'bar', label: 'Prévi', data: previData, backgroundColor: 'rgba(0, 123, 255, 0.1)',borderColor: 'rgba(0, 123, 255, 0.5)', borderDash: [5, 5], pointRadius: 0, yAxisID: 'y',}
-          ]
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: { label: ctx => ctx.dataset.label + ' : ' + Math.abs(ctx.parsed.y).toLocaleString('fr-FR') + ' €' } }
-          },
-          scales: {
-            x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#888', maxRotation: 30 } },
-            y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 }, color: '#888', callback: v => Math.abs(v).toLocaleString('fr-FR') + ' €' } }
-          }
-        }
-      })
-      return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
-    }, [reelData, previData])
 
-    useEffect(() => {
-      if (typeof window === 'undefined') return
-      const el = document.getElementById(donutId)
-      if (!el) return
-      if (el._chartInstance) el._chartInstance.destroy()
-      el._chartInstance = new Chart(el, {
-        type: 'doughnut',
-        data: {
-          labels: ['Commissions HT', 'Frais HT', 'Royalties'],
-          datasets: [{ data: [totComHT, totFraisHT, totRoyalties], backgroundColor: ['#00578e','#0094d4','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
-        },
-        options: {
-          cutout: '70%', responsive: true, maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: { label: ctx => ctx.label + ' : ' + (ctx.parsed).toLocaleString('fr-FR') + ' €' } }
-          }
-        }
-      })
-      return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
-    }, [totComHT, totFraisHT, totRoyalties])
-
-    const totalDonut = totComHT + totFraisHT + totRoyalties
-    const reelTotal  = reelData.reduce((s,v) => s+v, 0)
-
-    return (
-      <div style={{display:'flex',flexDirection:'column',gap:20}}>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <span className="eyebrow">Filtré sur</span>
-          <span style={{fontSize:12,fontWeight:600,color:'var(--brand-800)',background:'var(--brand-50)',padding:'3px 10px',borderRadius:99}}>{libellePerimetre()}</span>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-          {/* LEFT : bar+line chart + totaux */}
-          <div className="card" style={{padding:20}}>
-            <div className="eyebrow" style={{marginBottom:12}}>Évolution mensuelle {anneeEnCours} \nCA RÉEL NET VS PRÉVISIONNEL </div>
-            <div style={{display:'flex',gap:16,marginBottom:12,flexWrap:'wrap'}}>
-              <div style={{display:'flex',alignItems:'center',gap:6}}>
-                <div style={{width:10,height:10,borderRadius:2,background:'#3B7DD8'}}/>
-                <span style={{fontSize:11,color:'var(--ink-500)'}}>Réel</span>
-              </div>
-              <div style={{display:'flex',alignItems:'center',gap:6}}>
-                <div style={{width:10,height:10,borderRadius:2,border:'2px dashed #94a3b8',background:'transparent'}}/>
-                <span style={{fontSize:11,color:'var(--ink-500)'}}>Prévi</span>
-              </div>
-            </div>
-            <div style={{position:'relative',height:220}}>
-              <canvas id={chartId} role="img" aria-label="Gains mensuels" />
-            </div>
-            <div style={{marginTop:16,display:'flex',flexDirection:'column',gap:6}}>
-              <Row label="Total réel" value={fmt(reelTotal)} bold accent />
-              <Row label="Total prévi" value={fmt(totPreviNet)} dim />
-              {pctObjectif > 0 && <Row label={`Objectif ${anneeEnCours} (${pctObjectif}%)`} value={fmt(objectifAnnuel)} dim />}
-            </div>
-          </div>
-          {/* RIGHT : donut + répartition */}
-          <div style={{display:'flex',flexDirection:'column',gap:16}}>
-            <div className="card" style={{padding:20}}>
-              <div className="eyebrow" style={{marginBottom:12}}>Répartition prévisionnel</div>
-              <div style={{position:'relative',height:160}}>
-                <canvas id={donutId} role="img" aria-label="Répartition" />
-              </div>
-              <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
-                <LegendRow color="#00578e" label="Commissions HT" value={fmt(totComHT)} pct={totalDonut>0?Math.round(totComHT/totalDonut*100):0} />
-                <LegendRow color="#0094d4" label="Frais HT"       value={fmt(totFraisHT)} pct={totalDonut>0?Math.round(totFraisHT/totalDonut*100):0} />
-                <LegendRow color="#94a3b8" label="Royalties"      value={fmt(totRoyalties)} pct={totalDonut>0?Math.round(totRoyalties/totalDonut*100):0} />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // ── FACTURATION AGENTES (INNER COMPONENT) ────────────────────────────────
-
-  function FacturationAgentes() {
-    const facturesAg  = facturesAgente.filter(f => f.agente_id === agenteSelectionnee)
-    const redevAg     = redevancesAgente
-    const [moisDeplie, setMoisDeplie] = useState(null)
-
-    // Montants F1/F2 calculés EN LIVE (source unique : agrégerParPaiement → finance.js).
-    // Le snapshot factures_agente ne sert plus qu'à lire le statut + le PDF (read-only ici).
-    const rowsReel   = agrégerParPaiement(dossiersAgente, false)
-    const aggParMois = new Map(rowsReel)
-    // Seuil de redevance dérivé de la CHAÎNE "YYYY-MM-DD" (zéro Date → zéro fuseau).
-    const debutIndex = agenteActuelle?.redevance_debut
-      ? (() => { const [y, m] = agenteActuelle.redevance_debut.split('-').map(Number); return y * 12 + (m - 1) })()
-      : null
-    const redevParam = agenteActuelle?.redevance_mensuelle_ht   // paramètre, jamais de littéral
-
-    // F1 (agente → CTP) = frais + commissions + honoraires + part partenaire (= gainsAgenteReels)
-    // F2 (CTP → agente) = redevance HT datée (param) + apporteur remboursé
-    const calcMois = (annee, mois) => {
-      const agg = aggParMois.get(`${annee}-${String(mois).padStart(2, '0')}`) || {}
-      const fraisN = round2(agg.fraisAgenteNet || 0)
-      const comN   = round2(agg.comAgenteNet || 0)
-      const honN   = round2(agg.honAgenteNet || 0)
-      const partN  = round2(agg.comApporteursAgenteNet || 0)
-      const montantF1 = round2(fraisN + comN + honN + partN)
-      const moisIndex = annee * 12 + (mois - 1)
-      const redev = (debutIndex != null && redevParam != null && moisIndex >= debutIndex) ? round2(redevParam) : 0
-      const apporteur = round2(agg.apporteurPartAgenteNet || 0)
-      const montantF2 = round2(redev + apporteur)
-      return { fraisN, comN, honN, partN, montantF1, redev, apporteur, montantF2 }
-    }
-
-    // F1/F2 effectif : figé (snapshot factures_agente.montant) si payé, sinon live.
-    const f1Eff = (f, liveF1) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF1
-    const f2Eff = (f, liveF2) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF2
-
-    // Facturation décalée : la facture du mois M porte sur l'activité du mois M−1.
-    // P2 : on persiste / apparie / toggle sur le mois d'ACTIVITÉ ; seul le libellé est décalé.
-    const shiftMoisKey = (key, delta) => {
-      const [y, m] = key.split('-').map(Number)
-      const dt = new Date(y, m - 1 + delta, 1)            // Date gère le rollover d'année
-      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
-    }
-
-    // Tous les mois de redevance due : de debutIndex au mois courant (activité) INCLUS, même creux.
-    const now = new Date()
-    const moisCourantIndex = now.getFullYear() * 12 + now.getMonth()    // getMonth() 0-based = (mois-1), cohérent avec debutIndex
-    const redevanceDueKeys = []
-    if (debutIndex != null) {
-      for (let i = debutIndex; i <= moisCourantIndex; i++) {
-        redevanceDueKeys.push(`${Math.floor(i / 12)}-${String(i % 12 + 1).padStart(2, '0')}`)   // clé activité "YYYY-MM"
-      }
-    }
-
-    // Lignes = mois de FACTURE (= activité + 1). Sources activité : rowsReel + factures persistées (P2) + redevances dues.
-    const months = [...new Set([
-      ...rowsReel.map(([k]) => shiftMoisKey(k, +1)),
-      ...facturesAg.map(f => shiftMoisKey(`${f.annee}-${String(f.mois).padStart(2, '0')}`, +1)),
-      ...redevanceDueKeys.map(k => shiftMoisKey(k, +1)),
-    ])].sort((a, b) => b.localeCompare(a))
-
-    let totalF1 = 0, totalF1Paye = 0, totalF2 = 0, totalF2Paye = 0
-    months.forEach(key => {
-      const [aStr, mStr] = shiftMoisKey(key, -1).split('-')   // mois d'activité (M−1)
-      const annee = parseInt(aStr), mois = parseInt(mStr)
-      const { montantF1, montantF2 } = calcMois(annee, mois)
-      const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
-      const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
-      const f1eff = f1Eff(f1, montantF1)
-      const f2eff = f2Eff(f2, montantF2)
-      totalF1 = round2(totalF1 + f1eff); totalF2 = round2(totalF2 + f2eff)
-      if (f1?.statut === 'paye') totalF1Paye = round2(totalF1Paye + f1eff)
-      if (f2?.statut === 'paye') totalF2Paye = round2(totalF2Paye + f2eff)
-    })
-    const totalRedev = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => round2(s + (r.montant_ht || 0)), 0)
-    const net        = round2(totalF1 - totalF2)
-
-    const uploadPdf = async (f, fichier) => {
-      setErreur(''); setSucces('')
-      const ext = fichier.name.split('.').pop().toLowerCase()
-      const chemin = `factures_agente/${agenteSelectionnee}/${f.annee}-${String(f.mois).padStart(2,'0')}-${f.type_facture}.${ext}`
-      const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
-      if (error) { setErreur('Erreur upload : ' + error.message); return }
-      try {
-        await upsertFactureMoisType(f.mois, f.annee, f.montant||0, f.type_facture, { facture_path: chemin })
-        setSucces('Facture uploadée ✓')
-      } catch (e) { setErreur('Erreur enregistrement : ' + e.message) }
-    }
-
-    // Bascule du statut F1 (agente → CTP). Au clic « payé » : fige le montant LIVE
-    // (calcMois, jamais f.montant). Au déclic : montant remis à NULL → le live reprend.
-    // INSERT si le mois n'a pas de ligne (montant positionnel), UPDATE sinon (montant dans updates).
-    const toggleF1Statut = async (annee, mois, f1) => {
-      const live = calcMois(annee, mois).montantF1
-      try {
-        if (f1?.statut === 'paye') {
-          await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'a_facturer', montant: null })
-        } else {
-          await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'paye', montant: live })
-        }
-      } catch (e) { setErreur('Erreur F1 : ' + e.message) }
-    }
-
-    // Bascule du statut F2 (CTP → agente). ADMIN ONLY (appelé uniquement depuis la
-    // branche isAdmin de la cellule). Fige le montant LIVE (calcMois().montantF2,
-    // jamais f.montant) au clic « reçu », NULL au déclic. Le type 'ctp_vers_agente'
-    // déclenche la synchro redevances dans upsertFactureMoisType (regle / en_attente).
-    const toggleF2Statut = async (annee, mois, f2) => {
-      const live = calcMois(annee, mois).montantF2
-      try {
-        if (f2?.statut === 'paye') {
-          await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'a_facturer', montant: null })
-        } else {
-          await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'paye', montant: live })
-        }
-      } catch (e) { setErreur('Erreur F2 : ' + e.message) }
-    }
-
-    const FactureDetailCard = ({ title, subtitle, type, accent }) => {
-      const fs = facturesAg.filter(f => f.type_facture === type)
-      return (
-        <div className="card" style={{padding:0,overflow:'hidden'}}>
-          <div style={{padding:'14px 18px',borderBottom:'1px solid var(--ink-200)',borderLeft:`4px solid ${accent}`}}>
-            <div style={{fontSize:14,fontWeight:700,color:'var(--ink-900)'}}>{title}</div>
-            <div style={{fontSize:11.5,color:'var(--ink-500)',marginTop:4,lineHeight:1.4}}>{subtitle}</div>
-          </div>
-          <div>
-            {fs.map(f => {
-              const m = calcMois(f.annee, f.mois)
-              const montant = type === 'agente_vers_ctp' ? f1Eff(f, m.montantF1) : f2Eff(f, m.montantF2)
-              const [fFaStr, fFmStr] = shiftMoisKey(`${f.annee}-${String(f.mois).padStart(2, '0')}`, +1).split('-')
-              return (
-              <div key={f.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:12,alignItems:'center',padding:'12px 18px',borderTop:'1px solid var(--ink-100)'}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:600,color:'var(--ink-900)'}}>{MOIS[parseInt(fFmStr)]} {fFaStr}</div>
-                  <div style={{fontSize:10,color:'var(--ink-400)'}}>activité de {MOIS[f.mois]} {f.annee}</div>
-                  <div style={{fontSize:11,color:'var(--ink-500)',marginTop:2}}>
-                    {f.facture_path
-                      ? <button onClick={async () => { const { data } = await supabase.storage.from('documents').createSignedUrl(f.facture_path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }}
-                          style={{fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>
-                      : <span style={{color:'var(--ink-400)'}}>Pas de PDF déposé</span>}
-                  </div>
-                </div>
-                <div style={{fontWeight:700,color:'var(--ink-900)',fontVariantNumeric:'tabular-nums'}}>{fmt(montant)}</div>
-                <div style={{display:'flex',gap:6,alignItems:'center'}}>
-                  <StatutFacture f={f}/>
-                  <label style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid var(--ink-200)',cursor:'pointer',color:'var(--ink-600)',background:'#fff'}}>
-                    {f.facture_path ? '📤 Remplacer le PDF' : '📤 Déposer un PDF'}
-                    <input type="file" accept=".pdf" className="hidden" onChange={e => e.target.files[0] && uploadPdf(f, e.target.files[0])}/>
-                  </label>
-                </div>
-              </div>
-              )
-            })}
-            {fs.length === 0 && <div style={{padding:24,textAlign:'center',color:'var(--ink-400)',fontSize:13}}>Aucune facture</div>}
-          </div>
-        </div>
-      )
-    }
-
-    return (
-      <div style={{display:'flex',flexDirection:'column',gap:18}}>
-        {succes && <div style={{background:'rgba(22,163,74,0.07)',border:'1px solid rgba(22,163,74,0.25)',borderRadius:10,padding:'10px 16px',fontSize:13,color:'#15803d'}}>{succes}</div>}
-        {erreur && <div style={{background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:10,padding:'10px 16px',fontSize:13,color:'#b91c1c'}}>{erreur}</div>}
-        {/* Sélecteur agente — admin uniquement (agente voit sa propre facturation) */}
-        {isAdmin && (
-          <div className="card" style={{padding:'14px 18px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
-            <div className="eyebrow">Agente :</div>
-            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-              {agentes.filter(a => a.role === 'agente').map(a => (
-                <button key={a.id} onClick={() => setAgenteSelectionnee(a.id)} style={{
-                  display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:99,
-                  border:'1px solid',borderColor: agenteSelectionnee === a.id ? 'var(--brand-500)' : 'var(--ink-200)',
-                  background: agenteSelectionnee === a.id ? 'var(--brand-50)' : '#fff',
-                  color: agenteSelectionnee === a.id ? 'var(--brand-800)' : 'var(--ink-700)',
-                  fontSize:12,fontWeight:600,cursor:'pointer',
-                }}>
-                  <Avatar name={`${a.prenom} ${a.nom}`} size={20}/>
-                  {a.prenom} {a.nom}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* KPI strip */}
-        <div className="kpi-grid">
-          <FinKpiCard label="F1 — Gains à facturer"       value={fmt(totalF1)}    sub={`Reçu ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
-          <FinKpiCard label="F2 — Redevances + apporteur" value={fmt(totalF2)}    sub={`Reçu ${fmt(totalF2Paye)}`}                                              tone="warn"/>
-          <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
-        </div>
-
-        {/* Tableau mensuel F1 / F2 */}
-        <div className="card" style={{padding:0,overflow:'hidden'}}>
-          <div style={{padding:'14px 22px',borderBottom:'1px solid var(--ink-200)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <div>
-              <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)'}}>
-                Facturation mensuelle · {agenteActuelle ? `${agenteActuelle.prenom} ${agenteActuelle.nom}` : '—'}
-              </div>
-              <div className="eyebrow" style={{marginTop:4}}>F1 = facture émise par l&apos;agente · F2 = facture émise par la franchisée</div>
-            </div>
-          </div>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
-            <thead style={{background:'var(--surface-2)'}}>
-              <tr>
-                {thL('Mois')}
-                {thR('F1 (Agente → Société)')}
-                <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F1</th>
-                {thR('F2 (Société → Agente)')}
-                <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F2</th>
-                {thR('Net')}
-              </tr>
-            </thead>
-            <tbody>
-              {months.map(key => {
-                const [faStr, fmStr] = key.split('-')
-                const fMois = parseInt(fmStr); const fAnnee = parseInt(faStr)        // mois de FACTURE (libellé)
-                const [aStr, mStr] = shiftMoisKey(key, -1).split('-')
-                const mois = parseInt(mStr); const annee = parseInt(aStr)            // mois d'ACTIVITÉ (M−1) : données, appariement, toggle
-                const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
-                const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
-                const d   = calcMois(annee, mois)
-                const f1m = f1Eff(f1, d.montantF1)
-                const f2m = f2Eff(f2, d.montantF2)
-                const n   = round2(f1m - f2m)
-                const isOpen = moisDeplie === key
-                const voirPdf = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }
-                return (
-                  <React.Fragment key={key}>
-                  <tr style={{borderTop:'1px solid var(--ink-100)',cursor:'pointer'}} className="row-hover" onClick={() => setMoisDeplie(isOpen ? null : key)}>
-                    <td style={{padding:'14px 16px',fontWeight:700,color:'var(--ink-900)'}}>
-                      <span style={{display:'inline-block',width:14,color:'var(--ink-400)'}}>{isOpen ? '▾' : '▸'}</span>{MOIS[fMois]} {fAnnee}
-                      <div style={{fontSize:11,fontWeight:500,color:'var(--ink-400)',marginLeft:14}}>activité de {MOIS[mois]} {annee}</div>
-                    </td>
-                    <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f1m>0?'#15803d':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
-                      {f1m > 0 ? fmt(f1m) : '—'}
-                    </td>
-                    <td style={{padding:'14px 16px',textAlign:'center'}}>
-                      {(f1m === 0 && f1?.statut !== 'paye') ? (
-                        <span style={{color:'var(--ink-400)'}}>—</span>
-                      ) : (
-                        <span
-                          onClick={(e) => { e.stopPropagation(); toggleF1Statut(annee, mois, f1) }}
-                          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
-                          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
-                          title={f1?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
-                          style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
-                          <StatutFacture f={f1}/>
-                        </span>
-                      )}
-                    </td>
-                    <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f2m>0?'#b91c1c':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
-                      {f2m > 0 ? fmt(f2m) : '—'}
-                    </td>
-                    <td style={{padding:'14px 16px',textAlign:'center'}}>
-                      {(f2m === 0 && f2?.statut !== 'paye') ? (
-                        <span style={{color:'var(--ink-400)'}}>—</span>
-                      ) : isAdmin ? (
-                        <span
-                          onClick={(e) => { e.stopPropagation(); toggleF2Statut(annee, mois, f2) }}
-                          onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
-                          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
-                          title={f2?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
-                          style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
-                          <StatutFacture f={f2}/>
-                        </span>
-                      ) : (
-                        <StatutFacture f={f2}/>
-                      )}
-                    </td>
-                    <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:n>=0?'var(--brand-800)':'#b91c1c',fontVariantNumeric:'tabular-nums'}}>
-                      {n >= 0 ? '+' : ''}{fmt(n)}
-                    </td>
-                  </tr>
-                  {isOpen && (
-                    <tr style={{background:'var(--surface-2)'}}>
-                      <td colSpan={6} style={{padding:'4px 16px 16px'}}>
-                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,maxWidth:720}}>
-                          <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                            <div className="eyebrow" style={{color:'#15803d'}}>F1 — Agente facture la Société</div>
-                            {d.fraisN > 0 && <Row label="Frais de consultation" value={fmt(d.fraisN)} />}
-                            {d.comN   > 0 && <Row label="Commissions artisans"   value={fmt(d.comN)} />}
-                            {d.honN   > 0 && <Row label="Honoraires (courtage + AMO)" value={fmt(d.honN)} />}
-                            {d.partN  > 0 && <Row label="Part partenaire"         value={fmt(d.partN)} />}
-                            {f1m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucun gain encaissé ce mois</span>}
-                            <Row label="Total F1" value={fmt(f1m)} bold accent />
-                            {f1?.facture_path && <button onClick={() => voirPdf(f1.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
-                          </div>
-                          <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                            <div className="eyebrow" style={{color:'#b91c1c'}}>F2 — La Société facture l&apos;agente</div>
-                            {d.redev     > 0 && <Row label="Redevance mensuelle (HT)" value={fmt(d.redev)} />}
-                            {d.apporteur > 0 && <Row label="Apporteur remboursé"      value={fmt(d.apporteur)} />}
-                            {f2m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucune charge ce mois</span>}
-                            <Row label="Total F2" value={fmt(f2m)} bold accent />
-                            {f2?.facture_path && <button onClick={() => voirPdf(f2.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  </React.Fragment>
-                )
-              })}
-              {months.length === 0 && (
-                <tr><td colSpan={6} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-400)'}}>Aucune facturation à afficher</td></tr>
-              )}
-            </tbody>
-            {months.length > 0 && (
-              <tfoot>
-                <tr style={{borderTop:'2px solid var(--ink-200)',background:'var(--surface-2)'}}>
-                  <td style={{padding:'14px 16px',fontWeight:800,color:'var(--ink-900)'}}>Total</td>
-                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#15803d',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF1)}</td>
-                  <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF1Paye)} reçu</td>
-                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#b91c1c',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF2)}</td>
-                  <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF2Paye)} reçu</td>
-                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,fontSize:15,fontVariantNumeric:'tabular-nums',color:net>=0?'var(--brand-800)':'#b91c1c'}}>
-                    {net >= 0 ? '+' : ''}{fmt(net)}
-                  </td>
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-
-        {/* Détail factures F1 + F2 côte à côte */}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18}}>
-          <FactureDetailCard
-            title="F1 — Factures émises par l'agente"
-            subtitle="L'agente facture la Société pour ses gains du mois (frais + commissions + honoraires)"
-            type="agente_vers_ctp"
-            accent="#16a34a"
-          />
-          <FactureDetailCard
-            title="F2 — Factures émises par la franchisée"
-            subtitle="La Société facture l'agente pour la redevance + apporteur remboursé"
-            type="ctp_vers_agente"
-            accent="#dc2626"
-          />
-        </div>
-
-        {/* Redevances 12 mois */}
-        <div className="card" style={{padding:22}}>
-          <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)',marginBottom:14}}>Redevances mensuelles · {agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} € HT` : 'montant à paramétrer'}</div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(12,1fr)',gap:6}}>
-            {MOIS_LABELS.map((mLabel, i) => {
-              const r = redevAg.find(rv => rv.mois === i+1 && rv.annee === anneeEnCours)
-              const isPast = new Date(anneeEnCours, i, 1) < new Date()
-              return (
-                <div key={i} style={{
-                  padding:'10px 6px',textAlign:'center',borderRadius:8,
-                  background:  r?.statut === 'regle' ? 'rgba(22,163,74,0.10)' : isPast ? 'rgba(245,158,11,0.13)' : 'var(--ink-50)',
-                  border:'1px solid',borderColor: r?.statut === 'regle' ? 'rgba(22,163,74,0.2)' : isPast ? 'rgba(245,158,11,0.3)' : 'var(--ink-200)',
-                }}>
-                  <div style={{fontSize:10,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>{mLabel.slice(0,3)}</div>
-                  <div style={{marginTop:6,fontSize:11.5,fontWeight:700,color:r?.statut==='regle'?'#15803d':isPast?'#a16207':'var(--ink-300)'}}>
-                    {r?.statut === 'regle' ? '✓' : isPast ? '⌛' : '—'}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          <div style={{marginTop:14,fontSize:12.5,color:'var(--ink-500)'}}>
-            {redevAg.filter(r => r.statut === 'regle').length} mois réglés ·
-            <span style={{fontWeight:700,color:'var(--brand-800)',marginLeft:6,fontVariantNumeric:'tabular-nums'}}>{fmt(totalRedev)}</span> sur l&apos;année
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // RENDU PRINCIPAL
@@ -1997,39 +2086,40 @@ export default function Finances() {
 
       {/* Tab bar */}
       <div className="tabs">
-        <button className={`tab ${tab==='previsionnel'?'active':''}`} onClick={() => setTab('previsionnel')}>
+        <button className={`tab ${tab==='previsionnel'?'active':''}`} onClick={() => handleTab('previsionnel')}>
           <span style={{display:'inline-flex',gap:8,alignItems:'center'}}>
             <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
               background:tab==='previsionnel'?'var(--brand-800)':'var(--ink-100)',
               color:tab==='previsionnel'?'#fff':'var(--ink-500)'}}>F1</span>
-            F1 Prévisionnel
+            Prévisionnel
           </span>
         </button>
-        <button className={`tab ${tab==='reel'?'active':''}`} onClick={() => setTab('reel')}>
+        <button className={`tab ${tab==='reel'?'active':''}`} onClick={() => handleTab('reel')}>
           <span style={{display:'inline-flex',gap:8,alignItems:'center'}}>
             <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
               background:tab==='reel'?'var(--brand-800)':'var(--ink-100)',
               color:tab==='reel'?'#fff':'var(--ink-500)'}}>F2</span>
-            F2 Réel
+            Réel
           </span>
         </button>
-        <button className={`tab ${tab==='synthese'?'active':''}`} onClick={() => setTab('synthese')}>Synthèse</button>
-        <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => setTab('suivi')}>📈Suivi financier</button>
-        <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => setTab('facturation')}>🗒️Facturation agentes</button>
+        <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => handleTab('suivi')}>📈Suivi financier</button>
+        <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => handleTab('facturation')}>🗒️Facturation agentes</button>
       </div>
 
       {/* KPI strip — même layout pour admin et agente, données scopées */}
       <div className="kpi-grid">
-        <FinKpiCard label={`CA réel net ${anneeEnCours}`} value={fmt(totalNetCTP)} tone="brand">
-          <div style={{marginTop:8}}>
-            <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
-              <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
+        {isAdmin && (
+          <FinKpiCard label={`CA réel net ${anneeEnCours}`} value={fmt(totalNetCTP)} tone="brand">
+            <div style={{marginTop:8}}>
+              <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
+                <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
+              </div>
+              <div style={{fontSize:11,color:'var(--ink-500)'}}>
+                Objectif <span style={{fontWeight:600,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(objectifAnnuel)}</span> · {pctObjectif}%
+              </div>
             </div>
-            <div style={{fontSize:11,color:'var(--ink-500)'}}>
-              Objectif <span style={{fontWeight:600,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(objectifAnnuel)}</span> · {pctObjectif}%
-            </div>
-          </div>
-        </FinKpiCard>
+          </FinKpiCard>
+        )}
         <FinKpiCard label="CA prévisionnel"
           value={fmt(totPreviNet)}
           sub={`${fmt(round2(totComHT+totFraisHT))} brut · ${fmt(totRoyalties)} royalties`}
@@ -2050,7 +2140,7 @@ export default function Finances() {
           <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
             <div className="eyebrow">Vue</div>
             <div className="pill-toggle">
-              {periodOptions.map(p => (
+              {periodOptions.filter(p => p.key !== 'mois').map(p => (
                 <button key={p.key} onClick={() => setPeriod(p.key)} style={{
                   padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
                   background: period === p.key ? '#fff' : 'transparent',
@@ -2080,8 +2170,8 @@ export default function Finances() {
             )}
           </div>
           {period === 'chantier' && renderFinanceTable(scopedDossiers, false)}
-          {period === 'mois'     && renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, false), 'Mois')}
-          {period === 'annee'    && renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, true), 'Année')}
+          {period === 'mois'     && renderTousPeriode(scopedDossiers, rowsPreviMoisScoped, 'Mois', true)}
+          {period === 'annee'    && renderTousPeriode(scopedDossiers, rowsPreviAnneeScoped, 'Année', true)}
         </div>
       )}
 
@@ -2121,32 +2211,52 @@ export default function Finances() {
             )}
           </div>
           {period === 'chantier' && renderFinanceTable(scopedDossiers, true)}
-          {period === 'mois'     && renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, false), 'Mois')}
-          {period === 'annee'    && renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, true), 'Année')}
+          {period === 'mois'     && renderTousPeriode(scopedDossiers, rowsReelScoped, 'Mois', false)}
+          {period === 'annee'    && renderTousPeriode(scopedDossiers, rowsAnneeScoped, 'Année', false)}
         </div>
       )}
 
-      {/* ── SYNTHÈSE ── */}
-      {tab === 'synthese' && <SyntheseView />}
-
-      {/* ── SUIVI FINANCIER — toggle Agence/CTP admin-only ; agente : mode agence forcé ── */}
+      {/* ── SUIVI FINANCIER — Synthèse fusionnée : graphes + compte de résultat ── */}
       {tab === 'suivi' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {isAdmin && (
-            <PillToggle
-              options={[{key:'agence',label:'Agence — Encaissements bruts'},{key:'ctp',label:'Société — Résultat net (charges incluses)'}]}
-              active={suiviMode}
-              onChange={setSuiviMode}
-            />
-          )}
-          {renderSuiviFinancier(isAdmin ? suiviMode : 'agence')}
+          {/* ZONE 1 — contrôles : toggle Agence/Société (multi-agence) + année */}
+          <div style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap',marginBottom:16}}>
+            {isAdmin && (
+              <div style={{display:'flex',gap:0,borderRadius:8,border:'1px solid var(--ink-200)',overflow:'hidden'}}>
+                <button onClick={() => setSuiviMode('agence')}
+                  style={{padding:'6px 14px',fontSize:12.5,fontWeight:600,border:'none',cursor:'pointer',
+                    background: suiviMode === 'agence' ? 'var(--brand-700)' : 'transparent',
+                    color: suiviMode === 'agence' ? '#fff' : 'var(--ink-600)'}}>
+                  Agence
+                </button>
+                <button onClick={() => setSuiviMode('ctp')}
+                  style={{padding:'6px 14px',fontSize:12.5,fontWeight:600,border:'none',cursor:'pointer',
+                    background: suiviMode === 'ctp' ? 'var(--brand-700)' : 'transparent',
+                    color: suiviMode === 'ctp' ? '#fff' : 'var(--ink-600)'}}>
+                  Société
+                </button>
+              </div>
+            )}
+            <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(Number(e.target.value))}
+              style={{fontSize:12.5,padding:'6px 10px',borderRadius:8,border:'1px solid var(--ink-200)',
+                background:'var(--surface-1)',color:'var(--ink-700)'}}>
+              {(() => { const ans = []; for (let a = new Date().getFullYear(); a >= anneeMin; a--) ans.push(a); return ans })()
+                .map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+
+          {/* ZONE 2 — sous-onglet Mois/Année + objectif + compte de résultat + graphe Gains/Charges */}
+          {renderSuiviFinancier(!isAdmin ? 'agent' : suiviMode)}
+
+          {/* ZONE 3 — graphe barres Réel/Prévi + deux donuts côte à côte */}
+          <SuiviGraphes anneeSelectionnee={anneeSelectionnee} rowsReelScoped={rowsReelScoped} scopedDossiers={scopedDossiers} getKeyFromDate={getKeyFromDate} calculer={calculer} />
         </div>
       )}
 
       {/* ── FACTURATION — même composant, données filtrées sur agente connectée ── */}
       {tab === 'facturation' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <FacturationAgentes />
+          <FacturationAgentes facturesAgente={facturesAgente} agenteSelectionnee={agenteSelectionnee} setAgenteSelectionnee={setAgenteSelectionnee} redevancesAgente={redevancesAgente} agrégerParPaiement={agrégerParPaiement} dossiersAgente={dossiersAgente} agenteActuelle={agenteActuelle} erreur={erreur} succes={succes} setErreur={setErreur} setSucces={setSucces} upsertFactureMoisType={upsertFactureMoisType} isAdmin={isAdmin} agentes={agentes} anneeEnCours={anneeEnCours} />
         </div>
       )}
 
