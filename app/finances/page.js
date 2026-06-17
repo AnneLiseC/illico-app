@@ -849,6 +849,11 @@ export default function Finances() {
     if (profile?.role === 'agente') setScope('moi')
   }, [profile?.role])
 
+  // Prévisionnel n'a pas de vue 'Par mois' : si l'état est resté sur 'mois' (venant du Réel), forcer 'chantier'.
+  useEffect(() => {
+    if (tab === 'previsionnel' && period === 'mois') setPeriod('chantier')
+  }, [tab, period])
+
   // Vue agence : si l'agente sélectionnée dans le pill n'appartient pas à l'agence
   // active, réinitialiser à 'tous' (évite un périmètre vide silencieux au changement de vue).
   useEffect(() => {
@@ -1768,6 +1773,80 @@ export default function Finances() {
   // ── TOUS LES CHANTIERS par période (admin) ─────────────────────────────────
 
   const renderTousPeriode = (listeDossiers, rows, colLabel, isPrevi = false) => {
+    // CORRECTION 4 — Réel + vue Année : drill-down année → mois → chantiers (dédié, n'affecte pas le Prévi ni les vues mois).
+    if (!isPrevi && colLabel === 'Année') {
+      const totHT = (agg) => round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0))
+      const cols = [
+        { label: 'Frais consultation', key: 'fraisNet' },
+        { label: 'Commissions',        key: 'comReelNet' },
+        { label: 'Honoraires',         key: 'honReel' },
+        { label: 'Total HT',           key: '__total', total: true },
+      ]
+      const cell = (agg, c) => c.total ? totHT(agg) : (agg[c.key] || 0)
+      const thR = { textAlign:'right', padding:'12px 16px', fontSize:11, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', whiteSpace:'nowrap' }
+      return (
+        <div className="card" style={{overflow:'hidden'}}>
+          <table style={{width:'100%',fontSize:13}}>
+            <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
+              <tr>
+                <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Année</th>
+                {cols.map(c => <th key={c.key} style={thR}>{c.label}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(([y, aggY]) => {
+                const isYOpen = periodeOuverte === `ry_${y}`
+                const moisY = rowsReelScoped.filter(([k]) => k.startsWith(`${y}-`))
+                return (
+                  <React.Fragment key={y}>
+                    <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-200)',cursor:'pointer'}}
+                      onClick={() => setPeriodeOuverte(isYOpen ? null : `ry_${y}`)}>
+                      <td style={{padding:'8px 12px',fontWeight:700,color:'var(--ink-800)'}}>
+                        <span style={{display:'inline-block',width:14,color:'var(--ink-400)'}}>{isYOpen ? '▾' : '▸'}</span>{y}
+                      </td>
+                      {cols.map(c => <td key={c.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:c.total ? '#15803d' : 'var(--ink-700)'}}>{fmt(cell(aggY, c))}</td>)}
+                    </tr>
+                    {isYOpen && moisY.map(([cle, aggM]) => {
+                      const isMOpen = moisOuvert === `rm_${cle}`
+                      const [a, m] = cle.split('-')
+                      const moisLabel = `${MOIS[parseInt(m)]} ${a}`
+                      const chantiers = (aggM.dossierIds || []).map(id => listeDossiers.find(d => d.id === id)).filter(Boolean)
+                      return (
+                        <React.Fragment key={cle}>
+                          <tr style={{borderTop:'1px solid var(--ink-100)',cursor:'pointer'}} className="row-hover"
+                            onClick={() => setMoisOuvert(isMOpen ? null : `rm_${cle}`)}>
+                            <td style={{padding:'6px 12px 6px 28px',fontWeight:600,color:'var(--ink-700)',fontSize:12}}>
+                              <span style={{display:'inline-block',width:12,color:'var(--ink-400)'}}>{isMOpen ? '▾' : '▸'}</span>{moisLabel}
+                            </td>
+                            {cols.map(c => <td key={c.key} style={{padding:'6px 12px',textAlign:'right',fontSize:12,fontWeight:600,color:c.total ? '#15803d' : 'var(--ink-600)'}}>{fmt(cell(aggM, c))}</td>)}
+                          </tr>
+                          {isMOpen && chantiers.map(d => {
+                            const aggD = agrégerParPaiement([d], false).find(([k]) => k === cle)?.[1] || {}
+                            return (
+                              <tr key={d.id} style={{borderTop:'1px solid var(--ink-100)'}}>
+                                <td style={{padding:'5px 12px 5px 44px',color:'var(--ink-500)',fontSize:11}}>
+                                  <span style={{color:'var(--ink-300)',marginRight:6}}>└</span>
+                                  <span style={{fontWeight:500,color:'var(--brand-800)'}}>{d.reference}</span>
+                                  <span style={{marginLeft:8}}>— {formatNomClient(d.client)}</span>
+                                </td>
+                                {cols.map(c => c.total
+                                  ? <td key={c.key} style={{padding:'5px 12px',textAlign:'right',fontSize:11,fontWeight:500,color:'var(--ink-600)'}}>{fmt(totHT(aggD))}</td>
+                                  : <td key={c.key} />)}
+                              </tr>
+                            )
+                          })}
+                        </React.Fragment>
+                      )
+                    })}
+                  </React.Fragment>
+                )
+              })}
+              {rows.length === 0 && <tr><td colSpan={cols.length + 1} style={{padding:'32px 12px',textAlign:'center',color:'var(--ink-400)'}}>Aucune donnée</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
     const colonnes = [
       { label: 'Frais consultation', key: 'fraisNet',   type: 'normal' },
       { label: 'Commissions',        key: 'comReelNet', type: 'normal' },
@@ -1835,19 +1914,19 @@ export default function Finances() {
     const crPourCle = (cle) => {
       const x = comptePourCle(cle)
       const lignesProduits = [
-        { label: '(+) Frais de consultation',  r: x.r.fraisNet||0 },
-        { label: '(+) Commissions illiCO',     r: x.r.comReelNet||0 },
-        { label: '(+) Honoraires',             r: x.r.honReel||0 },
-        { label: '(+) Commissions apporteurs', r: x.r.comApporteursReel||0 },
-        ...(isCTP ? [{ label: '(+) Redevances agentes', r: x.redev }] : []),
+        { label: 'Frais de consultation',  r: x.r.fraisNet||0 },
+        { label: 'Commissions illiCO',     r: x.r.comReelNet||0 },
+        { label: 'Honoraires',             r: x.r.honReel||0 },
+        { label: 'Commissions apporteurs', r: x.r.comApporteursReel||0 },
+        ...(isCTP ? [{ label: 'Redevances agentes', r: x.redev }] : []),
       ]
       const lignesReversements = isCTP
         ? [
-            { label: '(−) Royalties illiCO',      r: royaltiesReelVal(x.r) },
-            { label: '(−) Parts agentes',         r: x.r.gainsAgenteReels||0 },
-            { label: '(−) Apporteurs remboursés', r: x.reelApporteur },
+            { label: 'Royalties illiCO',      r: royaltiesReelVal(x.r) },
+            { label: 'Parts agentes',         r: x.r.gainsAgenteReels||0 },
+            { label: 'Apporteurs remboursés', r: x.reelApporteur },
           ]
-        : [{ label: '(−) Apporteurs remboursés', r: x.reelApporteur }]
+        : [{ label: 'Apporteurs remboursés', r: x.reelApporteur }]
       const tdL = { padding:'6px 8px', color:'var(--ink-500)' }
       const tdR = { padding:'6px 8px', textAlign:'right' }
       return (
@@ -1859,11 +1938,11 @@ export default function Finances() {
           <tbody>
             <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Gains</td></tr>
             {lignesProduits.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#15803d',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
-            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>= Total gains</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td></tr>
+            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total gains</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td></tr>
             <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Reversements</td></tr>
             {lignesReversements.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
-            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>= Total reversements</td><td style={{...tdR,fontWeight:500,color:'#ef4444'}}>{fmt(x.reelCharges)}</td></tr>
-            <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>= Résultat net {netLabel}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:x.reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(x.reelNet)}</td></tr>
+            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total reversements</td><td style={{...tdR,fontWeight:500,color:'#ef4444'}}>{fmt(x.reelCharges)}</td></tr>
+            <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>Résultat net {netLabel}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:x.reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(x.reelNet)}</td></tr>
           </tbody>
         </table>
       )
@@ -2127,7 +2206,7 @@ export default function Finances() {
           <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
             <div className="eyebrow">Vue</div>
             <div className="pill-toggle">
-              {periodOptions.map(p => (
+              {periodOptions.filter(p => p.key !== 'mois').map(p => (
                 <button key={p.key} onClick={() => setPeriod(p.key)} style={{
                   padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
                   background: period === p.key ? '#fff' : 'transparent',
