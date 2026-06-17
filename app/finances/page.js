@@ -753,6 +753,8 @@ export default function Finances() {
   const [objectifs, setObjectifs]                   = useState([])
   const [anneeSelectionnee, setAnneeSelectionnee]   = useState(new Date().getFullYear())
   const [moisOuvert, setMoisOuvert]                 = useState(null)
+  const [anneeOuverte, setAnneeOuverte]             = useState(null)
+  const [periodeOuverte, setPeriodeOuverte]         = useState(null)
   const [sfSousOngletCTP, setSfSousOngletCTP]       = useState('mois')
   const [isMobile, setIsMobile]                     = useState(false)
   // Garde de ré-entrance pour upsertFactureMoisType : les toggles F1/F2 et l'upload
@@ -770,7 +772,7 @@ export default function Finances() {
   }, [])
 
   const router = useRouter()
-  const { user, profile, initialized, agenceActive, agences } = useAuth()
+  const { user, profile, initialized, agenceActive } = useAuth()
 
   // ── CHARGEMENT ─────────────────────────────────────────────────────────────
 
@@ -1205,20 +1207,6 @@ export default function Finances() {
   // Options du pill agente limitées à l'agence active (Consolidé → toutes les agentes).
   const agentesScope = agenceActive ? agentes.filter(a => a.agence_id === agenceActive) : agentes
 
-  // Libellé du périmètre actif (réutilisé Suivi 4c-4 + Synthèse 4c-5) : agence (navbar) + pill.
-  // Le pill n'est pas rendu dans ces onglets mais les affecte → indicateur indispensable.
-  const libellePerimetre = () => {
-    if (!isAdmin) return 'Mon activité'
-    const agencePart = agenceActive
-      ? `Agence ${agences.find(a => a.id === agenceActive)?.nom || '—'}`
-      : 'Toutes agences'
-    const pillPart = scope === 'tous'
-      ? (agenceActive ? 'toutes les agentes' : '')
-      : scope === 'moi'
-        ? (profile?.prenom || 'Moi')
-        : (agentes.find(a => a.id === scope)?.prenom || '—')
-    return pillPart ? `${agencePart} · ${pillPart}` : agencePart
-  }
 
 // ── AGRÉGATION PAR PÉRIODE ─────────────────────────────────────────────────
 
@@ -1349,6 +1337,23 @@ export default function Finances() {
   }
 
 
+  // Agrégation PRÉVISIONNELLE par période (clé signature/création) — mêmes clés de
+  // champs que les buckets réels (fraisNet/comReelNet/honReel) pour réutiliser les colonnes.
+  const agrégerPrevi = (listeDossiers, isAnnee = false) => {
+    const map = {}
+    listeDossiers.forEach(d => {
+      const key = getKeyFromDate(d.date_signature_contrat || d.created_at, isAnnee)
+      if (!key) return
+      if (!map[key]) map[key] = { fraisNet: 0, comReelNet: 0, honReel: 0, dossierIds: new Set() }
+      const c = calculer(d)
+      map[key].fraisNet   = round2(map[key].fraisNet   + c.fraisNetPrevi)
+      map[key].comReelNet = round2(map[key].comReelNet + c.netComTous)
+      map[key].honReel    = round2(map[key].honReel    + c.honPreviNet)
+      map[key].dossierIds.add(d.id)
+    })
+    return Object.entries(map).map(([k, agg]) => [k, { ...agg, dossierIds: Array.from(agg.dossierIds) }]).sort((a, b) => b[0].localeCompare(a[0]))
+  }
+
   // ── TOTAUX GLOBAUX ─────────────────────────────────────────────────────────
 
   const anneeEnCours = new Date().getFullYear()
@@ -1363,6 +1368,10 @@ export default function Finances() {
   const rowsReelScoped  = useMemo(() => agrégerParPaiement(scopedDossiers, false), [scopedDossiers])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rowsAnneeScoped = useMemo(() => agrégerParPaiement(scopedDossiers, true), [scopedDossiers])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rowsPreviMoisScoped  = useMemo(() => agrégerPrevi(scopedDossiers, false), [scopedDossiers])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rowsPreviAnneeScoped = useMemo(() => agrégerPrevi(scopedDossiers, true), [scopedDossiers])
 
   const totalGainsAgentesReels = (() => {
     const keysAnnee = rowsReelScoped
@@ -1695,20 +1704,25 @@ export default function Finances() {
               return `${MOIS[parseInt(m)]} ${a}`
             })()
             const dossierspériode = listeDossiers.filter(d => agg.dossierIds?.includes(d.id))
+            const isOpen = periodeOuverte === key
             return (
               <React.Fragment key={key}>
-                {/* Ligne période */}
-                <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-200)'}}>
-                  <td style={{padding:'8px 12px',fontWeight:700,color:'var(--ink-800)'}}>{label}</td>
+                {/* Ligne période — cliquable */}
+                <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-200)',cursor:'pointer'}}
+                  onClick={() => setPeriodeOuverte(isOpen ? null : key)}>
+                  <td style={{padding:'8px 12px',fontWeight:700,color:'var(--ink-800)'}}>
+                    <span style={{display:'inline-block',width:14,color:'var(--ink-400)'}}>{isOpen ? '▾' : '▸'}</span>{label}
+                  </td>
                   {colonnes.map(col => {
                     const val = getMontant(agg, col.key)
+                    if (col.type === 'count') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:'var(--ink-600)'}}>{val}</td>
                     if (col.type === 'neg') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',color:'#f87171',fontSize:13,fontWeight:700}}>{val > 0 ? `— ${fmt(val)}` : '—'}</td>
                     if (col.type === 'total') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:(val || 0) >= 0 ? '#15803d' : '#dc2626'}}>{fmt(val)}</td>
                     return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:'var(--ink-700)'}}>{fmt(val)}</td>
                   })}
                 </tr>
-                {/* Lignes dossiers */}
-                {dossierspériode.map(d => {
+                {/* Lignes chantiers (dépliable) : référence + client + Total HT */}
+                {isOpen && dossierspériode.map(d => {
                   const nomClient = formatNomClient(d.client)
                   return (
                     <tr key={d.id} className="row-hover" style={{borderTop:'1px solid var(--ink-100)'}}>
@@ -1718,10 +1732,8 @@ export default function Finances() {
                         <span style={{color:'var(--ink-500)',fontSize:11,marginLeft:8}}>— {nomClient}</span>
                       </td>
                       {colonnes.map(col => {
-                        const val = getDossierMontant(d, col.key, key)
-                        if (col.type === 'neg') return <td key={col.key} style={{padding:'6px 12px',textAlign:'right',color:'#fca5a5',fontSize:11}}>{val > 0 ? `— ${fmt(val)}` : '—'}</td>
-                        if (col.type === 'total') return <td key={col.key} style={{padding:'6px 12px',textAlign:'right',fontSize:11,fontWeight:500,color:(val || 0) >= 0 ? '#16a34a' : '#ef4444'}}>{fmt(val)}</td>
-                        return <td key={col.key} style={{padding:'6px 12px',textAlign:'right',fontSize:11,color:'var(--ink-500)'}}>{fmt(val)}</td>
+                        if (col.type !== 'total') return <td key={col.key} />
+                        return <td key={col.key} style={{padding:'6px 12px',textAlign:'right',fontSize:11,fontWeight:500,color:'var(--ink-600)'}}>{fmt(getDossierMontant(d, col.key, key))}</td>
                       })}
                     </tr>
                   )
@@ -1736,6 +1748,7 @@ export default function Finances() {
             <td style={{padding:'8px 12px'}}>Total</td>
             {colonnes.map(col => {
               const total = rows.reduce((s, [, agg]) => s + (getMontant(agg, col.key) || 0), 0)
+              if (col.type === 'count') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700}}>{total}</td>
               if (col.type === 'neg') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',color:'#f87171',fontSize:13,fontWeight:700}}>— {fmt(total)}</td>
               if (col.type === 'total') return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:total >= 0 ? '#15803d' : '#dc2626'}}>{fmt(total)}</td>
               return <td key={col.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13}}>{fmt(total)}</td>
@@ -1748,22 +1761,23 @@ export default function Finances() {
 
   // ── TOUS LES CHANTIERS par période (admin) ─────────────────────────────────
 
-  const renderTousPeriode = (listeDossiers, rows, colLabel) => {
+  const renderTousPeriode = (listeDossiers, rows, colLabel, isPrevi = false) => {
     const colonnes = [
-      { label: 'Frais net',    key: 'fraisNet',          type: 'normal' },
-      { label: 'Com. net',     key: 'comNet',             type: 'normal' },
-      { label: 'Com. apport.', key: 'comApporteursNet',   type: 'normal' },
-      { label: 'Hon. net',     key: 'honReel',            type: 'normal' },
-      { label: 'Apporteur',    key: 'apporteurCoutTotalNet', type: 'neg' },
-      { label: 'Société',      key: 'gainAdminReel',      type: 'total'  },
+      { label: 'Frais consultation', key: 'fraisNet',   type: 'normal' },
+      { label: 'Commissions',        key: 'comReelNet', type: 'normal' },
+      { label: 'Honoraires',         key: 'honReel',    type: 'normal' },
+      { label: 'Total HT',           key: '__total',    type: 'total'  },
+      { label: 'Nb chantiers',       key: '__nb',       type: 'count'  },
     ]
+    const totalHT = (agg) => round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0))
+    const getMontant = (agg, key) => key === '__total' ? totalHT(agg) : key === '__nb' ? (agg.dossierIds?.length || 0) : (agg[key] || 0)
     const getDossierMontant = (d, key, periodKey) => {
-      const agg = agrégerParPaiement([d], periodKey?.includes('-') ? false : true)
+      const agg = (isPrevi ? agrégerPrevi([d], !periodKey.includes('-')) : agrégerParPaiement([d], !periodKey.includes('-')))
         .find(([k]) => k === periodKey)?.[1]
       if (!agg) return 0
-      return agg[key] || 0
+      return key === '__total' ? totalHT(agg) : (agg[key] || 0)
     }
-    return renderTableauPeriode(listeDossiers, rows, colLabel, colonnes, (agg, key) => agg[key] || 0, getDossierMontant)
+    return renderTableauPeriode(listeDossiers, rows, colLabel, colonnes, getMontant, getDossierMontant)
   }
 
   
@@ -1776,164 +1790,207 @@ export default function Finances() {
     const isCTP = mode === 'ctp'
     const rowsReel = rowsReelScoped
     const objectifMensuel = round2(getObjectif('agence') / 12)
-    const getReelNet = (r, redev) => {
-      const brut = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + redev)
-      if (isCTP) return round2(brut - (r.gainsAgenteReels||0) - (r.apporteurCoutTotalNet||0))
-      return brut
-    }
-    const crPourCle = (cle) => {
-      const mapPrevi = {}
-      scopedDossiers.forEach(d => {
-        const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
-        if (!key) return
-        if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, comApport: 0, hon: 0, partAgentes: 0, apporteur: 0, royalties: 0 }
-        const c = calculer(d)
-        mapPrevi[key].frais       = round2(mapPrevi[key].frais       + c.fraisNetPrevi)
-        mapPrevi[key].com         = round2(mapPrevi[key].com         + c.netComTous)
-        mapPrevi[key].comApport   = round2(mapPrevi[key].comApport   + c.comApporteursPrevi)
-        mapPrevi[key].hon         = round2(mapPrevi[key].hon         + c.honPreviNet)
-        mapPrevi[key].partAgentes = round2(mapPrevi[key].partAgentes + c.gainsAgentePreviTotal)
-        mapPrevi[key].apporteur   = round2(mapPrevi[key].apporteur   + c.apporteurTotalHT)
-        mapPrevi[key].royalties   = round2(mapPrevi[key].royalties   + c.royaltiesTotal)
-      })
-      const [annee, mois] = cle.split('-')
-      const redevMois = redevancesScoped.filter(r => r.statut === 'regle' && r.annee === parseInt(annee) && r.mois === parseInt(mois)).reduce((s, r) => s + (r.montant_ht || 0), 0)
-      const p = mapPrevi[cle] || {}
+    const netLabel = isCTP ? 'Société' : (mode === 'agent' ? 'Agente' : 'Agence')
+
+    // Apporteur remboursé (réel) selon le mode : Société/Agence = coût total, Agente = sa part.
+    const apporteurReelVal = (r) => round2(mode === 'agent' ? (r?.apporteurPartAgenteNet || 0) : (r?.apporteurCoutTotalNet || 0))
+    const royaltiesReelVal = (r) => round2((r?.comReelNet || 0) * (ROYALTIES_RATE / (1 - ROYALTIES_RATE)))
+
+    // Prévisionnel agrégé par mois (clé signature/création) — source unique.
+    const mapPreviMois = {}
+    scopedDossiers.forEach(d => {
+      const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
+      if (!key) return
+      if (!mapPreviMois[key]) mapPreviMois[key] = { frais:0, com:0, comApport:0, hon:0, partAgentes:0, apporteurTotal:0, apporteurAgente:0, royalties:0 }
+      const c = calculer(d); const M = mapPreviMois[key]
+      M.frais = round2(M.frais + c.fraisNetPrevi); M.com = round2(M.com + c.netComTous); M.comApport = round2(M.comApport + c.comApporteursPrevi)
+      M.hon = round2(M.hon + c.honPreviNet); M.partAgentes = round2(M.partAgentes + c.gainsAgentePreviTotal)
+      M.apporteurTotal = round2(M.apporteurTotal + c.apporteurTotalHT); M.apporteurAgente = round2(M.apporteurAgente + c.apporteurAgente)
+      M.royalties = round2(M.royalties + c.royaltiesTotal)
+    })
+    const redevPourCle = (cle) => { const [a, m] = cle.split('-'); return redevancesScoped.filter(r => r.statut === 'regle' && r.annee === parseInt(a) && r.mois === parseInt(m)).reduce((sum, r) => sum + (r.montant_ht || 0), 0) }
+
+    // Compte de résultat (prévi + réel) d'un mois, selon le mode.
+    const comptePourCle = (cle) => {
+      const p = mapPreviMois[cle] || {}
       const r = rowsReel.find(([k]) => k === cle)?.[1] || {}
-      const previProduits = round2((p.frais||0) + (p.com||0) + (p.hon||0) + (p.comApport||0) + (isCTP ? redevMois : 0))
-      const previCharges  = isCTP ? round2((p.partAgentes||0) + (p.apporteur||0) + (p.royalties||0)) : 0
-      const previNet      = round2(previProduits - previCharges)
-      const reelProduits  = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redevMois : 0))
-      const reelCharges   = isCTP ? round2((r.gainsAgenteReels||0) + round2((r.comReelNet||0) * (ROYALTIES_RATE / (1 - ROYALTIES_RATE))) + (r.apporteurCoutTotalNet||0)) : 0
-      const reelNet       = round2(reelProduits - reelCharges)
-      const ecart = (pv, rv) => { const e = round2(rv - pv); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
+      const redev = redevPourCle(cle)
+      const previProduits = round2((p.frais||0) + (p.com||0) + (p.hon||0) + (p.comApport||0) + (isCTP ? redev : 0))
+      const reelProduits  = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0))
+      const previApporteur = round2(mode === 'agent' ? (p.apporteurAgente||0) : (p.apporteurTotal||0))
+      const reelApporteur  = apporteurReelVal(r)
+      const previCharges = isCTP ? round2((p.partAgentes||0) + previApporteur + (p.royalties||0)) : previApporteur
+      const reelCharges  = isCTP ? round2((r.gainsAgenteReels||0) + royaltiesReelVal(r) + reelApporteur) : reelApporteur
+      return { p, r, redev, previProduits, reelProduits, previApporteur, reelApporteur, previCharges, reelCharges, previNet: round2(previProduits - previCharges), reelNet: round2(reelProduits - reelCharges) }
+    }
+    const ecart = (pv, rv) => { const e = round2(rv - pv); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
+
+    // Détail compte de résultat (prévi / réel / écart) d'un mois.
+    const crPourCle = (cle) => {
+      const x = comptePourCle(cle)
       const lignesProduits = [
-        { label: '(+) Frais consultation', p: p.frais||0, r: r.fraisNet||0 },
-        { label: '(+) Commissions',        p: p.com||0,   r: r.comReelNet||0 },
-        { label: '(+) Honoraires',         p: p.hon||0,   r: r.honReel||0 },
-        { label: '(+) Com. apporteurs',    p: p.comApport||0, r: r.comApporteursReel||0 },
-        ...(isCTP ? [{ label: '(+) Redevances agentes', p: redevMois, r: redevMois }] : []),
+        { label: '(+) Frais de consultation', p: x.p.frais||0, r: x.r.fraisNet||0 },
+        { label: '(+) Commissions illiCO',    p: x.p.com||0,   r: x.r.comReelNet||0 },
+        { label: '(+) Honoraires',            p: x.p.hon||0,   r: x.r.honReel||0 },
+        { label: '(+) Commissions apporteurs', p: x.p.comApport||0, r: x.r.comApporteursReel||0 },
+        ...(isCTP ? [{ label: '(+) Redevances agentes', p: x.redev, r: x.redev }] : []),
       ]
-      const lignesCharges = isCTP ? [
-        { label: '(−) Royalties illiCO',      p: p.royalties||0,   r: round2((r.comReelNet||0) * (ROYALTIES_RATE / (1 - ROYALTIES_RATE))) },
-        { label: '(−) Part agentes',          p: p.partAgentes||0, r: r.gainsAgenteReels||0 },
-        { label: '(−) Apporteurs remboursés', p: p.apporteur||0,   r: r.apporteurCoutTotalNet||0 },
-      ] : []
+      const lignesReversements = isCTP
+        ? [
+            { label: '(−) Royalties illiCO',      p: x.p.royalties||0,   r: royaltiesReelVal(x.r) },
+            { label: '(−) Parts agentes',         p: x.p.partAgentes||0, r: x.r.gainsAgenteReels||0 },
+            { label: '(−) Apporteurs remboursés', p: x.previApporteur,   r: x.reelApporteur },
+          ]
+        : [{ label: '(−) Apporteurs remboursés', p: x.previApporteur, r: x.reelApporteur }]
+      const tdL = { padding:'6px 8px', color:'var(--ink-500)' }
+      const tdR = { padding:'6px 8px', textAlign:'right' }
       return (
-        <div style={{marginTop:12,borderTop:'1px solid var(--ink-100)',paddingTop:12}}>
-          <table style={{width:'100%',fontSize:11}}>
-            <thead><tr style={{borderBottom:'1px solid var(--ink-100)'}}>
-              <th style={{textAlign:'left',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase',width:'50%'}}>Ligne</th>
-              <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Prévi</th>
-              <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Réel</th>
-              <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Écart</th>
-            </tr></thead>
+        <table style={{width:'100%',fontSize:11}}>
+          <thead><tr style={{borderBottom:'1px solid var(--ink-100)'}}>
+            <th style={{textAlign:'left',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase',width:'46%'}}>Ligne</th>
+            <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Prévi</th>
+            <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Réel</th>
+            <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Écart</th>
+          </tr></thead>
+          <tbody>
+            <tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Gains</td></tr>
+            {lignesProduits.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'var(--ink-500)'}}>{fmt(l.p)}</td><td style={{...tdR,color:'#15803d',fontWeight:500}}>{fmt(l.r)}</td><td style={tdR}>{ecart(l.p, l.r)}</td></tr>))}
+            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>= Total gains</td><td style={{...tdR,fontWeight:500,color:'var(--ink-700)'}}>{fmt(x.previProduits)}</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td><td style={tdR}>{ecart(x.previProduits, x.reelProduits)}</td></tr>
+            <tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Reversements</td></tr>
+            {lignesReversements.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'var(--ink-500)'}}>{fmt(l.p)}</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{fmt(l.r)}</td><td style={tdR}>{ecart(l.p, l.r)}</td></tr>))}
+            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>= Total reversements</td><td style={{...tdR,fontWeight:500,color:'var(--ink-700)'}}>{fmt(x.previCharges)}</td><td style={{...tdR,fontWeight:500,color:'#ef4444'}}>{fmt(x.reelCharges)}</td><td style={tdR}>{ecart(x.previCharges, x.reelCharges)}</td></tr>
+            <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>= Résultat net {netLabel}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:'var(--ink-600)'}}>{fmt(x.previNet)}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:x.reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(x.reelNet)}</td><td style={{padding:'8px',textAlign:'right'}}>{ecart(x.previNet, x.reelNet)}</td></tr>
+          </tbody>
+        </table>
+      )
+    }
+
+    // Chantiers encaissés un mois donné (HT net du mois par dossier).
+    const dossiersDuMois = (cle) => {
+      const ids = (rowsReel.find(([k]) => k === cle)?.[1]?.dossierIds) || []
+      return ids.map(id => {
+        const d = scopedDossiers.find(x => x.id === id)
+        if (!d) return null
+        const aggD = agrégerParPaiement([d], false).find(([k]) => k === cle)?.[1] || {}
+        const htNet = round2((aggD.fraisNet||0) + (aggD.comReelNet||0) + (aggD.honReel||0) + (aggD.comApporteursReel||0))
+        return { d, htNet }
+      }).filter(Boolean)
+    }
+
+    // Détail mois déplié : chantiers (gauche) + répartition (droite).
+    const renderMoisDetail = (cle) => {
+      const liste = dossiersDuMois(cle)
+      return (
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginTop:12,paddingTop:12,borderTop:'1px solid var(--ink-100)'}}>
+          <div>
+            <div className="eyebrow" style={{marginBottom:8}}>Chantiers du mois</div>
+            {liste.length === 0
+              ? <div style={{fontSize:12,color:'var(--ink-400)'}}>Aucun chantier encaissé ce mois</div>
+              : liste.map(({ d, htNet }) => (
+                  <div key={d.id} style={{display:'flex',justifyContent:'space-between',gap:8,padding:'4px 0',fontSize:12,borderBottom:'1px solid var(--ink-100)'}}>
+                    <span><span style={{fontWeight:600,color:'var(--brand-800)'}}>{d.reference}</span> <span style={{color:'var(--ink-500)'}}>— {formatNomClient(d.client)}</span></span>
+                    <span style={{color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(htNet)}</span>
+                  </div>
+                ))}
+          </div>
+          <div>
+            <div className="eyebrow" style={{marginBottom:8}}>Répartition</div>
+            {crPourCle(cle)}
+          </div>
+        </div>
+      )
+    }
+
+    // Ligne mois (réutilisée vue Mois + vue Année dépliée).
+    const renderMoisRow = (cle, bg) => {
+      const x = comptePourCle(cle)
+      const [a, m] = cle.split('-')
+      const label = `${MOIS[parseInt(m)].slice(0, 3)}. ${a}`
+      const ecartObj = round2(x.reelNet - objectifMensuel)
+      const isOpen = moisOuvert === `${mode}_${cle}`
+      return (
+        <React.Fragment key={cle}>
+          <tr style={{cursor:'pointer',background:bg}}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--brand-50)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = bg }}
+            onClick={() => setMoisOuvert(isOpen ? null : `${mode}_${cle}`)}>
+            <td style={{padding:'10px 16px',fontWeight:500,color:'var(--ink-700)',display:'flex',alignItems:'center',gap:8}}><span>{label}</span><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></td>
+            <td style={{padding:'10px 12px',textAlign:'right',fontWeight:500,color:x.reelNet >= 0 ? '#15803d' : '#dc2626'}}>{fmt(x.reelNet)}</td>
+            <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{fmt(objectifMensuel)}</td>
+            <td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:ecartObj >= 0 ? '#16a34a' : '#ef4444'}}>{ecartObj >= 0 ? '+' : ''}{fmt(ecartObj)}</td>
+          </tr>
+          {isOpen && (<tr style={{background:bg}}><td colSpan={4} style={{padding:'0 16px 12px'}}>{renderMoisDetail(cle)}</td></tr>)}
+        </React.Fragment>
+      )
+    }
+    const moisTableHead = (
+      <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
+        <tr>
+          <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Mois</th>
+          <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Réel net</th>
+          <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Objectif mois</th>
+          <th style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>vs Objectif</th>
+        </tr>
+      </thead>
+    )
+
+    const cles = Array.from(new Set([...rowsReel.map(([k]) => k), ...redevancesScoped.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`)])).sort((a, b) => b.localeCompare(a))
+    const chartLabels = cles.map(cle => { const [a, m] = cle.split('-'); return `${MOIS[parseInt(m)].slice(0,3)}. ${a}` })
+    const chartProduits = cles.map(cle => comptePourCle(cle).reelProduits)
+    const chartCharges = cles.map(cle => -comptePourCle(cle).reelCharges)
+    const chartNet = cles.map(cle => comptePourCle(cle).reelNet)
+    const sfSousOnglet = sfSousOngletCTP; const setSfSousOnglet = setSfSousOngletCTP
+
+    // Vue Année : tableau plat (Année | Prévi | Réel | Écart) → déplier en mois.
+    const renderAnnuel = () => {
+      const annees = []; for (let a = new Date().getFullYear(); a >= anneeMin; a--) annees.push(a)
+      return (
+        <div className="card" style={{overflow:'hidden'}}>
+          <table style={{width:'100%',fontSize:13}}>
+            <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
+              <tr>
+                <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Année</th>
+                <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Prévisionnel</th>
+                <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Réel net</th>
+                <th style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Écart</th>
+              </tr>
+            </thead>
             <tbody>
-              <tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Gains</td></tr>
-              {lignesProduits.map(({ label, p: pv, r: rv }) => (
-                <tr key={label}><td style={{padding:'6px 8px',color:'var(--ink-500)'}}>{label}</td><td style={{padding:'6px 8px',textAlign:'right',color:'var(--ink-500)'}}>{fmt(pv)}</td><td style={{padding:'6px 8px',textAlign:'right',color:'#15803d',fontWeight:500}}>{fmt(rv)}</td><td style={{padding:'6px 8px',textAlign:'right'}}>{ecart(pv, rv)}</td></tr>
-              ))}
-              <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{padding:'6px 8px',fontWeight:500,color:'var(--ink-700)'}}>= Total gains</td><td style={{padding:'6px 8px',textAlign:'right',fontWeight:500,color:'var(--ink-700)'}}>{fmt(previProduits)}</td><td style={{padding:'6px 8px',textAlign:'right',fontWeight:500,color:'#15803d'}}>{fmt(reelProduits)}</td><td style={{padding:'6px 8px',textAlign:'right'}}>{ecart(previProduits, reelProduits)}</td></tr>
-              {isCTP && <><tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Charges</td></tr>
-              {lignesCharges.map(({ label, p: pv, r: rv }) => (
-                <tr key={label}><td style={{padding:'6px 8px',color:'var(--ink-500)'}}>{label}</td><td style={{padding:'6px 8px',textAlign:'right',color:'var(--ink-500)'}}>{fmt(pv)}</td><td style={{padding:'6px 8px',textAlign:'right',color:'#ef4444',fontWeight:500}}>{fmt(rv)}</td><td style={{padding:'6px 8px',textAlign:'right'}}>{ecart(pv, rv)}</td></tr>
-              ))}
-              <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{padding:'6px 8px',fontWeight:500,color:'var(--ink-700)'}}>= Total charges</td><td style={{padding:'6px 8px',textAlign:'right',fontWeight:500,color:'var(--ink-700)'}}>{fmt(previCharges)}</td><td style={{padding:'6px 8px',textAlign:'right',fontWeight:500,color:'#ef4444'}}>{fmt(reelCharges)}</td><td style={{padding:'6px 8px',textAlign:'right'}}>{ecart(previCharges, reelCharges)}</td></tr></>}
-              <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>= {isCTP ? 'Résultat net Société' : 'Total encaissé agence'}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:'var(--ink-600)'}}>{fmt(previNet)}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(reelNet)}</td><td style={{padding:'8px',textAlign:'right'}}>{ecart(previNet, reelNet)}</td></tr>
+              {annees.map((y, i) => {
+                const cs = cles.filter(c => c.startsWith(String(y)))
+                const previ = round2(cs.reduce((sum, c) => sum + comptePourCle(c).previNet, 0))
+                const reel  = round2(cs.reduce((sum, c) => sum + comptePourCle(c).reelNet, 0))
+                const isOpen = anneeOuverte === `${mode}_${y}`
+                const bg = i % 2 === 0 ? 'transparent' : 'var(--surface-2)'
+                return (
+                  <React.Fragment key={y}>
+                    <tr style={{cursor:'pointer',background:bg}}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--brand-50)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = bg }}
+                      onClick={() => setAnneeOuverte(isOpen ? null : `${mode}_${y}`)}>
+                      <td style={{padding:'10px 16px',fontWeight:600,color:'var(--ink-800)',display:'flex',alignItems:'center',gap:8}}><span>{y}</span><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></td>
+                      <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-600)'}}>{fmt(previ)}</td>
+                      <td style={{padding:'10px 12px',textAlign:'right',fontWeight:600,color:reel >= 0 ? '#15803d' : '#dc2626'}}>{fmt(reel)}</td>
+                      <td style={{padding:'10px 16px',textAlign:'right'}}>{ecart(previ, reel)}</td>
+                    </tr>
+                    {isOpen && (
+                      <tr style={{background:bg}}><td colSpan={4} style={{padding:'0 12px 12px'}}>
+                        {cs.length === 0
+                          ? <div style={{fontSize:12,color:'var(--ink-400)',padding:'8px 4px'}}>Aucune activité cette année</div>
+                          : <table style={{width:'100%',fontSize:11}}><tbody>{cs.map((c, j) => renderMoisRow(c, j % 2 === 0 ? 'transparent' : 'var(--surface-2)'))}</tbody></table>}
+                      </td></tr>
+                    )}
+                  </React.Fragment>
+                )
+              })}
             </tbody>
           </table>
         </div>
       )
     }
-    const allKeys = new Set([...rowsReel.map(([k]) => k), ...redevancesScoped.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`)])
-    const cles = Array.from(allKeys).sort((a, b) => b.localeCompare(a))
-    const chartLabels = cles.map(cle => { const [a, m] = cle.split('-'); return `${MOIS[parseInt(m)].slice(0,3)}. ${a}` })
-    const chartProduits = cles.map(cle => { const [a, m] = cle.split('-'); const r = rowsReel.find(([k]) => k === cle)?.[1] || {}; const redev = redevancesScoped.filter(rv => rv.statut === 'regle' && rv.annee === parseInt(a) && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ht||0), 0); return round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0)) })
-    const chartCharges = cles.map(cle => { const r = rowsReel.find(([k]) => k === cle)?.[1] || {}; return isCTP ? -round2((r.gainsAgenteReels||0) + (r.apporteurCoutTotalNet||0)) : 0 })
-    const chartNet = cles.map((_, i) => round2(chartProduits[i] + chartCharges[i]))
-    const sfSousOnglet = sfSousOngletCTP; const setSfSousOnglet = setSfSousOngletCTP
 
-    const renderAnnuel = () => {
-      const annees = []; for (let a = new Date().getFullYear(); a >= anneeMin; a--) annees.push(a)
-      const rowsReelAnnee = rowsReelScoped
-      const clesMois = Array.from(new Set([...rowsReelAnnee.map(([k]) => k), ...redevancesScoped.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`)])).filter(k => k.startsWith(String(anneeSelectionnee))).sort()
-      const mapPrevi = {}
-      scopedDossiers.forEach(d => {
-        const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
-        if (!key || !key.startsWith(String(anneeSelectionnee))) return
-        if (!mapPrevi[key]) mapPrevi[key] = { frais: 0, com: 0, comApport: 0, hon: 0, partAgentes: 0, apporteur: 0, royalties: 0 }
-        const c = calculer(d)
-        mapPrevi[key].frais       = round2(mapPrevi[key].frais       + c.fraisNetPrevi)
-        mapPrevi[key].com         = round2(mapPrevi[key].com         + c.netComTous)
-        mapPrevi[key].comApport   = round2(mapPrevi[key].comApport   + c.comApporteursPrevi)
-        mapPrevi[key].hon         = round2(mapPrevi[key].hon         + c.honPreviNet)
-        mapPrevi[key].partAgentes = round2(mapPrevi[key].partAgentes + c.gainsAgentePreviTotal)
-        mapPrevi[key].royalties   = round2(mapPrevi[key].royalties   + c.royaltiesTotal)
-      })
-      const totP = { frais: 0, com: 0, comApport: 0, hon: 0, redev: 0, partAgentes: 0, apporteur: 0, royalties: 0 }
-      const totR = { frais: 0, com: 0, comApport: 0, hon: 0, redev: 0, partAgentes: 0, royalties: 0, apporteur: 0 }
-      clesMois.forEach(cle => {
-        const [, m] = cle.split('-')
-        const redev = redevancesScoped.filter(r => r.statut === 'regle' && r.annee === anneeSelectionnee && r.mois === parseInt(m)).reduce((s, r) => s + (r.montant_ht || 0), 0)
-        const p = mapPrevi[cle] || {}; const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}
-        totP.frais = round2(totP.frais + (p.frais||0)); totP.com = round2(totP.com + (p.com||0)); totP.comApport = round2(totP.comApport + (p.comApport||0)); totP.hon = round2(totP.hon + (p.hon||0)); totP.redev = round2(totP.redev + redev); totP.partAgentes = round2(totP.partAgentes + (p.partAgentes||0)); totP.royalties = round2(totP.royalties + (p.royalties||0))
-        totR.frais = round2(totR.frais + (r.fraisNet||0)); totR.com = round2(totR.com + (r.comReelNet||0)); totR.comApport = round2(totR.comApport + (r.comApporteursReel||0)); totR.hon = round2(totR.hon + (r.honReel||0)); totR.redev = round2(totR.redev + redev); totR.partAgentes = round2(totR.partAgentes + (r.gainsAgenteReels||0)); totR.royalties = round2(totR.royalties + round2((r.comReelNet||0) * (ROYALTIES_RATE / (1 - ROYALTIES_RATE))))
-        const apporteurReel = scopedDossiers.reduce((s, d) => { const lignes = (d.suivi_financier || []).filter(sf => sf.type_echeance === 'apporteur_agente' && sf.statut_ctp === 'rembourse' && sf.date_paiement && getKeyFromDate(sf.date_paiement, false) === cle); if (!lignes.length) return s; const c2 = calculerReel(d); return s + round2((c2.finance?.apporteur?.lines || []).reduce((sum, ligne) => { const dv = (d.devis_artisans || []).find(dv => dv.id === ligne.devisId); const artId = dv?.artisan_id || dv?.artisan?.id; const sf = (d.suivi_financier || []).find(s2 => s2.type_echeance === 'apporteur_agente' && (ligne.type === 'total_chantier_ht' ? s2.artisan_id === null : s2.artisan_id === artId) && s2.statut_ctp === 'rembourse' && s2.date_paiement && getKeyFromDate(s2.date_paiement, false) === cle); return sf ? sum + ligne.totalHT : sum }, 0)) }, 0)
-        totR.apporteur = round2(totR.apporteur + apporteurReel)
-      })
-      const previProduits = round2(totP.frais + totP.com + totP.comApport + totP.hon + (isCTP ? totP.redev : 0))
-      const previCharges  = isCTP ? round2(totP.partAgentes + totP.apporteur + totP.royalties) : 0
-      const previNet      = round2(previProduits - previCharges)
-      const reelProduits  = round2(totR.frais + totR.com + totR.comApport + totR.hon + (isCTP ? totR.redev : 0))
-      const reelCharges   = isCTP ? round2(totR.partAgentes + totR.royalties + totR.apporteur) : 0
-      const reelNet       = round2(reelProduits - reelCharges)
-      const ecart = (p, r) => { const e = round2(r - p); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
-      const chartLabelsAnnee = clesMois.map(cle => { const [, m] = cle.split('-'); return MOIS[parseInt(m)].slice(0, 3) })
-      const chartProduitsAnnee = clesMois.map(cle => { const [, m] = cle.split('-'); const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}; const redev = redevancesScoped.filter(rv => rv.statut === 'regle' && rv.annee === anneeSelectionnee && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ht||0), 0); return round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0)) })
-      const chartChargesAnnee = clesMois.map(cle => { const r = rowsReelAnnee.find(([k]) => k === cle)?.[1] || {}; return isCTP ? -round2((r.gainsAgenteReels||0) + (r.apporteurCoutTotalNet||0)) : 0 })
-      const chartNetAnnee = clesMois.map((_, i) => round2(chartProduitsAnnee[i] + chartChargesAnnee[i]))
-      return (
-        <div style={{display:'flex',flexDirection:'column',gap:20}}>
-          <ObjectifBar label={isCTP ? 'Objectif CA Société (résultat net)' : 'Objectif CA agence (encaissements bruts)'} reel={reelNet} objectifMontant={getObjectif('agence')} cible="agence" canEdit={false} />
-          <div className="card" style={{overflow:'hidden'}}>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 20px',background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
-              <span style={{fontSize:14,fontWeight:600,color:'var(--ink-700)'}}>Compte de résultat {isCTP ? 'Société' : 'Agence'}</span>
-              <div style={{display:'flex',alignItems:'center',gap:10}}>
-                <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,background:'rgba(22,163,74,0.1)',color:'#15803d',fontWeight:600}}>réel encaissé</span>
-                <select value={anneeSelectionnee} onChange={e => setAnneeSelectionnee(parseInt(e.target.value))} className="input" style={{height:28,fontSize:12,padding:'0 8px'}}>
-                  {annees.map(a => <option key={a} value={a}>{a}</option>)}
-                </select>
-              </div>
-            </div>
-            <table style={{width:'100%',fontSize:13}}>
-              <thead><tr style={{borderBottom:'1px solid var(--ink-100)'}}>
-                <th style={{textAlign:'left',padding:'8px 20px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase',width:'50%'}}>Ligne</th>
-                <th style={{textAlign:'right',padding:'8px 16px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Prévisionnel</th>
-                <th style={{textAlign:'right',padding:'8px 16px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Réel</th>
-                <th style={{textAlign:'right',padding:'8px 20px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Écart</th>
-              </tr></thead>
-              <tbody>
-                <tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'6px 20px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Gains</td></tr>
-                {[
-                  { label: '(+) Frais consultation', p: totP.frais, r: totR.frais },
-                  { label: '(+) Commissions', p: totP.com, r: totR.com },
-                  { label: '(+) Honoraires', p: totP.hon, r: totR.hon },
-                  { label: '(+) Com. apporteurs', p: totP.comApport, r: totR.comApport },
-                  ...(isCTP ? [{ label: '(+) Redevances agentes', p: totP.redev, r: totR.redev }] : []),
-                ].map(({ label, p, r }) => (<tr key={label} className="row-hover"><td style={{padding:'10px 20px',color:'var(--ink-500)',fontSize:11}}>{label}</td><td style={{padding:'10px 16px',textAlign:'right',color:'var(--ink-500)',fontSize:11}}>{fmt(p)}</td><td style={{padding:'10px 16px',textAlign:'right',color:'#15803d',fontSize:11,fontWeight:500}}>{fmt(r)}</td><td style={{padding:'10px 20px',textAlign:'right'}}>{ecart(p, r)}</td></tr>))}
-                <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{padding:'10px 20px',fontWeight:500,color:'var(--ink-700)',fontSize:11}}>= Total gains</td><td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:'var(--ink-700)',fontSize:11}}>{fmt(previProduits)}</td><td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:'#15803d',fontSize:11}}>{fmt(reelProduits)}</td><td style={{padding:'10px 20px',textAlign:'right'}}>{ecart(previProduits, reelProduits)}</td></tr>
-                {isCTP && <><tr style={{background:'var(--surface-2)'}}><td colSpan={4} style={{padding:'6px 20px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Charges</td></tr>
-                {[{ label: '(−) Royalties illiCO', p: totP.royalties, r: totR.royalties }, { label: '(−) Part agentes', p: totP.partAgentes, r: totR.partAgentes }, { label: '(−) Apporteurs remboursés', p: totP.apporteur, r: totR.apporteur }].map(({ label, p, r }) => (<tr key={label} className="row-hover"><td style={{padding:'10px 20px',color:'var(--ink-500)',fontSize:11}}>{label}</td><td style={{padding:'10px 16px',textAlign:'right',color:'var(--ink-500)',fontSize:11}}>{fmt(p)}</td><td style={{padding:'10px 16px',textAlign:'right',color:'#ef4444',fontSize:11,fontWeight:500}}>{fmt(r)}</td><td style={{padding:'10px 20px',textAlign:'right'}}>{ecart(p, r)}</td></tr>))}
-                <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{padding:'10px 20px',fontWeight:500,color:'var(--ink-700)',fontSize:11}}>= Total charges</td><td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:'var(--ink-700)',fontSize:11}}>{fmt(previCharges)}</td><td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:'#ef4444',fontSize:11}}>{fmt(reelCharges)}</td><td style={{padding:'10px 20px',textAlign:'right'}}>{ecart(previCharges, reelCharges)}</td></tr></>}
-                <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'12px 20px',fontWeight:700,color:'var(--brand-800)',fontSize:13}}>= {isCTP ? `Résultat net Société ${anneeSelectionnee}` : `Encaissements bruts agence ${anneeSelectionnee}`}</td><td style={{padding:'12px 16px',textAlign:'right',fontWeight:700,color:'var(--ink-600)',fontSize:13}}>{fmt(previNet)}</td><td style={{padding:'12px 16px',textAlign:'right',fontWeight:700,fontSize:13,color:reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(reelNet)}</td><td style={{padding:'12px 20px',textAlign:'right'}}>{ecart(previNet, reelNet)}</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <SuiviCTPChart labels={chartLabelsAnnee} produitsData={chartProduitsAnnee} chargesData={chartChargesAnnee} netData={chartNetAnnee} chartId={`chart_${mode}_annee_${anneeSelectionnee}`} />
-        </div>
-      )
-    }
-
+    const moisCourantCle = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+    const totalReelMois = round2(cles.reduce((sum, c) => sum + comptePourCle(c).reelNet, 0))
     return (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
         <PillToggle
@@ -1943,47 +2000,17 @@ export default function Finances() {
         />
         {sfSousOnglet === 'mois' && (
           <div style={{display:'flex',flexDirection:'column',gap:20}}>
-            <ObjectifBar label={isCTP ? `Objectif mensuel Société (${fmt(objectifMensuel)}/mois)` : `Objectif mensuel agence (${fmt(objectifMensuel)}/mois)`}
-              reel={(() => { const moisCourant = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`; const r = rowsReel.find(([k]) => k === moisCourant)?.[1] || {}; const redev = redevancesScoped.filter(rv => rv.statut === 'regle' && rv.annee === new Date().getFullYear() && rv.mois === new Date().getMonth() + 1).reduce((s, rv) => s + (rv.montant_ht||0), 0); return getReelNet(r, redev) })()}
+            <ObjectifBar label={`Objectif mensuel ${netLabel} (${fmt(objectifMensuel)}/mois)`}
+              reel={comptePourCle(moisCourantCle).reelNet}
               objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
             <div className="card" style={{overflow:'hidden'}}>
               <table style={{width:'100%',fontSize:11}}>
-                <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
-                  <tr>
-                    <th style={{textAlign:'left',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Mois</th>
-                    <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Réel encaissé</th>
-                    <th style={{textAlign:'right',padding:'12px 12px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Objectif mois</th>
-                    <th style={{textAlign:'right',padding:'12px 16px',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>vs Objectif</th>
-                  </tr>
-                </thead>
+                {moisTableHead}
                 <tbody>
-                  {cles.map((cle, i) => {
-                    const [a, m] = cle.split('-')
-                    const label = `${MOIS[parseInt(m)].slice(0, 3)}. ${a}`
-                    const r = rowsReel.find(([k]) => k === cle)?.[1] || {}
-                    const redev = redevancesScoped.filter(rv => rv.statut === 'regle' && rv.annee === parseInt(a) && rv.mois === parseInt(m)).reduce((s, rv) => s + (rv.montant_ht||0), 0)
-                    const reelNet = getReelNet(r, redev)
-                    const ecartObj = round2(reelNet - objectifMensuel)
-                    const isOpen = moisOuvert === `${mode}_${cle}`
-                    const bg = i % 2 === 0 ? 'transparent' : 'var(--surface-2)'
-                    return (
-                      <React.Fragment key={cle}>
-                        <tr style={{cursor:'pointer',background:bg}}
-                          onMouseEnter={e => { e.currentTarget.style.background = 'var(--brand-50)' }}
-                          onMouseLeave={e => { e.currentTarget.style.background = bg }}
-                          onClick={() => setMoisOuvert(isOpen ? null : `${mode}_${cle}`)}>
-                          <td style={{padding:'10px 16px',fontWeight:500,color:'var(--ink-700)',display:'flex',alignItems:'center',gap:8}}><span>{label}</span><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></td>
-                          <td style={{padding:'10px 12px',textAlign:'right',fontWeight:500,color:reelNet >= 0 ? '#15803d' : '#dc2626'}}>{fmt(reelNet)}</td>
-                          <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{fmt(objectifMensuel)}</td>
-                          <td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:ecartObj >= 0 ? '#16a34a' : '#ef4444'}}>{ecartObj >= 0 ? '+' : ''}{fmt(ecartObj)}</td>
-                        </tr>
-                        {isOpen && (<tr style={{background:bg}}><td colSpan={4} style={{padding:'0 16px 12px'}}>{crPourCle(cle)}</td></tr>)}
-                      </React.Fragment>
-                    )
-                  })}
+                  {cles.map((cle, i) => renderMoisRow(cle, i % 2 === 0 ? 'transparent' : 'var(--surface-2)'))}
                   <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-300)',fontWeight:700,fontSize:11}}>
                     <td style={{padding:'10px 16px',color:'var(--ink-700)'}}>Total</td>
-                    <td style={{padding:'10px 12px',textAlign:'right',color:cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevancesScoped.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ht||0),0);return s+getReelNet(r,redev)},0)>=0?'#15803d':'#dc2626'}}>{fmt(cles.reduce((s,cle)=>{const [a,m]=cle.split('-');const r=rowsReel.find(([k])=>k===cle)?.[1]||{};const redev=redevancesScoped.filter(rv=>rv.statut==='regle'&&rv.annee===parseInt(a)&&rv.mois===parseInt(m)).reduce((sv,rv)=>sv+(rv.montant_ht||0),0);return s+getReelNet(r,redev)},0))}</td>
+                    <td style={{padding:'10px 12px',textAlign:'right',color:totalReelMois >= 0 ? '#15803d' : '#dc2626'}}>{fmt(totalReelMois)}</td>
                     <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{fmt(objectifMensuel * cles.length)}</td>
                     <td style={{padding:'10px 16px',textAlign:'right',color:'var(--ink-500)'}}>—</td>
                   </tr>
@@ -2126,8 +2153,8 @@ export default function Finances() {
             )}
           </div>
           {period === 'chantier' && renderFinanceTable(scopedDossiers, false)}
-          {period === 'mois'     && renderTousPeriode(scopedDossiers, rowsReelScoped, 'Mois')}
-          {period === 'annee'    && renderTousPeriode(scopedDossiers, rowsAnneeScoped, 'Année')}
+          {period === 'mois'     && renderTousPeriode(scopedDossiers, rowsPreviMoisScoped, 'Mois', true)}
+          {period === 'annee'    && renderTousPeriode(scopedDossiers, rowsPreviAnneeScoped, 'Année', true)}
         </div>
       )}
 
@@ -2167,8 +2194,8 @@ export default function Finances() {
             )}
           </div>
           {period === 'chantier' && renderFinanceTable(scopedDossiers, true)}
-          {period === 'mois'     && renderTousPeriode(scopedDossiers, rowsReelScoped, 'Mois')}
-          {period === 'annee'    && renderTousPeriode(scopedDossiers, rowsAnneeScoped, 'Année')}
+          {period === 'mois'     && renderTousPeriode(scopedDossiers, rowsReelScoped, 'Mois', false)}
+          {period === 'annee'    && renderTousPeriode(scopedDossiers, rowsAnneeScoped, 'Année', false)}
         </div>
       )}
 
