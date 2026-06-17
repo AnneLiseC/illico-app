@@ -1936,10 +1936,6 @@ export default function Finances() {
 
     return (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <span className="eyebrow">Filtré sur</span>
-          <span style={{fontSize:12,fontWeight:600,color:'var(--brand-800)',background:'var(--brand-50)',padding:'3px 10px',borderRadius:99}}>{libellePerimetre()}</span>
-        </div>
         <PillToggle
           options={[{key:'mois',label:'Par mois'},{key:'annee',label:'Par année'}]}
           active={sfSousOnglet}
@@ -2205,11 +2201,11 @@ export default function Finances() {
             </select>
           </div>
 
-          {/* ZONE 2 — graphes côte à côte (issus de l'ancienne Synthèse) */}
-          <SuiviGraphes anneeSelectionnee={anneeSelectionnee} rowsReelScoped={rowsReelScoped} scopedDossiers={scopedDossiers} getKeyFromDate={getKeyFromDate} calculer={calculer} objectifAnnuel={objectifAnnuel} pctObjectif={pctObjectif} />
-
-          {/* ZONE 3 — graphe Suivi + compte de résultat (logique inchangée) */}
+          {/* ZONE 2 — sous-onglet Mois/Année + objectif + compte de résultat + graphe Gains/Charges */}
           {renderSuiviFinancier(!isAdmin ? 'agent' : suiviMode)}
+
+          {/* ZONE 3 — graphe barres Réel/Prévi + deux donuts côte à côte */}
+          <SuiviGraphes anneeSelectionnee={anneeSelectionnee} rowsReelScoped={rowsReelScoped} scopedDossiers={scopedDossiers} getKeyFromDate={getKeyFromDate} calculer={calculer} objectifAnnuel={objectifAnnuel} pctObjectif={pctObjectif} />
         </div>
       )}
 
