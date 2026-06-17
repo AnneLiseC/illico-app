@@ -501,6 +501,14 @@ export async function POST(request) {
         return photo
       }))
 
+      // RIB + KBIS de l'admin franchisé de la société du dossier (pour la restitution).
+      const { data: adminFranchise } = await supabaseAdmin
+        .from('profiles')
+        .select('id, prenom, nom, rib_url, kbis_url')
+        .eq('societe_id', dossier.societe_id)
+        .eq('role', 'admin')
+        .maybeSingle()
+
       pdfBuffer = await buildDossierSuivi({
         dossier,
         devis: devisComplets || [],
@@ -510,6 +518,7 @@ export async function POST(request) {
         docsRestitution: docsRestitution || [],
         factures: factures || [],
         suiviFinancier: suiviFinancier || [],
+        adminFranchise: adminFranchise || null,
         logo: getLogoBase64(),
         supabaseAdmin,
       })
