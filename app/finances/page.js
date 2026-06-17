@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import { formatNomClient } from '../lib/clients'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { calculateDossierFinance, getActiveDevis, getSignedDevis, ROYALTIES_RATE } from '../lib/finance'
+import { calculateDossierFinance, getActiveDevis, getSignedDevis, ROYALTIES_RATE, DEFAULT_PART_AGENTE } from '../lib/finance'
 import { calcStatut } from '../lib/dossiers'
 import { Avatar } from '../components/shared'
 
@@ -30,7 +30,7 @@ const fmt = (n) => {
 }
 const normalizeDossier = (d) => ({
   ...d,
-  part_agente: d.part_agente ?? (d.referente?.role === 'admin' ? 0 : 0.5),
+  part_agente: d.part_agente ?? (d.referente?.role === 'admin' ? 0 : DEFAULT_PART_AGENTE),
   frais_part_agente: d.frais_part_agente ?? null,
   taux_amo: d?.taux_amo ?? d?.honoraires_amo_taux,
   client: d?.client || null,
@@ -199,7 +199,7 @@ export default function Finances() {
       supabase.from('dossiers').select(`
         *,
         referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
-        client:clients(civilite, prenom, nom, apporteur_affaires, apporteur_nom, apporteur_pourcentage, apporteur_base),
+        client:clients(civilite, prenom, nom, apporteur_pourcentage, apporteur_base),
         devis_artisans(*, artisan:artisans(id, entreprise, partenaire, paiement_direct)),
         rendez_vous(type_rdv, date_heure),
         suivi_financier(*)
@@ -763,11 +763,17 @@ export default function Finances() {
   // ── TOTAUX GLOBAUX ─────────────────────────────────────────────────────────
 
   const anneeEnCours = new Date().getFullYear()
-  const rowsReelScoped       = agrégerParPaiement(scopedDossiers, false)
-  const chantiersAnneeEnCours = dossiers.filter(d => {
-    const date = d.date_fin_chantier || d.date_demarrage_chantier || d.date_signature_contrat || d.created_at
-    return date && new Date(date).getFullYear() === anneeEnCours
-  }).length
+  // Année plancher des sélecteurs : dérivée du dossier le plus ancien chargé,
+  // avec repli à l'année courante − 2 (zéro littéral d'année en dur).
+  const anneeMin = dossiers.length > 0
+    ? Math.min(...dossiers.map(d => new Date(d.created_at).getFullYear()))
+    : new Date().getFullYear() - 2
+  // Agrégats par paiement (réel) mémoïsés : false = par mois, true = par année.
+  // Évite 6 recalculs identiques par rendu. agrégerParPaiement est pur (aucun effet de bord).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rowsReelScoped  = useMemo(() => agrégerParPaiement(scopedDossiers, false), [scopedDossiers])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rowsAnneeScoped = useMemo(() => agrégerParPaiement(scopedDossiers, true), [scopedDossiers])
 
   const totalGainsAgentesReels = (() => {
     const keysAnnee = rowsReelScoped
@@ -1230,7 +1236,7 @@ export default function Finances() {
   // Les royalties inline (fonction pure de comReelNet, issu des agrégats) suivent.
   const renderSuiviFinancier = (mode) => {
     const isCTP = mode === 'ctp'
-    const rowsReel = agrégerParPaiement(scopedDossiers, false)
+    const rowsReel = rowsReelScoped
     const objectifMensuel = round2(getObjectif('agence') / 12)
     const getReelNet = (r, redev) => {
       const brut = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + redev)
@@ -1310,8 +1316,8 @@ export default function Finances() {
     const sfSousOnglet = sfSousOngletCTP; const setSfSousOnglet = setSfSousOngletCTP
 
     const renderAnnuel = () => {
-      const annees = []; for (let a = new Date().getFullYear(); a >= 2024; a--) annees.push(a)
-      const rowsReelAnnee = agrégerParPaiement(scopedDossiers, false)
+      const annees = []; for (let a = new Date().getFullYear(); a >= anneeMin; a--) annees.push(a)
+      const rowsReelAnnee = rowsReelScoped
       const clesMois = Array.from(new Set([...rowsReelAnnee.map(([k]) => k), ...redevancesScoped.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`)])).filter(k => k.startsWith(String(anneeSelectionnee))).sort()
       const mapPrevi = {}
       scopedDossiers.forEach(d => {
@@ -1547,7 +1553,7 @@ export default function Finances() {
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
           {/* LEFT : bar+line chart + totaux */}
           <div className="card" style={{padding:20}}>
-            <div className="eyebrow" style={{marginBottom:12}}>Évolution mensuelle {anneeEnCours} \nCA RÉEL NET VS PRÉVISIONNEL </div>
+            <div className="eyebrow" style={{marginBottom:12}}>Évolution mensuelle {anneeEnCours}<br />CA RÉEL NET VS PRÉVISIONNEL</div>
             <div style={{display:'flex',gap:16,marginBottom:12,flexWrap:'wrap'}}>
               <div style={{display:'flex',alignItems:'center',gap:6}}>
                 <div style={{width:10,height:10,borderRadius:2,background:'#3B7DD8'}}/>
@@ -2020,16 +2026,18 @@ export default function Finances() {
 
       {/* KPI strip — même layout pour admin et agente, données scopées */}
       <div className="kpi-grid">
-        <FinKpiCard label={`CA réel net ${anneeEnCours}`} value={fmt(totalNetCTP)} tone="brand">
-          <div style={{marginTop:8}}>
-            <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
-              <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
+        {isAdmin && (
+          <FinKpiCard label={`CA réel net ${anneeEnCours}`} value={fmt(totalNetCTP)} tone="brand">
+            <div style={{marginTop:8}}>
+              <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
+                <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
+              </div>
+              <div style={{fontSize:11,color:'var(--ink-500)'}}>
+                Objectif <span style={{fontWeight:600,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(objectifAnnuel)}</span> · {pctObjectif}%
+              </div>
             </div>
-            <div style={{fontSize:11,color:'var(--ink-500)'}}>
-              Objectif <span style={{fontWeight:600,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(objectifAnnuel)}</span> · {pctObjectif}%
-            </div>
-          </div>
-        </FinKpiCard>
+          </FinKpiCard>
+        )}
         <FinKpiCard label="CA prévisionnel"
           value={fmt(totPreviNet)}
           sub={`${fmt(round2(totComHT+totFraisHT))} brut · ${fmt(totRoyalties)} royalties`}
@@ -2080,8 +2088,8 @@ export default function Finances() {
             )}
           </div>
           {period === 'chantier' && renderFinanceTable(scopedDossiers, false)}
-          {period === 'mois'     && renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, false), 'Mois')}
-          {period === 'annee'    && renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, true), 'Année')}
+          {period === 'mois'     && renderTousPeriode(scopedDossiers, rowsReelScoped, 'Mois')}
+          {period === 'annee'    && renderTousPeriode(scopedDossiers, rowsAnneeScoped, 'Année')}
         </div>
       )}
 
@@ -2121,8 +2129,8 @@ export default function Finances() {
             )}
           </div>
           {period === 'chantier' && renderFinanceTable(scopedDossiers, true)}
-          {period === 'mois'     && renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, false), 'Mois')}
-          {period === 'annee'    && renderTousPeriode(scopedDossiers, agrégerParPaiement(scopedDossiers, true), 'Année')}
+          {period === 'mois'     && renderTousPeriode(scopedDossiers, rowsReelScoped, 'Mois')}
+          {period === 'annee'    && renderTousPeriode(scopedDossiers, rowsAnneeScoped, 'Année')}
         </div>
       )}
 
