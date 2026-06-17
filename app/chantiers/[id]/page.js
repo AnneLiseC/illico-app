@@ -1046,7 +1046,7 @@ export default function FicheChantier({ params }) {
     setSucces('Document supprimé ✓')
   }
 
-  const uploadDocumentChantier = async (fichiers) => {
+  const uploadDocumentChantier = async (fichiers, options = {}) => {
     if (!fichiers?.length) return
     setUploadingDocChantier(true)
     let echecsDoc = 0
@@ -1057,8 +1057,9 @@ export default function FicheChantier({ params }) {
       if (error) { echecsDoc++; continue }
       const { error: insertErr } = await supabase.from('chantier_documents').insert({
         dossier_id: id, nom: fichier.name, path: chemin,
-        type_mime: fichier.type, taille: fichier.size, dans_restitution: false,
-        categorie: detecterCategorie(fichier.name),
+        type_mime: fichier.type, taille: fichier.size,
+        dans_restitution: options.dans_restitution ?? false,
+        categorie: options.categorie ?? detecterCategorie(fichier.name),
       })
       if (insertErr) { echecsDoc++; continue }
     }
@@ -3742,11 +3743,21 @@ export default function FicheChantier({ params }) {
                   {documents.length} fichier{documents.length > 1 ? 's' : ''}{documents.length > 0 && ` · ${fmtSize(totalKo)}`}
                 </div>
               </div>
-              <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingDocChantier ? 'wait' : 'pointer', opacity: uploadingDocChantier ? 0.6 : 1}}>
-                <DlIcon /> {uploadingDocChantier ? 'Upload…' : 'Ajouter un document'}
-                <input type="file" style={{display:'none'}} multiple disabled={uploadingDocChantier}
-                  onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files))} />
-              </label>
+              <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+                <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingDocChantier ? 'wait' : 'pointer', opacity: uploadingDocChantier ? 0.6 : 1}}>
+                  <DlIcon /> {uploadingDocChantier ? 'Upload…' : 'Ajouter un document'}
+                  <input type="file" style={{display:'none'}} multiple disabled={uploadingDocChantier}
+                    onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files))} />
+                </label>
+                <label className="btn btn-ghost" style={{fontSize:12.5, cursor: uploadingDocChantier ? 'wait' : 'pointer', opacity: uploadingDocChantier ? 0.6 : 1}}>
+                  <DlIcon /> {uploadingDocChantier ? 'Upload…' : 'Ajouter une facture honoraires'}
+                  <input type="file" style={{display:'none'}} accept="application/pdf" disabled={uploadingDocChantier}
+                    onChange={e => e.target.files.length && uploadDocumentChantier(
+                      Array.from(e.target.files),
+                      { categorie: 'facture_honoraire', dans_restitution: true }
+                    )} />
+                </label>
+              </div>
             </div>
             {documents.length === 0 ? (
               <div style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
@@ -3782,24 +3793,33 @@ export default function FicheChantier({ params }) {
                           {doc.categorie === 'compte_rendu' && (
                             <span style={{fontSize:10, fontWeight:800, letterSpacing:0.04, padding:'1px 6px', borderRadius:5, background:'rgba(0,148,212,0.12)', color:'#0094d4'}}>Compte-rendu</span>
                           )}
+                          {doc.categorie === 'facture_honoraire' && (
+                            <span style={{fontSize:10, fontWeight:800, background:'rgba(234,88,12,0.12)', color:'#ea580c', borderRadius:4, padding:'1px 5px'}}>FACT</span>
+                          )}
                         </div>
                       </div>
-                      <label style={{display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:11, color:'var(--ink-500)'}}>
-                        <input type="checkbox" checked={doc.dans_restitution || false}
-                          onChange={e => toggleDansRestitution(doc.id, e.target.checked)}
-                          style={{accentColor:'var(--brand-500)'}} />
-                        Restitution
-                      </label>
+                      {doc.categorie !== 'facture_honoraire' ? (
+                        <label style={{display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:11, color:'var(--ink-500)'}}>
+                          <input type="checkbox" checked={doc.dans_restitution || false}
+                            onChange={e => toggleDansRestitution(doc.id, e.target.checked)}
+                            style={{accentColor:'var(--brand-500)'}} />
+                          Restitution
+                        </label>
+                      ) : (
+                        <span style={{color:'#16a34a', fontSize:13}} title="Inclus dans la restitution">✓</span>
+                      )}
                       <div className="tnum" style={{fontSize:11.5, color:'var(--ink-500)', whiteSpace:'nowrap'}}>
                         {doc.taille ? fmtSize(doc.taille / 1024) : '—'}
                       </div>
                       <div style={{display:'flex', gap:4}}>
-                        <button onClick={() => toggleCategorieCR(doc.id, doc.categorie !== 'compte_rendu')}
-                          className="btn btn-ghost"
-                          style={{padding:'4px 8px', fontSize:11, fontWeight:700, color: doc.categorie === 'compte_rendu' ? '#0094d4' : 'var(--ink-400)'}}
-                          title={doc.categorie === 'compte_rendu' ? 'Retirer de la catégorie Compte-rendu' : 'Marquer comme compte-rendu'}>
-                          {doc.categorie === 'compte_rendu' ? '✓ CR' : 'CR'}
-                        </button>
+                        {doc.categorie !== 'facture_honoraire' && (
+                          <button onClick={() => toggleCategorieCR(doc.id, doc.categorie !== 'compte_rendu')}
+                            className="btn btn-ghost"
+                            style={{padding:'4px 8px', fontSize:11, fontWeight:700, color: doc.categorie === 'compte_rendu' ? '#0094d4' : 'var(--ink-400)'}}
+                            title={doc.categorie === 'compte_rendu' ? 'Retirer de la catégorie Compte-rendu' : 'Marquer comme compte-rendu'}>
+                            {doc.categorie === 'compte_rendu' ? '✓ CR' : 'CR'}
+                          </button>
+                        )}
                         <button onClick={() => ouvrirDocument(doc.path, doc.nom)}
                           className="btn btn-ghost" style={{padding:'4px 8px'}} title="Voir">
                           <EyeIcon />
