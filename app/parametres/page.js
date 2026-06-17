@@ -42,6 +42,7 @@ export default function Parametres() {
   const [supprimant, setSupprimant]       = useState(false)
   const [uploadingKbis, setUploadingKbis] = useState(null)
   const [uploadingRib, setUploadingRib]   = useState(false)
+  const [uploadingKbisFranchise, setUploadingKbisFranchise] = useState(false)
   const [section, setSection]             = useState('profil')
   const [gcalConnected, setGcalConnected] = useState(false)
   const [savingProfil, setSavingProfil]   = useState(false)
@@ -319,6 +320,26 @@ export default function Parametres() {
   const voirRib = async () => {
     if (!profile?.rib_url) return
     const { data } = await supabase.storage.from('documents').createSignedUrl(profile.rib_url, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  const uploadKbisFranchise = async (fichier) => {
+    if (!profile) return
+    setUploadingKbisFranchise(true)
+    const ext = fichier.name.split('.').pop()
+    const chemin = `kbis/${profile.id}.${ext}`
+    const { error: uploadError } = await supabase.storage
+      .from('documents').upload(chemin, fichier, { upsert: true })
+    if (uploadError) { setErreur('Erreur upload KBIS : ' + uploadError.message); setUploadingKbisFranchise(false); return }
+    const { error } = await supabase.from('profiles').update({ kbis_url: chemin }).eq('id', profile.id)
+    if (error) { setErreur('Erreur sauvegarde KBIS : ' + error.message) }
+    else { setSucces('KBIS uploadé ✓'); setProfile(p => ({ ...p, kbis_url: chemin })) }
+    setUploadingKbisFranchise(false)
+  }
+
+  const voirKbisFranchise = async () => {
+    if (!profile?.kbis_url) return
+    const { data } = await supabase.storage.from('documents').createSignedUrl(profile.kbis_url, 3600)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
@@ -655,6 +676,29 @@ export default function Parametres() {
                     <label className="btn btn-primary" style={{fontSize:12, cursor:'pointer', opacity: uploadingRib ? 0.5 : 1}}>
                       {uploadingRib ? 'Upload…' : '+ Uploader'}
                       <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingRib} onChange={e => e.target.files[0] && uploadRib(e.target.files[0])} />
+                    </label>
+                  )}
+                </div>
+                <div style={{padding:'14px 18px', border:'1px solid', borderColor: profile?.kbis_url ? 'var(--ink-200)' : 'rgba(245,158,11,0.3)', borderRadius:12, display:'flex', justifyContent:'space-between', alignItems:'center', gap:14}}>
+                  <div style={{display:'flex', alignItems:'center', gap:12}}>
+                    <div style={{width:36, height:36, borderRadius:8, background: profile?.kbis_url ? 'var(--brand-50)' : 'rgba(245,158,11,0.12)', color: profile?.kbis_url ? 'var(--brand-800)' : '#a16207', display:'grid', placeItems:'center', fontSize:18}}>📄</div>
+                    <div>
+                      <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>KBIS franchisée</div>
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{profile?.kbis_url ? 'Fichier uploadé' : 'Aucun fichier'}</div>
+                    </div>
+                  </div>
+                  {profile?.kbis_url ? (
+                    <div style={{display:'flex', gap:8}}>
+                      <button className="btn btn-ghost" style={{fontSize:12}} onClick={voirKbisFranchise}>Voir</button>
+                      <label className="btn btn-ghost" style={{fontSize:12, cursor:'pointer', opacity: uploadingKbisFranchise ? 0.5 : 1}}>
+                        {uploadingKbisFranchise ? 'Upload…' : 'Remplacer'}
+                        <input type="file" accept=".pdf,image/*" style={{display:'none'}} disabled={uploadingKbisFranchise} onChange={e => e.target.files[0] && uploadKbisFranchise(e.target.files[0])} />
+                      </label>
+                    </div>
+                  ) : (
+                    <label className="btn btn-primary" style={{fontSize:12, cursor:'pointer', opacity: uploadingKbisFranchise ? 0.5 : 1}}>
+                      {uploadingKbisFranchise ? 'Upload…' : '+ Uploader'}
+                      <input type="file" accept=".pdf,image/*" style={{display:'none'}} disabled={uploadingKbisFranchise} onChange={e => e.target.files[0] && uploadKbisFranchise(e.target.files[0])} />
                     </label>
                   )}
                 </div>
