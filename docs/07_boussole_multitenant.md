@@ -113,7 +113,6 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 
 #### Bloc A — Sécurité — SOLDÉ (restants = dépendances externes / refonte calendrier)
 > La vraie surface d'attaque avant ouverture franchisé est fermée. Ce qui reste est soit bloqué par une dépendance (plan Pro), soit rattaché à la refonte calendrier dédiée, soit de l'hygiène cosmétique. Côté sécurité, l'ouverture à un franchisé est possible AVEC le garde-fou « pas de sync Google Calendar active » (cf. module calendrier ci-dessous).
-
 ##### ✅ Fait
 - [x] **🔴 Purge Storage à la suppression SOLDÉE** (10/06, mergé `219720e`, branche fix/storage-purge-entites). Carte d'audit : chantier déjà purgé correctement (cr/ inclus, ordre OK), client sans objet (aucun préfixe clients/, FK NO ACTION bloque). 2 vrais gaps corrigés : (1) agente DELETE purge kbis_url/rib_url/factures_agente — ORDRE CRITIQUE corrigé après bug : purge APRÈS deleteUser réussi (sinon fichiers détruits alors que l'agente survit si deleteUser échoue) ; (2) artisan delete balaie artisans/{id}/fiches/ (scopé id exact). Prouvé E2E : agente cas échec (KBIS survit à l'échec, ×2 sur TEST AI + Manon réelles), artisan purge=0 + témoin LS TRAVAUX=20 intact. Reste (fonctionnel, pas dette) : flux RGPD orchestré « effacer client + ses dossiers + fichiers » en 1 action → backlog.
 - [x] **Faille route /api/cr corrigée + PROUVÉE E2E** (10/06, mergé `fd2b2cd`). dossierId et docsPaths du body consommés en service_role sans contrôle → lecture cross-tenant + téléchargement arbitraire du bucket documents. Fix : appartenance reflétant la RLS (admin→societe_id, agente→agence_id), 404 uniforme ; docsPaths ceinture-bretelles (match exact Set contre chantier_documents du dossier + préfixe chantiers/{dossierId}/), 400 au 1er invalide. 8 tests E2E : T4 admin TEST1→dossier CTP 404 ; T5 uuid inexistant 404 corps IDENTIQUE (pas de fuite d'existence) ; T6 agente Marseille→dossier Montpellier 404 (amendement agence) ; T7/T8a/T8b/T9 paths hostiles 400 (T8b = bon préfixe absent table → match exact prouvé) ; contre-test positif Marie→son dossier Marseille 200.
@@ -126,7 +125,6 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **Surface ANON sur les TABLES soldée** (10/06). RLS active sur 25/25 tables, GRANT anon (défaut Supabase) neutralisé par la RLS. 24 tables sûres (policies TO authenticated → anon deny). 1 faille corrigée : policy INSERT notifications « Service role inserts notifications » était TO public WITH CHECK true (anon pouvait forger des notifs pour tout user_id) → re-scopée TO authenticated WITH CHECK (auth.uid()=user_id) via docs/sql/fix_notifications_insert_policy.sql. Prouvé : INSERT anon → 42501 RLS violation. service_role (cron) non affecté (bypass RLS). admin_invitations : 0 policy = deny total, voulu.
 - [x] **Policies Storage versionnées (#5)** ✅ (15/06, f06bb0, complété par #7). docs/sql/storage_policies.sql = source de vérité. NB : l'export #5 initial avait omis les 2 policies DELETE (réparé en #7 → fichier complet à 8). 5 anciens fichiers obsolètes supprimés. Cloisonnement tenant confirmé solide (pas de sécurité par obscurité).
 - [x] **Placeholder cross-société (#7)** ✅ (15/06, 0ee864c). Exemption .emptyFolderPlaceholder retirée des 6 policies Storage (scoping tenant désormais appliqué à tout chemin) — vérifié 8 policies a_exemption=false en base, T1 non-régression OK (lecture/upload/suppression docs intacts). Au passage : réparé l'omission #5 (storage_policies.sql avait 6/8 policies, les 2 DELETE manquaient → désormais complet à 8 sans exemption). Reste geste manuel cosmétique : supprimer le placeholder 0 octet via UI Storage (DELETE SQL bloqué par Supabase ; inerte car soumis au scoping normal).
-
 ##### 🔶 Restants — bloqués par dépendance ou refonte (PAS des trous exploitables avant ouverture)
 - [ ] **Durcissements bloqués** : (c) leaked password protection → attend le plan Pro Supabase ; (d) captcha → optionnel. [(a) EXECUTE anon et (b) policy notifications INSERT : FAITS le 10/06, voir ci-dessus.]
 - [ ] **🔴 Suppression agente impossible si google_tokens existe** : FK google_tokens.user_id → auth.users en NO ACTION/RESTRICT → deleteUser échoue (« Database error deleting user ») pour toute agente ayant connecté Google. Touche les agentes RÉELLES (Manon, TEST AI sur TEST 1). À corriger AVEC la refonte calendrier : FK CASCADE ou purge google_tokens avant deleteUser. NB : TEST AI a perdu son KBIS au 1er test purge (avant correctif d'ordre).
@@ -220,7 +218,6 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **suiviAcompteAMO vestige mort** ✅ (15/06, 92c2ce5). Supprimé (0 usage).
 - [x] **Code mort** finance.js restants ✅ 16/06 (b4d7ae2)
 
-
 ##### A FAIRE
 - [ ] **#8 dashboard admin scope** (à arbitrer selon scénario testeur).
 - [ ] **L18 bug ajout intervention** : ⚠️ audit d'abord, STOP si lié à la sync Google Calendar.
@@ -229,13 +226,41 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 
 #### Bloc E — Refonte UX vues finances (post-test, à froid) [CONCEPTION d'abord]
 > Gros chantier de design d'écran. NE PAS patcher en isolé les points ci-dessous : ce sont des décisions de design à penser ensemble (sinon travail jeté). Cadrage maquette/structure AVANT code. Idéalement après un vrai retour d'usage terrain (facturation réelle), qui réordonnera les priorités d'affichage.
-- [ ] **Refonte des 5 onglets finances** (F1/F2/Synthèse/Suivi/Facturation se chevauchent).
-  - Objectif affiché par périmètre (incohérence assumée : agente voit objectif AGENCE). Cible : objectif qui suit rôle ET périmètre.
-  - Vue « compte de résultat agente » (produits − charges = net réel agente) = ex-point 7 / ex-renderSuiviAgenteFinancier (net = gains − redevance − part apporteur ; redevance en charge ; royalties absentes). L'agente voit aujourd'hui le résultat CTP scopé, faux pour elle.
-  - Barre objectif MENSUEL agence à 0 (numérateur tape le mauvais calcul ; `o.mois` colonne inexistante → décision produit : objectif mensuel = annuel/12 ?).
-  - Détail par chantier dans les dépliables (ex-point 6) : voir quel dossier alimente chaque montant. Donnée déjà dispo (agrégerParPaiement garde d.id).
-  - Détail apporteur PAR DEVIS (ex-point 6) : contrôler la facture Kiosque ligne par ligne à réception.
-  - Nom de la colonne « Net » du tableau facturation (gardée 11/06, à trancher : « Net » / « Solde F1−F2 indicatif » / suppression).
+##### Refonte finances (17/06) — COMPLÈTE
+- [x] Finances Lot 1 — renommage onglets ✅ 17/06 (1f153ae)
+- [x] Finances Lot 2 — ménage + KPI + mémo (D4 D6 D7 D8 D9 D10 D11) ✅ 17/06 (0439a85)
+- [x] Finances Lot 3a — style unifié + extraction composants ✅ 17/06 (c064f94)
+- [x] Finances Lot 3b — fusion Synthèse→Suivi + nouvelle mise en page ✅ 17/06 (6b95794)
+- [x] Finances Lot 3c — comptes de résultat 3 vues + tableaux Prévi/Réel refondus ✅ 17/06 (99291fc)
+- [x] Finances Lot 4 — D3 royalties réel corrigées ✅ 17/06 (2a8ae4d)
+- [~] D12 — renderAnnuel extraction finance.js : non applicable (couplage React trop fort). Clos 17/06.
+- [x] l.228 Refonte 5 onglets finances — COMPLÈTE ✅ 17/06
+- [x] l.172/175 Renommages/libellés finances — COMPLÈTE ✅ 17/06
+
+##### Décisions verrouillées finances
+- D1 : Renommer F1 Prévisionnel → Prévisionnel / F2 Réel → Réel
+- D2 : Vue mois/année Réel = encaissements réels par date paiement
+- D3 : Royalties réel = frais + honoraires + commissions (corrigé)
+- D4 : KPI CA réel net admin only, retiré pour agente
+- D5 : Style unifié tokens CSS, Tailwind supprimé
+- D6 : agrégerParPaiement mémoïsé (useMemo)
+- D7 : Variable morte chantiersAnneeEnCours supprimée
+- D8 : Sur-fetch apporteur_affaires/nom retiré
+- D9 : Année plancher dynamique (anneeMin depuis dossiers)
+- D10 : DEFAULT_PART_AGENTE centralisé dans finance.js
+- D11 : Typo \n → br corrigé
+- D12 : Non applicable (voir ci-dessus)
+- D13 : SyntheseView/FacturationAgentes/SuiviCTPChart extraits hors composant
+- D14 : Cloisonnement transitif devis_artisans/suivi_financier via EXISTS dossiers.
+        VIGILANCE : si dossiers_scope s'élargit, ces tables héritent de l'élargissement.
+        À vérifier à chaque modification RLS dossiers.
+- D15 : Onglet Synthèse supprimé, fusionné dans Suivi financier
+- D16 : Vue "Par mois" supprimée dans Prévisionnel (pas de sens métier)
+- D17 : Prévi par mois = date_signature_contrat, Réel par mois = date paiement réel
+- D18 : scope reset à 'tous' en entrant sur Suivi/Facturation (handleTab)
+
+##### 4 onglets finaux
+Prévisionnel · Réel · Suivi financier · Facturation
 
 #### Bloc E-bis — Dette technique / nommage / code mort (indépendant, faisable isolément)
 - [x] **Formulaire devis inline mort** ✅ (12/06, `63b0cd9 `). Cluster mort autoréférent supprimé (7 symboles, −56 l.) après audit prouvant 0 lien vivant. DevisModal = seul chemin actif, intact. contrat_signe préservé (dupliqué dans saveDevisFromModal).
