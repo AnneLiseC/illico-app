@@ -2002,7 +2002,7 @@ export default function Finances() {
             <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
               background:tab==='previsionnel'?'var(--brand-800)':'var(--ink-100)',
               color:tab==='previsionnel'?'#fff':'var(--ink-500)'}}>F1</span>
-            F1 Prévisionnel
+            Prévisionnel
           </span>
         </button>
         <button className={`tab ${tab==='reel'?'active':''}`} onClick={() => setTab('reel')}>
@@ -2010,7 +2010,7 @@ export default function Finances() {
             <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
               background:tab==='reel'?'var(--brand-800)':'var(--ink-100)',
               color:tab==='reel'?'#fff':'var(--ink-500)'}}>F2</span>
-            F2 Réel
+            Réel
           </span>
         </button>
         <button className={`tab ${tab==='synthese'?'active':''}`} onClick={() => setTab('synthese')}>Synthèse</button>
