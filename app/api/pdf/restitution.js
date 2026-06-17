@@ -674,6 +674,11 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   const hasFichesTech = (fichesTech || []).length > 0
   const hasQualif = devisAcceptes.some(d => d.artisan?.qualification_url)
 
+  // Factures honoraires (CTP→client) : à embarquer dans le bloc Factures, pas
+  // dans le bloc générique « autres documents ». categorie='facture_honoraire'.
+  const facturesHonoraires = (docsRestitution || []).filter(d => d.categorie === 'facture_honoraire')
+  const autresDocs = (docsRestitution || []).filter(d => d.categorie !== 'facture_honoraire')
+
   const loadSep = async (b64) => PDFDocument.load(Buffer.from(b64, 'base64'))
   const [sepDescriptif, sepIllustrations, sepRecap, sepDevis, sepPlanning, sepRefs, sepKbis, sepQualification] = await Promise.all([
     loadSep(SEP_DESCRIPTIF), loadSep(SEP_ILLUSTRATIONS), loadSep(SEP_RECAP),
@@ -761,6 +766,12 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
         await addExternalPDF(buf)
       }
     }
+    // Factures honoraires (CTP→client) — chantier_documents categorie='facture_honoraire'
+    // cochés dans_restitution. Même bloc que les factures artisans. Non bloquant.
+    for (const d of facturesHonoraires) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', d.path)
+      await addExternalPDF(buf)
+    }
   }
 
   // ── Qualifications (si présentes et stade post-signature) ──
@@ -801,14 +812,6 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     }
   }
 
-  // ── Documents chantier cochés "dans_restitution" ──
-  if ((docsRestitution || []).length > 0) {
-    for (const doc of docsRestitution) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path)
-      await addExternalPDF(buf)
-    }
-  }
-
   // ── KBIS + Assurances (post-signature) ──
   if (!isPreSignature) {
     await addSep(sepKbis)
@@ -833,6 +836,14 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     }
     if (adminFranchise?.rib_url) {
       const buf = await downloadPDF(supabaseAdmin, 'documents', adminFranchise.rib_url)
+      await addExternalPDF(buf)
+    }
+  }
+
+  // ── Autres documents chantier cochés "dans_restitution" (hors factures honoraires) ──
+  if (autresDocs.length > 0) {
+    for (const doc of autresDocs) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path)
       await addExternalPDF(buf)
     }
   }

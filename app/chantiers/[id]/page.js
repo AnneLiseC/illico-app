@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { formatNomClient } from '../../lib/clients'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
-import { calculerAvancement, detecterCategorieCR } from '../../lib/dossiers'
+import { calculerAvancement, detecterCategorie } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
@@ -1058,7 +1058,7 @@ export default function FicheChantier({ params }) {
       const { error: insertErr } = await supabase.from('chantier_documents').insert({
         dossier_id: id, nom: fichier.name, path: chemin,
         type_mime: fichier.type, taille: fichier.size, dans_restitution: false,
-        categorie: detecterCategorieCR(fichier.name),
+        categorie: detecterCategorie(fichier.name),
       })
       if (insertErr) { echecsDoc++; continue }
     }
