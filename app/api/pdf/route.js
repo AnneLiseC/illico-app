@@ -546,10 +546,13 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Type de PDF inconnu' }, { status: 400 })
     }
 
-    // CR : nom de fichier « DATE_CR_NOM CLIENT » (date de visite, sinon date d'émission).
+    // CR : nom de fichier « DATE_CR_NOM » (date de visite, sinon date d'émission).
+    // Nom de famille uniquement (sans prénom) ; couple à deux noms → « Nom1 & Nom2 ».
     const crDate = cr?.date_visite || cr?.created_at
     const crDateStr = crDate ? new Date(crDate).toISOString().slice(0, 10) : ''
-    const nomClient = formatNomClient(dossier.client) || 'Client'
+    const nomClient = dossier.client
+      ? [dossier.client.nom, dossier.client.nom2].filter(Boolean).join(' & ') || 'Client'
+      : 'Client'
     const filename =
       type === 'recapitulatif_prev' ? `Recap_Financier_${dossier.reference}.pdf`
       : type === 'recapitulatif' ? `Suivi_Financier_${dossier.reference}.pdf`
