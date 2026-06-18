@@ -546,18 +546,26 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Type de PDF inconnu' }, { status: 400 })
     }
 
-    const TYPES_LABEL = { r1: 'R1', r2: 'R2', r3: 'R3', suivi: 'Suivi', reception: 'Reception' }
+    // CR : nom de fichier « DATE_CR_NOM » (date de visite, sinon date d'émission).
+    // Nom de famille uniquement (sans prénom) ; couple à deux noms → « Nom1 & Nom2 ».
+    const crDate = cr?.date_visite || cr?.created_at
+    const crDateStr = crDate ? new Date(crDate).toISOString().slice(0, 10) : ''
+    const nomClient = dossier.client
+      ? [dossier.client.nom, dossier.client.nom2].filter(Boolean).join(' & ') || 'Client'
+      : 'Client'
     const filename =
       type === 'recapitulatif_prev' ? `Recap_Financier_${dossier.reference}.pdf`
       : type === 'recapitulatif' ? `Suivi_Financier_${dossier.reference}.pdf`
       : type === 'dossier_suivi' ? `DossierSuivi_${dossier.reference}.pdf`
-      : type === 'cr' ? `CR_${TYPES_LABEL[cr?.type_visite] || 'visite'}_${dossier.reference}.pdf`
+      : type === 'cr' ? `${crDateStr ? crDateStr + '_' : ''}CR_${nomClient}.pdf`
       : `Dossier_${dossier.reference}.pdf`
 
+    // En-tête robuste aux accents/espaces : fallback ASCII + version UTF-8 (RFC 5987).
+    const asciiName = filename.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '')
     return new Response(pdfBuffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Disposition': `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       },
     })
   } catch (err) {
