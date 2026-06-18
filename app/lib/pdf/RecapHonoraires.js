@@ -5,6 +5,7 @@
 // Écrit en React.createElement (pas de JSX) pour être rendu/testé directement en node.
 import React from 'react'
 import { Text, View, StyleSheet } from '@react-pdf/renderer'
+import './fonts.js'
 import {
   calculateHonorairesFinance,
   calculateHonorairesRecuAccepte,
@@ -23,25 +24,25 @@ const GRIS = '#94a3b8'
 
 const S = StyleSheet.create({
   section:      { marginTop: 10 },
-  sectionTitle: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 5, paddingBottom: 3, borderBottomWidth: 1, borderBottomColor: BLEU_CLAIR },
+  sectionTitle: { fontSize: 10, fontFamily: 'Roboto-Bold', color: BLEU, marginBottom: 5, paddingBottom: 3, borderBottomWidth: 1, borderBottomColor: BLEU_CLAIR },
   blocC:        { borderLeftWidth: 3, borderLeftColor: BLEU_CLAIR, paddingLeft: 8, marginBottom: 8 },
   blocA:        { borderLeftWidth: 3, borderLeftColor: ORANGE, paddingLeft: 8, marginBottom: 8 },
-  blocTitleC:   { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 4 },
-  blocTitleA:   { fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: ORANGE_FONCE, marginBottom: 4 },
+  blocTitleC:   { fontSize: 8.5, fontFamily: 'Roboto-Bold', color: BLEU, marginBottom: 4 },
+  blocTitleA:   { fontSize: 8.5, fontFamily: 'Roboto-Bold', color: ORANGE_FONCE, marginBottom: 4 },
   niveau:       { fontSize: 7.5, color: '#64748b', fontStyle: 'italic', marginTop: 4, marginBottom: 1 },
   row:          { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
   label:        { fontSize: 8.5, color: '#333333', flex: 1, paddingRight: 12 },
-  value:        { fontSize: 8.5, fontFamily: 'Helvetica-Bold' },
+  value:        { fontSize: 8.5, fontFamily: 'Roboto-Bold' },
   remiseRow:    { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2, marginTop: 2 },
   remiseLabel:  { fontSize: 7.5, fontStyle: 'italic', flex: 1, paddingRight: 12 },
-  remiseValue:  { fontSize: 7.5, fontFamily: 'Helvetica-Bold' },
+  remiseValue:  { fontSize: 7.5, fontFamily: 'Roboto-Bold' },
   totalHonRow:  { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2, borderTopWidth: 1, borderTopColor: '#e5e7eb', marginTop: 2 },
-  totalHonLbl:  { fontSize: 8, fontFamily: 'Helvetica-Bold', flex: 1 },
-  totalHonVal:  { fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  totalHonLbl:  { fontSize: 8, fontFamily: 'Roboto-Bold', flex: 1 },
+  totalHonVal:  { fontSize: 8, fontFamily: 'Roboto-Bold' },
   tc:           { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 6, borderRadius: 4, marginTop: 4 },
   tcStd:        { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, paddingHorizontal: 6, borderRadius: 4, marginTop: 4, backgroundColor: GRIS },
-  tcLabel:      { color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' },
-  tcValue:      { color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' },
+  tcLabel:      { color: 'white', fontSize: 9, fontFamily: 'Roboto-Bold' },
+  tcValue:      { color: 'white', fontSize: 9, fontFamily: 'Roboto-Bold' },
 })
 
 const fmt = (n) => {
