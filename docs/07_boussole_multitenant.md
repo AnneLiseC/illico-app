@@ -131,7 +131,7 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [~] **🔶 Module calendrier Google EN QUARANTAINE** (push/sync/event) — décision 10/06 : NON patché isolément. Défaut structurel mono-franchise (CALENDAR_ID global hérité, jamais migré multi-agence/société), pas juste un contrôle d'appartenance manquant. Patcher route par route donnerait une fausse sécurité tant que l'agenda cible reste partagé. À traiter EN BLOC lors de la refonte calendrier multi-agence (chantier dédié).
   - Failles à corriger DANS la refonte : push (mutation google_event_id sur id du body sans contrôle tenant, route.js:125-129/141-145/208-209) ; sync (SELECT non filtrés rendez_vous/interventions/dossiers → tous tenants, route.js:175-177/200-202/238-239 + writes google_*_event_id) ; event (event du body, appartenance à reverifier).
   - 🔴 GARDE-FOU IMMÉDIAT : NE PAS activer la sync Google Calendar pour un franchisé réel tant que le module n'est pas refait. Aujourd'hui = tes comptes uniquement, fuite non exploitable par un tiers.
-- [ ] **Policy UPDATE bucket `photos` manquante** : `photos` a INSERT/SELECT/DELETE sans UPDATE (même trou que `documents` avant le fix factures). Si remplacement de photo voulu → upsert refusé en silence. Policy UPDATE ciblée à ajouter le jour où la feature existe.
+- [x] Policy UPDATE bucket photos — ABANDONNÉ 18/06 : le remplacement de photo n'est pas un besoin.
 
 #### Bloc B — Multi-agence réel (chantier en cours, découpé en 5 lots)
 > **Principes verrouillés** : la « vue active » est un filtre d'AFFICHAGE (UX), PAS une frontière de sécurité — la RLS reste l'unique frontière (admin = toute sa société, il a le droit de tout voir). Défaut admin multi-agences = vue Consolidée (toutes agences). Agente = une seule agence, aucun sélecteur. **Garde-fou permanent** : une société à 1 agence (CTP/Marine) ne doit voir AUCUN changement à aucun lot. ⚠️ CTP reste mono-agence jusqu'à la fin du chantier ; le terrain de test multi-agence = société TEST 1 (2 agences : MA00 Marseille + MO00 Montpellier).
@@ -165,20 +165,19 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **Cases redevance cliquables (agente)** ✅ FERMÉ SANS CODE (14/06). Décision : le besoin n'existe pas. Dans le flux réel, c'est l'ADMIN qui constate les redevances reçues (il a déjà son chemin via le toggle F2 → upsertFactureMoisType synchronise redevances.statut). L'agente paie par virement, pas par clic — la grille redevances est de l'AFFICHAGE pour elle (consultation), pas un pilotage. Pas de route INSERT agente, pas de pré-création, pas de policy à ajouter. L'item décrivait un faux manque (hypothèse « les cases devraient être cliquables » invalidée par le flux métier). NB structure pour mémoire : redevances = 1 statut binaire en_attente/regle, INSERT admin-only, UPDATE agente(sa ligne)+admin(société), trigger protège montant en UPDATE seulement.
 - [x] **Atomicité conversions AMO↔courtage (#3)** ✅ (15/06, 2d56011). 2 fonctions Postgres convertir_dossier_en_amo / _en_courtage (SECURITY INVOKER, patron K). Séquence multi-écritures rendue atomique. Montant/date/statut préservés au rename. Collision = rollback total. Famille AMO close (avec K + #4).
 - [x] **Hygiène : dropper `factures_agente_backup_b7b`** ✅ 
+- [x] L16 Facturation scopée/consolidée ✅ 18/06 (d3df28b) — sélecteur d'agente filtré par agence active (agentesScope) + reset agente hors périmètre. Consolidé = toutes. CTP mono-agence non régressé.
+- [x] Vue agente du suivi financier ✅ SANS OBJET 18/06 — l'ancienne spec (net perso = gains − redevance − part apporteur dans le Suivi) est CADUQUE depuis la refonte CA généré. Découpage acté : Suivi (mode agent) = performance commerciale (CA généré vs objectif) ; Facturation (F1/F2) = cash perso (redevance + apporteur en F2, net = F1−F2). Bug d'accès mode CTP corrigé (mode agent forcé, toggle admin-only). Mettre le net perso dans le Suivi serait une régression (doublon Facturation + cassure alignement objectif). Résidu cosmétique « libellés 1ère personne » écarté volontairement (crPourCle partagé, complexité inutile).
+- [x] Colonne « Net » facturation supprimée (solde F1−F2 indicatif, non relu) ✅ 18/06 (cafe6dd)
+- [x] Timing remboursement apporteur F2 ✅ VÉRIFIÉ / DÉJÀ CORRECT 18/06 — l'apporteur F2 est bucketé sur date_paiement de l'échéance apporteur_agente/rembourse (= mois du remboursement réel ≈ facture Kiosque), PAS sur la date d'acompte. Donnée dédiée déjà en base (suivi_financier, type_echeance='apporteur_agente', statut_ctp='rembourse'), aucune colonne à ajouter. Réserve cosmétique non chiffrante : subit le décalage d'affichage +1 uniforme de la Facturation (montant/rattachement justes) — à juger à l'écran si besoin, pas un bug.
+- [x] Chantier 2 — décalage M−1 vue admin propre ✅ SANS OBJET 18/06 — la prémisse (redevance en PRODUIT du Suivi CTP cohabitant avec l'activité propre non décalée) est CADUQUE depuis la refonte CA généré, qui a sorti la redevance du Suivi (→ Facturation). Aujourd'hui : Suivi CTP = une seule échelle (mois d'activité, redevance exclue, apporteur au mois de paiement) ; le seul décalage M+1 vit dans la Facturation, uniforme F1/F2 et déjà libellé « activité de {mois} ». Aucun écran ne mélange deux échelles. Toucher au bucketing redevance serait inutile et risqué (alimente F2 + grille).
+- [x] Légende « mois d'activité » sur grille redevances (lève l'ambiguïté vs mois de facture du tableau F1/F2) ✅ 18/06 (cafe6dd)
+- [x] Label F1 « courtage + AMO » → « Honoraires » ✅ 18/06 (cafe6dd)
+- [x] Convention d'affichage asymétrique commissions/honoraires homogénéisée ✅ 18/06 (386ce8b) — colonne Honoraires (brut) ajoutée au tableau Réel/Prévi, Net inchangé.
+- [x] Fiabilité génération CR (IA) ✅ 18/06 (fix/cr-join-notes, 3 lots) — mots collés corrigés (join '' → '\n\n', cause des « lansuite » = bug code, pas l'IA) ; numérotation retirée (CR = type+date) ; consigne orthographe (corrige la prose, préserve les noms propres) + temperature 0.3.  Lot 1 ✅ mots collés (join → \n\n, 1b00cbd). Lot 2 ✅ retrait numérotation (CR = type+date). Reste : Lot 3 consigne orthographe + temperature 0.3. ✅ 18/06 (bde261b)
+- [x] Accent prénom client (Jerome/Jérôme) ✅ 18/06 (abda085) — source de vérité = clients.prenom (fiche client). Le CR la lit déjà verbatim ; l'IA la ré-accentuait → consigne prompt étendue (nom+prénom client protégés). Probabiliste ; post-traitement déterministe seulement si récidive.
 
 ##### A FAIRE
-
-- [ ] **L16 Facturation scopée/consolidée** (par agence sur onglets agence ; somme société sur vue consolidée). Lié au Lot 4 finances.
-- [ ] **Vue agente du suivi financier** (gros sujet de conception). Aujourd'hui `renderSuiviFinancier` n'a PAS de vue agente — l'agente voit le compte de résultat CTP scopé (apporteur total, redevance en PRODUIT au lieu de charge, royalties affichées + bug d'accès au mode CTP). Base = spec archivée ex-`renderSuiviAgenteFinancier` (récupérable git) : net agente = gains − redevance − part apporteur ; redevance en CHARGE ; apporteur en part ; royalties ABSENTES ; libellés 1ère personne. Inclut le fix du toggle mode CTP à réserver à l'admin.
-- [ ] **Colonne « Net » du tableau facturation mensuel** : conservée telle quelle (solde F1−F2 par mois + total). NOM à trancher selon usage terrain : garder « Net », renommer « Solde F1−F2 (indicatif) », ou supprimer si inutile. Décision reportée volontairement (pas oubliée).
-- [ ] **Timing remboursement apporteur dans F2** : `apporteurRembourseNet` garde un axe DATE distinct (facture Kiosque ~1 mois après déblocage acompte). À traiter avec les vues facturation détaillées.
-- [ ] **Chantier 2 — décalage M−1 vue admin propre** : la redevance + apporteur que l'admin ENCAISSE des agentes (= leur F2) suivent le décalage M−1, mais SON activité propre n'est pas décalée. Écran à IDENTIFIER (probablement Suivi CTP). Auditer AVANT de coder.
-- [ ] **Grille redevances 12 mois** : éventuellement relibeller en mois de facture (datée activité aujourd'hui, correct mais visuellement ambigu). À juger à l'écran.
-- [ ] **3a-bis — Alerte écart figé/live** : badge ⚠️ signalant un écart entre montant figé (au clic « Reçu ») et live. PARKÉ — arbitrage Marine : le cas (activité d'un mois facturé qui bouge) est-il assez fréquent pour justifier un filet ? Sans traçabilité des modifs post-figement, un badge seul = bruit non actionnable.
-- [ ] **Label F1 « courtage + AMO » trompeur** : sur un mois sans AMO encaissé, F1 ne contient que du courtage. Relibeller dynamiquement selon ce qui est réellement dans le total. Découvert en facturant juillet (activité juin réelle).
-- [ ] **Convention d'affichage asymétrique commissions/honoraires** (lié L16 + vue agente) : commissions affichées en BRUT (pré-royalty, royalty 5% + split appliqués derrière), honoraires en POST-royalty (split seul). Même module Réel, deux stades → piège de relecture (a induit une erreur de calcul manuelle). Homogénéiser : afficher brut + post-royalty côte à côte comme les commissions. PAS un bug de calcul (F1 = 8 448,69 € juste), dette de lisibilité.
-- [ ] **Fiabilité génération CR (IA)** : coquilles et incohérences générées (« lansuite », « attende » au lieu d'« attendent », « Visite de suivi N°5 » alors que CR N°1). Présentes en base, pas un défaut de police. Piste : renforcer le prompt de génération (app/api/cr/route.js) — orthographe + cohérence du numéro de visite (le calquer sur le N° de CR réel plutôt que laisser l'IA inventer). À auditer : d'où sort le « N°5 » ? Si l'IA invente un compteur, il faut le lui passer en entrée.
-- [ ] **Incohérence accent prénom client** : « Jerome » (fiche client) vs « Jérôme » (corps CR). Donnée, pas code. Trancher la source de vérité : si l'accent est voulu, corriger clients.prenom ; sinon harmoniser le CR sur la fiche.
+- [⏸] 3a-bis — Alerte écart figé/live — EN ATTENTE DÉCISION MARINE (pas un blocage technique). Badge ⚠️ si le montant figé (au clic « Reçu ») diffère du live. À trancher AVANT tout code : le cas (activité d'un mois facturé qui bouge après figement) est-il assez fréquent pour justifier un filet ? Sans traçabilité des modifs post-figement, un badge seul = bruit non actionnable. → question à poser à Marine, pas un lot à coder en l'état.
 
 #### Bloc C — Onboarding self-service (reste)
 - [ ] **3d page stats plateforme** — reportée backlog (pas utile tant qu'un seul franchisé ; compteurs visibles via dashboard Supabase).
@@ -202,7 +201,7 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **Garde-fou création profil client** ✅ (10/06). 
   Trigger BEFORE INSERT `profile_client_derive_agence_trg` (SECURITY DEFINER) : role='client' → dérive agence_id + societe_id depuis le client métier rattaché (profiles.client_id → clients) ; exception stricte si client_id manquant. + CHECK `profiles_client_agence_not_null` (role <> 'client' OR agence_id IS NOT NULL) = filet dur, survit au retrait du trigger. Cible role='client' uniquement (admin agence_id NULL préservé, vérifié). SQL versionné docs/sql/garde_fou_profil_client_agence.sql. Dérivation + CHECK + non-régression admin prouvés en base. NB découvert : aucun chemin applicatif ne crée de profil client (lien magique acté mais non construit) → garde-fou préventif, posé AVANT le futur flux espace-client.
 - [x] **Boutons morts Finances** ✅ (11/06). 4 boutons décoratifs (CSV, ▼, Exporter le bilan, Saisir un règlement) supprimés + conteneurs vides. Aucun handler (jamais câblés).
-  - [~] **Export CSV + bilan** : MASQUÉ, non câblé (besoin non avéré). À construire SI demandé, avec le demandeur (colonnes/périmètre/format Excel-FR). Choix volontaire.
+- [x] Export CSV + bilan finances — ABANDONNÉ 18/06 : masqué volontairement, à construire seulement sur demande explicite future.
 - [x] **CR markdown→rendu** ✅ (12/06). 
   Composant partagé MarkdownCR (client + agente, variant). Cause racine corrigée (join('\n\n') + template désindenté). 5 CR legacy migrés (SQL versionné, backup rollback). Filet renderer tolère un legacy non migré. Fallback notes_brutes retiré côté client (« CR en cours de rédaction »). Bonus : vue agente complète (aperçu strippé + dépliable) qui n'existait pas. f385f27
 - [x] **comptes_rendus.pdf_path mort** ✅ (12/06, `b866d73`). Feature morte supprimée (colonne inexistante, 0 lecteur, uploads orphelins). CR reste texte + PDF à la volée.
@@ -226,9 +225,9 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [ ] **L22 bug synchro Google Calendar** : `Cannot access 'n' before initialization` (TDZ — `const auth` l.143 shadow l.128 dans `api/google/calendar/sync/route.js`). Fix : renommer le 2e `auth` en `oauthClient`. ⚠️ Lié au calendrier Google partagé entre agences (fuite multi-tenant à creuser).
 - [ ] **Messagerie AMO : aucun dossier affiché** : la page lit `clients.raison_sociale` (colonne cible jamais créée — cf. doc 02). Créer la colonne OU rebrancher la lecture. ⚠️ lié à la réactivation Messagerie (bloc F).
 
-#### Bloc E — Refonte UX vues finances (post-test, à froid) [CONCEPTION d'abord]
-> Gros chantier de design d'écran. NE PAS patcher en isolé les points ci-dessous : ce sont des décisions de design à penser ensemble (sinon travail jeté). Cadrage maquette/structure AVANT code. Idéalement après un vrai retour d'usage terrain (facturation réelle), qui réordonnera les priorités d'affichage.
-##### Refonte finances (17/06) — COMPLÈTE
+#### Bloc E — Refonte UX vues finances SOLDÉ
+> ✅ BLOC FINANCES SOLDÉ (18/06). Tout le codable est fait : compte de résultat CA généré (3 modes), RLS objectif agente durcie+testée, objectif vue Par année, barre objectif alignée CA généré, L16 facturation scopée, libellés (colonne Net, légende redevances, honoraires), colonne Honoraires, CR IA (3 lots). Items fermés sans objet (résolus par la refonte CA généré) : vue agente, décalage M−1, timing apporteur F2. SEUL RESTE : 3a-bis figé/live = en attente décision Marine (pas du code). → Finances ne contient plus aucun item codable ouvert.
+
 - [x] Finances Lot 1 — renommage onglets ✅ 17/06 (1f153ae)
 - [x] Finances Lot 2 — ménage + KPI + mémo (D4 D6 D7 D8 D9 D10 D11) ✅ 17/06 (0439a85)
 - [x] Finances Lot 3a — style unifié + extraction composants ✅ 17/06 (c064f94)
@@ -243,8 +242,7 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] Compte de résultat « CA généré » (3 modes unifiés) ✅ 18/06 (c2cf533) — formule CA = brut−royalty−apporteur total ; société −parts. KPI alignés (CA généré / Part franchisée). Bug royalty×2 société corrigé.
 - [x] RLS objectifs_ca durcie + prouvée (4 policies, brèches b/c fermées, 5 tests SQL verts) ✅ 18/06
 - [x] Lot 2 — Objectif perso agente éditable (RLS durcie + écran profil) ✅ 18/06 — l'agente fixe son objectif CA, last-write-wins avec l'admin (même ligne). Notif de changement = reportée (bloc notifs).
-
-- [ ] **Objectif dans la vue « Par année »** du compte de résultat : la barre objectif n'existe qu'en vue « Par mois ». Ajouter l'affichage de l'objectif (échelle CA généré) en vue année. Gap d'affichage (jamais existé, pas une régression). Petit lot.
+- [x] Objectif dans la vue « Par année » + barre alignée sur CA généré (mois + année, 3 modes) ✅ 18/06 (14346as) — KPI haut == barre mois == barre année, incohérence net/CA fermée.
 
 
 ##### Décisions verrouillées finances
@@ -289,16 +287,17 @@ Prévisionnel · Réel · Suivi financier · Facturation
 
 
 #### Bloc F — En dernier : réactiver modules neutralisés
+##### A FAIRE
 - [ ] **Réactiver Messagerie + Statistiques** (code conservé à `3dbd6f1`). Adapter au multi-tenant (RLS agence messages, scope agence stats). + resserrer policy INSERT `notifications` ici.
 - [ ] **Notif mail upload facture** : agente upload F1 → mail admin ; admin upload → mail agente + redevance cochée des deux côtés ? À cadrer (déclencheur, destinataire, contenu).
 - [ ] **Automatisme cochage redevance** : statut « reçu » auto quand l'admin rentre sa facture du mois ? Lié à la notif ci-dessus.
 - [ ] **Intégration Google Drive** (piste future) : connecter les documents chantier à Drive. Carte retirée le 12/06 (bouton mort). À construire si besoin confirmé.
 - [ ] **Bouton « Connecter » générique mort** (paramètres l.708, sert Google Calendar) : à câbler/retirer DANS la refonte calendrier (module en quarantaine).
 - [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
-- [x] Comparateur de devis dans les dossiers ✅ 17/06 (8faf611)
 - [ ] **Chantiers : résumé en panneau latéral** sans quitter la liste.
 
-
+##### ✅ FAIT
+- [x] Comparateur de devis dans les dossiers ✅ 17/06 (8faf611)
 - [x] KPIs page chantier : montant prévu + réel ✅ 17/06 (3401841)
 - [x] Restitution : factures artisans + RIB/KBIS franchisé ✅ 17/06 (6ef0cfd)
 - [x] Dossier de fin — Lot 1 (factures + RIB/KBIS franchisé) ✅ 17/06 (6ef0cfd)
