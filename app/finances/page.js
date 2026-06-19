@@ -1866,11 +1866,13 @@ export default function Finances() {
     const objectifAnnuelCible = isAdmin ? getObjectif('agence') : (objAgentePerso || objAgenceDeLAgente || 0)
     const objectifMensuel = round2(objectifAnnuelCible / 12)
     const netLabel = isCTP ? 'Société' : (mode === 'agent' ? 'Agente' : 'Agence')
-    const objectifLabel = isAdmin
-      ? `Objectif mensuel ${netLabel} (${fmt(objectifMensuel)}/mois)`
-      : objectifSource === 'perso'  ? `Objectif mensuel (${fmt(objectifMensuel)}/mois)`
-      : objectifSource === 'agence' ? `Objectif agence (${fmt(objectifMensuel)}/mois)`
-      : 'Objectif non défini'
+    // Libellé objectif : la barre mesure le CA GÉNÉRÉ du périmètre (≠ « Résultat net »
+    // du tableau société), d'où le « CA généré » explicite + l'échelle (mois/an).
+    const objectifLabelPour = (montant, suffixe) =>
+        objectifAnnuelCible <= 0      ? 'Objectif non défini'
+      : isAdmin                       ? `Objectif CA généré ${netLabel} (${fmt(montant)}${suffixe})`
+      : objectifSource === 'perso'    ? `Objectif CA généré (${fmt(montant)}${suffixe})`
+      :                                 `Objectif CA généré agence (${fmt(montant)}${suffixe})`
 
     // CA généré : l'apporteur remboursé est déduit pour son COÛT TOTAL dans les 3
     // modes (agent inclus) — c'est un flux sortant, pas une part perso.
@@ -1901,6 +1903,10 @@ export default function Finances() {
       const reelCharges  = isCTP ? round2((r.gainsAgenteReels||0) + reelApporteur) : reelApporteur
       return { p, r, previProduits, reelProduits, previApporteur, reelApporteur, previCharges, reelCharges, previNet: round2(previProduits - previCharges), reelNet: round2(reelProduits - reelCharges) }
     }
+    // CA généré d'un mois pour le périmètre (mode-agnostique) : produits nets − apporteur
+    // total, SANS soustraire les parts agentes. En agent/agence, = reelNet ; en société,
+    // = reelNet + parts. La somme annuelle = totalCAGenere (aligné sur le KPI haut).
+    const caGenerePourCle = (cle) => { const x = comptePourCle(cle); return round2(x.reelProduits - x.reelApporteur) }
     const ecart = (pv, rv) => { const e = round2(rv - pv); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
 
     // Détail compte de résultat (RÉEL uniquement) d'un mois — vue groupée par encaissement.
@@ -2031,6 +2037,12 @@ export default function Finances() {
       const chartNetAnnee = anneesAsc.map(y => sumAnnee(y, 'reelNet'))
       return (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {/* CA généré annuel du périmètre (= totalCAGenere, année courante, mode-agnostique) —
+              même valeur que le KPI haut → même %. Libellé « /an » pour ne pas confondre
+              avec le « Réel net » du tableau ci-dessous (mode société). */}
+          <ObjectifBar label={objectifLabelPour(objectifAnnuelCible, '/an')}
+            reel={totalCAGenere}
+            objectifMontant={objectifAnnuelCible} cible="agence" canEdit={false} />
           <div className="card" style={{overflow:'hidden'}}>
           <table style={{width:'100%',fontSize:13}}>
             <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
@@ -2089,9 +2101,10 @@ export default function Finances() {
         {sfSousOnglet === 'mois' && (
           <div style={{display:'flex',flexDirection:'column',gap:20}}>
             {/* cible="agence" : prop morte tant que canEdit={false} (jamais lue —
-                onSave n'est pas fourni et le bloc d'édition est inaccessible). */}
-            <ObjectifBar label={objectifLabel}
-              reel={comptePourCle(moisCourantCle).reelNet}
+                onSave n'est pas fourni et le bloc d'édition est inaccessible).
+                reel = CA généré du mois (≠ résultat net) — cohérent avec le KPI haut. */}
+            <ObjectifBar label={objectifLabelPour(objectifMensuel, '/mois')}
+              reel={caGenerePourCle(moisCourantCle)}
               objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
             <div className="card" style={{overflow:'hidden'}}>
               <table style={{width:'100%',fontSize:11}}>
