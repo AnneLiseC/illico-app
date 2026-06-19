@@ -677,7 +677,7 @@ export default function Finances() {
   const [periodeOuverte, setPeriodeOuverte]         = useState(null)
   const [sfSousOngletCTP, setSfSousOngletCTP]       = useState('mois')
   // Changement d'onglet : Suivi/Facturation n'ont pas le pill Périmètre →
-  // on réinitialise le scope à 'tous' pour éviter un filtre invisible hérité de F1/F2.
+  // on réinitialise le scope à 'tous' pour éviter un filtre invisible hérité de Prévisionnel/Réel.
   const handleTab = (key) => {
     if (key === 'suivi' || key === 'facturation') setScope('tous')
     setTab(key)
@@ -2088,6 +2088,8 @@ export default function Finances() {
         />
         {sfSousOnglet === 'mois' && (
           <div style={{display:'flex',flexDirection:'column',gap:20}}>
+            {/* cible="agence" : prop morte tant que canEdit={false} (jamais lue —
+                onSave n'est pas fourni et le bloc d'édition est inaccessible). */}
             <ObjectifBar label={objectifLabel}
               reel={comptePourCle(moisCourantCle).reelNet}
               objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
@@ -2191,7 +2193,7 @@ export default function Finances() {
           tone="brand"/>
       </div>
 
-      {/* ── F1 PRÉVISIONNEL ── */}
+      {/* ── PRÉVISIONNEL ── */}
       {tab === 'previsionnel' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
           <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
@@ -2232,7 +2234,7 @@ export default function Finances() {
         </div>
       )}
 
-      {/* ── F2 RÉEL ── */}
+      {/* ── RÉEL ── */}
       {tab === 'reel' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
           <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
@@ -2302,7 +2304,7 @@ export default function Finances() {
             </select>
           </div>
 
-          {/* ZONE 2 — sous-onglet Mois/Année + objectif + compte de résultat + graphe Gains/Charges */}
+          {/* ZONE 2 — sous-onglet Mois/Année + objectif + compte de résultat + graphe Produits/Reversements */}
           {renderSuiviFinancier(!isAdmin ? 'agent' : suiviMode)}
 
           {/* ZONE 3 — graphe barres Réel/Prévi + deux donuts côte à côte */}
