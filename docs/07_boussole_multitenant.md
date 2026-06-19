@@ -243,6 +243,10 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] Compte de résultat « CA généré » (3 modes unifiés) ✅ 18/06 (c2cf533) — formule CA = brut−royalty−apporteur total ; société −parts. KPI alignés (CA généré / Part franchisée). Bug royalty×2 société corrigé.
 - [x] RLS objectifs_ca durcie + prouvée (4 policies, brèches b/c fermées, 5 tests SQL verts) ✅ 18/06
 - [x] Lot 2 — Objectif perso agente éditable (RLS durcie + écran profil) ✅ 18/06 — l'agente fixe son objectif CA, last-write-wins avec l'admin (même ligne). Notif de changement = reportée (bloc notifs).
+
+- [ ] **Objectif dans la vue « Par année »** du compte de résultat : la barre objectif n'existe qu'en vue « Par mois ». Ajouter l'affichage de l'objectif (échelle CA généré) en vue année. Gap d'affichage (jamais existé, pas une régression). Petit lot.
+
+
 ##### Décisions verrouillées finances
 - D1 : Renommer F1 Prévisionnel → Prévisionnel / F2 Réel → Réel
 - D2 : Vue mois/année Réel = encaissements réels par date paiement
@@ -291,7 +295,7 @@ Prévisionnel · Réel · Suivi financier · Facturation
 - [ ] **Intégration Google Drive** (piste future) : connecter les documents chantier à Drive. Carte retirée le 12/06 (bouton mort). À construire si besoin confirmé.
 - [ ] **Bouton « Connecter » générique mort** (paramètres l.708, sert Google Calendar) : à câbler/retirer DANS la refonte calendrier (module en quarantaine).
 - [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
-- [ ] comparateur dans les dossiers
+- [x] Comparateur de devis dans les dossiers ✅ 17/06 (8faf611)
 - [ ] **Chantiers : résumé en panneau latéral** sans quitter la liste.
 
 
@@ -341,7 +345,7 @@ Reste hors staff : C7 espace-client + RLS client → BLOC ESPACE CLIENT dédié 
 - Next.js / Supabase / Tailwind / Vercel. Repo `github.com/AnneLiseC/illico-app`. Projet Supabase `illico-app` (`tfqtzfyavitrcsgbuueq`).
 - **Source de vérité CALCULS** : `app/lib/finance.js`.
 - Société CTP : `ef2128ea-4660-4c74-ba17-6910be523efd`. Agence Martigues : `0fe5e7a1-4015-40cc-9854-e60d03b56ab9` (code MA00).
-- Société de test (onboarding) « TEST 1 » : `65fad1cc-700d-4d1d-9524-ad972718bb39`, admin epfedu `d77de619-bfa1-4907-999c-51a9f74da2eb`. **Terrain de test MULTI-AGENCE : 2 agences** (MA00 « illiCO TEST » Marseille `426ca388` + MO00 « illCO travaux TEST 3 » Montpellier `8759fabb`).
+- Société de test (onboarding) « TEST 1 » : `65fad1cc-700d-4d1d-9524-ad972718bb39`, admin epfedu `d77de619-bfa1-4907-999c-51a9f74da2eb`. **Terrain de test MULTI-AGENCE : 3 agences** (MA00 « illiCO TEST » Marseille `426ca388` + MO00 « illCO travaux TEST 3 » Montpellier `8759fabb` + PA00 « AGENCE » Paris `9a2557db`).
 
 ### Acteurs de test
 - Admin CTP (Marine) : `048e524e-1973-406d-8a41-620bbb8a6a14` (agence_id NULL).
