@@ -357,7 +357,6 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
     if (f2?.statut === 'paye') totalF2Paye = round2(totalF2Paye + f2eff)
   })
   const totalRedev = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => round2(s + (r.montant_ht || 0)), 0)
-  const net        = round2(totalF1 - totalF2)
 
   const uploadPdf = async (f, fichier) => {
     setErreur(''); setSucces('')
@@ -492,7 +491,6 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
               <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F1</th>
               {thR('F2 (Société → Agente)')}
               <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F2</th>
-              {thR('Net')}
             </tr>
           </thead>
           <tbody>
@@ -506,7 +504,6 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
               const d   = calcMois(annee, mois)
               const f1m = f1Eff(f1, d.montantF1)
               const f2m = f2Eff(f2, d.montantF2)
-              const n   = round2(f1m - f2m)
               const isOpen = moisDeplie === key
               const voirPdf = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }
               return (
@@ -552,19 +549,16 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                       <StatutFacture f={f2}/>
                     )}
                   </td>
-                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:n>=0?'var(--brand-800)':'#b91c1c',fontVariantNumeric:'tabular-nums'}}>
-                    {n >= 0 ? '+' : ''}{fmt(n)}
-                  </td>
                 </tr>
                 {isOpen && (
                   <tr style={{background:'var(--surface-2)'}}>
-                    <td colSpan={6} style={{padding:'4px 16px 16px'}}>
+                    <td colSpan={5} style={{padding:'4px 16px 16px'}}>
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,maxWidth:720}}>
                         <div style={{display:'flex',flexDirection:'column',gap:6}}>
                           <div className="eyebrow" style={{color:'#15803d'}}>F1 — Agente facture la Société</div>
                           {d.fraisN > 0 && <Row label="Frais de consultation" value={fmt(d.fraisN)} />}
                           {d.comN   > 0 && <Row label="Commissions artisans"   value={fmt(d.comN)} />}
-                          {d.honN   > 0 && <Row label="Honoraires (courtage + AMO)" value={fmt(d.honN)} />}
+                          {d.honN   > 0 && <Row label="Honoraires" value={fmt(d.honN)} />}
                           {d.partN  > 0 && <Row label="Part partenaire"         value={fmt(d.partN)} />}
                           {f1m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucun gain encaissé ce mois</span>}
                           <Row label="Total F1" value={fmt(f1m)} bold accent />
@@ -586,7 +580,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
               )
             })}
             {months.length === 0 && (
-              <tr><td colSpan={6} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-400)'}}>Aucune facturation à afficher</td></tr>
+              <tr><td colSpan={5} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-400)'}}>Aucune facturation à afficher</td></tr>
             )}
           </tbody>
           {months.length > 0 && (
@@ -597,9 +591,6 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                 <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF1Paye)} reçu</td>
                 <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#b91c1c',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF2)}</td>
                 <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF2Paye)} reçu</td>
-                <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,fontSize:15,fontVariantNumeric:'tabular-nums',color:net>=0?'var(--brand-800)':'#b91c1c'}}>
-                  {net >= 0 ? '+' : ''}{fmt(net)}
-                </td>
               </tr>
             </tfoot>
           )}
@@ -647,6 +638,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
           {redevAg.filter(r => r.statut === 'regle').length} mois réglés ·
           <span style={{fontWeight:700,color:'var(--brand-800)',marginLeft:6,fontVariantNumeric:'tabular-nums'}}>{fmt(totalRedev)}</span> sur l&apos;année
         </div>
+        <div className="eyebrow" style={{marginTop:8,color:'var(--ink-400)'}}>Redevance due au titre du mois d&apos;activité</div>
       </div>
     </div>
   )
@@ -781,6 +773,14 @@ export default function Finances() {
     if (scope === 'tous' || scope === 'moi') return
     if (!agentes.some(a => a.id === scope && a.agence_id === agenceActive)) setScope('tous')
   }, [agenceActive, profile?.role, scope, agentes])
+
+  // L16 — Facturation : si l'agente sélectionnée n'appartient pas à l'agence active,
+  // la désélectionner (miroir de l'effet scope ci-dessus). agenceActive null (consolidé)
+  // ou mono-agence → toutes les agentes restent dans le périmètre → aucun reset.
+  useEffect(() => {
+    if (profile?.role !== 'admin' || !agenceActive || !agenteSelectionnee) return
+    if (!agentes.some(a => a.id === agenteSelectionnee && a.agence_id === agenceActive)) setAgenteSelectionnee(null)
+  }, [agenceActive, profile?.role, agenteSelectionnee, agentes])
 
   // ── HELPERS PROFIL ─────────────────────────────────────────────────────────
 
@@ -1543,12 +1543,13 @@ export default function Finances() {
       return {
         fraisHT:   round2(acc.fraisHT   + (isReel ? r.fraisBrutReel     : c.fraisHT)),
         comHT:     round2(acc.comHT     + (isReel ? r.comBruteEncaissee : c.comHT)),
+        honoraires:round2(acc.honoraires + (isReel ? r.honReelBrut      : c.honPreviBrut)),
         royalties: round2(acc.royalties + (isReel ? r.royaltyReelle     : c.royaltyPreviActifs)),
         net:       round2(acc.net + (isReel
           ? (r.gainAdminReel + r.gainsAgenteReels)
           : (c.gainsAdminPreviTotal + c.gainsAgentePreviTotal))),
       }
-    }, { fraisHT: 0, comHT: 0, royalties: 0, net: 0 })
+    }, { fraisHT: 0, comHT: 0, honoraires: 0, royalties: 0, net: 0 })
 
     return (
       <div className="card" style={{padding:0,overflow:'hidden'}}>
@@ -1571,6 +1572,7 @@ export default function Finances() {
               <Th>Statut</Th>
               <Th right>Frais de consultation</Th>
               <Th right>Commissions HT</Th>
+              <Th right>Honoraires</Th>
               <Th right>Royalties</Th>
               <Th right>Net {isReel ? 'réel' : 'prévisionnel'}</Th>
               <Th right>Avancement</Th>
@@ -1623,6 +1625,7 @@ export default function Finances() {
                     </Td>
                     <Td right mono>{fmt(isReel ? r.fraisBrutReel : c.fraisHT)}</Td>
                     <Td right mono>{fmt(isReel ? r.comBruteEncaissee : c.comHT)}</Td>
+                    <Td right mono>{fmt(isReel ? r.honReelBrut : c.honPreviBrut)}</Td>
                     <Td right mono dim>{fmt(isReel ? r.royaltyReelle : c.royaltyPreviActifs)}</Td>
                     <Td right mono bold accent={net > 0}>{fmt(net)}</Td>
                     <Td right>
@@ -1636,7 +1639,7 @@ export default function Finances() {
                     <Td right><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></Td>
                   </tr>
                   {isOpen && !isMobile && (
-                    <tr><td colSpan={9} style={{padding:0,borderTop:'1px solid var(--ink-100)'}}>
+                    <tr><td colSpan={10} style={{padding:0,borderTop:'1px solid var(--ink-100)'}}>
                       {renderDossierDetail(d, isReel)}
                     </td></tr>
                   )}
@@ -1644,7 +1647,7 @@ export default function Finances() {
               )
             })}
             {listeDossiers.length === 0 && (
-              <tr><td colSpan={9} style={{textAlign:'center',color:'var(--ink-400)',fontSize:13,padding:'32px 0'}}>Aucun chantier</td></tr>
+              <tr><td colSpan={10} style={{textAlign:'center',color:'var(--ink-400)',fontSize:13,padding:'32px 0'}}>Aucun chantier</td></tr>
             )}
           </tbody>
           {listeDossiers.length > 0 && (
@@ -1653,6 +1656,7 @@ export default function Finances() {
                 <td colSpan={3} style={{padding:'12px 16px',fontSize:12,fontWeight:700,color:'var(--ink-600)'}}>Total ({listeDossiers.length})</td>
                 <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.fraisHT)}</td>
                 <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.comHT)}</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.honoraires)}</td>
                 <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-400)'}}>{fmt(totals.royalties)}</td>
                 <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--brand-800)'}}>{fmt(totals.net)}</td>
                 <td colSpan={2}/>
@@ -1866,11 +1870,13 @@ export default function Finances() {
     const objectifAnnuelCible = isAdmin ? getObjectif('agence') : (objAgentePerso || objAgenceDeLAgente || 0)
     const objectifMensuel = round2(objectifAnnuelCible / 12)
     const netLabel = isCTP ? 'Société' : (mode === 'agent' ? 'Agente' : 'Agence')
-    const objectifLabel = isAdmin
-      ? `Objectif mensuel ${netLabel} (${fmt(objectifMensuel)}/mois)`
-      : objectifSource === 'perso'  ? `Objectif mensuel (${fmt(objectifMensuel)}/mois)`
-      : objectifSource === 'agence' ? `Objectif agence (${fmt(objectifMensuel)}/mois)`
-      : 'Objectif non défini'
+    // Libellé objectif : la barre mesure le CA GÉNÉRÉ du périmètre (≠ « Résultat net »
+    // du tableau société), d'où le « CA généré » explicite + l'échelle (mois/an).
+    const objectifLabelPour = (montant, suffixe) =>
+        objectifAnnuelCible <= 0      ? 'Objectif non défini'
+      : isAdmin                       ? `Objectif CA généré ${netLabel} (${fmt(montant)}${suffixe})`
+      : objectifSource === 'perso'    ? `Objectif CA généré (${fmt(montant)}${suffixe})`
+      :                                 `Objectif CA généré agence (${fmt(montant)}${suffixe})`
 
     // CA généré : l'apporteur remboursé est déduit pour son COÛT TOTAL dans les 3
     // modes (agent inclus) — c'est un flux sortant, pas une part perso.
@@ -1901,6 +1907,10 @@ export default function Finances() {
       const reelCharges  = isCTP ? round2((r.gainsAgenteReels||0) + reelApporteur) : reelApporteur
       return { p, r, previProduits, reelProduits, previApporteur, reelApporteur, previCharges, reelCharges, previNet: round2(previProduits - previCharges), reelNet: round2(reelProduits - reelCharges) }
     }
+    // CA généré d'un mois pour le périmètre (mode-agnostique) : produits nets − apporteur
+    // total, SANS soustraire les parts agentes. En agent/agence, = reelNet ; en société,
+    // = reelNet + parts. La somme annuelle = totalCAGenere (aligné sur le KPI haut).
+    const caGenerePourCle = (cle) => { const x = comptePourCle(cle); return round2(x.reelProduits - x.reelApporteur) }
     const ecart = (pv, rv) => { const e = round2(rv - pv); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
 
     // Détail compte de résultat (RÉEL uniquement) d'un mois — vue groupée par encaissement.
@@ -2031,6 +2041,12 @@ export default function Finances() {
       const chartNetAnnee = anneesAsc.map(y => sumAnnee(y, 'reelNet'))
       return (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {/* CA généré annuel du périmètre (= totalCAGenere, année courante, mode-agnostique) —
+              même valeur que le KPI haut → même %. Libellé « /an » pour ne pas confondre
+              avec le « Réel net » du tableau ci-dessous (mode société). */}
+          <ObjectifBar label={objectifLabelPour(objectifAnnuelCible, '/an')}
+            reel={totalCAGenere}
+            objectifMontant={objectifAnnuelCible} cible="agence" canEdit={false} />
           <div className="card" style={{overflow:'hidden'}}>
           <table style={{width:'100%',fontSize:13}}>
             <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
@@ -2089,9 +2105,10 @@ export default function Finances() {
         {sfSousOnglet === 'mois' && (
           <div style={{display:'flex',flexDirection:'column',gap:20}}>
             {/* cible="agence" : prop morte tant que canEdit={false} (jamais lue —
-                onSave n'est pas fourni et le bloc d'édition est inaccessible). */}
-            <ObjectifBar label={objectifLabel}
-              reel={comptePourCle(moisCourantCle).reelNet}
+                onSave n'est pas fourni et le bloc d'édition est inaccessible).
+                reel = CA généré du mois (≠ résultat net) — cohérent avec le KPI haut. */}
+            <ObjectifBar label={objectifLabelPour(objectifMensuel, '/mois')}
+              reel={caGenerePourCle(moisCourantCle)}
               objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
             <div className="card" style={{overflow:'hidden'}}>
               <table style={{width:'100%',fontSize:11}}>
@@ -2315,7 +2332,7 @@ export default function Finances() {
       {/* ── FACTURATION — même composant, données filtrées sur agente connectée ── */}
       {tab === 'facturation' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <FacturationAgentes facturesAgente={facturesAgente} agenteSelectionnee={agenteSelectionnee} setAgenteSelectionnee={setAgenteSelectionnee} redevancesAgente={redevancesAgente} agrégerParPaiement={agrégerParPaiement} dossiersAgente={dossiersAgente} agenteActuelle={agenteActuelle} erreur={erreur} succes={succes} setErreur={setErreur} setSucces={setSucces} upsertFactureMoisType={upsertFactureMoisType} isAdmin={isAdmin} agentes={agentes} anneeEnCours={anneeEnCours} />
+          <FacturationAgentes facturesAgente={facturesAgente} agenteSelectionnee={agenteSelectionnee} setAgenteSelectionnee={setAgenteSelectionnee} redevancesAgente={redevancesAgente} agrégerParPaiement={agrégerParPaiement} dossiersAgente={dossiersAgente} agenteActuelle={agenteActuelle} erreur={erreur} succes={succes} setErreur={setErreur} setSucces={setSucces} upsertFactureMoisType={upsertFactureMoisType} isAdmin={isAdmin} agentes={agentesScope} anneeEnCours={anneeEnCours} />
         </div>
       )}
 

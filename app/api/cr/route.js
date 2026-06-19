@@ -43,8 +43,8 @@ ${type === 'r3' ? `CONTEXTE R3 : Cette visite réunit UNIQUEMENT le courtier ill
 
 CONSIGNES :
 - Ton professionnel, précis, clair — style AMO (Assistance à Maîtrise d'Ouvrage)
-- Français impeccable
-- Reprendre exactement les noms des artisans, pièces, produits mentionnés dans les notes
+- Français impeccable : corrige l'orthographe, la grammaire et la conjugaison du texte que tu rédiges (les notes peuvent contenir des fautes de saisie ou de dictée vocale)
+- Reprendre exactement les noms des artisans, pièces, produits ET le nom et le prénom du client (maître d'ouvrage) tels que fournis — ne JAMAIS « corriger », accentuer ni modifier un nom propre, une raison sociale ou un terme technique, même s'il semble inhabituel ou comporte une faute
 - Mettre en valeur les points critiques, retards, incidents, décisions importantes
 - Si des images sont fournies (photos de cahier, captures), extraire et intégrer leur contenu
 
@@ -71,7 +71,7 @@ RÉPONSE : JSON strict uniquement, aucun texte avant ou après :
 }`
 }
 
-function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants, notesBrutes, numeroCR }) {
+function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants, notesBrutes }) {
   const client = dossier.client
   const nomClient = client ? formatNomClient(client, { civilite: true }) : 'Client inconnu'
 
@@ -87,7 +87,6 @@ function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants,
     - Type de prestation : ${dossier.typologie?.toUpperCase() || ''}
     - Référente illiCO : ${dossier.referente ? `${dossier.referente.prenom} ${dossier.referente.nom}` : ''}
     - Artisans du chantier : ${artisansChantier.join(', ') || 'Aucun devis accepté'}
-    - Numéro de CR : N°${numeroCR}
 
     VISITE :
     - Date : ${dateVisite ? new Date(dateVisite).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Non précisée'}
@@ -149,17 +148,10 @@ export async function POST(request) {
       .select('*, artisan:artisans(id, entreprise)')
       .eq('dossier_id', dossierId)
 
-    // Numéro du prochain CR
-    const { count } = await supabaseAdmin
-      .from('comptes_rendus')
-      .select('*', { count: 'exact', head: true })
-      .eq('dossier_id', dossierId)
-    const numeroCR = (count || 0) + 1
-
     // Construire les messages Claude
     const agenceNom = dossier.agence?.nom || 'illiCO travaux'
     const systemPrompt = buildSystemPrompt(typeVisite, agenceNom)
-    const userText = buildUserPrompt({ dossier, devis: devis || [], typeVisite, dateVisite, intervenants, notesBrutes: notesBrutes || '', numeroCR })
+    const userText = buildUserPrompt({ dossier, devis: devis || [], typeVisite, dateVisite, intervenants, notesBrutes: notesBrutes || '' })
 
     const userContent = []
 
@@ -210,6 +202,7 @@ export async function POST(request) {
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 4000,
+        temperature: 0.3,
         system: systemPrompt,
         messages: [{ role: 'user', content: userContent }],
       }),
@@ -231,7 +224,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Réponse IA invalide', raw: rawText }, { status: 500 })
     }
 
-    return NextResponse.json({ cr: crJSON, numeroCR })
+    return NextResponse.json({ cr: crJSON })
   } catch (err) {
     console.error('CR AI error DETAIL:', err.message, err.stack)
     return NextResponse.json({ error: err.message || 'Erreur serveur' }, { status: 500 })
