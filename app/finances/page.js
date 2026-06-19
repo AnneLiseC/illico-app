@@ -881,6 +881,18 @@ export default function Finances() {
 
       // Prévisionnel honoraires (tous devis actifs)
       honPreviNet:    round2(f.honorairesPrevi.totalNet),
+      // Honoraires BRUT prévisionnel (avant royalties) — courtage + AMO, base devis actifs.
+      honPreviBrut:   round2(f.honorairesPrevi.courtage.ht + f.honorairesPrevi.soldeAmo.ht),
+      // Royalty PRÉVI sur base ACTIFS (miroir prévi de royaltyReelle) — somme des
+      // royalties DÉJÀ ARRONDIES PAR COMPOSANT (méthode illiCO, aucun recalcul).
+      // Affichage uniquement ; n'entre pas dans le calcul du net. Le frais suit le
+      // MÊME gating que le net prévi (exclu si 'offerts').
+      royaltyPreviActifs: round2(
+        ((f.frais.net > 0 && d.frais_statut !== 'offerts') ? f.frais.royalties : 0) +
+        f.commissions.royaltiesType2 +
+        f.honorairesPrevi.courtage.royalties +
+        f.honorairesPrevi.soldeAmo.royalties
+      ),
 
       // Gains prévisionnels complets
       gainsAgentePreviTotal: round2(
@@ -912,25 +924,39 @@ export default function Finances() {
       const soldeAmoNetM = amoRegle ? c.amoNet : 0
       const honReel = round2((courtageRegle ? c.courtNet : 0) + soldeAmoNetM)
       let comReelNet = 0
+      let comBruteEncaissee = 0       // AJOUT affichage : Σ comHT brut des devis encaissés
+      let royaltiesComReel = 0        // AJOUT affichage : Σ royalties (par devis, déjà arrondies)
       for (const dv of c.devisAcceptes) {
         if (dv.artisan?.paiement_direct) continue
         const artId = dv.artisan_id || dv.artisan?.id
         const dvF = c.devisFinanceMap.get(dv.id)
         if (!dvF) continue
         const suivi = getSuivi(d, 'acompte_artisan', artId)
-        if (suivi?.statut_illico === 'recu') comReelNet = round2(comReelNet + dvF.netCom)
+        if (suivi?.statut_illico === 'recu') {
+          comReelNet        = round2(comReelNet        + dvF.netCom)
+          comBruteEncaissee = round2(comBruteEncaissee + dvF.comHT)
+          royaltiesComReel  = round2(royaltiesComReel  + dvF.royaltiesType2)
+        }
       }
-      const comApporteursReel = round2(
-        c.finance.commissions.devis
-          .filter(dv => dv.isApporteur && dv.signed)
-          .reduce((s, dv) => s + dv.netCom, 0)
-      )
+      const apporteursReels = c.finance.commissions.devis.filter(dv => dv.isApporteur && dv.signed)
+      const comApporteursReel = round2(apporteursReels.reduce((s, dv) => s + dv.netCom, 0))
+      comBruteEncaissee = round2(comBruteEncaissee + apporteursReels.reduce((s, dv) => s + dv.comHT, 0))
+      const royaltiesComApporteursReel = round2(apporteursReels.reduce((s, dv) => s + dv.royaltiesType2, 0))
       // Réel = coût apporteur sur les acomptes débloqués (finance.js).
       // Admin référent porte tout (part_agente = 0).
       const apporteurRetire = c.apporteurAdminReel
 
+      // AJOUTS affichage (brut/royalty réels) — n'entrent PAS dans le calcul du net.
+      const fraisBrutReel = d.frais_statut === 'regle' ? c.fraisHT : 0
+      const honReelBrut = round2((courtageRegle ? c.finance.honoraires.courtage.ht : 0) + (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0))
+      const royaltyReelle = round2(
+        (d.frais_statut === 'regle' ? c.fraisRoyalties : 0) +
+        royaltiesComReel + royaltiesComApporteursReel +
+        (courtageRegle ? c.courtRoyalties : 0) + (amoRegle ? c.amoRoyalties : 0)
+      )
+
       const gainAdminReel = round2(fraisReel + honReel + comReelNet + comApporteursReel - apporteurRetire)
-      return { ...c, fraisReel, fraisAgenteReel: 0, honReel, comReelNet, comApporteursReel, apporteurRembourse: apporteurRetire, gainAgenteReel: 0, gainAdminReel, gainsAgenteReels: 0, soldeAmoNet: soldeAmoNetM, soldeAmoAgente: 0 }
+      return { ...c, fraisReel, fraisAgenteReel: 0, honReel, comReelNet, comApporteursReel, apporteurRembourse: apporteurRetire, gainAgenteReel: 0, gainAdminReel, gainsAgenteReels: 0, soldeAmoNet: soldeAmoNetM, soldeAmoAgente: 0, fraisBrutReel, comBruteEncaissee, honReelBrut, royaltyReelle }
     }
 
     // Frais — HT net si réglé
@@ -962,6 +988,7 @@ export default function Finances() {
     let comReelNet        = 0
     let royaltiesComReel  = 0
     let comAgenteReel     = 0
+    let comBruteEncaissee = 0       // AJOUT affichage : Σ comHT brut des devis encaissés
 
     for (const dv of c.devisAcceptes) {
       if (dv.artisan?.paiement_direct) continue // paiement direct : commission déclenchée dès signé
@@ -971,22 +998,36 @@ export default function Finances() {
       const suivi      = getSuivi(d, 'acompte_artisan', artId)
       const debloque   = suivi?.statut_illico === 'recu'
       if (debloque) {
-        comReelNet       = round2(comReelNet       + dvF.netCom)
-        royaltiesComReel = round2(royaltiesComReel + dvF.royaltiesType2)
-        comAgenteReel    = round2(comAgenteReel    + dvF.parts.agente)
+        comReelNet        = round2(comReelNet        + dvF.netCom)
+        royaltiesComReel  = round2(royaltiesComReel  + dvF.royaltiesType2)
+        comAgenteReel     = round2(comAgenteReel     + dvF.parts.agente)
+        comBruteEncaissee = round2(comBruteEncaissee + dvF.comHT)
       }
     }
 
     // Commissions apporteurs artisans — déclenchées dès devis signé
     let comApporteursReel     = 0
     let comApporteursAgente   = 0
+    let royaltiesComApporteursReel = 0   // AJOUT affichage
     for (const dv of c.devisAcceptes) {
       if (!dv.artisan?.paiement_direct) continue
       const dvF = c.devisFinanceMap.get(dv.id)
       if (!dvF || !dvF.signed) continue
-      comApporteursReel   = round2(comApporteursReel   + dvF.netCom)
-      comApporteursAgente = round2(comApporteursAgente + dvF.parts.agente)
+      comApporteursReel        = round2(comApporteursReel        + dvF.netCom)
+      comApporteursAgente      = round2(comApporteursAgente      + dvF.parts.agente)
+      comBruteEncaissee        = round2(comBruteEncaissee        + dvF.comHT)
+      royaltiesComApporteursReel = round2(royaltiesComApporteursReel + dvF.royaltiesType2)
     }
+
+    // AJOUTS affichage (brut/royalty réels) — n'entrent PAS dans le calcul du net.
+    const fraisBrutReel = fraisRegle ? c.fraisHT : 0
+    const honReelBrut = round2(
+      (courtageRegle ? c.finance.honoraires.courtage.ht : 0) +
+      (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0)
+    )
+    const royaltyReelle = round2(
+      fraisRoyaltiesReel + royaltiesComReel + royaltiesComApporteursReel + royaltiesHonReel
+    )
 
     // Apporteur client réel = part agente sur les acomptes débloqués (finance.js).
     const apporteurRembourse = c.apporteurAgenteReel
@@ -1007,6 +1048,10 @@ export default function Finances() {
       gainAgenteReel,
       gainAdminReel,
       gainsAgenteReels: gainAgenteReel,
+      fraisBrutReel,
+      comBruteEncaissee,
+      honReelBrut,
+      royaltyReelle,
     }
   }
 
@@ -1438,10 +1483,10 @@ export default function Finances() {
           <div style={{padding:14, background:'#fff', borderRadius:10, border:'1px solid var(--ink-200)'}}>
             <div className="eyebrow" style={{marginBottom:10}}>Répartition</div>
             <div style={{display:'flex', flexDirection:'column', gap:8, fontSize:12.5}}>
-              <RepartRow label="Frais consultation HT" value={fmt(isReel ? r.fraisReel : c.fraisNet)} />
-              <RepartRow label="Commissions HT" value={fmt(c.comHT)} />
-              {c.honTotalNet > 0 && <RepartRow label="Honoraires" value={fmt(isReel ? r.honReel : c.honTotalNet)} />}
-              <RepartRow label="Royalties" value={`-${fmt(c.royaltiesTotal)}`} dim />
+              <RepartRow label="Frais consultation HT" value={fmt(isReel ? r.fraisBrutReel : c.fraisHT)} />
+              <RepartRow label="Commissions HT" value={fmt(isReel ? r.comBruteEncaissee : c.comHT)} />
+              {(isReel ? r.honReelBrut : c.honPreviBrut) > 0 && <RepartRow label="Honoraires" value={fmt(isReel ? r.honReelBrut : c.honPreviBrut)} />}
+              <RepartRow label="Royalties" value={`-${fmt(isReel ? r.royaltyReelle : c.royaltyPreviActifs)}`} dim />
               {c.apporteurTotalHT > 0 && (
                 <RepartRow label="Apporteur client" value={`-${fmt(isReel ? r.apporteurRembourse : (c.referentEstAdmin ? c.apporteurAdmin : c.apporteurAgente))}`} accent="warn" />
               )}
@@ -1478,9 +1523,9 @@ export default function Finances() {
       const c = calculer(d)
       const r = calculerReel(d)
       return {
-        fraisHT:   round2(acc.fraisHT   + c.fraisHT),
-        comHT:     round2(acc.comHT     + c.comHT),
-        royalties: round2(acc.royalties + c.royaltiesTotal),
+        fraisHT:   round2(acc.fraisHT   + (isReel ? r.fraisBrutReel     : c.fraisHT)),
+        comHT:     round2(acc.comHT     + (isReel ? r.comBruteEncaissee : c.comHT)),
+        royalties: round2(acc.royalties + (isReel ? r.royaltyReelle     : c.royaltyPreviActifs)),
         net:       round2(acc.net + (isReel
           ? (r.gainAdminReel + r.gainsAgenteReels)
           : (c.gainsAdminPreviTotal + c.gainsAgentePreviTotal))),
@@ -1558,9 +1603,9 @@ export default function Finances() {
                       </span>
                       {nbAlertes > 0 && <span style={{fontSize:10,marginLeft:4,color:'#b91c1c'}}>⚠️ {nbAlertes}</span>}
                     </Td>
-                    <Td right mono>{fmt(c.fraisHT)}</Td>
-                    <Td right mono>{fmt(c.comHT)}</Td>
-                    <Td right mono dim>{fmt(c.royaltiesTotal)}</Td>
+                    <Td right mono>{fmt(isReel ? r.fraisBrutReel : c.fraisHT)}</Td>
+                    <Td right mono>{fmt(isReel ? r.comBruteEncaissee : c.comHT)}</Td>
+                    <Td right mono dim>{fmt(isReel ? r.royaltyReelle : c.royaltyPreviActifs)}</Td>
                     <Td right mono bold accent={net > 0}>{fmt(net)}</Td>
                     <Td right>
                       <div style={{display:'flex',alignItems:'center',gap:8}}>
