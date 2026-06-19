@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import { formatNomClient } from '../lib/clients'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { calculateDossierFinance, getActiveDevis, getSignedDevis, ROYALTIES_RATE, DEFAULT_PART_AGENTE } from '../lib/finance'
+import { calculateDossierFinance, getActiveDevis, getSignedDevis, DEFAULT_PART_AGENTE } from '../lib/finance'
 import { calcStatut } from '../lib/dossiers'
 import { Avatar } from '../components/shared'
 
@@ -1203,6 +1203,9 @@ export default function Finances() {
     comAgenteNet: 0, comApporteursAgenteNet: 0,
     fraisAgenteNet: 0, honAgenteNet: 0,
     apporteurCoutTotalNet: 0, apporteurPartAgenteNet: 0,
+    // Bruts (pré-royalty) + royalty agrégée par bucket — AFFICHAGE « CA généré »
+    // (façon répartition par chantier). Bucketés à la MÊME date que leur net.
+    fraisBrut: 0, comBrut: 0, comApporteursBrut: 0, honBrut: 0, royaltyBucket: 0,
     dossierIds: new Set(),
   })
 
@@ -1228,6 +1231,8 @@ export default function Finances() {
         const key = getKeyFromDate(dateFrais, isAnnee)
         addToKey(key, 'fraisNet', c.fraisReel, d.id)
         addToKey(key, 'fraisAgenteNet', c.fraisAgenteReel ?? c.fraisAgente, d.id)
+        addToKey(key, 'fraisBrut', c.fraisHT, d.id)
+        addToKey(key, 'royaltyBucket', c.fraisRoyalties, d.id)
       }
 
       // Honoraires courtage
@@ -1237,6 +1242,8 @@ export default function Finances() {
         const key = getKeyFromDate(dateCourtage, isAnnee)
         addToKey(key, 'courtNet', c.courtNet, d.id)
         addToKey(key, 'honAgenteNet', c.courtAgente, d.id)
+        addToKey(key, 'honBrut', c.finance.honoraires.courtage.ht, d.id)
+        addToKey(key, 'royaltyBucket', c.courtRoyalties, d.id)
       }
 
       // Solde AMO — part AMO pleine (finance.js), gated par solde_amo réglé.
@@ -1248,6 +1255,8 @@ export default function Finances() {
         const key = getKeyFromDate(dateAmo, isAnnee)
         addToKey(key, 'amoNet', c.soldeAmoNet, d.id)
         addToKey(key, 'honAgenteNet', c.soldeAmoAgente, d.id)
+        addToKey(key, 'honBrut', c.finance.honoraires.soldeAmo.ht, d.id)
+        addToKey(key, 'royaltyBucket', c.amoRoyalties, d.id)
       }
 
       // Commissions artisans normaux
@@ -1262,6 +1271,8 @@ export default function Finances() {
         const key = getKeyFromDate(suiviAcompte.date_deblocage || suiviAcompte.date_paiement, isAnnee)
         addToKey(key, 'comNet', dvF.netCom, d.id)
         addToKey(key, 'comAgenteNet', dvF.parts.agente, d.id)
+        addToKey(key, 'comBrut', dvF.comHT, d.id)
+        addToKey(key, 'royaltyBucket', dvF.royaltiesType2, d.id)
       }
 
       // Commissions paiement direct (déclenchées dès signé — date_signature du devis)
@@ -1272,6 +1283,8 @@ export default function Finances() {
         const key = getKeyFromDate(dv.date_signature, isAnnee)
         addToKey(key, 'comApporteursNet', dvF.netCom, d.id)
         addToKey(key, 'comApporteursAgenteNet', dvF.parts.agente, d.id)
+        addToKey(key, 'comApporteursBrut', dvF.comHT, d.id)
+        addToKey(key, 'royaltyBucket', dvF.royaltiesType2, d.id)
       }
 
             // Apporteur client remboursé par ligne
@@ -1370,12 +1383,16 @@ export default function Finances() {
     return base.filter(r => r.agente_id === scope)
   }, [isAdmin, agenceActive, scope, redevances, mesRedevances, profile?.id])
 
-  const totalNetCTP = (() => {
+  // CA généré (société-level) = Σ produits nets − apporteur TOTAL. Redevance EXCLUE,
+  // royalty embarquée 1× (déjà dans les nets). totalNetCTP = ce CA − parts agentes
+  // (= résultat net société) ; aligné sur la somme annuelle du compte de résultat société.
+  const { totalCAGenere, totalNetCTP } = (() => {
     const keysAnnee = rowsReelScoped.filter(([k]) => k.startsWith(String(anneeEnCours)))
     const reelProduits = keysAnnee.reduce((s, [, agg]) => s + round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0)), 0)
-    const reelRedev = redevancesScoped.filter(r => r.statut === 'regle' && r.annee === anneeEnCours).reduce((s, r) => s + (r.montant_ht || 0), 0)
-    const reelCharges = keysAnnee.reduce((s, [, agg]) => s + (agg.gainsAgenteReels || 0), 0)
-    return round2(reelProduits + reelRedev - reelCharges)
+    const reelApporteur = keysAnnee.reduce((s, [, agg]) => s + (agg.apporteurCoutTotalNet || 0), 0)
+    const reelParts = keysAnnee.reduce((s, [, agg]) => s + (agg.gainsAgenteReels || 0), 0)
+    const caGenere = round2(reelProduits - reelApporteur)
+    return { totalCAGenere: caGenere, totalNetCTP: round2(caGenere - reelParts) }
   })()
 
   // ── PÉRIMÈTRE SCOPÉ ────────────────────────────────────────────────────────
@@ -1386,8 +1403,9 @@ export default function Finances() {
     const totComHT     = scopedDossiers.reduce((s, d) => s + calculer(d).comHT, 0)
     const totFraisHT   = scopedDossiers.reduce((s, d) => s + calculer(d).fraisHT, 0)
     const totRoyalties = scopedDossiers.reduce((s, d) => s + calculer(d).royaltiesTotal, 0)
+    // Objectif d'agence = cible de CA → comparé au CA GÉNÉRÉ (même échelle), pas au net société.
     const objectifAnnuel = getObjectif('agence')
-    const pctObjectif    = objectifAnnuel > 0 ? Math.round(totalNetCTP / objectifAnnuel * 100) : 0
+    const pctObjectif    = objectifAnnuel > 0 ? Math.round(totalCAGenere / objectifAnnuel * 100) : 0
     return { totPreviNet, totComHT, totFraisHT, totRoyalties, objectifAnnuel, pctObjectif }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopedDossiers, objectifs, agenceActive])
@@ -1854,55 +1872,50 @@ export default function Finances() {
       : objectifSource === 'agence' ? `Objectif agence (${fmt(objectifMensuel)}/mois)`
       : 'Objectif non défini'
 
-    // Apporteur remboursé (réel) selon le mode : Société/Agence = coût total, Agente = sa part.
-    const apporteurReelVal = (r) => round2(mode === 'agent' ? (r?.apporteurPartAgenteNet || 0) : (r?.apporteurCoutTotalNet || 0))
-    const royaltiesReelVal = (r) => round2(
-      ((r?.fraisNet || 0) + (r?.comReelNet || 0) + (r?.honReel || 0))
-      * (ROYALTIES_RATE / (1 - ROYALTIES_RATE))
-    )
+    // CA généré : l'apporteur remboursé est déduit pour son COÛT TOTAL dans les 3
+    // modes (agent inclus) — c'est un flux sortant, pas une part perso.
+    const apporteurReelVal = (r) => round2(r?.apporteurCoutTotalNet || 0)
 
     // Prévisionnel agrégé par mois (clé signature/création) — source unique.
     const mapPreviMois = {}
     scopedDossiers.forEach(d => {
       const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
       if (!key) return
-      if (!mapPreviMois[key]) mapPreviMois[key] = { frais:0, com:0, comApport:0, hon:0, partAgentes:0, apporteurTotal:0, apporteurAgente:0, royalties:0 }
+      if (!mapPreviMois[key]) mapPreviMois[key] = { frais:0, com:0, comApport:0, hon:0, partAgentes:0, apporteurTotal:0 }
       const c = calculer(d); const M = mapPreviMois[key]
       M.frais = round2(M.frais + c.fraisNetPrevi); M.com = round2(M.com + c.netComTous); M.comApport = round2(M.comApport + c.comApporteursPrevi)
       M.hon = round2(M.hon + c.honPreviNet); M.partAgentes = round2(M.partAgentes + c.gainsAgentePreviTotal)
-      M.apporteurTotal = round2(M.apporteurTotal + c.apporteurTotalHT); M.apporteurAgente = round2(M.apporteurAgente + c.apporteurAgente)
-      M.royalties = round2(M.royalties + c.royaltiesTotal)
+      M.apporteurTotal = round2(M.apporteurTotal + c.apporteurTotalHT)
     })
-    const redevPourCle = (cle) => { const [a, m] = cle.split('-'); return redevancesScoped.filter(r => r.statut === 'regle' && r.annee === parseInt(a) && r.mois === parseInt(m)).reduce((sum, r) => sum + (r.montant_ht || 0), 0) }
-
     // Compte de résultat (prévi + réel) d'un mois, selon le mode.
+    // CA = produits (nets, royalty embarquée 1×) − apporteur TOTAL [− parts agentes en société].
+    // Redevance EXCLUE (→ Facturation). Royalty jamais re-déduite (déjà dans les nets).
     const comptePourCle = (cle) => {
       const p = mapPreviMois[cle] || {}
       const r = rowsReel.find(([k]) => k === cle)?.[1] || {}
-      const redev = redevPourCle(cle)
-      const previProduits = round2((p.frais||0) + (p.com||0) + (p.hon||0) + (p.comApport||0) + (isCTP ? redev : 0))
-      const reelProduits  = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0))
-      const previApporteur = round2(mode === 'agent' ? (p.apporteurAgente||0) : (p.apporteurTotal||0))
+      const previProduits = round2((p.frais||0) + (p.com||0) + (p.hon||0) + (p.comApport||0))
+      const reelProduits  = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0))
+      const previApporteur = round2(p.apporteurTotal||0)
       const reelApporteur  = apporteurReelVal(r)
-      const previCharges = isCTP ? round2((p.partAgentes||0) + previApporteur + (p.royalties||0)) : previApporteur
-      const reelCharges  = isCTP ? round2((r.gainsAgenteReels||0) + royaltiesReelVal(r) + reelApporteur) : reelApporteur
-      return { p, r, redev, previProduits, reelProduits, previApporteur, reelApporteur, previCharges, reelCharges, previNet: round2(previProduits - previCharges), reelNet: round2(reelProduits - reelCharges) }
+      const previCharges = isCTP ? round2((p.partAgentes||0) + previApporteur) : previApporteur
+      const reelCharges  = isCTP ? round2((r.gainsAgenteReels||0) + reelApporteur) : reelApporteur
+      return { p, r, previProduits, reelProduits, previApporteur, reelApporteur, previCharges, reelCharges, previNet: round2(previProduits - previCharges), reelNet: round2(reelProduits - reelCharges) }
     }
     const ecart = (pv, rv) => { const e = round2(rv - pv); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
 
     // Détail compte de résultat (RÉEL uniquement) d'un mois — vue groupée par encaissement.
     const crPourCle = (cle) => {
       const x = comptePourCle(cle)
+      // Produits en BRUT (pré-royalty), puis royalty déduite 1× → Total produits (net).
       const lignesProduits = [
-        { label: 'Frais de consultation',  r: x.r.fraisNet||0 },
-        { label: 'Commissions illiCO',     r: x.r.comReelNet||0 },
-        { label: 'Honoraires',             r: x.r.honReel||0 },
-        { label: 'Commissions apporteurs', r: x.r.comApporteursReel||0 },
-        ...(isCTP ? [{ label: 'Redevances agentes', r: x.redev }] : []),
-      ]
+        { label: 'Frais de consultation',  r: x.r.fraisBrut||0 },
+        { label: 'Commissions illiCO',     r: x.r.comBrut||0 },
+        { label: 'Commissions apporteurs', r: x.r.comApporteursBrut||0 },
+        { label: 'Honoraires',             r: x.r.honBrut||0 },
+      ].filter(l => l.r !== 0)
+      // Reversements : apporteur (TOTAL) dans tous les modes ; + parts agentes en société.
       const lignesReversements = isCTP
         ? [
-            { label: 'Royalties illiCO',      r: royaltiesReelVal(x.r) },
             { label: 'Parts agentes',         r: x.r.gainsAgenteReels||0 },
             { label: 'Apporteurs remboursés', r: x.reelApporteur },
           ]
@@ -1916,13 +1929,14 @@ export default function Finances() {
             <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Réel</th>
           </tr></thead>
           <tbody>
-            <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Produits</td></tr>
+            <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Produits (brut)</td></tr>
             {lignesProduits.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#15803d',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
-            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total produits</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td></tr>
+            <tr><td style={tdL}>Royalties illiCO</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{`-${fmt(x.r.royaltyBucket||0)}`}</td></tr>
+            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total produits (net)</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td></tr>
             <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Reversements</td></tr>
             {lignesReversements.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
             <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total reversements</td><td style={{...tdR,fontWeight:500,color:'#ef4444'}}>{fmt(x.reelCharges)}</td></tr>
-            <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>Résultat net {netLabel}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:x.reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(x.reelNet)}</td></tr>
+            <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>{isCTP ? 'Résultat net Société' : 'CA généré'}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:x.reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(x.reelNet)}</td></tr>
           </tbody>
         </table>
       )
@@ -2152,7 +2166,7 @@ export default function Finances() {
       {/* KPI strip — même layout pour admin et agente, données scopées */}
       <div className="kpi-grid">
         {isAdmin && (
-          <FinKpiCard label={`CA réel net ${anneeEnCours}`} value={fmt(totalNetCTP)} tone="brand">
+          <FinKpiCard label={`CA généré ${anneeEnCours}`} value={fmt(totalCAGenere)} tone="brand">
             <div style={{marginTop:8}}>
               <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
                 <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
@@ -2171,9 +2185,9 @@ export default function Finances() {
           value={fmt(totComHT)}
           sub={`Frais conso. ${fmt(totFraisHT)} HT`}
           tone="warn"/>
-        <FinKpiCard label={isAdmin ? "Part franchisée" : "Mes gains"}
-          value={fmt(isAdmin ? round2(totalNetCTP-totalGainsAgentesReels) : totalGainsAgentesReels)}
-          sub={isAdmin ? `Part agentes ${fmt(totalGainsAgentesReels)}` : 'Réels encaissés'}
+        <FinKpiCard label={isAdmin ? "Part franchisée" : "CA généré"}
+          value={fmt(isAdmin ? totalNetCTP : totalCAGenere)}
+          sub={isAdmin ? `Part agentes ${fmt(totalGainsAgentesReels)}` : 'Réel encaissé'}
           tone="brand"/>
       </div>
 
