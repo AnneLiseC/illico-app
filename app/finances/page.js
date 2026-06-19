@@ -774,6 +774,14 @@ export default function Finances() {
     if (!agentes.some(a => a.id === scope && a.agence_id === agenceActive)) setScope('tous')
   }, [agenceActive, profile?.role, scope, agentes])
 
+  // L16 — Facturation : si l'agente sélectionnée n'appartient pas à l'agence active,
+  // la désélectionner (miroir de l'effet scope ci-dessus). agenceActive null (consolidé)
+  // ou mono-agence → toutes les agentes restent dans le périmètre → aucun reset.
+  useEffect(() => {
+    if (profile?.role !== 'admin' || !agenceActive || !agenteSelectionnee) return
+    if (!agentes.some(a => a.id === agenteSelectionnee && a.agence_id === agenceActive)) setAgenteSelectionnee(null)
+  }, [agenceActive, profile?.role, agenteSelectionnee, agentes])
+
   // ── HELPERS PROFIL ─────────────────────────────────────────────────────────
 
   const isAdmin     = profile?.role === 'admin'
@@ -2324,7 +2332,7 @@ export default function Finances() {
       {/* ── FACTURATION — même composant, données filtrées sur agente connectée ── */}
       {tab === 'facturation' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <FacturationAgentes facturesAgente={facturesAgente} agenteSelectionnee={agenteSelectionnee} setAgenteSelectionnee={setAgenteSelectionnee} redevancesAgente={redevancesAgente} agrégerParPaiement={agrégerParPaiement} dossiersAgente={dossiersAgente} agenteActuelle={agenteActuelle} erreur={erreur} succes={succes} setErreur={setErreur} setSucces={setSucces} upsertFactureMoisType={upsertFactureMoisType} isAdmin={isAdmin} agentes={agentes} anneeEnCours={anneeEnCours} />
+          <FacturationAgentes facturesAgente={facturesAgente} agenteSelectionnee={agenteSelectionnee} setAgenteSelectionnee={setAgenteSelectionnee} redevancesAgente={redevancesAgente} agrégerParPaiement={agrégerParPaiement} dossiersAgente={dossiersAgente} agenteActuelle={agenteActuelle} erreur={erreur} succes={succes} setErreur={setErreur} setSucces={setSucces} upsertFactureMoisType={upsertFactureMoisType} isAdmin={isAdmin} agentes={agentesScope} anneeEnCours={anneeEnCours} />
         </div>
       )}
 
