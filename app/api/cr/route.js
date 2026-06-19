@@ -43,8 +43,8 @@ ${type === 'r3' ? `CONTEXTE R3 : Cette visite réunit UNIQUEMENT le courtier ill
 
 CONSIGNES :
 - Ton professionnel, précis, clair — style AMO (Assistance à Maîtrise d'Ouvrage)
-- Français impeccable
-- Reprendre exactement les noms des artisans, pièces, produits mentionnés dans les notes
+- Français impeccable : corrige l'orthographe, la grammaire et la conjugaison du texte que tu rédiges (les notes peuvent contenir des fautes de saisie ou de dictée vocale)
+- Reprendre exactement les noms des artisans, pièces, produits mentionnés dans les notes — ne JAMAIS « corriger » un nom propre, une raison sociale ou un terme technique, même s'il semble inhabituel
 - Mettre en valeur les points critiques, retards, incidents, décisions importantes
 - Si des images sont fournies (photos de cahier, captures), extraire et intégrer leur contenu
 
@@ -202,6 +202,7 @@ export async function POST(request) {
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 4000,
+        temperature: 0.3,
         system: systemPrompt,
         messages: [{ role: 'user', content: userContent }],
       }),
