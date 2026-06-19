@@ -1839,8 +1839,20 @@ export default function Finances() {
   const renderSuiviFinancier = (mode) => {
     const isCTP = mode === 'ctp'
     const rowsReel = rowsReelScoped
-    const objectifMensuel = round2(getObjectif('agence') / 12)
+    // Objectif de comparaison (AFFICHAGE) — admin : objectif d'agence (consolidé ou
+    // vue agence) INCHANGÉ ; agente : son objectif PERSONNEL, sinon celui de SON
+    // agence (profiles.agence_id), sinon non défini (on n'affiche jamais 0 comme cible).
+    const objAgentePerso     = getObjectif('agente', profile?.id)
+    const objAgenceDeLAgente = objectifs.find(o => o.cible === 'agence' && o.agence_id === profile?.agence_id)?.montant || 0
+    const objectifSource = isAdmin ? 'agence' : (objAgentePerso ? 'perso' : objAgenceDeLAgente ? 'agence' : 'aucun')
+    const objectifAnnuelCible = isAdmin ? getObjectif('agence') : (objAgentePerso || objAgenceDeLAgente || 0)
+    const objectifMensuel = round2(objectifAnnuelCible / 12)
     const netLabel = isCTP ? 'Société' : (mode === 'agent' ? 'Agente' : 'Agence')
+    const objectifLabel = isAdmin
+      ? `Objectif mensuel ${netLabel} (${fmt(objectifMensuel)}/mois)`
+      : objectifSource === 'perso'  ? `Objectif mensuel (${fmt(objectifMensuel)}/mois)`
+      : objectifSource === 'agence' ? `Objectif agence (${fmt(objectifMensuel)}/mois)`
+      : 'Objectif non défini'
 
     // Apporteur remboursé (réel) selon le mode : Société/Agence = coût total, Agente = sa part.
     const apporteurReelVal = (r) => round2(mode === 'agent' ? (r?.apporteurPartAgenteNet || 0) : (r?.apporteurCoutTotalNet || 0))
@@ -1967,8 +1979,8 @@ export default function Finances() {
             onClick={() => setMoisOuvert(isOpen ? null : `${mode}_${cle}`)}>
             <td style={{padding:'10px 16px',fontWeight:500,color:'var(--ink-700)',display:'flex',alignItems:'center',gap:8}}><span>{label}</span><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></td>
             <td style={{padding:'10px 12px',textAlign:'right',fontWeight:500,color:x.reelNet >= 0 ? '#15803d' : '#dc2626'}}>{fmt(x.reelNet)}</td>
-            <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{fmt(objectifMensuel)}</td>
-            <td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:ecartObj >= 0 ? '#16a34a' : '#ef4444'}}>{ecartObj >= 0 ? '+' : ''}{fmt(ecartObj)}</td>
+            <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{objectifMensuel > 0 ? fmt(objectifMensuel) : '—'}</td>
+            <td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:objectifMensuel > 0 ? (ecartObj >= 0 ? '#16a34a' : '#ef4444') : 'var(--ink-400)'}}>{objectifMensuel > 0 ? `${ecartObj >= 0 ? '+' : ''}${fmt(ecartObj)}` : '—'}</td>
           </tr>
           {isOpen && (<tr style={{background:bg}}><td colSpan={4} style={{padding:'0 16px 12px'}}>{renderMoisDetail(cle)}</td></tr>)}
         </React.Fragment>
@@ -2062,7 +2074,7 @@ export default function Finances() {
         />
         {sfSousOnglet === 'mois' && (
           <div style={{display:'flex',flexDirection:'column',gap:20}}>
-            <ObjectifBar label={`Objectif mensuel ${netLabel} (${fmt(objectifMensuel)}/mois)`}
+            <ObjectifBar label={objectifLabel}
               reel={comptePourCle(moisCourantCle).reelNet}
               objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
             <div className="card" style={{overflow:'hidden'}}>
@@ -2073,7 +2085,7 @@ export default function Finances() {
                   <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-300)',fontWeight:700,fontSize:11}}>
                     <td style={{padding:'10px 16px',color:'var(--ink-700)'}}>Total</td>
                     <td style={{padding:'10px 12px',textAlign:'right',color:totalReelMois >= 0 ? '#15803d' : '#dc2626'}}>{fmt(totalReelMois)}</td>
-                    <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{fmt(objectifMensuel * cles.length)}</td>
+                    <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{objectifMensuel > 0 ? fmt(objectifMensuel * cles.length) : '—'}</td>
                     <td style={{padding:'10px 16px',textAlign:'right',color:'var(--ink-500)'}}>—</td>
                   </tr>
                 </tbody>
