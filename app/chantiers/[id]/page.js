@@ -1639,7 +1639,7 @@ export default function FicheChantier({ params }) {
   // ── GÉNÉRER CR AVEC IA ──
   const genererCRAvecIA = async () => {
     if (!crForm.type_visite) return
-    const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('')
+    const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('\n\n')
     if (!notesCombinees.trim() && crImages.length === 0) return
     setCrGenerating(true)
     try {
@@ -1670,7 +1670,7 @@ export default function FicheChantier({ params }) {
     if (!crGenere) return
     setCrSavingFinal(true)
     const contenuFinal = crSectionsEditees.map(s => `## ${s.numero}. ${s.titre}\n\n${s.contenu}`).join('\n\n')
-    const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('')
+    const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('\n\n')
     const { error: insertErr } = await supabase.from('comptes_rendus').insert({
       dossier_id: id,
       type_visite: crForm.type_visite,
