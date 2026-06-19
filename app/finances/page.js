@@ -357,7 +357,6 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
     if (f2?.statut === 'paye') totalF2Paye = round2(totalF2Paye + f2eff)
   })
   const totalRedev = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => round2(s + (r.montant_ht || 0)), 0)
-  const net        = round2(totalF1 - totalF2)
 
   const uploadPdf = async (f, fichier) => {
     setErreur(''); setSucces('')
@@ -492,7 +491,6 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
               <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F1</th>
               {thR('F2 (Société → Agente)')}
               <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F2</th>
-              {thR('Net')}
             </tr>
           </thead>
           <tbody>
@@ -506,7 +504,6 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
               const d   = calcMois(annee, mois)
               const f1m = f1Eff(f1, d.montantF1)
               const f2m = f2Eff(f2, d.montantF2)
-              const n   = round2(f1m - f2m)
               const isOpen = moisDeplie === key
               const voirPdf = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }
               return (
@@ -552,19 +549,16 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                       <StatutFacture f={f2}/>
                     )}
                   </td>
-                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:n>=0?'var(--brand-800)':'#b91c1c',fontVariantNumeric:'tabular-nums'}}>
-                    {n >= 0 ? '+' : ''}{fmt(n)}
-                  </td>
                 </tr>
                 {isOpen && (
                   <tr style={{background:'var(--surface-2)'}}>
-                    <td colSpan={6} style={{padding:'4px 16px 16px'}}>
+                    <td colSpan={5} style={{padding:'4px 16px 16px'}}>
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,maxWidth:720}}>
                         <div style={{display:'flex',flexDirection:'column',gap:6}}>
                           <div className="eyebrow" style={{color:'#15803d'}}>F1 — Agente facture la Société</div>
                           {d.fraisN > 0 && <Row label="Frais de consultation" value={fmt(d.fraisN)} />}
                           {d.comN   > 0 && <Row label="Commissions artisans"   value={fmt(d.comN)} />}
-                          {d.honN   > 0 && <Row label="Honoraires (courtage + AMO)" value={fmt(d.honN)} />}
+                          {d.honN   > 0 && <Row label="Honoraires" value={fmt(d.honN)} />}
                           {d.partN  > 0 && <Row label="Part partenaire"         value={fmt(d.partN)} />}
                           {f1m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucun gain encaissé ce mois</span>}
                           <Row label="Total F1" value={fmt(f1m)} bold accent />
@@ -586,7 +580,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
               )
             })}
             {months.length === 0 && (
-              <tr><td colSpan={6} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-400)'}}>Aucune facturation à afficher</td></tr>
+              <tr><td colSpan={5} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-400)'}}>Aucune facturation à afficher</td></tr>
             )}
           </tbody>
           {months.length > 0 && (
@@ -597,9 +591,6 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                 <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF1Paye)} reçu</td>
                 <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#b91c1c',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF2)}</td>
                 <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF2Paye)} reçu</td>
-                <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,fontSize:15,fontVariantNumeric:'tabular-nums',color:net>=0?'var(--brand-800)':'#b91c1c'}}>
-                  {net >= 0 ? '+' : ''}{fmt(net)}
-                </td>
               </tr>
             </tfoot>
           )}
@@ -647,6 +638,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
           {redevAg.filter(r => r.statut === 'regle').length} mois réglés ·
           <span style={{fontWeight:700,color:'var(--brand-800)',marginLeft:6,fontVariantNumeric:'tabular-nums'}}>{fmt(totalRedev)}</span> sur l&apos;année
         </div>
+        <div className="eyebrow" style={{marginTop:8,color:'var(--ink-400)'}}>Redevance due au titre du mois d&apos;activité</div>
       </div>
     </div>
   )
