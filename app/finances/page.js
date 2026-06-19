@@ -1535,12 +1535,13 @@ export default function Finances() {
       return {
         fraisHT:   round2(acc.fraisHT   + (isReel ? r.fraisBrutReel     : c.fraisHT)),
         comHT:     round2(acc.comHT     + (isReel ? r.comBruteEncaissee : c.comHT)),
+        honoraires:round2(acc.honoraires + (isReel ? r.honReelBrut      : c.honPreviBrut)),
         royalties: round2(acc.royalties + (isReel ? r.royaltyReelle     : c.royaltyPreviActifs)),
         net:       round2(acc.net + (isReel
           ? (r.gainAdminReel + r.gainsAgenteReels)
           : (c.gainsAdminPreviTotal + c.gainsAgentePreviTotal))),
       }
-    }, { fraisHT: 0, comHT: 0, royalties: 0, net: 0 })
+    }, { fraisHT: 0, comHT: 0, honoraires: 0, royalties: 0, net: 0 })
 
     return (
       <div className="card" style={{padding:0,overflow:'hidden'}}>
@@ -1563,6 +1564,7 @@ export default function Finances() {
               <Th>Statut</Th>
               <Th right>Frais de consultation</Th>
               <Th right>Commissions HT</Th>
+              <Th right>Honoraires</Th>
               <Th right>Royalties</Th>
               <Th right>Net {isReel ? 'réel' : 'prévisionnel'}</Th>
               <Th right>Avancement</Th>
@@ -1615,6 +1617,7 @@ export default function Finances() {
                     </Td>
                     <Td right mono>{fmt(isReel ? r.fraisBrutReel : c.fraisHT)}</Td>
                     <Td right mono>{fmt(isReel ? r.comBruteEncaissee : c.comHT)}</Td>
+                    <Td right mono>{fmt(isReel ? r.honReelBrut : c.honPreviBrut)}</Td>
                     <Td right mono dim>{fmt(isReel ? r.royaltyReelle : c.royaltyPreviActifs)}</Td>
                     <Td right mono bold accent={net > 0}>{fmt(net)}</Td>
                     <Td right>
@@ -1628,7 +1631,7 @@ export default function Finances() {
                     <Td right><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></Td>
                   </tr>
                   {isOpen && !isMobile && (
-                    <tr><td colSpan={9} style={{padding:0,borderTop:'1px solid var(--ink-100)'}}>
+                    <tr><td colSpan={10} style={{padding:0,borderTop:'1px solid var(--ink-100)'}}>
                       {renderDossierDetail(d, isReel)}
                     </td></tr>
                   )}
@@ -1636,7 +1639,7 @@ export default function Finances() {
               )
             })}
             {listeDossiers.length === 0 && (
-              <tr><td colSpan={9} style={{textAlign:'center',color:'var(--ink-400)',fontSize:13,padding:'32px 0'}}>Aucun chantier</td></tr>
+              <tr><td colSpan={10} style={{textAlign:'center',color:'var(--ink-400)',fontSize:13,padding:'32px 0'}}>Aucun chantier</td></tr>
             )}
           </tbody>
           {listeDossiers.length > 0 && (
@@ -1645,6 +1648,7 @@ export default function Finances() {
                 <td colSpan={3} style={{padding:'12px 16px',fontSize:12,fontWeight:700,color:'var(--ink-600)'}}>Total ({listeDossiers.length})</td>
                 <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.fraisHT)}</td>
                 <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.comHT)}</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.honoraires)}</td>
                 <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-400)'}}>{fmt(totals.royalties)}</td>
                 <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--brand-800)'}}>{fmt(totals.net)}</td>
                 <td colSpan={2}/>
