@@ -153,7 +153,7 @@ function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) 
       data: {
         labels,
         datasets: [
-          { type: 'bar', label: 'Gains', data: produitsData, backgroundColor: '#3B7DD8', borderRadius: 3, order: 2 },
+          { type: 'bar', label: 'Produits', data: produitsData, backgroundColor: '#3B7DD8', borderRadius: 3, order: 2 },
           { type: 'bar', label: 'Reversements', data: chargesData, backgroundColor: '#E24B4A', borderRadius: 3, order: 2 },
           { type: 'line', label: 'Résultats', data: netData, borderColor: '#1F5FA6', backgroundColor: 'rgba(31,95,166,0.06)', borderWidth: 2, borderDash: [4, 3], pointRadius: 4, pointBackgroundColor: '#1F5FA6', tension: 0.3, order: 1 }
         ]
@@ -177,7 +177,7 @@ function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) 
     <div className="card" style={{padding:20}}>
       <div style={{display:'flex',gap:16,marginBottom:16,flexWrap:'wrap'}}>
         {[
-          { color: '#3B7DD8', label: 'Gains encaissés' },
+          { color: '#3B7DD8', label: 'Produits encaissés' },
           { color: '#E24B4A', label: 'Reversements' },
           { color: '#1F5FA6', label: 'Résultat', dashed: true },
         ].map(({ color, label, dashed }) => (
@@ -1537,7 +1537,7 @@ export default function Finances() {
         <div style={{padding:'14px 22px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid var(--ink-200)'}}>
           <div>
             <div style={{fontSize:16,fontWeight:700,color:'var(--ink-900)'}}>
-              {isReel ? 'F2 — Encaissements réels' : 'F1 — Engagements prévisionnels'} · {listeDossiers.length} dossiers
+              {isReel ? 'Encaissements réels' : 'Engagements prévisionnels'} · {listeDossiers.length} dossiers
             </div>
             <div className="eyebrow" style={{marginTop:4}}>
               {period === 'chantier' ? 'Détail par chantier' : period === 'mois' ? 'Agrégation par mois de paiement' : 'Agrégation annuelle'}
@@ -1916,9 +1916,9 @@ export default function Finances() {
             <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Réel</th>
           </tr></thead>
           <tbody>
-            <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Gains</td></tr>
+            <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Produits</td></tr>
             {lignesProduits.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#15803d',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
-            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total gains</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td></tr>
+            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total produits</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td></tr>
             <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Reversements</td></tr>
             {lignesReversements.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
             <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total reversements</td><td style={{...tdR,fontWeight:500,color:'#ef4444'}}>{fmt(x.reelCharges)}</td></tr>
@@ -2143,23 +2143,9 @@ export default function Finances() {
 
       {/* Tab bar */}
       <div className="tabs">
-        <button className={`tab ${tab==='previsionnel'?'active':''}`} onClick={() => handleTab('previsionnel')}>
-          <span style={{display:'inline-flex',gap:8,alignItems:'center'}}>
-            <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
-              background:tab==='previsionnel'?'var(--brand-800)':'var(--ink-100)',
-              color:tab==='previsionnel'?'#fff':'var(--ink-500)'}}>F1</span>
-            Prévisionnel
-          </span>
-        </button>
-        <button className={`tab ${tab==='reel'?'active':''}`} onClick={() => handleTab('reel')}>
-          <span style={{display:'inline-flex',gap:8,alignItems:'center'}}>
-            <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
-              background:tab==='reel'?'var(--brand-800)':'var(--ink-100)',
-              color:tab==='reel'?'#fff':'var(--ink-500)'}}>F2</span>
-            Réel
-          </span>
-        </button>
-        <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => handleTab('suivi')}>📈Suivi financier</button>
+        <button className={`tab ${tab==='previsionnel'?'active':''}`} onClick={() => handleTab('previsionnel')}>Prévisionnel</button>
+        <button className={`tab ${tab==='reel'?'active':''}`} onClick={() => handleTab('reel')}>Réel</button>
+        <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => handleTab('suivi')}>📈Compte de résultat</button>
         <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => handleTab('facturation')}>🗒️Facturation agentes</button>
       </div>
 
