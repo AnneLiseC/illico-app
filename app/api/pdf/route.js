@@ -7,6 +7,7 @@ import { formatNomClient } from '../../lib/clients.js'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
+import '../../lib/pdf/fonts.js'
 import path from 'path'
 import fs from 'fs'
 import { requireUser } from '../../lib/api-auth'
@@ -49,39 +50,39 @@ const logoBase64 = getLogoBase64()
 
 // ── Styles ──
 const styles = StyleSheet.create({
-  page: { padding: 32, paddingBottom: 50, fontFamily: 'Helvetica', fontSize: 10, color: '#1F2937' },
+  page: { padding: 32, paddingBottom: 50, fontFamily: 'Roboto', fontSize: 10, color: '#1F2937' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 10, borderBottomWidth: 2, borderBottomColor: BLEU },
   logo: { width: 120, height: 44 },
   headerRight: { alignItems: 'flex-end' },
-  headerTitle: { fontSize: 16, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 2 },
+  headerTitle: { fontSize: 16, fontFamily: 'Roboto-Bold', color: BLEU, marginBottom: 2 },
   headerSub: { fontSize: 8, color: GRIS_TEXTE },
   section: { marginBottom: 10 },
-  sectionTitle: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 5, paddingBottom: 3, borderBottomWidth: 1, borderBottomColor: BLEU_CLAIR },
+  sectionTitle: { fontSize: 10, fontFamily: 'Roboto-Bold', color: BLEU, marginBottom: 5, paddingBottom: 3, borderBottomWidth: 1, borderBottomColor: BLEU_CLAIR },
   infoGrid: { flexDirection: 'row', gap: 16, marginBottom: 3 },
   infoBlock: { flex: 1 },
   infoLabel: { fontSize: 7.5, color: GRIS_TEXTE, marginBottom: 1 },
-  infoValue: { fontSize: 9, fontFamily: 'Helvetica-Bold' },
+  infoValue: { fontSize: 9, fontFamily: 'Roboto-Bold' },
   table: { marginBottom: 8 },
   tableHeader: { flexDirection: 'row', backgroundColor: BLEU, padding: 5, borderRadius: 3 },
-  tableHeaderCell: { color: 'white', fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  tableHeaderCell: { color: 'white', fontSize: 8, fontFamily: 'Roboto-Bold' },
   tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E5E7EB', paddingVertical: 4, paddingHorizontal: 4 },
   tableRowAlt: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E5E7EB', paddingVertical: 4, paddingHorizontal: 4, backgroundColor: GRIS },
   tableRowTotal: { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 4, backgroundColor: BLEU_CLAIR, marginTop: 3, borderRadius: 3 },
   cell: { fontSize: 8 },
-  cellBold: { fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  cellBold: { fontSize: 8, fontFamily: 'Roboto-Bold' },
   cellRight: { fontSize: 8, textAlign: 'right' },
-  cellRightBold: { fontSize: 8, fontFamily: 'Helvetica-Bold', textAlign: 'right' },
+  cellRightBold: { fontSize: 8, fontFamily: 'Roboto-Bold', textAlign: 'right' },
   montantBlock: { flexDirection: 'row', justifyContent: 'space-between', padding: 8, backgroundColor: BLEU, borderRadius: 6, marginTop: 6 },
-  montantLabel: { color: 'white', fontSize: 13, fontFamily: 'Helvetica-Bold' },
-  montantValue: { color: 'white', fontSize: 13, fontFamily: 'Helvetica-Bold' },
+  montantLabel: { color: 'white', fontSize: 13, fontFamily: 'Roboto-Bold' },
+  montantValue: { color: 'white', fontSize: 13, fontFamily: 'Roboto-Bold' },
   footer: { position: 'absolute', bottom: 22, left: 32, right: 32, flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 6 },
   footerText: { fontSize: 7.5, color: GRIS_TEXTE },
   divider: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 5 },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   infoRowLabel: { fontSize: 8.5, color: GRIS_TEXTE, flex: 1, paddingRight: 12 },
-  infoRowValue: { fontSize: 8.5, fontFamily: 'Helvetica-Bold' },
+  infoRowValue: { fontSize: 8.5, fontFamily: 'Roboto-Bold' },
   coverBlock: { backgroundColor: BLEU, borderRadius: 8, padding: 20, marginBottom: 24 },
-  coverTitle: { color: 'white', fontSize: 20, fontFamily: 'Helvetica-Bold', marginBottom: 8 },
+  coverTitle: { color: 'white', fontSize: 20, fontFamily: 'Roboto-Bold', marginBottom: 8 },
   coverRef: { color: '#93C5FD', fontSize: 12, marginBottom: 4 },
   coverSub: { color: '#93C5FD', fontSize: 10 },
   signatureBox: { height: 60, borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 4, marginTop: 4 },
@@ -225,7 +226,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
               <View key={i} style={styles.infoRow}>
                 <Text style={[styles.infoRowLabel, { flex: 1 }]}>{a.entreprise}{a.pctLabel}</Text>
                 {!preview ? (
-                  <Text style={{ fontSize: 7.5, color: a.couleurStatut, fontFamily: 'Helvetica-Bold', width: 54, textAlign: 'center' }}>{a.statut}</Text>
+                  <Text style={{ fontSize: 7.5, color: a.couleurStatut, fontFamily: 'Roboto-Bold', width: 54, textAlign: 'center' }}>{a.statut}</Text>
                 ) : null}
                 <Text style={[styles.infoRowValue, { width: 72, textAlign: 'right' }]}>{fmt(a.acompte)}</Text>
               </View>
@@ -277,21 +278,21 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
   const dateEmis = new Date(cr.created_at || Date.now()).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
 
   const CRS = StyleSheet.create({
-    page: { padding: 40, paddingBottom: 60, fontFamily: 'Helvetica', fontSize: 9, backgroundColor: '#ffffff' },
+    page: { padding: 40, paddingBottom: 60, fontFamily: 'Roboto', fontSize: 9, backgroundColor: '#ffffff' },
     logoImg: { width: 120, height: 48, marginBottom: 12 },
     titleBlock: { marginBottom: 18, borderBottomWidth: 2, borderBottomColor: BLEU, paddingBottom: 10 },
-    mainTitle: { fontSize: 16, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 3 },
+    mainTitle: { fontSize: 16, fontFamily: 'Roboto-Bold', color: BLEU, marginBottom: 3 },
     emis: { fontSize: 9, color: '#6b7280' },
     secWrap: { marginBottom: 14 },
     secHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-    secNum: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: BLEU, marginRight: 6 },
-    secTitle: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: BLEU, flex: 1 },
+    secNum: { fontSize: 11, fontFamily: 'Roboto-Bold', color: BLEU, marginRight: 6 },
+    secTitle: { fontSize: 11, fontFamily: 'Roboto-Bold', color: BLEU, flex: 1 },
     secLine: { height: 1.5, backgroundColor: BLEU, marginBottom: 8 },
     para: { fontSize: 9, color: '#1f2937', lineHeight: 1.65, marginBottom: 5 },
     listRow: { flexDirection: 'row', marginBottom: 4, paddingLeft: 4 },
     listBullet: { fontSize: 9, color: '#1f2937', width: 14 },
     listText: { fontSize: 9, color: '#1f2937', flex: 1, lineHeight: 1.55 },
-    bold: { fontFamily: 'Helvetica-Bold' },
+    bold: { fontFamily: 'Roboto-Bold' },
     footer: { position: 'absolute', bottom: 22, left: 40, right: 40, flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e5e7eb', paddingTop: 5 },
     footerTxt: { fontSize: 7.5, color: '#6b7280' },
   })
@@ -303,7 +304,7 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
   }
 
   const renderKVTable = (rows, col1Label, col2Label) => {
-    const thStyle = { color: '#ffffff', fontSize: 9, fontFamily: 'Helvetica-Bold' }
+    const thStyle = { color: '#ffffff', fontSize: 9, fontFamily: 'Roboto-Bold' }
     return React.createElement(View, { style: { marginBottom: 8 } },
       React.createElement(View, { style: { flexDirection: 'row', backgroundColor: BLEU, paddingVertical: 5, paddingHorizontal: 8 } },
         React.createElement(Text, { style: [thStyle, { flex: 1.8 }] }, col1Label),
@@ -311,7 +312,7 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
       ),
       ...rows.map(([k, v], i) =>
         React.createElement(View, { key: i, style: { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', backgroundColor: i % 2 === 0 ? '#f9fafb' : '#ffffff' } },
-          React.createElement(Text, { style: { fontSize: 9, fontFamily: 'Helvetica-Bold', flex: 1.8, color: '#374151' } }, k),
+          React.createElement(Text, { style: { fontSize: 9, fontFamily: 'Roboto-Bold', flex: 1.8, color: '#374151' } }, k),
           React.createElement(Text, { style: { fontSize: 9, flex: 2.2, color: '#1f2937' } }, v),
         )
       )
@@ -352,7 +353,7 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
       flushList()
       const subhead = line.match(/^\*\*(.+?)\s*:\*\*\s*$/) || line.match(/^\*\*(.+?):\s*\*\*\s*$/)
       if (subhead) {
-        blocks.push(React.createElement(Text, { key: i, style: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: '#1f2937', marginTop: 6, marginBottom: 3 } }, subhead[1].trim() + ' :'))
+        blocks.push(React.createElement(Text, { key: i, style: { fontSize: 9, fontFamily: 'Roboto-Bold', color: '#1f2937', marginTop: 6, marginBottom: 3 } }, subhead[1].trim() + ' :'))
         return
       }
       blocks.push(React.createElement(Text, { key: i, style: CRS.para }, inlineEl(line.trim())))
@@ -545,18 +546,26 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Type de PDF inconnu' }, { status: 400 })
     }
 
-    const TYPES_LABEL = { r1: 'R1', r2: 'R2', r3: 'R3', suivi: 'Suivi', reception: 'Reception' }
+    // CR : nom de fichier « DATE_CR_NOM » (date de visite, sinon date d'émission).
+    // Nom de famille uniquement (sans prénom) ; couple à deux noms → « Nom1 & Nom2 ».
+    const crDate = cr?.date_visite || cr?.created_at
+    const crDateStr = crDate ? new Date(crDate).toISOString().slice(0, 10) : ''
+    const nomClient = dossier.client
+      ? [dossier.client.nom, dossier.client.nom2].filter(Boolean).join(' & ') || 'Client'
+      : 'Client'
     const filename =
       type === 'recapitulatif_prev' ? `Recap_Financier_${dossier.reference}.pdf`
       : type === 'recapitulatif' ? `Suivi_Financier_${dossier.reference}.pdf`
       : type === 'dossier_suivi' ? `DossierSuivi_${dossier.reference}.pdf`
-      : type === 'cr' ? `CR_${TYPES_LABEL[cr?.type_visite] || 'visite'}_${dossier.reference}.pdf`
+      : type === 'cr' ? `${crDateStr ? crDateStr + '_' : ''}CR_${nomClient}.pdf`
       : `Dossier_${dossier.reference}.pdf`
 
+    // En-tête robuste aux accents/espaces : fallback ASCII + version UTF-8 (RFC 5987).
+    const asciiName = filename.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '')
     return new Response(pdfBuffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Disposition': `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       },
     })
   } catch (err) {

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
+import { getObjectifAgente, saveObjectif } from '../lib/objectifs'
 
 // Page profil de l'utilisateur connecté (pensée pour les agentes ; l'admin gère
 // tout via /parametres, mais la page reste consultable sans erreur). Réutilise
@@ -26,6 +27,11 @@ export default function Profil() {
   const [savingPwd, setSavingPwd] = useState(false)
   const [error, setError] = useState('')
   const [succes, setSucces] = useState('')
+  // Objectif annuel perso (agente) — '' = aucune ligne (≠ 0). objExiste distingue
+  // « pas d'objectif » de « objectif à 0 ».
+  const [objMontant, setObjMontant] = useState('')
+  const [objExiste, setObjExiste] = useState(false)
+  const [savingObj, setSavingObj] = useState(false)
 
   useEffect(() => {
     if (!initialized) return
@@ -36,6 +42,15 @@ export default function Profil() {
   // Initialise le champ téléphone éditable depuis le profil chargé.
   useEffect(() => { if (profile) setTel(profile.telephone || '') }, [profile?.id])
 
+  // Pré-remplit l'objectif annuel PERSO de l'agente (sa ligne objectifs_ca, année
+  // courante). row === null → champ vide (placeholder) ; JAMAIS le fallback agence.
+  useEffect(() => {
+    if (!profile || profile.role !== 'agente' || !profile.agence_id) return
+    getObjectifAgente(profile.id)
+      .then(row => { setObjMontant(row?.montant ?? ''); setObjExiste(!!row) })
+      .catch(() => { /* erreur réseau transitoire : on laisse le champ tel quel */ })
+  }, [profile?.id])
+
   if (!initialized || !profile) return <div className="page-loading" />
 
   // ── Handlers (transposés de parametres, keyés sur le profil connecté) ──
@@ -45,6 +60,19 @@ export default function Profil() {
     if (error) setError('Erreur : ' + error.message)
     else { setSucces('Téléphone enregistré ✓'); fetchProfile(user.id) }
     setSavingTel(false)
+  }
+
+  const enregistrerObjectif = async () => {
+    setSavingObj(true); setError(''); setSucces('')
+    try {
+      await saveObjectif({ cible: 'agente', agenteId: profile.id, agenceId: profile.agence_id, montant: objMontant })
+      const row = await getObjectifAgente(profile.id)
+      setObjMontant(row?.montant ?? ''); setObjExiste(!!row)
+      setSucces('Objectif enregistré ✓')
+    } catch (e) {
+      setError('Erreur : ' + e.message)
+    }
+    setSavingObj(false)
   }
 
   const voirRib = async () => {
@@ -135,6 +163,32 @@ export default function Profil() {
             </div>
           </div>
         </div>
+
+        {/* ── Mon objectif annuel (agente : éditable par elle-même) ── */}
+        {profile.role === 'agente' && profile.agence_id && (
+          <div className="card" style={cardStyle}>
+            <div className="eyebrow">Mon objectif annuel {new Date().getFullYear()}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>
+              Tu fixes ton objectif de CA généré pour l'année. Visible dans Finances.
+            </div>
+            <div>
+              <label style={LS}>Objectif de CA (€)</label>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <input className="input" type="number" min="0" value={objMontant}
+                  onChange={e => setObjMontant(e.target.value)}
+                  placeholder="ex. 65000" style={{ height: 40, flex: 1 }} />
+                <button className="btn btn-primary" onClick={enregistrerObjectif} disabled={savingObj}>
+                  {savingObj ? 'Enregistrement…' : 'Enregistrer'}
+                </button>
+              </div>
+              {!objExiste && (
+                <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>
+                  Aucun objectif défini pour {new Date().getFullYear()}.
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Rémunération (lecture seule — réglée par l'administrateur) ── */}
         <div className="card" style={cardStyle}>

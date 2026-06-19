@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import { formatNomClient } from '../lib/clients'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { calculateDossierFinance, getActiveDevis, getSignedDevis, ROYALTIES_RATE, DEFAULT_PART_AGENTE } from '../lib/finance'
+import { calculateDossierFinance, getActiveDevis, getSignedDevis, DEFAULT_PART_AGENTE } from '../lib/finance'
 import { calcStatut } from '../lib/dossiers'
 import { Avatar } from '../components/shared'
 
@@ -153,7 +153,7 @@ function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) 
       data: {
         labels,
         datasets: [
-          { type: 'bar', label: 'Gains', data: produitsData, backgroundColor: '#3B7DD8', borderRadius: 3, order: 2 },
+          { type: 'bar', label: 'Produits', data: produitsData, backgroundColor: '#3B7DD8', borderRadius: 3, order: 2 },
           { type: 'bar', label: 'Reversements', data: chargesData, backgroundColor: '#E24B4A', borderRadius: 3, order: 2 },
           { type: 'line', label: 'Résultats', data: netData, borderColor: '#1F5FA6', backgroundColor: 'rgba(31,95,166,0.06)', borderWidth: 2, borderDash: [4, 3], pointRadius: 4, pointBackgroundColor: '#1F5FA6', tension: 0.3, order: 1 }
         ]
@@ -177,7 +177,7 @@ function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) 
     <div className="card" style={{padding:20}}>
       <div style={{display:'flex',gap:16,marginBottom:16,flexWrap:'wrap'}}>
         {[
-          { color: '#3B7DD8', label: 'Gains encaissés' },
+          { color: '#3B7DD8', label: 'Produits encaissés' },
           { color: '#E24B4A', label: 'Reversements' },
           { color: '#1F5FA6', label: 'Résultat', dashed: true },
         ].map(({ color, label, dashed }) => (
@@ -677,7 +677,7 @@ export default function Finances() {
   const [periodeOuverte, setPeriodeOuverte]         = useState(null)
   const [sfSousOngletCTP, setSfSousOngletCTP]       = useState('mois')
   // Changement d'onglet : Suivi/Facturation n'ont pas le pill Périmètre →
-  // on réinitialise le scope à 'tous' pour éviter un filtre invisible hérité de F1/F2.
+  // on réinitialise le scope à 'tous' pour éviter un filtre invisible hérité de Prévisionnel/Réel.
   const handleTab = (key) => {
     if (key === 'suivi' || key === 'facturation') setScope('tous')
     setTab(key)
@@ -881,6 +881,18 @@ export default function Finances() {
 
       // Prévisionnel honoraires (tous devis actifs)
       honPreviNet:    round2(f.honorairesPrevi.totalNet),
+      // Honoraires BRUT prévisionnel (avant royalties) — courtage + AMO, base devis actifs.
+      honPreviBrut:   round2(f.honorairesPrevi.courtage.ht + f.honorairesPrevi.soldeAmo.ht),
+      // Royalty PRÉVI sur base ACTIFS (miroir prévi de royaltyReelle) — somme des
+      // royalties DÉJÀ ARRONDIES PAR COMPOSANT (méthode illiCO, aucun recalcul).
+      // Affichage uniquement ; n'entre pas dans le calcul du net. Le frais suit le
+      // MÊME gating que le net prévi (exclu si 'offerts').
+      royaltyPreviActifs: round2(
+        ((f.frais.net > 0 && d.frais_statut !== 'offerts') ? f.frais.royalties : 0) +
+        f.commissions.royaltiesType2 +
+        f.honorairesPrevi.courtage.royalties +
+        f.honorairesPrevi.soldeAmo.royalties
+      ),
 
       // Gains prévisionnels complets
       gainsAgentePreviTotal: round2(
@@ -912,25 +924,39 @@ export default function Finances() {
       const soldeAmoNetM = amoRegle ? c.amoNet : 0
       const honReel = round2((courtageRegle ? c.courtNet : 0) + soldeAmoNetM)
       let comReelNet = 0
+      let comBruteEncaissee = 0       // AJOUT affichage : Σ comHT brut des devis encaissés
+      let royaltiesComReel = 0        // AJOUT affichage : Σ royalties (par devis, déjà arrondies)
       for (const dv of c.devisAcceptes) {
         if (dv.artisan?.paiement_direct) continue
         const artId = dv.artisan_id || dv.artisan?.id
         const dvF = c.devisFinanceMap.get(dv.id)
         if (!dvF) continue
         const suivi = getSuivi(d, 'acompte_artisan', artId)
-        if (suivi?.statut_illico === 'recu') comReelNet = round2(comReelNet + dvF.netCom)
+        if (suivi?.statut_illico === 'recu') {
+          comReelNet        = round2(comReelNet        + dvF.netCom)
+          comBruteEncaissee = round2(comBruteEncaissee + dvF.comHT)
+          royaltiesComReel  = round2(royaltiesComReel  + dvF.royaltiesType2)
+        }
       }
-      const comApporteursReel = round2(
-        c.finance.commissions.devis
-          .filter(dv => dv.isApporteur && dv.signed)
-          .reduce((s, dv) => s + dv.netCom, 0)
-      )
+      const apporteursReels = c.finance.commissions.devis.filter(dv => dv.isApporteur && dv.signed)
+      const comApporteursReel = round2(apporteursReels.reduce((s, dv) => s + dv.netCom, 0))
+      comBruteEncaissee = round2(comBruteEncaissee + apporteursReels.reduce((s, dv) => s + dv.comHT, 0))
+      const royaltiesComApporteursReel = round2(apporteursReels.reduce((s, dv) => s + dv.royaltiesType2, 0))
       // Réel = coût apporteur sur les acomptes débloqués (finance.js).
       // Admin référent porte tout (part_agente = 0).
       const apporteurRetire = c.apporteurAdminReel
 
+      // AJOUTS affichage (brut/royalty réels) — n'entrent PAS dans le calcul du net.
+      const fraisBrutReel = d.frais_statut === 'regle' ? c.fraisHT : 0
+      const honReelBrut = round2((courtageRegle ? c.finance.honoraires.courtage.ht : 0) + (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0))
+      const royaltyReelle = round2(
+        (d.frais_statut === 'regle' ? c.fraisRoyalties : 0) +
+        royaltiesComReel + royaltiesComApporteursReel +
+        (courtageRegle ? c.courtRoyalties : 0) + (amoRegle ? c.amoRoyalties : 0)
+      )
+
       const gainAdminReel = round2(fraisReel + honReel + comReelNet + comApporteursReel - apporteurRetire)
-      return { ...c, fraisReel, fraisAgenteReel: 0, honReel, comReelNet, comApporteursReel, apporteurRembourse: apporteurRetire, gainAgenteReel: 0, gainAdminReel, gainsAgenteReels: 0, soldeAmoNet: soldeAmoNetM, soldeAmoAgente: 0 }
+      return { ...c, fraisReel, fraisAgenteReel: 0, honReel, comReelNet, comApporteursReel, apporteurRembourse: apporteurRetire, gainAgenteReel: 0, gainAdminReel, gainsAgenteReels: 0, soldeAmoNet: soldeAmoNetM, soldeAmoAgente: 0, fraisBrutReel, comBruteEncaissee, honReelBrut, royaltyReelle }
     }
 
     // Frais — HT net si réglé
@@ -962,6 +988,7 @@ export default function Finances() {
     let comReelNet        = 0
     let royaltiesComReel  = 0
     let comAgenteReel     = 0
+    let comBruteEncaissee = 0       // AJOUT affichage : Σ comHT brut des devis encaissés
 
     for (const dv of c.devisAcceptes) {
       if (dv.artisan?.paiement_direct) continue // paiement direct : commission déclenchée dès signé
@@ -971,22 +998,36 @@ export default function Finances() {
       const suivi      = getSuivi(d, 'acompte_artisan', artId)
       const debloque   = suivi?.statut_illico === 'recu'
       if (debloque) {
-        comReelNet       = round2(comReelNet       + dvF.netCom)
-        royaltiesComReel = round2(royaltiesComReel + dvF.royaltiesType2)
-        comAgenteReel    = round2(comAgenteReel    + dvF.parts.agente)
+        comReelNet        = round2(comReelNet        + dvF.netCom)
+        royaltiesComReel  = round2(royaltiesComReel  + dvF.royaltiesType2)
+        comAgenteReel     = round2(comAgenteReel     + dvF.parts.agente)
+        comBruteEncaissee = round2(comBruteEncaissee + dvF.comHT)
       }
     }
 
     // Commissions apporteurs artisans — déclenchées dès devis signé
     let comApporteursReel     = 0
     let comApporteursAgente   = 0
+    let royaltiesComApporteursReel = 0   // AJOUT affichage
     for (const dv of c.devisAcceptes) {
       if (!dv.artisan?.paiement_direct) continue
       const dvF = c.devisFinanceMap.get(dv.id)
       if (!dvF || !dvF.signed) continue
-      comApporteursReel   = round2(comApporteursReel   + dvF.netCom)
-      comApporteursAgente = round2(comApporteursAgente + dvF.parts.agente)
+      comApporteursReel        = round2(comApporteursReel        + dvF.netCom)
+      comApporteursAgente      = round2(comApporteursAgente      + dvF.parts.agente)
+      comBruteEncaissee        = round2(comBruteEncaissee        + dvF.comHT)
+      royaltiesComApporteursReel = round2(royaltiesComApporteursReel + dvF.royaltiesType2)
     }
+
+    // AJOUTS affichage (brut/royalty réels) — n'entrent PAS dans le calcul du net.
+    const fraisBrutReel = fraisRegle ? c.fraisHT : 0
+    const honReelBrut = round2(
+      (courtageRegle ? c.finance.honoraires.courtage.ht : 0) +
+      (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0)
+    )
+    const royaltyReelle = round2(
+      fraisRoyaltiesReel + royaltiesComReel + royaltiesComApporteursReel + royaltiesHonReel
+    )
 
     // Apporteur client réel = part agente sur les acomptes débloqués (finance.js).
     const apporteurRembourse = c.apporteurAgenteReel
@@ -1007,6 +1048,10 @@ export default function Finances() {
       gainAgenteReel,
       gainAdminReel,
       gainsAgenteReels: gainAgenteReel,
+      fraisBrutReel,
+      comBruteEncaissee,
+      honReelBrut,
+      royaltyReelle,
     }
   }
 
@@ -1158,6 +1203,9 @@ export default function Finances() {
     comAgenteNet: 0, comApporteursAgenteNet: 0,
     fraisAgenteNet: 0, honAgenteNet: 0,
     apporteurCoutTotalNet: 0, apporteurPartAgenteNet: 0,
+    // Bruts (pré-royalty) + royalty agrégée par bucket — AFFICHAGE « CA généré »
+    // (façon répartition par chantier). Bucketés à la MÊME date que leur net.
+    fraisBrut: 0, comBrut: 0, comApporteursBrut: 0, honBrut: 0, royaltyBucket: 0,
     dossierIds: new Set(),
   })
 
@@ -1183,6 +1231,8 @@ export default function Finances() {
         const key = getKeyFromDate(dateFrais, isAnnee)
         addToKey(key, 'fraisNet', c.fraisReel, d.id)
         addToKey(key, 'fraisAgenteNet', c.fraisAgenteReel ?? c.fraisAgente, d.id)
+        addToKey(key, 'fraisBrut', c.fraisHT, d.id)
+        addToKey(key, 'royaltyBucket', c.fraisRoyalties, d.id)
       }
 
       // Honoraires courtage
@@ -1192,6 +1242,8 @@ export default function Finances() {
         const key = getKeyFromDate(dateCourtage, isAnnee)
         addToKey(key, 'courtNet', c.courtNet, d.id)
         addToKey(key, 'honAgenteNet', c.courtAgente, d.id)
+        addToKey(key, 'honBrut', c.finance.honoraires.courtage.ht, d.id)
+        addToKey(key, 'royaltyBucket', c.courtRoyalties, d.id)
       }
 
       // Solde AMO — part AMO pleine (finance.js), gated par solde_amo réglé.
@@ -1203,6 +1255,8 @@ export default function Finances() {
         const key = getKeyFromDate(dateAmo, isAnnee)
         addToKey(key, 'amoNet', c.soldeAmoNet, d.id)
         addToKey(key, 'honAgenteNet', c.soldeAmoAgente, d.id)
+        addToKey(key, 'honBrut', c.finance.honoraires.soldeAmo.ht, d.id)
+        addToKey(key, 'royaltyBucket', c.amoRoyalties, d.id)
       }
 
       // Commissions artisans normaux
@@ -1217,6 +1271,8 @@ export default function Finances() {
         const key = getKeyFromDate(suiviAcompte.date_deblocage || suiviAcompte.date_paiement, isAnnee)
         addToKey(key, 'comNet', dvF.netCom, d.id)
         addToKey(key, 'comAgenteNet', dvF.parts.agente, d.id)
+        addToKey(key, 'comBrut', dvF.comHT, d.id)
+        addToKey(key, 'royaltyBucket', dvF.royaltiesType2, d.id)
       }
 
       // Commissions paiement direct (déclenchées dès signé — date_signature du devis)
@@ -1227,6 +1283,8 @@ export default function Finances() {
         const key = getKeyFromDate(dv.date_signature, isAnnee)
         addToKey(key, 'comApporteursNet', dvF.netCom, d.id)
         addToKey(key, 'comApporteursAgenteNet', dvF.parts.agente, d.id)
+        addToKey(key, 'comApporteursBrut', dvF.comHT, d.id)
+        addToKey(key, 'royaltyBucket', dvF.royaltiesType2, d.id)
       }
 
             // Apporteur client remboursé par ligne
@@ -1325,12 +1383,16 @@ export default function Finances() {
     return base.filter(r => r.agente_id === scope)
   }, [isAdmin, agenceActive, scope, redevances, mesRedevances, profile?.id])
 
-  const totalNetCTP = (() => {
+  // CA généré (société-level) = Σ produits nets − apporteur TOTAL. Redevance EXCLUE,
+  // royalty embarquée 1× (déjà dans les nets). totalNetCTP = ce CA − parts agentes
+  // (= résultat net société) ; aligné sur la somme annuelle du compte de résultat société.
+  const { totalCAGenere, totalNetCTP } = (() => {
     const keysAnnee = rowsReelScoped.filter(([k]) => k.startsWith(String(anneeEnCours)))
     const reelProduits = keysAnnee.reduce((s, [, agg]) => s + round2((agg.fraisNet||0) + (agg.comReelNet||0) + (agg.honReel||0) + (agg.comApporteursReel||0)), 0)
-    const reelRedev = redevancesScoped.filter(r => r.statut === 'regle' && r.annee === anneeEnCours).reduce((s, r) => s + (r.montant_ht || 0), 0)
-    const reelCharges = keysAnnee.reduce((s, [, agg]) => s + (agg.gainsAgenteReels || 0), 0)
-    return round2(reelProduits + reelRedev - reelCharges)
+    const reelApporteur = keysAnnee.reduce((s, [, agg]) => s + (agg.apporteurCoutTotalNet || 0), 0)
+    const reelParts = keysAnnee.reduce((s, [, agg]) => s + (agg.gainsAgenteReels || 0), 0)
+    const caGenere = round2(reelProduits - reelApporteur)
+    return { totalCAGenere: caGenere, totalNetCTP: round2(caGenere - reelParts) }
   })()
 
   // ── PÉRIMÈTRE SCOPÉ ────────────────────────────────────────────────────────
@@ -1341,8 +1403,9 @@ export default function Finances() {
     const totComHT     = scopedDossiers.reduce((s, d) => s + calculer(d).comHT, 0)
     const totFraisHT   = scopedDossiers.reduce((s, d) => s + calculer(d).fraisHT, 0)
     const totRoyalties = scopedDossiers.reduce((s, d) => s + calculer(d).royaltiesTotal, 0)
+    // Objectif d'agence = cible de CA → comparé au CA GÉNÉRÉ (même échelle), pas au net société.
     const objectifAnnuel = getObjectif('agence')
-    const pctObjectif    = objectifAnnuel > 0 ? Math.round(totalNetCTP / objectifAnnuel * 100) : 0
+    const pctObjectif    = objectifAnnuel > 0 ? Math.round(totalCAGenere / objectifAnnuel * 100) : 0
     return { totPreviNet, totComHT, totFraisHT, totRoyalties, objectifAnnuel, pctObjectif }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopedDossiers, objectifs, agenceActive])
@@ -1438,10 +1501,10 @@ export default function Finances() {
           <div style={{padding:14, background:'#fff', borderRadius:10, border:'1px solid var(--ink-200)'}}>
             <div className="eyebrow" style={{marginBottom:10}}>Répartition</div>
             <div style={{display:'flex', flexDirection:'column', gap:8, fontSize:12.5}}>
-              <RepartRow label="Frais consultation HT" value={fmt(isReel ? r.fraisReel : c.fraisNet)} />
-              <RepartRow label="Commissions HT" value={fmt(c.comHT)} />
-              {c.honTotalNet > 0 && <RepartRow label="Honoraires" value={fmt(isReel ? r.honReel : c.honTotalNet)} />}
-              <RepartRow label="Royalties" value={`-${fmt(c.royaltiesTotal)}`} dim />
+              <RepartRow label="Frais consultation HT" value={fmt(isReel ? r.fraisBrutReel : c.fraisHT)} />
+              <RepartRow label="Commissions HT" value={fmt(isReel ? r.comBruteEncaissee : c.comHT)} />
+              {(isReel ? r.honReelBrut : c.honPreviBrut) > 0 && <RepartRow label="Honoraires" value={fmt(isReel ? r.honReelBrut : c.honPreviBrut)} />}
+              <RepartRow label="Royalties" value={`-${fmt(isReel ? r.royaltyReelle : c.royaltyPreviActifs)}`} dim />
               {c.apporteurTotalHT > 0 && (
                 <RepartRow label="Apporteur client" value={`-${fmt(isReel ? r.apporteurRembourse : (c.referentEstAdmin ? c.apporteurAdmin : c.apporteurAgente))}`} accent="warn" />
               )}
@@ -1478,9 +1541,9 @@ export default function Finances() {
       const c = calculer(d)
       const r = calculerReel(d)
       return {
-        fraisHT:   round2(acc.fraisHT   + c.fraisHT),
-        comHT:     round2(acc.comHT     + c.comHT),
-        royalties: round2(acc.royalties + c.royaltiesTotal),
+        fraisHT:   round2(acc.fraisHT   + (isReel ? r.fraisBrutReel     : c.fraisHT)),
+        comHT:     round2(acc.comHT     + (isReel ? r.comBruteEncaissee : c.comHT)),
+        royalties: round2(acc.royalties + (isReel ? r.royaltyReelle     : c.royaltyPreviActifs)),
         net:       round2(acc.net + (isReel
           ? (r.gainAdminReel + r.gainsAgenteReels)
           : (c.gainsAdminPreviTotal + c.gainsAgentePreviTotal))),
@@ -1492,7 +1555,7 @@ export default function Finances() {
         <div style={{padding:'14px 22px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid var(--ink-200)'}}>
           <div>
             <div style={{fontSize:16,fontWeight:700,color:'var(--ink-900)'}}>
-              {isReel ? 'F2 — Encaissements réels' : 'F1 — Engagements prévisionnels'} · {listeDossiers.length} dossiers
+              {isReel ? 'Encaissements réels' : 'Engagements prévisionnels'} · {listeDossiers.length} dossiers
             </div>
             <div className="eyebrow" style={{marginTop:4}}>
               {period === 'chantier' ? 'Détail par chantier' : period === 'mois' ? 'Agrégation par mois de paiement' : 'Agrégation annuelle'}
@@ -1558,9 +1621,9 @@ export default function Finances() {
                       </span>
                       {nbAlertes > 0 && <span style={{fontSize:10,marginLeft:4,color:'#b91c1c'}}>⚠️ {nbAlertes}</span>}
                     </Td>
-                    <Td right mono>{fmt(c.fraisHT)}</Td>
-                    <Td right mono>{fmt(c.comHT)}</Td>
-                    <Td right mono dim>{fmt(c.royaltiesTotal)}</Td>
+                    <Td right mono>{fmt(isReel ? r.fraisBrutReel : c.fraisHT)}</Td>
+                    <Td right mono>{fmt(isReel ? r.comBruteEncaissee : c.comHT)}</Td>
+                    <Td right mono dim>{fmt(isReel ? r.royaltyReelle : c.royaltyPreviActifs)}</Td>
                     <Td right mono bold accent={net > 0}>{fmt(net)}</Td>
                     <Td right>
                       <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -1794,58 +1857,65 @@ export default function Finances() {
   const renderSuiviFinancier = (mode) => {
     const isCTP = mode === 'ctp'
     const rowsReel = rowsReelScoped
-    const objectifMensuel = round2(getObjectif('agence') / 12)
+    // Objectif de comparaison (AFFICHAGE) — admin : objectif d'agence (consolidé ou
+    // vue agence) INCHANGÉ ; agente : son objectif PERSONNEL, sinon celui de SON
+    // agence (profiles.agence_id), sinon non défini (on n'affiche jamais 0 comme cible).
+    const objAgentePerso     = getObjectif('agente', profile?.id)
+    const objAgenceDeLAgente = objectifs.find(o => o.cible === 'agence' && o.agence_id === profile?.agence_id)?.montant || 0
+    const objectifSource = isAdmin ? 'agence' : (objAgentePerso ? 'perso' : objAgenceDeLAgente ? 'agence' : 'aucun')
+    const objectifAnnuelCible = isAdmin ? getObjectif('agence') : (objAgentePerso || objAgenceDeLAgente || 0)
+    const objectifMensuel = round2(objectifAnnuelCible / 12)
     const netLabel = isCTP ? 'Société' : (mode === 'agent' ? 'Agente' : 'Agence')
+    const objectifLabel = isAdmin
+      ? `Objectif mensuel ${netLabel} (${fmt(objectifMensuel)}/mois)`
+      : objectifSource === 'perso'  ? `Objectif mensuel (${fmt(objectifMensuel)}/mois)`
+      : objectifSource === 'agence' ? `Objectif agence (${fmt(objectifMensuel)}/mois)`
+      : 'Objectif non défini'
 
-    // Apporteur remboursé (réel) selon le mode : Société/Agence = coût total, Agente = sa part.
-    const apporteurReelVal = (r) => round2(mode === 'agent' ? (r?.apporteurPartAgenteNet || 0) : (r?.apporteurCoutTotalNet || 0))
-    const royaltiesReelVal = (r) => round2(
-      ((r?.fraisNet || 0) + (r?.comReelNet || 0) + (r?.honReel || 0))
-      * (ROYALTIES_RATE / (1 - ROYALTIES_RATE))
-    )
+    // CA généré : l'apporteur remboursé est déduit pour son COÛT TOTAL dans les 3
+    // modes (agent inclus) — c'est un flux sortant, pas une part perso.
+    const apporteurReelVal = (r) => round2(r?.apporteurCoutTotalNet || 0)
 
     // Prévisionnel agrégé par mois (clé signature/création) — source unique.
     const mapPreviMois = {}
     scopedDossiers.forEach(d => {
       const key = getKeyFromDate(d.date_signature_contrat || d.created_at, false)
       if (!key) return
-      if (!mapPreviMois[key]) mapPreviMois[key] = { frais:0, com:0, comApport:0, hon:0, partAgentes:0, apporteurTotal:0, apporteurAgente:0, royalties:0 }
+      if (!mapPreviMois[key]) mapPreviMois[key] = { frais:0, com:0, comApport:0, hon:0, partAgentes:0, apporteurTotal:0 }
       const c = calculer(d); const M = mapPreviMois[key]
       M.frais = round2(M.frais + c.fraisNetPrevi); M.com = round2(M.com + c.netComTous); M.comApport = round2(M.comApport + c.comApporteursPrevi)
       M.hon = round2(M.hon + c.honPreviNet); M.partAgentes = round2(M.partAgentes + c.gainsAgentePreviTotal)
-      M.apporteurTotal = round2(M.apporteurTotal + c.apporteurTotalHT); M.apporteurAgente = round2(M.apporteurAgente + c.apporteurAgente)
-      M.royalties = round2(M.royalties + c.royaltiesTotal)
+      M.apporteurTotal = round2(M.apporteurTotal + c.apporteurTotalHT)
     })
-    const redevPourCle = (cle) => { const [a, m] = cle.split('-'); return redevancesScoped.filter(r => r.statut === 'regle' && r.annee === parseInt(a) && r.mois === parseInt(m)).reduce((sum, r) => sum + (r.montant_ht || 0), 0) }
-
     // Compte de résultat (prévi + réel) d'un mois, selon le mode.
+    // CA = produits (nets, royalty embarquée 1×) − apporteur TOTAL [− parts agentes en société].
+    // Redevance EXCLUE (→ Facturation). Royalty jamais re-déduite (déjà dans les nets).
     const comptePourCle = (cle) => {
       const p = mapPreviMois[cle] || {}
       const r = rowsReel.find(([k]) => k === cle)?.[1] || {}
-      const redev = redevPourCle(cle)
-      const previProduits = round2((p.frais||0) + (p.com||0) + (p.hon||0) + (p.comApport||0) + (isCTP ? redev : 0))
-      const reelProduits  = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0) + (isCTP ? redev : 0))
-      const previApporteur = round2(mode === 'agent' ? (p.apporteurAgente||0) : (p.apporteurTotal||0))
+      const previProduits = round2((p.frais||0) + (p.com||0) + (p.hon||0) + (p.comApport||0))
+      const reelProduits  = round2((r.fraisNet||0) + (r.comReelNet||0) + (r.honReel||0) + (r.comApporteursReel||0))
+      const previApporteur = round2(p.apporteurTotal||0)
       const reelApporteur  = apporteurReelVal(r)
-      const previCharges = isCTP ? round2((p.partAgentes||0) + previApporteur + (p.royalties||0)) : previApporteur
-      const reelCharges  = isCTP ? round2((r.gainsAgenteReels||0) + royaltiesReelVal(r) + reelApporteur) : reelApporteur
-      return { p, r, redev, previProduits, reelProduits, previApporteur, reelApporteur, previCharges, reelCharges, previNet: round2(previProduits - previCharges), reelNet: round2(reelProduits - reelCharges) }
+      const previCharges = isCTP ? round2((p.partAgentes||0) + previApporteur) : previApporteur
+      const reelCharges  = isCTP ? round2((r.gainsAgenteReels||0) + reelApporteur) : reelApporteur
+      return { p, r, previProduits, reelProduits, previApporteur, reelApporteur, previCharges, reelCharges, previNet: round2(previProduits - previCharges), reelNet: round2(reelProduits - reelCharges) }
     }
     const ecart = (pv, rv) => { const e = round2(rv - pv); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
 
     // Détail compte de résultat (RÉEL uniquement) d'un mois — vue groupée par encaissement.
     const crPourCle = (cle) => {
       const x = comptePourCle(cle)
+      // Produits en BRUT (pré-royalty), puis royalty déduite 1× → Total produits (net).
       const lignesProduits = [
-        { label: 'Frais de consultation',  r: x.r.fraisNet||0 },
-        { label: 'Commissions illiCO',     r: x.r.comReelNet||0 },
-        { label: 'Honoraires',             r: x.r.honReel||0 },
-        { label: 'Commissions apporteurs', r: x.r.comApporteursReel||0 },
-        ...(isCTP ? [{ label: 'Redevances agentes', r: x.redev }] : []),
-      ]
+        { label: 'Frais de consultation',  r: x.r.fraisBrut||0 },
+        { label: 'Commissions illiCO',     r: x.r.comBrut||0 },
+        { label: 'Commissions apporteurs', r: x.r.comApporteursBrut||0 },
+        { label: 'Honoraires',             r: x.r.honBrut||0 },
+      ].filter(l => l.r !== 0)
+      // Reversements : apporteur (TOTAL) dans tous les modes ; + parts agentes en société.
       const lignesReversements = isCTP
         ? [
-            { label: 'Royalties illiCO',      r: royaltiesReelVal(x.r) },
             { label: 'Parts agentes',         r: x.r.gainsAgenteReels||0 },
             { label: 'Apporteurs remboursés', r: x.reelApporteur },
           ]
@@ -1859,13 +1929,14 @@ export default function Finances() {
             <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Réel</th>
           </tr></thead>
           <tbody>
-            <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Gains</td></tr>
+            <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Produits (brut)</td></tr>
             {lignesProduits.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#15803d',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
-            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total gains</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td></tr>
+            <tr><td style={tdL}>Royalties illiCO</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{`-${fmt(x.r.royaltyBucket||0)}`}</td></tr>
+            <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total produits (net)</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td></tr>
             <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Reversements</td></tr>
             {lignesReversements.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
             <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total reversements</td><td style={{...tdR,fontWeight:500,color:'#ef4444'}}>{fmt(x.reelCharges)}</td></tr>
-            <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>Résultat net {netLabel}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:x.reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(x.reelNet)}</td></tr>
+            <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>{isCTP ? 'Résultat net Société' : 'CA généré'}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:x.reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(x.reelNet)}</td></tr>
           </tbody>
         </table>
       )
@@ -1922,8 +1993,8 @@ export default function Finances() {
             onClick={() => setMoisOuvert(isOpen ? null : `${mode}_${cle}`)}>
             <td style={{padding:'10px 16px',fontWeight:500,color:'var(--ink-700)',display:'flex',alignItems:'center',gap:8}}><span>{label}</span><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></td>
             <td style={{padding:'10px 12px',textAlign:'right',fontWeight:500,color:x.reelNet >= 0 ? '#15803d' : '#dc2626'}}>{fmt(x.reelNet)}</td>
-            <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{fmt(objectifMensuel)}</td>
-            <td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:ecartObj >= 0 ? '#16a34a' : '#ef4444'}}>{ecartObj >= 0 ? '+' : ''}{fmt(ecartObj)}</td>
+            <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{objectifMensuel > 0 ? fmt(objectifMensuel) : '—'}</td>
+            <td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:objectifMensuel > 0 ? (ecartObj >= 0 ? '#16a34a' : '#ef4444') : 'var(--ink-400)'}}>{objectifMensuel > 0 ? `${ecartObj >= 0 ? '+' : ''}${fmt(ecartObj)}` : '—'}</td>
           </tr>
           {isOpen && (<tr style={{background:bg}}><td colSpan={4} style={{padding:'0 16px 12px'}}>{renderMoisDetail(cle)}</td></tr>)}
         </React.Fragment>
@@ -2017,7 +2088,9 @@ export default function Finances() {
         />
         {sfSousOnglet === 'mois' && (
           <div style={{display:'flex',flexDirection:'column',gap:20}}>
-            <ObjectifBar label={`Objectif mensuel ${netLabel} (${fmt(objectifMensuel)}/mois)`}
+            {/* cible="agence" : prop morte tant que canEdit={false} (jamais lue —
+                onSave n'est pas fourni et le bloc d'édition est inaccessible). */}
+            <ObjectifBar label={objectifLabel}
               reel={comptePourCle(moisCourantCle).reelNet}
               objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
             <div className="card" style={{overflow:'hidden'}}>
@@ -2028,7 +2101,7 @@ export default function Finances() {
                   <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-300)',fontWeight:700,fontSize:11}}>
                     <td style={{padding:'10px 16px',color:'var(--ink-700)'}}>Total</td>
                     <td style={{padding:'10px 12px',textAlign:'right',color:totalReelMois >= 0 ? '#15803d' : '#dc2626'}}>{fmt(totalReelMois)}</td>
-                    <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{fmt(objectifMensuel * cles.length)}</td>
+                    <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{objectifMensuel > 0 ? fmt(objectifMensuel * cles.length) : '—'}</td>
                     <td style={{padding:'10px 16px',textAlign:'right',color:'var(--ink-500)'}}>—</td>
                   </tr>
                 </tbody>
@@ -2086,30 +2159,16 @@ export default function Finances() {
 
       {/* Tab bar */}
       <div className="tabs">
-        <button className={`tab ${tab==='previsionnel'?'active':''}`} onClick={() => handleTab('previsionnel')}>
-          <span style={{display:'inline-flex',gap:8,alignItems:'center'}}>
-            <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
-              background:tab==='previsionnel'?'var(--brand-800)':'var(--ink-100)',
-              color:tab==='previsionnel'?'#fff':'var(--ink-500)'}}>F1</span>
-            Prévisionnel
-          </span>
-        </button>
-        <button className={`tab ${tab==='reel'?'active':''}`} onClick={() => handleTab('reel')}>
-          <span style={{display:'inline-flex',gap:8,alignItems:'center'}}>
-            <span style={{padding:'1px 6px',borderRadius:5,fontSize:10,fontWeight:800,fontVariantNumeric:'tabular-nums',
-              background:tab==='reel'?'var(--brand-800)':'var(--ink-100)',
-              color:tab==='reel'?'#fff':'var(--ink-500)'}}>F2</span>
-            Réel
-          </span>
-        </button>
-        <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => handleTab('suivi')}>📈Suivi financier</button>
+        <button className={`tab ${tab==='previsionnel'?'active':''}`} onClick={() => handleTab('previsionnel')}>Prévisionnel</button>
+        <button className={`tab ${tab==='reel'?'active':''}`} onClick={() => handleTab('reel')}>Réel</button>
+        <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => handleTab('suivi')}>📈Compte de résultat</button>
         <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => handleTab('facturation')}>🗒️Facturation agentes</button>
       </div>
 
       {/* KPI strip — même layout pour admin et agente, données scopées */}
       <div className="kpi-grid">
         {isAdmin && (
-          <FinKpiCard label={`CA réel net ${anneeEnCours}`} value={fmt(totalNetCTP)} tone="brand">
+          <FinKpiCard label={`CA généré ${anneeEnCours}`} value={fmt(totalCAGenere)} tone="brand">
             <div style={{marginTop:8}}>
               <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
                 <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
@@ -2128,13 +2187,13 @@ export default function Finances() {
           value={fmt(totComHT)}
           sub={`Frais conso. ${fmt(totFraisHT)} HT`}
           tone="warn"/>
-        <FinKpiCard label={isAdmin ? "Part franchisée" : "Mes gains"}
-          value={fmt(isAdmin ? round2(totalNetCTP-totalGainsAgentesReels) : totalGainsAgentesReels)}
-          sub={isAdmin ? `Part agentes ${fmt(totalGainsAgentesReels)}` : 'Réels encaissés'}
+        <FinKpiCard label={isAdmin ? "Part franchisée" : "CA généré"}
+          value={fmt(isAdmin ? totalNetCTP : totalCAGenere)}
+          sub={isAdmin ? `Part agentes ${fmt(totalGainsAgentesReels)}` : 'Réel encaissé'}
           tone="brand"/>
       </div>
 
-      {/* ── F1 PRÉVISIONNEL ── */}
+      {/* ── PRÉVISIONNEL ── */}
       {tab === 'previsionnel' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
           <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
@@ -2175,7 +2234,7 @@ export default function Finances() {
         </div>
       )}
 
-      {/* ── F2 RÉEL ── */}
+      {/* ── RÉEL ── */}
       {tab === 'reel' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
           <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
@@ -2245,7 +2304,7 @@ export default function Finances() {
             </select>
           </div>
 
-          {/* ZONE 2 — sous-onglet Mois/Année + objectif + compte de résultat + graphe Gains/Charges */}
+          {/* ZONE 2 — sous-onglet Mois/Année + objectif + compte de résultat + graphe Produits/Reversements */}
           {renderSuiviFinancier(!isAdmin ? 'agent' : suiviMode)}
 
           {/* ZONE 3 — graphe barres Réel/Prévi + deux donuts côte à côte */}
