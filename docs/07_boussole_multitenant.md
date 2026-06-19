@@ -3,8 +3,8 @@
 > **État vivant du projet.** Lue par Claude (binôme) et Claude Code en tête de chaque session.
 > Le détail historique (journal des commits, chantier finances) est dans `07_journal_multitenant.md`.
 
-> Dernière mise à jour : 15/06/2026.
-> Statut : Multi-agence COMPLET. Bloc A sécurité soldé. Sujet erreurs avalées SOLDÉ (capture toute l'app + atomicité AMO). Famille AMO close (toggle K + conversions #3 + rattrapage data #4). Ménage infra fait (#5 policies Storage versionnées, #7 brèche placeholder fermée). App multi-tenant fonctionnelle, cloisonnée, sécurisée.
+> Dernière mise à jour : 18/06/2026.
+> Statut : Multi-agence COMPLET. Bloc A sécurité soldé. App multi-tenant fonctionnelle, cloisonnée, sécurisée. Acquis antérieurs : erreurs avalées soldé, famille AMO close, ménage infra (policies Storage versionnées + placeholder fermé). Sprint 16-17/06 mergé (22 lots) : refonte finances COMPLÈTE (4 onglets, 3 vues compte de résultat, royalties réel corrigées), dossier de fin (factures + RIB/KBIS + ZIP photos + PV réception), comparateur de devis, fiche technique depuis chantier, statut staff CLOS (calcStatut v2 + CHECK strict), stepper 5 étapes corrigé (bug Deudon), contrat auto-signé. 18/06 : PDF CR assaini (glyphes Roboto + flèches/alertes ASCII, e32a9c8).
 ---
 
 ## 0. CADRE
@@ -175,8 +175,10 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [ ] **Chantier 2 — décalage M−1 vue admin propre** : la redevance + apporteur que l'admin ENCAISSE des agentes (= leur F2) suivent le décalage M−1, mais SON activité propre n'est pas décalée. Écran à IDENTIFIER (probablement Suivi CTP). Auditer AVANT de coder.
 - [ ] **Grille redevances 12 mois** : éventuellement relibeller en mois de facture (datée activité aujourd'hui, correct mais visuellement ambigu). À juger à l'écran.
 - [ ] **3a-bis — Alerte écart figé/live** : badge ⚠️ signalant un écart entre montant figé (au clic « Reçu ») et live. PARKÉ — arbitrage Marine : le cas (activité d'un mois facturé qui bouge) est-il assez fréquent pour justifier un filet ? Sans traçabilité des modifs post-figement, un badge seul = bruit non actionnable.
-
-
+- [ ] **Label F1 « courtage + AMO » trompeur** : sur un mois sans AMO encaissé, F1 ne contient que du courtage. Relibeller dynamiquement selon ce qui est réellement dans le total. Découvert en facturant juillet (activité juin réelle).
+- [ ] **Convention d'affichage asymétrique commissions/honoraires** (lié L16 + vue agente) : commissions affichées en BRUT (pré-royalty, royalty 5% + split appliqués derrière), honoraires en POST-royalty (split seul). Même module Réel, deux stades → piège de relecture (a induit une erreur de calcul manuelle). Homogénéiser : afficher brut + post-royalty côte à côte comme les commissions. PAS un bug de calcul (F1 = 8 448,69 € juste), dette de lisibilité.
+- [ ] **Fiabilité génération CR (IA)** : coquilles et incohérences générées (« lansuite », « attende » au lieu d'« attendent », « Visite de suivi N°5 » alors que CR N°1). Présentes en base, pas un défaut de police. Piste : renforcer le prompt de génération (app/api/cr/route.js) — orthographe + cohérence du numéro de visite (le calquer sur le N° de CR réel plutôt que laisser l'IA inventer). À auditer : d'où sort le « N°5 » ? Si l'IA invente un compteur, il faut le lui passer en entrée.
+- [ ] **Incohérence accent prénom client** : « Jerome » (fiche client) vs « Jérôme » (corps CR). Donnée, pas code. Trancher la source de vérité : si l'accent est voulu, corriger clients.prenom ; sinon harmoniser le CR sur la fiche.
 
 #### Bloc C — Onboarding self-service (reste)
 - [ ] **3d page stats plateforme** — reportée backlog (pas utile tant qu'un seul franchisé ; compteurs visibles via dashboard Supabase).
@@ -233,10 +235,14 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] Finances Lot 3b — fusion Synthèse→Suivi + nouvelle mise en page ✅ 17/06 (6b95794)
 - [x] Finances Lot 3c — comptes de résultat 3 vues + tableaux Prévi/Réel refondus ✅ 17/06 (99291fc)
 - [x] Finances Lot 4 — D3 royalties réel corrigées ✅ 17/06 (2a8ae4d)
-- [~] D12 — renderAnnuel extraction finance.js : non applicable (couplage React trop fort). Clos 17/06.
+- [x] D12 — renderAnnuel : extraction vers finance.js non applicable. comptePourCle dépend de l'état React (rowsReel, mapPreviMois, redevancesScoped, mode, isCTP) — couplage trop fort pour une lib a-temporelle par dossier. La logique temporelle appartient à la page. Clos 17/06.
 - [x] l.228 Refonte 5 onglets finances — COMPLÈTE ✅ 17/06
 - [x] l.172/175 Renommages/libellés finances — COMPLÈTE ✅ 17/06
-
+- [x] Bug objectif agente (somme toutes agences) ✅ 18/06 (db506e3) — perso → fallback agence labellé → non défini.
+- [x] Retrait badges F1/F2 onglets + Suivi → « Compte de résultat » + « Gains » → « Produits » ✅ 18/06 (e76d6b9)
+- [x] Compte de résultat « CA généré » (3 modes unifiés) ✅ 18/06 (c2cf533) — formule CA = brut−royalty−apporteur total ; société −parts. KPI alignés (CA généré / Part franchisée). Bug royalty×2 société corrigé.
+- [x] RLS objectifs_ca durcie + prouvée (4 policies, brèches b/c fermées, 5 tests SQL verts) ✅ 18/06
+- [x] Lot 2 — Objectif perso agente éditable (RLS durcie + écran profil) ✅ 18/06 — l'agente fixe son objectif CA, last-write-wins avec l'admin (même ligne). Notif de changement = reportée (bloc notifs).
 ##### Décisions verrouillées finances
 - D1 : Renommer F1 Prévisionnel → Prévisionnel / F2 Réel → Réel
 - D2 : Vue mois/année Réel = encaissements réels par date paiement
@@ -258,6 +264,10 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - D16 : Vue "Par mois" supprimée dans Prévisionnel (pas de sens métier)
 - D17 : Prévi par mois = date_signature_contrat, Réel par mois = date paiement réel
 - D18 : scope reset à 'tous' en entrant sur Suivi/Facturation (handleTab)
+- D19 : Répartition par chantier = Frais(brut)+Commissions(brut)+Honoraires(brut)−Royalties=Net. Réel=encaissé, Prévi=engagé (base actifs). Apporteur = split Société/Agente seulement, jamais le total.
+- D20 : Royalty = 5% PAR ENCAISSEMENT, arrondie PAR COMPOSANT (méthode illiCO confirmée). NE JAMAIS recalculer sur un total (désaligne des factures illiCO). Convention assumée, pas une dette.
+- D21 : royaltyPreviActifs (base actifs) ≠ c.royaltiesTotal (royalty hon sur signés) sur dossiers à devis non signés. La répartition par chantier utilise royaltyPreviActifs (reconcilie le Net) ; KPI CA prévi + Suivi CTP gardent c.royaltiesTotal (agrégat canonique). Bases différentes = volontaire.
+- D22 : CA généré = Hon+Com+Frais(brut) − Royalties − Apporteur remboursé(TOTAL). agent/agence = CA ; société = CA − parts agentes. Redevance EXCLUE du compte de résultat (vit en Facturation). Apporteur TOTAL déduit dans les 3 modes. Net par chantier (répartition) ≠ CA généré (diffère de l'apporteur, voulu — libellés distincts).
 
 ##### 4 onglets finaux
 Prévisionnel · Réel · Suivi financier · Facturation
