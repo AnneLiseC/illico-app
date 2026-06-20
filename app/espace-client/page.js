@@ -46,6 +46,7 @@ export default function EspaceClient() {
   const [profile, setProfile]         = useState(null)
   const [dossier, setDossier]         = useState(null)
   const [photos, setPhotos]           = useState([])
+  const [devis, setDevis]             = useState([])
   const [comptesRendus, setComptesRendus] = useState([])
   const [messages, setMessages]       = useState([])
   const [loading, setLoading]         = useState(true)
@@ -69,6 +70,15 @@ export default function EspaceClient() {
       return { ...p, url_signee: u?.signedUrl }
     }))
     setPhotos(withUrls)
+  }
+
+  // Devis acceptés du dossier, lus via la vue scopée client_devis_acceptes
+  // (la table devis_artisans n'est pas lisible côté client). Colonnes exposées :
+  // devis_id, dossier_id, statut ('accepte'), artisan_entreprise.
+  const chargerDevis = async (dossierId) => {
+    const { data } = await supabase
+      .from('client_devis_acceptes').select('*').eq('dossier_id', dossierId)
+    setDevis(data || [])
   }
 
   const chargerComptesRendus = async (dossierId) => {
@@ -128,7 +138,7 @@ export default function EspaceClient() {
       // Dossier AMO du client
       const { data: dossierData } = await supabase
         .from('dossiers')
-        .select('*, referente:profiles!dossiers_referente_id_fkey(prenom, nom), devis_artisans(id, statut, artisan:artisans(entreprise))')
+        .select('*, referente:profiles!dossiers_referente_id_fkey(prenom, nom)')
         .eq('client_id', profData.client_id)
         .eq('typologie', 'amo')
         .order('created_at', { ascending: false })
@@ -139,6 +149,7 @@ export default function EspaceClient() {
         setDossier(dossierData)
         await Promise.all([
           chargerPhotos(dossierData.id),
+          chargerDevis(dossierData.id),
           chargerComptesRendus(dossierData.id),
           chargerMessages(dossierData.id, user.id),
         ])
@@ -229,7 +240,6 @@ export default function EspaceClient() {
   const statutClient      = STATUT_CLIENT_OVERRIDE[calcStatut(dossierComplet)] || STATUT_CONFIG[calcStatut(dossierComplet)]
   const photosCatActuelle = photos.filter(p => p.categorie === categoriePhoto)
   const nbMsgNonLus       = messages.filter(m => m.auteur_role !== 'client' && !m.lu).length
-  const devisAcceptes     = (dossier.devis_artisans || []).filter(d => d.statut === 'accepte')
 
   const onglets = [
     { key: 'accueil',   label: 'Mon chantier',                                    icon: '🏠' },
@@ -297,10 +307,10 @@ export default function EspaceClient() {
                     <p className="font-medium text-gray-800">{new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR')}</p>
                   </div>
                 )}
-                {devisAcceptes.length > 0 && (
+                {devis.length > 0 && (
                   <div>
                     <p className="text-xs text-gray-400">Artisans</p>
-                    <p className="font-medium text-gray-800">{devisAcceptes.length} devis signé{devisAcceptes.length > 1 ? 's' : ''}</p>
+                    <p className="font-medium text-gray-800">{devis.length} devis signé{devis.length > 1 ? 's' : ''}</p>
                   </div>
                 )}
               </div>
@@ -338,14 +348,14 @@ export default function EspaceClient() {
             )}
 
             {/* Artisans */}
-            {devisAcceptes.length > 0 && (
+            {devis.length > 0 && (
               <div className="bg-white border border-gray-200 rounded-xl p-5">
                 <h2 className="font-semibold text-gray-800 mb-3">Artisans sélectionnés</h2>
                 <div className="space-y-2">
-                  {devisAcceptes.map(dv => (
-                    <div key={dv.id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
+                  {devis.map(dv => (
+                    <div key={dv.devis_id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
                       <span className="text-xl">🔨</span>
-                      <p className="text-sm font-medium text-gray-800">{dv.artisan?.entreprise}</p>
+                      <p className="text-sm font-medium text-gray-800">{dv.artisan_entreprise}</p>
                       <span className="ml-auto text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Devis signé</span>
                     </div>
                   ))}
