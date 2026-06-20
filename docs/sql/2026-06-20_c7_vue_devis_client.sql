@@ -179,6 +179,25 @@ SELECT * FROM public.client_devis_acceptes LIMIT 5;
 --     vue (et éventuellement la fonction). Assumées (cf. en-tête). Vérifier
 --     qu'aucune AUTRE alerte nouvelle n'apparaît.
 
+-- ── 5. CORRECTIF DROITS — resserrer authenticated à SELECT uniquement ────────
+-- Les default privileges Supabase accordent ALL (INSERT/UPDATE/DELETE/TRUNCATE/
+-- REFERENCES/TRIGGER, en plus de SELECT) à `authenticated` sur tout nouvel objet
+-- de public. Le GRANT SELECT de la section 2 N'ENLÈVE PAS ces droits hérités →
+-- vérif (e) montre authenticated avec ALL. On resserre à SELECT seul.
+-- ⚠️ On ne touche QUE `authenticated`. postgres / service_role (admin/backend)
+--    gardent leurs droits — c'est normal.
+BEGIN;
+  REVOKE ALL ON public.client_devis_acceptes FROM authenticated;
+  GRANT SELECT ON public.client_devis_acceptes TO authenticated;
+COMMIT;
+
+-- VÉRIF APRÈS correctif (lecture seule) : authenticated ne doit plus avoir que SELECT.
+SELECT grantee, privilege_type
+FROM information_schema.role_table_grants
+WHERE table_schema = 'public' AND table_name = 'client_devis_acceptes' AND grantee = 'authenticated'
+ORDER BY privilege_type;
+-- → attendu : UNE seule ligne, privilege_type = SELECT.
+
 -- ============================================================================
 -- ROLLBACK (à n'exécuter QUE pour revenir à l'état d'origine) :
 -- ----------------------------------------------------------------------------
