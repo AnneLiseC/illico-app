@@ -390,13 +390,13 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
 
 // ── ROUTE API ──
 // Types autorisés pour un utilisateur client (lecture de son propre dossier uniquement)
-const CLIENT_ALLOWED_TYPES = new Set(['cr'])
+const CLIENT_ALLOWED_TYPES = new Set(['cr', 'devis'])
 
 export async function POST(request) {
   const auth = await requireUser(request)
   if (auth.error) return auth.error
   try {
-    const { dossierId, type, crId } = await request.json()
+    const { dossierId, type, crId, devisId } = await request.json()
 
     if (!dossierId || !type) {
       return NextResponse.json({ error: 'Paramètres manquants' }, { status: 400 })
@@ -541,6 +541,49 @@ export async function POST(request) {
 
       const doc = buildCRDocument({ dossier, cr, sections, logo: getLogoBase64() })
       pdfBuffer = await renderToBuffer(doc)
+
+    } else if (type === 'devis') {
+      // Devis SIGNÉ : fichier STOCKÉ (bucket documents), pas généré. Servi via
+      // service_role, jamais via le bucket (qui reste fermé au client).
+      if (!devisId) return NextResponse.json({ error: 'devisId manquant' }, { status: 400 })
+
+      // Ownership STRICT : le devis doit appartenir au dossier déjà vérifié (:419).
+      // `devis` est scopé à dossierId (:435) → retrouver devisId dedans garantit
+      // qu'il est dans le dossier possédé. Forge d'un devisId d'un autre dossier → 404.
+      const devisCible = (devis || []).find(d => d.id === devisId)
+      if (!devisCible || devisCible.dossier_id !== dossierId) {
+        return NextResponse.json({ error: 'Devis non trouvé' }, { status: 404 })
+      }
+      // Cohérence C7-1 : le client ne télécharge que ce qu'il voit (devis accepté).
+      if (devisCible.statut !== 'accepte') {
+        return NextResponse.json({ error: 'Devis non trouvé' }, { status: 404 })
+      }
+      // Tous les acceptés n'ont pas de PDF signé → 404 propre (pas de crash).
+      if (!devisCible.devis_signe_path) {
+        return NextResponse.json({ error: 'PDF du devis non disponible' }, { status: 404 })
+      }
+      const { data: fileData, error: dlErr } = await supabaseAdmin.storage
+        .from('documents').download(devisCible.devis_signe_path)
+      if (dlErr || !fileData) {
+        return NextResponse.json({ error: 'PDF du devis non disponible' }, { status: 404 })
+      }
+      const fileBuf = Buffer.from(await fileData.arrayBuffer())
+
+      // Content-Type dérivé de l'extension (le devis signé peut être pdf OU image).
+      const ext = (devisCible.devis_signe_path.split('.').pop() || '').toLowerCase()
+      const contentType = ext === 'pdf' ? 'application/pdf'
+        : (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg'
+        : ext === 'png' ? 'image/png'
+        : 'application/octet-stream'
+      const devisNom = `Devis_${dossier.reference}_${devisCible.artisan?.entreprise || 'artisan'}.${ext || 'pdf'}`
+      const devisAscii = devisNom.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '')
+      // inline : le client ouvre le document dans un onglet (carte « voir le devis »).
+      return new Response(fileBuf, {
+        headers: {
+          'Content-Type': contentType,
+          'Content-Disposition': `inline; filename="${devisAscii}"; filename*=UTF-8''${encodeURIComponent(devisNom)}`,
+        },
+      })
 
     } else {
       return NextResponse.json({ error: 'Type de PDF inconnu' }, { status: 400 })
