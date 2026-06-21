@@ -82,13 +82,13 @@ export default function EspaceClient() {
   }
 
   const chargerComptesRendus = async (dossierId) => {
-    // Afficher seulement les CR validés (valide = true)
+    // CR visibles client via la vue scopée client_comptes_rendus : elle porte déjà
+    // valide=true ET type_visite NOT IN (r1,r2,r3) → suivi + reception, colonnes
+    // limitées (ni notes_brutes ni contenu_ia). On ne refiltre PAS le type ici.
     const { data } = await supabase
-      .from('comptes_rendus')
-      .select('*, auteur:profiles(prenom, nom)')
+      .from('client_comptes_rendus')
+      .select('*')
       .eq('dossier_id', dossierId)
-      .eq('valide', true)
-      .eq('type_visite', 'suivi')
       .order('created_at', { ascending: false })
     setComptesRendus(data || [])
   }
@@ -493,9 +493,9 @@ export default function EspaceClient() {
               </div>
             ) : (
               comptesRendus.map(cr => (
-                <div key={cr.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div key={cr.cr_id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                   <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
-                    onClick={() => setCrOuvert(crOuvert === cr.id ? null : cr.id)}>
+                    onClick={() => setCrOuvert(crOuvert === cr.cr_id ? null : cr.cr_id)}>
                     <div className="flex items-center gap-3">
                       <span className="text-xl">📄</span>
                       <div>
@@ -506,13 +506,13 @@ export default function EspaceClient() {
                           {cr.date_visite
                             ? new Date(cr.date_visite).toLocaleDateString('fr-FR')
                             : new Date(cr.created_at).toLocaleDateString('fr-FR')}
-                          {cr.auteur && ` — ${cr.auteur.prenom} ${cr.auteur.nom}`}
+                          {(cr.auteur_prenom || cr.auteur_nom) && ` — ${cr.auteur_prenom || ''} ${cr.auteur_nom || ''}`.trimEnd()}
                         </p>
                       </div>
                     </div>
-                    <span className="text-gray-400 text-sm">{crOuvert === cr.id ? '▲' : '▼'}</span>
+                    <span className="text-gray-400 text-sm">{crOuvert === cr.cr_id ? '▲' : '▼'}</span>
                   </div>
-                  {crOuvert === cr.id && (
+                  {crOuvert === cr.cr_id && (
                     <div className="border-t border-gray-100 px-4 py-4 space-y-3">
                       {cr.contenu_final ? (
                         <div className="prose prose-sm max-w-none">
@@ -530,7 +530,7 @@ export default function EspaceClient() {
                                 const res = await fetch('/api/pdf', {
                                   method: 'POST',
                                   headers: await authHeaders(),
-                                  body: JSON.stringify({ dossierId: dossier.id, type: 'cr', crId: cr.id }),
+                                  body: JSON.stringify({ dossierId: dossier.id, type: 'cr', crId: cr.cr_id }),
                                 })
                                 if (!res.ok) {
                                   const data = await res.json().catch(() => ({}))
