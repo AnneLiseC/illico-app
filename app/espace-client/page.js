@@ -204,6 +204,31 @@ export default function EspaceClient() {
     router.push('/login')
   }
 
+  // Ouvre le PDF du devis signé (servi inline par /api/pdf, type='devis').
+  // Même pattern que le téléchargement CR (authHeaders + blob), mais window.open
+  // (inline) au lieu d'un <a download>.
+  const ouvrirDevis = async (devisId) => {
+    setPdfErreur('')
+    try {
+      const res = await fetch('/api/pdf', {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({ dossierId: dossier.id, type: 'devis', devisId }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setPdfErreur('Devis indisponible : ' + (data.error || `code ${res.status}`))
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (err) {
+      setPdfErreur('Devis indisponible : ' + (err.message || 'réseau'))
+    }
+  }
+
   if (loading) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <p className="text-gray-400">Chargement...</p>
@@ -353,13 +378,25 @@ export default function EspaceClient() {
                 <h2 className="font-semibold text-gray-800 mb-3">Artisans sélectionnés</h2>
                 <div className="space-y-2">
                   {devis.map(dv => (
-                    <div key={dv.devis_id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
-                      <span className="text-xl">🔨</span>
-                      <p className="text-sm font-medium text-gray-800">{dv.artisan_entreprise}</p>
-                      <span className="ml-auto text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Devis signé</span>
-                    </div>
+                    dv.a_devis_signe ? (
+                      <button key={dv.devis_id} onClick={() => ouvrirDevis(dv.devis_id)}
+                        className="w-full flex items-center gap-3 py-2 px-2 -mx-2 rounded-lg border-b border-gray-100 last:border-0 hover:bg-blue-50 transition-colors text-left">
+                        <span className="text-xl">📄</span>
+                        <p className="text-sm font-medium text-gray-800">{dv.artisan_entreprise}</p>
+                        <span className="ml-auto text-xs text-blue-700">Voir le devis →</span>
+                      </button>
+                    ) : (
+                      <div key={dv.devis_id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
+                        <span className="text-xl">🔨</span>
+                        <p className="text-sm font-medium text-gray-800">{dv.artisan_entreprise}</p>
+                        <span className="ml-auto text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Devis signé</span>
+                      </div>
+                    )
                   ))}
                 </div>
+                {pdfErreur && (
+                  <p className="text-xs text-red-600 mt-2">{pdfErreur}</p>
+                )}
               </div>
             )}
 
