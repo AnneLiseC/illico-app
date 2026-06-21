@@ -159,16 +159,16 @@ export default function EspaceClient() {
     init()
   }, [router])
 
-  // Realtime : nouveaux messages côté client (réponse de l'agence)
+  // Realtime : nouveaux messages côté client (réponse de l'agence).
+  // Plus de realtime CR : la table comptes_rendus est fail-closed pour le client
+  // (lecture via la vue client_comptes_rendus) → l'abonnement ne recevrait rien.
+  // Les CR se rechargent à l'ouverture (chargerComptesRendus dans le Promise.all).
   useEffect(() => {
     if (!dossier?.id || !profile?.id) return
     const channel = supabase
       .channel(`espace-client:${dossier.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `dossier_id=eq.${dossier.id}` },
         () => chargerMessages(dossier.id, profile.id))
-      // CR : INSERT (nouveau CR publié) ou UPDATE (toggle valide → apparaît/disparaît)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'comptes_rendus', filter: `dossier_id=eq.${dossier.id}` },
-        () => chargerComptesRendus(dossier.id))
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [dossier?.id, profile?.id])
