@@ -194,6 +194,55 @@ BEGIN;
     END;
   END $$;
 
+  -- T7 — a_devis_signe (C7-3 B1) : cohérence avec la réalité + chemin caché.
+  -- Requiert la vue en version 5 colonnes (B1 appliqué). Sous le JWT de A.
+  DO $$
+  DECLARE v_true int; v_false int; t_true int; t_false int;
+  BEGIN
+    PERFORM set_config('request.jwt.claims',
+      '{"sub":"c6cadabd-b013-4554-a3f2-cdaede69b33e","role":"authenticated"}', true);
+
+    -- T7a/T7b — cohérence true/false vs la réalité (devis_signe_path), scopée A.
+    BEGIN
+      SELECT count(*) INTO v_true  FROM public.client_devis_acceptes WHERE a_devis_signe;
+      SELECT count(*) INTO v_false FROM public.client_devis_acceptes WHERE NOT a_devis_signe;
+      -- vérité terrain : mêmes filtres que la vue (accepté + JOIN artisan + dossiers de A)
+      SELECT count(*) INTO t_true
+        FROM public.devis_artisans da JOIN public.artisans a ON a.id = da.artisan_id
+        WHERE da.statut = 'accepte' AND da.devis_signe_path IS NOT NULL
+          AND da.dossier_id IN (SELECT d.id FROM public.dossiers d
+                                WHERE d.client_id = '7f269a05-d287-41aa-b6ff-3ae77f0aa0d3');
+      SELECT count(*) INTO t_false
+        FROM public.devis_artisans da JOIN public.artisans a ON a.id = da.artisan_id
+        WHERE da.statut = 'accepte' AND da.devis_signe_path IS NULL
+          AND da.dossier_id IN (SELECT d.id FROM public.dossiers d
+                                WHERE d.client_id = '7f269a05-d287-41aa-b6ff-3ae77f0aa0d3');
+      INSERT INTO _res VALUES ('T7a — a_devis_signe=true coherent',
+        CASE WHEN v_true = t_true THEN 'OK' ELSE 'ÉCHEC' END,
+        format('vue_true=%s, verite_true=%s (doivent etre egaux)', v_true, t_true));
+      INSERT INTO _res VALUES ('T7b — a_devis_signe=false coherent',
+        CASE WHEN v_false = t_false THEN 'OK' ELSE 'ÉCHEC' END,
+        format('vue_false=%s, verite_false=%s (doivent etre egaux)', v_false, t_false));
+    EXCEPTION
+      WHEN undefined_column THEN
+        INSERT INTO _res VALUES ('T7a — a_devis_signe=true coherent', 'ÉCHEC',
+          'colonne a_devis_signe absente : appliquer B1 (2026-06-21_c7_vue_devis_ajout_a_devis_signe.sql)');
+        INSERT INTO _res VALUES ('T7b — a_devis_signe=false coherent', 'ÉCHEC',
+          'colonne a_devis_signe absente : appliquer B1');
+    END;
+
+    -- T7c — le chemin réel devis_signe_path reste inatteignable (comme T6).
+    BEGIN
+      PERFORM devis_signe_path FROM public.client_devis_acceptes LIMIT 1;
+      INSERT INTO _res VALUES ('T7c — devis_signe_path cache', 'ÉCHEC', 'colonne ACCESSIBLE (faille)');
+    EXCEPTION
+      WHEN undefined_column THEN
+        INSERT INTO _res VALUES ('T7c — devis_signe_path cache', 'OK', 'SQLSTATE 42703 (colonne inexistante)');
+      WHEN OTHERS THEN
+        INSERT INTO _res VALUES ('T7c — devis_signe_path cache', '? ERREUR', format('SQLSTATE=%s', SQLSTATE));
+    END;
+  END $$;
+
   -- ── 3. RÉCAP (à lire AVANT le ROLLBACK) ────────────────────────────────────
   SELECT test, verdict, detail FROM _res ORDER BY test;
 
