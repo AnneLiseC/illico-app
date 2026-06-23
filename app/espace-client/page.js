@@ -46,6 +46,7 @@ export default function EspaceClient() {
   const [profile, setProfile]         = useState(null)
   const [dossier, setDossier]         = useState(null)
   const [photos, setPhotos]           = useState([])
+  const [devis, setDevis]             = useState([])
   const [comptesRendus, setComptesRendus] = useState([])
   const [messages, setMessages]       = useState([])
   const [loading, setLoading]         = useState(true)
@@ -71,14 +72,23 @@ export default function EspaceClient() {
     setPhotos(withUrls)
   }
 
-  const chargerComptesRendus = async (dossierId) => {
-    // Afficher seulement les CR validés (valide = true)
+  // Devis acceptés du dossier, lus via la vue scopée client_devis_acceptes
+  // (la table devis_artisans n'est pas lisible côté client). Colonnes exposées :
+  // devis_id, dossier_id, statut ('accepte'), artisan_entreprise.
+  const chargerDevis = async (dossierId) => {
     const { data } = await supabase
-      .from('comptes_rendus')
-      .select('*, auteur:profiles(prenom, nom)')
+      .from('client_devis_acceptes').select('*').eq('dossier_id', dossierId)
+    setDevis(data || [])
+  }
+
+  const chargerComptesRendus = async (dossierId) => {
+    // CR visibles client via la vue scopée client_comptes_rendus : elle porte déjà
+    // valide=true ET type_visite NOT IN (r1,r2,r3) → suivi + reception, colonnes
+    // limitées (ni notes_brutes ni contenu_ia). On ne refiltre PAS le type ici.
+    const { data } = await supabase
+      .from('client_comptes_rendus')
+      .select('*')
       .eq('dossier_id', dossierId)
-      .eq('valide', true)
-      .eq('type_visite', 'suivi')
       .order('created_at', { ascending: false })
     setComptesRendus(data || [])
   }
@@ -128,7 +138,7 @@ export default function EspaceClient() {
       // Dossier AMO du client
       const { data: dossierData } = await supabase
         .from('dossiers')
-        .select('*, referente:profiles!dossiers_referente_id_fkey(prenom, nom), devis_artisans(id, statut, artisan:artisans(entreprise))')
+        .select('*, referente:profiles!dossiers_referente_id_fkey(prenom, nom)')
         .eq('client_id', profData.client_id)
         .eq('typologie', 'amo')
         .order('created_at', { ascending: false })
@@ -139,6 +149,7 @@ export default function EspaceClient() {
         setDossier(dossierData)
         await Promise.all([
           chargerPhotos(dossierData.id),
+          chargerDevis(dossierData.id),
           chargerComptesRendus(dossierData.id),
           chargerMessages(dossierData.id, user.id),
         ])
@@ -148,16 +159,16 @@ export default function EspaceClient() {
     init()
   }, [router])
 
-  // Realtime : nouveaux messages côté client (réponse de l'agence)
+  // Realtime : nouveaux messages côté client (réponse de l'agence).
+  // Plus de realtime CR : la table comptes_rendus est fail-closed pour le client
+  // (lecture via la vue client_comptes_rendus) → l'abonnement ne recevrait rien.
+  // Les CR se rechargent à l'ouverture (chargerComptesRendus dans le Promise.all).
   useEffect(() => {
     if (!dossier?.id || !profile?.id) return
     const channel = supabase
       .channel(`espace-client:${dossier.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `dossier_id=eq.${dossier.id}` },
         () => chargerMessages(dossier.id, profile.id))
-      // CR : INSERT (nouveau CR publié) ou UPDATE (toggle valide → apparaît/disparaît)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'comptes_rendus', filter: `dossier_id=eq.${dossier.id}` },
-        () => chargerComptesRendus(dossier.id))
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [dossier?.id, profile?.id])
@@ -191,6 +202,31 @@ export default function EspaceClient() {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  // Ouvre le PDF du devis signé (servi inline par /api/pdf, type='devis').
+  // Même pattern que le téléchargement CR (authHeaders + blob), mais window.open
+  // (inline) au lieu d'un <a download>.
+  const ouvrirDevis = async (devisId) => {
+    setPdfErreur('')
+    try {
+      const res = await fetch('/api/pdf', {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({ dossierId: dossier.id, type: 'devis', devisId }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setPdfErreur('Devis indisponible : ' + (data.error || `code ${res.status}`))
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (err) {
+      setPdfErreur('Devis indisponible : ' + (err.message || 'réseau'))
+    }
   }
 
   if (loading) return (
@@ -229,7 +265,6 @@ export default function EspaceClient() {
   const statutClient      = STATUT_CLIENT_OVERRIDE[calcStatut(dossierComplet)] || STATUT_CONFIG[calcStatut(dossierComplet)]
   const photosCatActuelle = photos.filter(p => p.categorie === categoriePhoto)
   const nbMsgNonLus       = messages.filter(m => m.auteur_role !== 'client' && !m.lu).length
-  const devisAcceptes     = (dossier.devis_artisans || []).filter(d => d.statut === 'accepte')
 
   const onglets = [
     { key: 'accueil',   label: 'Mon chantier',                                    icon: '🏠' },
@@ -297,10 +332,10 @@ export default function EspaceClient() {
                     <p className="font-medium text-gray-800">{new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR')}</p>
                   </div>
                 )}
-                {devisAcceptes.length > 0 && (
+                {devis.length > 0 && (
                   <div>
                     <p className="text-xs text-gray-400">Artisans</p>
-                    <p className="font-medium text-gray-800">{devisAcceptes.length} devis signé{devisAcceptes.length > 1 ? 's' : ''}</p>
+                    <p className="font-medium text-gray-800">{devis.length} devis signé{devis.length > 1 ? 's' : ''}</p>
                   </div>
                 )}
               </div>
@@ -338,18 +373,30 @@ export default function EspaceClient() {
             )}
 
             {/* Artisans */}
-            {devisAcceptes.length > 0 && (
+            {devis.length > 0 && (
               <div className="bg-white border border-gray-200 rounded-xl p-5">
                 <h2 className="font-semibold text-gray-800 mb-3">Artisans sélectionnés</h2>
                 <div className="space-y-2">
-                  {devisAcceptes.map(dv => (
-                    <div key={dv.id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
-                      <span className="text-xl">🔨</span>
-                      <p className="text-sm font-medium text-gray-800">{dv.artisan?.entreprise}</p>
-                      <span className="ml-auto text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Devis signé</span>
-                    </div>
+                  {devis.map(dv => (
+                    dv.a_devis_signe ? (
+                      <button key={dv.devis_id} onClick={() => ouvrirDevis(dv.devis_id)}
+                        className="w-full flex items-center gap-3 py-2 px-2 -mx-2 rounded-lg border-b border-gray-100 last:border-0 hover:bg-blue-50 transition-colors text-left">
+                        <span className="text-xl">📄</span>
+                        <p className="text-sm font-medium text-gray-800">{dv.artisan_entreprise}</p>
+                        <span className="ml-auto text-xs text-blue-700">Voir le devis →</span>
+                      </button>
+                    ) : (
+                      <div key={dv.devis_id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
+                        <span className="text-xl">🔨</span>
+                        <p className="text-sm font-medium text-gray-800">{dv.artisan_entreprise}</p>
+                        <span className="ml-auto text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Devis signé</span>
+                      </div>
+                    )
                   ))}
                 </div>
+                {pdfErreur && (
+                  <p className="text-xs text-red-600 mt-2">{pdfErreur}</p>
+                )}
               </div>
             )}
 
@@ -446,9 +493,9 @@ export default function EspaceClient() {
               </div>
             ) : (
               comptesRendus.map(cr => (
-                <div key={cr.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div key={cr.cr_id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
                   <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
-                    onClick={() => setCrOuvert(crOuvert === cr.id ? null : cr.id)}>
+                    onClick={() => setCrOuvert(crOuvert === cr.cr_id ? null : cr.cr_id)}>
                     <div className="flex items-center gap-3">
                       <span className="text-xl">📄</span>
                       <div>
@@ -459,13 +506,13 @@ export default function EspaceClient() {
                           {cr.date_visite
                             ? new Date(cr.date_visite).toLocaleDateString('fr-FR')
                             : new Date(cr.created_at).toLocaleDateString('fr-FR')}
-                          {cr.auteur && ` — ${cr.auteur.prenom} ${cr.auteur.nom}`}
+                          {(cr.auteur_prenom || cr.auteur_nom) && ` — ${cr.auteur_prenom || ''} ${cr.auteur_nom || ''}`.trimEnd()}
                         </p>
                       </div>
                     </div>
-                    <span className="text-gray-400 text-sm">{crOuvert === cr.id ? '▲' : '▼'}</span>
+                    <span className="text-gray-400 text-sm">{crOuvert === cr.cr_id ? '▲' : '▼'}</span>
                   </div>
-                  {crOuvert === cr.id && (
+                  {crOuvert === cr.cr_id && (
                     <div className="border-t border-gray-100 px-4 py-4 space-y-3">
                       {cr.contenu_final ? (
                         <div className="prose prose-sm max-w-none">
@@ -483,7 +530,7 @@ export default function EspaceClient() {
                                 const res = await fetch('/api/pdf', {
                                   method: 'POST',
                                   headers: await authHeaders(),
-                                  body: JSON.stringify({ dossierId: dossier.id, type: 'cr', crId: cr.id }),
+                                  body: JSON.stringify({ dossierId: dossier.id, type: 'cr', crId: cr.cr_id }),
                                 })
                                 if (!res.ok) {
                                   const data = await res.json().catch(() => ({}))
