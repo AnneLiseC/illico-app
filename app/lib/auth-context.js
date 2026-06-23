@@ -21,6 +21,7 @@ export function AuthProvider({ children }) {
   const [agenceActive, setAgenceActiveState] = useState(null)
   const [initialized, setInitialized] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [unreadMessages, setUnreadMessages] = useState(0)
   const prevUserIdRef = useRef(null)
 
   const loadUnread = useCallback(async (uid) => {
@@ -31,6 +32,18 @@ export function AuthProvider({ children }) {
       .eq('user_id', uid)
       .eq('lu', false)
     setUnreadCount(count || 0)
+  }, [])
+
+  // Messages client non lus côté STAFF (pastille navbar). La RLS messages_staff_scope
+  // scope déjà aux dossiers visibles (admin = société, agente = ses dossiers) → pas
+  // de filtre agence manuel. Ne concerne pas un client (pas de navbar staff).
+  const loadUnreadMessages = useCallback(async () => {
+    const { count } = await supabase
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('auteur_role', 'client')
+      .eq('lu_agence', false)
+    setUnreadMessages(count || 0)
   }, [])
 
   // Nom à afficher dans le header : agence de l'utilisateur si rattaché à une
@@ -122,10 +135,13 @@ export function AuthProvider({ children }) {
         setProfileStatus('absent')
       }
       loadUnread(uid)
+      // Pastille messages : seulement pour le staff (admin/agente), pas un client.
+      if (data?.role === 'admin' || data?.role === 'agente') loadUnreadMessages()
+      else setUnreadMessages(0)
     } catch {
       // erreur réseau transitoire, on ne reset pas le profil ni le statut (reste 'loading')
     }
-  }, [loadUnread, loadAgenceName, loadAgences])
+  }, [loadUnread, loadUnreadMessages, loadAgenceName, loadAgences])
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -183,6 +199,21 @@ export function AuthProvider({ children }) {
     return () => supabase.removeChannel(channel)
   }, [user?.id, loadUnread])
 
+  // Pastille messages (staff) : recharge le compteur quand un message arrive
+  // (INSERT) ou est marqué lu par l'agence (UPDATE lu_agence). La RLS scope déjà.
+  useEffect(() => {
+    if (!user?.id) return
+    if (!(profile?.role === 'admin' || profile?.role === 'agente')) return
+    const channel = supabase
+      .channel(`msgs-unread-${user.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
+        () => loadUnreadMessages())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' },
+        () => loadUnreadMessages())
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [user?.id, profile?.role, loadUnreadMessages])
+
   const markAllRead = useCallback(async () => {
     if (!user?.id) return
     await supabase
@@ -194,7 +225,7 @@ export function AuthProvider({ children }) {
   }, [user?.id])
 
   return (
-    <AuthContext.Provider value={{ user, profile, societe: profile?.societe, profileStatus, displayAgenceName, agences, agenceActive, setAgenceActive, refreshAgences, initialized, unreadCount, markAllRead, loadUnread, fetchProfile }}>
+    <AuthContext.Provider value={{ user, profile, societe: profile?.societe, profileStatus, displayAgenceName, agences, agenceActive, setAgenceActive, refreshAgences, initialized, unreadCount, unreadMessages, markAllRead, loadUnread, fetchProfile }}>
       {children}
     </AuthContext.Provider>
   )
