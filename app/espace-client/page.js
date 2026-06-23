@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { calcStatut, STATUT_CONFIG } from '../lib/dossiers'
 import { authHeaders } from '../lib/api-auth-client'
+import { fmtDateHeureFR } from '../lib/dates'
 import MarkdownCR from '../components/MarkdownCR'
 
 // Vue client : les statuts internes de prospection (à contacter / à relancer)
@@ -586,7 +587,7 @@ export default function EspaceClient() {
                           )}
                           <p className="text-sm">{msg.contenu}</p>
                           <p className={`text-xs mt-1 opacity-60 ${isClient ? 'text-right' : ''}`}>
-                            {new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            {fmtDateHeureFR(msg.created_at)}
                           </p>
                         </div>
                       </div>

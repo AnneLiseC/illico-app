@@ -10,6 +10,7 @@ import { calculerAvancement, detecterCategorie } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
+import { fmtDateHeureFR } from '../../lib/dates'
 import JSZip from 'jszip'
 
 // Liste des entités supprimées avec un chantier — source unique des 2 libellés
@@ -5205,7 +5206,7 @@ export default function FicheChantier({ params }) {
               const who = isClient
                 ? (msg.auteur?.prenom ? `${msg.auteur.prenom}${msg.auteur.nom ? ' ' + msg.auteur.nom : ''}` : (client ? `${client.prenom || ''} ${client.nom || ''}`.trim() : 'Client'))
                 : (msg.auteur?.prenom ? `${msg.auteur.prenom}${msg.auteur.nom ? ' ' + msg.auteur.nom[0] + '.' : ''}` : 'Équipe')
-              const when = new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+              const when = fmtDateHeureFR(msg.created_at)
               return (
                 <div key={msg.id} style={{display:'flex', gap:10, justifyContent: isClient ? 'flex-start' : 'flex-end'}}>
                   {isClient && <Avatar name={who} color="#0094d4" size={28} />}
