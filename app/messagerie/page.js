@@ -23,9 +23,9 @@ export default function MessageriePage() {
     const chargerDossiers = async () => {
       const { data: dossData } = await supabase
         .from('dossiers')
-        .select('id, reference, client:clients(prenom, nom)')
+        .select('id, reference, client:clients(prenom, nom), referente:profiles!dossiers_referente_id_fkey(prenom, nom)')
         .eq('typologie', 'amo')
-        .order('reference')
+        .order('created_at', { ascending: false })
 
       if (!dossData) { setLoading(false); return }
 
@@ -150,10 +150,10 @@ export default function MessageriePage() {
       </div>
 
       {/* Layout deux colonnes */}
-      <div className="card" style={{padding:0, overflow:'hidden', display:'grid', gridTemplateColumns:'300px 1fr', minHeight:560}}>
+      <div className="card" style={{padding:0, overflow:'hidden', display:'grid', gridTemplateColumns:'300px 1fr', height:'calc(100vh - 210px)', minHeight:480}}>
 
         {/* ── Liste des dossiers AMO ── */}
-        <div style={{borderRight:'1px solid var(--ink-200)', display:'flex', flexDirection:'column'}}>
+        <div style={{borderRight:'1px solid var(--ink-200)', display:'flex', flexDirection:'column', overflowY:'auto', minHeight:0}}>
           {dossiers.length === 0 ? (
             <div style={{padding:32, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
               Aucun chantier AMO
@@ -189,7 +189,7 @@ export default function MessageriePage() {
         </div>
 
         {/* ── Zone de conversation ── */}
-        <div style={{display:'flex', flexDirection:'column'}}>
+        <div style={{display:'flex', flexDirection:'column', minHeight:0}}>
           {!dossierId ? (
             <div style={{flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:48}}>
               <div style={{color:'var(--ink-400)', fontSize:13}}>Sélectionnez un chantier</div>
@@ -233,7 +233,9 @@ export default function MessageriePage() {
                           boxShadow: isClient ? '0 1px 2px rgba(0,0,0,0.04)' : undefined,
                         }}>
                           <div style={{fontSize:11.5, fontWeight:600, marginBottom:4, color: isClient ? 'var(--ink-500)' : 'rgba(255,255,255,0.7)'}}>
-                            {isClient ? `${msg.auteur?.prenom || 'Client'} (client)` : `${msg.auteur?.prenom || 'Équipe'}`}
+                            {isClient
+                              ? (msg.auteur?.prenom || nomClient(dossierActif) || 'Client')
+                              : (`${dossierActif?.referente?.prenom || ''} ${dossierActif?.referente?.nom || ''}`.trim() || 'Équipe')}
                           </div>
                           <div>{msg.contenu}</div>
                           <div style={{fontSize:11, marginTop:4, opacity:0.6}}>
