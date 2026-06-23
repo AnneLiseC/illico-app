@@ -10,7 +10,7 @@ import { calculerAvancement, detecterCategorie } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
-import { fmtDateHeureFR } from '../../lib/dates'
+import { fmtDateHeureFR, estDansDelaiEdition } from '../../lib/dates'
 import JSZip from 'jszip'
 
 // Liste des entités supprimées avec un chantier — source unique des 2 libellés
@@ -1775,6 +1775,9 @@ export default function FicheChantier({ params }) {
   const [onglet, setOnglet] = useState('apercu')
   const [reponseMsg, setReponseMsg] = useState('')
   const [sendingMsg, setSendingMsg] = useState(false)
+  const [editingMsgId, setEditingMsgId] = useState(null)
+  const [editMsgText, setEditMsgText] = useState('')
+  const [editMsgError, setEditMsgError] = useState('')
   const messagesEndRef = useRef(null)
 
   // Realtime : écoute les nouveaux messages sur ce dossier
@@ -1859,6 +1862,24 @@ export default function FicheChantier({ params }) {
     else setNbMsgNonLus(0)
     setSendingMsg(false)
   }
+
+  // Édition en place d'un message (l'auteur, < 10 min — le trigger SQL est le
+  // vrai gardien ; en cas de rejet, on garde le texte saisi et on l'indique).
+  const modifierMessage = async (msg) => {
+    const txt = editMsgText.trim()
+    if (!txt) return
+    setEditMsgError('')
+    const { error } = await supabase.from('messages').update({ contenu: txt }).eq('id', msg.id)
+    if (error) {
+      setEditMsgError('Édition impossible (délai de 10 min dépassé ?).')
+      return
+    }
+    setMessages(prev => prev.map(m =>
+      m.id === msg.id ? { ...m, contenu: txt, edited_at: new Date().toISOString() } : m))
+    setEditingMsgId(null); setEditMsgText('')
+  }
+
+  const annulerEditionMsg = () => { setEditingMsgId(null); setEditMsgText(''); setEditMsgError('') }
 
   const typologieLabel = (t) => ({ courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' })[t] || t
 
@@ -5207,6 +5228,9 @@ export default function FicheChantier({ params }) {
                 ? (msg.auteur?.prenom ? `${msg.auteur.prenom}${msg.auteur.nom ? ' ' + msg.auteur.nom : ''}` : (client ? `${client.prenom || ''} ${client.nom || ''}`.trim() : 'Client'))
                 : (msg.auteur?.prenom ? `${msg.auteur.prenom}${msg.auteur.nom ? ' ' + msg.auteur.nom[0] + '.' : ''}` : 'Équipe')
               const when = fmtDateHeureFR(msg.created_at)
+              const editable = msg.auteur_id === profile?.id
+                && !String(msg.id).startsWith('tmp-')
+                && estDansDelaiEdition(msg.created_at)
               return (
                 <div key={msg.id} style={{display:'flex', gap:10, justifyContent: isClient ? 'flex-start' : 'flex-end'}}>
                   {isClient && <Avatar name={who} color="#0094d4" size={28} />}
@@ -5221,10 +5245,26 @@ export default function FicheChantier({ params }) {
                       wordBreak: 'break-word',
                       opacity: String(msg.id).startsWith('tmp-') ? 0.7 : 1,
                     }}>
-                      {msg.contenu}
+                      {editingMsgId === msg.id ? (
+                        <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                          <textarea value={editMsgText} onChange={e => setEditMsgText(e.target.value)} rows={2} autoFocus
+                            style={{width:'100%', resize:'vertical', borderRadius:8, border:'1px solid var(--ink-200)', padding:'6px 8px', fontSize:13.5, color:'var(--ink-900)', background:'#fff'}} />
+                          {editMsgError && <div style={{fontSize:11, color:'#fecaca', fontWeight:600}}>{editMsgError}</div>}
+                          <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
+                            <button onClick={annulerEditionMsg} style={{fontSize:11, background:'transparent', border:0, color:'inherit', opacity:0.85, cursor:'pointer'}}>Annuler</button>
+                            <button onClick={() => modifierMessage(msg)} disabled={!editMsgText.trim()} style={{fontSize:11, fontWeight:700, background:'#fff', color:'var(--brand-700)', border:0, borderRadius:6, padding:'2px 10px', cursor:'pointer'}}>Valider</button>
+                          </div>
+                        </div>
+                      ) : (
+                        msg.contenu
+                      )}
                     </div>
                     <div style={{fontSize:10.5, color:'var(--ink-400)', marginTop:4, textAlign: isClient ? 'left' : 'right'}}>
-                      {who} · {when}
+                      {who} · {when}{msg.edited_at ? ' (modifié)' : ''}
+                      {editable && editingMsgId !== msg.id && (
+                        <button onClick={() => { setEditingMsgId(msg.id); setEditMsgText(msg.contenu); setEditMsgError('') }}
+                          style={{marginLeft:8, fontSize:10.5, background:'transparent', border:0, color:'var(--brand-600)', cursor:'pointer', textDecoration:'underline', padding:0}}>modifier</button>
+                      )}
                     </div>
                   </div>
                   {!isClient && <Avatar name={who} color="#00578e" size={28} />}
