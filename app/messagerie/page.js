@@ -25,19 +25,31 @@ export default function MessageriePage() {
         .from('dossiers')
         .select('id, reference, client:clients(prenom, nom), referente:profiles!dossiers_referente_id_fkey(prenom, nom)')
         .eq('typologie', 'amo')
+        .eq('archive', false)
         .order('created_at', { ascending: false })
 
       if (!dossData) { setLoading(false); return }
 
       const dossiersAvecMsgs = await Promise.all(dossData.map(async (d) => {
-        const { count } = await supabase
+        const { data: msgs } = await supabase
           .from('messages')
-          .select('id', { count: 'exact', head: true })
+          .select('created_at, auteur_role, lu_agence')
           .eq('dossier_id', d.id)
-          .eq('auteur_role', 'client')
-          .eq('lu_agence', false)
-        return { ...d, nbNonLus: count || 0 }
+          .order('created_at', { ascending: false })
+        const nbNonLus = (msgs || []).filter(m => m.auteur_role === 'client' && !m.lu_agence).length
+        const dernierMessageAt = msgs?.[0]?.created_at || null
+        return { ...d, nbNonLus, dernierMessageAt }
       }))
+
+      // Tri par dernier message (récent en haut) ; dossiers sans message en bas.
+      // Tie-break = ordre de la requête (created_at desc) grâce au sort stable.
+      dossiersAvecMsgs.sort((a, b) => {
+        if (a.dernierMessageAt && b.dernierMessageAt)
+          return new Date(b.dernierMessageAt) - new Date(a.dernierMessageAt)
+        if (a.dernierMessageAt) return -1
+        if (b.dernierMessageAt) return 1
+        return 0
+      })
 
       setDossiers(dossiersAvecMsgs)
       setLoading(false)
