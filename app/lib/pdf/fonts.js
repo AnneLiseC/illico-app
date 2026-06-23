@@ -17,3 +17,8 @@ const fontsDir = path.join(process.cwd(), 'public', 'fonts')
 Font.register({ family: 'Roboto', src: path.join(fontsDir, 'Roboto-Regular.ttf') })
 Font.register({ family: 'Roboto-Bold', src: path.join(fontsDir, 'Roboto-Bold.ttf') })
 Font.register({ family: 'Roboto-Italic', src: path.join(fontsDir, 'Roboto-Italic.ttf') })
+// Variante italic de la famille 'Roboto' : résout les styles fontStyle:'italic'
+// (ex. restitution.js paiementEmpty, RecapHonoraires niveau/remiseLabel) qui
+// héritent de la famille Roboto. La famille séparée 'Roboto-Italic' ci-dessus est
+// conservée (utilisée par NOM via fontFamily:'Roboto-Italic' ailleurs).
+Font.register({ family: 'Roboto', src: path.join(fontsDir, 'Roboto-Italic.ttf'), fontStyle: 'italic' })
