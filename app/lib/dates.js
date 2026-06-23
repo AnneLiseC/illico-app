@@ -35,3 +35,13 @@ export function fmtDateHeureFR(ts) {
   if (!d) return ''
   return d.toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' })
 }
+
+// Fenêtre d'édition d'un message (aligné sur le trigger SQL : interval '10 minutes').
+// ⚠️ Affichage du bouton « modifier » UNIQUEMENT — le vrai gardien reste le
+// trigger messages_lock_columns (qui rejette toute édition hors fenêtre/auteur).
+export const DELAI_EDITION_MS = 10 * 60 * 1000
+
+export function estDansDelaiEdition(ts) {
+  const d = parseUTC(ts)
+  return !!d && (Date.now() - d.getTime()) < DELAI_EDITION_MS
+}

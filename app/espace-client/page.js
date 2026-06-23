@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { calcStatut, STATUT_CONFIG } from '../lib/dossiers'
 import { authHeaders } from '../lib/api-auth-client'
-import { fmtDateHeureFR } from '../lib/dates'
+import { fmtDateHeureFR, estDansDelaiEdition } from '../lib/dates'
 import MarkdownCR from '../components/MarkdownCR'
 
 // Vue client : les statuts internes de prospection (à contacter / à relancer)
@@ -58,6 +58,9 @@ export default function EspaceClient() {
   const [nouveauMessage, setNouveauMessage] = useState('')
   const [msgErreur, setMsgErreur]     = useState('')
   const [sendingMsg, setSendingMsg]   = useState(false)
+  const [editingId, setEditingId]     = useState(null)
+  const [editText, setEditText]       = useState('')
+  const [editError, setEditError]     = useState('')
   const [crOuvert, setCrOuvert]       = useState(null)
   const [pdfErreur, setPdfErreur]     = useState('')
   const messagesEndRef                = useRef(null)
@@ -199,6 +202,24 @@ export default function EspaceClient() {
     setSendingMsg(false)
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }
+
+  // Édition en place d'un message (l'auteur, < 10 min — le trigger SQL est le
+  // vrai gardien ; en cas de rejet, on garde le texte saisi et on l'indique).
+  const modifierMessage = async (msg) => {
+    const txt = editText.trim()
+    if (!txt) return
+    setEditError('')
+    const { error } = await supabase.from('messages').update({ contenu: txt }).eq('id', msg.id)
+    if (error) {
+      setEditError('Modification impossible (délai de 10 min dépassé ?).')
+      return
+    }
+    setMessages(prev => prev.map(m =>
+      m.id === msg.id ? { ...m, contenu: txt, edited_at: new Date().toISOString() } : m))
+    setEditingId(null); setEditText('')
+  }
+
+  const annulerEdition = () => { setEditingId(null); setEditText(''); setEditError('') }
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -579,15 +600,33 @@ export default function EspaceClient() {
                 ) : (
                   messages.map(msg => {
                     const isClient = msg.auteur_role === 'client'
+                    const editable = msg.auteur_id === profile?.id && estDansDelaiEdition(msg.created_at)
                     return (
                       <div key={msg.id} className={`flex ${isClient ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-xs rounded-2xl px-4 py-2.5 ${isClient ? 'bg-blue-800 text-white' : 'bg-gray-100 text-gray-800'}`}>
                           {!isClient && (
                             <p className="text-xs font-medium mb-1 opacity-70">{msg.auteur?.prenom || 'Équipe illiCO'}</p>
                           )}
-                          <p className="text-sm">{msg.contenu}</p>
+                          {editingId === msg.id ? (
+                            <div className="flex flex-col gap-1.5">
+                              <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={2} autoFocus
+                                className="w-full text-sm text-gray-800 bg-white rounded-lg border border-gray-300 px-2 py-1 resize-y" />
+                              {editError && <p className="text-xs text-red-200 font-medium">{editError}</p>}
+                              <div className="flex gap-2 justify-end">
+                                <button onClick={annulerEdition} className="text-xs opacity-85">Annuler</button>
+                                <button onClick={() => modifierMessage(msg)} disabled={!editText.trim()}
+                                  className="text-xs font-bold bg-white text-blue-800 rounded px-2 py-0.5">Valider</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-sm">{msg.contenu}</p>
+                          )}
                           <p className={`text-xs mt-1 opacity-60 ${isClient ? 'text-right' : ''}`}>
-                            {fmtDateHeureFR(msg.created_at)}
+                            {fmtDateHeureFR(msg.created_at)}{msg.edited_at ? ' (modifié)' : ''}
+                            {editable && editingId !== msg.id && (
+                              <button onClick={() => { setEditingId(msg.id); setEditText(msg.contenu); setEditError('') }}
+                                className="ml-2 underline">modifier</button>
+                            )}
                           </p>
                         </div>
                       </div>

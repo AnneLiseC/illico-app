@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { fmtDateHeureFR } from '../lib/dates'
+import { fmtDateHeureFR, estDansDelaiEdition } from '../lib/dates'
 
 export default function MessageriePage() {
   const router = useRouter()
@@ -14,6 +14,9 @@ export default function MessageriePage() {
   const [reponse, setReponse] = useState('')
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [editingId, setEditingId] = useState(null)
+  const [editText, setEditText] = useState('')
+  const [editError, setEditError] = useState('')
   const messagesEndRef = useRef(null)
 
   useEffect(() => {
@@ -136,6 +139,24 @@ export default function MessageriePage() {
     setSending(false)
   }
 
+  // Édition en place d'un message (l'auteur, < 10 min — le trigger SQL est le
+  // vrai gardien ; en cas de rejet, on garde le texte saisi et on l'indique).
+  const modifierMessage = async (msg) => {
+    const txt = editText.trim()
+    if (!txt) return
+    setEditError('')
+    const { error } = await supabase.from('messages').update({ contenu: txt }).eq('id', msg.id)
+    if (error) {
+      setEditError('Édition impossible (délai de 10 min dépassé ?).')
+      return
+    }
+    setMessages(prev => prev.map(m =>
+      m.id === msg.id ? { ...m, contenu: txt, edited_at: new Date().toISOString() } : m))
+    setEditingId(null); setEditText('')
+  }
+
+  const annulerEdition = () => { setEditingId(null); setEditText(''); setEditError('') }
+
   const nomClient = (d) => {
     const c = d.client
     if (!c) return d.reference
@@ -236,6 +257,7 @@ export default function MessageriePage() {
                 ) : (
                   messages.map(msg => {
                     const isClient = msg.auteur_role === 'client'
+                    const editable = msg.auteur_id === profile?.id && estDansDelaiEdition(msg.created_at)
                     return (
                       <div key={msg.id} style={{display:'flex', justifyContent: isClient ? 'flex-start' : 'flex-end'}}>
                         <div style={{
@@ -250,9 +272,32 @@ export default function MessageriePage() {
                               ? (msg.auteur?.prenom || nomClient(dossierActif) || 'Client')
                               : (`${dossierActif?.referente?.prenom || ''} ${dossierActif?.referente?.nom || ''}`.trim() || 'Équipe')}
                           </div>
-                          <div>{msg.contenu}</div>
-                          <div style={{fontSize:11, marginTop:4, opacity:0.6}}>
-                            {fmtDateHeureFR(msg.created_at)}
+                          {editingId === msg.id ? (
+                            <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                              <textarea
+                                value={editText}
+                                onChange={e => setEditText(e.target.value)}
+                                rows={2}
+                                autoFocus
+                                style={{width:'100%', resize:'vertical', borderRadius:8, border:'1px solid var(--ink-200)', padding:'6px 8px', fontSize:13.5, color:'var(--ink-900)', background:'#fff'}}
+                              />
+                              {editError && <div style={{fontSize:11, color:'#fecaca', fontWeight:600}}>{editError}</div>}
+                              <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
+                                <button onClick={annulerEdition}
+                                  style={{fontSize:11, background:'transparent', border:0, color:'inherit', opacity:0.85, cursor:'pointer'}}>Annuler</button>
+                                <button onClick={() => modifierMessage(msg)} disabled={!editText.trim()}
+                                  style={{fontSize:11, fontWeight:700, background:'#fff', color:'var(--brand-700)', border:0, borderRadius:6, padding:'2px 10px', cursor:'pointer'}}>Valider</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div>{msg.contenu}</div>
+                          )}
+                          <div style={{fontSize:11, marginTop:4, opacity:0.6, display:'flex', gap:8, alignItems:'center', justifyContent: isClient ? 'flex-start' : 'flex-end'}}>
+                            <span>{fmtDateHeureFR(msg.created_at)}{msg.edited_at ? ' (modifié)' : ''}</span>
+                            {editable && editingId !== msg.id && (
+                              <button onClick={() => { setEditingId(msg.id); setEditText(msg.contenu); setEditError('') }}
+                                style={{fontSize:11, background:'transparent', border:0, color:'inherit', opacity:0.85, cursor:'pointer', textDecoration:'underline'}}>modifier</button>
+                            )}
                           </div>
                         </div>
                       </div>
