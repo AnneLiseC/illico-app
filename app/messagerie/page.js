@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
+import { fmtDateHeureFR } from '../lib/dates'
 
 export default function MessageriePage() {
   const router = useRouter()
@@ -251,7 +252,7 @@ export default function MessageriePage() {
                           </div>
                           <div>{msg.contenu}</div>
                           <div style={{fontSize:11, marginTop:4, opacity:0.6}}>
-                            {new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            {fmtDateHeureFR(msg.created_at)}
                           </div>
                         </div>
                       </div>
