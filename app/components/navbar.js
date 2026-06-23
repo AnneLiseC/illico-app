@@ -84,7 +84,7 @@ export default function NavBar() {
   const [hover, setHover] = useState(false)
   const [pinned, setPinned] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { profile, displayAgenceName, agences, agenceActive, setAgenceActive, unreadCount } = useAuth()
+  const { profile, displayAgenceName, agences, agenceActive, setAgenceActive, unreadCount, unreadMessages } = useAuth()
 
   // Close mobile drawer on route change
   useEffect(() => { setMobileOpen(false) }, [pathname])
@@ -214,6 +214,7 @@ export default function NavBar() {
                     <NavItem
                       key={item.href}
                       {...item}
+                      badge={item.href === '/messagerie' ? (unreadMessages > 0 ? unreadMessages : null) : item.badge}
                       active={isActive(item.href)}
                       open={open}
                     />
