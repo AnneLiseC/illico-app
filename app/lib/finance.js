@@ -6,6 +6,7 @@ export const TVA_TRAVAUX = 1.1    // devis travaux = TVA 10% (fallback TTC si mo
 export const ROYALTIES_RATE = 0.05
 export const COURTAGE_STANDARD = 0.06
 export const AMO_STANDARD = 0.09
+export const DEFAULT_PART_AGENTE = 0.5   // part agente par défaut (référent non-admin)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILITAIRES
@@ -46,11 +47,7 @@ export function getPartAgente(dossier) {
   const v = dossier?.part_agente
   if (v !== undefined && v !== null) return normalizePercent(v, 0)
   if (dossier?.referente?.role === 'admin') return 0
-  return 0.5
-}
-
-export function getPartAdmin(dossier) {
-  return round2(1 - getPartAgente(dossier))
+  return DEFAULT_PART_AGENTE
 }
 
 export function getTauxCourtage(dossier) {
@@ -91,7 +88,7 @@ function getSignedTotals(dossier) {
     if (dv.montant_ttc !== undefined && dv.montant_ttc !== null) return s + toNumber(dv.montant_ttc)
     return s + toNumber(dv.montant_ht) * TVA_TRAVAUX
   }, 0))
-  return { signed, totalHT, totalTTC }
+  return { totalHT, totalTTC }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -107,7 +104,6 @@ export function calculateFraisFinance(dossier) {
   const parts     = split(net, fraisPartAgente)
 
   return {
-    fraisTTC,
     fraisHT,
     royalties,
     net,
@@ -127,7 +123,6 @@ export function calculateDevisFinance(devis, dossier = {}) {
   )
   const commissionPct  = normalizePercent(devis?.commission_pourcentage, 0)
   const comHT          = round2(montantHT * commissionPct)
-  const comTTC         = round2(comHT * TVA_FRAIS)
   const royaltiesType2 = round2(comHT * ROYALTIES_RATE)
   const netCom         = round2(comHT - royaltiesType2)
   const parts          = split(netCom, partAgente)
@@ -148,17 +143,11 @@ export function calculateDevisFinance(devis, dossier = {}) {
 
   return {
     id: devis?.id || null,
-    statut: devis?.statut || null,
     signed,
     refused,
     isApporteur: Boolean(devis?.artisan?.paiement_direct),
-    partenaire: Boolean(devis?.artisan?.partenaire),
-    paiementDirect: Boolean(devis?.artisan?.paiement_direct),
-    montantHT,
-    montantTTC,
     commissionPct,
     comHT,
-    comTTC,
     royaltiesType2,
     netCom,
     parts: { agente: parts.agente, admin: parts.admin },
@@ -174,7 +163,6 @@ export function calculateCommissionsFinance(dossier) {
   const devis  = active.map(dv => calculateDevisFinance(dv, dossier))
 
   const comHT          = round2(devis.reduce((s, d) => s + d.comHT, 0))
-  const comTTC         = round2(devis.reduce((s, d) => s + d.comTTC, 0))
   const royaltiesType2 = round2(devis.reduce((s, d) => s + d.royaltiesType2, 0))
   const netCom         = round2(devis.reduce((s, d) => s + d.netCom, 0))
   const partsAgente    = round2(devis.reduce((s, d) => s + d.parts.agente, 0))
@@ -183,7 +171,6 @@ export function calculateCommissionsFinance(dossier) {
   return {
     devis,
     comHT,
-    comTTC,
     royaltiesType2,
     netCom,
     parts: { agente: partsAgente, admin: partsAdmin },
@@ -213,7 +200,7 @@ function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC }) {
   const deductionFraisTTC = fraisRembourse ? round2(toNumber(dossier?.frais_consultation) || 0) : 0
   const deductionFraisHT  = fraisRembourse ? round2((toNumber(dossier?.frais_consultation) || 0) / TVA_FRAIS) : 0
 
-  let courtage = { brut: 0, htBrut: 0, ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
+  let courtage = { brut: 0, ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
   if (isCourtage || isAmo) {
     // brut = base × taux (AVANT déduction frais). net/ttc = brut − frais remboursés.
     // round2(brut − dedFrais) = round2(base×taux − dedFrais) car dedFrais est déjà
@@ -225,7 +212,7 @@ function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC }) {
     const royalties = round2(ht * ROYALTIES_RATE)
     const net       = round2(ht - royalties)
     const parts     = split(net, partAgente)
-    courtage = { brut, htBrut, ttc, ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
+    courtage = { brut, ttc, ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
   }
 
   let soldeAmo = { ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
@@ -239,7 +226,6 @@ function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC }) {
   }
 
   const totalTTC      = round2(courtage.ttc + soldeAmo.ttc)
-  const totalHT       = round2(courtage.ht + soldeAmo.ht)
   const totalRoyalties = round2(courtage.royalties + soldeAmo.royalties)
   const totalNet      = round2(courtage.net + soldeAmo.net)
   const parts    = {
@@ -257,27 +243,19 @@ function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC }) {
   }
   standard.totalTTC = round2(standard.courtageTTC + standard.amoTTC)
 
-  return { courtage, soldeAmo, totalTTC, totalHT, totalRoyalties, totalNet, parts, standard }
+  return { courtage, soldeAmo, totalTTC, totalRoyalties, totalNet, parts, standard }
 }
 
 export function calculateHonorairesFinance(dossier) {
-  const { signed, totalHT, totalTTC } = getSignedTotals(dossier)
+  const { totalHT, totalTTC } = getSignedTotals(dossier)
   const core = honorairesCore(dossier, { totalHT, totalTTC })
 
   return {
-    typologie: dossier?.typologie || '',
-    tauxCourtage: getTauxCourtage(dossier),
-    tauxAmo: getTauxAmo(dossier),
-    totalDevisHTSignes:  totalHT,
     totalDevisTTCSignes: totalTTC,
-    signedDevisCount: signed.length,
     courtage: core.courtage,
     soldeAmo: core.soldeAmo,
-    totalTTC: core.totalTTC,
-    totalHT:  core.totalHT,
     totalRoyalties: core.totalRoyalties,
     totalNet: core.totalNet,
-    parts: core.parts,
     standard: core.standard,
   }
 }
@@ -306,10 +284,11 @@ export function calculateHonorairesPrevi(dossier) {
     courtage: core.courtage,
     soldeAmo: core.soldeAmo,
     totalNet: core.totalNet,
+    // Asymétrie VOULUE : le prévi expose `parts` (lu par gains.netsPrevi), pas le
+    // réel — `honoraires.parts` (réel) a été retiré au nettoyage code mort (aucun
+    // lecteur). Ne pas re-ajouter `parts` côté réel « par symétrie ».
     parts: core.parts,
-    totalDevisHTRecus:  totalHT,
     totalDevisTTCRecus: totalTTC,
-    totalTTC: core.totalTTC,
     standard: core.standard,
   }
 }
@@ -339,7 +318,6 @@ export function calculateHonorairesRecuAccepte(dossier) {
     soldeAmo: core.soldeAmo,
     totalNet: core.totalNet,
     parts: core.parts,
-    totalDevisHTRecuAccepte:  totalHT,
     totalDevisTTCRecuAccepte: totalTTC,
     totalTTC: core.totalTTC,
     standard: core.standard,
@@ -369,9 +347,9 @@ export function calculateApporteurFinance(dossier) {
   // Taux null/0 = « taux à définir », coût 0, jamais de NaN.
   if (!actif || !tauxDefini) {
     return {
-      enabled: false, actif, tauxDefini, mode, tauxApporteur,
+      enabled: false, actif, mode, tauxApporteur,
       totalHT: 0, parts: { agente: 0, admin: 0 },
-      totalHTReel: 0, partsReel: { agente: 0, admin: 0 },
+      partsReel: { agente: 0, admin: 0 },
       lines: [],
     }
   }
@@ -393,9 +371,8 @@ export function calculateApporteurFinance(dossier) {
     const totalHTReel = round2(baseHTReel * tauxApporteur)
     const partsReel   = split(totalHTReel, partAgente)
     lines = [{
-      type: 'total_chantier_ht', baseHT, tauxApporteur, totalHT,
+      type: 'total_chantier_ht', baseHT, totalHT,
       agente: parts.agente, admin: parts.admin,
-      debloque: baseHTReel > 0, totalHTReel,
       agenteReel: partsReel.agente, adminReel: partsReel.admin,
     }]
   } else {
@@ -408,12 +385,9 @@ export function calculateApporteurFinance(dossier) {
       return {
         type: 'par_devis',
         devisId: dv.id || null,
-        artisanId,
         label: dv?.artisan?.entreprise || 'Devis',
-        baseHT, tauxApporteur, totalHT,
+        baseHT, totalHT,
         agente: parts.agente, admin: parts.admin,
-        debloque,
-        totalHTReel: debloque ? totalHT : 0,
         agenteReel:  debloque ? parts.agente : 0,
         adminReel:   debloque ? parts.admin : 0,
       }
@@ -423,15 +397,13 @@ export function calculateApporteurFinance(dossier) {
   const totalHT     = round2(lines.reduce((s, l) => s + l.totalHT, 0))
   const agente      = round2(lines.reduce((s, l) => s + l.agente, 0))
   const admin       = round2(lines.reduce((s, l) => s + l.admin, 0))
-  const totalHTReel = round2(lines.reduce((s, l) => s + (l.totalHTReel || 0), 0))
   const agenteReel  = round2(lines.reduce((s, l) => s + (l.agenteReel || 0), 0))
   const adminReel   = round2(lines.reduce((s, l) => s + (l.adminReel || 0), 0))
 
   return {
-    enabled: true, actif, tauxDefini, mode, tauxApporteur,
+    enabled: true, actif, mode, tauxApporteur,
     totalHT,
     parts: { agente, admin },
-    totalHTReel,
     partsReel: { agente: agenteReel, admin: adminReel },
     lines,
   }
@@ -443,7 +415,6 @@ export function calculateApporteurFinance(dossier) {
 
 export function calculateDossierFinance(dossier) {
   const partAgente = getPartAgente(dossier)
-  const partAdmin  = getPartAdmin(dossier)
 
   const frais           = calculateFraisFinance(dossier)
   const commissions     = calculateCommissionsFinance(dossier)
@@ -456,15 +427,6 @@ export function calculateDossierFinance(dossier) {
   const royaltiesHonoraires  = round2(honoraires.totalRoyalties)
   const royaltiesTotal       = round2(royaltiesCommissions + royaltiesFrais + royaltiesHonoraires)
 
-  const gainsBruts = {
-    agente: round2(frais.parts.agente + commissions.parts.agente + honoraires.parts.agente),
-    admin:  round2(frais.parts.admin  + commissions.parts.admin  + honoraires.parts.admin),
-  }
-  const gainsNets = {
-    agente: round2(gainsBruts.agente - apporteur.partsReel.agente),
-    admin:  round2(gainsBruts.admin  - apporteur.partsReel.admin),
-  }
-
   const gainsBrutsPrevi = {
     agente: round2(frais.parts.agente + commissions.parts.agente + honorairesPrevi.parts.agente),
     admin:  round2(frais.parts.admin  + commissions.parts.admin  + honorairesPrevi.parts.admin),
@@ -474,22 +436,9 @@ export function calculateDossierFinance(dossier) {
     admin:  round2(gainsBrutsPrevi.admin  - apporteur.parts.admin),
   }
 
-  // Total des acomptes artisans (affichage uniquement). Deux ensembles en miroir
-  // des honoraires : SIGNÉS (getSignedDevis) et ACTIFS (getActiveDevis = même base
-  // que les honoraires prévi). Dérivés de commissions.devis (déjà = getActiveDevis
-  // mappé), chacun portant son champ .acompte et .signed. Pas d'arrondi (cohérent
-  // avec les sites d'affichage existants).
-  const acomptes = {
-    totalSignes: commissions.devis.filter(d => d.signed).reduce((s, d) => s + d.acompte, 0),
-    totalActifs: commissions.devis.reduce((s, d) => s + d.acompte, 0),
-  }
-
   return {
     settings: {
       partAgente,
-      partAdmin,
-      tauxCourtage: getTauxCourtage(dossier),
-      tauxAmo:      getTauxAmo(dossier),
     },
     frais,
     commissions,
@@ -497,17 +446,10 @@ export function calculateDossierFinance(dossier) {
     honorairesPrevi,
     apporteur,
     royalties: {
-      commissions: royaltiesCommissions,
-      frais:       royaltiesFrais,
-      honoraires:  royaltiesHonoraires,
-      total:       royaltiesTotal,
+      total: royaltiesTotal,
     },
     gains: {
-      bruts:      gainsBruts,
-      nets:       gainsNets,
-      brutsPrevi: gainsBrutsPrevi,
-      netsPrevi:  gainsNetsPrevi,
+      netsPrevi: gainsNetsPrevi,
     },
-    acomptes,
   }
 }

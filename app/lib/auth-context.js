@@ -4,12 +4,24 @@ import { supabase } from './supabase'
 
 const AuthContext = createContext(null)
 
+// Clé localStorage de la vue active, namespacée par utilisateur.
+const agenceKey = (uid) => `batilis.agenceActive.${uid}`
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
+  // profileStatus lève l'ambiguïté de `profile === null` :
+  //  'loading' = fetch en cours/non résolu · 'loaded' = profil présent · 'absent' = 0 ligne confirmée.
+  // État SÉPARÉ de `initialized` (qui reste posé à true immédiatement, cf. plus bas).
+  const [profileStatus, setProfileStatus] = useState('loading')
   const [displayAgenceName, setDisplayAgenceName] = useState(null)
+  // Multi-agence : liste des agences (admin uniquement) + vue active.
+  // agenceActive : null = Consolidé (pas de filtre) · uuid = une agence choisie.
+  const [agences, setAgences] = useState([])
+  const [agenceActive, setAgenceActiveState] = useState(null)
   const [initialized, setInitialized] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [unreadMessages, setUnreadMessages] = useState(0)
   const prevUserIdRef = useRef(null)
 
   const loadUnread = useCallback(async (uid) => {
@@ -20,6 +32,18 @@ export function AuthProvider({ children }) {
       .eq('user_id', uid)
       .eq('lu', false)
     setUnreadCount(count || 0)
+  }, [])
+
+  // Messages client non lus côté STAFF (pastille navbar). La RLS messages_staff_scope
+  // scope déjà aux dossiers visibles (admin = société, agente = ses dossiers) → pas
+  // de filtre agence manuel. Ne concerne pas un client (pas de navbar staff).
+  const loadUnreadMessages = useCallback(async () => {
+    const { count } = await supabase
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('auteur_role', 'client')
+      .eq('lu_agence', false)
+    setUnreadMessages(count || 0)
   }, [])
 
   // Nom à afficher dans le header : agence de l'utilisateur si rattaché à une
@@ -41,27 +65,97 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const fetchProfile = useCallback(async (uid) => {
+  // Charge la liste des agences (admin uniquement) PUIS calcule la vue active
+  // depuis localStorage — la validation se fait une fois la liste connue (pas de race).
+  const loadAgences = useCallback(async (prof) => {
+    if (!prof || prof.role !== 'admin' || !prof.societe_id) {
+      // agente / non-admin → pas de liste, vue Consolidée (null).
+      setAgences([])
+      setAgenceActiveState(null)
+      return
+    }
     try {
-      const { data } = await supabase.from('profiles').select('*').eq('id', uid).single()
+      const { data } = await supabase.from('agences').select('id, nom, code').eq('societe_id', prof.societe_id).order('code')
+      const list = data || []
+      setAgences(list)
+      // Validation : on n'adopte la valeur stockée que si elle appartient bien
+      // aux agences de l'utilisateur courant ; sinon Consolidé (null).
+      let initial = null
+      try {
+        const stored = localStorage.getItem(agenceKey(prof.id))
+        if (stored && list.some(a => a.id === stored)) initial = stored
+      } catch { /* localStorage indisponible → Consolidé */ }
+      setAgenceActiveState(initial)
+    } catch {
+      // erreur réseau transitoire : on ne casse pas l'état existant
+    }
+  }, [])
+
+  // Setter exposé : met l'état ET persiste (uuid) ou purge (null) la clé de l'user.
+  const setAgenceActive = useCallback((idOuNull) => {
+    setAgenceActiveState(idOuNull)
+    const uid = prevUserIdRef.current
+    if (!uid) return
+    try {
+      if (idOuNull) localStorage.setItem(agenceKey(uid), idOuNull)
+      else localStorage.removeItem(agenceKey(uid))
+    } catch { /* localStorage indisponible : l'état en mémoire suffit */ }
+  }, [])
+
+  // Recharge UNIQUEMENT la liste des agences (après création d'une agence p.ex.).
+  // Ne touche PAS agenceActive (la vue active choisie reste intacte). Lit le
+  // `profile` courant du state (≠ loadAgences qui reçoit le profil tout juste fetché).
+  const refreshAgences = useCallback(async () => {
+    if (!profile || profile.role !== 'admin' || !profile.societe_id) return
+    try {
+      const { data } = await supabase.from('agences').select('id, nom, code').eq('societe_id', profile.societe_id).order('code')
+      setAgences(data || [])
+    } catch { /* erreur réseau transitoire : on garde la liste existante */ }
+  }, [profile])
+
+  const fetchProfile = useCallback(async (uid) => {
+    setProfileStatus('loading')
+    try {
+      // maybeSingle : 0 ligne => data null sans erreur (≠ .single() qui lèverait).
+      const { data, error } = await supabase.from('profiles').select('*, societe:societes(id, nom_societe)').eq('id', uid).maybeSingle()
+      if (error) {
+        // Erreur réseau : NE PAS conclure « absent ». On reste 'loading' ; le retry
+        // par page (filet existant) rejouera fetchProfile.
+        return
+      }
       if (data) {
         setProfile(data)
         loadAgenceName(data)
+        loadAgences(data)
+        setProfileStatus('loaded')
+      } else {
+        // 0 ligne, pas d'erreur => profil confirmé absent (admin invité sans société).
+        setProfile(null)
+        setDisplayAgenceName(null)
+        setProfileStatus('absent')
       }
       loadUnread(uid)
+      // Pastille messages : seulement pour le staff (admin/agente), pas un client.
+      if (data?.role === 'admin' || data?.role === 'agente') loadUnreadMessages()
+      else setUnreadMessages(0)
     } catch {
-      // erreur réseau transitoire, on ne reset pas le profil
+      // erreur réseau transitoire, on ne reset pas le profil ni le statut (reste 'loading')
     }
-  }, [loadUnread, loadAgenceName])
+  }, [loadUnread, loadUnreadMessages, loadAgenceName, loadAgences])
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       const u = session?.user ?? null
       setUser(u)
       if (!u) {
+        // Purge la vue active de l'utilisateur qui se déconnecte.
+        try { if (prevUserIdRef.current) localStorage.removeItem(agenceKey(prevUserIdRef.current)) } catch { /* ignore */ }
         prevUserIdRef.current = null
         setProfile(null)
+        setProfileStatus('loading')
         setDisplayAgenceName(null)
+        setAgences([])
+        setAgenceActiveState(null)
         setUnreadCount(0)
         setInitialized(true)
         return
@@ -105,6 +199,21 @@ export function AuthProvider({ children }) {
     return () => supabase.removeChannel(channel)
   }, [user?.id, loadUnread])
 
+  // Pastille messages (staff) : recharge le compteur quand un message arrive
+  // (INSERT) ou est marqué lu par l'agence (UPDATE lu_agence). La RLS scope déjà.
+  useEffect(() => {
+    if (!user?.id) return
+    if (!(profile?.role === 'admin' || profile?.role === 'agente')) return
+    const channel = supabase
+      .channel(`msgs-unread-${user.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
+        () => loadUnreadMessages())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' },
+        () => loadUnreadMessages())
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [user?.id, profile?.role, loadUnreadMessages])
+
   const markAllRead = useCallback(async () => {
     if (!user?.id) return
     await supabase
@@ -116,7 +225,7 @@ export function AuthProvider({ children }) {
   }, [user?.id])
 
   return (
-    <AuthContext.Provider value={{ user, profile, displayAgenceName, initialized, unreadCount, markAllRead, loadUnread, fetchProfile }}>
+    <AuthContext.Provider value={{ user, profile, societe: profile?.societe, profileStatus, displayAgenceName, agences, agenceActive, setAgenceActive, refreshAgences, initialized, unreadCount, unreadMessages, markAllRead, loadUnread, fetchProfile }}>
       {children}
     </AuthContext.Provider>
   )

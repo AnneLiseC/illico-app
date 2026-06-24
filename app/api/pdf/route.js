@@ -3,13 +3,16 @@
 
 import React from 'react'
 import { buildDossierSuivi, buildSuiviPaiementsSection } from './restitution.js'
+import { formatNomClient } from '../../lib/clients.js'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
+import '../../lib/pdf/fonts.js'
 import path from 'path'
 import fs from 'fs'
 import { requireUser } from '../../lib/api-auth'
 import RecapHonoraires from '../../lib/pdf/RecapHonoraires.js'
+import { stripEmojiPdf } from '../../lib/pdf/stripEmoji.js'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -48,39 +51,39 @@ const logoBase64 = getLogoBase64()
 
 // ── Styles ──
 const styles = StyleSheet.create({
-  page: { padding: 32, paddingBottom: 50, fontFamily: 'Helvetica', fontSize: 10, color: '#1F2937' },
+  page: { padding: 32, paddingBottom: 50, fontFamily: 'Roboto', fontSize: 10, color: '#1F2937' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 10, borderBottomWidth: 2, borderBottomColor: BLEU },
   logo: { width: 120, height: 44 },
   headerRight: { alignItems: 'flex-end' },
-  headerTitle: { fontSize: 16, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 2 },
+  headerTitle: { fontSize: 16, fontFamily: 'Roboto-Bold', color: BLEU, marginBottom: 2 },
   headerSub: { fontSize: 8, color: GRIS_TEXTE },
   section: { marginBottom: 10 },
-  sectionTitle: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 5, paddingBottom: 3, borderBottomWidth: 1, borderBottomColor: BLEU_CLAIR },
+  sectionTitle: { fontSize: 10, fontFamily: 'Roboto-Bold', color: BLEU, marginBottom: 5, paddingBottom: 3, borderBottomWidth: 1, borderBottomColor: BLEU_CLAIR },
   infoGrid: { flexDirection: 'row', gap: 16, marginBottom: 3 },
   infoBlock: { flex: 1 },
   infoLabel: { fontSize: 7.5, color: GRIS_TEXTE, marginBottom: 1 },
-  infoValue: { fontSize: 9, fontFamily: 'Helvetica-Bold' },
+  infoValue: { fontSize: 9, fontFamily: 'Roboto-Bold' },
   table: { marginBottom: 8 },
   tableHeader: { flexDirection: 'row', backgroundColor: BLEU, padding: 5, borderRadius: 3 },
-  tableHeaderCell: { color: 'white', fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  tableHeaderCell: { color: 'white', fontSize: 8, fontFamily: 'Roboto-Bold' },
   tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E5E7EB', paddingVertical: 4, paddingHorizontal: 4 },
   tableRowAlt: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E5E7EB', paddingVertical: 4, paddingHorizontal: 4, backgroundColor: GRIS },
   tableRowTotal: { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 4, backgroundColor: BLEU_CLAIR, marginTop: 3, borderRadius: 3 },
   cell: { fontSize: 8 },
-  cellBold: { fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  cellBold: { fontSize: 8, fontFamily: 'Roboto-Bold' },
   cellRight: { fontSize: 8, textAlign: 'right' },
-  cellRightBold: { fontSize: 8, fontFamily: 'Helvetica-Bold', textAlign: 'right' },
+  cellRightBold: { fontSize: 8, fontFamily: 'Roboto-Bold', textAlign: 'right' },
   montantBlock: { flexDirection: 'row', justifyContent: 'space-between', padding: 8, backgroundColor: BLEU, borderRadius: 6, marginTop: 6 },
-  montantLabel: { color: 'white', fontSize: 13, fontFamily: 'Helvetica-Bold' },
-  montantValue: { color: 'white', fontSize: 13, fontFamily: 'Helvetica-Bold' },
+  montantLabel: { color: 'white', fontSize: 13, fontFamily: 'Roboto-Bold' },
+  montantValue: { color: 'white', fontSize: 13, fontFamily: 'Roboto-Bold' },
   footer: { position: 'absolute', bottom: 22, left: 32, right: 32, flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 6 },
   footerText: { fontSize: 7.5, color: GRIS_TEXTE },
   divider: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 5 },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   infoRowLabel: { fontSize: 8.5, color: GRIS_TEXTE, flex: 1, paddingRight: 12 },
-  infoRowValue: { fontSize: 8.5, fontFamily: 'Helvetica-Bold' },
+  infoRowValue: { fontSize: 8.5, fontFamily: 'Roboto-Bold' },
   coverBlock: { backgroundColor: BLEU, borderRadius: 8, padding: 20, marginBottom: 24 },
-  coverTitle: { color: 'white', fontSize: 20, fontFamily: 'Helvetica-Bold', marginBottom: 8 },
+  coverTitle: { color: 'white', fontSize: 20, fontFamily: 'Roboto-Bold', marginBottom: 8 },
   coverRef: { color: '#93C5FD', fontSize: 12, marginBottom: 4 },
   coverSub: { color: '#93C5FD', fontSize: 10 },
   signatureBox: { height: 60, borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 4, marginTop: 4 },
@@ -90,9 +93,7 @@ const styles = StyleSheet.create({
 // ── RÉCAPITULATIF FINANCIER CLIENT ──
 function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = false }) {
   const client = dossier.client
-  const nomClient = client
-    ? `${client.civilite || ''} ${client.prenom || ''} ${client.nom || ''}`.trim()
-    : '—'
+  const nomClient = formatNomClient(client, { civilite: true })
   const referente = dossier.referente
     ? `${dossier.referente.prenom || ''} ${dossier.referente.nom || ''}`.trim()
     : '—'
@@ -226,7 +227,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
               <View key={i} style={styles.infoRow}>
                 <Text style={[styles.infoRowLabel, { flex: 1 }]}>{a.entreprise}{a.pctLabel}</Text>
                 {!preview ? (
-                  <Text style={{ fontSize: 7.5, color: a.couleurStatut, fontFamily: 'Helvetica-Bold', width: 54, textAlign: 'center' }}>{a.statut}</Text>
+                  <Text style={{ fontSize: 7.5, color: a.couleurStatut, fontFamily: 'Roboto-Bold', width: 54, textAlign: 'center' }}>{a.statut}</Text>
                 ) : null}
                 <Text style={[styles.infoRowValue, { width: 72, textAlign: 'right' }]}>{fmt(a.acompte)}</Text>
               </View>
@@ -263,9 +264,7 @@ function buildRecapitulatifDocument({ dossier, devis, suiviFinancier, factures, 
 // ── COMPTE-RENDU PDF ──
 function buildCRDocument({ dossier, cr, sections, logo }) {
   const client = dossier.client
-  const nomClient = client
-    ? [client.civilite, client.prenom, client.nom, client.prenom2 ? '& ' + client.prenom2 + ' ' + client.nom2 : null].filter(Boolean).join(' ')
-    : '—'
+  const nomClient = formatNomClient(client, { civilite: true })
   const ref = dossier.referente
   const nomRef = ref ? (ref.prenom + ' ' + ref.nom) : ''
 
@@ -280,21 +279,21 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
   const dateEmis = new Date(cr.created_at || Date.now()).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
 
   const CRS = StyleSheet.create({
-    page: { padding: 40, paddingBottom: 60, fontFamily: 'Helvetica', fontSize: 9, backgroundColor: '#ffffff' },
+    page: { padding: 40, paddingBottom: 60, fontFamily: 'Roboto', fontSize: 9, backgroundColor: '#ffffff' },
     logoImg: { width: 120, height: 48, marginBottom: 12 },
     titleBlock: { marginBottom: 18, borderBottomWidth: 2, borderBottomColor: BLEU, paddingBottom: 10 },
-    mainTitle: { fontSize: 16, fontFamily: 'Helvetica-Bold', color: BLEU, marginBottom: 3 },
+    mainTitle: { fontSize: 16, fontFamily: 'Roboto-Bold', color: BLEU, marginBottom: 3 },
     emis: { fontSize: 9, color: '#6b7280' },
     secWrap: { marginBottom: 14 },
     secHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-    secNum: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: BLEU, marginRight: 6 },
-    secTitle: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: BLEU, flex: 1 },
+    secNum: { fontSize: 11, fontFamily: 'Roboto-Bold', color: BLEU, marginRight: 6 },
+    secTitle: { fontSize: 11, fontFamily: 'Roboto-Bold', color: BLEU, flex: 1 },
     secLine: { height: 1.5, backgroundColor: BLEU, marginBottom: 8 },
     para: { fontSize: 9, color: '#1f2937', lineHeight: 1.65, marginBottom: 5 },
     listRow: { flexDirection: 'row', marginBottom: 4, paddingLeft: 4 },
     listBullet: { fontSize: 9, color: '#1f2937', width: 14 },
     listText: { fontSize: 9, color: '#1f2937', flex: 1, lineHeight: 1.55 },
-    bold: { fontFamily: 'Helvetica-Bold' },
+    bold: { fontFamily: 'Roboto-Bold' },
     footer: { position: 'absolute', bottom: 22, left: 40, right: 40, flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e5e7eb', paddingTop: 5 },
     footerTxt: { fontSize: 7.5, color: '#6b7280' },
   })
@@ -306,7 +305,7 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
   }
 
   const renderKVTable = (rows, col1Label, col2Label) => {
-    const thStyle = { color: '#ffffff', fontSize: 9, fontFamily: 'Helvetica-Bold' }
+    const thStyle = { color: '#ffffff', fontSize: 9, fontFamily: 'Roboto-Bold' }
     return React.createElement(View, { style: { marginBottom: 8 } },
       React.createElement(View, { style: { flexDirection: 'row', backgroundColor: BLEU, paddingVertical: 5, paddingHorizontal: 8 } },
         React.createElement(Text, { style: [thStyle, { flex: 1.8 }] }, col1Label),
@@ -314,7 +313,7 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
       ),
       ...rows.map(([k, v], i) =>
         React.createElement(View, { key: i, style: { flexDirection: 'row', paddingVertical: 5, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', backgroundColor: i % 2 === 0 ? '#f9fafb' : '#ffffff' } },
-          React.createElement(Text, { style: { fontSize: 9, fontFamily: 'Helvetica-Bold', flex: 1.8, color: '#374151' } }, k),
+          React.createElement(Text, { style: { fontSize: 9, fontFamily: 'Roboto-Bold', flex: 1.8, color: '#374151' } }, k),
           React.createElement(Text, { style: { fontSize: 9, flex: 2.2, color: '#1f2937' } }, v),
         )
       )
@@ -355,7 +354,7 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
       flushList()
       const subhead = line.match(/^\*\*(.+?)\s*:\*\*\s*$/) || line.match(/^\*\*(.+?):\s*\*\*\s*$/)
       if (subhead) {
-        blocks.push(React.createElement(Text, { key: i, style: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: '#1f2937', marginTop: 6, marginBottom: 3 } }, subhead[1].trim() + ' :'))
+        blocks.push(React.createElement(Text, { key: i, style: { fontSize: 9, fontFamily: 'Roboto-Bold', color: '#1f2937', marginTop: 6, marginBottom: 3 } }, subhead[1].trim() + ' :'))
         return
       }
       blocks.push(React.createElement(Text, { key: i, style: CRS.para }, inlineEl(line.trim())))
@@ -392,13 +391,13 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
 
 // ── ROUTE API ──
 // Types autorisés pour un utilisateur client (lecture de son propre dossier uniquement)
-const CLIENT_ALLOWED_TYPES = new Set(['cr'])
+const CLIENT_ALLOWED_TYPES = new Set(['cr', 'devis'])
 
 export async function POST(request) {
   const auth = await requireUser(request)
   if (auth.error) return auth.error
   try {
-    const { dossierId, type, crId } = await request.json()
+    const { dossierId, type, crId, devisId } = await request.json()
 
     if (!dossierId || !type) {
       return NextResponse.json({ error: 'Paramètres manquants' }, { status: 400 })
@@ -421,7 +420,16 @@ export async function POST(request) {
       if (!auth.profile.client_id || dossier.client_id !== auth.profile.client_id) {
         return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
       }
-    } else if (auth.profile.role !== 'admin' && auth.profile.role !== 'agente') {
+    } else if (auth.profile.role === 'admin' || auth.profile.role === 'agente') {
+      // Contrôle d'appartenance (service_role contourne la RLS) : admin = même
+      // société, agente = même agence. 404 uniforme (introuvable ou autre tenant).
+      const autorise = auth.profile.role === 'admin'
+        ? dossier.societe_id === auth.profile.societe_id
+        : dossier.agence_id === auth.profile.agence_id
+      if (!autorise) {
+        return NextResponse.json({ error: 'Dossier non trouvé' }, { status: 404 })
+      }
+    } else {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
     }
 
@@ -495,6 +503,14 @@ export async function POST(request) {
         return photo
       }))
 
+      // RIB + KBIS de l'admin franchisé de la société du dossier (pour la restitution).
+      const { data: adminFranchise } = await supabaseAdmin
+        .from('profiles')
+        .select('id, prenom, nom, rib_url, kbis_url')
+        .eq('societe_id', dossier.societe_id)
+        .eq('role', 'admin')
+        .maybeSingle()
+
       pdfBuffer = await buildDossierSuivi({
         dossier,
         devis: devisComplets || [],
@@ -504,6 +520,7 @@ export async function POST(request) {
         docsRestitution: docsRestitution || [],
         factures: factures || [],
         suiviFinancier: suiviFinancier || [],
+        adminFranchise: adminFranchise || null,
         logo: getLogoBase64(),
         supabaseAdmin,
       })
@@ -511,10 +528,14 @@ export async function POST(request) {
     } else if (type === 'cr') {
       if (!crId) return NextResponse.json({ error: 'crId manquant' }, { status: 400 })
       const { data: crData } = await supabaseAdmin.from('comptes_rendus').select('*').eq('id', crId).single()
-      if (!crData) return NextResponse.json({ error: 'CR non trouvé' }, { status: 404 })
+      // Le CR doit être rattaché au dossier validé (crId vient du body) — sinon 404.
+      if (!crData || crData.dossier_id !== dossierId) return NextResponse.json({ error: 'CR non trouvé' }, { status: 404 })
       cr = crData
 
-      const sections = (cr.contenu_final || '').split(/(?=## \d+\.)/).map(block => {
+      // Retrait des emojis (tofu en Roboto) AVANT le split : ne touche ni `## n.`,
+      // ni les puces `–`, ni le gras `**` → la structure est préservée. Donnée en
+      // base inchangée (nettoyage à l'affichage uniquement).
+      const sections = stripEmojiPdf(cr.contenu_final || '').split(/(?=## \d+\.)/).map(block => {
         const match = block.match(/^## (\d+)\. (.+?)\n([\s\S]*)/)
         if (match) return { numero: match[1], titre: match[2].trim(), contenu: match[3].trim() }
         const trimmed = block.trim()
@@ -525,22 +546,73 @@ export async function POST(request) {
       const doc = buildCRDocument({ dossier, cr, sections, logo: getLogoBase64() })
       pdfBuffer = await renderToBuffer(doc)
 
+    } else if (type === 'devis') {
+      // Devis SIGNÉ : fichier STOCKÉ (bucket documents), pas généré. Servi via
+      // service_role, jamais via le bucket (qui reste fermé au client).
+      if (!devisId) return NextResponse.json({ error: 'devisId manquant' }, { status: 400 })
+
+      // Ownership STRICT : le devis doit appartenir au dossier déjà vérifié (:419).
+      // `devis` est scopé à dossierId (:435) → retrouver devisId dedans garantit
+      // qu'il est dans le dossier possédé. Forge d'un devisId d'un autre dossier → 404.
+      const devisCible = (devis || []).find(d => d.id === devisId)
+      if (!devisCible || devisCible.dossier_id !== dossierId) {
+        return NextResponse.json({ error: 'Devis non trouvé' }, { status: 404 })
+      }
+      // Cohérence C7-1 : le client ne télécharge que ce qu'il voit (devis accepté).
+      if (devisCible.statut !== 'accepte') {
+        return NextResponse.json({ error: 'Devis non trouvé' }, { status: 404 })
+      }
+      // Tous les acceptés n'ont pas de PDF signé → 404 propre (pas de crash).
+      if (!devisCible.devis_signe_path) {
+        return NextResponse.json({ error: 'PDF du devis non disponible' }, { status: 404 })
+      }
+      const { data: fileData, error: dlErr } = await supabaseAdmin.storage
+        .from('documents').download(devisCible.devis_signe_path)
+      if (dlErr || !fileData) {
+        return NextResponse.json({ error: 'PDF du devis non disponible' }, { status: 404 })
+      }
+      const fileBuf = Buffer.from(await fileData.arrayBuffer())
+
+      // Content-Type dérivé de l'extension (le devis signé peut être pdf OU image).
+      const ext = (devisCible.devis_signe_path.split('.').pop() || '').toLowerCase()
+      const contentType = ext === 'pdf' ? 'application/pdf'
+        : (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg'
+        : ext === 'png' ? 'image/png'
+        : 'application/octet-stream'
+      const devisNom = `Devis_${dossier.reference}_${devisCible.artisan?.entreprise || 'artisan'}.${ext || 'pdf'}`
+      const devisAscii = devisNom.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '')
+      // inline : le client ouvre le document dans un onglet (carte « voir le devis »).
+      return new Response(fileBuf, {
+        headers: {
+          'Content-Type': contentType,
+          'Content-Disposition': `inline; filename="${devisAscii}"; filename*=UTF-8''${encodeURIComponent(devisNom)}`,
+        },
+      })
+
     } else {
       return NextResponse.json({ error: 'Type de PDF inconnu' }, { status: 400 })
     }
 
-    const TYPES_LABEL = { r1: 'R1', r2: 'R2', r3: 'R3', suivi: 'Suivi', reception: 'Reception' }
+    // CR : nom de fichier « DATE_CR_NOM » (date de visite, sinon date d'émission).
+    // Nom de famille uniquement (sans prénom) ; couple à deux noms → « Nom1 & Nom2 ».
+    const crDate = cr?.date_visite || cr?.created_at
+    const crDateStr = crDate ? new Date(crDate).toISOString().slice(0, 10) : ''
+    const nomClient = dossier.client
+      ? [dossier.client.nom, dossier.client.nom2].filter(Boolean).join(' & ') || 'Client'
+      : 'Client'
     const filename =
       type === 'recapitulatif_prev' ? `Recap_Financier_${dossier.reference}.pdf`
       : type === 'recapitulatif' ? `Suivi_Financier_${dossier.reference}.pdf`
       : type === 'dossier_suivi' ? `DossierSuivi_${dossier.reference}.pdf`
-      : type === 'cr' ? `CR_${TYPES_LABEL[cr?.type_visite] || 'visite'}_${dossier.reference}.pdf`
+      : type === 'cr' ? `${crDateStr ? crDateStr + '_' : ''}CR_${nomClient}.pdf`
       : `Dossier_${dossier.reference}.pdf`
 
+    // En-tête robuste aux accents/espaces : fallback ASCII + version UTF-8 (RFC 5987).
+    const asciiName = filename.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '')
     return new Response(pdfBuffer, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Disposition': `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       },
     })
   } catch (err) {

@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { formatNomClient } from '../../lib/clients'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 
@@ -58,6 +59,15 @@ function NouveauChantierForm() {
     setLoading(true)
     setErreur('')
 
+    // Garde-fou : interdiction de créer un dossier pour un client archivé.
+    // Dernier rempart (le sélecteur et le bouton fiche seront masqués aux Lots 3-4) ;
+    // re-test ici au cas où le client serait archivé entre le chargement et l'envoi.
+    if (client?.archive) {
+      setErreur('Ce client est archivé, désarchivez-le d\'abord.')
+      setLoading(false)
+      return
+    }
+
     // D18 : le dossier hérite de l'agence de son client.
     if (!client?.agence_id) {
       setErreur('Agence du client introuvable — recharge la page.')
@@ -71,7 +81,7 @@ function NouveauChantierForm() {
         referente_id: client?.referente_id || profile?.id,
         agence_id: client.agence_id,
         typologie: form.typologie,
-        statut: 'a_contacter',
+        statut: null, // NULL = pas d'override manuel → calcStatut décide (a_contacter à la création)
         frais_consultation: form.frais_consultation ? parseFloat(form.frais_consultation) : null,
         description: form.description || null,
         frais_statut: form.frais_statut,
@@ -95,9 +105,7 @@ function NouveauChantierForm() {
     }
   }
 
-  const nomComplet = client
-    ? `${client.civilite} ${client.prenom} ${client.nom}${client.prenom2 ? ` & ${client.prenom2} ${client.nom2}` : ''}`
-    : ''
+  const nomComplet = formatNomClient(client, { civilite: true })
 
   return (
     <div className="page-enter min-h-screen bg-gray-50">
@@ -116,6 +124,26 @@ function NouveauChantierForm() {
       </header>
 
       <main className="max-w-2xl mx-auto px-6 py-8">
+        {client?.archive ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">📦</span>
+              <div>
+                <h2 className="font-semibold text-amber-900">Client archivé</h2>
+                <p className="text-sm text-amber-700 mt-1">
+                  Ce client est archivé. Désarchivez-le d'abord pour créer un dossier.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push(`/clients/${clientId}`)}
+              className="border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50 text-sm"
+            >
+              ← Retour à la fiche client
+            </button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-6">
 
           {/* Client */}
@@ -310,6 +338,7 @@ function NouveauChantierForm() {
           </div>
 
         </form>
+        )}
       </main>
     </div>
   )

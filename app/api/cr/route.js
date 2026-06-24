@@ -4,6 +4,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../lib/api-auth'
+import { formatNomClient } from '../../lib/clients'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -26,12 +27,12 @@ const SECTIONS_PAR_TYPE = {
   reception:['Identification du chantier', 'Travaux réceptionnés', 'Réserves constatées', 'Délais de levée des réserves', 'Signature de réception'],
 }
 
-function buildSystemPrompt(type) {
+function buildSystemPrompt(type, agenceNom) {
   const typLabel = TYPES_VISITE[type] || 'Visite de chantier'
   const sections = (SECTIONS_PAR_TYPE[type] || SECTIONS_PAR_TYPE.suivi)
     .map((s, i) => `${i + 1}. ${s}`).join('\n')
 
-  return `Tu es un expert en gestion de chantiers BTP. Tu rédiges des comptes-rendus de visite professionnels pour illiCO travaux Martigues, agence de courtage en travaux et AMO.
+  return `Tu es un expert en gestion de chantiers BTP. Tu rédiges des comptes-rendus de visite professionnels pour ${agenceNom}, agence de courtage en travaux et AMO.
 
 TYPE DE VISITE : ${typLabel}
 
@@ -42,9 +43,10 @@ ${type === 'r3' ? `CONTEXTE R3 : Cette visite réunit UNIQUEMENT le courtier ill
 
 CONSIGNES :
 - Ton professionnel, précis, clair — style AMO (Assistance à Maîtrise d'Ouvrage)
-- Français impeccable
-- Reprendre exactement les noms des artisans, pièces, produits mentionnés dans les notes
-- Mettre en valeur les points critiques, retards, incidents, décisions importantes
+- Français impeccable : corrige l'orthographe, la grammaire et la conjugaison du texte que tu rédiges (les notes peuvent contenir des fautes de saisie ou de dictée vocale)
+- Reprendre exactement les noms des artisans, pièces, produits ET le nom et le prénom du client (maître d'ouvrage) tels que fournis — ne JAMAIS « corriger », accentuer ni modifier un nom propre, une raison sociale ou un terme technique, même s'il semble inhabituel ou comporte une faute
+- Mettre en valeur les points critiques, retards, incidents, décisions importantes — UNIQUEMENT en texte (gras markdown **, formulations comme « Point de vigilance : »), JAMAIS avec des emojis ou pictogrammes
+- N'utiliser AUCUN emoji ni pictogramme (⚠️, ✅, 🔧, etc.) : ils ne s'affichent pas dans le PDF
 - Si des images sont fournies (photos de cahier, captures), extraire et intégrer leur contenu
 
 FORMATS OBLIGATOIRES :
@@ -70,11 +72,9 @@ RÉPONSE : JSON strict uniquement, aucun texte avant ou après :
 }`
 }
 
-function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants, notesBrutes, numeroCR }) {
+function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants, notesBrutes }) {
   const client = dossier.client
-  const nomClient = client
-    ? [client.civilite, client.prenom, client.nom, client.prenom2 ? `& ${client.prenom2} ${client.nom2}` : null].filter(Boolean).join(' ')
-    : 'Client inconnu'
+  const nomClient = client ? formatNomClient(client, { civilite: true }) : 'Client inconnu'
 
   const artisansChantier = (devis || [])
     .filter(d => d.statut === 'accepte').map(d => d.artisan?.entreprise).filter(Boolean)
@@ -88,7 +88,6 @@ function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants,
     - Type de prestation : ${dossier.typologie?.toUpperCase() || ''}
     - Référente illiCO : ${dossier.referente ? `${dossier.referente.prenom} ${dossier.referente.nom}` : ''}
     - Artisans du chantier : ${artisansChantier.join(', ') || 'Aucun devis accepté'}
-    - Numéro de CR : N°${numeroCR}
 
     VISITE :
     - Date : ${dateVisite ? new Date(dateVisite).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Non précisée'}
@@ -113,24 +112,47 @@ export async function POST(request) {
     // Charger dossier + devis
     const { data: dossier } = await supabaseAdmin
       .from('dossiers')
-      .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom), client:clients(*)')
+      .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom), client:clients(*), agence:agences(nom)')
       .eq('id', dossierId).single()
+
+    // Contrôle d'appartenance — service_role contourne la RLS, on la reflète ici :
+    // admin = même société, agente = même agence. 404 uniforme (introuvable ou
+    // étranger : même réponse, ne jamais confirmer l'existence d'un dossier d'un autre tenant).
+    const dossierAutorise = dossier && (
+      auth.profile.role === 'admin'
+        ? dossier.societe_id === auth.profile.societe_id
+        : dossier.agence_id === auth.profile.agence_id
+    )
+    if (!dossierAutorise) {
+      return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
+    }
+
+    // docsPaths du body : jamais de confiance (téléchargés en service_role).
+    // Deux contrôles indépendants : (a) match EXACT contre chantier_documents de CE
+    // dossier ; (b) préfixe Storage du dossier (convention : chantiers/{dossier_id}/…).
+    // Un seul path invalide → 400, requête entière rejetée (fail loud).
+    if (docsPaths?.length) {
+      const { data: docsDossier } = await supabaseAdmin
+        .from('chantier_documents')
+        .select('path')
+        .eq('dossier_id', dossierId)
+      const pathsAutorises = new Set((docsDossier || []).map(d => d.path))
+      const prefixe = `chantiers/${dossierId}/`
+      const pathInvalide = docsPaths.some(doc => !pathsAutorises.has(doc.path) || !doc.path.startsWith(prefixe))
+      if (pathInvalide) {
+        return NextResponse.json({ error: 'Document non rattaché au dossier' }, { status: 400 })
+      }
+    }
 
     const { data: devis } = await supabaseAdmin
       .from('devis_artisans')
       .select('*, artisan:artisans(id, entreprise)')
       .eq('dossier_id', dossierId)
 
-    // Numéro du prochain CR
-    const { count } = await supabaseAdmin
-      .from('comptes_rendus')
-      .select('*', { count: 'exact', head: true })
-      .eq('dossier_id', dossierId)
-    const numeroCR = (count || 0) + 1
-
     // Construire les messages Claude
-    const systemPrompt = buildSystemPrompt(typeVisite)
-    const userText = buildUserPrompt({ dossier, devis: devis || [], typeVisite, dateVisite, intervenants, notesBrutes: notesBrutes || '', numeroCR })
+    const agenceNom = dossier.agence?.nom || 'illiCO travaux'
+    const systemPrompt = buildSystemPrompt(typeVisite, agenceNom)
+    const userText = buildUserPrompt({ dossier, devis: devis || [], typeVisite, dateVisite, intervenants, notesBrutes: notesBrutes || '' })
 
     const userContent = []
 
@@ -179,8 +201,9 @@ export async function POST(request) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 4000,
+        temperature: 0.3,
         system: systemPrompt,
         messages: [{ role: 'user', content: userContent }],
       }),
@@ -202,7 +225,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Réponse IA invalide', raw: rawText }, { status: 500 })
     }
 
-    return NextResponse.json({ cr: crJSON, numeroCR })
+    return NextResponse.json({ cr: crJSON })
   } catch (err) {
     console.error('CR AI error DETAIL:', err.message, err.stack)
     return NextResponse.json({ error: err.message || 'Erreur serveur' }, { status: 500 })

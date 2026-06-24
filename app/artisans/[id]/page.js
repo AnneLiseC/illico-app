@@ -111,7 +111,8 @@ export default function FicheArtisan({ params }) {
     const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (uploadError) { setErreur('Erreur upload : ' + uploadError.message); setUploadEnCours(u => ({ ...u, [type]: false })); return }
     const champ = type === 'kbis' ? 'kbis_url' : type === 'decennale' ? 'decennale_url' : type === 'qualification' ? 'qualification_url' : 'rib_url'
-    await supabase.from('artisans').update({ [champ]: chemin }).eq('id', id)
+    const { error } = await supabase.from('artisans').update({ [champ]: chemin }).eq('id', id)
+    if (error) { setErreur('Erreur : ' + error.message); setUploadEnCours(u => ({ ...u, [type]: false })); return }
     setArtisan(a => ({ ...a, [champ]: chemin }))
     setSucces(`${type} uploadé ✓`)
     setUploadEnCours(u => ({ ...u, [type]: false }))
@@ -137,7 +138,8 @@ export default function FicheArtisan({ params }) {
 
   const supprimerFiche = async (ficheId) => {
     if (!confirm('Supprimer cette fiche technique ?')) return
-    await supabase.from('fiches_techniques').delete().eq('id', ficheId)
+    const { error } = await supabase.from('fiches_techniques').delete().eq('id', ficheId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerFiches()
   }
 

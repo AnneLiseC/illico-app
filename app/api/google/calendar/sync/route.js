@@ -46,9 +46,11 @@ function rdvToGoogleEvent(rdv) {
   const client = rdv.dossier?.client
   const nomClient = client ? `${client.civilite || ''} ${client.prenom} ${client.nom}`.trim() : ''
   const artisan = rdv.artisan?.entreprise || ''
+  // date_heure est un timestamptz (instant UTC) → envoyer l'instant ISO COMPLET (offset/Z)
+  // à Google ; timeZone:'Europe/Paris' ne sert qu'à l'affichage/récurrence. Ne PAS faire
+  // slice(0,19) qui couperait l'offset et ré-étiquetterait le wall-clock UTC comme Paris (+offset erroné).
   const start = new Date(rdv.date_heure)
   const end = new Date(start.getTime() + (rdv.duree_minutes || 60) * 60000)
-  const fmtNaive = (d) => d.toISOString().slice(0, 19)
   const summary = rdv.type_rdv === 'autres'
     ? (rdv.titre || rdv.notes || 'Autre RDV')
     : `${typeLabels[rdv.type_rdv] || rdv.type_rdv}${nomClient ? ' | ' + nomClient : ''}${artisan ? ' x ' + artisan : ''}`
@@ -58,8 +60,8 @@ function rdvToGoogleEvent(rdv) {
       rdv.dossier?.reference ? `Chantier : ${rdv.dossier.reference}` : '',
       rdv.notes ? `Notes : ${rdv.notes}` : '',
     ].filter(Boolean).join('\n'),
-    start: { dateTime: fmtNaive(start), timeZone: 'Europe/Paris' },
-    end: { dateTime: fmtNaive(end), timeZone: 'Europe/Paris' },
+    start: { dateTime: start.toISOString(), timeZone: 'Europe/Paris' },
+    end: { dateTime: end.toISOString(), timeZone: 'Europe/Paris' },
   }
 }
 

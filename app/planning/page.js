@@ -9,7 +9,9 @@ import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import listPlugin from '@fullcalendar/list'
 import interactionPlugin from '@fullcalendar/interaction'
+import luxonPlugin from '@fullcalendar/luxon3'
 import frLocale from '@fullcalendar/core/locales/fr'
+import { parisLocalToInstant, instantToParisLocal } from '../lib/dates'
 
 // ─── PALETTE illiCO TRAVAUX ───────────────────────────────────────────────────
 const COLORS = {
@@ -26,17 +28,24 @@ const COLORS = {
 }
 
 const TYPE_CONFIG = {
-  visite_technique_client:  { label: 'R1 — Visite client',      short: 'R1',    color: COLORS.blue,   bg: '#EFF6FF' },
-  visite_technique_artisan: { label: 'R2 — Visite artisan',     short: 'R2',    color: COLORS.teal,   bg: '#F0FDF9' },
-  presentation_devis:       { label: 'R3 — Présentation devis', short: 'R3',    color: COLORS.amber,  bg: '#FFFBEB' },
-  autres:                   { label: 'Autre RDV',               short: 'Autre', color: '#64748B',     bg: '#F8FAFC' },
+  visite_technique_client:  { label: 'R1 — Visite client',      short: 'R1',     color: COLORS.blue,   bg: '#EFF6FF' },
+  visite_technique_artisan: { label: 'R2 — Visite artisan',     short: 'R2',     color: COLORS.teal,   bg: '#F0FDF9' },
+  presentation_devis:       { label: 'R3 — Présentation devis', short: 'R3',     color: COLORS.amber,  bg: '#FFFBEB' },
+  suivi:                    { label: 'Suivi de chantier',       short: 'Suivi',  color: COLORS.violet, bg: '#F5F3FF' },
+  reception:                { label: 'Réception',               short: 'Récept.',color: COLORS.mint,   bg: '#ECFDF5' },
+  etude:                    { label: 'Étude/conception',        short: 'Étude',  color: COLORS.coral,  bg: '#FEF2F2' },
+  autres:                   { label: 'Autre RDV',               short: 'Autre',  color: '#64748B',     bg: '#F8FAFC' },
 }
 
 const ARTISAN_COLORS = [COLORS.violet, COLORS.coral, COLORS.mint, COLORS.gold, COLORS.sky, COLORS.teal, '#9333EA', '#0891B2']
 
-const fmtDate    = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) : '—'
-const fmtHeure   = (d) => d ? new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'
-const fmtDateLong = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '—'
+// date_heure est désormais un timestamptz (ISO offsetté) → new Date(d) donne le bon
+// instant ; on force l'affichage en Europe/Paris. (Sur les dates `date` pures des
+// interventions, ce pin Paris ne décale pas le jour pour un usage FR.)
+// ⚠️ Ne PAS passer par lib/dates.parseUTC : il ajoute 'Z' et casserait une valeur déjà suffixée +00:00.
+const fmtDate    = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', timeZone: 'Europe/Paris' }) : '—'
+const fmtHeure   = (d) => d ? new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' }) : '—'
+const fmtDateLong = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Paris' }) : '—'
 
 export default function Planning() {
   const [rdvs, setRdvs]                   = useState([])
@@ -85,7 +94,7 @@ export default function Planning() {
   const [formDateCle, setFormDateCle] = useState({ date_demarrage_chantier: '', date_fin_chantier: '' })
 
   const router = useRouter()
-  const { user, profile, initialized } = useAuth()
+  const { user, profile, initialized, agenceActive } = useAuth()
 
   const chargerTout = async () => {
     const [rdvRes, intRes, dosRes, artRes, devRes, agRes, agencesRes] = await Promise.all([
@@ -98,8 +107,11 @@ export default function Planning() {
       // Agences de la société (RLS agences_select_ma_societe filtre déjà) — pour le sélecteur admin
       supabase.from('agences').select('id, nom, code').order('nom'),
     ])
-    setRdvs(rdvRes.data || [])
-    setInterventions(intRes.data || [])
+    // Masquage archive : on retire RDV/interventions rattachés à un dossier archivé,
+    // tout en CONSERVANT ceux sans dossier (dossier?.archive === undefined → gardés :
+    // RDV prospect/standalone). Condition de retrait stricte : dossier?.archive === true.
+    setRdvs((rdvRes.data || []).filter(r => r.dossier?.archive !== true))
+    setInterventions((intRes.data || []).filter(i => i.dossier?.archive !== true))
     setDossiers(dosRes.data || [])
     setArtisans(artRes.data || [])
     setDevis(devRes.data || [])
@@ -136,9 +148,26 @@ export default function Planning() {
     return ARTISAN_COLORS[idx % ARTISAN_COLORS.length] || COLORS.slate
   }, [artisans])
 
+  // ── SCOPING MULTI-AGENCE (UX, pas sécurité — la RLS reste la frontière) ─────
+  // RDV/interventions sont filles du dossier (pas d'agence_id propre) : le filtre
+  // passe par le parent. agenceActive null = pas de filtre (Consolidé / agente).
+  // Un item SANS dossier (transverse : RDV prospect/standalone) reste TOUJOURS visible.
+  const matchAgence = useCallback(
+    (item) => !agenceActive || !item.dossier_id || item.dossier?.agence_id === agenceActive,
+    [agenceActive]
+  )
+  const rdvsScoped          = useMemo(() => rdvs.filter(matchAgence), [rdvs, matchAgence])
+  const interventionsScoped = useMemo(() => interventions.filter(matchAgence), [interventions, matchAgence])
+  // Les dossiers ont un agence_id propre (NOT NULL) → règle directe 4a, sans le cas
+  // « transverse ». Source des jalons chantier, de la stat et des dropdowns de création.
+  const dossiersScoped      = useMemo(
+    () => (agenceActive ? dossiers.filter(d => d.agence_id === agenceActive) : dossiers),
+    [dossiers, agenceActive]
+  )
+
   // ── ÉVÉNEMENTS CALENDRIER ──────────────────────────────────────────────────
 
-  const evenementsRdv = useMemo(() => rdvs
+  const evenementsRdv = useMemo(() => rdvsScoped
     .filter(r => vue === 'tous' || (vue === 'moi' && r.dossier?.referente_id === profile?.id) || (vue === 'artisan' && r.artisan_id))
     .filter(r => !typeFiltre   || r.type_rdv === typeFiltre)
     .filter(r => !artisanFiltre || r.artisan_id === artisanFiltre)
@@ -158,9 +187,9 @@ export default function Planning() {
         backgroundColor: cfg.color, borderColor: cfg.color, textColor: '#fff',
         extendedProps: { type: 'rdv', data: r, cfg },
       }
-    }), [rdvs, vue, typeFiltre, artisanFiltre, agenteFiltre, profile?.id])
+    }), [rdvsScoped, vue, typeFiltre, artisanFiltre, agenteFiltre, profile?.id])
 
-  const evenementsInterventions = useMemo(() => interventions
+  const evenementsInterventions = useMemo(() => interventionsScoped
     .filter(i => !artisanFiltre || i.artisan_id === artisanFiltre)
     .filter(i => !agenteFiltre  || i.dossier?.referente_id === agenteFiltre)
     .flatMap(i => {
@@ -176,16 +205,16 @@ export default function Planning() {
         const endD = new Date(d + 'T00:00:00'); endD.setDate(endD.getDate() + 1)
         return { id: 'int-' + i.id + '-' + idx, title: titre, start: d, end: endD.toISOString().slice(0, 10), backgroundColor: color + '28', borderColor: color, textColor: color, allDay: true, extendedProps: { type: 'intervention', data: i } }
       })
-    }), [interventions, artisanFiltre, agenteFiltre, couleurArtisan])
+    }), [interventionsScoped, artisanFiltre, agenteFiltre, couleurArtisan])
 
-  const evenementsDates = useMemo(() => dossiers
+  const evenementsDates = useMemo(() => dossiersScoped
     .filter(d => !agenteFiltre || d.referente_id === agenteFiltre)
     .flatMap(d => {
       const evts = []
       if (d.date_demarrage_chantier) evts.push({ id: 'start-' + d.id, title: `▶ ${d.reference}`, start: d.date_demarrage_chantier, allDay: true, backgroundColor: '#ECFDF5', borderColor: COLORS.mint, textColor: COLORS.mint, extendedProps: { type: 'date_cle', data: d } })
       if (d.date_fin_chantier) evts.push({ id: 'end-' + d.id, title: `■ ${d.reference}`, start: d.date_fin_chantier, allDay: true, backgroundColor: '#FFF7ED', borderColor: COLORS.amber, textColor: COLORS.gold, extendedProps: { type: 'date_cle', data: d } })
       return evts
-    }), [dossiers, agenteFiltre])
+    }), [dossiersScoped, agenteFiltre])
 
   const tousEvenements = useMemo(() => [...evenementsRdv, ...evenementsInterventions, ...evenementsDates],
     [evenementsRdv, evenementsInterventions, evenementsDates])
@@ -196,7 +225,7 @@ export default function Planning() {
     const maintenant = new Date()
     const dans30j = new Date(maintenant.getTime() + 30 * 24 * 3600000)
 
-    const rdvItems = rdvs
+    const rdvItems = rdvsScoped
       .filter(r => { const d = new Date(r.date_heure); return d >= maintenant && d <= dans30j })
       .filter(r => !artisanFiltre || r.artisan_id === artisanFiltre)
       .filter(r => !agenteFiltre  || r.dossier?.referente_id === agenteFiltre)
@@ -212,7 +241,7 @@ export default function Planning() {
         }
       })
 
-    const intItems = interventions
+    const intItems = interventionsScoped
       .filter(i => { const d = new Date(i.date_debut); return d >= maintenant && d <= dans30j })
       .filter(i => !artisanFiltre || i.artisan_id === artisanFiltre)
       .filter(i => !agenteFiltre  || i.dossier?.referente_id === agenteFiltre)
@@ -229,7 +258,7 @@ export default function Planning() {
     return [...rdvItems, ...intItems]
       .filter(item => !recherche || [item.titre, item.sous].join(' ').toLowerCase().includes(recherche.toLowerCase()))
       .sort((a, b) => a.date - b.date)
-  }, [rdvs, interventions, artisanFiltre, agenteFiltre, typeFiltre, recherche, couleurArtisan])
+  }, [rdvsScoped, interventionsScoped, artisanFiltre, agenteFiltre, typeFiltre, recherche, couleurArtisan])
 
   // ── HANDLERS ──────────────────────────────────────────────────────────────
 
@@ -361,8 +390,10 @@ export default function Planning() {
         body: JSON.stringify({ googleEventId }),
       })).catch(() => {})
     }
-    if (elementSelectionne.type === 'rdv') await supabase.from('rendez_vous').delete().eq('id', elementSelectionne.data.id)
-    else await supabase.from('interventions_artisans').delete().eq('id', elementSelectionne.data.id)
+    const { error } = elementSelectionne.type === 'rdv'
+      ? await supabase.from('rendez_vous').delete().eq('id', elementSelectionne.data.id)
+      : await supabase.from('interventions_artisans').delete().eq('id', elementSelectionne.data.id)
+    if (error) { setErreur(error.message); return }
     fermerModal()
     chargerTout()
   }
@@ -390,7 +421,7 @@ export default function Planning() {
   const inputCls = "input"
   const labelCls = "eyebrow"
 
-  const rdvCeMois = rdvs.filter(r => {
+  const rdvCeMois = rdvsScoped.filter(r => {
     const d = new Date(r.date_heure), m = new Date()
     return d.getMonth() === m.getMonth() && d.getFullYear() === m.getFullYear()
   }).length
@@ -405,7 +436,7 @@ export default function Planning() {
           <h1 className="page" style={{fontSize:28}}>Planning</h1>
           <div style={{color:'var(--ink-500)', fontSize:13, marginTop:6}}>
             <strong style={{color:'var(--ink-700)'}}>{rdvCeMois}</strong> RDV ce mois ·{' '}
-            <strong style={{color:'var(--ink-700)'}}>{interventions.length}</strong> interventions ·{' '}
+            <strong style={{color:'var(--ink-700)'}}>{interventionsScoped.length}</strong> interventions ·{' '}
             <strong style={{color:'var(--ink-700)'}}>{agendaItems.length}</strong> à venir 30j
           </div>
         </div>
@@ -549,9 +580,10 @@ export default function Planning() {
               .fc-more-link { font-size: 10px !important; font-weight: 700 !important; color: ${COLORS.blue} !important; }
             `}</style>
             <FullCalendar
-              plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}
+              plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin, luxonPlugin]}
               initialView={calendarView}
               locale={frLocale}
+              timeZone="Europe/Paris"
               headerToolbar={{
                 left: 'prev,next today',
                 center: 'title',
@@ -607,8 +639,8 @@ export default function Planning() {
                       width:48, padding:'6px 0', background:'var(--surface-2)', borderRadius:8,
                       textAlign:'center', borderLeft:`3px solid ${item.color}`
                     }}>
-                      <div className="tnum" style={{fontSize:16, fontWeight:800, color:'var(--ink-900)', lineHeight:1}}>{dt.toLocaleDateString('fr-FR',{day:'2-digit'})}</div>
-                      <div style={{fontSize:8.5, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2}}>{dt.toLocaleDateString('fr-FR',{month:'short'}).replace('.','')}</div>
+                      <div className="tnum" style={{fontSize:16, fontWeight:800, color:'var(--ink-900)', lineHeight:1}}>{dt.toLocaleDateString('fr-FR',{day:'2-digit', timeZone:'Europe/Paris'})}</div>
+                      <div style={{fontSize:8.5, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2}}>{dt.toLocaleDateString('fr-FR',{month:'short', timeZone:'Europe/Paris'}).replace('.','')}</div>
                     </div>
                     <div style={{minWidth:0}}>
                       <div className="clip-1" style={{fontSize:12, fontWeight:600, color:'var(--ink-900)'}}>{item.titre}</div>
@@ -651,8 +683,8 @@ export default function Planning() {
           <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
             {[
               { label: 'RDV ce mois', value: rdvCeMois, color: COLORS.blue },
-              { label: 'Interventions', value: interventions.length, color: COLORS.violet },
-              { label: 'Chantiers actifs', value: dossiers.filter(d => d.date_demarrage_chantier && !d.date_fin_chantier).length, color: COLORS.mint},
+              { label: 'Interventions', value: interventionsScoped.length, color: COLORS.violet },
+              { label: 'Chantiers actifs', value: dossiersScoped.filter(d => d.date_demarrage_chantier && !d.date_fin_chantier).length, color: COLORS.mint},
               { label: 'À venir 30j', value: agendaItems.length, color: COLORS.amber },
             ].map(({ label, value, color }) => (
               <div key={label} className="card" style={{padding:12, textAlign:'center'}}>
@@ -759,11 +791,15 @@ export default function Planning() {
                         type_rdv: newType,
                         titre: newType !== 'autres' ? '' : f.titre,
                         dossier_id: newType === 'autres' ? '' : (f.type_rdv === 'autres' ? '' : f.dossier_id),
+                        artisan_id: ['visite_technique_artisan', 'reception'].includes(newType) ? f.artisan_id : '',
                       }))
                     }} className={inputCls} style={{marginTop:6}}>
                       <option value="visite_technique_client">R1 — Visite technique client</option>
                       <option value="visite_technique_artisan">R2 — Visite technique avec artisan</option>
                       <option value="presentation_devis">R3 — Présentation devis</option>
+                      <option value="suivi">Suivi de chantier</option>
+                      <option value="reception">Réception</option>
+                      <option value="etude">Étude/conception</option>
                       <option value="autres">Autre rendez-vous</option>
                     </select>
                   </div>
@@ -780,7 +816,7 @@ export default function Planning() {
                   {formRdv.type_rdv !== 'autres' && !formRdv.dossier_id && <div><label className={labelCls}>Chantier *</label>
                     <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir un chantier —</option>
-                      {dossiers.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
+                      {dossiersScoped.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
                     </select>
                   </div>}
                   <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
@@ -791,7 +827,7 @@ export default function Planning() {
                       </select>
                     </div>
                   </div>
-                  {formRdv.type_rdv === 'visite_technique_artisan' && <div><label className={labelCls}>Artisan</label>
+                  {['visite_technique_artisan', 'reception'].includes(formRdv.type_rdv) && <div><label className={labelCls}>Artisan</label>
                     <select value={formRdv.artisan_id} onChange={e => setFormRdv(f => ({ ...f, artisan_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir —</option>
                       {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
@@ -813,7 +849,7 @@ export default function Planning() {
                   {!modeEdition && <div><label className={labelCls}>Chantier *</label>
                     <select value={formIntervention.dossier_id} onChange={e => setFormIntervention(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir un chantier —</option>
-                      {dossiers.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
+                      {dossiersScoped.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
                     </select>
                   </div>}
                   <div><label className={labelCls}>Artisan *</label>
@@ -909,7 +945,7 @@ export default function Planning() {
           <div style={{position:'fixed', inset:0, zIndex:40}} onClick={() => setQuickMenu(null)} />
           <div className="card" style={{position:'fixed', zIndex:50, minWidth:180, overflow:'hidden', padding:0, top: quickMenu.y + 8, left: quickMenu.x}}>
             <div className="eyebrow" style={{padding:'12px 16px 6px'}}>
-              {new Date(quickMenu.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}
+              {new Date(quickMenu.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/Paris' })}
             </div>
             <button onClick={() => ouvrirDepuisMenu('rdv')}
               className="row-hover"

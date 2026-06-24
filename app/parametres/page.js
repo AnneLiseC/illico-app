@@ -18,16 +18,21 @@ const NOTIFS = [
 ]
 
 export default function Parametres() {
-  const { profile: authProfile, initialized, fetchProfile } = useAuth()
+  const { profile: authProfile, initialized, fetchProfile, agenceActive, agences: agencesCtx, refreshAgences } = useAuth()
   const [profile, setProfile]             = useState(null)
   const [loading, setLoading]             = useState(true)
   const [agentes, setAgentes]             = useState([])
   const [societe, setSociete]             = useState(null)
-  const [agence, setAgence]               = useState(null)
+  const [agences, setAgences]             = useState([])
   const [objectifs, setObjectifs]         = useState([])
   const [objAgenceVal, setObjAgenceVal]   = useState('')
   const [savingObjAgence, setSavingObjAgence] = useState(false)
   const [objAgenceMsg, setObjAgenceMsg]   = useState('')
+  // Multi-agence (5b) : saisie/feedback indépendants par agence (objectif 'agence').
+  // Branche mono (objAgenceVal) inchangée.
+  const [objAbVals, setObjAbVals]         = useState({})   // { agence_id: string }
+  const [objAbSaving, setObjAbSaving]     = useState(null) // agence_id en cours, ou null
+  const [objAbMsg, setObjAbMsg]           = useState({})   // { agence_id: message }
   const [saving, setSaving]               = useState(false)
   const [erreur, setErreur]               = useState('')
   const [succes, setSucces]               = useState('')
@@ -37,6 +42,7 @@ export default function Parametres() {
   const [supprimant, setSupprimant]       = useState(false)
   const [uploadingKbis, setUploadingKbis] = useState(null)
   const [uploadingRib, setUploadingRib]   = useState(false)
+  const [uploadingKbisFranchise, setUploadingKbisFranchise] = useState(false)
   const [section, setSection]             = useState('profil')
   const [gcalConnected, setGcalConnected] = useState(false)
   const [savingProfil, setSavingProfil]   = useState(false)
@@ -50,9 +56,16 @@ export default function Parametres() {
     parts_agente_disponibles: '60',
     frais_part_agente_defaut: 100,
     redevance_debut: '',
+    redevance_mensuelle_ht: '',
     objectif: '',
+    agence_id: '',
   }
   const [form, setForm] = useState(emptyForm)
+
+  // Création d'agence (multi-agence) — état séparé de la modale agente.
+  const emptyFormAgence = { nom: '', ville: '', adresse: '', code_postal: '', telephone: '', email: '', responsable_nom: '' }
+  const [formAgence, setFormAgence] = useState(emptyFormAgence)
+  const [savingAgence, setSavingAgence] = useState(false)
 
   const chargerAgentes = async () => {
     const { data } = await supabase.from('profiles').select('*').eq('role', 'agente').order('prenom')
@@ -61,13 +74,12 @@ export default function Parametres() {
 
   const chargerAgence = async (societeId) => {
     if (!societeId) return
-    const [{ data: soc }, { data: ag }] = await Promise.all([
+    const [{ data: soc }, { data: ags }] = await Promise.all([
       supabase.from('societes').select('nom_societe, siret, rcs').eq('id', societeId).single(),
-      // L15: multi-agences — ici on prend l'unique agence de la société (mono-agence).
-      supabase.from('agences').select('id, nom, ville, adresse, code_postal, telephone').eq('societe_id', societeId).limit(1).single(),
+      supabase.from('agences').select('id, code, nom, ville, adresse, code_postal, telephone, email, responsable_nom, logo_path').eq('societe_id', societeId).order('code'),
     ])
     setSociete(soc || null)
-    setAgence(ag || null)
+    setAgences(ags || [])
   }
 
   // Objectifs de CA (grain annuel). Lecture pour pré-remplir, écriture via sauvegarderObjectif.
@@ -76,6 +88,17 @@ export default function Parametres() {
     const { data } = await supabase.from('objectifs_ca').select('*').eq('annee', annee)
     setObjectifs(data || [])
     setObjAgenceVal(String(data?.find(o => o.cible === 'agence' && o.agente_id === null)?.montant || ''))
+    // Index par agence pour la branche multi-agence. Ne remplit que les agences
+    // PAS déjà en saisie (préserve les éditions en cours après un rechargement).
+    setObjAbVals(prev => {
+      const next = { ...prev }
+      for (const o of (data || [])) {
+        if (o.cible === 'agence' && o.agente_id === null && o.agence_id && !(o.agence_id in next)) {
+          next[o.agence_id] = String(o.montant ?? '')
+        }
+      }
+      return next
+    })
   }
 
   // Écriture objectif côté client : objectif d'agence ET objectif d'agente (édition).
@@ -84,14 +107,25 @@ export default function Parametres() {
   const sauvegarderObjectif = async (cible, agenteId, agenceId, montant) => {
     if (!agenceId) return
     const annee = new Date().getFullYear()
-    const query = supabase.from('objectifs_ca').select('id').eq('annee', annee).eq('cible', cible)
-    const { data: existing } = agenteId
-      ? await query.eq('agente_id', agenteId).maybeSingle()
-      : await query.is('agente_id', null).maybeSingle()
+    const montantNum = parseFloat(montant) || 0
+
+    // Recherche de la ligne existante scopée par la clé d'unicité RÉELLE (sinon, en
+    // multi-agence, maybeSingle voit plusieurs lignes et échoue) :
+    //  - agence : (annee, cible, agence_id) WHERE agente_id IS NULL
+    //  - agente : (annee, cible, agente_id)
+    // L'upsert PostgREST ne peut pas cibler ces index PARTIELS (ON CONFLICT sans WHERE
+    // → 42P10), d'où le select-puis-update/insert. Toute erreur est levée (plus de ✓ menteur).
+    let q = supabase.from('objectifs_ca').select('id').eq('annee', annee).eq('cible', cible)
+    q = agenteId ? q.eq('agente_id', agenteId) : q.is('agente_id', null).eq('agence_id', agenceId)
+    const { data: existing, error: selErr } = await q.maybeSingle()
+    if (selErr) throw new Error(selErr.message)
+
     if (existing) {
-      await supabase.from('objectifs_ca').update({ montant: parseFloat(montant) || 0 }).eq('id', existing.id)
+      const { error } = await supabase.from('objectifs_ca').update({ montant: montantNum }).eq('id', existing.id)
+      if (error) throw new Error(error.message)
     } else {
-      await supabase.from('objectifs_ca').insert({ annee, cible, agente_id: agenteId || null, agence_id: agenceId, montant: parseFloat(montant) || 0 })
+      const { error } = await supabase.from('objectifs_ca').insert({ annee, cible, agente_id: agenteId || null, agence_id: agenceId, montant: montantNum })
+      if (error) throw new Error(error.message)
     }
     await chargerObjectifs()
   }
@@ -99,12 +133,82 @@ export default function Parametres() {
   const enregistrerObjAgence = async () => {
     setSavingObjAgence(true); setObjAgenceMsg('')
     try {
-      await sauvegarderObjectif('agence', null, agence?.id, objAgenceVal)
+      // Mono-agence : agences[0] EST l'unique agence (pas un choix arbitraire).
+      await sauvegarderObjectif('agence', null, agences[0]?.id, objAgenceVal)
       setObjAgenceMsg('Enregistré ✓')
     } catch (err) {
       setObjAgenceMsg('Erreur : ' + err.message)
     }
     setSavingObjAgence(false)
+  }
+
+  // Enregistrement de l'objectif d'UNE agence (multi-agence). Réutilise le chemin
+  // d'écriture sécurisé sauvegarderObjectif (policy objectifs_ca_scope), non modifié.
+  const enregistrerObjAb = async (agenceId) => {
+    setObjAbSaving(agenceId); setObjAbMsg(m => ({ ...m, [agenceId]: '' }))
+    try {
+      await sauvegarderObjectif('agence', null, agenceId, objAbVals[agenceId] ?? '')
+      setObjAbMsg(m => ({ ...m, [agenceId]: 'Enregistré ✓' }))
+    } catch (err) {
+      setObjAbMsg(m => ({ ...m, [agenceId]: 'Erreur : ' + err.message }))
+    }
+    setObjAbSaving(null)
+  }
+
+  const ouvrirCreerAgence = () => { setFormAgence(emptyFormAgence); setModal('creer_agence'); setErreur(''); setSucces('') }
+
+  // Édition d'une agence (admin, ses propres agences) — réutilise formAgence + l'id/code
+  // de l'agence ciblée. Écriture via route service_role (agences n'a pas de policy UPDATE).
+  const ouvrirEditerAgence = (ag) => {
+    setFormAgence({
+      id: ag.id, code: ag.code || '',
+      nom: ag.nom || '', ville: ag.ville || '', adresse: ag.adresse || '',
+      code_postal: ag.code_postal || '', telephone: ag.telephone || '',
+      email: ag.email || '', responsable_nom: ag.responsable_nom || '',
+    })
+    setModal('editer_agence'); setErreur(''); setSucces('')
+  }
+
+  const modifierAgence = async () => {
+    if (!formAgence.nom.trim() || !formAgence.ville.trim()) return
+    setSavingAgence(true); setErreur('')
+    try {
+      const res = await fetch('/api/update-agence', {
+        method: 'PATCH', headers: await authHeaders(),
+        body: JSON.stringify({
+          agence_id: formAgence.id,
+          nom: formAgence.nom, ville: formAgence.ville, adresse: formAgence.adresse,
+          code_postal: formAgence.code_postal, telephone: formAgence.telephone,
+          email: formAgence.email, responsable_nom: formAgence.responsable_nom,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setErreur(data.error || 'Erreur'); setSavingAgence(false); return }
+      setModal(false)
+      setSucces('Agence mise à jour ✓')
+      await chargerAgence(authProfile.societe_id)
+      await refreshAgences()   // met à jour la liste du contexte (navbar + sélecteur agente)
+    } catch {
+      setErreur('Erreur réseau, veuillez réessayer.')
+    }
+    setSavingAgence(false)
+  }
+
+  const creerAgence = async () => {
+    if (!formAgence.nom.trim() || !formAgence.ville.trim()) return
+    setSavingAgence(true); setErreur('')
+    try {
+      const res = await fetch('/api/create-agence', { method: 'POST', headers: await authHeaders(), body: JSON.stringify(formAgence) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setErreur(data.error || 'Erreur'); setSavingAgence(false); return }
+      setModal(false)
+      setSucces('Agence créée ✓')
+      await chargerAgence(authProfile.societe_id)
+      await refreshAgences()   // met à jour la liste du contexte (navbar + sélecteur agente)
+    } catch {
+      setErreur('Erreur réseau, veuillez réessayer.')
+    }
+    setSavingAgence(false)
   }
 
   useEffect(() => {
@@ -127,7 +231,8 @@ export default function Parametres() {
   }, [initialized, authProfile, router])
 
   /* ── Handlers agentes (inchangés) ── */
-  const ouvrirCreer = () => { setForm(emptyForm); setAgenteEditee(null); setModal('creer'); setErreur(''); setSucces('') }
+  // Défaut sélecteur d'agence : la vue active si une agence est sélectionnée, sinon choix forcé.
+  const ouvrirCreer = () => { setForm({ ...emptyForm, agence_id: agenceActive || '' }); setAgenteEditee(null); setModal('creer'); setErreur(''); setSucces('') }
   const ouvrirModifier = (agente) => {
     const objAgente = objectifs.find(o => o.cible === 'agente' && o.agente_id === agente.id)?.montant
     setForm({
@@ -137,6 +242,7 @@ export default function Parametres() {
         ? agente.parts_agente_disponibles.map(p => Math.round(p * 100)).join(', ')
         : String(Math.round((agente.part_agente_defaut || 0.5) * 100)),
       redevance_debut: agente.redevance_debut || '',
+      redevance_mensuelle_ht: agente.redevance_mensuelle_ht != null ? String(agente.redevance_mensuelle_ht) : '',
       objectif: objAgente != null ? String(objAgente) : '',
     })
     setAgenteEditee(agente); setModal('modifier'); setErreur(''); setSucces('')
@@ -160,7 +266,7 @@ export default function Parametres() {
     try {
       const partsArray = form.parts_agente_disponibles.split(',').map(v => parseInt(v.trim()) / 100).filter(v => !isNaN(v) && v > 0 && v <= 1)
       const partDefaut = partsArray[0] ?? 0.5
-      const res = await fetch('/api/create-agente', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ prenom: form.prenom, nom: form.nom, email: form.email, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, objectif: form.objectif !== '' ? parseFloat(form.objectif) || 0 : null }) })
+      const res = await fetch('/api/create-agente', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ prenom: form.prenom, nom: form.nom, email: form.email, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, redevance_debut: form.redevance_debut || null, redevance_mensuelle_ht: form.redevance_mensuelle_ht !== '' ? parseFloat(form.redevance_mensuelle_ht) : null, objectif: form.objectif !== '' ? parseFloat(form.objectif) || 0 : null, agence_id: form.agence_id || null }) })
       const data = await res.json()
       if (!res.ok) { setErreur(data.error || 'Erreur') } else { setSucces(`Invitation envoyée à ${form.email} ✓`); setModal(false); await chargerAgentes(); await chargerObjectifs() }
     } catch (err) { setErreur(err.message) }
@@ -172,7 +278,7 @@ export default function Parametres() {
     try {
       const partsArray = form.parts_agente_disponibles.split(',').map(v => parseInt(v.trim()) / 100).filter(v => !isNaN(v) && v > 0 && v <= 1)
       const partDefaut = partsArray[0] ?? 0.5
-      const res = await fetch('/api/create-agente', { method: 'PATCH', headers: await authHeaders(), body: JSON.stringify({ id: agenteEditee.id, prenom: form.prenom, nom: form.nom, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, redevance_debut: form.redevance_debut || null }) })
+      const res = await fetch('/api/create-agente', { method: 'PATCH', headers: await authHeaders(), body: JSON.stringify({ id: agenteEditee.id, prenom: form.prenom, nom: form.nom, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, redevance_debut: form.redevance_debut || null, redevance_mensuelle_ht: form.redevance_mensuelle_ht !== '' ? parseFloat(form.redevance_mensuelle_ht) : null }) })
       const data = await res.json()
       if (!res.ok) { setErreur(data.error || 'Erreur'); setSaving(false); return }
       // Objectif d'agente : écriture côté client (agence_id = celle de l'agente, dispo en state).
@@ -214,6 +320,26 @@ export default function Parametres() {
   const voirRib = async () => {
     if (!profile?.rib_url) return
     const { data } = await supabase.storage.from('documents').createSignedUrl(profile.rib_url, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  const uploadKbisFranchise = async (fichier) => {
+    if (!profile) return
+    setUploadingKbisFranchise(true)
+    const ext = fichier.name.split('.').pop()
+    const chemin = `kbis/${profile.id}.${ext}`
+    const { error: uploadError } = await supabase.storage
+      .from('documents').upload(chemin, fichier, { upsert: true })
+    if (uploadError) { setErreur('Erreur upload KBIS : ' + uploadError.message); setUploadingKbisFranchise(false); return }
+    const { error } = await supabase.from('profiles').update({ kbis_url: chemin }).eq('id', profile.id)
+    if (error) { setErreur('Erreur sauvegarde KBIS : ' + error.message) }
+    else { setSucces('KBIS uploadé ✓'); setProfile(p => ({ ...p, kbis_url: chemin })) }
+    setUploadingKbisFranchise(false)
+  }
+
+  const voirKbisFranchise = async () => {
+    if (!profile?.kbis_url) return
+    const { data } = await supabase.storage.from('documents').createSignedUrl(profile.kbis_url, 3600)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
@@ -331,20 +457,20 @@ export default function Parametres() {
           {/* ── Agence ── */}
           {section === 'agence' && (
             <div style={{display:'flex', flexDirection:'column', gap:18}}>
-              <div>
-                <h2 className="page" style={{fontSize:18, marginBottom:4}}>Agence</h2>
-                <p style={{color:'var(--ink-500)', fontSize:13}}>Informations légales · données publiques enregistrées au RCS.</p>
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end'}}>
+                <div>
+                  <h2 className="page" style={{fontSize:18, marginBottom:4}}>Agence</h2>
+                  <p style={{color:'var(--ink-500)', fontSize:13}}>Informations légales · données publiques enregistrées au RCS.</p>
+                </div>
+                <button className="btn btn-primary" onClick={ouvrirCreerAgence}>+ Ajouter une agence</button>
               </div>
+
+              {/* Société (affichée une seule fois) */}
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, maxWidth:680}}>
                 {[
-                  { l:'Raison sociale',    v:societe?.nom_societe },
-                  { l:'Franchise',         v:agence?.nom },
-                  { l:'SIRET',             v:societe?.siret },
-                  { l:'RCS',               v:societe?.rcs },
-                  { l:'Rue',               v:agence?.adresse },
-                  { l:'Code postal',       v:agence?.code_postal },
-                  { l:'Ville',             v:agence?.ville },
-                  { l:'Téléphone agence',  v:agence?.telephone },
+                  { l:'Raison sociale', v:societe?.nom_societe },
+                  { l:'SIRET',          v:societe?.siret },
+                  { l:'RCS',            v:societe?.rcs },
                 ].map(({ l, v }) => (
                   <div key={l} style={{padding:'14px 16px', background:'var(--surface-2)', borderRadius:10, border:'1px solid var(--ink-100)'}}>
                     <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>{l}</div>
@@ -352,7 +478,30 @@ export default function Parametres() {
                   </div>
                 ))}
               </div>
-              <div style={{fontSize:12, color:'var(--ink-400)'}}>Pour modifier ces informations, contactez Anne-Lise à l'adresse mail suivante : anne-lise.caillet@outlook.com</div>
+
+              {/* Agence(s) — un sous-bloc par agence */}
+              {agences.map((ag) => (
+                <div key={ag.id} style={{display:'flex', flexDirection:'column', gap:8}}>
+                  <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:8}}>
+                    <div className="eyebrow" style={{fontSize:11}}>{ag.nom}</div>
+                    <button className="btn btn-ghost" style={{fontSize:12, padding:'4px 10px'}} onClick={() => ouvrirEditerAgence(ag)}>Modifier</button>
+                  </div>
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, maxWidth:680}}>
+                    {[
+                      { l:'Rue',              v:ag.adresse },
+                      { l:'Code postal',      v:ag.code_postal },
+                      { l:'Ville',            v:ag.ville },
+                      { l:'Téléphone agence', v:ag.telephone },
+                    ].map(({ l, v }) => (
+                      <div key={l} style={{padding:'14px 16px', background:'var(--surface-2)', borderRadius:10, border:'1px solid var(--ink-100)'}}>
+                        <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>{l}</div>
+                        <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>{v || '—'}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
             </div>
           )}
 
@@ -368,20 +517,41 @@ export default function Parametres() {
               </div>
 
               {/* Objectif de CA de l'agence (annuel) */}
-              <div className="card" style={{padding:'16px 18px', display:'flex', flexDirection:'column', gap:10}}>
-                <div>
-                  <div style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>Objectif de CA — agence {new Date().getFullYear()}</div>
-                  <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}}>Montant annuel (encaissements bruts). {agence?.nom || ''}</div>
+              {agences.length > 1 ? (
+                <div className="card" style={{padding:'16px 18px', display:'flex', flexDirection:'column', gap:14}}>
+                  <div>
+                    <div style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>Objectif de CA par agence — {new Date().getFullYear()}</div>
+                    <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}}>Montant annuel (encaissements bruts), par agence.</div>
+                  </div>
+                  {agences.map(ag => (
+                    <div key={ag.id} style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                      <div style={{minWidth:160, fontSize:13, fontWeight:600, color:'var(--ink-800)'}}>{ag.nom}</div>
+                      <input className="input" type="number" min="0" value={objAbVals[ag.id] ?? ''}
+                        onChange={e => setObjAbVals(v => ({ ...v, [ag.id]: e.target.value }))}
+                        placeholder="Objectif annuel €" style={{maxWidth:200}}/>
+                      <button className="btn btn-primary" onClick={() => enregistrerObjAb(ag.id)} disabled={objAbSaving === ag.id}>
+                        {objAbSaving === ag.id ? 'Enregistrement…' : 'Enregistrer'}
+                      </button>
+                      {objAbMsg[ag.id] && <span style={{fontSize:12.5, color: objAbMsg[ag.id].startsWith('Erreur') ? '#b91c1c' : '#15803d'}}>{objAbMsg[ag.id]}</span>}
+                    </div>
+                  ))}
                 </div>
-                <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
-                  <input className="input" type="number" min="0" value={objAgenceVal}
-                    onChange={e => setObjAgenceVal(e.target.value)} placeholder="Objectif annuel €" style={{maxWidth:220}}/>
-                  <button className="btn btn-primary" onClick={enregistrerObjAgence} disabled={savingObjAgence || !agence?.id}>
-                    {savingObjAgence ? 'Enregistrement…' : 'Enregistrer'}
-                  </button>
-                  {objAgenceMsg && <span style={{fontSize:12.5, color: objAgenceMsg.startsWith('Erreur') ? '#b91c1c' : '#15803d'}}>{objAgenceMsg}</span>}
+              ) : (
+                <div className="card" style={{padding:'16px 18px', display:'flex', flexDirection:'column', gap:10}}>
+                  <div>
+                    <div style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>Objectif de CA — agence {new Date().getFullYear()}</div>
+                    <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}}>Montant annuel (encaissements bruts). {agences[0]?.nom || ''}</div>
+                  </div>
+                  <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                    <input className="input" type="number" min="0" value={objAgenceVal}
+                      onChange={e => setObjAgenceVal(e.target.value)} placeholder="Objectif annuel €" style={{maxWidth:220}}/>
+                    <button className="btn btn-primary" onClick={enregistrerObjAgence} disabled={savingObjAgence || !agences[0]?.id}>
+                      {savingObjAgence ? 'Enregistrement…' : 'Enregistrer'}
+                    </button>
+                    {objAgenceMsg && <span style={{fontSize:12.5, color: objAgenceMsg.startsWith('Erreur') ? '#b91c1c' : '#15803d'}}>{objAgenceMsg}</span>}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {agentes.length === 0 ? (
                 <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:24}}>Aucune agente</p>
@@ -455,12 +625,12 @@ export default function Parametres() {
                               ? agente.parts_agente_disponibles.map(p => `${Math.round(p * 100)} / ${Math.round((1 - p) * 100)}`).join(' · ')
                               : fmtPct(agente.part_agente_defaut)}
                           </div>
-                          <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>agente / CTP</div>
+                          <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>agente / Société</div>
                         </div>
                         <div style={{background:'var(--surface-2)', borderRadius:8, padding:'10px 14px'}}>
                           <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>Répartition frais</div>
                           <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:13}}>{fmtPct(agente.frais_part_agente_defaut)}</div>
-                          <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>agente / CTP</div>
+                          <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>agente / Société</div>
                         </div>
                         <div style={{background:'var(--surface-2)', borderRadius:8, padding:'10px 14px'}}>
                           <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>Redevances depuis</div>
@@ -509,6 +679,29 @@ export default function Parametres() {
                     </label>
                   )}
                 </div>
+                <div style={{padding:'14px 18px', border:'1px solid', borderColor: profile?.kbis_url ? 'var(--ink-200)' : 'rgba(245,158,11,0.3)', borderRadius:12, display:'flex', justifyContent:'space-between', alignItems:'center', gap:14}}>
+                  <div style={{display:'flex', alignItems:'center', gap:12}}>
+                    <div style={{width:36, height:36, borderRadius:8, background: profile?.kbis_url ? 'var(--brand-50)' : 'rgba(245,158,11,0.12)', color: profile?.kbis_url ? 'var(--brand-800)' : '#a16207', display:'grid', placeItems:'center', fontSize:18}}>📄</div>
+                    <div>
+                      <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>KBIS franchisée</div>
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{profile?.kbis_url ? 'Fichier uploadé' : 'Aucun fichier'}</div>
+                    </div>
+                  </div>
+                  {profile?.kbis_url ? (
+                    <div style={{display:'flex', gap:8}}>
+                      <button className="btn btn-ghost" style={{fontSize:12}} onClick={voirKbisFranchise}>Voir</button>
+                      <label className="btn btn-ghost" style={{fontSize:12, cursor:'pointer', opacity: uploadingKbisFranchise ? 0.5 : 1}}>
+                        {uploadingKbisFranchise ? 'Upload…' : 'Remplacer'}
+                        <input type="file" accept=".pdf,image/*" style={{display:'none'}} disabled={uploadingKbisFranchise} onChange={e => e.target.files[0] && uploadKbisFranchise(e.target.files[0])} />
+                      </label>
+                    </div>
+                  ) : (
+                    <label className="btn btn-primary" style={{fontSize:12, cursor:'pointer', opacity: uploadingKbisFranchise ? 0.5 : 1}}>
+                      {uploadingKbisFranchise ? 'Upload…' : '+ Uploader'}
+                      <input type="file" accept=".pdf,image/*" style={{display:'none'}} disabled={uploadingKbisFranchise} onChange={e => e.target.files[0] && uploadKbisFranchise(e.target.files[0])} />
+                    </label>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -545,9 +738,6 @@ export default function Parametres() {
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, maxWidth:680}}>
                 {[
                   { l:'Google Calendar', desc:'Sync des RDV et interventions',   connected: gcalConnected },
-                  { l:'Google Drive',    desc:'Stockage documents chantier',      connected: false },
-                  { l:'Supabase',        desc:'Base de données principale',       connected: true },
-                  { l:'IA Claude',       desc:'Génération comptes-rendus IA',     connected: true },
                 ].map(int => (
                   <div key={int.l} style={{padding:18, border:'1px solid var(--ink-200)', borderRadius:12, display:'flex', flexDirection:'column', gap:8}}>
                     <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
@@ -604,6 +794,70 @@ export default function Parametres() {
         </div>
       </div>
 
+      {/* ── Modal ajouter une agence ── */}
+      {modal === 'creer_agence' && (
+        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
+          <div className="card" style={{padding:0, maxWidth:520, width:'100%', maxHeight:'90vh', overflow:'auto'}}>
+            <div style={{padding:'18px 22px', borderBottom:'1px solid var(--ink-200)'}}>
+              <h2 className="page" style={{fontSize:16}}>Ajouter une agence</h2>
+              <div className="eyebrow" style={{marginTop:4}}>Le code agence est généré automatiquement</div>
+            </div>
+            <div style={{padding:22, display:'flex', flexDirection:'column', gap:14}}>
+              {erreur && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c'}}>{erreur}</div>}
+              <div><label style={LS}>Nom de l&apos;agence *</label><input className="input" value={formAgence.nom} onChange={e => setFormAgence(f => ({ ...f, nom: e.target.value }))} placeholder="illiCO travaux [ville]"/></div>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+                <div><label style={LS}>Ville *</label><input className="input" value={formAgence.ville} onChange={e => setFormAgence(f => ({ ...f, ville: e.target.value }))} placeholder="Votre ville"/></div>
+                <div><label style={LS}>Code postal</label><input className="input" value={formAgence.code_postal} onChange={e => setFormAgence(f => ({ ...f, code_postal: e.target.value }))}/></div>
+              </div>
+              <div><label style={LS}>Adresse</label><input className="input" value={formAgence.adresse} onChange={e => setFormAgence(f => ({ ...f, adresse: e.target.value }))}/></div>
+              <div><label style={LS}>Téléphone</label><input className="input" type="tel" value={formAgence.telephone} onChange={e => setFormAgence(f => ({ ...f, telephone: e.target.value }))} placeholder="04 00 00 00 00"/></div>
+              <div><label style={LS}>Email</label><input className="input" type="email" value={formAgence.email} onChange={e => setFormAgence(f => ({ ...f, email: e.target.value }))} placeholder="agence@illico-travaux.com"/></div>
+              <div><label style={LS}>Nom du responsable</label><input className="input" value={formAgence.responsable_nom} onChange={e => setFormAgence(f => ({ ...f, responsable_nom: e.target.value }))}/></div>
+            </div>
+            <div style={{padding:'14px 22px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:8, justifyContent:'flex-end'}}>
+              <button className="btn btn-ghost" onClick={() => { setModal(false); setErreur('') }}>Annuler</button>
+              <button className="btn btn-primary" onClick={creerAgence}
+                disabled={savingAgence || !formAgence.nom.trim() || !formAgence.ville.trim()}
+                style={{opacity: (savingAgence || !formAgence.nom.trim() || !formAgence.ville.trim()) ? 0.5 : 1}}>
+                {savingAgence ? 'Création…' : 'Créer l\'agence'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal modifier une agence ── */}
+      {modal === 'editer_agence' && (
+        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
+          <div className="card" style={{padding:0, maxWidth:520, width:'100%', maxHeight:'90vh', overflow:'auto'}}>
+            <div style={{padding:'18px 22px', borderBottom:'1px solid var(--ink-200)'}}>
+              <h2 className="page" style={{fontSize:16}}>Modifier l&apos;agence</h2>
+              <div className="eyebrow" style={{marginTop:4}}>Code {formAgence.code || '—'} · non modifiable</div>
+            </div>
+            <div style={{padding:22, display:'flex', flexDirection:'column', gap:14}}>
+              {erreur && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c'}}>{erreur}</div>}
+              <div><label style={LS}>Nom de l&apos;agence *</label><input className="input" value={formAgence.nom} onChange={e => setFormAgence(f => ({ ...f, nom: e.target.value }))} placeholder="illiCO travaux [ville]"/></div>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+                <div><label style={LS}>Ville *</label><input className="input" value={formAgence.ville} onChange={e => setFormAgence(f => ({ ...f, ville: e.target.value }))} placeholder="Votre ville"/></div>
+                <div><label style={LS}>Code postal</label><input className="input" value={formAgence.code_postal} onChange={e => setFormAgence(f => ({ ...f, code_postal: e.target.value }))}/></div>
+              </div>
+              <div><label style={LS}>Adresse</label><input className="input" value={formAgence.adresse} onChange={e => setFormAgence(f => ({ ...f, adresse: e.target.value }))}/></div>
+              <div><label style={LS}>Téléphone</label><input className="input" type="tel" value={formAgence.telephone} onChange={e => setFormAgence(f => ({ ...f, telephone: e.target.value }))} placeholder="04 00 00 00 00"/></div>
+              <div><label style={LS}>Email</label><input className="input" type="email" value={formAgence.email} onChange={e => setFormAgence(f => ({ ...f, email: e.target.value }))} placeholder="agence@illico-travaux.com"/></div>
+              <div><label style={LS}>Nom du responsable</label><input className="input" value={formAgence.responsable_nom} onChange={e => setFormAgence(f => ({ ...f, responsable_nom: e.target.value }))}/></div>
+            </div>
+            <div style={{padding:'14px 22px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:8, justifyContent:'flex-end'}}>
+              <button className="btn btn-ghost" onClick={() => { setModal(false); setErreur('') }}>Annuler</button>
+              <button className="btn btn-primary" onClick={modifierAgence}
+                disabled={savingAgence || !formAgence.nom.trim() || !formAgence.ville.trim()}
+                style={{opacity: (savingAgence || !formAgence.nom.trim() || !formAgence.ville.trim()) ? 0.5 : 1}}>
+                {savingAgence ? 'Enregistrement…' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Modal créer / modifier ── */}
       {(modal === 'creer' || modal === 'modifier') && (
         <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
@@ -626,6 +880,15 @@ export default function Parametres() {
                   <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Un email d'invitation sera envoyé à cette adresse</div>
                 </div>
               )}
+              {modal === 'creer' && agencesCtx.length >= 2 && (
+                <div>
+                  <label style={LS}>Agence de rattachement *</label>
+                  <select className="input" value={form.agence_id} onChange={e => setForm(f => ({ ...f, agence_id: e.target.value }))}>
+                    <option value="">— Choisir une agence —</option>
+                    {agencesCtx.map(ag => <option key={ag.id} value={ag.id}>{ag.nom}</option>)}
+                  </select>
+                </div>
+              )}
               <div><label style={LS}>Téléphone</label><input className="input" type="tel" value={form.telephone} onChange={e => setForm(f => ({ ...f, telephone: e.target.value }))} placeholder="06 00 00 00 00"/></div>
               <div>
                 <label style={LS}>Début des redevances</label>
@@ -633,12 +896,17 @@ export default function Parametres() {
                 <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Date à partir de laquelle la redevance mensuelle est due.</div>
               </div>
               <div>
+                <label style={LS}>Redevance mensuelle (HT)</label>
+                <input className="input" type="number" min="0" step="0.01" value={form.redevance_mensuelle_ht} onChange={e => setForm(f => ({ ...f, redevance_mensuelle_ht: e.target.value }))} placeholder="€ / mois"/>
+                <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Montant fixe dû chaque mois (à partir de la date ci-dessus). Vide = à paramétrer.</div>
+              </div>
+              <div>
                 <label style={LS}>Répartitions commission disponibles — agente %</label>
                 <input className="input" value={form.parts_agente_disponibles} onChange={e => setForm(f => ({ ...f, parts_agente_disponibles: e.target.value }))} placeholder="ex: 60 ou 50, 60"/>
                 <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Une valeur = pas de choix. Plusieurs séparées par virgule = l'agente choisit.</div>
               </div>
               <div>
-                <label style={LS}>Répartition frais de consultation — agente / CTP</label>
+                <label style={LS}>Répartition frais de consultation — agente / Société</label>
                 <div style={{display:'flex', alignItems:'center', gap:10}}>
                   <div style={{flex:1}}>
                     <input className="input" type="number" min="0" max="100" value={form.frais_part_agente_defaut} onChange={e => setForm(f => ({ ...f, frais_part_agente_defaut: parseInt(e.target.value) || 0 }))} style={{textAlign:'center'}}/>
@@ -647,7 +915,7 @@ export default function Parametres() {
                   <span style={{color:'var(--ink-400)', fontWeight:600}}>/</span>
                   <div style={{flex:1}}>
                     <input className="input" type="number" value={100 - form.frais_part_agente_defaut} disabled style={{textAlign:'center', opacity:0.5}}/>
-                    <div style={{fontSize:11, textAlign:'center', color:'var(--ink-400)', marginTop:3}}>CTP %</div>
+                    <div style={{fontSize:11, textAlign:'center', color:'var(--ink-400)', marginTop:3}}>Société %</div>
                   </div>
                 </div>
               </div>
@@ -660,8 +928,8 @@ export default function Parametres() {
             <div style={{padding:'14px 22px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:8, justifyContent:'flex-end'}}>
               <button className="btn btn-ghost" onClick={() => { setModal(false); setErreur(''); setSucces('') }}>Annuler</button>
               <button className="btn btn-primary" onClick={modal === 'creer' ? creerAgente : modifierAgente}
-                disabled={saving || !form.prenom || !form.nom || (modal === 'creer' && !form.email)}
-                style={{opacity: (saving || !form.prenom || !form.nom || (modal === 'creer' && !form.email)) ? 0.5 : 1}}>
+                disabled={saving || !form.prenom || !form.nom || (modal === 'creer' && !form.email) || (modal === 'creer' && agencesCtx.length >= 2 && !form.agence_id)}
+                style={{opacity: (saving || !form.prenom || !form.nom || (modal === 'creer' && !form.email) || (modal === 'creer' && agencesCtx.length >= 2 && !form.agence_id)) ? 0.5 : 1}}>
                 {saving ? 'Enregistrement…' : modal === 'creer' ? "Envoyer l'invitation" : 'Enregistrer'}
               </button>
             </div>

@@ -1,6 +1,7 @@
 'use client'
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
+import { formatNomClient } from '../lib/clients'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { getDossiersByScope, getFilteredDossiers, getCompteurs, calcStatut, calculerAvancement, STATUT_CONFIG } from '../lib/dossiers'
@@ -42,9 +43,7 @@ const villeFromAddr = (addr) => {
   const parts = addr.split(',')
   return parts[parts.length - 1]?.trim() || addr
 }
-const nomClient = (c) => c
-  ? `${c.civilite || ''} ${c.prenom} ${c.nom}${c.prenom2 ? ` & ${c.prenom2} ${c.nom2}` : ''}`.trim()
-  : '—'
+const nomClient = (c) => formatNomClient(c, { civilite: true })
 
 const TYPOLOGIES = {
   courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo',
@@ -68,7 +67,7 @@ function FactRow({ label, value, highlight, mono }) {
 }
 
 /* ── Colonne liste ── */
-function ChantiersList({ items, selectedId, onSelect, aujourdhui, isMobile }) {
+function ChantiersList({ items, selectedId, onSelect, onOpen, aujourdhui, isMobile }) {
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: isMobile ? 'auto' : '100%' }}>
       <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--ink-200)', flexShrink: 0 }}>
@@ -92,9 +91,10 @@ function ChantiersList({ items, selectedId, onSelect, aujourdhui, isMobile }) {
             const isSel    = d.id === selectedId
             return (
               <button key={d.id} onClick={() => onSelect(d.id)}
+                onDoubleClick={() => onOpen(d.id)}
                 className={!isSel ? 'row-hover' : ''}
                 style={{
-                  textAlign: 'left', padding: '14px 14px', borderRadius: 12,
+                  textAlign: 'left', padding: '14px 14px', borderRadius: 12, userSelect: 'none',
                   border: '1px solid', borderColor: isSel ? 'var(--brand-500)' : 'transparent',
                   background: isSel ? 'var(--brand-50)' : 'transparent',
                   boxShadow: isSel ? '0 0 0 3px rgba(0,148,212,0.10)' : 'none',
@@ -399,7 +399,7 @@ function ChantiersInner() {
   const [modaleClient, setModaleClient] = useState(false)
   const router        = useRouter()
   const searchParams  = useSearchParams()
-  const { user, profile, initialized } = useAuth()
+  const { user, profile, initialized, agenceActive } = useAuth()
 
   useEffect(() => {
     if (searchParams.get('nouveau') === '1') {
@@ -423,7 +423,8 @@ function ChantiersInner() {
 
     let query = supabase
       .from('dossiers')
-      .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse, telephone, email), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, artisan_id, artisan:artisans(id, entreprise, metier, ville)), comptes_rendus(id, type_visite), suivi_financier(type_echeance, montant_ttc, statut_illico, statut_client, artisan_id)')
+      .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse, telephone, email), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, artisan_id, artisan:artisans(id, entreprise, metier, ville)), comptes_rendus(id, type_visite), rendez_vous(type_rdv, date_heure), suivi_financier(type_echeance, montant_ttc, statut_illico, statut_client, artisan_id)')
+      .eq('archive', false)
       .order('created_at', { ascending: false })
     if (profile.role === 'agente') query = query.eq('referente_id', profile.id)
 
@@ -442,7 +443,15 @@ function ChantiersInner() {
 
   const isAdmin = profile?.role === 'admin'
 
-  const dossiersFiltresOnglet = getDossiersByScope(dossiers, profile, onglet, agentes)
+  // Scoping multi-agence (UX, pas sécurité — RLS reste la frontière) :
+  // agenceActive null = tout ; uuid = seulement cette agence. Filtrage en mémoire,
+  // SOURCE des dérivés (liste + compteurs) pour qu'ils restent cohérents.
+  const dossiersScoped = useMemo(
+    () => (agenceActive ? dossiers.filter(d => d.agence_id === agenceActive) : dossiers),
+    [dossiers, agenceActive]
+  )
+
+  const dossiersFiltresOnglet = getDossiersByScope(dossiersScoped, profile, onglet, agentes)
   const dossiersFiltres       = getFilteredDossiers(dossiersFiltresOnglet, recherche, filtreStatut, filtreTypo, nomClient)
   const compteurs             = getCompteurs(dossiersFiltresOnglet)
   const aujourdhui            = new Date()
@@ -558,13 +567,13 @@ function ChantiersInner() {
       {isMobile ? (
         <div>
           {!showPreview
-            ? <ChantiersList items={dossiersFiltres} selectedId={selected?.id} onSelect={handleSelect} aujourdhui={aujourdhui} isMobile />
+            ? <ChantiersList items={dossiersFiltres} selectedId={selected?.id} onSelect={handleSelect} onOpen={(id) => router.push(`/chantiers/${id}`)} aujourdhui={aujourdhui} isMobile />
             : <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} onBack={() => setShowPreview(false)} isMobile />
           }
         </div>
       ) : (
         <div className="grid-list" style={{ height: panelHeight }}>
-          <ChantiersList items={dossiersFiltres} selectedId={selected?.id} onSelect={handleSelect} aujourdhui={aujourdhui} />
+          <ChantiersList items={dossiersFiltres} selectedId={selected?.id} onSelect={handleSelect} onOpen={(id) => router.push(`/chantiers/${id}`)} aujourdhui={aujourdhui} />
           <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} />
         </div>
       )}

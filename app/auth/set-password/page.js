@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { supabase } from '../../lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 // L14a — Définition du mot de passe après acceptation d'un lien d'invitation.
 // Le lien invite (inviteUserByEmail) pose la session automatiquement via le hash
@@ -27,7 +27,7 @@ function Shell({ children }) {
   )
 }
 
-export default function SetPassword() {
+function SetPasswordInner() {
   // null = en attente de session ; true = session prête ; false = lien invalide/expiré
   const [sessionReady, setSessionReady] = useState(null)
   const [pwd, setPwd] = useState('')
@@ -35,6 +35,11 @@ export default function SetPassword() {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const router = useRouter()
+  // Type de flux pour le WORDING uniquement (la logique session→updateUser est
+  // identique). 'recovery' = mot de passe oublié (login). Absence/autre = invite
+  // (le lien d'invitation create-agente n'ajoute pas de ?type → défaut invite).
+  const searchParams = useSearchParams()
+  const isRecovery = searchParams.get('type') === 'recovery'
 
   useEffect(() => {
     let resolved = false
@@ -83,7 +88,15 @@ export default function SetPassword() {
       setSaving(false)
       return
     }
-    router.replace('/dashboard')
+    // Aiguillage par rôle : un client va à son espace, le staff au dashboard.
+    // (Chacun peut lire SON propre profil via la RLS profiles_select_scope.)
+    const { data: { user } } = await supabase.auth.getUser()
+    let role = null
+    if (user) {
+      const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      role = prof?.role
+    }
+    router.replace(role === 'client' ? '/espace-client' : '/dashboard')
   }
 
   if (sessionReady === null) {
@@ -95,7 +108,9 @@ export default function SetPassword() {
       <Shell>
         <h1 className="page" style={{fontSize:18}}>Lien invalide ou expiré</h1>
         <p style={{fontSize:13.5, color:'var(--ink-500)', lineHeight:1.6}}>
-          Ce lien d'invitation n'est plus valide. Contactez l'administrateur pour recevoir une nouvelle invitation.
+          {isRecovery
+            ? 'Ce lien de réinitialisation est invalide ou a expiré. Vous pouvez en demander un nouveau depuis la page de connexion.'
+            : 'Ce lien d\'invitation n\'est plus valide. Contactez l\'administrateur pour recevoir une nouvelle invitation.'}
         </p>
         <button className="btn btn-ghost" onClick={() => router.replace('/login')}>Retour à la connexion</button>
       </Shell>
@@ -105,7 +120,7 @@ export default function SetPassword() {
   return (
     <Shell>
       <div>
-        <h1 className="page" style={{fontSize:18, marginBottom:4}}>Définir mon mot de passe</h1>
+        <h1 className="page" style={{fontSize:18, marginBottom:4}}>{isRecovery ? 'Réinitialiser mon mot de passe' : 'Définir mon mot de passe'}</h1>
         <p style={{fontSize:13, color:'var(--ink-500)'}}>Choisissez un mot de passe pour accéder à votre espace.</p>
       </div>
       {error && (
@@ -121,8 +136,16 @@ export default function SetPassword() {
       </div>
       <button className="btn btn-primary" onClick={handleSubmit} disabled={saving || !pwd || !confirm}
         style={{opacity: (saving || !pwd || !confirm) ? 0.5 : 1}}>
-        {saving ? 'Enregistrement…' : 'Définir mon mot de passe'}
+        {saving ? 'Enregistrement…' : (isRecovery ? 'Réinitialiser mon mot de passe' : 'Définir mon mot de passe')}
       </button>
     </Shell>
+  )
+}
+
+export default function SetPassword() {
+  return (
+    <Suspense fallback={<Shell><p className="eyebrow" style={{textAlign:'center'}}>Validation du lien…</p></Shell>}>
+      <SetPasswordInner />
+    </Suspense>
   )
 }

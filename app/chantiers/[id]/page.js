@@ -3,11 +3,31 @@
 'use client'
 import { useState, useEffect, useRef, use } from 'react'
 import { supabase } from '../../lib/supabase'
+import { formatNomClient } from '../../lib/clients'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
-import { calculerAvancement } from '../../lib/dossiers'
+import { calculerAvancement, detecterCategorie } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
+import MarkdownCR from '../../components/MarkdownCR'
+import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
+import { buildInviteMailto } from '../../lib/inviteMail'
+import { calculerExpiration } from '../../lib/expiration'
+import JSZip from 'jszip'
+
+// Liste des entités supprimées avec un chantier — source unique des 2 libellés
+// (confirm de suppression + sous-titre du bouton), pour éviter qu'ils divergent.
+const ENTITES_CHANTIER = 'devis, factures, photos, comptes-rendus, documents, RDV, interventions, suivis financiers, messages, contrat'
+
+// Aperçu texte nu d'un CR : retire la syntaxe markdown (## titres, **gras**, puces).
+function stripMarkdown(text) {
+  return (text || '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/## +(?:\d+\.\s*)?/g, ' ')
+    .replace(/^[-–] /gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
 function Svg({ children, size = 14 }) {
   return (
@@ -33,6 +53,7 @@ const FolderIcon   = () => <Svg><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2H19.5A1
 const MsgIcon      = () => <Svg><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4 3v-3h-.5A2.5 2.5 0 0 1 3 14.5z" transform="translate(0.5,0.5)"/></Svg>
 const MoreIcon     = () => <Svg><circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/></Svg>
 const PlusIcon     = () => <Svg><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></Svg>
+const ChartIcon    = () => <Svg><path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/></Svg>
 
 // ─── Helpers Aperçu ───────────────────────────────────────────────────────────
 function Fact({ label, value, highlight, mono }) {
@@ -317,10 +338,14 @@ function DocViewer({ url, nom, onClose }) {
 }
 
 // ─── Panel fiches techniques artisan ─────────────────────────────────────────
-function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
+function FichesTechPanel({ artisanId, dossierId, fichesCochees, onToggle, onCreated }) {
   const [fiches, setFiches] = useState([])
   const [loading, setLoading] = useState(true)
   const [viewer, setViewer] = useState(null) // { url, nom }
+  const [showForm, setShowForm] = useState(false)
+  const [nouvelleFiche, setNouvelleFiche] = useState({ nom: '', description: '' })
+  const [fichierFiche, setFichierFiche] = useState(null)
+  const [savingFiche, setSavingFiche] = useState(false)
 
   useEffect(() => {
     const charger = async () => {
@@ -336,16 +361,41 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
     if (data?.signedUrl) setViewer({ url: data.signedUrl, nom })
   }
 
+  // Création d'une fiche technique depuis le chantier : crée la fiche pour
+  // l'artisan puis l'auto-lie au dossier (chantier_fiches_techniques).
+  const creerFiche = async () => {
+    if (!nouvelleFiche.nom.trim()) return
+    setSavingFiche(true)
+    let url = null
+    if (fichierFiche) {
+      const ext = fichierFiche.name.split('.').pop()
+      const chemin = `artisans/${artisanId}/fiches/${Date.now()}.${ext}`
+      const { error: uploadErr } = await supabase.storage.from('documents').upload(chemin, fichierFiche)
+      if (!uploadErr) url = chemin
+    }
+    const { data: nouvelle, error } = await supabase
+      .from('fiches_techniques')
+      .insert({ artisan_id: artisanId, nom: nouvelleFiche.nom.trim(), description: nouvelleFiche.description || null, url })
+      .select().single()
+    if (error || !nouvelle) { setSavingFiche(false); return }
+    await supabase.from('chantier_fiches_techniques')
+      .insert({ dossier_id: dossierId, fiche_technique_id: nouvelle.id, artisan_id: artisanId })
+    const { data } = await supabase.from('fiches_techniques').select('*').eq('artisan_id', artisanId).order('nom')
+    setFiches(data || [])
+    await onCreated?.()
+    setNouvelleFiche({ nom: '', description: '' })
+    setFichierFiche(null)
+    setShowForm(false)
+    setSavingFiche(false)
+  }
+
   if (loading) return <div className="page-loading" />
-  if (fiches.length === 0) return (
-    <p style={{fontSize:11.5, color:'var(--ink-400)', marginTop:8}}>
-      Aucune fiche technique pour cet artisan
-      <a href={`/artisans/${artisanId}`} target="_blank" style={{color:'var(--brand-700)', textDecoration:'underline', marginLeft:6}}>En ajouter →</a>
-    </p>
-  )
   return (
     <>
       {viewer && <DocViewer url={viewer.url} nom={viewer.nom} onClose={() => setViewer(null)} />}
+      {fiches.length === 0 ? (
+        <p style={{fontSize:11.5, color:'var(--ink-400)', marginTop:8}}>Aucune fiche technique pour cet artisan</p>
+      ) : (
       <div style={{marginTop:8, padding:12, background:'var(--surface-2)', border:'1px solid var(--ink-200)', borderRadius:10, display:'flex', flexDirection:'column', gap:6}}>
         {fiches.map(fiche => {
           const cochee = fichesCochees.some(f => f.fiche_technique_id === fiche.id)
@@ -374,6 +424,40 @@ function FichesTechPanel({ artisanId, fichesCochees, onToggle }) {
           )
         })}
       </div>
+      )}
+      {!showForm ? (
+        <button onClick={() => setShowForm(true)} className="btn btn-ghost" style={{fontSize:11, marginTop:8, alignSelf:'flex-start'}}>
+          + Créer une fiche technique
+        </button>
+      ) : (
+        <div style={{display:'flex', flexDirection:'column', gap:8, padding:'10px 12px', marginTop:8, background:'var(--surface-1)', borderRadius:8, border:'1px solid var(--ink-100)'}}>
+          <input
+            placeholder="Nom de la fiche *"
+            value={nouvelleFiche.nom}
+            onChange={e => setNouvelleFiche(p => ({...p, nom: e.target.value}))}
+            style={{fontSize:12, padding:'5px 8px', borderRadius:6, border:'1px solid var(--ink-200)', outline:'none'}} />
+          <textarea
+            placeholder="Description (optionnel)"
+            value={nouvelleFiche.description}
+            onChange={e => setNouvelleFiche(p => ({...p, description: e.target.value}))}
+            rows={2}
+            style={{fontSize:12, padding:'5px 8px', borderRadius:6, border:'1px solid var(--ink-200)', resize:'vertical', outline:'none'}} />
+          <label style={{fontSize:11, color:'var(--ink-500)', cursor:'pointer'}}>
+            📎 {fichierFiche ? fichierFiche.name : 'Joindre un PDF (optionnel)'}
+            <input type="file" accept=".pdf" style={{display:'none'}}
+              onChange={e => setFichierFiche(e.target.files[0] || null)} />
+          </label>
+          <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
+            <button onClick={() => { setShowForm(false); setNouvelleFiche({nom:'',description:''}); setFichierFiche(null) }}
+              className="btn btn-ghost" style={{fontSize:11}}>Annuler</button>
+            <button onClick={creerFiche}
+              disabled={!nouvelleFiche.nom.trim() || savingFiche}
+              className="btn btn-primary" style={{fontSize:11}}>
+              {savingFiche ? 'Création…' : 'Créer et lier'}
+            </button>
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -554,6 +638,23 @@ const fmt = (n) => {
   return int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + '.' + dec + ' €'
 }
 
+// Édition inline des taux d'une simulation (courtage % + AMO %) — comparateur.
+function TauxEditor({ sim, onSave, onCancel }) {
+  const [tc, setTc] = useState(String(sim.taux_courtage ?? ''))
+  const [ta, setTa] = useState(String(sim.taux_amo ?? ''))
+  const inp = { width:46, fontSize:11, padding:'2px 4px', border:'1px solid var(--ink-200)', borderRadius:6, textAlign:'center' }
+  return (
+    <div style={{display:'flex', gap:4, alignItems:'center', flexWrap:'wrap', justifyContent:'center'}}>
+      <input type="number" value={tc} onChange={e => setTc(e.target.value)} style={inp} title="Courtage %" />
+      <span style={{fontSize:10, color:'var(--ink-400)'}}>C</span>
+      <input type="number" value={ta} onChange={e => setTa(e.target.value)} style={inp} title="AMO %" />
+      <span style={{fontSize:10, color:'var(--ink-400)'}}>A</span>
+      <button onClick={() => onSave(sim.id, tc, ta)} style={{border:'none', background:'none', cursor:'pointer', color:'#15803d', fontSize:13}} title="Valider">✓</button>
+      <button onClick={onCancel} style={{border:'none', background:'none', cursor:'pointer', color:'#b91c1c', fontSize:13}} title="Annuler">✗</button>
+    </div>
+  )
+}
+
 
 // Signature groupée des photos : 1 appel createSignedUrls au lieu de N appels.
 async function signerPhotos(rows) {
@@ -569,17 +670,20 @@ export default function FicheChantier({ params }) {
   const [dossier, setDossier] = useState(null)
   const [client, setClient] = useState(null)
   const [profile, setProfile] = useState(null)
-  const [nomFranchisee, setNomFranchisee] = useState('Franchisée')
-  const [prenomAdmin, setPrenomAdmin] = useState('CTP')
+  const [prenomAdmin, setPrenomAdmin] = useState('—')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [generatingPDF, setGeneratingPDF] = useState(null) // 'recapitulatif' | 'dossier_fin'
   const [erreur, setErreur] = useState('')
   const [succes, setSucces] = useState('')
-  const [mode, setMode] = useState('lecture')
+  const [modalModif, setModalModif] = useState(false)
   const [devis, setDevis] = useState([])
+  // Comparateur de devis (onglet dédié, lazy)
+  const [simulations, setSimulations] = useState([])          // [{ id, nom, taux_courtage, taux_amo, lignes:[...] }]
+  const [loadingComparateur, setLoadingComparateur] = useState(false)
+  const [editingTaux, setEditingTaux] = useState(null)        // simulation_id en cours d'édition
+  const [editingMontant, setEditingMontant] = useState(null)  // ligne_id en cours d'édition
   const [artisans, setArtisans] = useState([])
-  const [ajouterDevis, setAjouterDevis] = useState(false)
   const [devisModal, setDevisModal] = useState({ open: false, devis: null })
   const [devisExpanded, setDevisExpanded] = useState(() => new Set())
   const toggleDevisExpand = (id) => setDevisExpanded(s => {
@@ -587,9 +691,8 @@ export default function FicheChantier({ params }) {
     if (next.has(id)) next.delete(id); else next.add(id)
     return next
   })
-  const [savingDevis, setSavingDevis] = useState(false)
-  const [devisEnEdition, setDevisEnEdition] = useState(null)
   const [photos, setPhotos] = useState([])
+  const [zippingPhotos, setZippingPhotos] = useState(false)
   const [categorie, setCategorie] = useState('all')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photosAffichees, setPhotosAffichees] = useState(3)
@@ -609,9 +712,10 @@ export default function FicheChantier({ params }) {
   const [uploadingFacturePdf, setUploadingFacturePdf] = useState(null)
 
   // CR avec IA
+  const [crOuvert, setCrOuvert] = useState(null) // id du CR déplié dans la liste
   const [crModal, setCrModal] = useState(false)
   const [crManuelModal, setCrManuelModal] = useState(false)
-  const [crManuelForm, setCrManuelForm] = useState({ type_visite: '', date_visite: '', contenu: '', fichier: null })
+  const [crManuelForm, setCrManuelForm] = useState({ type_visite: '', date_visite: '', contenu: '' })
   const [crManuelSaving, setCrManuelSaving] = useState(false)
   const [crEtape, setCrEtape] = useState(1) // 1=config, 2=notes, 3=relecture
   const [crForm, setCrForm] = useState({ type_visite: '', date_visite: '', intervenants: '' })
@@ -642,7 +746,6 @@ export default function FicheChantier({ params }) {
   const [uploadingDocChantier, setUploadingDocChantier] = useState(false)
   const [uploadingContrat, setUploadingContrat] = useState(false)
   const [docViewer, setDocViewer] = useState(null) // { url, nom }
-  const [nouveauDevis, setNouveauDevis] = useState({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, date_reception: '', date_limite: '', notes: '', fichier: null })
   const [suiviFinancier, setSuiviFinancier] = useState([])
   const router = useRouter()
 
@@ -691,14 +794,14 @@ export default function FicheChantier({ params }) {
           .order('created_at', { referencedTable: 'messages' })
           .single(),
         isAdmin
-          ? supabase.from('profiles').select('prenom, nom').eq('role', 'admin').maybeSingle()
+          ? supabase.from('profiles').select('prenom, nom').eq('role', 'admin').order('prenom').limit(1).maybeSingle()
           : Promise.resolve({ data: null }),
         supabase.from('artisans').select('id, entreprise, metier, partenaire').order('entreprise'),
       ])
 
       const d = dossierRes.data
 
-      if (adminRes.data) { setNomFranchisee(`${adminRes.data.prenom} ${adminRes.data.nom}`); setPrenomAdmin(adminRes.data.prenom || 'CTP') }
+      if (adminRes.data) { setPrenomAdmin(adminRes.data.prenom || '—') }
       setDossier(d)
       setClient(d?.client)
       setDevis(d?.devis_artisans || [])
@@ -732,6 +835,35 @@ export default function FicheChantier({ params }) {
     setPhotos(await signerPhotos(data))
   }
 
+  // Télécharge toutes les photos du dossier en un ZIP, rangées par catégorie.
+  // Signed URLs régénérées au clic (60s), côté client uniquement (pas de route API).
+  const telechargerZipPhotos = async () => {
+    if (photos.length === 0) return
+    setZippingPhotos(true)
+    try {
+      const { data: signed } = await supabase.storage.from('photos').createSignedUrls(photos.map(p => p.url), 60)
+      const parChemin = new Map((signed || []).map(u => [u.path, u.signedUrl]))
+      const zip = new JSZip()
+      for (const p of photos) {
+        const url = parChemin.get(p.url)
+        if (!url) continue
+        const blob = await (await fetch(url)).blob()
+        const cat = ['avant', 'pendant', 'apres', 'maquette'].includes(p.categorie) ? p.categorie : 'autres'
+        zip.folder(cat).file(`${cat}_${p.id}.jpg`, blob)
+      }
+      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      const href = URL.createObjectURL(zipBlob)
+      const a = document.createElement('a')
+      a.href = href
+      a.download = `Photos_${dossier.reference}.zip`
+      a.click()
+      URL.revokeObjectURL(href)
+    } catch (e) {
+      setErreur('Erreur ZIP : ' + e.message)
+    }
+    setZippingPhotos(false)
+  }
+
   const uploadPhotos = async (fichiers) => {
     if (!fichiers.length) return
     setUploadingPhoto(true)
@@ -740,7 +872,8 @@ export default function FicheChantier({ params }) {
       const chemin = `chantiers/${id}/${categorie}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error: uploadError } = await supabase.storage.from('photos').upload(chemin, fichier)
       if (uploadError) return false
-      await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id })
+      const { error: insertErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id })
+      if (insertErr) return false
       return true
     }))
     await chargerPhotos()
@@ -752,8 +885,10 @@ export default function FicheChantier({ params }) {
 
   const supprimerPhoto = async (photoId, chemin) => {
     if (!confirm('Supprimer cette photo ?')) return
-    await supabase.storage.from('photos').remove([chemin])
-    await supabase.from('photos').delete().eq('id', photoId)
+    const { error: rmErr } = await supabase.storage.from('photos').remove([chemin])
+    if (rmErr) console.error('Suppression fichier photo (non bloquant) :', rmErr.message)
+    const { error } = await supabase.from('photos').delete().eq('id', photoId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerPhotos()
   }
 
@@ -766,7 +901,7 @@ export default function FicheChantier({ params }) {
 
   const sauvegarderRdvDossier = async () => {
     const { error } = await supabase.from('rendez_vous').insert({
-      dossier_id: id, type_rdv: nouveauRdvDossier.type_rdv, date_heure: nouveauRdvDossier.date_heure,
+      dossier_id: id, type_rdv: nouveauRdvDossier.type_rdv, date_heure: parisLocalToInstant(nouveauRdvDossier.date_heure),
       duree_minutes: parseInt(nouveauRdvDossier.duree_minutes), artisan_id: nouveauRdvDossier.artisan_id || null, notes: nouveauRdvDossier.notes || null,
       titre: nouveauRdvDossier.type_rdv === 'autres' ? (nouveauRdvDossier.titre || null) : null,
       lieu: nouveauRdvDossier.lieu || 'client',
@@ -777,7 +912,7 @@ export default function FicheChantier({ params }) {
       setModalRdvOuvert(false)
       setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client' })
       setSucces('RDV créé ✓')
-    }
+    } else { setErreur('Erreur : ' + error.message) }
   }
 
   const deleteGoogleEvent = async (googleEventId) => {
@@ -796,19 +931,21 @@ export default function FicheChantier({ params }) {
   const supprimerRdvDossier = async (rdvId) => {
     if (!confirm('Supprimer ce RDV ?')) return
     const rdv = rdvsDossier.find(r => r.id === rdvId)
-    await supabase.from('rendez_vous').delete().eq('id', rdvId)
+    const { error } = await supabase.from('rendez_vous').delete().eq('id', rdvId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     if (rdv?.google_event_id) await deleteGoogleEvent(rdv.google_event_id)
     await chargerRdvsDossier()
   }
 
   const modifierRdvDossier = async () => {
     if (!rdvEnEdition) return
-    await supabase.from('rendez_vous').update({
-      type_rdv: rdvEnEdition.type_rdv, date_heure: rdvEnEdition.date_heure,
+    const { error } = await supabase.from('rendez_vous').update({
+      type_rdv: rdvEnEdition.type_rdv, date_heure: parisLocalToInstant(rdvEnEdition.date_heure),
       duree_minutes: parseInt(rdvEnEdition.duree_minutes), artisan_id: rdvEnEdition.artisan_id || null, notes: rdvEnEdition.notes || null,
       titre: rdvEnEdition.type_rdv === 'autres' ? (rdvEnEdition.titre || null) : null,
       lieu: rdvEnEdition.lieu || 'client',
     }).eq('id', rdvEnEdition.id)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerRdvsDossier()
     setModalRdvOuvert(false)
     setRdvEnEdition(null)
@@ -878,7 +1015,8 @@ export default function FicheChantier({ params }) {
   const supprimerInterventionDossier = async (intId) => {
     if (!confirm('Supprimer cette intervention ?')) return
     const intervention = interventionsDossier.find(i => i.id === intId)
-    await supabase.from('interventions_artisans').delete().eq('id', intId)
+    const { error } = await supabase.from('interventions_artisans').delete().eq('id', intId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     if (intervention?.google_event_id) await deleteGoogleEvent(intervention.google_event_id)
     const { data } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
     setInterventionsDossier(data || [])
@@ -898,9 +1036,11 @@ export default function FicheChantier({ params }) {
     const dejaCochee = fichesTechChantier[artisanId]?.some(f => f.fiche_technique_id === ficheId)
     if (dejaCochee) {
       const item = fichesTechChantier[artisanId].find(f => f.fiche_technique_id === ficheId)
-      await supabase.from('chantier_fiches_techniques').delete().eq('id', item.id)
+      const { error } = await supabase.from('chantier_fiches_techniques').delete().eq('id', item.id)
+      if (error) { setErreur('Erreur : ' + error.message); return }
     } else {
-      await supabase.from('chantier_fiches_techniques').insert({ dossier_id: id, fiche_technique_id: ficheId, artisan_id: artisanId })
+      const { error } = await supabase.from('chantier_fiches_techniques').insert({ dossier_id: id, fiche_technique_id: ficheId, artisan_id: artisanId })
+      if (error) { setErreur('Erreur : ' + error.message); return }
     }
     await chargerFichesTechChantier()
   }
@@ -910,21 +1050,142 @@ export default function FicheChantier({ params }) {
     setDevis(data || [])
   }
 
+  // ── Comparateur de devis : chargement + CRUD (sauvegarde auto, erreurs silencieuses) ──
+  const chargerComparateur = async (skipSync = false) => {
+    setLoadingComparateur(true)
+    const { data, error } = await supabase
+      .from('comparateur_simulations')
+      .select('*, lignes:comparateur_lignes(*)')
+      .eq('dossier_id', id)
+      .order('created_at')
+    if (error) { console.error('chargerComparateur :', error.message); setLoadingComparateur(false); return }
+
+    // Synchro : crée les lignes manquantes pour les devis ajoutés après la création
+    // d'une simulation. skipSync évite la récursion infinie (1 seul re-chargement).
+    if (!skipSync && (data || []).length > 0 && devis.length > 0) {
+      const aInserer = []
+      for (const sim of data) {
+        const devisManquants = devis.filter(d => !(sim.lignes || []).some(l => l.devis_artisan_id === d.id))
+        for (const d of devisManquants) {
+          aInserer.push({ simulation_id: sim.id, devis_artisan_id: d.id, inclus: true, montant_ttc_override: null })
+        }
+      }
+      if (aInserer.length > 0) {
+        const { error: errIns } = await supabase.from('comparateur_lignes').insert(aInserer)
+        if (errIns) console.error('chargerComparateur (sync lignes) :', errIns.message)
+        else { await chargerComparateur(true); return }   // re-charge une fois, sans re-synchroniser
+      }
+    }
+
+    setSimulations(data || [])
+    setLoadingComparateur(false)
+  }
+
+  const ajouterSimulation = async () => {
+    const nom = `Simul ${simulations.length + 1}`
+    const { data: sim, error } = await supabase
+      .from('comparateur_simulations')
+      .insert({ dossier_id: id, nom, taux_courtage: 6, taux_amo: 9 })
+      .select().single()
+    if (error || !sim) { console.error('ajouterSimulation :', error?.message); return }
+    if (devis.length > 0) {
+      const lignes = devis.map(d => ({ simulation_id: sim.id, devis_artisan_id: d.id, inclus: true, montant_ttc_override: null }))
+      const { error: errL } = await supabase.from('comparateur_lignes').insert(lignes)
+      if (errL) console.error('ajouterSimulation (lignes) :', errL.message)
+    }
+    await chargerComparateur()
+  }
+
+  const saveTaux = async (simId, taux_courtage, taux_amo) => {
+    const tc = parseFloat(taux_courtage), ta = parseFloat(taux_amo)
+    const payload = { taux_courtage: isNaN(tc) ? 0 : tc, taux_amo: isNaN(ta) ? 0 : ta }
+    setSimulations(prev => prev.map(s => s.id === simId ? { ...s, ...payload } : s))
+    setEditingTaux(null)
+    const { error } = await supabase.from('comparateur_simulations').update(payload).eq('id', simId)
+    if (error) console.error('saveTaux :', error.message)
+  }
+
+  const toggleInclus = async (simId, ligneId, valeur) => {
+    setSimulations(prev => prev.map(s => s.id === simId
+      ? { ...s, lignes: (s.lignes || []).map(l => l.id === ligneId ? { ...l, inclus: valeur } : l) } : s))
+    const { error } = await supabase.from('comparateur_lignes').update({ inclus: valeur }).eq('id', ligneId)
+    if (error) console.error('toggleInclus :', error.message)
+  }
+
+  const saveMontant = async (simId, ligneId, valeur) => {
+    const v = (valeur === '' || valeur == null) ? null : parseFloat(valeur)
+    const override = (v == null || isNaN(v)) ? null : v
+    setSimulations(prev => prev.map(s => s.id === simId
+      ? { ...s, lignes: (s.lignes || []).map(l => l.id === ligneId ? { ...l, montant_ttc_override: override } : l) } : s))
+    setEditingMontant(null)
+    const { error } = await supabase.from('comparateur_lignes').update({ montant_ttc_override: override }).eq('id', ligneId)
+    if (error) console.error('saveMontant :', error.message)
+  }
+
+  const supprimerSimulation = async (simId) => {
+    if (!confirm('Supprimer cette simulation ?')) return
+    setSimulations(prev => prev.filter(s => s.id !== simId))   // optimiste (CASCADE supprime les lignes)
+    const { error } = await supabase.from('comparateur_simulations').delete().eq('id', simId)
+    if (error) { console.error('supprimerSimulation :', error.message); await chargerComparateur() }
+  }
+
   const deplacerDevis = async (devisId, direction) => {
     const idx = devis.findIndex(d => d.id === devisId)
     const swapIdx = direction === 'up' ? idx - 1 : idx + 1
     if (swapIdx < 0 || swapIdx >= devis.length) return
     const a = devis[idx], b = devis[swapIdx]
     const ordreA = a.ordre ?? idx + 1, ordreB = b.ordre ?? swapIdx + 1
-    await supabase.from('devis_artisans').update({ ordre: ordreB }).eq('id', a.id)
-    await supabase.from('devis_artisans').update({ ordre: ordreA }).eq('id', b.id)
+    const { error: errA } = await supabase.from('devis_artisans').update({ ordre: ordreB }).eq('id', a.id)
+    const { error: errB } = await supabase.from('devis_artisans').update({ ordre: ordreA }).eq('id', b.id)
+    if (errA || errB) setErreur('Erreur : ' + (errA || errB).message)
     await chargerDevis()
   }
   
   const set = (champ, valeur) => setDossier(d => ({ ...d, [champ]: valeur }))
-  const setND = (champ, valeur) => setNouveauDevis(d => ({ ...d, [champ]: valeur }))
+
+  // Taux (courtage/AMO) : la frappe met à jour l'état (UI + recalcul live) ;
+  // l'écriture DB se fait au blur / Enter (pas à chaque caractère). Rollback de
+  // l'état vers la valeur d'avant édition (capturée au focus) si l'UPDATE échoue.
+  const tauxAvantEditRef = useRef({})
+  const persistTaux = async (champ, valeur) => {
+    const { error } = await supabase.from('dossiers').update({ [champ]: valeur }).eq('id', id)
+    if (error) {
+      setErreur('Erreur : ' + error.message)
+      const ancien = tauxAvantEditRef.current[champ]
+      if (ancien !== undefined) set(champ, ancien)
+    }
+  }
 
   const referentEstAdmin = dossier?.referente?.role === 'admin'
+
+  // Override MANUEL du statut (annule/termine) ou retour au calcul auto (null).
+  // dossier.statut ne porte que ces 3 valeurs (CHECK strict, ÉTAPE D) ; sinon
+  // calcStatut décide. Écriture immédiate + optimiste + rollback (pattern persistTaux).
+  const majStatutManuel = async (valeur) => {
+    if (valeur === 'annule' && !confirm('Annuler ce dossier ? Il sera marqué « Annulé » (réversible via « Ré-ouvrir »).')) return
+    const ancien = dossier.statut ?? null
+    set('statut', valeur)
+    setErreur(''); setSucces('')
+
+    // Expiration d'accès client (tr.3) — stockage seul, pas encore appliqué (tr.4/5).
+    const payload = { statut: valeur }
+    if (valeur === 'termine') {
+      // date_cloture : on garde la 1ère clôture (ne pas écraser si re-clic).
+      const dateCloture = dossier.date_cloture || new Date().toISOString().slice(0, 10)
+      payload.date_cloture = dateCloture
+      // Recalcul à chaque clôture : base = date_fin_chantier si renseignée, sinon date_cloture.
+      payload.acces_expire_le = calculerExpiration({ date_fin_chantier: dossier.date_fin_chantier, date_cloture: dateCloture })
+    } else if (valeur === null) {
+      // Ré-ouverture : le dossier repart actif → accès de nouveau illimité.
+      payload.acces_expire_le = null
+    }
+    // (valeur === 'annule' : on ne touche pas à l'expiration.)
+
+    const { error } = await supabase.from('dossiers').update(payload).eq('id', id)
+    if (error) { setErreur('Erreur : ' + error.message); set('statut', ancien); return }
+    setDossier(d => ({ ...d, ...payload }))
+    setSucces(valeur === 'termine' ? 'Dossier marqué terminé ✓' : valeur === 'annule' ? 'Dossier annulé ✓' : 'Dossier ré-ouvert (statut automatique) ✓')
+  }
 
 
   const chargerDocuments = async () => {
@@ -940,8 +1201,14 @@ export default function FicheChantier({ params }) {
     const chemin = `chantiers/${id}/contrat/contrat.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (error) { setErreur('Erreur upload : ' + error.message); setUploadingContrat(false); return }
-    await supabase.from('dossiers').update({ contrat_url: chemin }).eq('id', id)
-    setDossier(d => ({ ...d, contrat_url: chemin }))
+    // Auto-signature : déposer le PDF du contrat coche le mandat (sauf s'il l'est déjà).
+    const today = new Date().toISOString().slice(0, 10)
+    const payload = dossier.contrat_signe
+      ? { contrat_url: chemin }
+      : { contrat_url: chemin, contrat_signe: true, date_signature_contrat: today }
+    const { error: updErr } = await supabase.from('dossiers').update(payload).eq('id', id)
+    if (updErr) { setErreur('Erreur : ' + updErr.message); setUploadingContrat(false); return }
+    setDossier(d => ({ ...d, ...payload }))
     setSucces('Contrat ajouté ✓')
     setUploadingContrat(false)
   }
@@ -954,13 +1221,18 @@ export default function FicheChantier({ params }) {
 
   const supprimerContrat = async () => {
     if (!confirm('Supprimer le document du contrat ?')) return
-    if (dossier?.contrat_url) await supabase.storage.from('documents').remove([dossier.contrat_url])
-    await supabase.from('dossiers').update({ contrat_url: null }).eq('id', id)
-    setDossier(d => ({ ...d, contrat_url: null }))
+    if (dossier?.contrat_url) {
+      const { error: rmErr } = await supabase.storage.from('documents').remove([dossier.contrat_url])
+      if (rmErr) console.error('Suppression fichier contrat (non bloquant) :', rmErr.message)
+    }
+    // Retirer le PDF décoche le mandat (symétrique de l'auto-signature à l'upload).
+    const { error } = await supabase.from('dossiers').update({ contrat_url: null, contrat_signe: false, date_signature_contrat: null }).eq('id', id)
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    setDossier(d => ({ ...d, contrat_url: null, contrat_signe: false, date_signature_contrat: null }))
     setSucces('Document supprimé ✓')
   }
 
-  const uploadDocumentChantier = async (fichiers) => {
+  const uploadDocumentChantier = async (fichiers, options = {}) => {
     if (!fichiers?.length) return
     setUploadingDocChantier(true)
     let echecsDoc = 0
@@ -969,10 +1241,13 @@ export default function FicheChantier({ params }) {
       const chemin = `chantiers/${id}/documents/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error } = await supabase.storage.from('documents').upload(chemin, fichier)
       if (error) { echecsDoc++; continue }
-      await supabase.from('chantier_documents').insert({
+      const { error: insertErr } = await supabase.from('chantier_documents').insert({
         dossier_id: id, nom: fichier.name, path: chemin,
-        type_mime: fichier.type, taille: fichier.size, dans_restitution: false,
+        type_mime: fichier.type, taille: fichier.size,
+        dans_restitution: options.dans_restitution ?? false,
+        categorie: options.categorie ?? detecterCategorie(fichier.name),
       })
+      if (insertErr) { echecsDoc++; continue }
     }
     await chargerDocuments()
     if (echecsDoc === 0) setSucces('Document(s) ajouté(s) ✓')
@@ -982,14 +1257,29 @@ export default function FicheChantier({ params }) {
 
   const supprimerDocumentChantier = async (docId, path) => {
     if (!confirm('Supprimer ce document ?')) return
-    await supabase.storage.from('documents').remove([path])
-    await supabase.from('chantier_documents').delete().eq('id', docId)
+    const { error: rmErr } = await supabase.storage.from('documents').remove([path])
+    if (rmErr) console.error('Suppression fichier document (non bloquant) :', rmErr.message)
+    const { error } = await supabase.from('chantier_documents').delete().eq('id', docId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerDocuments()
   }
 
   const toggleDansRestitution = async (docId, valeur) => {
-    await supabase.from('chantier_documents').update({ dans_restitution: valeur }).eq('id', docId)
+    const { error } = await supabase.from('chantier_documents').update({ dans_restitution: valeur }).eq('id', docId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     setDocuments(prev => prev.map(d => d.id === docId ? { ...d, dans_restitution: valeur } : d))
+  }
+
+  // Tague / dé-tague un document comme compte-rendu (NULL ↔ 'compte_rendu').
+  // Maj optimiste + rollback si l'update échoue.
+  const toggleCategorieCR = async (docId, estCR) => {
+    const categorie = estCR ? 'compte_rendu' : null
+    setDocuments(prev => prev.map(d => d.id === docId ? { ...d, categorie } : d))
+    const { error } = await supabase.from('chantier_documents').update({ categorie }).eq('id', docId)
+    if (error) {
+      setDocuments(prev => prev.map(d => d.id === docId ? { ...d, categorie: estCR ? null : 'compte_rendu' } : d))
+      setErreur('Erreur : ' + error.message)
+    }
   }
 
   const chargerFactures = async () => {
@@ -1003,7 +1293,7 @@ export default function FicheChantier({ params }) {
       ? (nouvelleFacture.libelle_autre || 'Facture').trim()
       : nouvelleFacture.libelle
 
-    const { data: factureInseree } = await supabase.from('factures_artisans').insert({
+    const { data: factureInseree, error } = await supabase.from('factures_artisans').insert({
       dossier_id: id,
       devis_id: devisId,
       artisan_id: artisanId,
@@ -1012,6 +1302,8 @@ export default function FicheChantier({ params }) {
       statut: nouvelleFacture.statut,
       libelle: libelleFinal
     }).select().single()
+    // Échec de l'insert : on garde la saisie (pas de reset) pour réessayer.
+    if (error) { setErreur('Erreur : ' + error.message); return }
 
     let uploadFactureOk = true
     if (factureInseree) {
@@ -1050,8 +1342,14 @@ export default function FicheChantier({ params }) {
 
   const supprimerFactureArtisan = async (factureId, pdfPath) => {
     if (!confirm('Supprimer cette facture ?')) return
-    if (pdfPath) await supabase.storage.from('documents').remove([pdfPath])
-    await supabase.from('factures_artisans').delete().eq('id', factureId)
+    // Storage best-effort : un fichier qui résiste ne doit pas bloquer la suppression
+    // de la ligne (l'orphelin éventuel est sans gravité), mais on le signale.
+    if (pdfPath) {
+      const { error: rmErr } = await supabase.storage.from('documents').remove([pdfPath])
+      if (rmErr) console.error('Suppression PDF facture (non bloquant) :', rmErr.message)
+    }
+    const { error } = await supabase.from('factures_artisans').delete().eq('id', factureId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerFactures()
   }
 
@@ -1059,10 +1357,11 @@ export default function FicheChantier({ params }) {
     const newStatut = statut === 'paye' ? 'en_attente' : 'paye'
     const facture = factures.find(f => f.id === factureId)
     const datePaye = facture?.date_paiement || (newStatut === 'paye' ? new Date().toISOString().slice(0, 10) : null)
-    await supabase.from('factures_artisans').update({
+    const { error } = await supabase.from('factures_artisans').update({
       statut: newStatut,
       date_paiement: newStatut === 'paye' ? datePaye : null,
     }).eq('id', factureId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     setFactures(prev => prev.map(f => f.id === factureId ? { ...f, statut: newStatut, date_paiement: newStatut === 'paye' ? datePaye : null } : f))
     // E5 — synchro suivi_financier (acompte_artisan si libellé 'acompte', sinon facture_finale)
     if (facture?.artisan_id) {
@@ -1083,7 +1382,8 @@ export default function FicheChantier({ params }) {
     const chemin = `chantiers/${id}/factures/${factureId}.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (!error) {
-      await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureId)
+      const { error: updErr } = await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureId)
+      if (updErr) { setErreur('Erreur : ' + updErr.message); setUploadingFacturePdf(null); return }
       await chargerFactures()
       setSucces('PDF facture uploadé ✓')
     } else { setErreur('Erreur upload : ' + error.message) }
@@ -1107,7 +1407,6 @@ export default function FicheChantier({ params }) {
       description: dossier.description || null,
       part_agente: newPartAgente,
       frais_part_agente: dossier.frais_part_agente ?? null,
-      avancement: dossier.avancement ?? 0,
     }).eq('id', id)
 
     if (error) {
@@ -1115,84 +1414,45 @@ export default function FicheChantier({ params }) {
     } else {
       // Si frais réglés, créer/màj la ligne suivi_financier
       if (dossier.frais_statut === 'regle') {
-        const { data: existingSuivi } = await supabase
+        const { data: existingSuivi, error: fraisSelErr } = await supabase
           .from('suivi_financier')
-          .select('id')
+          .select('id, date_paiement')
           .eq('dossier_id', id)
           .eq('type_echeance', 'frais_consultation')
           .is('artisan_id', null)
           .maybeSingle()
         const today = new Date().toISOString().split('T')[0]
-        if (existingSuivi) {
-          await supabase.from('suivi_financier')
-            .update({ statut_client: 'regle', date_paiement: today })
-            .eq('id', existingSuivi.id)
-        } else {
-          await supabase.from('suivi_financier').insert({
-            dossier_id: id,
-            type_echeance: 'frais_consultation',
-            artisan_id: null,
-            statut_client: 'regle',
-            date_paiement: today,
-          })
+        let fraisErr = fraisSelErr
+        if (!fraisErr) {
+          if (existingSuivi) {
+            // On réaffirme le statut mais on PRÉSERVE la date métier existante :
+            // le tampon `today` ne s'applique qu'à la transition vers réglé (date NULL).
+            // Sinon chaque « Enregistrer » réécraserait la date → frais reclassé au mauvais mois.
+            ({ error: fraisErr } = await supabase.from('suivi_financier')
+              .update({ statut_client: 'regle', date_paiement: existingSuivi.date_paiement || today })
+              .eq('id', existingSuivi.id))
+          } else {
+            ({ error: fraisErr } = await supabase.from('suivi_financier').insert({
+              dossier_id: id,
+              type_echeance: 'frais_consultation',
+              artisan_id: null,
+              statut_client: 'regle',
+              date_paiement: today,
+            }))
+          }
+        }
+        if (fraisErr) {
+          // Le dossier EST enregistré ; on reste en édition pour signaler le reliquat.
+          setErreur('Dossier enregistré, mais échec de la ligne de frais : ' + fraisErr.message)
+          setSaving(false)
+          return
         }
       }
 
       setSucces('Modifications enregistrées ✓')
-      setMode('lecture')
+      setModalModif(false)
     }
     setSaving(false)
-  }
-
-  const sauvegarderDevis = async () => {
-    if (!nouveauDevis.artisan_id) return
-    setSavingDevis(true)
-    const prochainOrdre = devis.length > 0 ? Math.max(...devis.map(d => d.ordre ?? 0)) + 1 : 1
-    const { data: devisInsere, error } = await supabase.from('devis_artisans').insert({
-      dossier_id: id, artisan_id: nouveauDevis.artisan_id,
-      montant_ht: nouveauDevis.montant_ht ? parseFloat(nouveauDevis.montant_ht) : null,
-      montant_ttc: nouveauDevis.montant_ttc ? parseFloat(nouveauDevis.montant_ttc) : null,
-      commission_pourcentage: nouveauDevis.sans_commission ? 0 : (nouveauDevis.commission_pourcentage ? parseFloat(nouveauDevis.commission_pourcentage) / 100 : null),
-      date_reception: nouveauDevis.date_reception || null, date_limite: nouveauDevis.date_limite || null,
-      notes: nouveauDevis.notes || null,
-      statut: (nouveauDevis.date_reception || nouveauDevis.fichier) ? 'recu' : 'en_attente',
-      ordre: prochainOrdre,
-    }).select()
-    let uploadDevisOk = true
-    if (!error && nouveauDevis.fichier && devisInsere?.[0]) {
-      const ext = nouveauDevis.fichier.name.split('.').pop()
-      const cheminDevis = `chantiers/${id}/devis/${devisInsere[0].id}.${ext}`
-      // Gate : on n'écrit le chemin que si l'upload réussit (sinon référence pendante).
-      const { error: uploadError } = await supabase.storage.from('documents').upload(cheminDevis, nouveauDevis.fichier)
-      if (uploadError) uploadDevisOk = false
-      else await supabase.from('devis_artisans').update({ devis_pdf_path: cheminDevis }).eq('id', devisInsere[0].id)
-    }
-    if (!error) {
-      if (!dossier.contrat_signe) {
-        const today = new Date().toISOString().slice(0, 10)
-        await supabase.from('dossiers').update({ contrat_signe: true, date_signature_contrat: today }).eq('id', id)
-        setDossier(d => ({ ...d, contrat_signe: true, date_signature_contrat: today }))
-      }
-      await chargerDevis()
-      setAjouterDevis(false)
-      setNouveauDevis({ artisan_id: '', montant_ht: '', montant_ttc: '', commission_pourcentage: '', sans_commission: false, date_reception: '', date_limite: '', notes: '', fichier: null })
-      if (uploadDevisOk) setSucces('Devis ajouté ✓')
-      else setErreur('Devis ajouté, mais échec de l\'upload du PDF — réessayez via la fiche devis.')
-    } else { setErreur('Erreur : ' + error.message) }
-    setSavingDevis(false)
-  }
-
-  const modifierDevis = async (devisId, updates) => {
-    await supabase.from('devis_artisans').update({
-      montant_ht: updates.montant_ht ? parseFloat(updates.montant_ht) : null,
-      montant_ttc: updates.montant_ttc ? parseFloat(updates.montant_ttc) : null,
-      commission_pourcentage: updates.sans_commission ? 0 : (updates.commission_pourcentage ? parseFloat(updates.commission_pourcentage) / 100 : null),
-      date_reception: updates.date_reception || null, date_limite: updates.date_limite || null,
-      notes: updates.notes || null,
-    }).eq('id', devisId)
-    await chargerDevis()
-    setDevisEnEdition(null)
-    setSucces('Devis modifié ✓')
   }
 
   // Handler unique du DevisModal (create + edit, inclut acompte custom)
@@ -1222,8 +1482,9 @@ export default function FicheChantier({ params }) {
       acompte_montant_fixe: acompteMontant,
     }
     if (devisModal.devis) {
-      // Edit
-      await supabase.from('devis_artisans').update(payload).eq('id', devisModal.devis.id)
+      // Edit — sur erreur, la modale reste ouverte avec la saisie (return avant fermeture).
+      const { error } = await supabase.from('devis_artisans').update(payload).eq('id', devisModal.devis.id)
+      if (error) { setErreur('Erreur : ' + error.message); return }
       await chargerDevis()
       setSucces('Devis modifié ✓')
     } else {
@@ -1245,12 +1506,15 @@ export default function FicheChantier({ params }) {
         // Gate : on n'écrit le chemin que si l'upload réussit (sinon référence pendante).
         const { error: uploadError } = await supabase.storage.from('documents').upload(cheminDevis, form.fichier)
         if (uploadError) uploadDevisOk = false
-        else await supabase.from('devis_artisans').update({ devis_pdf_path: cheminDevis }).eq('id', devisInsere[0].id)
+        else {
+          const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_pdf_path: cheminDevis }).eq('id', devisInsere[0].id)
+          if (pathErr) uploadDevisOk = false
+        }
       }
       if (!dossier.contrat_signe) {
         const today = new Date().toISOString().slice(0, 10)
-        await supabase.from('dossiers').update({ contrat_signe: true, date_signature_contrat: today }).eq('id', id)
-        setDossier(d => ({ ...d, contrat_signe: true, date_signature_contrat: today }))
+        const { error: contratErr } = await supabase.from('dossiers').update({ contrat_signe: true, date_signature_contrat: today }).eq('id', id)
+        if (!contratErr) setDossier(d => ({ ...d, contrat_signe: true, date_signature_contrat: today }))
       }
       await chargerDevis()
       if (uploadDevisOk) setSucces('Devis ajouté ✓')
@@ -1269,29 +1533,31 @@ export default function FicheChantier({ params }) {
   }
 
   const changerStatutDevis = async (devisId, statut) => {
+    let error
     if (statut === 'accepte') {
       const aujourd_hui = new Date().toISOString().slice(0, 10)
       const [annee, mois, jour] = aujourd_hui.split('-')
       const dateSignature = prompt('Date de signature du devis (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
       const dateParsee = parseDateFR(dateSignature)
       if (dateSignature && dateParsee) {
-        await supabase.from('devis_artisans').update({ statut, date_signature: dateParsee }).eq('id', devisId)
+        ({ error } = await supabase.from('devis_artisans').update({ statut, date_signature: dateParsee }).eq('id', devisId))
       } else {
-        await supabase.from('devis_artisans').update({ statut: 'recu' }).eq('id', devisId)
+        ({ error } = await supabase.from('devis_artisans').update({ statut: 'recu' }).eq('id', devisId))
       }
     } else {
-      await supabase.from('devis_artisans').update({ statut }).eq('id', devisId)
+      ({ error } = await supabase.from('devis_artisans').update({ statut }).eq('id', devisId))
     }
-    if (statut === 'a_modifier') {
-      await supabase.from('dossiers').update({ statut: 'devis_a_modifier' }).eq('id', id)
-      setDossier(prev => prev ? { ...prev, statut: 'devis_a_modifier' } : prev)
-    }
+    if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
+    // Plus d'auto-push dossiers.statut='devis_a_modifier' : calcStatut le dérive
+    // désormais des devis (cascade v2). La colonne ne porte que les overrides
+    // manuels (NULL/annule/termine). Persister le calculé la re-périmerait.
     await chargerDevis()
   }
 
   const supprimerDevis = async (devisId) => {
     if (!confirm('Supprimer ce devis ?')) return
-    await supabase.from('devis_artisans').delete().eq('id', devisId)
+    const { error } = await supabase.from('devis_artisans').delete().eq('id', devisId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerDevis()
   }
 
@@ -1303,7 +1569,9 @@ export default function FicheChantier({ params }) {
     const chemin = `chantiers/${id}/devis_signes/${devisId}.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (!error) {
-      await supabase.from('devis_artisans').update({ devis_signe_path: chemin }).eq('id', devisId)
+      const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_signe_path: chemin }).eq('id', devisId)
+      if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
+      let statutOk = true
       const devisActuel = devis.find(d => d.id === devisId)
       if (devisActuel && devisActuel.statut !== 'accepte') {
         const aujourd_hui = new Date().toISOString().slice(0, 10)
@@ -1311,23 +1579,55 @@ export default function FicheChantier({ params }) {
         const dateSignature = prompt('Date de signature du devis (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
         const dateParsee = parseDateFR(dateSignature)
         if (dateSignature && dateParsee) {
-          await supabase.from('devis_artisans').update({
+          const { error: statutErr } = await supabase.from('devis_artisans').update({
             statut: 'accepte',
             date_signature: dateParsee,
           }).eq('id', devisId)
+          if (statutErr) statutOk = false
         }
       }
       await chargerDevis()
-      setSucces('Devis signé uploadé ✓')
+      if (statutOk) setSucces('Devis signé uploadé ✓')
+      else setErreur('Devis signé enregistré, mais le statut n\'a pas pu être mis à jour — réessayez.')
     } else { setErreur('Erreur upload : ' + error.message) }
     setUploadingDoc(null)
   }
   const supprimerDevisSigne = async (devisId, path) => {
     if (!confirm('Supprimer le devis signé ?')) return
-    await supabase.storage.from('documents').remove([path])
-    await supabase.from('devis_artisans').update({ devis_signe_path: null }).eq('id', devisId)
+    // Storage best-effort : un fichier qui résiste ne bloque pas le retrait de la
+    // référence (orphelin sans gravité), mais on le signale.
+    const { error: rmErr } = await supabase.storage.from('documents').remove([path])
+    if (rmErr) console.error('Suppression PDF devis signé (non bloquant) :', rmErr.message)
+    const { error } = await supabase.from('devis_artisans').update({ devis_signe_path: null }).eq('id', devisId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerDevis()
     setSucces('Devis signé supprimé ✓')
+  }
+
+  // PV de réception (1 par devis). Calqué sur uploadDevisSigne / supprimerDevisSigne,
+  // SANS la logique de changement de statut/date (le PV n'affecte pas le statut du devis).
+  const uploadPV = async (devisId, fichier) => {
+    if (!fichier) return
+    setUploadingDoc(devisId)
+    const ext = fichier.name.split('.').pop()
+    const chemin = `chantiers/${id}/pv/${devisId}.${ext}`
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+    if (!error) {
+      const { error: pathErr } = await supabase.from('devis_artisans').update({ pv_path: chemin }).eq('id', devisId)
+      if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
+      await chargerDevis()
+      setSucces('PV uploadé ✓')
+    } else { setErreur('Erreur upload PV : ' + error.message) }
+    setUploadingDoc(null)
+  }
+  const supprimerPV = async (devisId, path) => {
+    if (!confirm('Supprimer le PV de réception ?')) return
+    const { error: rmErr } = await supabase.storage.from('documents').remove([path])
+    if (rmErr) console.error('Suppression PDF PV (non bloquant) :', rmErr.message)
+    const { error } = await supabase.from('devis_artisans').update({ pv_path: null }).eq('id', devisId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    await chargerDevis()
+    setSucces('PV supprimé ✓')
   }
 
   // ── URL SIGNÉE DOCUMENT ──
@@ -1340,35 +1640,27 @@ export default function FicheChantier({ params }) {
   const sauvegarderCRManuel = async (publier = false) => {
     if (!crManuelForm.contenu.trim()) return
     setCrManuelSaving(true)
-    const { data: crInsere } = await supabase.from('comptes_rendus').insert({
+    const { error: insertErr } = await supabase.from('comptes_rendus').insert({
       dossier_id: id,
       type_visite: crManuelForm.type_visite || null,
       date_visite: crManuelForm.date_visite || null,
       contenu_final: crManuelForm.contenu,
       valide: publier,
-    }).select().single()
-
-    let uploadCrOk = true
-    if (crInsere && crManuelForm.fichier) {
-      const ext = crManuelForm.fichier.name.split('.').pop()
-      const chemin = `chantiers/${id}/cr/${crInsere.id}.${ext}`
-      const { error: uploadErr } = await supabase.storage.from('documents').upload(chemin, crManuelForm.fichier)
-      if (uploadErr) uploadCrOk = false
-      else await supabase.from('comptes_rendus').update({ pdf_path: chemin }).eq('id', crInsere.id)
-    }
+    })
+    // Échec de l'insert : on garde la saisie (modale ouverte) pour réessayer.
+    if (insertErr) { setErreur('Erreur : ' + insertErr.message); setCrManuelSaving(false); return }
 
     const { data } = await supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
     setComptesRendus(data || [])
     setCrManuelModal(false)
-    setCrManuelForm({ type_visite: '', date_visite: '', contenu: '', fichier: null })
+    setCrManuelForm({ type_visite: '', date_visite: '', contenu: '' })
     setCrManuelSaving(false)
-    if (uploadCrOk) setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
-    else setErreur('CR enregistré, mais échec de l\'upload du PDF — réessayez.')
+    setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
   }
   // ── GÉNÉRER CR AVEC IA ──
   const genererCRAvecIA = async () => {
     if (!crForm.type_visite) return
-    const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('')
+    const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('\n\n')
     if (!notesCombinees.trim() && crImages.length === 0) return
     setCrGenerating(true)
     try {
@@ -1398,11 +1690,9 @@ export default function FicheChantier({ params }) {
   const sauvegarderCRGenere = async (publier = false) => {
     if (!crGenere) return
     setCrSavingFinal(true)
-    const contenuFinal = crSectionsEditees.map(s => `## ${s.numero}. ${s.titre}
-
-  ${s.contenu}`).join('')
-    const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('')
-    await supabase.from('comptes_rendus').insert({
+    const contenuFinal = crSectionsEditees.map(s => `## ${s.numero}. ${s.titre}\n\n${s.contenu}`).join('\n\n')
+    const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('\n\n')
+    const { error: insertErr } = await supabase.from('comptes_rendus').insert({
       dossier_id: id,
       type_visite: crForm.type_visite,
       date_visite: crForm.date_visite || null,
@@ -1410,6 +1700,8 @@ export default function FicheChantier({ params }) {
       contenu_final: contenuFinal,
       valide: publier,
     })
+    // Échec de l'insert : on garde la modale ouverte (sections éditées conservées).
+    if (insertErr) { setErreur('Erreur : ' + insertErr.message); setCrSavingFinal(false); return }
     const { data } = await supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
     setComptesRendus(data || [])
     setCrModal(false)
@@ -1455,12 +1747,14 @@ export default function FicheChantier({ params }) {
 
   const supprimerCR = async (crId) => {
     if (!confirm('Supprimer ce compte-rendu ?')) return
-    await supabase.from('comptes_rendus').delete().eq('id', crId)
+    const { error } = await supabase.from('comptes_rendus').delete().eq('id', crId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     setComptesRendus(prev => prev.filter(c => c.id !== crId))
   }
 
   const toggleValide = async (crId, valide) => {
-    await supabase.from('comptes_rendus').update({ valide }).eq('id', crId)
+    const { error } = await supabase.from('comptes_rendus').update({ valide }).eq('id', crId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     setComptesRendus(prev => prev.map(c => c.id === crId ? { ...c, valide } : c))
   }
 
@@ -1501,6 +1795,11 @@ export default function FicheChantier({ params }) {
   const [onglet, setOnglet] = useState('apercu')
   const [reponseMsg, setReponseMsg] = useState('')
   const [sendingMsg, setSendingMsg] = useState(false)
+  const [editingMsgId, setEditingMsgId] = useState(null)
+  const [editMsgText, setEditMsgText] = useState('')
+  const [editMsgError, setEditMsgError] = useState('')
+  const [inviting, setInviting] = useState(false)
+  const [inviteMsg, setInviteMsg] = useState(null) // { type:'ok'|'err', text }
   const messagesEndRef = useRef(null)
 
   // Realtime : écoute les nouveaux messages sur ce dossier
@@ -1540,6 +1839,12 @@ export default function FicheChantier({ params }) {
     })()
   }, [onglet, id, messages.length])
 
+  // Chargement paresseux du comparateur à l'ouverture de l'onglet
+  useEffect(() => {
+    if (onglet === 'comparateur') chargerComparateur()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onglet, id])
+
   const envoyerReponse = async () => {
     if (!reponseMsg.trim()) return
     setSendingMsg(true)
@@ -1571,11 +1876,70 @@ export default function FicheChantier({ params }) {
     } else if (inserted) {
       setMessages(prev => prev.map(m => m.id === tempId ? inserted : m))
     }
-    // Marquer les messages client comme lus par l'agence (au cas où)
-    await supabase.from('messages').update({ lu_agence: true })
+    // Marquer les messages client comme lus par l'agence (au cas où).
+    // Bénin : en cas d'échec, on garde le compteur (pas de message utilisateur).
+    const { error: luErr } = await supabase.from('messages').update({ lu_agence: true })
       .eq('dossier_id', id).eq('auteur_role', 'client').eq('lu_agence', false)
-    setNbMsgNonLus(0)
+    if (luErr) console.error('Marquage messages lus (non bloquant) :', luErr.message)
+    else setNbMsgNonLus(0)
     setSendingMsg(false)
+  }
+
+  // Édition en place d'un message (l'auteur, < 10 min — le trigger SQL est le
+  // vrai gardien ; en cas de rejet, on garde le texte saisi et on l'indique).
+  const modifierMessage = async (msg) => {
+    const txt = editMsgText.trim()
+    if (!txt) return
+    setEditMsgError('')
+    const { error } = await supabase.from('messages').update({ contenu: txt }).eq('id', msg.id)
+    if (error) {
+      setEditMsgError('Édition impossible (délai de 10 min dépassé ?).')
+      return
+    }
+    setMessages(prev => prev.map(m =>
+      m.id === msg.id ? { ...m, contenu: txt, edited_at: new Date().toISOString() } : m))
+    setEditingMsgId(null); setEditMsgText('')
+  }
+
+  const annulerEditionMsg = () => { setEditingMsgId(null); setEditMsgText(''); setEditMsgError('') }
+
+  // Invite le client du dossier : le serveur crée le compte + génère le lien (sans
+  // envoyer d'email), puis on ouvre un brouillon mailto que le référent envoie de
+  // sa boîte. Le scope d'accès est porté par client_id → mes_dossiers_client() (RLS).
+  const inviterClient = async () => {
+    setInviting(true); setInviteMsg(null)
+    try {
+      const res = await fetch('/api/invite-client', {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({ dossierId: id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (data.status === 'invited' || data.status === 'relinked') {
+        setInviteMsg({
+          type: 'ok',
+          text: data.status === 'relinked'
+            ? 'Ce client a déjà un compte. Brouillon de renvoi ouvert — vérifiez et envoyez-le.'
+            : 'Brouillon d\'email ouvert — vérifiez et envoyez-le au client.',
+        })
+        // window.location.href (pas window.open) : éviter le blocage popup après await.
+        const mailto = buildInviteMailto({
+          email: data.email,
+          prenom: data.prenom,
+          actionLink: data.actionLink,
+          loginUrl: `${window.location.origin}/login-client`,
+          isRenvoi: data.status === 'relinked',
+        })
+        window.location.href = mailto
+      } else if (data.error === 'email_manquant') {
+        setInviteMsg({ type: 'err', text: 'Ajoutez un email au client avant de l\'inviter.' })
+      } else {
+        setInviteMsg({ type: 'err', text: data.message || data.error || 'Échec de l\'invitation.' })
+      }
+    } catch {
+      setInviteMsg({ type: 'err', text: 'Erreur réseau, réessayez.' })
+    }
+    setInviting(false)
   }
 
   const typologieLabel = (t) => ({ courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' })[t] || t
@@ -1586,12 +1950,6 @@ export default function FicheChantier({ params }) {
     accepte:    { label: 'Accepté',    tone: 'ok'   },
     refuse:     { label: 'Refusé',     tone: 'bad'  },
     a_modifier: { label: 'À modifier', tone: 'warn' },
-  }
-  const fraisStatutConfig = {
-    offerts:                   { label: 'Offerts' },
-    factures:                  { label: 'Facturés — en attente' },
-    regle:                     { label: 'Réglés' },
-    rembourse:                 { label: 'Remboursé' },
   }
   // Couleurs tone → classes badge (pour les boutons quick statut)
   const TONE_BG = { ok: 'rgba(22,163,74,0.12)', warn: 'rgba(245,158,11,0.13)', bad: 'rgba(220,38,38,0.10)', info: 'rgba(0,148,212,0.12)', mute: 'rgba(148,163,184,0.15)' }
@@ -1618,7 +1976,6 @@ export default function FicheChantier({ params }) {
   const honorairesCourtagePrev = finDossier.honorairesPrevi.courtage.ttc
   const honorairesAMOPrev      = finDossier.honorairesPrevi.courtage.ttc + finDossier.honorairesPrevi.soldeAmo.ttc
   const suiviCourtage = suiviFinancier.find(s => s.type_echeance === 'honoraires_courtage')
-  const suiviAcompteAMO = suiviFinancier.find(s => s.type_echeance === 'acompte_amo')
   const suiviSoldeAMO = suiviFinancier.find(s => s.type_echeance === 'solde_amo')
   // Statut frais = dossiers.frais_statut (source unique) ; date = ligne frais_consultation si réglé.
   const suiviFrais = suiviFinancier.find(s => s.type_echeance === 'frais_consultation')
@@ -1635,17 +1992,18 @@ export default function FicheChantier({ params }) {
     x.type_echeance === 'facture_finale' && x.artisan_id === dv.artisan_id && x.statut_illico === 'recu')).length
 
   const majSuiviAvecArtisan = async (type, artisanId, champ, valeur) => {
-    const { data: existing } = await supabase
+    const { data: existing, error: selectErr } = await supabase
       .from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', type).eq('artisan_id', artisanId)
       .maybeSingle()
-    if (existing) {
-      await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
-    } else {
-      await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: type, artisan_id: artisanId, [champ]: valeur })
-    }
+    if (selectErr) { setErreur('Erreur : ' + selectErr.message); return false }
+    const { error } = existing
+      ? await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
+      : await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: type, artisan_id: artisanId, [champ]: valeur })
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
+    if (error) { setErreur('Erreur : ' + error.message); return false }
+    return true
   }
 
   // Quand acompte_artisan est togglé côté suivi, propager aux factures_artisans acompte de cet artisan
@@ -1684,18 +2042,21 @@ export default function FicheChantier({ params }) {
   // PAS de DELETE : la ligne est partagée avec l'acompte client (statut_client/date_paiement),
   // qui reste intact. date_deblocage est de type `date` → AAAA-MM-JJ.
   const setDeblocagePaye = async (artisanId, recu) => {
-    const { data: existing } = await supabase
+    const { data: existing, error: selectErr } = await supabase
       .from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', 'acompte_artisan').eq('artisan_id', artisanId)
       .maybeSingle()
+    if (selectErr) { setErreur('Erreur : ' + selectErr.message); return }
     const payload = recu
       ? { statut_illico: 'recu', date_deblocage: new Date().toISOString().slice(0, 10) }
       : { statut_illico: 'en_attente', date_deblocage: null }
+    let error = null
     if (existing) {
-      await supabase.from('suivi_financier').update(payload).eq('id', existing.id)
+      ({ error } = await supabase.from('suivi_financier').update(payload).eq('id', existing.id))
     } else if (recu) {
-      await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'acompte_artisan', artisan_id: artisanId, ...payload })
+      ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'acompte_artisan', artisan_id: artisanId, ...payload }))
     }
+    if (error) { setErreur('Erreur : ' + error.message); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -1710,57 +2071,45 @@ export default function FicheChantier({ params }) {
     let q = supabase.from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', 'apporteur_agente')
     q = artisanId === null ? q.is('artisan_id', null) : q.eq('artisan_id', artisanId)
-    const { data: existing } = await q.maybeSingle()
+    const { data: existing, error: selectErr } = await q.maybeSingle()
+    if (selectErr) { setErreur('Erreur : ' + selectErr.message); return }
 
+    let error = null
     if (paye) {
       const today = new Date().toISOString().slice(0, 10)
       if (existing) {
-        await supabase.from('suivi_financier').update({ statut_ctp: 'rembourse', date_paiement: today }).eq('id', existing.id)
+        ({ error } = await supabase.from('suivi_financier').update({ statut_ctp: 'rembourse', date_paiement: today }).eq('id', existing.id))
       } else {
-        await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'apporteur_agente', artisan_id: artisanId, statut_ctp: 'rembourse', date_paiement: today })
+        ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'apporteur_agente', artisan_id: artisanId, statut_ctp: 'rembourse', date_paiement: today }))
       }
     } else if (existing) {
-      await supabase.from('suivi_financier').delete().eq('id', existing.id)
+      ({ error } = await supabase.from('suivi_financier').delete().eq('id', existing.id))
     }
+    if (error) { setErreur('Erreur : ' + error.message); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
 
-  const majSuiviChantier = async (type, montant, champ, valeur) => {
-    // Échéances honoraires togglées par statut_client : on DATE le règlement au coche
-    // (date_paiement = aujourd'hui, la date que lit l'agrégation F2) et on SUPPRIME la
-    // ligne au décoche (zéro résidu, pas de date périmée). Tout autre cas (apporteur,
-    // autres champs) garde l'upsert d'origine. date_paiement est de type `date` → AAAA-MM-JJ.
-    const honoToggle = champ === 'statut_client' &&
-      ['honoraires_courtage', 'acompte_amo', 'solde_amo'].includes(type)
-    const today = new Date().toISOString().slice(0, 10)
-
-    const upsertOne = async (t, m) => {
-      // Interroger la BDD directement (pas le state) pour éviter les problèmes de double appel
-      const { data: existing } = await supabase
-        .from('suivi_financier')
-        .select('id')
-        .eq('dossier_id', id)
-        .eq('type_echeance', t)
-        .is('artisan_id', null)
-        .maybeSingle()
-
-      if (honoToggle && valeur === 'en_attente') {
-        // Décoche : supprimer la ligne (élimine le résidu + la date périmée).
-        if (existing) await supabase.from('suivi_financier').delete().eq('id', existing.id)
-        return
-      }
-
-      const payload = honoToggle ? { statut_client: 'regle', date_paiement: today } : { [champ]: valeur }
-      if (existing) {
-        await supabase.from('suivi_financier').update(payload).eq('id', existing.id)
-      } else {
-        await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: t, montant_ttc: m, ...payload })
-      }
+  const majSuiviChantier = async (type, montant, valeur) => {
+    // Toggle d'une échéance honoraire : coche = réglé + date du jour, décoche = suppression.
+    // Sur AMO, honoraires_courtage et acompte_amo représentent le MÊME encaissement
+    // (la part courtage, vue AMO) → togglés ensemble. La fonction Postgres
+    // suivi_toggle_honoraires écrit les 1-2 lignes de façon ATOMIQUE (tout-ou-rien)
+    // sous la RLS de l'appelant (SECURITY INVOKER).
+    const types = [type]
+    if (dossier?.typologie === 'amo') {
+      if (type === 'honoraires_courtage') types.push('acompte_amo')
+      else if (type === 'acompte_amo') types.push('honoraires_courtage')
     }
-    await upsertOne(type, montant)
-    if (type === 'honoraires_courtage' && dossier?.typologie === 'amo') await upsertOne('acompte_amo', montant)
-    if (type === 'acompte_amo' && dossier?.typologie === 'amo') await upsertOne('honoraires_courtage', montant)
+    const today = new Date().toISOString().slice(0, 10)
+    const { error } = await supabase.rpc('suivi_toggle_honoraires', {
+      p_dossier_id: id,
+      p_types: types,
+      p_montant: montant,
+      p_regle: valeur === 'regle',
+      p_today: today,
+    })
+    if (error) setErreur('Erreur : ' + error.message)
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -1776,40 +2125,20 @@ export default function FicheChantier({ params }) {
     )
     if (!ok) return
     setSaving(true)
-    try {
-      // Mettre à jour la typologie + taux AMO si non défini
-      await supabase.from('dossiers').update({
-        typologie: 'amo',
-        honoraires_amo_taux: dossier.honoraires_amo_taux ?? AMO_STANDARD * 100,
-      }).eq('id', id)
-
-      // Migrer la ligne honoraires_courtage → acompte_amo
-      const { data: ligneCourtage } = await supabase
-        .from('suivi_financier').select('*')
-        .eq('dossier_id', id).eq('type_echeance', 'honoraires_courtage').is('artisan_id', null).maybeSingle()
-
-      if (ligneCourtage) {
-        await supabase.from('suivi_financier').update({ type_echeance: 'acompte_amo' }).eq('id', ligneCourtage.id)
-        // Créer la ligne solde_amo si elle n'existe pas
-        const { data: ligneSolde } = await supabase
-          .from('suivi_financier').select('id')
-          .eq('dossier_id', id).eq('type_echeance', 'solde_amo').is('artisan_id', null).maybeSingle()
-        if (!ligneSolde) {
-          await supabase.from('suivi_financier').insert({
-            dossier_id: id, type_echeance: 'solde_amo',
-            montant_ttc: 0, statut_client: 'en_attente',
-          })
-        }
-      }
-
-      // Recharger état
-      setDossier(d => ({ ...d, typologie: 'amo', honoraires_amo_taux: d.honoraires_amo_taux ?? AMO_STANDARD * 100 }))
-      const { data: newSuivi } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
-      setSuiviFinancier(newSuivi || [])
-      setSucces('Dossier converti en AMO ✓')
-    } catch (e) {
-      setErreur('Erreur lors de la conversion : ' + e.message)
+    // Conversion atomique côté base (fonction Postgres transactionnelle).
+    const { error } = await supabase.rpc('convertir_dossier_en_amo', {
+      p_dossier_id: id,
+      p_taux_amo: AMO_STANDARD * 100,
+    })
+    if (error) {
+      setErreur('Erreur lors de la conversion : ' + error.message)
+      setSaving(false)
+      return
     }
+    setDossier(d => ({ ...d, typologie: 'amo', honoraires_amo_taux: d.honoraires_amo_taux ?? AMO_STANDARD * 100 }))
+    const { data: newSuivi } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(newSuivi || [])
+    setSucces('Dossier converti en AMO ✓')
     setSaving(false)
   }
 
@@ -1823,39 +2152,30 @@ export default function FicheChantier({ params }) {
     )
     if (!ok) return
     setSaving(true)
-    try {
-      await supabase.from('dossiers').update({ typologie: 'courtage' }).eq('id', id)
-
-      const { data: ligneAMO } = await supabase
-        .from('suivi_financier').select('*')
-        .eq('dossier_id', id).eq('type_echeance', 'acompte_amo').is('artisan_id', null).maybeSingle()
-
-      if (ligneAMO) {
-        await supabase.from('suivi_financier').update({ type_echeance: 'honoraires_courtage' }).eq('id', ligneAMO.id)
-      }
-
-      await supabase.from('suivi_financier').delete()
-        .eq('dossier_id', id).eq('type_echeance', 'solde_amo').is('artisan_id', null)
-
-      setDossier(d => ({ ...d, typologie: 'courtage' }))
-      const { data: newSuivi } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
-      setSuiviFinancier(newSuivi || [])
-      setSucces('Dossier converti en Courtage ✓')
-    } catch (e) {
-      setErreur('Erreur lors de la conversion : ' + e.message)
+    // Conversion atomique côté base (fonction Postgres transactionnelle).
+    const { error } = await supabase.rpc('convertir_dossier_en_courtage', {
+      p_dossier_id: id,
+    })
+    if (error) {
+      setErreur('Erreur lors de la conversion : ' + error.message)
+      setSaving(false)
+      return
     }
+    setDossier(d => ({ ...d, typologie: 'courtage' }))
+    const { data: newSuivi } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(newSuivi || [])
+    setSucces('Dossier converti en Courtage ✓')
     setSaving(false)
   }
 
   if (loading) return <div className="page-loading" />
   if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-400)'}}>Chantier introuvable</div>
 
-  const nomComplet = client ? `${client.civilite} ${client.prenom} ${client.nom}${client.prenom2 ? ` & ${client.prenom2} ${client.nom2}` : ''}` : ''
-  const f = fraisStatutConfig[dossier.frais_statut] ?? { label: dossier.frais_statut ?? '—' }
+  const nomComplet = formatNomClient(client, { civilite: true })
 
   const supprimerChantier = async () => {
     const ok = confirm(
-      'Supprimer définitivement ce chantier et tout ce qui lui est rattaché (devis, factures, photos, comptes-rendus, documents, RDV, interventions, suivis financiers, messages, contrat) ? Cette action est irréversible.'
+      `Supprimer définitivement ce chantier et tout ce qui lui est rattaché (${ENTITES_CHANTIER}) ? Cette action est irréversible.`
     )
     if (!ok) return
 
@@ -1988,7 +2308,26 @@ export default function FicheChantier({ params }) {
                 {dossier.reference}
               </span>
               <TypoBadge typo={dossier.typologie}/>
-              <StatutBadge statut={dossier.statut}/>
+              <StatutBadge dossier={{ ...dossier, devis_artisans: devis, rendez_vous: rdvsDossier }}/>
+              {/* Override manuel du statut — sinon calcStatut décide */}
+              {!dossier.statut && (
+                <>
+                  <button onClick={() => majStatutManuel('termine')} disabled={saving}
+                    className="btn btn-ghost" style={{fontSize:11.5, padding:'3px 10px', borderColor:'rgba(22,163,74,0.35)', color:'#15803d'}}>
+                    ✓ Marquer terminé
+                  </button>
+                  <button onClick={() => majStatutManuel('annule')} disabled={saving}
+                    className="btn btn-ghost" style={{fontSize:11.5, padding:'3px 10px', borderColor:'rgba(239,68,68,0.3)', color:'#b91c1c'}}>
+                    Annuler le dossier
+                  </button>
+                </>
+              )}
+              {(dossier.statut === 'termine' || dossier.statut === 'annule') && (
+                <button onClick={() => majStatutManuel(null)} disabled={saving}
+                  className="btn btn-ghost" style={{fontSize:11.5, padding:'3px 10px'}}>
+                  ↺ Ré-ouvrir le dossier
+                </button>
+              )}
               {dossier.contrat_signe && (
                 <span style={{display:'inline-flex',alignItems:'center',gap:4,
                   fontSize:11.5,color:'#15803d',fontWeight:600}}>
@@ -2030,64 +2369,65 @@ export default function FicheChantier({ params }) {
         {/* Action strip */}
         <div style={{padding:'14px 28px',borderTop:'1px solid var(--ink-100)',
           background:'var(--surface-2)',display:'flex',gap:8,flexWrap:'wrap'}}>
-          {mode === 'lecture' ? (
+          <button onClick={() => setModalModif(true)} className="btn btn-primary"
+            style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+            <EditIcon /> Modifier
+          </button>
+          {client?.telephone && (
+            <a href={`tel:${client.telephone}`} className="btn btn-ghost"
+              style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+              <PhoneIcon /> {client.telephone}
+            </a>
+          )}
+          {client?.email && (
+            <a href={`mailto:${client.email}`} className="btn btn-ghost"
+              style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+              <MailIcon /> Email
+            </a>
+          )}
+          {/* Invitation espace client : réservée aux dossiers AMO (l'espace client est AMO). */}
+          {dossier.typologie === 'amo' && (
             <>
-              <button onClick={() => setMode('edition')} className="btn btn-primary"
+              <button onClick={inviterClient} disabled={inviting} className="btn btn-ghost"
                 style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                <EditIcon /> Modifier
+                <MailIcon /> {inviting ? 'Invitation…' : 'Inviter le client'}
               </button>
-              {client?.telephone && (
-                <a href={`tel:${client.telephone}`} className="btn btn-ghost"
-                  style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                  <PhoneIcon /> {client.telephone}
-                </a>
+              {inviteMsg && (
+                <div style={{width:'100%', fontSize:12, marginTop:2,
+                  color: inviteMsg.type === 'ok' ? '#15803d' : '#b91c1c'}}>
+                  {inviteMsg.text}
+                </div>
               )}
-              {client?.email && (
-                <a href={`mailto:${client.email}`} className="btn btn-ghost"
-                  style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                  <MailIcon /> Email
-                </a>
-              )}
-              <div style={{flex:1}}/>
-              <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
-                className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                <DlIcon /> {generatingPDF === 'recapitulatif_prev' ? '...' : 'Récap. financier'}
-              </button>
-              <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
-                className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                <DlIcon /> {generatingPDF === 'recapitulatif' ? '...' : 'Suivi financier'}
-              </button>
-              <button onClick={() => generatePDF('dossier_suivi')} disabled={!!generatingPDF}
-                className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                <DocIcon /> {generatingPDF === 'dossier_suivi' ? '...' : 'Dossier de suivi'}
-              </button>
-            </>
-          ) : (
-            <>
-              <button onClick={handleSave} disabled={saving} className="btn btn-primary"
-                style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-                <CheckIcon /> {saving ? '...' : 'Enregistrer'}
-              </button>
-              <button onClick={() => setMode('lecture')} className="btn btn-ghost"
-                style={{fontSize:12.5}}>Annuler</button>
             </>
           )}
+          <div style={{flex:1}}/>
+          <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
+            className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+            <DlIcon /> {generatingPDF === 'recapitulatif_prev' ? '...' : 'Récap. financier'}
+          </button>
+          <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
+            className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+            <DlIcon /> {generatingPDF === 'recapitulatif' ? '...' : 'Suivi financier'}
+          </button>
+          <button onClick={() => generatePDF('dossier_suivi')} disabled={!!generatingPDF}
+            className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+            <DocIcon /> {generatingPDF === 'dossier_suivi' ? '...' : 'Dossier de suivi'}
+          </button>
         </div>
       </div>
 
       {/* KPI strip */}
       <div className="kpi-grid">
         <MiniKpi
-          label="Montant chantier"
+          label="Montant prévu"
+          value={totalDevisTTCRecus > 0 ? fmt(totalDevisTTCRecus) : '—'}
+          sub={`${devisRecus.length} devis reçus`}
+        />
+        <MiniKpi
+          label="Montant réel"
           value={totalDevisTTCSignes > 0 ? fmt(totalDevisTTCSignes) : '—'}
           sub={`${devisSignes.length} devis signés`}
           tone="brand"
-        />
-        <MiniKpi
-          label="Frais consultation TTC"
-          value={fraisTTC > 0 ? `${fmt(fraisTTC)} TTC` : 'Offerts'}
-          sub={f.label}
-          tone="warn"
         />
         <MiniKpi
           label="Acomptes reçus"
@@ -2132,6 +2472,7 @@ export default function FicheChantier({ params }) {
         {[
           { key:'apercu',    label:'Aperçu',           icon:<EyeIcon /> },
           { key:'devis',     label:'Devis & artisans', icon:<HammerIcon />, count: devis.length },
+          { key:'comparateur', label:'Comparateur',    icon:<ChartIcon /> },
           { key:'planning',  label:'Planning',         icon:<CalIcon />,    count: rdvsDossier.length + interventionsDossier.length },
           { key:'photos',    label:'Photos',           icon:<CamIcon />,    count: photos.length },
           { key:'cr',        label:'Comptes-rendus',   icon:<DocIcon />,    count: comptesRendus.length },
@@ -2157,7 +2498,7 @@ export default function FicheChantier({ params }) {
 
 
       {/* ── APERÇU ── */}
-      {onglet === 'apercu' && mode === 'lecture' && (
+      {onglet === 'apercu' && (
       <div style={{display:'grid', gridTemplateColumns:'1.4fr 1fr', gap:20}}>
 
         {/* LEFT */}
@@ -2195,23 +2536,32 @@ export default function FicheChantier({ params }) {
             </div>
             <Progress value={avancement} height={10} />
             <div style={{display:'grid', gridTemplateColumns:'repeat(5, 1fr)', marginTop:18, gap:10}}>
-              {[
-                { l:'Contact',   done: true },
-                { l:'Devis',     done: devis.length > 0 },
-                { l:'Signature', done: !!dossier.contrat_signe },
-                { l:'Chantier',  done: !!dossier.date_demarrage_chantier },
-                { l:'Livraison', done: avancement >= 100 },
-              ].map((s, i) => (
-                <div key={i} style={{textAlign:'center'}}>
-                  <div style={{
-                    width:28, height:28, borderRadius:99, margin:'0 auto',
-                    background: s.done ? 'var(--ok)' : 'var(--ink-100)',
-                    color: s.done ? '#fff' : 'var(--ink-400)',
-                    display:'grid', placeItems:'center', fontSize:13, fontWeight:700,
-                  }}>{s.done ? '✓' : i+1}</div>
-                  <div style={{fontSize:11, color:'var(--ink-500)', marginTop:6, fontWeight:600}}>{s.l}</div>
-                </div>
-              ))}
+              {(() => {
+                const step1 = !!dossier.contrat_signe                                   // Mandat R1 signé
+                const step2 = devis.length > 0                                          // ≥1 devis (tout statut)
+                const step3 = devis.length > 0 && devis.every(d => d.statut !== 'recu')  // 0 devis 'recu' (tous tranchés)
+                const step4 = !!(dossier.date_demarrage_chantier || dossier.statut === 'en_cours_chantier') // chantier démarré
+                const step5 = dossier.statut === 'termine'                              // chantier terminé
+                // Monotonicité : étape N cochée ⇒ étapes 1..N-1 cochées.
+                const done = [
+                  step1 || step2 || step3 || step4 || step5,
+                  step2 || step3 || step4 || step5,
+                  step3 || step4 || step5,
+                  step4 || step5,
+                  step5,
+                ]
+                return ['Contact', 'Devis', 'Signature', 'Chantier', 'Livraison'].map((l, i) => (
+                  <div key={i} style={{textAlign:'center'}}>
+                    <div style={{
+                      width:28, height:28, borderRadius:99, margin:'0 auto',
+                      background: done[i] ? 'var(--ok)' : 'var(--ink-100)',
+                      color: done[i] ? '#fff' : 'var(--ink-400)',
+                      display:'grid', placeItems:'center', fontSize:13, fontWeight:700,
+                    }}>{done[i] ? '✓' : i+1}</div>
+                    <div style={{fontSize:11, color:'var(--ink-500)', marginTop:6, fontWeight:600}}>{l}</div>
+                  </div>
+                ))
+              })()}
             </div>
           </div>
 
@@ -2353,6 +2703,9 @@ export default function FicheChantier({ params }) {
                       visite_technique_client: '#0094d4',
                       visite_technique_artisan: '#16a34a',
                       presentation_devis: '#f59e0b',
+                      suivi: '#7c3aed',
+                      reception: '#10b981',
+                      etude: '#e05252',
                     }[r.type_rdv] || '#94a3b8'
                     return (
                       <div key={r.id} style={{display:'grid', gridTemplateColumns:'44px 4px 1fr', gap:10, alignItems:'center', padding:'8px 0'}}>
@@ -2390,14 +2743,26 @@ export default function FicheChantier({ params }) {
       </div>
       )}
 
-      {/* ── ÉDITION dossier (depuis bouton "Modifier" du hero) ── */}
-      {onglet === 'apercu' && mode === 'edition' && (
-      <div style={{display:'flex',flexDirection:'column',gap:18}}>
+      {/* ── ÉDITION dossier — modale ouverte par le bouton "Modifier" du hero,
+             accessible depuis n'importe quel onglet (avant : swap inline de l'onglet Aperçu). ── */}
+      {modalModif && (
+        <ModalShell
+          title="Modifier le dossier"
+          subtitle={dossier.reference}
+          width={760}
+          onClose={() => setModalModif(false)}
+          footer={<>
+            <button onClick={() => setModalModif(false)} className="btn btn-ghost" style={{fontSize:12.5}}>Annuler</button>
+            <button onClick={handleSave} disabled={saving} className="btn btn-primary"
+              style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+              <CheckIcon /> {saving ? '...' : 'Enregistrer'}
+            </button>
+          </>}
+        >
+      <div style={{display:'flex',flexDirection:'column',gap:18, padding:24}}>
 
         {/* Form principal */}
         <div className="card" style={{padding:24, display:'flex',flexDirection:'column',gap:16}}>
-          <h2 className="page" style={{fontSize:15}}>Modifier le dossier</h2>
-
           <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
             <div>
               <label className="eyebrow" style={{display:'block', marginBottom:6}}>Typologie</label>
@@ -2457,7 +2822,7 @@ export default function FicheChantier({ params }) {
 
           {!referentEstAdmin && profile?.parts_agente_disponibles?.length > 1 && (
             <div style={{paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
-              <label className="eyebrow" style={{display:'block', marginBottom:8}}>Répartition commission (agente / CTP)</label>
+              <label className="eyebrow" style={{display:'block', marginBottom:8}}>Répartition commission (agente / Société)</label>
               <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
                 {profile.parts_agente_disponibles.map(pct => {
                   const pctFloat = parseFloat(pct)
@@ -2500,8 +2865,10 @@ export default function FicheChantier({ params }) {
                   checked={dossier.apporteur_actif || false}
                   onChange={async e => {
                     const v = e.target.checked
+                    const ancien = dossier.apporteur_actif
                     set('apporteur_actif', v)
-                    await supabase.from('dossiers').update({ apporteur_actif: v }).eq('id', id)
+                    const { error } = await supabase.from('dossiers').update({ apporteur_actif: v }).eq('id', id)
+                    if (error) { setErreur('Erreur : ' + error.message); set('apporteur_actif', ancien) }
                   }}
                   style={{width:14, height:14, accentColor:'var(--brand-700)'}} />
                 <span style={{fontSize:13, fontWeight:600, color: dossier.apporteur_actif ? 'var(--brand-800)' : 'var(--ink-500)'}}>
@@ -2569,7 +2936,7 @@ export default function FicheChantier({ params }) {
           <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap'}}>
             <div>
               <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)', marginBottom:2}}>Supprimer définitivement ce chantier</div>
-              <div style={{fontSize:12, color:'var(--ink-500)'}}>Cette action est irréversible — supprime le dossier et toutes ses données (devis, factures, photos, CR, documents, RDV, interventions, suivis, messages, contrat).</div>
+              <div style={{fontSize:12, color:'var(--ink-500)'}}>Cette action est irréversible — supprime le dossier et toutes ses données ({ENTITES_CHANTIER}).</div>
             </div>
             <button onClick={supprimerChantier} disabled={saving} className="btn btn-ghost"
               style={{fontSize:12.5, color:'#b91c1c', borderColor:'rgba(239,68,68,0.3)'}}>
@@ -2579,6 +2946,7 @@ export default function FicheChantier({ params }) {
         </div>
 
       </div>
+        </ModalShell>
       )}
 
       {/* ── DEVIS & ARTISANS ── */}
@@ -2620,11 +2988,10 @@ export default function FicheChantier({ params }) {
                     <input
                       type="number" step="0.1" min="0" max="20"
                       value={(dossier.taux_courtage ?? COURTAGE_STANDARD) * 100}
-                      onChange={async e => {
-                        const taux = parseFloat(e.target.value || 0) / 100
-                        set('taux_courtage', taux)
-                        await supabase.from('dossiers').update({ taux_courtage: taux }).eq('id', id)
-                      }}
+                      onFocus={() => { tauxAvantEditRef.current.taux_courtage = dossier.taux_courtage }}
+                      onChange={e => set('taux_courtage', parseFloat(e.target.value || 0) / 100)}
+                      onBlur={e => persistTaux('taux_courtage', parseFloat(e.target.value || 0) / 100)}
+                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                       className="input"
                       style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
                     />
@@ -2658,11 +3025,10 @@ export default function FicheChantier({ params }) {
                     <input
                       type="number" step="0.1" min="0" max="20"
                       value={dossier.honoraires_amo_taux ?? AMO_STANDARD * 100}
-                      onChange={async e => {
-                        const taux = parseFloat(e.target.value || 0)
-                        set('honoraires_amo_taux', taux)
-                        await supabase.from('dossiers').update({ honoraires_amo_taux: taux }).eq('id', id)
-                      }}
+                      onFocus={() => { tauxAvantEditRef.current.honoraires_amo_taux = dossier.honoraires_amo_taux }}
+                      onChange={e => set('honoraires_amo_taux', parseFloat(e.target.value || 0))}
+                      onBlur={e => persistTaux('honoraires_amo_taux', parseFloat(e.target.value || 0))}
+                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                       className="input"
                       style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
                     />
@@ -2852,7 +3218,8 @@ export default function FicheChantier({ params }) {
                                   return
                                 }
                               }
-                              await supabase.from('devis_artisans').update({ acompte_pourcentage: newVal }).eq('id', d.id)
+                              const { error } = await supabase.from('devis_artisans').update({ acompte_pourcentage: newVal }).eq('id', d.id)
+                              if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
                               await chargerDevis()
                             }}
                             className="input" style={{height:26, fontSize:11, padding:'0 6px', minWidth:80}}>
@@ -2865,7 +3232,8 @@ export default function FicheChantier({ params }) {
                             <input type="number" step="0.01" placeholder="Montant TTC" defaultValue={d.acompte_montant_fixe || ''}
                               onBlur={async e => {
                                 const v = e.target.value !== '' && Number.isFinite(parseFloat(e.target.value)) ? parseFloat(e.target.value) : null
-                                await supabase.from('devis_artisans').update({ acompte_montant_fixe: v }).eq('id', d.id)
+                                const { error } = await supabase.from('devis_artisans').update({ acompte_montant_fixe: v }).eq('id', d.id)
+                                if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
                                 await chargerDevis()
                               }}
                               className="input" style={{width:96, height:26, fontSize:11, padding:'0 6px'}} />
@@ -2952,8 +3320,10 @@ export default function FicheChantier({ params }) {
                                 style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>Voir PDF</button>
                               <button onClick={async () => {
                                 if (!confirm('Supprimer le PDF du devis ?')) return
-                                await supabase.storage.from('documents').remove([d.devis_pdf_path])
-                                await supabase.from('devis_artisans').update({ devis_pdf_path: null }).eq('id', d.id)
+                                const { error: rmErr } = await supabase.storage.from('documents').remove([d.devis_pdf_path])
+                                if (rmErr) console.error('Suppression PDF devis (non bloquant) :', rmErr.message)
+                                const { error } = await supabase.from('devis_artisans').update({ devis_pdf_path: null }).eq('id', d.id)
+                                if (error) { setErreur('Erreur : ' + error.message); return }
                                 await chargerDevis()
                               }} style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
                             </>
@@ -2975,7 +3345,8 @@ export default function FicheChantier({ params }) {
                                   const chemin = `chantiers/${id}/devis/${d.id}.${ext}`
                                   const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
                                   if (!error) {
-                                    await supabase.from('devis_artisans').update({ devis_pdf_path: chemin }).eq('id', d.id)
+                                    const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_pdf_path: chemin }).eq('id', d.id)
+                                    if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
                                     await chargerDevis()
                                     setSucces('Devis artisan uploadé ✓')
                                   } else { setErreur('Erreur upload : ' + error.message) }
@@ -3006,6 +3377,31 @@ export default function FicheChantier({ params }) {
                               {uploadingDoc === d.id ? 'Upload…' : '+ Uploader'}
                               <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id}
                                 onChange={e => e.target.files[0] && uploadDevisSigne(d.id, e.target.files[0])} />
+                            </label>
+                          )}
+                        </div>
+                      </div>
+                      {/* PV de réception */}
+                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                        <span style={{fontSize:11, color:'var(--ink-500)', fontWeight:600}}>📋 PV de réception</span>
+                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                          {d.pv_path ? (
+                            <>
+                              <button onClick={() => ouvrirDocument(d.pv_path, `PV réception ${d.artisan?.entreprise || ''}.pdf`)}
+                                style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>Voir PDF</button>
+                              <button onClick={() => supprimerPV(d.id, d.pv_path)}
+                                style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
+                            </>
+                          ) : (
+                            <label style={{
+                              fontSize:11, cursor: uploadingDoc === d.id ? 'wait' : 'pointer',
+                              padding:'3px 10px', borderRadius:6, border:'1px solid',
+                              color: uploadingDoc === d.id ? 'var(--ink-400)' : 'var(--brand-700)',
+                              borderColor: uploadingDoc === d.id ? 'var(--ink-200)' : 'var(--brand-200)',
+                            }}>
+                              {uploadingDoc === d.id ? 'Upload…' : '+ Uploader'}
+                              <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id}
+                                onChange={e => e.target.files[0] && uploadPV(d.id, e.target.files[0])} />
                             </label>
                           )}
                         </div>
@@ -3136,7 +3532,7 @@ export default function FicheChantier({ params }) {
                         🗂 Fiches techniques ({fichesTechChantier[d.artisan_id]?.length || 0})
                       </button>
                       {fichesPanelOuvert === d.id && (
-                        <FichesTechPanel artisanId={d.artisan_id} fichesCochees={fichesTechChantier[d.artisan_id] || []} onToggle={toggleFicheTech} />
+                        <FichesTechPanel artisanId={d.artisan_id} dossierId={id} fichesCochees={fichesTechChantier[d.artisan_id] || []} onToggle={toggleFicheTech} onCreated={chargerFichesTechChantier} />
                       )}
                     </div>
                     {/* Bouton intervention rapide sur devis accepté */}
@@ -3325,7 +3721,7 @@ export default function FicheChantier({ params }) {
               label={referentEstAdmin ? 'Net franchisée' : 'Net total'}
               value={fmt(totalNet)}
               sub={partAgenteCfg > 0
-                ? `Agente ${fmt(gainAgente)} · CTP ${fmt(gainAdmin)}`
+                ? `Agente ${fmt(gainAgente)} · Société ${fmt(gainAdmin)}`
                 : 'tout pour la franchisée'}
               tone="brand"
             />
@@ -3394,7 +3790,7 @@ export default function FicheChantier({ params }) {
                   date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || null}
                   onToggle={() => {
                     const newStatut = suiviCourtage?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                    majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'statut_client', newStatut)
+                    majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, newStatut)
                   }}
                   fmtDateFn={fmtD}
                 />
@@ -3409,7 +3805,7 @@ export default function FicheChantier({ params }) {
                   date={(suiviSoldeAMO?.statut_client === 'regle' && suiviSoldeAMO.date_paiement) || null}
                   onToggle={() => {
                     const newStatut = suiviSoldeAMO?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                    majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'statut_client', newStatut)
+                    majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, newStatut)
                   }}
                   fmtDateFn={fmtD}
                 />
@@ -3525,14 +3921,22 @@ export default function FicheChantier({ params }) {
                 )
               })}
             </div>
-            <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingPhoto ? 'wait' : 'pointer', opacity: uploadingPhoto ? 0.6 : 1}}>
-              <CamIcon /> {uploadingPhoto
-                ? 'Upload en cours…'
-                : `Ajouter des photos${categorie !== 'all' ? ` (${CATS.find(c => c.k === categorie)?.l})` : ''}`}
-              <input type="file" accept="image/*" multiple style={{display:'none'}}
-                disabled={uploadingPhoto || categorie === 'all'}
-                onChange={e => uploadPhotos(Array.from(e.target.files))} />
-            </label>
+            <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+              {photos.length > 0 && (
+                <button onClick={telechargerZipPhotos} disabled={zippingPhotos}
+                  className="btn btn-ghost" style={{fontSize:12.5}}>
+                  <DlIcon /> {zippingPhotos ? 'Préparation…' : 'Télécharger les photos'}
+                </button>
+              )}
+              <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingPhoto ? 'wait' : 'pointer', opacity: uploadingPhoto ? 0.6 : 1}}>
+                <CamIcon /> {uploadingPhoto
+                  ? 'Upload en cours…'
+                  : `Ajouter des photos${categorie !== 'all' ? ` (${CATS.find(c => c.k === categorie)?.l})` : ''}`}
+                <input type="file" accept="image/*" multiple style={{display:'none'}}
+                  disabled={uploadingPhoto || categorie === 'all'}
+                  onChange={e => uploadPhotos(Array.from(e.target.files))} />
+              </label>
+            </div>
           </div>
 
           {categorie === 'all' && (
@@ -3661,11 +4065,21 @@ export default function FicheChantier({ params }) {
                   {documents.length} fichier{documents.length > 1 ? 's' : ''}{documents.length > 0 && ` · ${fmtSize(totalKo)}`}
                 </div>
               </div>
-              <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingDocChantier ? 'wait' : 'pointer', opacity: uploadingDocChantier ? 0.6 : 1}}>
-                <DlIcon /> {uploadingDocChantier ? 'Upload…' : 'Ajouter un document'}
-                <input type="file" style={{display:'none'}} multiple disabled={uploadingDocChantier}
-                  onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files))} />
-              </label>
+              <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+                <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingDocChantier ? 'wait' : 'pointer', opacity: uploadingDocChantier ? 0.6 : 1}}>
+                  <DlIcon /> {uploadingDocChantier ? 'Upload…' : 'Ajouter un document'}
+                  <input type="file" style={{display:'none'}} multiple disabled={uploadingDocChantier}
+                    onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files))} />
+                </label>
+                <label className="btn btn-ghost" style={{fontSize:12.5, cursor: uploadingDocChantier ? 'wait' : 'pointer', opacity: uploadingDocChantier ? 0.6 : 1}}>
+                  <DlIcon /> {uploadingDocChantier ? 'Upload…' : 'Ajouter une facture honoraires'}
+                  <input type="file" style={{display:'none'}} accept="application/pdf" disabled={uploadingDocChantier}
+                    onChange={e => e.target.files.length && uploadDocumentChantier(
+                      Array.from(e.target.files),
+                      { categorie: 'facture_honoraire', dans_restitution: true }
+                    )} />
+                </label>
+              </div>
             </div>
             {documents.length === 0 ? (
               <div style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
@@ -3696,18 +4110,38 @@ export default function FicheChantier({ params }) {
                           }}>
                           {doc.nom}
                         </button>
-                        <div style={{fontSize:11, color:'var(--ink-500)', marginTop:2, textTransform:'uppercase', letterSpacing:0.04}}>{meta.label}</div>
+                        <div style={{display:'flex', alignItems:'center', gap:6, marginTop:2}}>
+                          <span style={{fontSize:11, color:'var(--ink-500)', textTransform:'uppercase', letterSpacing:0.04}}>{meta.label}</span>
+                          {doc.categorie === 'compte_rendu' && (
+                            <span style={{fontSize:10, fontWeight:800, letterSpacing:0.04, padding:'1px 6px', borderRadius:5, background:'rgba(0,148,212,0.12)', color:'#0094d4'}}>Compte-rendu</span>
+                          )}
+                          {doc.categorie === 'facture_honoraire' && (
+                            <span style={{fontSize:10, fontWeight:800, background:'rgba(234,88,12,0.12)', color:'#ea580c', borderRadius:4, padding:'1px 5px'}}>FACT</span>
+                          )}
+                        </div>
                       </div>
-                      <label style={{display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:11, color:'var(--ink-500)'}}>
-                        <input type="checkbox" checked={doc.dans_restitution || false}
-                          onChange={e => toggleDansRestitution(doc.id, e.target.checked)}
-                          style={{accentColor:'var(--brand-500)'}} />
-                        Restitution
-                      </label>
+                      {doc.categorie !== 'facture_honoraire' ? (
+                        <label style={{display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:11, color:'var(--ink-500)'}}>
+                          <input type="checkbox" checked={doc.dans_restitution || false}
+                            onChange={e => toggleDansRestitution(doc.id, e.target.checked)}
+                            style={{accentColor:'var(--brand-500)'}} />
+                          Restitution
+                        </label>
+                      ) : (
+                        <span style={{color:'#16a34a', fontSize:13}} title="Inclus dans la restitution">✓</span>
+                      )}
                       <div className="tnum" style={{fontSize:11.5, color:'var(--ink-500)', whiteSpace:'nowrap'}}>
                         {doc.taille ? fmtSize(doc.taille / 1024) : '—'}
                       </div>
                       <div style={{display:'flex', gap:4}}>
+                        {doc.categorie !== 'facture_honoraire' && (
+                          <button onClick={() => toggleCategorieCR(doc.id, doc.categorie !== 'compte_rendu')}
+                            className="btn btn-ghost"
+                            style={{padding:'4px 8px', fontSize:11, fontWeight:700, color: doc.categorie === 'compte_rendu' ? '#0094d4' : 'var(--ink-400)'}}
+                            title={doc.categorie === 'compte_rendu' ? 'Retirer de la catégorie Compte-rendu' : 'Marquer comme compte-rendu'}>
+                            {doc.categorie === 'compte_rendu' ? '✓ CR' : 'CR'}
+                          </button>
+                        )}
                         <button onClick={() => ouvrirDocument(doc.path, doc.nom)}
                           className="btn btn-ghost" style={{padding:'4px 8px'}} title="Voir">
                           <EyeIcon />
@@ -3723,6 +4157,148 @@ export default function FicheChantier({ params }) {
               </div>
             )}
           </div>
+        </div>
+        )
+      })()}
+
+      {/* ── COMPARATEUR DE DEVIS ── */}
+      {onglet === 'comparateur' && (() => {
+        const thStyle = { padding:'10px 12px', textAlign:'center', fontSize:11, color:'var(--ink-500)', fontWeight:600, borderBottom:'1px solid var(--ink-200)', whiteSpace:'nowrap' }
+        const tdStyle = { padding:'8px 12px', textAlign:'center', color:'var(--ink-700)', whiteSpace:'nowrap' }
+        const linkBtn = { border:'none', background:'none', cursor:'pointer', fontSize:11, color:'var(--brand-700)', textDecoration:'underline' }
+
+        const devisById   = Object.fromEntries(devis.map(d => [d.id, d]))
+        const montantLigne = (l) => {
+          if (l.montant_ttc_override != null) return Number(l.montant_ttc_override) || 0
+          return Number(devisById[l.devis_artisan_id]?.montant_ttc) || 0
+        }
+        const ligneFor = (sim, devisId) => (sim.lignes || []).find(l => l.devis_artisan_id === devisId)
+        const totauxSim = (sim) => {
+          const totalTTC = (sim.lignes || []).filter(l => l.inclus).reduce((s, l) => s + montantLigne(l), 0)
+          const honCourtage = totalTTC * (Number(sim.taux_courtage) || 0) / 100
+          const honAMO      = totalTTC * (Number(sim.taux_amo) || 0) / 100
+          return { totalTTC, honCourtage, honAMO, totalCourtage: totalTTC + honCourtage, totalAMO: totalTTC + honAMO }
+        }
+        const totalBaseTTC = devis.reduce((s, d) => s + (Number(d.montant_ttc) || 0), 0)
+
+        return (
+        <div style={{display:'flex', flexDirection:'column', gap:14}}>
+          <div className="card" style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap'}}>
+            <div>
+              <h2 className="page" style={{fontSize:15}}>Comparateur de devis</h2>
+              <div className="eyebrow" style={{marginTop:4}}>Simule des scénarios : inclusion des devis, montants ajustés, taux d'honoraires.</div>
+            </div>
+            <button onClick={ajouterSimulation} className="btn btn-primary" style={{fontSize:12.5}}>
+              <PlusIcon /> Nouvelle simulation
+            </button>
+          </div>
+
+          {loadingComparateur ? (
+            <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Chargement…</div>
+          ) : devis.length === 0 ? (
+            <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucun devis à comparer — ajoute des devis dans l'onglet « Devis & artisans ».</div>
+          ) : simulations.length === 0 ? (
+            <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucune simulation — clique « Nouvelle simulation ».</div>
+          ) : (
+            <div className="card" style={{padding:0, overflowX:'auto'}}>
+              <table style={{width:'100%', borderCollapse:'collapse', fontSize:12.5, minWidth: 320 + simulations.length * 180}}>
+                <thead>
+                  <tr>
+                    <th style={{...thStyle, textAlign:'left', minWidth:190}}>Devis / artisan</th>
+                    <th style={{...thStyle, minWidth:110}}>Base</th>
+                    {simulations.map(sim => (
+                      <th key={sim.id} style={{...thStyle, minWidth:170}}>
+                        <div style={{display:'flex', flexDirection:'column', gap:4, alignItems:'center'}}>
+                          <span style={{fontWeight:700, color:'var(--ink-900)', fontSize:12.5}}>{sim.nom}</span>
+                          {editingTaux === sim.id ? (
+                            <TauxEditor sim={sim} onSave={saveTaux} onCancel={() => setEditingTaux(null)} />
+                          ) : (
+                            <button onClick={() => setEditingTaux(sim.id)} style={linkBtn}>
+                              Courtage&nbsp;{sim.taux_courtage}% · AMO&nbsp;{sim.taux_amo}%
+                            </button>
+                          )}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {devis.map(d => (
+                    <tr key={d.id} style={{borderTop:'1px solid var(--ink-100)'}}>
+                      <td style={{...tdStyle, textAlign:'left', whiteSpace:'normal'}}>
+                        <div style={{fontWeight:600, color:'var(--ink-900)'}}>{d.artisan?.entreprise || '—'}</div>
+                        {d.artisan?.metier && <div style={{fontSize:11, color:'var(--ink-500)'}}>{d.artisan.metier}</div>}
+                      </td>
+                      <td style={{...tdStyle, fontWeight:600}} className="tnum">{fmt(d.montant_ttc || 0)}</td>
+                      {simulations.map(sim => {
+                        const l = ligneFor(sim, d.id)
+                        if (!l) return <td key={sim.id} style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                        return (
+                          <td key={sim.id} style={{...tdStyle, opacity: l.inclus ? 1 : 0.45}}>
+                            <div style={{display:'flex', alignItems:'center', justifyContent:'center', gap:6}}>
+                              <button onClick={() => toggleInclus(sim.id, l.id, !l.inclus)}
+                                title={l.inclus ? 'Exclure de la simulation' : 'Inclure dans la simulation'}
+                                style={{border:'none', background:'none', cursor:'pointer', fontSize:13, fontWeight:700, color: l.inclus ? '#15803d' : '#b91c1c'}}>
+                                {l.inclus ? '✓' : '✗'}
+                              </button>
+                              {editingMontant === l.id ? (
+                                <input type="number" autoFocus defaultValue={l.montant_ttc_override ?? ''}
+                                  placeholder={String(d.montant_ttc ?? '')}
+                                  onBlur={e => saveMontant(sim.id, l.id, e.target.value)}
+                                  onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                                  style={{width:90, fontSize:12, padding:'2px 4px', border:'1px solid var(--ink-200)', borderRadius:6, textAlign:'right'}} />
+                              ) : (
+                                <button onClick={() => setEditingMontant(l.id)} className="tnum"
+                                  title="Modifier le montant pour cette simulation"
+                                  style={{border:'none', background:'none', cursor:'pointer', color: l.montant_ttc_override != null ? '#0094d4' : 'var(--ink-700)', fontWeight: l.montant_ttc_override != null ? 700 : 400}}>
+                                  {fmt(montantLigne(l))}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+
+                  <tr style={{borderTop:'2px solid var(--ink-300)', background:'var(--surface-2)'}}>
+                    <td style={{...tdStyle, textAlign:'left', fontWeight:700}}>Total TTC</td>
+                    <td style={{...tdStyle, fontWeight:700}} className="tnum">{fmt(totalBaseTTC)}</td>
+                    {simulations.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700}} className="tnum">{fmt(totauxSim(sim).totalTTC)}</td>)}
+                  </tr>
+                  <tr style={{borderTop:'1px solid var(--ink-100)'}}>
+                    <td style={{...tdStyle, textAlign:'left'}}>Honoraires courtage</td>
+                    <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                    {simulations.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honCourtage)}</td>)}
+                  </tr>
+                  <tr>
+                    <td style={{...tdStyle, textAlign:'left'}}>Honoraires AMO</td>
+                    <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                    {simulations.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honAMO)}</td>)}
+                  </tr>
+                  <tr style={{borderTop:'1px solid var(--ink-200)'}}>
+                    <td style={{...tdStyle, textAlign:'left', fontWeight:700, color:'var(--brand-800)'}}>Total chantier courtage</td>
+                    <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                    {simulations.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--brand-800)'}} className="tnum">{fmt(totauxSim(sim).totalCourtage)}</td>)}
+                  </tr>
+                  <tr>
+                    <td style={{...tdStyle, textAlign:'left', fontWeight:700, color:'var(--brand-800)'}}>Total chantier AMO</td>
+                    <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                    {simulations.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--brand-800)'}} className="tnum">{fmt(totauxSim(sim).totalAMO)}</td>)}
+                  </tr>
+                  <tr style={{borderTop:'1px solid var(--ink-100)'}}>
+                    <td style={tdStyle}></td>
+                    <td style={tdStyle}></td>
+                    {simulations.map(sim => (
+                      <td key={sim.id} style={tdStyle}>
+                        <button onClick={() => supprimerSimulation(sim.id)} className="btn btn-ghost" style={{fontSize:11, color:'#b91c1c'}}>Supprimer</button>
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
         )
       })()}
@@ -3758,6 +4334,9 @@ export default function FicheChantier({ params }) {
                   visite_technique_client:  { label:'R1 — Visite client',         color:'#0094d4' },
                   visite_technique_artisan: { label:'R2 — Visite artisan',        color:'#16a34a' },
                   presentation_devis:       { label:'R3 — Présentation devis',    color:'#f59e0b' },
+                  suivi:                    { label:'Suivi de chantier',          color:'#7c3aed' },
+                  reception:                { label:'Réception',                  color:'#10b981' },
+                  etude:                    { label:'Étude/conception',           color:'#e05252' },
                   autres:                   { label: r.titre || 'Autre RDV',      color:'#94a3b8' },
                 }[r.type_rdv] || { label:r.type_rdv, color:'#94a3b8' }
                 return (
@@ -3779,7 +4358,7 @@ export default function FicheChantier({ params }) {
                       </div>
                     </div>
                     <div style={{display:'flex', gap:4}}>
-                      <button onClick={() => { setRdvEnEdition(r); setModalRdvOuvert(true) }}
+                      <button onClick={() => { setRdvEnEdition({ ...r, date_heure: instantToParisLocal(r.date_heure) }); setModalRdvOuvert(true) }}
                         className="btn btn-ghost" style={{padding:'4px 6px'}} title="Modifier">
                         <EditIcon />
                       </button>
@@ -3858,10 +4437,13 @@ export default function FicheChantier({ params }) {
             ? (patch) => setRdvEnEdition(r => ({ ...r, ...(typeof patch === 'function' ? patch(r) : patch) }))
             : (patch) => setNouveauRdvDossier(f => ({ ...f, ...(typeof patch === 'function' ? patch(f) : patch) }))
           const types = [
-            { k: 'visite_technique_client',  l: 'R1',    sub: 'Visite client',        color: '#0094d4' },
-            { k: 'visite_technique_artisan', l: 'R2',    sub: 'Visite artisan',       color: '#16a34a' },
-            { k: 'presentation_devis',       l: 'R3',    sub: 'Présentation devis',   color: '#f59e0b' },
-            { k: 'autres',                   l: 'Autre', sub: 'RDV libre',            color: '#94a3b8' },
+            { k: 'visite_technique_client',  l: 'R1',       sub: 'Visite client',        color: '#0094d4' },
+            { k: 'visite_technique_artisan', l: 'R2',       sub: 'Visite artisan',       color: '#16a34a' },
+            { k: 'presentation_devis',       l: 'R3',       sub: 'Présentation devis',   color: '#f59e0b' },
+            { k: 'suivi',                    l: 'Suivi',    sub: 'Suivi de chantier',    color: '#7c3aed' },
+            { k: 'reception',                l: 'Réception',sub: 'Réception',            color: '#10b981' },
+            { k: 'etude',                    l: 'Étude',    sub: 'Étude/conception',     color: '#e05252' },
+            { k: 'autres',                   l: 'Autre',    sub: 'RDV libre',            color: '#94a3b8' },
           ]
           const dateOnly = (form.date_heure || '').slice(0, 10)
           const timeOnly = (form.date_heure || '').slice(11, 16)
@@ -3893,7 +4475,7 @@ export default function FicheChantier({ params }) {
                     {types.map(t => {
                       const active = form.type_rdv === t.k
                       return (
-                        <button key={t.k} type="button" onClick={() => setForm({ type_rdv: t.k })}
+                        <button key={t.k} type="button" onClick={() => setForm(f => ({ type_rdv: t.k, artisan_id: ['visite_technique_artisan', 'reception'].includes(t.k) ? f.artisan_id : '' }))}
                           style={{
                             padding:'10px 6px', borderRadius:8, border:'1px solid',
                             borderColor: active ? t.color : 'var(--ink-200)',
@@ -3951,7 +4533,7 @@ export default function FicheChantier({ params }) {
                   </ModalField>
                 </div>
 
-                {form.type_rdv === 'visite_technique_artisan' && (
+                {['visite_technique_artisan', 'reception'].includes(form.type_rdv) && (
                   <ModalField label="Artisan présent">
                     <select className="input"
                       value={form.artisan_id || ''}
@@ -4170,6 +4752,7 @@ export default function FicheChantier({ params }) {
               {comptesRendus.map(cr => {
                 const meta = typeMeta[cr.type_visite] || { color: '#94a3b8', label: cr.type_visite, long: cr.type_visite }
                 const fmtD = cr.date_visite ? new Date(cr.date_visite).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' }) : null
+                const apercu = stripMarkdown(cr.contenu_final)
                 return (
                   <div key={cr.id} style={{
                     padding:16, border:'1px solid var(--ink-200)', borderRadius:12, background:'#fff', position:'relative',
@@ -4194,11 +4777,19 @@ export default function FicheChantier({ params }) {
                         <span className="tnum" style={{fontSize:11.5, color:'var(--ink-400)'}}>{fmtD}</span>
                       )}
                     </div>
-                    {cr.contenu_final && (
-                      <p className="clip-2" style={{fontSize:13, color:'var(--ink-700)', lineHeight:1.55, margin:0}}>
-                        {cr.contenu_final.slice(0, 300)}{cr.contenu_final.length > 300 ? '…' : ''}
+                    {cr.contenu_final && (crOuvert === cr.id ? (
+                      <div>
+                        <MarkdownCR text={cr.contenu_final} variant="staff" />
+                        <button onClick={() => setCrOuvert(null)} className="btn btn-ghost" style={{padding:'3px 10px', fontSize:11, marginTop:8}}>
+                          ▲ Replier
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="clip-2" onClick={() => setCrOuvert(cr.id)} title="Voir le CR complet"
+                        style={{fontSize:13, color:'var(--ink-700)', lineHeight:1.55, margin:0, cursor:'pointer'}}>
+                        {apercu.slice(0, 200)}{apercu.length > 200 ? '…' : ''} <span style={{color:'var(--ink-400)'}}>▼</span>
                       </p>
-                    )}
+                    ))}
                     <div style={{
                       display:'flex', gap:8, marginTop:12, paddingTop:10,
                       borderTop:'1px solid var(--ink-100)', fontSize:11, color:'var(--ink-500)',
@@ -4219,6 +4810,59 @@ export default function FicheChantier({ params }) {
                 )
               })}
             </div>
+
+            {/* ── Section : documents uploadés marqués compte-rendu (Lot 3) ──
+                Vue additionnelle (pas une fusion) : on liste les chantier_documents
+                tagués 'compte_rendu', distincts des CR générés ci-dessus. Filtre
+                réactif sur le state `documents` → dé-taguer fait disparaître la ligne. */}
+            {(() => {
+              const docTypeLabel = (doc) => {
+                const m = (doc.type_mime || '').toLowerCase()
+                const n = (doc.nom || '').toLowerCase()
+                if (m.includes('pdf') || n.endsWith('.pdf')) return 'pdf'
+                if (m.startsWith('image') || /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(n)) return 'image'
+                if (m.includes('word') || /\.(doc|docx)$/i.test(n)) return 'word'
+                if (m.includes('excel') || /\.(xls|xlsx)$/i.test(n)) return 'tableur'
+                return 'fichier'
+              }
+              const docsCR = documents.filter(d => d.categorie === 'compte_rendu')
+              return (
+                <div style={{borderTop:'1px solid var(--ink-200)', padding:'14px 22px'}}>
+                  <h3 className="page" style={{fontSize:13.5}}>Documents joints marqués compte-rendu</h3>
+                  <div className="eyebrow" style={{marginTop:4, marginBottom:10}}>
+                    Fichiers uploadés dans l'onglet Documents et tagués CR ({docsCR.length})
+                  </div>
+                  {docsCR.length === 0 ? (
+                    <div style={{fontSize:12.5, color:'var(--ink-400)'}}>
+                      Aucun document marqué compte-rendu — taguez un fichier depuis l'onglet Documents (bouton « CR »).
+                    </div>
+                  ) : docsCR.map(doc => (
+                    <div key={doc.id} className="row-hover" style={{
+                      display:'flex', alignItems:'center', gap:12, padding:'10px 6px', borderBottom:'1px solid var(--ink-100)',
+                    }}>
+                      <div style={{width:32, height:32, borderRadius:8, background:'rgba(0,148,212,0.12)', color:'#0094d4', display:'grid', placeItems:'center', flex:'0 0 32px'}}>
+                        <DocIcon />
+                      </div>
+                      <button onClick={() => ouvrirDocument(doc.path, doc.nom)} className="clip-1" style={{
+                        flex:1, minWidth:0, fontSize:13, fontWeight:600, color:'var(--ink-900)',
+                        background:'none', border:'none', cursor:'pointer', padding:0, textAlign:'left',
+                      }}>
+                        {doc.nom}
+                      </button>
+                      <span style={{fontSize:11, color:'var(--ink-500)', textTransform:'uppercase', letterSpacing:0.04}}>{docTypeLabel(doc)}</span>
+                      <button onClick={() => ouvrirDocument(doc.path, doc.nom)} className="btn btn-ghost" style={{padding:'4px 8px'}} title="Voir">
+                        <EyeIcon />
+                      </button>
+                      <button onClick={() => toggleCategorieCR(doc.id, false)} className="btn btn-ghost"
+                        style={{padding:'4px 8px', fontSize:11, fontWeight:700, color:'#0094d4'}}
+                        title="Retirer de la catégorie Compte-rendu">
+                        ✓ CR
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
           </div>
 
           {/* Sidebar IA */}
@@ -4317,17 +4961,6 @@ export default function FicheChantier({ params }) {
                 className="input" style={{minHeight:200, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
             </ModalField>
 
-            <ModalField label="Document PDF (optionnel)">
-              <label style={{
-                display:'inline-flex', alignItems:'center', gap:8, fontSize:12, color:'var(--ink-600)',
-                border:'1px solid var(--ink-200)', borderRadius:8, padding:'8px 12px',
-                cursor:'pointer', alignSelf:'flex-start', background:'#fff',
-              }}>
-                {crManuelForm.fichier ? `✓ ${crManuelForm.fichier.name}` : '+ Joindre un PDF'}
-                <input type="file" accept=".pdf" style={{display:'none'}}
-                  onChange={e => setCrManuelForm(f => ({ ...f, fichier: e.target.files[0] || null }))} />
-              </label>
-            </ModalField>
           </div>
         </ModalShell>
       )}
@@ -4670,7 +5303,10 @@ export default function FicheChantier({ params }) {
               const who = isClient
                 ? (msg.auteur?.prenom ? `${msg.auteur.prenom}${msg.auteur.nom ? ' ' + msg.auteur.nom : ''}` : (client ? `${client.prenom || ''} ${client.nom || ''}`.trim() : 'Client'))
                 : (msg.auteur?.prenom ? `${msg.auteur.prenom}${msg.auteur.nom ? ' ' + msg.auteur.nom[0] + '.' : ''}` : 'Équipe')
-              const when = new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+              const when = fmtDateHeureFR(msg.created_at)
+              const editable = msg.auteur_id === profile?.id
+                && !String(msg.id).startsWith('tmp-')
+                && estDansDelaiEdition(msg.created_at)
               return (
                 <div key={msg.id} style={{display:'flex', gap:10, justifyContent: isClient ? 'flex-start' : 'flex-end'}}>
                   {isClient && <Avatar name={who} color="#0094d4" size={28} />}
@@ -4685,10 +5321,26 @@ export default function FicheChantier({ params }) {
                       wordBreak: 'break-word',
                       opacity: String(msg.id).startsWith('tmp-') ? 0.7 : 1,
                     }}>
-                      {msg.contenu}
+                      {editingMsgId === msg.id ? (
+                        <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                          <textarea value={editMsgText} onChange={e => setEditMsgText(e.target.value)} rows={2} autoFocus
+                            style={{width:'100%', resize:'vertical', borderRadius:8, border:'1px solid var(--ink-200)', padding:'6px 8px', fontSize:13.5, color:'var(--ink-900)', background:'#fff'}} />
+                          {editMsgError && <div style={{fontSize:11, color:'#fecaca', fontWeight:600}}>{editMsgError}</div>}
+                          <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
+                            <button onClick={annulerEditionMsg} style={{fontSize:11, background:'transparent', border:0, color:'inherit', opacity:0.85, cursor:'pointer'}}>Annuler</button>
+                            <button onClick={() => modifierMessage(msg)} disabled={!editMsgText.trim()} style={{fontSize:11, fontWeight:700, background:'#fff', color:'var(--brand-700)', border:0, borderRadius:6, padding:'2px 10px', cursor:'pointer'}}>Valider</button>
+                          </div>
+                        </div>
+                      ) : (
+                        msg.contenu
+                      )}
                     </div>
                     <div style={{fontSize:10.5, color:'var(--ink-400)', marginTop:4, textAlign: isClient ? 'left' : 'right'}}>
-                      {who} · {when}
+                      {who} · {when}{msg.edited_at ? ' (modifié)' : ''}
+                      {editable && editingMsgId !== msg.id && (
+                        <button onClick={() => { setEditingMsgId(msg.id); setEditMsgText(msg.contenu); setEditMsgError('') }}
+                          style={{marginLeft:8, fontSize:10.5, background:'transparent', border:0, color:'var(--brand-600)', cursor:'pointer', textDecoration:'underline', padding:0}}>modifier</button>
+                      )}
                     </div>
                   </div>
                   {!isClient && <Avatar name={who} color="#00578e" size={28} />}

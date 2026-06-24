@@ -29,6 +29,7 @@ const PinIcon      = () => <Icon><line x1="12" y1="17" x2="12" y2="22"/><path d=
 const LogOutIcon   = () => <Icon d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" d2="M16 17l5-5-5-5"><line x1="21" y1="12" x2="9" y2="12"/></Icon>
 const MenuIcon     = () => <Icon><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></Icon>
 const CloseIcon    = () => <Icon><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></Icon>
+const UserIcon     = () => <Icon><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></Icon>
 
 const NAV_GROUPS = [
   {
@@ -57,6 +58,7 @@ const NAV_GROUPS = [
   {
     label: 'Système',
     items: [
+      { href: '/profil',       label: 'Mon profil',       Icon: UserIcon, agenteOnly: true },
       { href: '/parametres',   label: 'Paramètres',       Icon: SettingsIcon, adminOnly: true },
     ],
   },
@@ -82,7 +84,7 @@ export default function NavBar() {
   const [hover, setHover] = useState(false)
   const [pinned, setPinned] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { profile, displayAgenceName, unreadCount } = useAuth()
+  const { profile, displayAgenceName, agences, agenceActive, setAgenceActive, unreadCount, unreadMessages } = useAuth()
 
   // Close mobile drawer on route change
   useEffect(() => { setMobileOpen(false) }, [pathname])
@@ -96,7 +98,7 @@ export default function NavBar() {
     }
   }, [mobileOpen])
 
-  const hidden = ['/', '/login', '/espace-client'].some(
+  const hidden = ['/', '/login', '/login-client', '/espace-client'].some(
     p => pathname === p || pathname?.startsWith('/espace-client')
   )
   if (hidden || !profile) return null
@@ -108,6 +110,13 @@ export default function NavBar() {
 
   const isActive = (href) => pathname?.startsWith(href)
   const open = pinned || hover || mobileOpen
+
+  // Bi-zone : seulement pour un admin avec ≥2 agences. Sinon navbar inchangée.
+  const isMultiAdmin = profile.role === 'admin' && agences.length >= 2
+  // Sous-titre logo : en multi-agences, reflète la vue active ; sinon inchangé.
+  const subtitle = isMultiAdmin
+    ? (agenceActive ? (agences.find(a => a.id === agenceActive)?.nom ?? '') : 'Toutes les agences')
+    : displayAgenceName
 
   const initials = `${profile.prenom?.[0] ?? ''}${profile.nom?.[0] ?? ''}`.toUpperCase()
   const roleLabel = profile.role === 'admin' ? 'Franchisée' : profile.role === 'agente' ? 'Agente' : 'Membre'
@@ -146,7 +155,7 @@ export default function NavBar() {
             <div className="logo-mark">Ba</div>
             <div className="logo-text">
               BATILIS
-              <span className="muted">{displayAgenceName || ' '}</span>
+              <span className="muted">{subtitle || ' '}</span>
             </div>
             <button
               className="mobile-close-btn"
@@ -166,10 +175,37 @@ export default function NavBar() {
             <PinIcon />
           </button>
 
+          {/* Zone agences (bi-zone) — admin ≥2 agences uniquement, et navbar déployée.
+              Clic = change la vue active SANS naviguer. Aucun scoping d'écran (Lot 4). */}
+          {isMultiAdmin && open && (
+            <div style={{ padding: '8px 8px 10px', borderBottom: '1px solid var(--ink-100)' }}>
+              <div className="nav-section-label">Agences</div>
+              <button
+                className={`nav-item${agenceActive === null ? ' active' : ''}`}
+                onClick={() => setAgenceActive(null)}
+                style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                <span className="nav-label">Toutes les agences</span>
+              </button>
+              {agences.map(ag => (
+                <button
+                  key={ag.id}
+                  className={`nav-item${agenceActive === ag.id ? ' active' : ''}`}
+                  onClick={() => setAgenceActive(ag.id)}
+                  style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  <span className="nav-label">{ag.nom}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Nav */}
           <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 0' }}>
             {NAV_GROUPS.map(group => {
-              const visibleItems = group.items.filter(item => !item.adminOnly || profile?.role === 'admin')
+              const visibleItems = group.items.filter(item =>
+                (!item.adminOnly  || profile?.role === 'admin') &&
+                (!item.agenteOnly || profile?.role === 'agente'))
               if (visibleItems.length === 0) return null
               return (
                 <div key={group.label}>
@@ -178,6 +214,7 @@ export default function NavBar() {
                     <NavItem
                       key={item.href}
                       {...item}
+                      badge={item.href === '/messagerie' ? (unreadMessages > 0 ? unreadMessages : null) : item.badge}
                       active={isActive(item.href)}
                       open={open}
                     />

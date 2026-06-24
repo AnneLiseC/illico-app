@@ -3,6 +3,9 @@ import { useState, useEffect, use, Suspense } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '../../lib/auth-context'
+import { archiverClient, desarchiverClient, supprimerClient, formatNomClient } from '../../lib/clients'
+import { StatutBadge } from '../../components/shared'
+import { calcStatut } from '../../lib/dossiers'
 
 function Svg({ size = 16, children }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -14,6 +17,8 @@ const PhoneIcon   = ({ size=16 }) => <Svg size={size}><path d="M22 16.92v3a2 2 0
 const MailIcon    = ({ size=16 }) => <Svg size={size}><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></Svg>
 const EditIcon    = ({ size=16 }) => <Svg size={size}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></Svg>
 const PlusIcon    = ({ size=16 }) => <Svg size={size}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></Svg>
+const ArchiveIcon = ({ size=16 }) => <Svg size={size}><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></Svg>
+const TrashIcon   = ({ size=16 }) => <Svg size={size}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></Svg>
 const CalIcon     = ({ size=16 }) => <Svg size={size}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></Svg>
 
 const fmtEur  = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
@@ -26,16 +31,6 @@ const diffJours = (d) => {
   return Math.round((Date.now() - new Date(d)) / 86400000)
 }
 
-const STATUTS = {
-  a_contacter:       { label: 'À contacter',    bg: 'rgba(234,179,8,0.1)',  color: '#a16207' },
-  a_relancer:        { label: 'À relancer',      bg: 'rgba(249,115,22,0.1)', color: '#c2410c' },
-  devis_en_attente:  { label: 'Devis en attente', bg: 'rgba(234,179,8,0.1)', color: '#a16207' },
-  devis_a_modifier:  { label: 'Devis à modifier', bg: 'rgba(249,115,22,0.1)', color: '#c2410c' },
-  en_cours_chantier: { label: 'En cours',        bg: 'rgba(22,163,74,0.1)', color: '#15803d' },
-  termine:           { label: 'Terminé',          bg: 'var(--ink-100)',      color: 'var(--ink-500)' },
-  annule:            { label: 'Annulé',           bg: 'rgba(239,68,68,0.1)', color: '#dc2626' },
-}
-
 const TYPOLOGIES = {
   courtage:          { label: 'Courtage',           bg: 'rgba(0,148,212,0.1)',   color: 'var(--brand-800)' },
   amo:               { label: 'AMO',                bg: 'rgba(124,58,237,0.1)', color: '#7c3aed' },
@@ -43,17 +38,6 @@ const TYPOLOGIES = {
   merad:             { label: 'MERAD',              bg: 'rgba(249,115,22,0.1)', color: '#c2410c' },
   audit_energetique: { label: 'Audit énergétique',  bg: 'rgba(22,163,74,0.1)', color: '#15803d' },
   studio_jardin:     { label: 'Studio de jardin',   bg: 'rgba(236,72,153,0.1)', color: '#be185d' },
-}
-
-function StatutBadge({ statut }) {
-  const s = STATUTS[statut] || { label: statut, bg: 'var(--ink-100)', color: 'var(--ink-500)' }
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', padding: '2px 10px',
-      borderRadius: 99, fontSize: 11.5, fontWeight: 700,
-      background: s.bg, color: s.color, whiteSpace: 'nowrap',
-    }}>{s.label}</span>
-  )
 }
 
 function TypoBadge({ typo }) {
@@ -182,6 +166,31 @@ function FicheClientInner({ params }) {
     setSaving(false)
   }
 
+  // Archiver un client qui a des dossiers (le trigger DB propage sur ses dossiers).
+  const handleArchiver = async () => {
+    if (!confirm('Archiver ce client ? Ses dossiers seront masqués des vues opérationnelles (conservés en compta). Réversible.')) return
+    const { error } = await archiverClient(supabase, id)
+    if (error) { setErreur(error.message); return }
+    router.push('/clients')
+  }
+
+  // Supprimer définitivement un client SANS dossier (le helper mappe l'erreur FK 23503).
+  const handleSupprimer = async () => {
+    if (!confirm('Supprimer définitivement ce client ? Cette action est irréversible.')) return
+    const { error } = await supprimerClient(supabase, id)
+    if (error) { setErreur(error.message); return }
+    router.push('/clients')
+  }
+
+  // Désarchiver le client (le trigger DB propage sur ses dossiers). On reste sur la
+  // fiche : maj locale archive=false → la fiche redevient « active » sur place.
+  const handleDesarchiver = async () => {
+    if (!confirm('Désarchiver ce client ? Il réapparaîtra dans les vues opérationnelles.')) return
+    const { error } = await desarchiverClient(supabase, id)
+    if (error) { setErreur(error.message); return }
+    setClient(c => ({ ...c, archive: false }))
+  }
+
   const estCouple = ['M. et Mme', 'Mme et Mme', 'M. et M.'].includes(client?.civilite)
 
   if (loading) return <div className="page-loading" />
@@ -193,9 +202,7 @@ function FicheClientInner({ params }) {
   const isPro = client.type_client === 'professionnel'
   const initials = `${(client.prenom || '').charAt(0)}${(client.nom || '').charAt(0)}`.toUpperCase()
 
-  const nomDisplay = estCouple
-    ? `${client.civilite} ${client.prenom} ${(client.nom || '').toUpperCase()} & ${client.prenom2 || ''} ${(client.nom2 || '').toUpperCase()}`.trim()
-    : `${client.civilite} ${client.prenom} ${(client.nom || '').toUpperCase()}`
+  const nomDisplay = formatNomClient(client, { civilite: true, upper: true })
 
   const montantTotal = dossiers.reduce((s, d) =>
     s + (d.devis_artisans || []).filter(dv => dv.statut === 'accepte')
@@ -207,7 +214,7 @@ function FicheClientInner({ params }) {
   const dernierRdv = allRdvs[allRdvs.length - 1] || null
 
   const signesCount = dossiers.filter(d => d.contrat_signe === true).length
-  const clientActif = dossiers.some(d => d.statut === 'en_cours_chantier')
+  const clientActif = dossiers.some(d => calcStatut(d) === 'en_cours_chantier')
 
   const ECHEANCE_LABELS = {
     acompte_amo:         'Acompte AMO reçu',
@@ -260,6 +267,16 @@ function FicheClientInner({ params }) {
           <span style={{ color: 'var(--ink-300)' }}>/</span>
           <span style={{ color: 'var(--ink-700)', fontWeight: 600 }}>{nomDisplay}</span>
         </div>
+
+        {/* Bandeau client archivé */}
+        {client.archive && (
+          <div style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12, color: '#a16207' }}>
+            <span style={{ fontSize: 20 }}>📦</span>
+            <div style={{ fontSize: 13 }}>
+              <strong>Client archivé.</strong> Ses dossiers sont masqués des vues opérationnelles (conservés en comptabilité).
+            </div>
+          </div>
+        )}
 
         {/* Hero card */}
         <div className="card" style={{ padding: 28 }}>
@@ -315,9 +332,24 @@ function FicheClientInner({ params }) {
                   <MailIcon size={14}/>
                 </a>
               )}
-              <button className="btn btn-primary" onClick={() => router.push(`/chantiers/nouveau?client=${id}`)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <PlusIcon size={14}/> Nouveau dossier
-              </button>
+              {!client.archive && (
+                <button className="btn btn-primary" onClick={() => router.push(`/chantiers/nouveau?client=${id}`)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <PlusIcon size={14}/> Nouveau dossier
+                </button>
+              )}
+              {client.archive ? (
+                <button className="btn btn-ghost" onClick={handleDesarchiver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <ArchiveIcon size={14}/> Désarchiver
+                </button>
+              ) : dossiers.length > 0 ? (
+                <button className="btn btn-ghost" onClick={handleArchiver} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <ArchiveIcon size={14}/> Archiver
+                </button>
+              ) : (
+                <button className="btn btn-ghost" onClick={handleSupprimer} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--bad)' }}>
+                  <TrashIcon size={14}/> Supprimer
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -375,7 +407,7 @@ function FicheClientInner({ params }) {
                     {montantDossier > 0 && (
                       <div className="tnum" style={{ fontWeight: 700, color: 'var(--ink-900)' }}>{fmtEur(montantDossier)}</div>
                     )}
-                    <StatutBadge statut={d.statut}/>
+                    <StatutBadge dossier={d}/>
                   </div>
                 )
               })

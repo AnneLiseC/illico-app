@@ -3,7 +3,9 @@
 
 import React from 'react'
 import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
+import '../../lib/pdf/fonts.js'
 import RecapHonoraires from '../../lib/pdf/RecapHonoraires.js'
+import { formatNomClient } from '../../lib/clients.js'
 import { PDFDocument, degrees, rgb, StandardFonts } from 'pdf-lib'
 import { SEP_PAGE_GARDE } from '../../lib/sep_page_garde.js'
 import { SEP_DESCRIPTIF }    from '../../lib/sep_descriptif.js'
@@ -42,53 +44,53 @@ function getNomRef(ref) {
 
 // ── Styles ──
 const CS = StyleSheet.create({
-  page:        { padding: 28, fontFamily: 'Helvetica', fontSize: 9, backgroundColor: '#ffffff' },
+  page:        { padding: 28, fontFamily: 'Roboto', fontSize: 9, backgroundColor: '#ffffff' },
   header:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingBottom: 7, borderBottomWidth: 2, borderBottomColor: BLEU },
   logo:        { width: 110, height: 44 },
-  headerTitle: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: BLEU, textAlign: 'right' },
+  headerTitle: { fontSize: 13, fontFamily: 'Roboto-Bold', color: BLEU, textAlign: 'right' },
   headerSub:   { fontSize: 8, color: GRIS, marginTop: 2, textAlign: 'right' },
-  sectionH:    { fontSize: 9.5, fontFamily: 'Helvetica-Bold', color: BLEU, marginTop: 8, marginBottom: 3, paddingBottom: 2, borderBottomWidth: 1, borderBottomColor: '#e8f4fb' },
+  sectionH:    { fontSize: 9.5, fontFamily: 'Roboto-Bold', color: BLEU, marginTop: 8, marginBottom: 3, paddingBottom: 2, borderBottomWidth: 1, borderBottomColor: '#e8f4fb' },
   infoRow:     { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
   infoLabel:   { fontSize: 8, color: GRIS, flex: 1 },
-  infoValue:   { fontSize: 8, fontFamily: 'Helvetica-Bold' },
+  infoValue:   { fontSize: 8, fontFamily: 'Roboto-Bold' },
   tableHdr:    { flexDirection: 'row', backgroundColor: BLEU, paddingVertical: 3, paddingHorizontal: 4 },
-  th:          { color: BLANC, fontSize: 7.5, fontFamily: 'Helvetica-Bold' },
+  th:          { color: BLANC, fontSize: 7.5, fontFamily: 'Roboto-Bold' },
   tr:          { flexDirection: 'row', paddingVertical: 3, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
   trAlt:       { flexDirection: 'row', paddingVertical: 3, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', backgroundColor: '#f0f7fb' },
   trTotal:     { flexDirection: 'row', paddingVertical: 4, paddingHorizontal: 4, backgroundColor: BLEU },
   trSub:       { flexDirection: 'row', paddingVertical: 3, paddingHorizontal: 4, backgroundColor: '#ddeef8' },
   td:          { fontSize: 7.5 },
-  tdB:         { fontSize: 7.5, fontFamily: 'Helvetica-Bold' },
+  tdB:         { fontSize: 7.5, fontFamily: 'Roboto-Bold' },
   tdR:         { fontSize: 7.5, textAlign: 'right' },
-  tdRB:        { fontSize: 7.5, fontFamily: 'Helvetica-Bold', textAlign: 'right' },
+  tdRB:        { fontSize: 7.5, fontFamily: 'Roboto-Bold', textAlign: 'right' },
   tdW:         { fontSize: 7.5, color: BLANC },
-  tdWB:        { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: BLANC },
-  tdRWB:       { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: BLANC, textAlign: 'right' },
+  tdWB:        { fontSize: 7.5, fontFamily: 'Roboto-Bold', color: BLANC },
+  tdRWB:       { fontSize: 7.5, fontFamily: 'Roboto-Bold', color: BLANC, textAlign: 'right' },
   sumRow:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
   sumLabel:    { fontSize: 7.5, color: GRIS, flex: 1 },
-  sumValue:    { fontSize: 7.5, fontFamily: 'Helvetica-Bold' },
+  sumValue:    { fontSize: 7.5, fontFamily: 'Roboto-Bold' },
   sumOrange:   { flexDirection: 'row', justifyContent: 'space-between', padding: 4, backgroundColor: '#fff0e0', marginTop: 2, borderRadius: 2 },
   totalBlock:  { flexDirection: 'row', justifyContent: 'space-between', padding: 7, backgroundColor: BLEU, borderRadius: 4, marginTop: 6 },
   photoImg:    { width: 148, height: 110, objectFit: 'cover', borderRadius: 4 },
   footer:      { position: 'absolute', bottom: 18, left: 28, right: 28, flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#e5e7eb', paddingTop: 4 },
   footerTxt:   { fontSize: 7, color: GRIS },
-  footerSlogan:{ fontSize: 7, color: BLEU2, fontFamily: 'Helvetica-Oblique' },
+  footerSlogan:{ fontSize: 7, color: BLEU2, fontFamily: 'Roboto-Italic' },
   // Cover
   coverPage:   { padding: 0, backgroundColor: '#ffffff' },
   coverTopBand:{ height: 8, backgroundColor: '#00578e' },
   coverLogoArea:{ padding: 30, paddingBottom: 0 },
   coverLogo:   { width: 140, height: 56 },
   coverBlueBand:{ backgroundColor: '#00578e', paddingVertical: 40, paddingLeft: 32, marginTop: 50 },
-  coverTitle:  { color: BLANC, fontSize: 38, fontFamily: 'Helvetica-Bold', lineHeight: 1.2 },
+  coverTitle:  { color: BLANC, fontSize: 38, fontFamily: 'Roboto-Bold', lineHeight: 1.2 },
   coverOrangeBand:{ backgroundColor: '#f37f2b', height: 14, marginRight: 80 },
   coverBottom: { position: 'absolute', bottom: 56, left: 0, right: 0, alignItems: 'center' },
   coverName:   { fontSize: 11, color: BLEU, textAlign: 'center', marginBottom: 3 },
   coverText:   { fontSize: 10, color: '#374151', textAlign: 'center', marginBottom: 2 },
-  coverSlogan: { fontSize: 10, color: BLEU2, textAlign: 'center', fontFamily: 'Helvetica-Oblique', marginTop: 8 },
+  coverSlogan: { fontSize: 10, color: BLEU2, textAlign: 'center', fontFamily: 'Roboto-Italic', marginTop: 8 },
   // Suivi paiements
   paiementBloc:        { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 3, padding: 8, marginBottom: 6 },
   paiementHeader:      { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  paiementHeaderTitle: { fontSize: 9, fontFamily: 'Helvetica-Bold' },
+  paiementHeaderTitle: { fontSize: 9, fontFamily: 'Roboto-Bold' },
   paiementHeaderMontant:{ fontSize: 8, color: GRIS },
   paiementLigne:       { flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: '#e5e7eb', paddingVertical: 3 },
   paiementCol:         { fontSize: 8 },
@@ -136,7 +138,7 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
           React.createElement(Text, { style: [CS.paiementCol, { flex: 2.5, color: GRIS }] }, 'Frais de consultation'),
           React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, datePaiement || '—'),
           React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, fmt(fraisTTC)),
-          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: paye ? '#16a34a' : '#d97706', fontFamily: 'Helvetica-Bold' }] },
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: paye ? '#16a34a' : '#d97706', fontFamily: 'Roboto-Bold' }] },
             paye ? 'Payé' : 'En attente'),
         ),
       )
@@ -214,7 +216,7 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
             React.createElement(Text, { style: [CS.paiementCol, { flex: 2.5, color: GRIS }] }, l.libelle),
             React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, l.date),
             React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, fmt(l.montant)),
-            React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: l.paye ? '#16a34a' : '#d97706', fontFamily: 'Helvetica-Bold' }] },
+            React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: l.paye ? '#16a34a' : '#d97706', fontFamily: 'Roboto-Bold' }] },
               l.paye ? 'Payé' : 'En attente'),
           )
         )
@@ -226,10 +228,10 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
     const resteLabel = reste < 0 ? `Trop-perçu : ${fmt(Math.abs(reste))}` : `Reste : ${fmt(reste)}`
     children.push(
       React.createElement(View, { key: 'total', style: CS.paiementTotal },
-        React.createElement(Text, { style: [CS.paiementCol, { flex: 2.5, fontFamily: 'Helvetica-Bold' }] }, 'Total payé'),
+        React.createElement(Text, { style: [CS.paiementCol, { flex: 2.5, fontFamily: 'Roboto-Bold' }] }, 'Total payé'),
         React.createElement(Text, { style: [CS.paiementCol, { flex: 1 }] }, ''),
-        React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', fontFamily: 'Helvetica-Bold' }] }, fmt(totalPaye)),
-        React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: resteColor, fontFamily: 'Helvetica-Bold' }] }, resteLabel),
+        React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', fontFamily: 'Roboto-Bold' }] }, fmt(totalPaye)),
+        React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: resteColor, fontFamily: 'Roboto-Bold' }] }, resteLabel),
       )
     )
 
@@ -293,9 +295,7 @@ async function makeCoverPage({ nomRef, telRef, agence }) {
 async function buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo, resumeGenere }) {
   const client = dossier.client
   const ref = dossier.referente
-  const nomClient = client
-    ? [client.civilite, client.prenom, client.nom, client.prenom2 ? `& ${client.prenom2} ${client.nom2}` : null].filter(Boolean).join(' ')
-    : '—'
+  const nomClient = formatNomClient(client, { civilite: true })
   const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
   const nomRef = getNomRef(ref)
   const dateAuj = new Date().toLocaleDateString('fr-FR')
@@ -399,7 +399,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
         ...acomptesArtisans.map((a, i) =>
           React.createElement(View, { key: i, style: CS.infoRow },
             React.createElement(Text, { style: [CS.infoLabel, { flex: 1 }] }, `${a.entreprise}${a.pctLabel}`),
-            React.createElement(Text, { style: { fontSize: 7.5, color: a.couleurStatut, fontFamily: 'Helvetica-Bold', width: 54, textAlign: 'center' } }, a.statut),
+            React.createElement(Text, { style: { fontSize: 7.5, color: a.couleurStatut, fontFamily: 'Roboto-Bold', width: 54, textAlign: 'center' } }, a.statut),
             React.createElement(Text, { style: [CS.infoValue, { width: 72, textAlign: 'right' }] }, fmt(a.acompte)),
           )
         ),
@@ -442,7 +442,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
               : `${(i.jours_specifiques || []).slice(0, 4).map(j => new Date(j).toLocaleDateString('fr-FR')).join(', ')}${(i.jours_specifiques || []).length > 4 ? '…' : ''}`
           ),
         )),
-        React.createElement(Text, { style: { fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', marginTop: 14, lineHeight: 1.4 } },
+        React.createElement(Text, { style: { fontSize: 7, color: GRIS, fontFamily: 'Roboto-Italic', marginTop: 14, lineHeight: 1.4 } },
           "Ce planning est communiqué à titre purement indicatif et ne possède aucune valeur contractuelle.",
         ),
         React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
@@ -464,7 +464,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
               )
             ),
           ),
-          React.createElement(Text, { style: { position: 'absolute', bottom: 40, left: 38, right: 38, fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', lineHeight: 1.4 } },
+          React.createElement(Text, { style: { position: 'absolute', bottom: 40, left: 38, right: 38, fontSize: 7, color: GRIS, fontFamily: 'Roboto-Italic', lineHeight: 1.4 } },
             "Les illustrations graphiques reproduites sont des illustrations commerciales qui ne peuvent servir de base à la réalisation du chantier.",
           ),
           React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
@@ -535,9 +535,7 @@ async function downloadPDF(supabaseAdmin, bucket, path) {
 async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
   const client = dossier.client
   const ref = dossier.referente
-  const nomClient = client
-    ? [client.civilite, client.prenom, client.nom, client.prenom2 ? `& ${client.prenom2} ${client.nom2}` : null].filter(Boolean).join(' ')
-    : '—'
+  const nomClient = formatNomClient(client, { civilite: true })
   const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
   const nomRef = getNomRef(ref)
   const dateAuj = new Date().toLocaleDateString('fr-FR')
@@ -573,7 +571,7 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
         React.createElement(Text, { style: CS.sectionH }, 'Résumé du projet'),
         React.createElement(Text, { style: { fontSize: 8.5, lineHeight: 1.6, color: '#374151' } }, resumeGenere),
       ),
-      React.createElement(Text, { style: { fontSize: 7, color: GRIS, fontFamily: 'Helvetica-Oblique', marginTop: 16, lineHeight: 1.4 } },
+      React.createElement(Text, { style: { fontSize: 7, color: GRIS, fontFamily: 'Roboto-Italic', marginTop: 16, lineHeight: 1.4 } },
         "Ce document présente l'ensemble des devis reçus et signés pour votre projet. Les devis signés sont déjà engagés ; les devis à valider constituent une simulation sous réserve de signature.",
       ),
       React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
@@ -581,7 +579,7 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
     // ── Récapitulatif financier (simulation) ──
     React.createElement(Page, { key: 'recap', size: 'A4', style: CS.page },
       React.createElement(Hdr, { title: 'Récapitulatif financier', sub: `${dossier.reference} — ${nomClient}`, logo }),
-      React.createElement(Text, { style: { fontSize: 7.5, color: '#f37f2b', fontFamily: 'Helvetica-Oblique', marginBottom: 5 } },
+      React.createElement(Text, { style: { fontSize: 7.5, color: '#f37f2b', fontFamily: 'Roboto-Italic', marginBottom: 5 } },
         "Vue globale — devis signés (engagés) et devis à valider. Les montants définitifs dépendent de la signature des devis en attente.",
       ),
       React.createElement(View, { style: CS.tableHdr },
@@ -607,7 +605,7 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
           React.createElement(Text, { style: [CS.td, { width: 18, color: GRIS }] }, String(n)),
           React.createElement(Text, { style: [CS.td, { flex: 3 }] }, d.artisan?.entreprise || '—'),
           React.createElement(Text, { style: [CS.td, { flex: 3, color: GRIS }] }, d.notes || '—'),
-          React.createElement(Text, { style: [CS.td, { flex: 1.3, textAlign: 'center', color: estSigne ? '#16a34a' : '#d97706', fontFamily: 'Helvetica-Bold' }] },
+          React.createElement(Text, { style: [CS.td, { flex: 1.3, textAlign: 'center', color: estSigne ? '#16a34a' : '#d97706', fontFamily: 'Roboto-Bold' }] },
             estSigne ? 'Signé' : 'À valider'),
           React.createElement(Text, { style: [CS.tdR, { flex: 2 }] }, fmt(d.montant_ht)),
           React.createElement(Text, { style: [CS.tdRB, { flex: 2 }] }, fmt(d.montant_ttc)),
@@ -662,7 +660,7 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
 //   - Phase avant signature (devis_en_attente, devis_a_modifier…) → style R3 : devis reçus + récap
 //   - en_cours_chantier → devis signés + KBIS/assurances + FT
 //   - termine → restitution complète avec photos, planning, etc.
-export async function buildDossierSuivi({ dossier, devis, photos, interventions, fichesTech, docsRestitution, factures, suiviFinancier, logo, supabaseAdmin }) {
+export async function buildDossierSuivi({ dossier, devis, photos, interventions, fichesTech, docsRestitution, factures, suiviFinancier, adminFranchise, logo, supabaseAdmin }) {
   const statut = dossier.statut || 'en_cours_chantier'
   const isPreSignature = ['a_contacter', 'a_relancer', 'devis_en_attente', 'devis_a_modifier'].includes(statut)
   const isTermine = statut === 'termine'
@@ -676,6 +674,11 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
   const hasFichesTech = (fichesTech || []).length > 0
   const hasQualif = devisAcceptes.some(d => d.artisan?.qualification_url)
+
+  // Factures honoraires (CTP→client) : à embarquer dans le bloc Factures, pas
+  // dans le bloc générique « autres documents ». categorie='facture_honoraire'.
+  const facturesHonoraires = (docsRestitution || []).filter(d => d.categorie === 'facture_honoraire')
+  const autresDocs = (docsRestitution || []).filter(d => d.categorie !== 'facture_honoraire')
 
   const loadSep = async (b64) => PDFDocument.load(Buffer.from(b64, 'base64'))
   const [sepDescriptif, sepIllustrations, sepRecap, sepDevis, sepPlanning, sepRefs, sepKbis, sepQualification] = await Promise.all([
@@ -742,25 +745,41 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     await addContent()  // page suivi des paiements
   }
 
-  // ── Devis ──
+  // ── Devis / Factures / PV — groupés PAR DEVIS ──
+  // Post-signature : pour chaque devis accepté → devis signé (ou original) →
+  //   ses factures (liées par devis_id) → son PV de réception.
+  // Pré-signature : seulement les devis reçus/acceptés (ni factures ni PV).
   await addSep(sepDevis)
-  if (isPreSignature) {
-    // Phase pré-signature : inclure les PDFs de devis reçus
-    for (const d of devisActifs) {
-      if (d.devis_pdf_path) {
-        const buf = await downloadPDF(supabaseAdmin, 'documents', d.devis_pdf_path)
+  if (!isPreSignature) {
+    for (const d of devisR3) {
+      const pathDevis = d.devis_signe_path || d.devis_pdf_path
+      if (pathDevis) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', pathDevis)
+        await addExternalPDF(buf)
+      }
+      const facturesDevis = (factures || []).filter(f => f.devis_id === d.id)
+      for (const f of facturesDevis) {
+        if (f.pdf_path) {
+          const buf = await downloadPDF(supabaseAdmin, 'documents', f.pdf_path)
+          await addExternalPDF(buf)
+        }
+      }
+      if (d.pv_path) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', d.pv_path)
         await addExternalPDF(buf)
       }
     }
+    // Factures honoraires (CTP→client) — chantier_documents categorie='facture_honoraire'
+    // cochés dans_restitution. Bloc séparé (vient de docsRestitution, pas factures_artisans).
+    for (const d of facturesHonoraires) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', d.path)
+      await addExternalPDF(buf)
+    }
   } else {
-    // Phase post-signature : devis signés + factures
-    for (const d of devisAcceptes) {
-      if (d.devis_signe_path) {
-        const buf = await downloadPDF(supabaseAdmin, 'documents', d.devis_signe_path)
-        await addExternalPDF(buf)
-      }
-      if (d.facture_path) {
-        const buf = await downloadPDF(supabaseAdmin, 'documents', d.facture_path)
+    for (const d of devisR3) {
+      const path = d.devis_signe_path || d.devis_pdf_path
+      if (path) {
+        const buf = await downloadPDF(supabaseAdmin, 'documents', path)
         await addExternalPDF(buf)
       }
     }
@@ -804,14 +823,6 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     }
   }
 
-  // ── Documents chantier cochés "dans_restitution" ──
-  if ((docsRestitution || []).length > 0) {
-    for (const doc of docsRestitution) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path)
-      await addExternalPDF(buf)
-    }
-  }
-
   // ── KBIS + Assurances (post-signature) ──
   if (!isPreSignature) {
     await addSep(sepKbis)
@@ -825,6 +836,26 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
         const buf = await downloadPDF(supabaseAdmin, 'documents', art.decennale_url)
         await addExternalPDF(buf)
       }
+    }
+  }
+
+  // ── KBIS + RIB du franchisé (admin de la société) — post-signature, sans séparateur. Non bloquant. ──
+  if (!isPreSignature) {
+    if (adminFranchise?.kbis_url) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', adminFranchise.kbis_url)
+      await addExternalPDF(buf)
+    }
+    if (adminFranchise?.rib_url) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', adminFranchise.rib_url)
+      await addExternalPDF(buf)
+    }
+  }
+
+  // ── Autres documents chantier cochés "dans_restitution" (hors factures honoraires) ──
+  if (autresDocs.length > 0) {
+    for (const doc of autresDocs) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path)
+      await addExternalPDF(buf)
     }
   }
 
