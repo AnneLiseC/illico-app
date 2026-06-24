@@ -11,6 +11,7 @@ import listPlugin from '@fullcalendar/list'
 import interactionPlugin from '@fullcalendar/interaction'
 import luxonPlugin from '@fullcalendar/luxon3'
 import frLocale from '@fullcalendar/core/locales/fr'
+import { parisLocalToInstant, instantToParisLocal } from '../lib/dates'
 
 // ─── PALETTE illiCO TRAVAUX ───────────────────────────────────────────────────
 const COLORS = {
@@ -286,7 +287,7 @@ export default function Planning() {
   const handleEventClick = (info) => {
     const { type, data, cfg } = info.event.extendedProps
     setElementSelectionne({ type, data, cfg }); setModalType(type); setModeEdition(false)
-    if (type === 'rdv') setFormRdv({ dossier_id: data.dossier_id, type_rdv: data.type_rdv, date_heure: data.date_heure?.slice(0, 16), duree_minutes: data.duree_minutes || 60, artisan_id: data.artisan_id || '', notes: data.notes || '', titre: data.titre || '' })
+    if (type === 'rdv') setFormRdv({ dossier_id: data.dossier_id, type_rdv: data.type_rdv, date_heure: instantToParisLocal(data.date_heure), duree_minutes: data.duree_minutes || 60, artisan_id: data.artisan_id || '', notes: data.notes || '', titre: data.titre || '' })
     else if (type === 'intervention') setFormIntervention({ dossier_id: data.dossier_id, artisan_id: data.artisan_id, type_intervention: data.type_intervention, date_debut: data.date_debut || '', date_fin: data.date_fin || '', jours_specifiques: data.jours_specifiques || [], notes: data.notes || '' })
     else if (type === 'date_cle') setFormDateCle({ date_demarrage_chantier: data.date_demarrage_chantier || '', date_fin_chantier: data.date_fin_chantier || '' })
     setModalOuvert(true)
@@ -295,7 +296,7 @@ export default function Planning() {
   const ouvrirSidebar = (item) => {
     setElementSelectionne({ type: item.type, data: item.data })
     setModalType(item.type); setModeEdition(false)
-    if (item.type === 'rdv') setFormRdv({ dossier_id: item.data.dossier_id, type_rdv: item.data.type_rdv, date_heure: item.data.date_heure?.slice(0, 16), duree_minutes: item.data.duree_minutes || 60, artisan_id: item.data.artisan_id || '', notes: item.data.notes || '', titre: item.data.titre || '' })
+    if (item.type === 'rdv') setFormRdv({ dossier_id: item.data.dossier_id, type_rdv: item.data.type_rdv, date_heure: instantToParisLocal(item.data.date_heure), duree_minutes: item.data.duree_minutes || 60, artisan_id: item.data.artisan_id || '', notes: item.data.notes || '', titre: item.data.titre || '' })
     else if (item.type === 'intervention') setFormIntervention({ dossier_id: item.data.dossier_id, artisan_id: item.data.artisan_id, type_intervention: item.data.type_intervention, date_debut: item.data.date_debut || '', date_fin: item.data.date_fin || '', jours_specifiques: item.data.jours_specifiques || [], notes: item.data.notes || '' })
     setModalOuvert(true)
   }
@@ -318,7 +319,8 @@ export default function Planning() {
   const sauvegarderRdv = async () => {
     if (!formRdv.date_heure) return
     setSaving(true); setErreur('')
-    const payload = { type_rdv: formRdv.type_rdv, date_heure: formRdv.date_heure, duree_minutes: parseInt(formRdv.duree_minutes), artisan_id: formRdv.artisan_id || null, notes: formRdv.notes || null, titre: formRdv.type_rdv === 'autres' ? (formRdv.titre || null) : null }
+    // date_heure : la saisie datetime-local est en heure de Paris -> convertir en instant UTC pour la colonne timestamptz
+    const payload = { type_rdv: formRdv.type_rdv, date_heure: parisLocalToInstant(formRdv.date_heure), duree_minutes: parseInt(formRdv.duree_minutes), artisan_id: formRdv.artisan_id || null, notes: formRdv.notes || null, titre: formRdv.type_rdv === 'autres' ? (formRdv.titre || null) : null }
     let savedId = elementSelectionne?.data?.id
     if (elementSelectionne?.type === 'rdv' && modeEdition) {
       const { error } = await supabase.from('rendez_vous').update(payload).eq('id', savedId)
