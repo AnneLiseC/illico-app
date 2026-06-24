@@ -12,6 +12,7 @@ import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
 import { fmtDateHeureFR, estDansDelaiEdition } from '../../lib/dates'
 import { buildInviteMailto } from '../../lib/inviteMail'
+import { calculerExpiration } from '../../lib/expiration'
 import JSZip from 'jszip'
 
 // Liste des entités supprimées avec un chantier — source unique des 2 libellés
@@ -1163,8 +1164,24 @@ export default function FicheChantier({ params }) {
     const ancien = dossier.statut ?? null
     set('statut', valeur)
     setErreur(''); setSucces('')
-    const { error } = await supabase.from('dossiers').update({ statut: valeur }).eq('id', id)
+
+    // Expiration d'accès client (tr.3) — stockage seul, pas encore appliqué (tr.4/5).
+    const payload = { statut: valeur }
+    if (valeur === 'termine') {
+      // date_cloture : on garde la 1ère clôture (ne pas écraser si re-clic).
+      const dateCloture = dossier.date_cloture || new Date().toISOString().slice(0, 10)
+      payload.date_cloture = dateCloture
+      // Recalcul à chaque clôture : base = date_fin_chantier si renseignée, sinon date_cloture.
+      payload.acces_expire_le = calculerExpiration({ date_fin_chantier: dossier.date_fin_chantier, date_cloture: dateCloture })
+    } else if (valeur === null) {
+      // Ré-ouverture : le dossier repart actif → accès de nouveau illimité.
+      payload.acces_expire_le = null
+    }
+    // (valeur === 'annule' : on ne touche pas à l'expiration.)
+
+    const { error } = await supabase.from('dossiers').update(payload).eq('id', id)
     if (error) { setErreur('Erreur : ' + error.message); set('statut', ancien); return }
+    setDossier(d => ({ ...d, ...payload }))
     setSucces(valeur === 'termine' ? 'Dossier marqué terminé ✓' : valeur === 'annule' ? 'Dossier annulé ✓' : 'Dossier ré-ouvert (statut automatique) ✓')
   }
 
