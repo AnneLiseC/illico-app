@@ -111,13 +111,17 @@ where i.dossier_id in (select mes_dossiers_client());
 comment on view public.client_interventions is
   'Interventions visibles par le client (nom entreprise seulement, sans coordonnées/notes). Filtre dossier+expiration via mes_dossiers_client().';
 
--- ── Grants : authenticated en lecture ; anon explicitement exclu ──
-grant select on public.client_rendez_vous  to authenticated;
-grant select on public.client_interventions to authenticated;
+-- ── Grants : moindre privilège — authenticated = SELECT SEUL ──
+-- Supabase pose par défaut (ALTER DEFAULT PRIVILEGES) INSERT/UPDATE/DELETE/… à
+-- anon ET authenticated sur tout nouvel objet public. On repart d'une base propre :
+-- REVOKE ALL d'abord (anon, authenticated, public), PUIS GRANT SELECT à authenticated.
+-- L'ordre garantit qu'il ne reste QUE SELECT. postgres/service_role NON ciblés
+-- (ils gardent leurs droits propres).
+revoke all on public.client_rendez_vous   from anon, authenticated, public;
+revoke all on public.client_interventions from anon, authenticated, public;
 
--- Garde-fou : ces vues ne doivent JAMAIS être lisibles sans authentification.
-revoke all on public.client_rendez_vous   from anon, public;
-revoke all on public.client_interventions from anon, public;
+grant select on public.client_rendez_vous   to authenticated;
+grant select on public.client_interventions to authenticated;
 
 COMMIT;
 
@@ -127,7 +131,7 @@ COMMIT;
 -- Attendus :
 --   3.1 -> 2 vues, security_invoker=false
 --   3.2 -> colonnes = uniquement champs sûrs (aucune sensible)
---   3.3 -> grants : authenticated=SELECT présent ; anon ABSENT
+--   3.3 -> grants : authenticated = 'SELECT' UNIQUEMENT ; anon ABSENT
 --   3.4 -> aucune colonne sensible présente (compteur = 0)
 -- =============================================================================
 
@@ -142,11 +146,14 @@ from information_schema.columns
 where table_schema='public' and table_name in ('client_rendez_vous','client_interventions')
 group by table_name;
 
--- 3.3 grants (anon ne doit PAS apparaître)
-select table_name, grantee, privilege_type
+-- 3.3 grants : authenticated = SELECT uniquement ; anon = aucune ligne
+select table_name, grantee, string_agg(privilege_type, ', ' order by privilege_type) as privs
 from information_schema.role_table_grants
 where table_schema='public' and table_name in ('client_rendez_vous','client_interventions')
+  and grantee in ('authenticated','anon')
+group by table_name, grantee
 order by table_name, grantee;
+-- attendu : authenticated -> 'SELECT' (uniquement) ; anon -> aucune ligne.
 
 -- 3.4 aucune colonne sensible exposée (doit renvoyer 0)
 select count(*) as colonnes_sensibles_exposees
@@ -318,4 +325,26 @@ ROLLBACK;   -- aucune donnée de test / expiration conservée
 --   drop view if exists public.client_rendez_vous;
 --   drop view if exists public.client_interventions;
 -- COMMIT;
+-- =============================================================================
+
+
+-- =============================================================================
+-- CORRECTIF GRANTS — à exécuter SEUL sur la base actuelle (vues DÉJÀ créées)
+-- Les vues existent déjà avec les droits par défaut Supabase (authenticated a
+-- hérité INSERT/UPDATE/DELETE/…). Ce bloc restreint à SELECT seul SANS recréer
+-- les vues. Idempotent.
+-- =============================================================================
+BEGIN;
+  revoke all on public.client_rendez_vous   from anon, authenticated, public;
+  revoke all on public.client_interventions from anon, authenticated, public;
+  grant select on public.client_rendez_vous   to authenticated;
+  grant select on public.client_interventions to authenticated;
+COMMIT;
+
+-- Re-vérif (attendu : authenticated -> 'SELECT' uniquement ; anon -> aucune ligne)
+-- select table_name, grantee, string_agg(privilege_type, ', ' order by privilege_type) as privs
+-- from information_schema.role_table_grants
+-- where table_schema='public' and table_name in ('client_rendez_vous','client_interventions')
+--   and grantee in ('authenticated','anon')
+-- group by table_name, grantee order by table_name, grantee;
 -- =============================================================================
