@@ -88,6 +88,9 @@ export async function POST(request) {
       if (linkError) {
         return NextResponse.json({ error: linkError.message }, { status: 400 })
       }
+      // Réinviter = rouvrir l'accès : si le compte avait été désactivé (cron J+14),
+      // on le réactive. On ne touche QUE ce profil client.
+      await supabaseAdmin.from('profiles').update({ acces_actif: true }).eq('id', existing.id)
       return NextResponse.json({
         status: 'relinked',
         actionLink: linkData.properties.action_link,

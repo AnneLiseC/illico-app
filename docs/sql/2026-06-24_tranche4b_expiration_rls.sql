@@ -89,8 +89,12 @@ BEGIN;
     'Date d''expiration d''acces du dernier dossier AMO du client connecte. NON gatee '
     'par l''expiration (le front l''appelle pour afficher l''ecran "acces expire").';
 
-  -- EXECUTE : aligné sur mes_dossiers_client() (authenticated + service_role).
+  -- EXECUTE : authenticated (le front client appelle cette RPC) + service_role.
+  -- ⚠️ Supabase pose un grant EXECUTE par défaut à `anon` sur les fonctions du
+  --    schéma public (ALTER DEFAULT PRIVILEGES) : il ne tombe PAS avec REVOKE FROM
+  --    PUBLIC → le révoquer nommément. On GARDE authenticated (client connecté).
   REVOKE ALL ON FUNCTION public.mon_expiration_client() FROM PUBLIC;
+  REVOKE ALL ON FUNCTION public.mon_expiration_client() FROM anon;
   GRANT EXECUTE ON FUNCTION public.mon_expiration_client() TO authenticated, service_role;
 
   -- 2.3 Reroutage des policies client inline → chokepoint.
