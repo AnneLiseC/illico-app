@@ -9,6 +9,7 @@ import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import listPlugin from '@fullcalendar/list'
 import interactionPlugin from '@fullcalendar/interaction'
+import luxonPlugin from '@fullcalendar/luxon3'
 import frLocale from '@fullcalendar/core/locales/fr'
 
 // ─── PALETTE illiCO TRAVAUX ───────────────────────────────────────────────────
@@ -561,7 +562,7 @@ export default function Planning() {
               .fc-more-link { font-size: 10px !important; font-weight: 700 !important; color: ${COLORS.blue} !important; }
             `}</style>
             <FullCalendar
-              plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}
+              plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin, luxonPlugin]}
               initialView={calendarView}
               locale={frLocale}
               timeZone="Europe/Paris"
