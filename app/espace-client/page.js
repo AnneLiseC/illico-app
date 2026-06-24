@@ -34,6 +34,25 @@ const TYPE_VISITE_LABELS = {
   reception: 'Réception chantier',
 }
 
+// ── Helpers agenda client ──
+// RDV : date_heure est un timestamptz → afficher en Europe/Paris via new Date()
+// + toLocale*, SANS parseUTC (qui casserait une valeur déjà offsettée).
+const fmtJourLong  = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }) : ''
+const fmtHeureParis = (d) => d ? new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' }) : ''
+
+// Interventions : date_debut/date_fin/jours_specifiques sont des DATES PURES →
+// formatDateFR (lib/expiration), pas de fuseau. heure_debut est un `time`.
+function periodeIntervention(i) {
+  if (i.type_intervention === 'jours_specifiques') {
+    const jours = i.jours_specifiques || []
+    return jours.length ? jours.map(formatDateFR).join(', ') : '—'
+  }
+  if (i.date_fin && i.date_fin !== i.date_debut) return `${formatDateFR(i.date_debut)} → ${formatDateFR(i.date_fin)}`
+  return formatDateFR(i.date_debut)
+}
+
+const lieuLabel = (lieu) => lieu === 'client' ? 'À votre domicile' : (lieu || '')
+
 export default function EspaceClient() {
   const [profile, setProfile]         = useState(null)
   const [dossier, setDossier]         = useState(null)
@@ -49,6 +68,9 @@ export default function EspaceClient() {
   const [sendingMsg, setSendingMsg]   = useState(false)
   const [crOuvert, setCrOuvert]       = useState(null)
   const [pdfErreur, setPdfErreur]     = useState('')
+  const [rdvsClient, setRdvsClient]   = useState([])
+  const [interventionsClient, setInterventionsClient] = useState([])
+  const [voirRdvPasses, setVoirRdvPasses] = useState(false)
   const messagesEndRef                = useRef(null)
   const router                        = useRouter()
 
@@ -72,6 +94,18 @@ export default function EspaceClient() {
       .eq('type_visite', 'suivi')
       .order('created_at', { ascending: false })
     setComptesRendus(data || [])
+  }
+
+  // Agenda client : RDV (types métier, libellé neutre) + interventions, lus via les
+  // vues scopées client_rendez_vous / client_interventions (filtre dossier + expiration
+  // hérité de mes_dossiers_client(), colonnes sûres seulement — ni notes ni coordonnées).
+  const chargerAgenda = async (dossierId) => {
+    const { data: rdvData } = await supabase
+      .from('client_rendez_vous').select('*').eq('dossier_id', dossierId).order('date_heure')
+    setRdvsClient(rdvData || [])
+    const { data: intData } = await supabase
+      .from('client_interventions').select('*').eq('dossier_id', dossierId).order('date_debut')
+    setInterventionsClient(intData || [])
   }
 
   const chargerMessages = async (dossierId, userId) => {
@@ -132,6 +166,7 @@ export default function EspaceClient() {
           chargerPhotos(dossierData.id),
           chargerComptesRendus(dossierData.id),
           chargerMessages(dossierData.id, user.id),
+          chargerAgenda(dossierData.id),
         ])
       }
       setLoading(false)
@@ -211,8 +246,21 @@ export default function EspaceClient() {
   const nbMsgNonLus       = messages.filter(m => m.auteur_role !== 'client' && !m.lu).length
   const devisAcceptes     = (dossier.devis_artisans || []).filter(d => d.statut === 'accepte')
 
+  // ── Agenda : séparer à venir / passés ──
+  const maintenant     = new Date()
+  const auj            = new Date().toISOString().slice(0, 10)  // date pure du jour (interventions)
+  const rdvsAVenir     = rdvsClient.filter(r => new Date(r.date_heure) >= maintenant)
+  const rdvsPasses     = rdvsClient.filter(r => new Date(r.date_heure) <  maintenant).reverse()  // + récents d'abord
+  // intervention « à venir/en cours » : sa dernière date (date_fin, dernier jour, ou date_debut) >= aujourd'hui
+  const finIntervention = (i) => i.type_intervention === 'jours_specifiques'
+    ? (i.jours_specifiques?.length ? [...i.jours_specifiques].sort().at(-1) : i.date_debut)
+    : (i.date_fin || i.date_debut)
+  const interventionsAVenir = interventionsClient.filter(i => (finIntervention(i) || '0000') >= auj)
+  const nbAgendaAVenir = rdvsAVenir.length + interventionsAVenir.length
+
   const onglets = [
     { key: 'accueil',   label: 'Mon chantier',                                    icon: '🏠' },
+    { key: 'agenda',    label: `Mon agenda${nbAgendaAVenir > 0 ? ` (${nbAgendaAVenir})` : ''}`, icon: '📅' },
     { key: 'photos',    label: `Photos (${photos.length})`,                        icon: '📸' },
     { key: 'cr',        label: `Comptes-rendus (${comptesRendus.length})`,          icon: '📄' },
     { key: 'messages',  label: `Messages${nbMsgNonLus > 0 ? ` (${nbMsgNonLus})` : ''}`, icon: '💬' },
@@ -529,6 +577,89 @@ export default function EspaceClient() {
                 </div>
               ))
             )}
+          </div>
+        )}
+
+        {/* ── AGENDA ── */}
+        {onglet === 'agenda' && (
+          <div className="space-y-6">
+
+            {/* Rendez-vous */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">📅 Mes rendez-vous</h3>
+              {rdvsAVenir.length === 0 && rdvsPasses.length === 0 ? (
+                <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
+                  <p className="text-4xl mb-3">📅</p>
+                  <p className="text-gray-400">Aucun rendez-vous prévu</p>
+                  <p className="text-xs text-gray-300 mt-1">Votre référente les planifiera avec vous</p>
+                </div>
+              ) : (
+                <>
+                  {rdvsAVenir.map(r => (
+                    <div key={r.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-start gap-3">
+                      <span className="text-xl">📅</span>
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-800 text-sm">{r.libelle || 'Rendez-vous'}</p>
+                        <p className="text-xs text-gray-500 mt-0.5 capitalize">
+                          {fmtJourLong(r.date_heure)} · {fmtHeureParis(r.date_heure)}
+                        </p>
+                        {r.lieu && <p className="text-xs text-gray-400 mt-0.5">📍 {lieuLabel(r.lieu)}</p>}
+                      </div>
+                    </div>
+                  ))}
+
+                  {rdvsPasses.length > 0 && (
+                    <div className="pt-1">
+                      <button onClick={() => setVoirRdvPasses(v => !v)}
+                        className="text-xs text-blue-700 hover:underline">
+                        {voirRdvPasses ? 'Masquer' : 'Voir'} les rendez-vous passés ({rdvsPasses.length})
+                      </button>
+                      {voirRdvPasses && (
+                        <div className="space-y-3 mt-3 opacity-70">
+                          {rdvsPasses.map(r => (
+                            <div key={r.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-start gap-3">
+                              <span className="text-xl grayscale">📅</span>
+                              <div className="min-w-0">
+                                <p className="font-medium text-gray-700 text-sm">{r.libelle || 'Rendez-vous'}</p>
+                                <p className="text-xs text-gray-500 mt-0.5 capitalize">
+                                  {fmtJourLong(r.date_heure)} · {fmtHeureParis(r.date_heure)}
+                                </p>
+                                {r.lieu && <p className="text-xs text-gray-400 mt-0.5">📍 {lieuLabel(r.lieu)}</p>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Interventions des artisans */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">🔨 Interventions des artisans</h3>
+              {interventionsClient.length === 0 ? (
+                <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+                  <p className="text-gray-400 text-sm">Aucune intervention planifiée pour le moment</p>
+                </div>
+              ) : (
+                interventionsClient.map(i => {
+                  const aVenir = (finIntervention(i) || '0000') >= auj
+                  return (
+                    <div key={i.id} className={`border rounded-xl p-4 flex items-start gap-3 ${aVenir ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-200 opacity-70'}`}>
+                      <span className="text-xl">🔨</span>
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-800 text-sm">{i.artisan_entreprise || 'Artisan'}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{periodeIntervention(i)}{i.heure_debut ? ` · à ${i.heure_debut.slice(0, 5)}` : ''}</p>
+                        {i.lieu && <p className="text-xs text-gray-400 mt-0.5">📍 {lieuLabel(i.lieu)}</p>}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
           </div>
         )}
 
