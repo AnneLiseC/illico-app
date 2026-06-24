@@ -1908,7 +1908,7 @@ export default function FicheChantier({ params }) {
           email: data.email,
           prenom: data.prenom,
           actionLink: data.actionLink,
-          loginUrl: `${window.location.origin}/login`,
+          loginUrl: `${window.location.origin}/login-client`,
           isRenvoi: data.status === 'relinked',
         })
         window.location.href = mailto
