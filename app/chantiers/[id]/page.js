@@ -905,6 +905,7 @@ export default function FicheChantier({ params }) {
       duree_minutes: parseInt(nouveauRdvDossier.duree_minutes), artisan_id: nouveauRdvDossier.artisan_id || null, notes: nouveauRdvDossier.notes || null,
       titre: nouveauRdvDossier.type_rdv === 'autres' ? (nouveauRdvDossier.titre || null) : null,
       lieu: nouveauRdvDossier.lieu || 'client',
+      agence_id: dossier?.agence_id || null,   // agence du dossier (le trigger fait foi, envoyé par cohérence)
     })
     if (!error) {
       await chargerRdvsDossier()
@@ -967,6 +968,7 @@ export default function FicheChantier({ params }) {
         heure_debut: nouvIntervForm.heure_debut || null,
         duree_minutes: nouvIntervForm.heure_debut ? (nouvIntervForm.duree_minutes || 60) : null,
         lieu: nouvIntervForm.lieu || 'client',
+        agence_id: dossier?.agence_id || null,   // agence du dossier (le trigger fait foi, envoyé par cohérence)
       }
       const { data: intData, error: insertErr } = await supabase.from('interventions_artisans').insert(payload).select('*, artisan:artisans(id, entreprise)')
       if (insertErr) { setErreur('Erreur : ' + insertErr.message); return }
