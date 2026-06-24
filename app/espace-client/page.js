@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { calcStatut, STATUT_CONFIG } from '../lib/dossiers'
 import { authHeaders } from '../lib/api-auth-client'
 import { fmtDateHeureFR, estDansDelaiEdition } from '../lib/dates'
+import { statutAcces, formatDateFR } from '../lib/expiration'
 import MarkdownCR from '../components/MarkdownCR'
 
 // Vue client : les statuts internes de prospection (à contacter / à relancer)
@@ -52,6 +53,8 @@ export default function EspaceClient() {
   const [messages, setMessages]       = useState([])
   const [loading, setLoading]         = useState(true)
   const [accesDenied, setAccesDenied]  = useState(false)
+  const [accesExpire, setAccesExpire]  = useState(null)   // date d'expiration (string) si accès expiré
+  const [bandeauEcheance, setBandeauEcheance] = useState(null) // date d'expiration (string) si J-21
   const [onglet, setOnglet]           = useState('accueil')
   const [categoriePhoto, setCategoriePhoto] = useState('avant')
   const [lightbox, setLightbox]       = useState({ open: false, index: 0 })
@@ -139,7 +142,22 @@ export default function EspaceClient() {
 
       setProfile({ ...profData, client: clientData })
 
-      // Dossier AMO du client
+      // Expiration d'accès via RPC mon_expiration_client() : NON gatée par la RLS,
+      // donc lisible même quand le dossier est caché (expiré). Pilote l'écran 4a
+      // AVANT le chargement du dossier. La RLS (back) reste la vraie barrière des
+      // données → en cas d'erreur RPC, fail-open sur l'AFFICHAGE (on continue).
+      const { data: expDate, error: expErr } = await supabase.rpc('mon_expiration_client')
+      if (!expErr) {
+        const acces = statutAcces({ acces_expire_le: expDate })
+        if (acces === 'expire') {
+          setAccesExpire(expDate)
+          setLoading(false)
+          return // dossier de toute façon caché par la RLS durcie
+        }
+        if (acces === 'bientot') setBandeauEcheance(expDate)
+      }
+
+      // Dossier AMO du client (visible si non expiré)
       const { data: dossierData } = await supabase
         .from('dossiers')
         .select('*, referente:profiles!dossiers_referente_id_fkey(prenom, nom)')
@@ -269,6 +287,25 @@ export default function EspaceClient() {
     </div>
   )
 
+  // Accès expiré (dossier clôturé + 3 mois dépassés) : écran global, contenu masqué.
+  if (accesExpire) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
+      <div className="text-center max-w-sm">
+        <p className="text-4xl mb-4">⏳</p>
+        <p className="text-gray-800 font-semibold text-lg">Votre accès a expiré</p>
+        <p className="text-gray-500 text-sm mt-3 leading-relaxed">
+          Votre accès à votre espace client a pris fin le {formatDateFR(accesExpire)}.
+        </p>
+        <p className="text-gray-500 text-sm mt-2 leading-relaxed">
+          Pour réaccéder à votre espace, contactez votre conseiller.
+        </p>
+        <button onClick={handleLogout} className="mt-6 text-sm text-blue-600 hover:underline">
+          Se déconnecter
+        </button>
+      </div>
+    </div>
+  )
+
   if (!dossier) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center">
@@ -308,6 +345,15 @@ export default function EspaceClient() {
           <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-red-500">Déconnexion</button>
         </div>
       </header>
+
+      {/* Bandeau J-21 : accès bientôt clos (info, pas une erreur). Contenu visible en dessous. */}
+      {bandeauEcheance && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5">
+          <p className="max-w-2xl mx-auto text-xs text-amber-800 text-center">
+            Votre accès à cet espace se fermera le {formatDateFR(bandeauEcheance)}.
+          </p>
+        </div>
+      )}
 
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto flex overflow-x-auto">
