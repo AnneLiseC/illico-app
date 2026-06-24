@@ -142,7 +142,22 @@ export default function EspaceClient() {
 
       setProfile({ ...profData, client: clientData })
 
-      // Dossier AMO du client
+      // Expiration d'accès via RPC mon_expiration_client() : NON gatée par la RLS,
+      // donc lisible même quand le dossier est caché (expiré). Pilote l'écran 4a
+      // AVANT le chargement du dossier. La RLS (back) reste la vraie barrière des
+      // données → en cas d'erreur RPC, fail-open sur l'AFFICHAGE (on continue).
+      const { data: expDate, error: expErr } = await supabase.rpc('mon_expiration_client')
+      if (!expErr) {
+        const acces = statutAcces({ acces_expire_le: expDate })
+        if (acces === 'expire') {
+          setAccesExpire(expDate)
+          setLoading(false)
+          return // dossier de toute façon caché par la RLS durcie
+        }
+        if (acces === 'bientot') setBandeauEcheance(expDate)
+      }
+
+      // Dossier AMO du client (visible si non expiré)
       const { data: dossierData } = await supabase
         .from('dossiers')
         .select('*, referente:profiles!dossiers_referente_id_fkey(prenom, nom)')
@@ -153,16 +168,6 @@ export default function EspaceClient() {
         .single()
 
       if (dossierData) {
-        // Expiration d'accès (dossier clôturé + 3 mois). statutAcces gère le cas
-        // acces_expire_le null → 'ouvert' (dossier non clôturé = accès illimité).
-        const acces = statutAcces(dossierData)
-        if (acces === 'expire') {
-          setAccesExpire(dossierData.acces_expire_le)
-          setLoading(false)
-          return // on ne charge pas le contenu : l'écran « accès expiré » s'affiche
-        }
-        if (acces === 'bientot') setBandeauEcheance(dossierData.acces_expire_le)
-
         setDossier(dossierData)
         await Promise.all([
           chargerPhotos(dossierData.id),
