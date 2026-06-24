@@ -12,6 +12,7 @@ import path from 'path'
 import fs from 'fs'
 import { requireUser } from '../../lib/api-auth'
 import RecapHonoraires from '../../lib/pdf/RecapHonoraires.js'
+import { stripEmojiPdf } from '../../lib/pdf/stripEmoji.js'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -531,7 +532,10 @@ export async function POST(request) {
       if (!crData || crData.dossier_id !== dossierId) return NextResponse.json({ error: 'CR non trouvé' }, { status: 404 })
       cr = crData
 
-      const sections = (cr.contenu_final || '').split(/(?=## \d+\.)/).map(block => {
+      // Retrait des emojis (tofu en Roboto) AVANT le split : ne touche ni `## n.`,
+      // ni les puces `–`, ni le gras `**` → la structure est préservée. Donnée en
+      // base inchangée (nettoyage à l'affichage uniquement).
+      const sections = stripEmojiPdf(cr.contenu_final || '').split(/(?=## \d+\.)/).map(block => {
         const match = block.match(/^## (\d+)\. (.+?)\n([\s\S]*)/)
         if (match) return { numero: match[1], titre: match[2].trim(), contenu: match[3].trim() }
         const trimmed = block.trim()
