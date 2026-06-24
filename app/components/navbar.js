@@ -98,7 +98,7 @@ export default function NavBar() {
     }
   }, [mobileOpen])
 
-  const hidden = ['/', '/login', '/espace-client'].some(
+  const hidden = ['/', '/login', '/login-client', '/espace-client'].some(
     p => pathname === p || pathname?.startsWith('/espace-client')
   )
   if (hidden || !profile) return null
