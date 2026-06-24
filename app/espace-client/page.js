@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { calcStatut, STATUT_CONFIG } from '../lib/dossiers'
 import { authHeaders } from '../lib/api-auth-client'
 import { fmtDateHeureFR, estDansDelaiEdition } from '../lib/dates'
+import { statutAcces, formatDateFR } from '../lib/expiration'
 import MarkdownCR from '../components/MarkdownCR'
 
 // Vue client : les statuts internes de prospection (à contacter / à relancer)
@@ -52,6 +53,8 @@ export default function EspaceClient() {
   const [messages, setMessages]       = useState([])
   const [loading, setLoading]         = useState(true)
   const [accesDenied, setAccesDenied]  = useState(false)
+  const [accesExpire, setAccesExpire]  = useState(null)   // date d'expiration (string) si accès expiré
+  const [bandeauEcheance, setBandeauEcheance] = useState(null) // date d'expiration (string) si J-21
   const [onglet, setOnglet]           = useState('accueil')
   const [categoriePhoto, setCategoriePhoto] = useState('avant')
   const [lightbox, setLightbox]       = useState({ open: false, index: 0 })
@@ -150,6 +153,16 @@ export default function EspaceClient() {
         .single()
 
       if (dossierData) {
+        // Expiration d'accès (dossier clôturé + 3 mois). statutAcces gère le cas
+        // acces_expire_le null → 'ouvert' (dossier non clôturé = accès illimité).
+        const acces = statutAcces(dossierData)
+        if (acces === 'expire') {
+          setAccesExpire(dossierData.acces_expire_le)
+          setLoading(false)
+          return // on ne charge pas le contenu : l'écran « accès expiré » s'affiche
+        }
+        if (acces === 'bientot') setBandeauEcheance(dossierData.acces_expire_le)
+
         setDossier(dossierData)
         await Promise.all([
           chargerPhotos(dossierData.id),
@@ -269,6 +282,25 @@ export default function EspaceClient() {
     </div>
   )
 
+  // Accès expiré (dossier clôturé + 3 mois dépassés) : écran global, contenu masqué.
+  if (accesExpire) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
+      <div className="text-center max-w-sm">
+        <p className="text-4xl mb-4">⏳</p>
+        <p className="text-gray-800 font-semibold text-lg">Votre accès a expiré</p>
+        <p className="text-gray-500 text-sm mt-3 leading-relaxed">
+          Votre accès à votre espace client a pris fin le {formatDateFR(accesExpire)}.
+        </p>
+        <p className="text-gray-500 text-sm mt-2 leading-relaxed">
+          Pour réaccéder à votre espace, contactez votre conseiller.
+        </p>
+        <button onClick={handleLogout} className="mt-6 text-sm text-blue-600 hover:underline">
+          Se déconnecter
+        </button>
+      </div>
+    </div>
+  )
+
   if (!dossier) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center">
@@ -308,6 +340,15 @@ export default function EspaceClient() {
           <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-red-500">Déconnexion</button>
         </div>
       </header>
+
+      {/* Bandeau J-21 : accès bientôt clos (info, pas une erreur). Contenu visible en dessous. */}
+      {bandeauEcheance && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5">
+          <p className="max-w-2xl mx-auto text-xs text-amber-800 text-center">
+            Votre accès à cet espace se fermera le {formatDateFR(bandeauEcheance)}.
+          </p>
+        </div>
+      )}
 
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto flex overflow-x-auto">

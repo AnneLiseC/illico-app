@@ -34,6 +34,16 @@ function aujourdHui() {
   return new Date().toISOString().slice(0, 10)
 }
 
+// Formate une DATE PURE 'YYYY-MM-DD' en FR (« 15 octobre 2026 »). Construction
+// LOCALE depuis les composants → pas de décalage UTC (≠ new Date('YYYY-MM-DD')
+// qui serait interprété en UTC minuit). À utiliser pour les colonnes `date`,
+// PAS pour les timestamps (ceux-là passent par lib/dates).
+export function formatDateFR(dateStr) {
+  if (!dateStr) return ''
+  const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
 // Date d'expiration = (date_fin_chantier ou date_cloture) + 3 mois, ou null si
 // aucune base (dossier non clôturé → accès illimité).
 export function calculerExpiration(dossier) {
