@@ -150,14 +150,14 @@ group by grantee;
 BEGIN;
 
 create temp table _res (test text, verdict text, detail text) on commit drop;
-grant insert, select on _res to authenticated;
+grant insert, select on _res to authenticated, service_role;
 
 create temp table _ctx on commit drop as
 select
   (select id from profiles where role='agente' and agence_id='0fe5e7a1-4015-40cc-9854-e60d03b56ab9' limit 1) as agente_mtg,
   (select id from profiles where role='admin'  and societe_id='ef2128ea-4660-4c74-ba17-6910be523efd' limit 1) as admin_ctp,
   (select id from google_tokens limit 1)                                                                      as oauth;
-grant select on _ctx to authenticated;
+grant select on _ctx to authenticated, service_role;
 
 
 -- ---- T1 : agente -> cible PERSO ----
