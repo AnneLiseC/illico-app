@@ -1,4 +1,5 @@
 // app/lib/dates.js
+import { DateTime } from 'luxon'
 // Formatage des dates/heures en fuseau Europe/Paris.
 //
 // ⚠️ POUR LES TIMESTAMPS UTC UNIQUEMENT (colonnes `timestamp without time zone`
@@ -44,4 +45,25 @@ export const DELAI_EDITION_MS = 10 * 60 * 1000
 export function estDansDelaiEdition(ts) {
   const d = parseUTC(ts)
   return !!d && (Date.now() - d.getTime()) < DELAI_EDITION_MS
+}
+
+// ── Conversion <input datetime-local> (heure de Paris saisie) <-> instant UTC ──
+// Pour les colonnes `timestamptz` (ex. rendez_vous.date_heure). Indépendant du
+// fuseau du navigateur (luxon interprète/exprime explicitement en Europe/Paris,
+// DST géré selon la date).
+
+// "YYYY-MM-DDTHH:MM" (heure de Paris, sans offset) -> ISO instant offsetté, pour stockage.
+// Renvoie null si vide/invalide.
+export function parisLocalToInstant(localStr) {
+  if (!localStr) return null
+  const dt = DateTime.fromISO(localStr, { zone: 'Europe/Paris' })
+  return dt.isValid ? dt.toISO() : null
+}
+
+// instant ISO (timestamptz offsetté ou Z) -> "YYYY-MM-DDTHH:MM" en heure de Paris,
+// pour pré-remplir un <input type="datetime-local">. Renvoie '' si vide/invalide.
+export function instantToParisLocal(iso) {
+  if (!iso) return ''
+  const dt = DateTime.fromISO(iso, { zone: 'Europe/Paris' })
+  return dt.isValid ? dt.toFormat("yyyy-MM-dd'T'HH:mm") : ''
 }

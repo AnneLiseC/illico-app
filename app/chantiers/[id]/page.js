@@ -10,7 +10,7 @@ import { calculerAvancement, detecterCategorie } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
-import { fmtDateHeureFR, estDansDelaiEdition } from '../../lib/dates'
+import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
 import { buildInviteMailto } from '../../lib/inviteMail'
 import { calculerExpiration } from '../../lib/expiration'
 import JSZip from 'jszip'
@@ -901,7 +901,7 @@ export default function FicheChantier({ params }) {
 
   const sauvegarderRdvDossier = async () => {
     const { error } = await supabase.from('rendez_vous').insert({
-      dossier_id: id, type_rdv: nouveauRdvDossier.type_rdv, date_heure: nouveauRdvDossier.date_heure,
+      dossier_id: id, type_rdv: nouveauRdvDossier.type_rdv, date_heure: parisLocalToInstant(nouveauRdvDossier.date_heure),
       duree_minutes: parseInt(nouveauRdvDossier.duree_minutes), artisan_id: nouveauRdvDossier.artisan_id || null, notes: nouveauRdvDossier.notes || null,
       titre: nouveauRdvDossier.type_rdv === 'autres' ? (nouveauRdvDossier.titre || null) : null,
       lieu: nouveauRdvDossier.lieu || 'client',
@@ -939,7 +939,7 @@ export default function FicheChantier({ params }) {
   const modifierRdvDossier = async () => {
     if (!rdvEnEdition) return
     const { error } = await supabase.from('rendez_vous').update({
-      type_rdv: rdvEnEdition.type_rdv, date_heure: rdvEnEdition.date_heure,
+      type_rdv: rdvEnEdition.type_rdv, date_heure: parisLocalToInstant(rdvEnEdition.date_heure),
       duree_minutes: parseInt(rdvEnEdition.duree_minutes), artisan_id: rdvEnEdition.artisan_id || null, notes: rdvEnEdition.notes || null,
       titre: rdvEnEdition.type_rdv === 'autres' ? (rdvEnEdition.titre || null) : null,
       lieu: rdvEnEdition.lieu || 'client',
@@ -4356,7 +4356,7 @@ export default function FicheChantier({ params }) {
                       </div>
                     </div>
                     <div style={{display:'flex', gap:4}}>
-                      <button onClick={() => { setRdvEnEdition(r); setModalRdvOuvert(true) }}
+                      <button onClick={() => { setRdvEnEdition({ ...r, date_heure: instantToParisLocal(r.date_heure) }); setModalRdvOuvert(true) }}
                         className="btn btn-ghost" style={{padding:'4px 6px'}} title="Modifier">
                         <EditIcon />
                       </button>
