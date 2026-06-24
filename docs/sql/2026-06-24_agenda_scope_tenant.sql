@@ -397,6 +397,53 @@ from public.rendez_vous r
 where r.id = 'aaaaaaaa-0000-0000-0000-000000000006';
 
 
+-- ---- T7 : cloisonnement inter-AGENCES, MÊME société CTP --------------------
+-- Aucune 2e agence CTP n'existe en base (seule Martigues) -> on crée une agence
+-- CTP TEMPORAIRE dans la transaction (ROLLBACK -> aucun effet persistant : ni
+-- l'agence, ni le RDV). Seed en superuser (reset role) AVANT les SET ROLE.
+-- Colonnes NOT NULL de `agences` à fournir : societe_id, nom, ville, code
+-- (id : uuid marqueur ; created_at/updated_at : default now()). Le code est
+-- fourni explicitement -> le trigger agences_generer_code le respecte (pas de
+-- régénération).
+reset role;
+insert into public.agences (id, societe_id, nom, ville, code)
+values ('aaaaaaaa-0000-0000-0000-0000000000a7',
+        'ef2128ea-4660-4c74-ba17-6910be523efd',   -- CTP : MÊME société que Martigues
+        '__T7_agence_temp_CTP__', 'VilleTest', 'ZZ99');
+
+-- RDV semé sur cette 2e agence CTP (le trigger dérive societe_id = CTP)
+insert into public.rendez_vous (id, type_rdv, date_heure, agence_id, notes)
+values ('aaaaaaaa-0000-0000-0000-000000000007', 'autres',
+        timestamp '2030-05-05 13:00:00',
+        'aaaaaaaa-0000-0000-0000-0000000000a7', '__T7_autre_agence_meme_societe__');
+
+-- T7a : agente Martigues -> RDV d'une AUTRE agence (même société) INVISIBLE
+reset role;
+select set_config('request.jwt.claims',
+  json_build_object('sub', (select agente_mtg from _ids), 'role', 'authenticated')::text, true);
+set local role authenticated;
+
+insert into _res
+select 'T7a_agente_ne_voit_pas_autre_agence',
+       case when (select count(*) from public.rendez_vous
+                   where id = 'aaaaaaaa-0000-0000-0000-000000000007') = 0
+            then 'OK' else 'ECHEC' end,
+       'RDV autre agence (même société CTP) visible par agente Martigues ? -> doit être 0';
+
+-- T7b : admin CTP -> ce même RDV VISIBLE (scope société large, toutes agences)
+reset role;
+select set_config('request.jwt.claims',
+  json_build_object('sub', (select admin_ctp from _ids), 'role', 'authenticated')::text, true);
+set local role authenticated;
+
+insert into _res
+select 'T7b_admin_voit_autre_agence_meme_societe',
+       case when (select count(*) from public.rendez_vous
+                   where id = 'aaaaaaaa-0000-0000-0000-000000000007') = 1
+            then 'OK' else 'ECHEC' end,
+       'RDV autre agence CTP visible par admin CTP ? -> doit être 1';
+
+
 -- ---- Verdicts -------------------------------------------------------------
 reset role;
 select test, verdict, detail from _res order by test;
