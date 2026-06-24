@@ -37,9 +37,13 @@ const TYPE_CONFIG = {
 
 const ARTISAN_COLORS = [COLORS.violet, COLORS.coral, COLORS.mint, COLORS.gold, COLORS.sky, COLORS.teal, '#9333EA', '#0891B2']
 
-const fmtDate    = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) : '—'
-const fmtHeure   = (d) => d ? new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'
-const fmtDateLong = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '—'
+// date_heure est désormais un timestamptz (ISO offsetté) → new Date(d) donne le bon
+// instant ; on force l'affichage en Europe/Paris. (Sur les dates `date` pures des
+// interventions, ce pin Paris ne décale pas le jour pour un usage FR.)
+// ⚠️ Ne PAS passer par lib/dates.parseUTC : il ajoute 'Z' et casserait une valeur déjà suffixée +00:00.
+const fmtDate    = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', timeZone: 'Europe/Paris' }) : '—'
+const fmtHeure   = (d) => d ? new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' }) : '—'
+const fmtDateLong = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Paris' }) : '—'
 
 export default function Planning() {
   const [rdvs, setRdvs]                   = useState([])
@@ -560,6 +564,7 @@ export default function Planning() {
               plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}
               initialView={calendarView}
               locale={frLocale}
+              timeZone="Europe/Paris"
               headerToolbar={{
                 left: 'prev,next today',
                 center: 'title',
@@ -615,8 +620,8 @@ export default function Planning() {
                       width:48, padding:'6px 0', background:'var(--surface-2)', borderRadius:8,
                       textAlign:'center', borderLeft:`3px solid ${item.color}`
                     }}>
-                      <div className="tnum" style={{fontSize:16, fontWeight:800, color:'var(--ink-900)', lineHeight:1}}>{dt.toLocaleDateString('fr-FR',{day:'2-digit'})}</div>
-                      <div style={{fontSize:8.5, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2}}>{dt.toLocaleDateString('fr-FR',{month:'short'}).replace('.','')}</div>
+                      <div className="tnum" style={{fontSize:16, fontWeight:800, color:'var(--ink-900)', lineHeight:1}}>{dt.toLocaleDateString('fr-FR',{day:'2-digit', timeZone:'Europe/Paris'})}</div>
+                      <div style={{fontSize:8.5, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2}}>{dt.toLocaleDateString('fr-FR',{month:'short', timeZone:'Europe/Paris'}).replace('.','')}</div>
                     </div>
                     <div style={{minWidth:0}}>
                       <div className="clip-1" style={{fontSize:12, fontWeight:600, color:'var(--ink-900)'}}>{item.titre}</div>
@@ -914,7 +919,7 @@ export default function Planning() {
           <div style={{position:'fixed', inset:0, zIndex:40}} onClick={() => setQuickMenu(null)} />
           <div className="card" style={{position:'fixed', zIndex:50, minWidth:180, overflow:'hidden', padding:0, top: quickMenu.y + 8, left: quickMenu.x}}>
             <div className="eyebrow" style={{padding:'12px 16px 6px'}}>
-              {new Date(quickMenu.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}
+              {new Date(quickMenu.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/Paris' })}
             </div>
             <button onClick={() => ouvrirDepuisMenu('rdv')}
               className="row-hover"
