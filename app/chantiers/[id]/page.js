@@ -11,6 +11,7 @@ import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFin
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
 import { fmtDateHeureFR, estDansDelaiEdition } from '../../lib/dates'
+import { buildInviteMailto } from '../../lib/inviteMail'
 import JSZip from 'jszip'
 
 // Liste des entités supprimées avec un chantier — source unique des 2 libellés
@@ -1778,6 +1779,8 @@ export default function FicheChantier({ params }) {
   const [editingMsgId, setEditingMsgId] = useState(null)
   const [editMsgText, setEditMsgText] = useState('')
   const [editMsgError, setEditMsgError] = useState('')
+  const [inviting, setInviting] = useState(false)
+  const [inviteMsg, setInviteMsg] = useState(null) // { type:'ok'|'err', text }
   const messagesEndRef = useRef(null)
 
   // Realtime : écoute les nouveaux messages sur ce dossier
@@ -1880,6 +1883,45 @@ export default function FicheChantier({ params }) {
   }
 
   const annulerEditionMsg = () => { setEditingMsgId(null); setEditMsgText(''); setEditMsgError('') }
+
+  // Invite le client du dossier : le serveur crée le compte + génère le lien (sans
+  // envoyer d'email), puis on ouvre un brouillon mailto que le référent envoie de
+  // sa boîte. Le scope d'accès est porté par client_id → mes_dossiers_client() (RLS).
+  const inviterClient = async () => {
+    setInviting(true); setInviteMsg(null)
+    try {
+      const res = await fetch('/api/invite-client', {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({ dossierId: id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (data.status === 'invited' || data.status === 'relinked') {
+        setInviteMsg({
+          type: 'ok',
+          text: data.status === 'relinked'
+            ? 'Ce client a déjà un compte. Brouillon de renvoi ouvert — vérifiez et envoyez-le.'
+            : 'Brouillon d\'email ouvert — vérifiez et envoyez-le au client.',
+        })
+        // window.location.href (pas window.open) : éviter le blocage popup après await.
+        const mailto = buildInviteMailto({
+          email: data.email,
+          prenom: data.prenom,
+          actionLink: data.actionLink,
+          loginUrl: `${window.location.origin}/login`,
+          isRenvoi: data.status === 'relinked',
+        })
+        window.location.href = mailto
+      } else if (data.error === 'email_manquant') {
+        setInviteMsg({ type: 'err', text: 'Ajoutez un email au client avant de l\'inviter.' })
+      } else {
+        setInviteMsg({ type: 'err', text: data.message || data.error || 'Échec de l\'invitation.' })
+      }
+    } catch {
+      setInviteMsg({ type: 'err', text: 'Erreur réseau, réessayez.' })
+    }
+    setInviting(false)
+  }
 
   const typologieLabel = (t) => ({ courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' })[t] || t
 
@@ -2323,6 +2365,21 @@ export default function FicheChantier({ params }) {
               style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
               <MailIcon /> Email
             </a>
+          )}
+          {/* Invitation espace client : réservée aux dossiers AMO (l'espace client est AMO). */}
+          {dossier.typologie === 'amo' && (
+            <>
+              <button onClick={inviterClient} disabled={inviting} className="btn btn-ghost"
+                style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+                <MailIcon /> {inviting ? 'Invitation…' : 'Inviter le client'}
+              </button>
+              {inviteMsg && (
+                <div style={{width:'100%', fontSize:12, marginTop:2,
+                  color: inviteMsg.type === 'ok' ? '#15803d' : '#b91c1c'}}>
+                  {inviteMsg.text}
+                </div>
+              )}
+            </>
           )}
           <div style={{flex:1}}/>
           <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}

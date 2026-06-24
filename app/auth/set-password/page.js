@@ -88,7 +88,15 @@ function SetPasswordInner() {
       setSaving(false)
       return
     }
-    router.replace('/dashboard')
+    // Aiguillage par rôle : un client va à son espace, le staff au dashboard.
+    // (Chacun peut lire SON propre profil via la RLS profiles_select_scope.)
+    const { data: { user } } = await supabase.auth.getUser()
+    let role = null
+    if (user) {
+      const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      role = prof?.role
+    }
+    router.replace(role === 'client' ? '/espace-client' : '/dashboard')
   }
 
   if (sessionReady === null) {
