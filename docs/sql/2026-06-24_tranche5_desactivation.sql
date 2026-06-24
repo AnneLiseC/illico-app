@@ -69,7 +69,12 @@ BEGIN;
     'Renvoie le nb desactives. Idempotent (filtre acces_actif=true). Appelee par le cron (service_role).';
 
   -- Fonction d'admin : NON appelable par les utilisateurs (ni client ni staff).
+  -- ⚠️ Supabase pose un grant EXECUTE par défaut à `anon` ET `authenticated` sur les
+  --    fonctions du schéma public (via ALTER DEFAULT PRIVILEGES) : ces grants sont
+  --    EXPLICITES et NE tombent PAS avec REVOKE FROM PUBLIC → il faut les révoquer
+  --    nommément (sinon un rôle non authentifié pourrait appeler la RPC).
   REVOKE ALL ON FUNCTION public.desactiver_acces_expires() FROM PUBLIC;
+  REVOKE ALL ON FUNCTION public.desactiver_acces_expires() FROM anon;
   REVOKE ALL ON FUNCTION public.desactiver_acces_expires() FROM authenticated;
   GRANT EXECUTE ON FUNCTION public.desactiver_acces_expires() TO service_role;
 
@@ -78,7 +83,8 @@ COMMIT;
 -- ── 3. VÉRIF APRÈS — fonction + grants ──────────────────────────────────────
 SELECT proname, prosecdef AS security_definer
 FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname='desactiver_acces_expires';
--- Grants : service_role doit avoir EXECUTE ; authenticated/PUBLIC ne doivent PAS.
+-- Grants attendus : service_role (+ postgres propriétaire) UNIQUEMENT ;
+--   PAS anon, PAS authenticated, PAS PUBLIC.
 SELECT grantee, privilege_type
 FROM information_schema.routine_privileges
 WHERE routine_schema='public' AND routine_name='desactiver_acces_expires'
