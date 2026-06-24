@@ -1909,6 +1909,7 @@ export default function FicheChantier({ params }) {
           prenom: data.prenom,
           actionLink: data.actionLink,
           loginUrl: `${window.location.origin}/login`,
+          isRenvoi: data.status === 'relinked',
         })
         window.location.href = mailto
       } else if (data.error === 'email_manquant') {
@@ -2365,15 +2366,20 @@ export default function FicheChantier({ params }) {
               <MailIcon /> Email
             </a>
           )}
-          <button onClick={inviterClient} disabled={inviting} className="btn btn-ghost"
-            style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-            <MailIcon /> {inviting ? 'Invitation…' : 'Inviter le client'}
-          </button>
-          {inviteMsg && (
-            <div style={{width:'100%', fontSize:12, marginTop:2,
-              color: inviteMsg.type === 'ok' ? '#15803d' : '#b91c1c'}}>
-              {inviteMsg.text}
-            </div>
+          {/* Invitation espace client : réservée aux dossiers AMO (l'espace client est AMO). */}
+          {dossier.typologie === 'amo' && (
+            <>
+              <button onClick={inviterClient} disabled={inviting} className="btn btn-ghost"
+                style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+                <MailIcon /> {inviting ? 'Invitation…' : 'Inviter le client'}
+              </button>
+              {inviteMsg && (
+                <div style={{width:'100%', fontSize:12, marginTop:2,
+                  color: inviteMsg.type === 'ok' ? '#15803d' : '#b91c1c'}}>
+                  {inviteMsg.text}
+                </div>
+              )}
+            </>
           )}
           <div style={{flex:1}}/>
           <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
