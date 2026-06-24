@@ -44,6 +44,7 @@ export default function Planning() {
   const [dossiers, setDossiers]           = useState([])
   const [artisans, setArtisans]           = useState([])
   const [agentes, setAgentes]             = useState([])
+  const [agences, setAgences]             = useState([])
   const [devis, setDevis]                 = useState([])
   const [loading, setLoading]             = useState(true)
 
@@ -74,7 +75,7 @@ export default function Planning() {
 
   const [formRdv, setFormRdv] = useState({
     dossier_id: '', type_rdv: 'visite_technique_client',
-    date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '',
+    date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', agence_id: '',
   })
   const [formIntervention, setFormIntervention] = useState({
     dossier_id: '', artisan_id: '', type_intervention: 'periode',
@@ -87,13 +88,15 @@ export default function Planning() {
   const { user, profile, initialized } = useAuth()
 
   const chargerTout = async () => {
-    const [rdvRes, intRes, dosRes, artRes, devRes, agRes] = await Promise.all([
+    const [rdvRes, intRes, dosRes, artRes, devRes, agRes, agencesRes] = await Promise.all([
       supabase.from('rendez_vous').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_heure'),
       supabase.from('interventions_artisans').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_debut'),
-      supabase.from('dossiers').select('id, reference, referente_id, date_demarrage_chantier, date_fin_chantier, client:clients(civilite, prenom, nom)').order('reference'),
+      supabase.from('dossiers').select('id, reference, referente_id, agence_id, date_demarrage_chantier, date_fin_chantier, client:clients(civilite, prenom, nom)').order('reference'),
       supabase.from('artisans').select('id, entreprise').order('entreprise'),
       supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise)'),
       supabase.from('profiles').select('id, prenom, nom, role').in('role', ['admin', 'agente']).order('prenom'),
+      // Agences de la société (RLS agences_select_ma_societe filtre déjà) — pour le sélecteur admin
+      supabase.from('agences').select('id, nom, code').order('nom'),
     ])
     setRdvs(rdvRes.data || [])
     setInterventions(intRes.data || [])
@@ -101,6 +104,7 @@ export default function Planning() {
     setArtisans(artRes.data || [])
     setDevis(devRes.data || [])
     setAgentes(agRes.data || [])
+    setAgences(agencesRes.data || [])
   }
 
   useEffect(() => {
@@ -258,7 +262,7 @@ export default function Planning() {
   const handleEventClick = (info) => {
     const { type, data, cfg } = info.event.extendedProps
     setElementSelectionne({ type, data, cfg }); setModalType(type); setModeEdition(false)
-    if (type === 'rdv') setFormRdv({ dossier_id: data.dossier_id, type_rdv: data.type_rdv, date_heure: data.date_heure?.slice(0, 16), duree_minutes: data.duree_minutes || 60, artisan_id: data.artisan_id || '', notes: data.notes || '', titre: data.titre || '' })
+    if (type === 'rdv') setFormRdv({ dossier_id: data.dossier_id, type_rdv: data.type_rdv, date_heure: data.date_heure?.slice(0, 16), duree_minutes: data.duree_minutes || 60, artisan_id: data.artisan_id || '', notes: data.notes || '', titre: data.titre || '', agence_id: data.agence_id || '' })
     else if (type === 'intervention') setFormIntervention({ dossier_id: data.dossier_id, artisan_id: data.artisan_id, type_intervention: data.type_intervention, date_debut: data.date_debut || '', date_fin: data.date_fin || '', jours_specifiques: data.jours_specifiques || [], notes: data.notes || '' })
     else if (type === 'date_cle') setFormDateCle({ date_demarrage_chantier: data.date_demarrage_chantier || '', date_fin_chantier: data.date_fin_chantier || '' })
     setModalOuvert(true)
@@ -267,14 +271,14 @@ export default function Planning() {
   const ouvrirSidebar = (item) => {
     setElementSelectionne({ type: item.type, data: item.data })
     setModalType(item.type); setModeEdition(false)
-    if (item.type === 'rdv') setFormRdv({ dossier_id: item.data.dossier_id, type_rdv: item.data.type_rdv, date_heure: item.data.date_heure?.slice(0, 16), duree_minutes: item.data.duree_minutes || 60, artisan_id: item.data.artisan_id || '', notes: item.data.notes || '', titre: item.data.titre || '' })
+    if (item.type === 'rdv') setFormRdv({ dossier_id: item.data.dossier_id, type_rdv: item.data.type_rdv, date_heure: item.data.date_heure?.slice(0, 16), duree_minutes: item.data.duree_minutes || 60, artisan_id: item.data.artisan_id || '', notes: item.data.notes || '', titre: item.data.titre || '', agence_id: item.data.agence_id || '' })
     else if (item.type === 'intervention') setFormIntervention({ dossier_id: item.data.dossier_id, artisan_id: item.data.artisan_id, type_intervention: item.data.type_intervention, date_debut: item.data.date_debut || '', date_fin: item.data.date_fin || '', jours_specifiques: item.data.jours_specifiques || [], notes: item.data.notes || '' })
     setModalOuvert(true)
   }
 
   const fermerModal = () => {
     setModalOuvert(false); setElementSelectionne(null); setModeEdition(false); setErreur('')
-    setFormRdv({ dossier_id: '', type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '' })
+    setFormRdv({ dossier_id: '', type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', agence_id: '' })
     setFormIntervention({ dossier_id: '', artisan_id: '', type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '' })
   }
 
@@ -289,8 +293,19 @@ export default function Planning() {
 
   const sauvegarderRdv = async () => {
     if (!formRdv.date_heure) return
+    const estAutresSansDossier = formRdv.type_rdv === 'autres' && !formRdv.dossier_id
+    // Admin créant un RDV libre (sans dossier) : l'agence est obligatoire (le trigger
+    // ne peut pas la dériver ; sans elle la RLS rejetterait l'insert).
+    if (profile?.role === 'admin' && estAutresSansDossier && !formRdv.agence_id) {
+      setErreur('Il manque une agence'); return
+    }
     setSaving(true); setErreur('')
-    const payload = { type_rdv: formRdv.type_rdv, date_heure: formRdv.date_heure, duree_minutes: parseInt(formRdv.duree_minutes), artisan_id: formRdv.artisan_id || null, notes: formRdv.notes || null, titre: formRdv.type_rdv === 'autres' ? (formRdv.titre || null) : null }
+    // agence_id : dérivée du dossier si présent ; sinon, pour un admin sur un RDV libre,
+    // celle du sélecteur. Pour une agente sans dossier → null (le trigger met son agence).
+    const agence_id = formRdv.dossier_id
+      ? (dossiers.find(d => d.id === formRdv.dossier_id)?.agence_id || null)
+      : (profile?.role === 'admin' && estAutresSansDossier ? (formRdv.agence_id || null) : null)
+    const payload = { type_rdv: formRdv.type_rdv, date_heure: formRdv.date_heure, duree_minutes: parseInt(formRdv.duree_minutes), artisan_id: formRdv.artisan_id || null, notes: formRdv.notes || null, titre: formRdv.type_rdv === 'autres' ? (formRdv.titre || null) : null, agence_id }
     let savedId = elementSelectionne?.data?.id
     if (elementSelectionne?.type === 'rdv' && modeEdition) {
       const { error } = await supabase.from('rendez_vous').update(payload).eq('id', savedId)
@@ -308,7 +323,9 @@ export default function Planning() {
   const sauvegarderIntervention = async () => {
     if (!formIntervention.artisan_id) return
     setSaving(true); setErreur('')
-    const payload = { dossier_id: formIntervention.dossier_id, artisan_id: formIntervention.artisan_id, type_intervention: formIntervention.type_intervention, date_debut: formIntervention.date_debut || null, date_fin: formIntervention.type_intervention === 'periode' ? formIntervention.date_fin || null : null, jours_specifiques: formIntervention.type_intervention === 'jours_specifiques' ? formIntervention.jours_specifiques : null, notes: formIntervention.notes || null, heure_debut: formIntervention.heure_debut || null, duree_minutes: formIntervention.heure_debut ? (formIntervention.duree_minutes || 60) : null }
+    // Une intervention a toujours un dossier → agence dérivée du dossier (le trigger fait foi, on l'envoie par cohérence).
+    const agence_id = dossiers.find(d => d.id === formIntervention.dossier_id)?.agence_id || null
+    const payload = { dossier_id: formIntervention.dossier_id, artisan_id: formIntervention.artisan_id, type_intervention: formIntervention.type_intervention, date_debut: formIntervention.date_debut || null, date_fin: formIntervention.type_intervention === 'periode' ? formIntervention.date_fin || null : null, jours_specifiques: formIntervention.type_intervention === 'jours_specifiques' ? formIntervention.jours_specifiques : null, notes: formIntervention.notes || null, heure_debut: formIntervention.heure_debut || null, duree_minutes: formIntervention.heure_debut ? (formIntervention.duree_minutes || 60) : null, agence_id }
     let savedId = elementSelectionne?.data?.id
     if (elementSelectionne?.type === 'intervention' && modeEdition) {
       const { error } = await supabase.from('interventions_artisans').update(payload).eq('id', savedId)
@@ -752,6 +769,13 @@ export default function Planning() {
                   </div>
                   {formRdv.type_rdv === 'autres' && <div><label className={labelCls}>Titre du rendez-vous *</label>
                     <input type="text" value={formRdv.titre} onChange={e => setFormRdv(f => ({ ...f, titre: e.target.value }))} placeholder="Ex : Réunion de chantier, Appel fournisseur…" className={inputCls} style={{marginTop:6}}/>
+                  </div>}
+                  {/* Sélecteur d'agence : admin uniquement, sur un RDV libre (sans dossier d'où dériver l'agence) */}
+                  {profile?.role === 'admin' && formRdv.type_rdv === 'autres' && <div><label className={labelCls}>Agence *</label>
+                    <select value={formRdv.agence_id} onChange={e => setFormRdv(f => ({ ...f, agence_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
+                      <option value="">— Choisir une agence —</option>
+                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}{a.code ? ` (${a.code})` : ''}</option>)}
+                    </select>
                   </div>}
                   {formRdv.type_rdv !== 'autres' && !formRdv.dossier_id && <div><label className={labelCls}>Chantier *</label>
                     <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
