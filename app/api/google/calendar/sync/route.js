@@ -142,13 +142,13 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Google Calendar non connecté' }, { status: 400 })
     }
 
-    const auth = buildOAuthClient(userId, {
+    const oauthClient = buildOAuthClient(userId, {
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
       expiry_date: tokenData.expiry_date,
     })
 
-    const calendar = google.calendar({ version: 'v3', auth })
+    const calendar = google.calendar({ version: 'v3', auth: oauthClient })
     const results = { pushed: 0, updated: 0, pulled: 0, deleted: 0, errors: [] }
 
     // Vérifier que le calendrier est accessible avant de commencer
