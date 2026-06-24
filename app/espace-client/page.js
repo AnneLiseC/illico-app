@@ -147,6 +147,17 @@ export default function EspaceClient() {
       // AVANT le chargement du dossier. La RLS (back) reste la vraie barrière des
       // données → en cas d'erreur RPC, fail-open sur l'AFFICHAGE (on continue).
       const { data: expDate, error: expErr } = await supabase.rpc('mon_expiration_client')
+
+      // Compte désactivé par le cron (J+14, acces_actif=false) : on RÉUTILISE l'écran
+      // « accès expiré » avec la date renvoyée par la RPC. Ce check n'est atteint que
+      // par un client (le staff est filtré plus haut par role !== 'client'), et le
+      // staff a de toute façon acces_actif=true.
+      if (profData.acces_actif === false) {
+        setAccesExpire(expDate)
+        setLoading(false)
+        return
+      }
+
       if (!expErr) {
         const acces = statutAcces({ acces_expire_le: expDate })
         if (acces === 'expire') {
