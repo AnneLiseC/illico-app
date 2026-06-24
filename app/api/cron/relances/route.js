@@ -457,5 +457,16 @@ export async function GET(req) {
     }
   } catch (e) { errors.push(`[7] ${e.message}`) }
 
+  // ─────────────────────────────────────────────────────────────
+  // 8. Désactivation des accès client expirés depuis +14j
+  //    → RPC desactiver_acces_expires() (service_role ; garde-fou multi-dossiers
+  //      côté SQL). Pas d'email : action base uniquement.
+  // ─────────────────────────────────────────────────────────────
+  try {
+    const { data, error } = await supabase.rpc('desactiver_acces_expires')
+    if (error) throw error
+    log.push(`[8] Désactivation accès : ${data ?? 0} compte(s) désactivé(s)`)
+  } catch (e) { errors.push(`[8] désactivation accès : ${e.message}`) }
+
   return NextResponse.json({ ok: true, date: todayStr, sent: log, errors: errors.length ? errors : undefined })
 }
