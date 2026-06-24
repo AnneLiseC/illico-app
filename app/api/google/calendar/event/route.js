@@ -37,18 +37,18 @@ export async function DELETE(request) {
       return NextResponse.json({ success: true, skipped: true })
     }
 
-    const auth = new google.auth.OAuth2(
+    const oauthClient = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
       process.env.GOOGLE_REDIRECT_URI
     )
-    auth.setCredentials({
+    oauthClient.setCredentials({
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
       expiry_date: tokenData.expiry_date,
     })
 
-    auth.on('tokens', async (tokens) => {
+    oauthClient.on('tokens', async (tokens) => {
       if (tokens.access_token) {
         await supabaseAdmin.from('google_tokens').update({
           access_token: tokens.access_token,
@@ -58,7 +58,7 @@ export async function DELETE(request) {
       }
     })
 
-    const calendar = google.calendar({ version: 'v3', auth })
+    const calendar = google.calendar({ version: 'v3', auth: oauthClient })
 
     await calendar.events.delete({
       calendarId: CALENDAR_ID,
