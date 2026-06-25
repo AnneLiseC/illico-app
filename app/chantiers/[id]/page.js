@@ -11,6 +11,7 @@ import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFin
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
 import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
+import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../../lib/cibles'
 import { buildInviteMailto } from '../../lib/inviteMail'
 import { calculerExpiration } from '../../lib/expiration'
 import JSZip from 'jszip'
@@ -736,10 +737,12 @@ export default function FicheChantier({ params }) {
   const [interventionEnEdition, setInterventionEnEdition] = useState(null)
   const [modalInterventionOuvert, setModalInterventionOuvert] = useState(false)
   const [interventionsDossier, setInterventionsDossier] = useState([])
-  const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client' })
+  const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client', cible_id: '' })
   const [modalCreerIntervOuvert, setModalCreerIntervOuvert] = useState(false)
   const [nouvIntervArtisanId, setNouvIntervArtisanId] = useState(null)
-  const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client' })
+  const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client', cible_id: '' })
+  // Cibles calendrier (lot 3b). INERTE : le push lit encore GOOGLE_CALENDAR_ID (lot 4).
+  const [cibles, setCibles] = useState([])
   const [fichesTechChantier, setFichesTechChantier] = useState({})
   const [fichesPanelOuvert, setFichesPanelOuvert] = useState(null)
   const [documents, setDocuments] = useState([])
@@ -766,7 +769,7 @@ export default function FicheChantier({ params }) {
       setProfile(profData)
       const isAdmin = profData?.role === 'admin'
 
-      const [dossierRes, adminRes, artisansRes] = await Promise.all([
+      const [dossierRes, adminRes, artisansRes, ciblesRes] = await Promise.all([
         supabase.from('dossiers').select(`
           *,
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role),
@@ -797,9 +800,11 @@ export default function FicheChantier({ params }) {
           ? supabase.from('profiles').select('prenom, nom').eq('role', 'admin').order('prenom').limit(1).maybeSingle()
           : Promise.resolve({ data: null }),
         supabase.from('artisans').select('id, entreprise, metier, partenaire').order('entreprise'),
+        supabase.from('cibles_calendrier').select('*').eq('actif', true).order('created_at'),
       ])
 
       const d = dossierRes.data
+      setCibles(ciblesRes.data || [])
 
       if (adminRes.data) { setPrenomAdmin(adminRes.data.prenom || '—') }
       setDossier(d)
@@ -906,11 +911,12 @@ export default function FicheChantier({ params }) {
       titre: nouveauRdvDossier.type_rdv === 'autres' ? (nouveauRdvDossier.titre || null) : null,
       lieu: nouveauRdvDossier.lieu || 'client',
       agence_id: dossier?.agence_id || null,   // agence du dossier (le trigger fait foi, envoyé par cohérence)
+      cible_id: nouveauRdvDossier.cible_id || null,   // INERTE lot 3b (push lit encore GOOGLE_CALENDAR_ID)
     })
     if (!error) {
       await chargerRdvsDossier()
       setModalRdvOuvert(false)
-      setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client' })
+      setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client', cible_id: '' })
       setSucces('RDV créé ✓')
     } else { setErreur('Erreur : ' + error.message) }
   }
@@ -944,6 +950,7 @@ export default function FicheChantier({ params }) {
       duree_minutes: parseInt(rdvEnEdition.duree_minutes), artisan_id: rdvEnEdition.artisan_id || null, notes: rdvEnEdition.notes || null,
       titre: rdvEnEdition.type_rdv === 'autres' ? (rdvEnEdition.titre || null) : null,
       lieu: rdvEnEdition.lieu || 'client',
+      cible_id: rdvEnEdition.cible_id || null,   // INERTE lot 3b (push lit encore GOOGLE_CALENDAR_ID)
     }).eq('id', rdvEnEdition.id)
     if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerRdvsDossier()
@@ -969,6 +976,7 @@ export default function FicheChantier({ params }) {
         duree_minutes: nouvIntervForm.heure_debut ? (nouvIntervForm.duree_minutes || 60) : null,
         lieu: nouvIntervForm.lieu || 'client',
         agence_id: dossier?.agence_id || null,   // agence du dossier (le trigger fait foi, envoyé par cohérence)
+        cible_id: nouvIntervForm.cible_id || null,   // INERTE lot 3b (push lit encore GOOGLE_CALENDAR_ID)
       }
       const { data: intData, error: insertErr } = await supabase.from('interventions_artisans').insert(payload).select('*, artisan:artisans(id, entreprise)')
       if (insertErr) { setErreur('Erreur : ' + insertErr.message); return }
@@ -983,7 +991,7 @@ export default function FicheChantier({ params }) {
       await chargerRdvsDossier()
       setModalCreerIntervOuvert(false)
       setNouvIntervArtisanId(null)
-      setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client' })
+      setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client', cible_id: '' })
       setSucces('Intervention planifiée ✓')
     } catch (err) {
       setErreur('Erreur inattendue : ' + err.message)
@@ -1004,6 +1012,7 @@ export default function FicheChantier({ params }) {
       heure_debut: interventionEnEdition.heure_debut || null,
       duree_minutes: interventionEnEdition.heure_debut ? (interventionEnEdition.duree_minutes || 60) : null,
       lieu: interventionEnEdition.lieu || 'client',
+      cible_id: interventionEnEdition.cible_id || null,   // INERTE lot 3b (push lit encore GOOGLE_CALENDAR_ID)
     }).eq('id', interventionEnEdition.id)
     if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerRdvsDossier()
@@ -1021,6 +1030,24 @@ export default function FicheChantier({ params }) {
     const { data } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
     setInterventionsDossier(data || [])
   }
+
+  // Pré-sélection de la cible à l'ouverture des modales de CRÉATION (jamais en édition,
+  // où la valeur vient de la base). Le dossier est FIXE ici → agence toujours connue
+  // (dossier.agence_id), donc pas de sélecteur d'agence ni de validation : on résout via
+  // le helper partagé (cohérence avec le planning) et on ne remplit que si le champ est vide.
+  useEffect(() => {
+    if (!modalRdvOuvert || rdvEnEdition) return
+    const agenceConcernee = determinerAgenceConcernee({ dossier, profileAgenceId: profile?.agence_id })
+    const def = resoudreCibleDefaut({ profile, cibles, agenceConcernee }) || ''
+    setNouveauRdvDossier(f => (f.cible_id ? f : { ...f, cible_id: def }))
+  }, [modalRdvOuvert]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!modalCreerIntervOuvert) return
+    const agenceConcernee = determinerAgenceConcernee({ dossier, profileAgenceId: profile?.agence_id })
+    const def = resoudreCibleDefaut({ profile, cibles, agenceConcernee }) || ''
+    setNouvIntervForm(f => (f.cible_id ? f : { ...f, cible_id: def }))
+  }, [modalCreerIntervOuvert]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const chargerFichesTechChantier = async () => {
     const { data } = await supabase.from('chantier_fiches_techniques').select('*, fiche:fiches_techniques(id, nom, description)').eq('dossier_id', id)
@@ -4552,6 +4579,19 @@ export default function FicheChantier({ params }) {
                     rows={3} placeholder="Points à aborder, préparation…"
                     style={{minHeight:80, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
                 </ModalField>
+
+                {/* Cible calendrier (lot 3b) — INERTE : le push lit encore GOOGLE_CALENDAR_ID (lot 4). */}
+                {cibles.length > 0 && (
+                  <ModalField label="Calendrier">
+                    <select className="input"
+                      value={form.cible_id || ''}
+                      onChange={e => setForm({ cible_id: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}}>
+                      <option value="">— Choisir un calendrier —</option>
+                      {cibles.map(c => <option key={c.id} value={c.id}>{libelleCible(c)}</option>)}
+                    </select>
+                  </ModalField>
+                )}
               </div>
             </ModalShell>
           )
@@ -4706,6 +4746,19 @@ export default function FicheChantier({ params }) {
                   rows={3} placeholder="Précisions, accès chantier, contact site…"
                   style={{minHeight:80, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
               </ModalField>
+
+              {/* Cible calendrier (lot 3b) — INERTE : le push lit encore GOOGLE_CALENDAR_ID (lot 4). */}
+              {cibles.length > 0 && (
+                <ModalField label="Calendrier">
+                  <select className="input"
+                    value={i.cible_id || ''}
+                    onChange={e => setI({ cible_id: e.target.value })}
+                    style={{height:38, padding:'0 12px', fontSize:13}}>
+                    <option value="">— Choisir un calendrier —</option>
+                    {cibles.map(c => <option key={c.id} value={c.id}>{libelleCible(c)}</option>)}
+                  </select>
+                </ModalField>
+              )}
 
             </div>
           </ModalShell>
@@ -5543,6 +5596,19 @@ export default function FicheChantier({ params }) {
                   rows={3} placeholder="Précisions, accès chantier, contact site…"
                   style={{minHeight:80, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
               </ModalField>
+
+              {/* Cible calendrier (lot 3b) — INERTE : le push lit encore GOOGLE_CALENDAR_ID (lot 4). */}
+              {cibles.length > 0 && (
+                <ModalField label="Calendrier">
+                  <select className="input"
+                    value={f.cible_id || ''}
+                    onChange={e => setF({ cible_id: e.target.value })}
+                    style={{height:38, padding:'0 12px', fontSize:13}}>
+                    <option value="">— Choisir un calendrier —</option>
+                    {cibles.map(c => <option key={c.id} value={c.id}>{libelleCible(c)}</option>)}
+                  </select>
+                </ModalField>
+              )}
 
             </div>
           </ModalShell>
