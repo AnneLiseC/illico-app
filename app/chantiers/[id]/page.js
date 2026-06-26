@@ -4463,6 +4463,16 @@ export default function FicheChantier({ params }) {
           const setForm = edit
             ? (patch) => setRdvEnEdition(r => ({ ...r, ...(typeof patch === 'function' ? patch(r) : patch) }))
             : (patch) => setNouveauRdvDossier(f => ({ ...f, ...(typeof patch === 'function' ? patch(f) : patch) }))
+          // Réception : artisans ayant un DEVIS ACCEPTÉ sur ce chantier (devis est déjà
+          // restreint au dossier courant → filtre sur statut seul). En édition, on conserve
+          // l'artisan déjà choisi même sans devis accepté (donnée historique) pour ne pas le
+          // faire disparaître du sélecteur.
+          const artisansReceptionList = (() => {
+            const m = new Map()
+            devis.filter(d => d.statut === 'accepte' && d.artisan).forEach(d => m.set(d.artisan.id, d.artisan))
+            if (form.artisan_id && form.artisan && !m.has(form.artisan_id)) m.set(form.artisan.id, form.artisan)
+            return [...m.values()]
+          })()
           const types = [
             { k: 'visite_technique_client',  l: 'R1',       sub: 'Visite client',        color: '#0094d4' },
             { k: 'visite_technique_artisan', l: 'R2',       sub: 'Visite artisan',       color: '#16a34a' },
@@ -4502,7 +4512,7 @@ export default function FicheChantier({ params }) {
                     {types.map(t => {
                       const active = form.type_rdv === t.k
                       return (
-                        <button key={t.k} type="button" onClick={() => setForm(f => ({ type_rdv: t.k, artisan_id: ['visite_technique_artisan', 'reception'].includes(t.k) ? f.artisan_id : '' }))}
+                        <button key={t.k} type="button" onClick={() => setForm(f => ({ type_rdv: t.k, artisan_id: '' }))}
                           style={{
                             padding:'10px 6px', borderRadius:8, border:'1px solid',
                             borderColor: active ? t.color : 'var(--ink-200)',
@@ -4567,8 +4577,11 @@ export default function FicheChantier({ params }) {
                       onChange={e => setForm({ artisan_id: e.target.value })}
                       style={{height:38, padding:'0 12px', fontSize:13}}>
                       <option value="">— Choisir —</option>
-                      {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
+                      {(form.type_rdv === 'reception' ? artisansReceptionList : artisans).map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
                     </select>
+                    {form.type_rdv === 'reception' && artisansReceptionList.length === 0 && (
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Aucun artisan avec devis signé sur ce chantier</div>
+                    )}
                   </ModalField>
                 )}
 
@@ -5467,17 +5480,22 @@ export default function FicheChantier({ params }) {
                     <button onClick={() => setNouvIntervArtisanId(null)} className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>Changer</button>
                   </div>
                 ) : (
-                  <select className="input"
-                    value={nouvIntervArtisanId || ''}
-                    onChange={e => setNouvIntervArtisanId(e.target.value)}
-                    style={{height:38, padding:'0 12px', fontSize:13}}>
-                    <option value="">— Choisir un artisan (devis signé) —</option>
-                    {devis.filter(d => d.statut === 'accepte').map(d => (
-                      <option key={d.artisan_id} value={d.artisan_id}>
-                        {d.artisan?.entreprise}{d.artisan?.metier ? ` · ${d.artisan.metier}` : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <>
+                    <select className="input"
+                      value={nouvIntervArtisanId || ''}
+                      onChange={e => setNouvIntervArtisanId(e.target.value)}
+                      style={{height:38, padding:'0 12px', fontSize:13}}>
+                      <option value="">— Choisir un artisan (devis signé) —</option>
+                      {devis.filter(d => d.statut === 'accepte').map(d => (
+                        <option key={d.artisan_id} value={d.artisan_id}>
+                          {d.artisan?.entreprise}{d.artisan?.metier ? ` · ${d.artisan.metier}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {devis.filter(d => d.statut === 'accepte').length === 0 && (
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Aucun artisan avec devis signé sur ce chantier</div>
+                    )}
+                  </>
                 )}
               </ModalField>
 
