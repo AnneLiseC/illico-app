@@ -237,8 +237,8 @@ export default function Planning() {
     .map(r => {
       const cfg = TYPE_CONFIG[r.type_rdv] || TYPE_CONFIG.visite_technique_client
       const client = `${r.dossier?.client?.prenom || ''} ${r.dossier?.client?.nom || ''}`.trim()
-      const titre = r.type_rdv === 'autres' && r.titre
-        ? `${cfg.short} · ${r.titre}`
+      const titre = r.type_rdv === 'autres'
+        ? (r.titre || cfg.label)
         : r.type_rdv === 'visite_technique_artisan'
           ? `${cfg.short} · ${client} × ${r.artisan?.entreprise || ''}`
           : `${cfg.short} · ${client}`
@@ -297,7 +297,7 @@ export default function Planning() {
         const client = `${r.dossier?.client?.prenom || ''} ${r.dossier?.client?.nom || ''}`.trim()
         return {
           id: r.id, type: 'rdv', date: new Date(r.date_heure),
-          titre: `${cfg.short} · ${client}`,
+          titre: r.type_rdv === 'autres' ? (r.titre || cfg.label) : `${cfg.short} · ${client}`,
           sous: r.type_rdv === 'visite_technique_artisan' && r.artisan?.entreprise ? `avec ${r.artisan.entreprise}` : fmtHeure(r.date_heure),
           color: cfg.color, data: r,
         }
