@@ -1,5 +1,19 @@
 // app/api/google/calendar/push/route.js
 // Push unitaire d'un élément vers Google Calendar (après création/modification)
+//
+// LOT 4a — BASCULE SUR LES CIBLES :
+//   La destination n'est plus l'env GOOGLE_CALENDAR_ID + les tokens du USER
+//   déclencheur. On lit le cible_id de l'item → la cible (calendar_id +
+//   compte_oauth_id) → les tokens du COMPTE DÉTENTEUR (google_tokens.id =
+//   compte_oauth_id), et on pousse vers CE calendrier avec CES tokens.
+//   - cible_id NULL → SKIP (aucun fallback sur GOOGLE_CALENDAR_ID).
+//   - type 'dossier' → SKIP (le ciblage est porté par rendez_vous/interventions,
+//     pas par dossiers ; marqueurs de chantier non poussés pour l'instant).
+//   - DRY-RUN (GOOGLE_SYNC_DRY_RUN === '1') : logge ce qui serait poussé et
+//     n'appelle ni Google ni le writeback en base.
+//
+// ⚠️ Le scoping tenant (lecture de l'item en service_role sans contrôle
+//    d'appartenance) RESTE une faille connue, traitée au lot 4b — pas ici.
 
 import { google } from 'googleapis'
 import { createClient } from '@supabase/supabase-js'
@@ -11,7 +25,8 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 )
 
-const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID
+// Mode simulation : calcule + logge l'événement sans rien écrire (Google ni base).
+const DRY_RUN = process.env.GOOGLE_SYNC_DRY_RUN === '1'
 
 function nextDay(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
@@ -19,7 +34,11 @@ function nextDay(dateStr) {
   return d.toISOString().slice(0, 10)
 }
 
-function buildOAuthClient(userId, tokens) {
+// Client OAuth ciblant une LIGNE google_tokens par son id (= compte détenteur de
+// la cible). ⚠️ Le refresh on('tokens') réécrit .eq('id', compteOauthId), JAMAIS
+// .eq('user_id', ...) : on rafraîchit les tokens du compte de la cible, pas ceux
+// du user déclencheur. Inverser corromprait le mauvais compte.
+function buildOAuthClientForCompte(compteOauthId, tokens) {
   const client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
@@ -32,38 +51,77 @@ function buildOAuthClient(userId, tokens) {
         access_token: newTokens.access_token,
         expiry_date: newTokens.expiry_date,
         updated_at: new Date().toISOString(),
-      }).eq('user_id', userId)
+      }).eq('id', compteOauthId)
     }
   })
   return client
 }
 
-async function getCalendar(userId) {
+// Résout la cible d'un item → { calendar, calendarId, compteOauthId } ou null.
+// null = rien à pousser : cible introuvable, sans compte OAuth, ou compte sans
+// refresh_token (cible inerte). L'appelant logge la raison et skip.
+async function getCalendarForCible(cibleId) {
+  const { data: cible } = await supabaseAdmin
+    .from('cibles_calendrier')
+    .select('id, calendar_id, compte_oauth_id')
+    .eq('id', cibleId)
+    .single()
+  if (!cible || !cible.compte_oauth_id) return null
+
   const { data: tokenData } = await supabaseAdmin
     .from('google_tokens')
     .select('*')
-    .eq('user_id', userId)
+    .eq('id', cible.compte_oauth_id)
     .single()
-  if (!tokenData) return null
-  const auth = buildOAuthClient(userId, {
+  if (!tokenData || !tokenData.refresh_token) return null
+
+  const oauthClient = buildOAuthClientForCompte(cible.compte_oauth_id, {
     access_token: tokenData.access_token,
     refresh_token: tokenData.refresh_token,
     expiry_date: tokenData.expiry_date,
   })
-  return google.calendar({ version: 'v3', auth })
+  return {
+    calendar: google.calendar({ version: 'v3', auth: oauthClient }),
+    calendarId: cible.calendar_id,
+    compteOauthId: cible.compte_oauth_id,
+  }
 }
 
-async function upsertEvent(calendar, googleEventId, eventBody) {
+// Seul point d'écriture Google de la route. En DRY-RUN : logge et ne touche rien.
+// action ∈ 'insert' | 'update'. Renvoie { id, dryRun }.
+async function gcalWrite({ calendar, action, calendarId, requestBody, eventId, compteOauthId, contexte }) {
+  if (DRY_RUN) {
+    console.log('[push][DRY-RUN]', JSON.stringify({
+      action,
+      type: contexte?.type,
+      itemId: contexte?.itemId,
+      calendarId,
+      compteOauthId,
+      summary: requestBody?.summary,
+      start: requestBody?.start,
+      end: requestBody?.end,
+    }))
+    return { id: null, dryRun: true }
+  }
+  if (action === 'update') {
+    await calendar.events.update({ calendarId, eventId, requestBody })
+    return { id: eventId, dryRun: false }
+  }
+  const res = await calendar.events.insert({ calendarId, requestBody })
+  return { id: res.data.id, dryRun: false }
+}
+
+async function upsertEvent({ calendar, calendarId, compteOauthId, googleEventId, eventBody, contexte }) {
   if (googleEventId) {
     try {
-      await calendar.events.update({ calendarId: CALENDAR_ID, eventId: googleEventId, requestBody: eventBody })
-      return { action: 'updated', id: googleEventId }
+      const r = await gcalWrite({ calendar, action: 'update', calendarId, eventId: googleEventId, requestBody: eventBody, compteOauthId, contexte })
+      return { action: 'updated', id: r.id, dryRun: r.dryRun }
     } catch (err) {
       if (err.code !== 404 && err.code !== 410) throw err
     }
   }
-  const res = await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: eventBody })
-  return { action: 'inserted', id: res.data.id }
+  const r = await gcalWrite({ calendar, action: 'insert', calendarId, requestBody: eventBody, compteOauthId, contexte })
+  return { action: 'inserted', id: r.id, dryRun: r.dryRun }
 }
 
 function buildIntervTimes(date, heure_debut, duree_minutes) {
@@ -111,15 +169,9 @@ export async function POST(request) {
   try {
     const body = await request.json()
     const { type, id } = body
-    const userId = auth.user.id
 
     if (!type || !id) {
       return NextResponse.json({ error: 'Paramètres manquants' }, { status: 400 })
-    }
-
-    const calendar = await getCalendar(userId)
-    if (!calendar) {
-      return NextResponse.json({ success: true, skipped: true })
     }
 
     // ── RDV ─────────────────────────────────────────────────────────────────
@@ -132,8 +184,23 @@ export async function POST(request) {
 
       if (!rdv) return NextResponse.json({ error: 'RDV introuvable' }, { status: 404 })
 
-      const result = await upsertEvent(calendar, rdv.google_event_id, rdvToGoogleEvent(rdv))
-      if (result.action === 'inserted') {
+      if (!rdv.cible_id) {
+        console.log('[push] rdv', id, '— sans cible, non poussé')
+        return NextResponse.json({ success: true, skipped: true, reason: 'sans cible' })
+      }
+      const resolved = await getCalendarForCible(rdv.cible_id)
+      if (!resolved) {
+        console.log('[push] rdv', id, '— cible', rdv.cible_id, 'non poussable (compte OAuth absent ou sans refresh_token), skip')
+        return NextResponse.json({ success: true, skipped: true, reason: 'cible non poussable' })
+      }
+      console.log('[push] rdv', id, '→ cible', rdv.cible_id, 'calendar', resolved.calendarId, 'compte', resolved.compteOauthId, DRY_RUN ? '(DRY-RUN)' : '')
+
+      const result = await upsertEvent({
+        calendar: resolved.calendar, calendarId: resolved.calendarId, compteOauthId: resolved.compteOauthId,
+        googleEventId: rdv.google_event_id, eventBody: rdvToGoogleEvent(rdv),
+        contexte: { type: 'rdv', itemId: id },
+      })
+      if (result.action === 'inserted' && !result.dryRun && result.id) {
         await supabaseAdmin.from('rendez_vous').update({ google_event_id: result.id }).eq('id', id)
       }
     }
@@ -147,6 +214,17 @@ export async function POST(request) {
         .single()
 
       if (!intervention) return NextResponse.json({ error: 'Intervention introuvable' }, { status: 404 })
+
+      if (!intervention.cible_id) {
+        console.log('[push] intervention', id, '— sans cible, non poussée')
+        return NextResponse.json({ success: true, skipped: true, reason: 'sans cible' })
+      }
+      const resolved = await getCalendarForCible(intervention.cible_id)
+      if (!resolved) {
+        console.log('[push] intervention', id, '— cible', intervention.cible_id, 'non poussable (compte OAuth absent ou sans refresh_token), skip')
+        return NextResponse.json({ success: true, skipped: true, reason: 'cible non poussable' })
+      }
+      console.log('[push] intervention', id, '→ cible', intervention.cible_id, 'calendar', resolved.calendarId, 'compte', resolved.compteOauthId, DRY_RUN ? '(DRY-RUN)' : '')
 
       const artisan = intervention.artisan?.entreprise || 'Artisan'
       const client = intervention.dossier?.client
@@ -195,56 +273,36 @@ export async function POST(request) {
         }))
       }
 
-      const result = await upsertEvent(calendar, intervention.google_event_id, firstEvent)
+      const result = await upsertEvent({
+        calendar: resolved.calendar, calendarId: resolved.calendarId, compteOauthId: resolved.compteOauthId,
+        googleEventId: intervention.google_event_id, eventBody: firstEvent,
+        contexte: { type: 'intervention', itemId: id },
+      })
       if (result.action === 'inserted') {
-        await supabaseAdmin.from('interventions_artisans')
-          .update({ google_event_id: result.id }).eq('id', id)
+        if (!result.dryRun && result.id) {
+          await supabaseAdmin.from('interventions_artisans')
+            .update({ google_event_id: result.id }).eq('id', id)
+        }
         for (const evt of extraEvents) {
-          await calendar.events.insert({ calendarId: CALENDAR_ID, requestBody: evt })
+          await gcalWrite({
+            calendar: resolved.calendar, action: 'insert', calendarId: resolved.calendarId,
+            requestBody: evt, compteOauthId: resolved.compteOauthId,
+            contexte: { type: 'intervention-extra', itemId: id },
+          })
         }
       }
     }
 
     // ── Dates clés dossier ───────────────────────────────────────────────────
+    // Le ciblage est porté par rendez_vous/interventions (cible_id), PAS par les
+    // dossiers. Les marqueurs de chantier (google_start/end_event_id) ne sont donc
+    // pas poussés au lot 4a : on skip proprement (traitement éventuel plus tard).
     if (type === 'dossier') {
-      const { data: dossier } = await supabaseAdmin
-        .from('dossiers')
-        .select('id, date_demarrage_chantier, date_fin_chantier, google_start_event_id, google_end_event_id, client:clients(prenom, nom)')
-        .eq('id', id)
-        .single()
-
-      if (!dossier) return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
-
-      const nomClient = dossier.client ? `${dossier.client.prenom} ${dossier.client.nom}` : ''
-
-      if (dossier.date_demarrage_chantier) {
-        const eventStart = {
-          summary: `Démarrage${nomClient ? ' | ' + nomClient : ''}`,
-          start: { date: dossier.date_demarrage_chantier },
-          end: { date: nextDay(dossier.date_demarrage_chantier) },
-          colorId: '2',
-        }
-        const result = await upsertEvent(calendar, dossier.google_start_event_id, eventStart)
-        if (result.action === 'inserted') {
-          await supabaseAdmin.from('dossiers').update({ google_start_event_id: result.id }).eq('id', id)
-        }
-      }
-
-      if (dossier.date_fin_chantier) {
-        const eventEnd = {
-          summary: `Fin${nomClient ? ' | ' + nomClient : ''}`,
-          start: { date: dossier.date_fin_chantier },
-          end: { date: nextDay(dossier.date_fin_chantier) },
-          colorId: '6',
-        }
-        const result = await upsertEvent(calendar, dossier.google_end_event_id, eventEnd)
-        if (result.action === 'inserted') {
-          await supabaseAdmin.from('dossiers').update({ google_end_event_id: result.id }).eq('id', id)
-        }
-      }
+      console.log('[push] dossier', id, '— sans ciblage (cible_id porté par rdv/interv), marqueurs non poussés')
+      return NextResponse.json({ success: true, skipped: true, reason: 'dossier non ciblé' })
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, dryRun: DRY_RUN })
   } catch (err) {
     console.error('Push error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
