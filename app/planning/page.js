@@ -73,7 +73,6 @@ export default function Planning() {
   const [erreur, setErreur]                   = useState('')
 
   const [googleConnected, setGoogleConnected] = useState(false)
-  const [syncing, setSyncing]                 = useState(false)
   const [syncMessage, setSyncMessage]         = useState('')
   const [calendarView, setCalendarView]       = useState('timeGridWeek')
   const [quickMenu, setQuickMenu]             = useState(null) // { date, x, y }
@@ -472,24 +471,6 @@ export default function Planning() {
     chargerTout()
   }
 
-  const syncGoogle = async () => {
-    setSyncing(true); setSyncMessage('')
-    try {
-      const res = await fetch('/api/google/calendar/sync', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({}) })
-      const data = await res.json()
-      if (!res.ok) {
-        setSyncMessage(`❌ ${data.error || 'Erreur de synchronisation'}`)
-        if (data.needsReconnect) setGoogleConnected(false)
-      } else if (data.hasErrors && !data.pushed && !data.updated && !data.pulled && !data.deleted) {
-        setSyncMessage(`❌ ${data.message}`)
-      } else {
-        setSyncMessage(`✅ ${data.message}`)
-        if (data.deleted > 0 || data.pulled > 0) await chargerTout()
-      }
-    } catch { setSyncMessage('❌ Google Calendar non configuré') }
-    setSyncing(false)
-  }
-
   if (loading) return <div className="page-loading" />
 
   const inputCls = "input"
@@ -516,11 +497,13 @@ export default function Planning() {
         </div>
         <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
           {googleConnected ? (
-            <button onClick={syncGoogle} disabled={syncing} className="btn btn-ghost"
-              style={{display:'inline-flex', alignItems:'center', gap:6, opacity: syncing ? 0.6 : 1}}>
-              <span style={{width:6, height:6, borderRadius:'50%', background:'#15803d', flexShrink:0, animation: syncing ? 'pulse 1s infinite' : undefined}}/>
-              Google {syncing ? 'Sync…' : <span style={{color:'#15803d'}}>● Connecté</span>}
-            </button>
+            // Indicateur passif : le push est désormais automatique à chaque sauvegarde
+            // (lot 4c). Plus de bouton de synchronisation complète (la route /sync POST
+            // reste pour l'étage 3 pull, mais n'est plus déclenchée depuis l'UI).
+            <span className="btn btn-ghost" style={{display:'inline-flex', alignItems:'center', gap:6, cursor:'default'}}>
+              <span style={{width:6, height:6, borderRadius:'50%', background:'#15803d', flexShrink:0}}/>
+              Google <span style={{color:'#15803d'}}>● Connecté</span>
+            </span>
           ) : (
             <button
               onClick={async () => {

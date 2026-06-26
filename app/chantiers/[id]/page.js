@@ -904,16 +904,28 @@ export default function FicheChantier({ params }) {
     setInterventionsDossier(intData || [])
   }
 
+  // Push unitaire vers Google après une sauvegarde (création/édition). Dupliqué du
+  // planning (plomberie, ~6 lignes) : pas de gate googleConnected ici (indisponible en
+  // fiche chantier) — la route push (lot 4a) skip proprement si pas de cible/tokens, et
+  // l'appel est non bloquant (la sauvegarde DB a déjà réussi). cible_id résout le calendrier.
+  const pushToGoogle = (type, pushId) => {
+    if (!pushId || !profile?.id) return
+    authHeaders().then(headers => fetch('/api/google/calendar/push', {
+      method: 'POST', headers, body: JSON.stringify({ type, id: pushId }),
+    })).catch(() => {})
+  }
+
   const sauvegarderRdvDossier = async () => {
-    const { error } = await supabase.from('rendez_vous').insert({
+    const { data, error } = await supabase.from('rendez_vous').insert({
       dossier_id: id, type_rdv: nouveauRdvDossier.type_rdv, date_heure: parisLocalToInstant(nouveauRdvDossier.date_heure),
       duree_minutes: parseInt(nouveauRdvDossier.duree_minutes), artisan_id: nouveauRdvDossier.artisan_id || null, notes: nouveauRdvDossier.notes || null,
       titre: nouveauRdvDossier.type_rdv === 'autres' ? (nouveauRdvDossier.titre || null) : null,
       lieu: nouveauRdvDossier.lieu || 'client',
       agence_id: dossier?.agence_id || null,   // agence du dossier (le trigger fait foi, envoyé par cohérence)
-      cible_id: nouveauRdvDossier.cible_id || null,   // INERTE lot 3b (push lit encore GOOGLE_CALENDAR_ID)
-    })
+      cible_id: nouveauRdvDossier.cible_id || null,   // calendrier cible (lot 4a) — résolu au push
+    }).select('id').single()
     if (!error) {
+      pushToGoogle('rdv', data?.id)   // non bloquant
       await chargerRdvsDossier()
       setModalRdvOuvert(false)
       setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client', cible_id: '' })
@@ -950,9 +962,10 @@ export default function FicheChantier({ params }) {
       duree_minutes: parseInt(rdvEnEdition.duree_minutes), artisan_id: rdvEnEdition.artisan_id || null, notes: rdvEnEdition.notes || null,
       titre: rdvEnEdition.type_rdv === 'autres' ? (rdvEnEdition.titre || null) : null,
       lieu: rdvEnEdition.lieu || 'client',
-      cible_id: rdvEnEdition.cible_id || null,   // INERTE lot 3b (push lit encore GOOGLE_CALENDAR_ID)
+      cible_id: rdvEnEdition.cible_id || null,   // calendrier cible (lot 4a) — résolu au push
     }).eq('id', rdvEnEdition.id)
     if (error) { setErreur('Erreur : ' + error.message); return }
+    pushToGoogle('rdv', rdvEnEdition.id)   // non bloquant
     await chargerRdvsDossier()
     setModalRdvOuvert(false)
     setRdvEnEdition(null)
@@ -976,18 +989,11 @@ export default function FicheChantier({ params }) {
         duree_minutes: nouvIntervForm.heure_debut ? (nouvIntervForm.duree_minutes || 60) : null,
         lieu: nouvIntervForm.lieu || 'client',
         agence_id: dossier?.agence_id || null,   // agence du dossier (le trigger fait foi, envoyé par cohérence)
-        cible_id: nouvIntervForm.cible_id || null,   // INERTE lot 3b (push lit encore GOOGLE_CALENDAR_ID)
+        cible_id: nouvIntervForm.cible_id || null,   // calendrier cible (lot 4a) — résolu au push
       }
       const { data: intData, error: insertErr } = await supabase.from('interventions_artisans').insert(payload).select('*, artisan:artisans(id, entreprise)')
       if (insertErr) { setErreur('Erreur : ' + insertErr.message); return }
-      // Sync Google si connecté (non bloquant)
-      if (intData?.[0] && profile?.id) {
-        authHeaders().then(headers => fetch('/api/google/calendar/sync', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ singleIntervId: intData[0].id }),
-        })).catch(() => {})
-      }
+      pushToGoogle('intervention', intData?.[0]?.id)   // push unitaire (lot 4c), non bloquant
       await chargerRdvsDossier()
       setModalCreerIntervOuvert(false)
       setNouvIntervArtisanId(null)
@@ -1012,9 +1018,10 @@ export default function FicheChantier({ params }) {
       heure_debut: interventionEnEdition.heure_debut || null,
       duree_minutes: interventionEnEdition.heure_debut ? (interventionEnEdition.duree_minutes || 60) : null,
       lieu: interventionEnEdition.lieu || 'client',
-      cible_id: interventionEnEdition.cible_id || null,   // INERTE lot 3b (push lit encore GOOGLE_CALENDAR_ID)
+      cible_id: interventionEnEdition.cible_id || null,   // calendrier cible (lot 4a) — résolu au push
     }).eq('id', interventionEnEdition.id)
     if (error) { setErreur('Erreur : ' + error.message); return }
+    pushToGoogle('intervention', interventionEnEdition.id)   // non bloquant
     await chargerRdvsDossier()
     setModalInterventionOuvert(false)
     setInterventionEnEdition(null)
