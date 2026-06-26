@@ -28,6 +28,16 @@ const supabaseAdmin = createClient(
 // Mode simulation : calcule + logge l'événement sans rien écrire (Google ni base).
 const DRY_RUN = process.env.GOOGLE_SYNC_DRY_RUN === '1'
 
+// Token Bearer ré-extrait inline (lot 4b) : requireUser le valide mais ne le renvoie
+// pas. On en a besoin pour construire un client RLS-authentifié servant de GATE
+// d'appartenance (l'item poussé doit être dans l'agence/société du user).
+function extractToken(request) {
+  const header = request.headers.get('authorization') || request.headers.get('Authorization')
+  if (!header) return null
+  const match = header.match(/^Bearer\s+(.+)$/i)
+  return match ? match[1].trim() : null
+}
+
 function nextDay(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
   d.setDate(d.getDate() + 1)
@@ -172,6 +182,26 @@ export async function POST(request) {
 
     if (!type || !id) {
       return NextResponse.json({ error: 'Paramètres manquants' }, { status: 400 })
+    }
+
+    // GATE d'appartenance (lot 4b) : client authentifié au JWT du user → la RLS
+    // (agence pour une agente, société pour un admin) ne renvoie l'id que si l'item
+    // est dans son périmètre. Sert UNIQUEMENT de contrôle d'autorisation ; les données
+    // complètes (avec jointures) sont relues en service_role, bornées à l'id validé —
+    // car la jointure dossier est référente-scopée et serait NULL pour un item de collègue.
+    const token = extractToken(request)
+    const supabaseUser = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false } }
+    )
+    const tableItem = type === 'rdv' ? 'rendez_vous' : type === 'intervention' ? 'interventions_artisans' : null
+    if (tableItem) {
+      const { data: autorise } = await supabaseUser.from(tableItem).select('id').eq('id', id).maybeSingle()
+      if (!autorise) {
+        console.log('[push]', type, id, '— hors périmètre (RLS), refusé')
+        return NextResponse.json({ error: 'Hors périmètre' }, { status: 403 })
+      }
     }
 
     // ── RDV ─────────────────────────────────────────────────────────────────
