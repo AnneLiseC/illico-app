@@ -186,6 +186,23 @@ export default function Planning() {
       ? dossiersScoped.filter(d => d.agence_id === formIntervention.agence_id) : dossiersScoped),
     [dossiersScoped, profile?.role, agenceActive, formIntervention.agence_id]
   )
+  // Artisans proposés dans les modales : restreints aux artisans ayant un DEVIS ACCEPTÉ
+  // (statut === 'accepte') sur le dossier choisi. `devis` est global (tous dossiers) au
+  // planning → on filtre sur dossier_id ET statut. Hors de ce cas → tous les artisans.
+  const artisansRdvModale = useMemo(() => {
+    if (formRdv.type_rdv === 'reception' && formRdv.dossier_id) {
+      const ids = new Set(devis.filter(d => d.dossier_id === formRdv.dossier_id && d.statut === 'accepte').map(d => d.artisan_id))
+      return artisans.filter(a => ids.has(a.id))
+    }
+    return artisans
+  }, [formRdv.type_rdv, formRdv.dossier_id, devis, artisans])
+  const artisansIntModale = useMemo(() => {
+    if (formIntervention.dossier_id) {
+      const ids = new Set(devis.filter(d => d.dossier_id === formIntervention.dossier_id && d.statut === 'accepte').map(d => d.artisan_id))
+      return artisans.filter(a => ids.has(a.id))
+    }
+    return artisans
+  }, [formIntervention.dossier_id, devis, artisans])
 
   // Pré-sélection de la cible (création seulement). Recalcule quand le dossier ou
   // l'agence change ; n'écrase JAMAIS un choix manuel (compare au dernier auto).
@@ -848,7 +865,9 @@ export default function Planning() {
                         type_rdv: newType,
                         titre: newType !== 'autres' ? '' : f.titre,
                         dossier_id: newType === 'autres' ? '' : (f.type_rdv === 'autres' ? '' : f.dossier_id),
-                        artisan_id: ['visite_technique_artisan', 'reception'].includes(newType) ? f.artisan_id : '',
+                        // La liste d'artisans dépend du type (réception = filtrée par devis accepté,
+                        // R2 = tous) → on réinitialise pour éviter un artisan fantôme hors liste.
+                        artisan_id: '',
                       }))
                     }} className={inputCls} style={{marginTop:6}}>
                       <option value="visite_technique_client">R1 — Visite technique client</option>
@@ -866,13 +885,13 @@ export default function Planning() {
                   {/* Sélecteur d'agence (admin en vue « toutes agences ») : filtre les dossiers,
                       détermine l'agence d'un RDV libre et pilote la résolution du calendrier. */}
                   {profile?.role === 'admin' && agenceActive === null && <div><label className={labelCls}>Agence{formRdv.type_rdv === 'autres' && !formRdv.dossier_id ? ' *' : ''}</label>
-                    <select value={formRdv.agence_id} onChange={e => setFormRdv(f => ({ ...f, agence_id: e.target.value, dossier_id: '' }))} className={inputCls} style={{marginTop:6}}>
+                    <select value={formRdv.agence_id} onChange={e => setFormRdv(f => ({ ...f, agence_id: e.target.value, dossier_id: '', artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir une agence —</option>
                       {agences.map(a => <option key={a.id} value={a.id}>{a.nom}{a.code ? ` (${a.code})` : ''}</option>)}
                     </select>
                   </div>}
-                  {formRdv.type_rdv !== 'autres' && !formRdv.dossier_id && <div><label className={labelCls}>Chantier *</label>
-                    <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
+                  {formRdv.type_rdv !== 'autres' && <div><label className={labelCls}>Chantier *</label>
+                    <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value, artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir un chantier —</option>
                       {dossiersRdvModale.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
                     </select>
@@ -895,8 +914,11 @@ export default function Planning() {
                   {['visite_technique_artisan', 'reception'].includes(formRdv.type_rdv) && <div><label className={labelCls}>Artisan</label>
                     <select value={formRdv.artisan_id} onChange={e => setFormRdv(f => ({ ...f, artisan_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir —</option>
-                      {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
+                      {artisansRdvModale.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
                     </select>
+                    {formRdv.type_rdv === 'reception' && formRdv.dossier_id && artisansRdvModale.length === 0 && (
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Aucun artisan avec devis signé sur ce chantier</div>
+                    )}
                   </div>}
                   <div><label className={labelCls}>Notes</label><textarea value={formRdv.notes} onChange={e => setFormRdv(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} style={{marginTop:6}}/></div>
                   <div style={{display:'flex', gap:8, paddingTop:4}}>
@@ -912,13 +934,13 @@ export default function Planning() {
               {(modalType === 'intervention' || (elementSelectionne?.type === 'intervention' && modeEdition)) && (!elementSelectionne || modeEdition) && (
                 <div style={{display:'flex', flexDirection:'column', gap:16}}>
                   {!modeEdition && profile?.role === 'admin' && agenceActive === null && <div><label className={labelCls}>Agence</label>
-                    <select value={formIntervention.agence_id} onChange={e => setFormIntervention(f => ({ ...f, agence_id: e.target.value, dossier_id: '' }))} className={inputCls} style={{marginTop:6}}>
+                    <select value={formIntervention.agence_id} onChange={e => setFormIntervention(f => ({ ...f, agence_id: e.target.value, dossier_id: '', artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir une agence —</option>
                       {agences.map(a => <option key={a.id} value={a.id}>{a.nom}{a.code ? ` (${a.code})` : ''}</option>)}
                     </select>
                   </div>}
                   {!modeEdition && <div><label className={labelCls}>Chantier *</label>
-                    <select value={formIntervention.dossier_id} onChange={e => setFormIntervention(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
+                    <select value={formIntervention.dossier_id} onChange={e => setFormIntervention(f => ({ ...f, dossier_id: e.target.value, artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir un chantier —</option>
                       {dossiersIntModale.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
                     </select>
@@ -933,10 +955,13 @@ export default function Planning() {
                   <div><label className={labelCls}>Artisan *</label>
                     <select value={formIntervention.artisan_id} onChange={e => setFormIntervention(f => ({ ...f, artisan_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir —</option>
-                      {(formIntervention.dossier_id ? devis.filter(d => d.dossier_id === formIntervention.dossier_id).map(d => d.artisan).filter(Boolean) : artisans).map(a => (
+                      {artisansIntModale.map(a => (
                         <option key={a.id} value={a.id}>{a.entreprise}</option>
                       ))}
                     </select>
+                    {formIntervention.dossier_id && artisansIntModale.length === 0 && (
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Aucun artisan avec devis signé sur ce chantier</div>
+                    )}
                   </div>
                   <div><label className={labelCls}>Type d'intervention</label>
                     <div style={{display:'flex', gap:16, marginTop:8}}>
