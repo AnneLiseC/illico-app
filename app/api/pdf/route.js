@@ -284,7 +284,6 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
     titleBlock: { marginBottom: 18, borderBottomWidth: 2, borderBottomColor: BLEU, paddingBottom: 10 },
     mainTitle: { fontSize: 16, fontFamily: 'Roboto-Bold', color: BLEU, marginBottom: 3 },
     emis: { fontSize: 9, color: '#6b7280' },
-    secWrap: { marginBottom: 14 },
     secHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
     secNum: { fontSize: 11, fontFamily: 'Roboto-Bold', color: BLEU, marginRight: 6 },
     secTitle: { fontSize: 11, fontFamily: 'Roboto-Bold', color: BLEU, flex: 1 },
@@ -333,25 +332,25 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
       return m ? [m[1].trim(), m[2].trim()] : null
     })
     const allKV = kvLines.length > 0 && kvLines.every(Boolean)
-    if (isIdent && allKV) return [renderKVTable(kvLines, 'Champ', 'Information', true)]   // borné (~8 lignes) -> insécable OK
-    if (isPlanning && allKV) return [renderKVTable(kvLines, 'Date', 'Interventions prévues')]   // peut grandir -> sécable
+    // firstGroupable : le 1er bloc peut-il être groupé (insécable) avec l'en-tête de section
+    // sans risque de dépasser une page ? Tableau d'identification = borné -> oui ; tableau de
+    // planning = sécable (peut grandir) -> NON (sinon on recréerait un insécable surdimensionné).
+    if (isIdent && allKV) return { blocks: [renderKVTable(kvLines, 'Champ', 'Information', true)], firstGroupable: true }
+    if (isPlanning && allKV) return { blocks: [renderKVTable(kvLines, 'Date', 'Interventions prévues')], firstGroupable: false }
 
     const blocks = []
     let listItems = []
     const flushList = () => {
       if (!listItems.length) return
-      // Liste GLOBALE sécable (pas de wrap ici) -> elle pagine ENTRE les items.
-      // Chaque ITEM (puce « – » + son texte) est insécable (wrap:false) : la puce ne
-      // se sépare jamais de son texte. Un item fait 1-3 lignes (borné < 1 page) ->
-      // wrap:false sûr, ne recrée pas le chevauchement.
-      blocks.push(React.createElement(View, { key: 'l' + blocks.length, style: { marginBottom: 6 } },
-        ...listItems.map((item, i) =>
-          React.createElement(View, { key: i, style: CRS.listRow, wrap: false },
-            React.createElement(Text, { style: CRS.listBullet }, '–'),
-            React.createElement(Text, { style: CRS.listText }, inlineEl(item)),
-          )
-        )
-      ))
+      // Listes APLATIES : chaque ITEM = un bloc atomique insécable (puce « – » + texte,
+      // 1-3 lignes < 1 page). La liste pagine ENTRE les items (blocs frères sécables). Ainsi
+      // blocs[0] est toujours atomique -> groupable avec l'en-tête sans dépasser une page.
+      listItems.forEach(item =>
+        blocks.push(React.createElement(View, { key: 'li' + blocks.length, style: CRS.listRow, wrap: false },
+          React.createElement(Text, { style: CRS.listBullet }, '–'),
+          React.createElement(Text, { style: CRS.listText }, inlineEl(item)),
+        ))
+      )
       listItems = []
     }
     lines.forEach((line, i) => {
@@ -367,7 +366,8 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
       blocks.push(React.createElement(Text, { key: i, style: CRS.para }, inlineEl(line.trim())))
     })
     flushList()
-    return blocks
+    // Prose : blocs atomiques (paragraphes, sous-titres, items de liste) -> blocs[0] borné -> groupable.
+    return { blocks, firstGroupable: true }
   }
 
   return React.createElement(Document, null,
@@ -377,22 +377,35 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
         React.createElement(Text, { style: CRS.mainTitle }, titre),
         React.createElement(Text, { style: CRS.emis }, 'Émis le ' + dateEmis),
       ),
-      ...sections.map((s, i) =>
-        // Section SÉCABLE (plus de wrap:false) : une section longue (« État des lieux »,
-        // 7 lots…) PAGINE au lieu de déborder/se superposer. L'en-tête (titre + filet) est
-        // groupé avec minPresenceAhead:60 -> il ne reste jamais orphelin en bas de page,
-        // sans rendre le contenu insécable.
-        React.createElement(View, { key: i, style: CRS.secWrap },
-          React.createElement(View, { minPresenceAhead: 60 },
-            React.createElement(View, { style: CRS.secHeader },
-              s.numero && React.createElement(Text, { style: CRS.secNum }, s.numero + '.'),
-              React.createElement(Text, { style: CRS.secTitle }, (s.titre || '').toUpperCase()),
-            ),
-            React.createElement(View, { style: CRS.secLine }),
+      ...sections.map((s, i) => {
+        const { blocks, firstGroupable } = renderContent(s.contenu, s.titre)
+        const enTete = [
+          React.createElement(View, { key: 'h', style: CRS.secHeader },
+            s.numero && React.createElement(Text, { style: CRS.secNum }, s.numero + '.'),
+            React.createElement(Text, { style: CRS.secTitle }, (s.titre || '').toUpperCase()),
           ),
-          ...renderContent(s.contenu, s.titre),
+          React.createElement(View, { key: 'ln', style: CRS.secLine }),
+        ]
+        // DÉFAUT 2 : marge INTER-sections via marginTop (sauf la 1re) -> AUCUNE marge après la
+        // dernière section -> pas de débordement de fin -> plus de page fantôme.
+        const outerStyle = i === 0 ? undefined : { marginTop: 14 }
+        // DÉFAUT 1 : en-tête groupé (insécable) AVEC son 1er bloc -> le titre emmène toujours
+        // son 1er élément, jamais orphelin. Le 1er bloc est BORNÉ (item de liste, paragraphe,
+        // ou tableau d'identification) -> wrap:false sûr. Le RESTE des blocs reste sécable.
+        // Section longue -> pagine toujours (seul le 1er bloc voyage avec le titre).
+        if (blocks.length && firstGroupable) {
+          return React.createElement(View, { key: i, style: outerStyle },
+            React.createElement(View, { key: 'g', wrap: false }, ...enTete, blocks[0]),
+            ...blocks.slice(1),
+          )
+        }
+        // 1er bloc NON groupable (tableau planning sécable) ou vide : en-tête seul avec
+        // minPresenceAhead (anti-orphelin sans créer d'insécable surdimensionné).
+        return React.createElement(View, { key: i, style: outerStyle },
+          React.createElement(View, { key: 'g', minPresenceAhead: 60 }, ...enTete),
+          ...blocks,
         )
-      ),
+      }),
       React.createElement(View, { style: CRS.footer, fixed: true },
         React.createElement(Text, { style: CRS.footerTxt }, 'Document établi le ' + dateEmis + ' – Chantier ' + nomClient),
         React.createElement(Text, { style: CRS.footerTxt }, nomRef + (dossier.agence?.nom ? ' – ' + dossier.agence.nom : '')),
