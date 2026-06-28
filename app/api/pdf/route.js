@@ -340,9 +340,13 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
     let listItems = []
     const flushList = () => {
       if (!listItems.length) return
+      // Liste GLOBALE sécable (pas de wrap ici) -> elle pagine ENTRE les items.
+      // Chaque ITEM (puce « – » + son texte) est insécable (wrap:false) : la puce ne
+      // se sépare jamais de son texte. Un item fait 1-3 lignes (borné < 1 page) ->
+      // wrap:false sûr, ne recrée pas le chevauchement.
       blocks.push(React.createElement(View, { key: 'l' + blocks.length, style: { marginBottom: 6 } },
         ...listItems.map((item, i) =>
-          React.createElement(View, { key: i, style: CRS.listRow },
+          React.createElement(View, { key: i, style: CRS.listRow, wrap: false },
             React.createElement(Text, { style: CRS.listBullet }, '–'),
             React.createElement(Text, { style: CRS.listText }, inlineEl(item)),
           )
