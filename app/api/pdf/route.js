@@ -304,9 +304,12 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
     return parts.map((p, i) => i % 2 === 1 ? React.createElement(Text, { key: i, style: CRS.bold }, p) : p)
   }
 
-  const renderKVTable = (rows, col1Label, col2Label) => {
+  // keepTogether=true -> wrap:false (insécable). À RÉSERVER aux tableaux BORNÉS qui ne
+  // peuvent pas dépasser une page (identification : ~8 lignes). Sinon (planning, prose)
+  // le tableau reste sécable pour pouvoir paginer.
+  const renderKVTable = (rows, col1Label, col2Label, keepTogether = false) => {
     const thStyle = { color: '#ffffff', fontSize: 9, fontFamily: 'Roboto-Bold' }
-    return React.createElement(View, { style: { marginBottom: 8 } },
+    return React.createElement(View, { style: { marginBottom: 8 }, wrap: !keepTogether },
       React.createElement(View, { style: { flexDirection: 'row', backgroundColor: BLEU, paddingVertical: 5, paddingHorizontal: 8 } },
         React.createElement(Text, { style: [thStyle, { flex: 1.8 }] }, col1Label),
         React.createElement(Text, { style: [thStyle, { flex: 2.2 }] }, col2Label),
@@ -330,8 +333,8 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
       return m ? [m[1].trim(), m[2].trim()] : null
     })
     const allKV = kvLines.length > 0 && kvLines.every(Boolean)
-    if (isIdent && allKV) return [renderKVTable(kvLines, 'Champ', 'Information')]
-    if (isPlanning && allKV) return [renderKVTable(kvLines, 'Date', 'Interventions prévues')]
+    if (isIdent && allKV) return [renderKVTable(kvLines, 'Champ', 'Information', true)]   // borné (~8 lignes) -> insécable OK
+    if (isPlanning && allKV) return [renderKVTable(kvLines, 'Date', 'Interventions prévues')]   // peut grandir -> sécable
 
     const blocks = []
     let listItems = []
@@ -371,12 +374,18 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
         React.createElement(Text, { style: CRS.emis }, 'Émis le ' + dateEmis),
       ),
       ...sections.map((s, i) =>
-        React.createElement(View, { key: i, style: CRS.secWrap, wrap: false },
-          React.createElement(View, { style: CRS.secHeader },
-            s.numero && React.createElement(Text, { style: CRS.secNum }, s.numero + '.'),
-            React.createElement(Text, { style: CRS.secTitle }, (s.titre || '').toUpperCase()),
+        // Section SÉCABLE (plus de wrap:false) : une section longue (« État des lieux »,
+        // 7 lots…) PAGINE au lieu de déborder/se superposer. L'en-tête (titre + filet) est
+        // groupé avec minPresenceAhead:60 -> il ne reste jamais orphelin en bas de page,
+        // sans rendre le contenu insécable.
+        React.createElement(View, { key: i, style: CRS.secWrap },
+          React.createElement(View, { minPresenceAhead: 60 },
+            React.createElement(View, { style: CRS.secHeader },
+              s.numero && React.createElement(Text, { style: CRS.secNum }, s.numero + '.'),
+              React.createElement(Text, { style: CRS.secTitle }, (s.titre || '').toUpperCase()),
+            ),
+            React.createElement(View, { style: CRS.secLine }),
           ),
-          React.createElement(View, { style: CRS.secLine }),
           ...renderContent(s.contenu, s.titre),
         )
       ),
