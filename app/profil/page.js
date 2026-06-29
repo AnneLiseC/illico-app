@@ -53,6 +53,8 @@ export default function Profil() {
   const [cibleAgenceId, setCibleAgenceId] = useState('')
   const [creatingCible, setCreatingCible] = useState(false)
   const [erreurCible, setErreurCible] = useState('')
+  const [cibleEditId, setCibleEditId] = useState(null)    // cible en cours de renommage
+  const [cibleEditLibelle, setCibleEditLibelle] = useState('')
 
   useEffect(() => {
     if (!initialized) return
@@ -101,7 +103,7 @@ export default function Profil() {
   const chargerCibles = useCallback(async () => {
     if (!profile) return
     const { data } = await supabase.from('cibles_calendrier')
-      .select('id, fournisseur, calendar_id, compte_oauth_id, libelle, user_id, agence_id, actif')
+      .select('id, fournisseur, calendar_id, compte_oauth_id, libelle, agenda_nom, user_id, agence_id, actif')
     setCibles(data || [])
   }, [profile?.id])
 
@@ -206,7 +208,10 @@ export default function Profil() {
   const compteSel = comptesCal.find(c => c.id === cibleCompteId)
   const agendasSel = agendas[cibleCompteId]?.items || []
   const labelPerimetre = (c) => c.agence_id ? 'Agence' : 'Perso'
+  // Nom de l'agenda : agenda_nom STOCKÉ d'abord (stable côté admin sans charger le compte
+  // d'autrui) ; sinon résolution via les agendas chargés ; sinon l'id brut en dernier recours.
   const labelAgenda = (c) => {
+    if (c.agenda_nom) return c.agenda_nom
     const found = agendas[c.compte_oauth_id]?.items?.find(x => x.externalId === c.calendar_id)
     return found?.label || c.calendar_id
   }
@@ -277,6 +282,8 @@ export default function Profil() {
       calendar_id: cibleAgenda,
       compte_oauth_id: cibleCompteId,
       libelle: cibleLibelle.trim(),
+      // nom lisible de l'agenda choisi (capturé depuis la liste 8a), stocké pour affichage stable
+      agenda_nom: agendasSel.find(a => a.externalId === cibleAgenda)?.label || null,
       ...perimetre,
     })
     if (error) setErreurCible('Création refusée : ' + error.message)
@@ -301,6 +308,19 @@ export default function Profil() {
     if (error) setError('Suppression impossible : ' + error.message)
     else if (!data || data.length === 0) setError('Suppression non autorisée pour cette cible.')
     else { setSucces('Cible supprimée ✓'); await chargerCibles() }
+  }
+
+  // Renomme une cible : n'écrit QUE libelle (pas calendar_id / agenda_nom / périmètre).
+  // RLS cibles_update borne (owner perso, admin agence) ; .select → 0 ligne = non autorisé.
+  const renommerCible = async (cible) => {
+    const nom = cibleEditLibelle.trim()
+    if (!nom) return
+    setError(''); setSucces('')
+    const { data, error } = await supabase.from('cibles_calendrier')
+      .update({ libelle: nom }).eq('id', cible.id).select('id')
+    if (error) setError('Renommage impossible : ' + error.message)
+    else if (!data || data.length === 0) setError('Renommage non autorisé pour cette cible.')
+    else { setSucces('Cible renommée ✓'); setCibleEditId(null); await chargerCibles() }
   }
 
   return (
@@ -574,24 +594,42 @@ export default function Profil() {
 
           {cibles.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {cibles.map(c => (
-                <div key={c.id} style={{ border: '1px solid var(--ink-200)', borderRadius: 10, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)' }}>
-                      {c.libelle}
-                      <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--ink-100)', color: 'var(--ink-600)' }}>{labelPerimetre(c)}</span>
-                      {!c.actif && <span style={{ marginLeft: 6, fontSize: 10.5, color: '#a16207' }}>· inactive</span>}
+              {cibles.map(c => {
+                const editing = cibleEditId === c.id
+                return (
+                  <div key={c.id} style={{ border: '1px solid var(--ink-200)', borderRadius: 10, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {editing ? (
+                        <input className="input" value={cibleEditLibelle} onChange={e => setCibleEditLibelle(e.target.value)}
+                          autoFocus style={{ height: 34, width: '100%', maxWidth: 280 }} />
+                      ) : (
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)' }}>
+                          {c.libelle}
+                          <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--ink-100)', color: 'var(--ink-600)' }}>{labelPerimetre(c)}</span>
+                          {!c.actif && <span style={{ marginLeft: 6, fontSize: 10.5, color: '#a16207' }}>· inactive</span>}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>
+                        {labelFournisseur(c.fournisseur)} · {labelAgenda(c)}
+                        {!c.compte_oauth_id && <span style={{ color: '#dc2626' }}> · compte déconnecté</span>}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>
-                      {labelFournisseur(c.fournisseur)} · {labelAgenda(c)}
-                      {!c.compte_oauth_id && <span style={{ color: '#dc2626' }}> · compte déconnecté</span>}
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      {editing ? (
+                        <>
+                          <button className="btn btn-primary" style={{ fontSize: 11.5 }} onClick={() => renommerCible(c)} disabled={!cibleEditLibelle.trim()}>Valider</button>
+                          <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => setCibleEditId(null)}>Annuler</button>
+                        </>
+                      ) : peutSupprimer(c) && (
+                        <>
+                          <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => { setCibleEditId(c.id); setCibleEditLibelle(c.libelle); setError('') }}>Renommer</button>
+                          <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => supprimerCible(c)}>Supprimer</button>
+                        </>
+                      )}
                     </div>
                   </div>
-                  {peutSupprimer(c) && (
-                    <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => supprimerCible(c)}>Supprimer</button>
-                  )}
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
