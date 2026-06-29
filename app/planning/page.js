@@ -237,6 +237,18 @@ export default function Planning() {
     })
   }, [modalOuvert, modalType, modeEdition, formIntervention.dossier_id, formIntervention.agence_id, agenceActive, cibles, profile, dossiers])
 
+  // Pré-remplissage de l'agence en CRÉATION quand la société n'a qu'UNE agence : le select
+  // est alors masqué (cf. JSX) → on fixe l'agence unique pour (1) éviter le soft-lock de la
+  // validation « autres sans dossier » (l'agence devient obligatoire) et (2) alimenter la
+  // résolution du calendrier. Idempotent (n'écrase jamais un choix), robuste au timing de
+  // chargement des agences (se redéclenche quand `agences` arrive), édition non concernée.
+  useEffect(() => {
+    if (!modalOuvert || modeEdition || agences.length !== 1) return
+    const uniqueId = agences[0].id
+    setFormRdv(f => f.agence_id ? f : { ...f, agence_id: uniqueId })
+    setFormIntervention(f => f.agence_id ? f : { ...f, agence_id: uniqueId })
+  }, [modalOuvert, modeEdition, agences])
+
   // ── ÉVÉNEMENTS CALENDRIER ──────────────────────────────────────────────────
 
   const evenementsRdv = useMemo(() => rdvsScoped
@@ -882,12 +894,16 @@ export default function Planning() {
                     <input type="text" value={formRdv.titre} onChange={e => setFormRdv(f => ({ ...f, titre: e.target.value }))} placeholder="Ex : Réunion de chantier, Appel fournisseur…" className={inputCls} style={{marginTop:6}}/>
                   </div>}
                   {/* Sélecteur d'agence (admin en vue « toutes agences ») : filtre les dossiers,
-                      détermine l'agence d'un RDV libre et pilote la résolution du calendrier. */}
-                  {profile?.role === 'admin' && agenceActive === null && <div><label className={labelCls}>Agence{formRdv.type_rdv === 'autres' && !formRdv.dossier_id ? ' *' : ''}</label>
+                      détermine l'agence d'un RDV libre et pilote la résolution du calendrier.
+                      Société à 1 agence → select masqué, agence pré-remplie (effet ci-dessus). */}
+                  {profile?.role === 'admin' && agenceActive === null && agences.length > 1 && <div><label className={labelCls}>Agence{formRdv.type_rdv === 'autres' && !formRdv.dossier_id ? ' *' : ''}</label>
                     <select value={formRdv.agence_id} onChange={e => setFormRdv(f => ({ ...f, agence_id: e.target.value, dossier_id: '', artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir une agence —</option>
-                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}{a.code ? ` (${a.code})` : ''}</option>)}
+                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
                     </select>
+                  </div>}
+                  {profile?.role === 'admin' && agenceActive === null && agences.length === 1 && <div><label className={labelCls}>Agence</label>
+                    <div style={{marginTop:6, fontSize:13, color:'var(--ink-700)'}}>{agences[0].nom}</div>
                   </div>}
                   {formRdv.type_rdv !== 'autres' && <div><label className={labelCls}>Chantier *</label>
                     <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value, artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
@@ -932,11 +948,14 @@ export default function Planning() {
               {/* Formulaire Intervention */}
               {(modalType === 'intervention' || (elementSelectionne?.type === 'intervention' && modeEdition)) && (!elementSelectionne || modeEdition) && (
                 <div style={{display:'flex', flexDirection:'column', gap:16}}>
-                  {!modeEdition && profile?.role === 'admin' && agenceActive === null && <div><label className={labelCls}>Agence</label>
+                  {!modeEdition && profile?.role === 'admin' && agenceActive === null && agences.length > 1 && <div><label className={labelCls}>Agence</label>
                     <select value={formIntervention.agence_id} onChange={e => setFormIntervention(f => ({ ...f, agence_id: e.target.value, dossier_id: '', artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir une agence —</option>
-                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}{a.code ? ` (${a.code})` : ''}</option>)}
+                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
                     </select>
+                  </div>}
+                  {!modeEdition && profile?.role === 'admin' && agenceActive === null && agences.length === 1 && <div><label className={labelCls}>Agence</label>
+                    <div style={{marginTop:6, fontSize:13, color:'var(--ink-700)'}}>{agences[0].nom}</div>
                   </div>}
                   {!modeEdition && <div><label className={labelCls}>Chantier *</label>
                     <select value={formIntervention.dossier_id} onChange={e => setFormIntervention(f => ({ ...f, dossier_id: e.target.value, artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
