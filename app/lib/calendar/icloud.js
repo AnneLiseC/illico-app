@@ -19,6 +19,10 @@ import ical from 'ical-generator'
 import { DateTime } from 'luxon'
 import { decrypt } from './crypto'
 import { DRY_RUN } from './google'
+import {
+  rdvSummary, rdvDescription, rdvBounds,
+  interventionSummary, interventionDescription, interventionOccurrences,
+} from './mapping'
 
 const TZ = 'Europe/Paris'
 
@@ -42,76 +46,43 @@ function nextDayDate(dateStr) {
   return d
 }
 
-// Bornes d'une occurrence d'intervention. heure_debut → horodaté (heure locale Paris
-// convertie en instant UTC, même affichage que Google) ; sinon all-day d'un jour.
-function intervBounds(date, heure_debut, duree_minutes) {
-  if (heure_debut) {
-    const start = DateTime.fromISO(`${date}T${heure_debut}`, { zone: TZ }).toJSDate()
-    const end = new Date(start.getTime() + (duree_minutes || 60) * 60000)
+// Bornes ICS d'une occurrence (spec neutre de mapping.js → start/end/allDay ical). 'timed'
+// → heure locale Paris convertie en instant UTC (même affichage que Google) ; 'allday'
+// (jour unique) et 'allday-range' (période) → DTSTART;VALUE=DATE, end exclusif = lendemain.
+function icloudTimeFields(time) {
+  if (time.kind === 'timed') {
+    const start = DateTime.fromISO(`${time.date}T${time.heure_debut}`, { zone: TZ }).toJSDate()
+    const end = new Date(start.getTime() + (time.duree_minutes || 60) * 60000)
     return { start, end, allDay: false }
   }
-  return { start: new Date(`${date}T00:00:00Z`), end: nextDayDate(date), allDay: true }
+  if (time.kind === 'allday-range') {
+    return { start: new Date(`${time.dateDebut}T00:00:00Z`), end: nextDayDate(time.dateFin), allDay: true }
+  }
+  return { start: new Date(`${time.date}T00:00:00Z`), end: nextDayDate(time.date), allDay: true }
 }
 
 export function rdvToICS(rdv) {
-  // Mapping IDENTIQUE à rdvToGoogleEvent (google.js) — garder synchronisé.
-  const typeLabels = { visite_technique_client: 'R1', visite_technique_artisan: 'R2', presentation_devis: 'R3' }
-  const client = rdv.dossier?.client
-  const nomClient = client ? `${client.civilite || ''} ${client.prenom} ${client.nom}`.trim() : ''
-  const artisan = rdv.artisan?.entreprise || ''
-  const start = new Date(rdv.date_heure)
-  const end = new Date(start.getTime() + (rdv.duree_minutes || 60) * 60000)
-  const base = [typeLabels[rdv.type_rdv] || rdv.type_rdv, nomClient].filter(Boolean).join(' - ')
-  const summary = rdv.type_rdv === 'autres'
-    ? (rdv.titre || rdv.notes || 'Autre RDV')
-    : `${base}${artisan ? ' x ' + artisan : ''}`
-  const description = [
-    rdv.dossier?.reference ? `Chantier : ${rdv.dossier.reference}` : '',
-    rdv.notes ? `Notes : ${rdv.notes}` : '',
-  ].filter(Boolean).join('\n')
-  return icsString({ uid: `illico-rdv-${rdv.id}@illico-travaux.com`, summary, description, start, end, allDay: false })
+  // Habillage ICS du mapping partagé (mapping.js). RDV = instant UTC (allDay false).
+  const { start, end } = rdvBounds(rdv)
+  return icsString({
+    uid: `illico-rdv-${rdv.id}@illico-travaux.com`,
+    summary: rdvSummary(rdv),
+    description: rdvDescription(rdv),
+    start, end, allDay: false,
+  })
 }
 
-// Renvoie le tableau ordonné [icsPrincipal, ...icsExtras] (multi-jours), ou [] pour les
-// cas à ignorer — même structure que interventionToGoogleEvents (l'event[0] porte
-// l'externalId/writeback ; les extras sont insert-only).
+// Renvoie le tableau ordonné [icsPrincipal, ...icsExtras] (multi-jours), ou [] pour les cas
+// à ignorer — même structure que interventionToGoogleEvents (l'event[0] porte l'externalId/
+// writeback ; les extras sont insert-only). UID déterministe = illico-int-<id><idSuffix>.
 export function interventionToICS(intervention) {
-  const artisan = intervention.artisan?.entreprise || 'Artisan'
-  const client = intervention.dossier?.client
-  const nomClient = client ? `${client.prenom} ${client.nom}`.trim() : ''
-  const summary = `${artisan}${nomClient ? ' | ' + nomClient : ''}`
-  const baseDesc = [
-    intervention.dossier?.reference ? `Chantier : ${intervention.dossier.reference}` : '',
-    intervention.notes ? `Notes : ${intervention.notes}` : '',
-  ].filter(Boolean)
-  const { heure_debut, duree_minutes } = intervention
-
-  const mk = (uidSuffix, marker, bounds) => icsString({
-    uid: `illico-int-${intervention.id}${uidSuffix}@illico-travaux.com`,
+  const summary = interventionSummary(intervention)
+  return interventionOccurrences(intervention).map((o) => icsString({
+    uid: `illico-int-${intervention.id}${o.idSuffix}@illico-travaux.com`,
     summary,
-    description: [...baseDesc, marker].join('\n'),
-    ...bounds,
-  })
-
-  if (intervention.type_intervention === 'periode') {
-    if (!intervention.date_fin && !heure_debut) return []
-    if (heure_debut) {
-      return [mk('', `[illico-int:${intervention.id}]`, intervBounds(intervention.date_debut, heure_debut, duree_minutes))]
-    }
-    // all-day multi-jours : date_debut → date_fin (end exclusif = date_fin + 1 jour)
-    return [mk('', `[illico-int:${intervention.id}]`, {
-      start: new Date(`${intervention.date_debut}T00:00:00Z`),
-      end: nextDayDate(intervention.date_fin),
-      allDay: true,
-    })]
-  }
-
-  const jours = [...(intervention.jours_specifiques || [])].sort()
-  if (!jours.length) return []
-  const first = mk('-0', `[illico-int:${intervention.id}:0]`, intervBounds(jours[0], heure_debut, duree_minutes))
-  const extras = jours.slice(1).map((jour, i) =>
-    mk(`-${i + 1}`, `[illico-int:${intervention.id}:${i + 1}]`, intervBounds(jour, heure_debut, duree_minutes)))
-  return [first, ...extras]
+    description: interventionDescription(intervention, o.marker),
+    ...icloudTimeFields(o.time),
+  }))
 }
 
 // ── Client CalDAV + handle ───────────────────────────────────────────────────
