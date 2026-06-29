@@ -41,6 +41,7 @@ export default function Profil() {
   const [appleId, setAppleId] = useState('')
   const [appPassword, setAppPassword] = useState('')
   const [connectingIcloud, setConnectingIcloud] = useState(false)
+  const [erreurIcloud, setErreurIcloud] = useState('') // erreur affichée DANS le formulaire
 
   useEffect(() => {
     if (!initialized) return
@@ -183,7 +184,7 @@ export default function Profil() {
   }
 
   const connecterIcloud = async () => {
-    setConnectingIcloud(true); setError(''); setSucces('')
+    setConnectingIcloud(true); setErreurIcloud(''); setSucces('')
     try {
       const res = await fetch('/api/calendar/icloud/connect', {
         method: 'POST', headers: await authHeaders(),
@@ -192,10 +193,10 @@ export default function Profil() {
       const d = await res.json()
       if (res.ok) {
         setSucces('Compte iCloud connecté ✓')
-        setIcloudOpen(false); setAppleId(''); setAppPassword('')
+        setIcloudOpen(false); setAppleId(''); setAppPassword(''); setErreurIcloud('')
         await chargerComptes()
-      } else setError(d.error || 'Connexion iCloud impossible')
-    } catch { setError('Connexion iCloud impossible') }
+      } else setErreurIcloud(d.error || 'Connexion iCloud impossible')
+    } catch { setErreurIcloud('Connexion iCloud impossible') }
     setConnectingIcloud(false)
   }
 
@@ -444,7 +445,7 @@ export default function Profil() {
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button className="btn btn-ghost" onClick={connecterGoogle} style={{ fontSize: 12.5 }}>📅 Connecter Google</button>
-          <button className="btn btn-ghost" onClick={() => { setIcloudOpen(o => !o); setError('') }}
+          <button className="btn btn-ghost" onClick={() => { setIcloudOpen(o => !o); setErreurIcloud('') }}
             style={{ fontSize: 12.5 }}> Connecter iCloud</button>
         </div>
 
@@ -459,13 +460,18 @@ export default function Profil() {
               onChange={e => setAppleId(e.target.value)} style={{ height: 40 }} />
             <input className="input" type="password" placeholder="Mot de passe d'application" value={appPassword}
               onChange={e => setAppPassword(e.target.value)} style={{ height: 40 }} />
+            {erreurIcloud && (
+              <div style={{ fontSize: 12.5, color: '#dc2626', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 12px' }}>
+                {erreurIcloud}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-primary" style={{ fontSize: 12.5 }} onClick={connecterIcloud}
                 disabled={connectingIcloud || !appleId || !appPassword}>
                 {connectingIcloud ? 'Connexion…' : 'Connecter'}
               </button>
               <button className="btn btn-ghost" style={{ fontSize: 12.5 }}
-                onClick={() => { setIcloudOpen(false); setAppleId(''); setAppPassword('') }}>Annuler</button>
+                onClick={() => { setIcloudOpen(false); setAppleId(''); setAppPassword(''); setErreurIcloud('') }}>Annuler</button>
             </div>
           </div>
         )}
