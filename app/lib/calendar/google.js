@@ -140,11 +140,13 @@ export function buildIntervTimes(date, heure_debut, duree_minutes) {
 }
 
 export function rdvToGoogleEvent(rdv) {
+  // Préfixes de type SANS tiret final : le « - » est inséré par le join entre le type
+  // et le client (donc pas de tiret pendouillant si pas de client). Le cas 'autres' est
+  // traité à part (titre seul) → pas d'entrée ici (l'ancienne 'Autre - ' était morte).
   const typeLabels = {
-    visite_technique_client: 'R1 - ',
-    visite_technique_artisan: 'R2 - ',
-    presentation_devis: 'R3 - ',
-    autres: 'Autre - ',
+    visite_technique_client: 'R1',
+    visite_technique_artisan: 'R2',
+    presentation_devis: 'R3',
   }
   const client = rdv.dossier?.client
   const nomClient = client ? `${client.civilite || ''} ${client.prenom} ${client.nom}`.trim() : ''
@@ -154,9 +156,12 @@ export function rdvToGoogleEvent(rdv) {
   // slice(0,19) qui couperait l'offset et ré-étiquetterait le wall-clock UTC comme Paris (+offset erroné).
   const start = new Date(rdv.date_heure)
   const end = new Date(start.getTime() + (rdv.duree_minutes || 60) * 60000)
+  // « R2 - M. Client x Artisan » : type et client assemblés par « - » (parties non vides
+  // seulement → pas de tiret pendouillant sans client), artisan suffixé par « x ».
+  const base = [typeLabels[rdv.type_rdv] || rdv.type_rdv, nomClient].filter(Boolean).join(' - ')
   const summary = rdv.type_rdv === 'autres'
     ? (rdv.titre || rdv.notes || 'Autre RDV')
-    : `${typeLabels[rdv.type_rdv] || rdv.type_rdv}${nomClient ? ' | ' + nomClient : ''}${artisan ? ' x ' + artisan : ''}`
+    : `${base}${artisan ? ' x ' + artisan : ''}`
   return {
     summary,
     description: [
@@ -176,7 +181,7 @@ export function interventionToGoogleEvents(intervention) {
   const artisan = intervention.artisan?.entreprise || 'Artisan'
   const client = intervention.dossier?.client
   const nomClient = client ? `${client.prenom} ${client.nom}`.trim() : ''
-  const summary = ` ${artisan}${nomClient ? ' | ' + nomClient : ''}`
+  const summary = `${artisan}${nomClient ? ' | ' + nomClient : ''}`
   const baseDesc = [
     intervention.dossier?.reference ? `Chantier : ${intervention.dossier.reference}` : '',
     intervention.notes ? `Notes : ${intervention.notes}` : '',
