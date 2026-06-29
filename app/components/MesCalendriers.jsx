@@ -411,10 +411,15 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
                 <label style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}>
                   <input type="radio" name="perimetre" checked={ciblePerimetre === 'agence'} onChange={() => setCiblePerimetre('agence')} /> Agence
                 </label>
-                {ciblePerimetre === 'agence' && (
+                {/* Plusieurs agences → choix ; une seule → prise d'office (cibleAgenceId déjà
+                    initialisé dans chargerAgences), affichée en texte. */}
+                {ciblePerimetre === 'agence' && agences.length > 1 && (
                   <select className="input" value={cibleAgenceId} onChange={e => setCibleAgenceId(e.target.value)} style={{ height: 36, maxWidth: 220 }}>
                     {agences.map(ag => <option key={ag.id} value={ag.id}>{ag.nom}</option>)}
                   </select>
+                )}
+                {ciblePerimetre === 'agence' && agences.length === 1 && (
+                  <span style={{ fontSize: 12.5, color: 'var(--ink-600)' }}>Agence : {agences[0].nom}</span>
                 )}
               </div>
             )}
