@@ -5,7 +5,7 @@
 //   Le calendrier + les tokens ne viennent plus de GOOGLE_CALENDAR_ID + du user
 //   courant, mais de la CIBLE de l'item. Comme l'item est souvent déjà supprimé en
 //   base au moment de l'appel (fiche chantier), le front passe `cibleId` (qu'il
-//   possède dans l'objet rdv/intervention) → getCalendarForCible → deleteEvent.
+//   possède dans l'objet rdv/intervention) → getClientForCible → client.delete.
 //   DRY-RUN géré par la lib (deleteEvent logge sans supprimer).
 //
 //   Garde-fou scoping (stratégie a) : on vérifie via la RLS AUTHENTIFIÉE que la cible
@@ -15,7 +15,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireUser } from '../../../../lib/api-auth'
-import { getCalendarForCible, deleteEvent } from '../../../../lib/calendar/google'
+import { getClientForCible } from '../../../../lib/calendar/dispatch'
 
 function extractToken(request) {
   const header = request.headers.get('authorization') || request.headers.get('Authorization')
@@ -56,17 +56,17 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Hors périmètre' }, { status: 403 })
     }
 
-    // Résolution cible → calendrier + tokens du compte détenteur (service_role, lib).
-    const resolved = await getCalendarForCible(cibleId)
-    if (!resolved) {
+    // Résolution cible → handle d'écriture du compte détenteur (dispatch, service_role).
+    const client = await getClientForCible(cibleId)
+    if (!client) {
       console.log('[event] cible', cibleId, '— non résolvable (compte OAuth/token absent), skip')
       return NextResponse.json({ success: true, skipped: true, reason: 'cible non résolvable' })
     }
 
     try {
-      await deleteEvent({
-        calendar: resolved.calendar, calendarId: resolved.calendarId,
-        eventId: googleEventId, contexte: { type: 'event-delete', itemId: googleEventId },
+      await client.delete({
+        externalId: googleEventId,
+        contexte: { type: 'event-delete', itemId: googleEventId },
       })
     } catch (err) {
       // L'event n'existe plus côté Google (déjà supprimé) → pas une erreur critique.
