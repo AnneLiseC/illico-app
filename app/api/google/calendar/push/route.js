@@ -4,7 +4,7 @@
 // LOT 4a — BASCULE SUR LES CIBLES :
 //   La destination n'est plus l'env GOOGLE_CALENDAR_ID + les tokens du USER
 //   déclencheur. On lit le cible_id de l'item → la cible (calendar_id +
-//   compte_oauth_id) → les tokens du COMPTE DÉTENTEUR (google_tokens.id =
+//   compte_oauth_id) → les tokens du COMPTE DÉTENTEUR (comptes_oauth.id =
 //   compte_oauth_id), et on pousse vers CE calendrier avec CES tokens.
 //   - cible_id NULL → SKIP (aucun fallback sur GOOGLE_CALENDAR_ID).
 //   - type 'dossier' → SKIP (le ciblage est porté par rendez_vous/interventions,
