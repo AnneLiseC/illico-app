@@ -20,12 +20,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireUser } from '../../../../lib/api-auth'
+import { getClientForCible } from '../../../../lib/calendar/dispatch'
 import {
   rdvToGoogleEvent,
   interventionToGoogleEvents,
-  getCalendarForCible,
-  upsertEvent,
-  gcalWrite,
   DRY_RUN,
 } from '../../../../lib/calendar/google'
 
@@ -89,16 +87,16 @@ export async function POST(request) {
         console.log('[push] rdv', id, '— sans cible, non poussé')
         return NextResponse.json({ success: true, skipped: true, reason: 'sans cible' })
       }
-      const resolved = await getCalendarForCible(rdv.cible_id)
-      if (!resolved) {
+      const client = await getClientForCible(rdv.cible_id)
+      if (!client) {
         console.log('[push] rdv', id, '— cible', rdv.cible_id, 'non poussable (compte OAuth absent ou sans refresh_token), skip')
         return NextResponse.json({ success: true, skipped: true, reason: 'cible non poussable' })
       }
-      console.log('[push] rdv', id, '→ cible', rdv.cible_id, 'calendar', resolved.calendarId, 'compte', resolved.compteOauthId, DRY_RUN ? '(DRY-RUN)' : '')
+      console.log('[push] rdv', id, '→ cible', rdv.cible_id, 'calendar', client.calendarId, 'compte', client.compteOauthId, DRY_RUN ? '(DRY-RUN)' : '')
 
-      const result = await upsertEvent({
-        calendar: resolved.calendar, calendarId: resolved.calendarId, compteOauthId: resolved.compteOauthId,
-        googleEventId: rdv.google_event_id, eventBody: rdvToGoogleEvent(rdv),
+      const result = await client.upsert({
+        eventBody: rdvToGoogleEvent(rdv),
+        externalId: rdv.google_event_id,
         contexte: { type: 'rdv', itemId: id },
       })
       if (result.action === 'inserted' && !result.dryRun && result.id) {
@@ -120,12 +118,12 @@ export async function POST(request) {
         console.log('[push] intervention', id, '— sans cible, non poussée')
         return NextResponse.json({ success: true, skipped: true, reason: 'sans cible' })
       }
-      const resolved = await getCalendarForCible(intervention.cible_id)
-      if (!resolved) {
+      const client = await getClientForCible(intervention.cible_id)
+      if (!client) {
         console.log('[push] intervention', id, '— cible', intervention.cible_id, 'non poussable (compte OAuth absent ou sans refresh_token), skip')
         return NextResponse.json({ success: true, skipped: true, reason: 'cible non poussable' })
       }
-      console.log('[push] intervention', id, '→ cible', intervention.cible_id, 'calendar', resolved.calendarId, 'compte', resolved.compteOauthId, DRY_RUN ? '(DRY-RUN)' : '')
+      console.log('[push] intervention', id, '→ cible', intervention.cible_id, 'calendar', client.calendarId, 'compte', client.compteOauthId, DRY_RUN ? '(DRY-RUN)' : '')
 
       // Construction des events extraite en lib (lot 5a) : [] → rien à pousser (skip,
       // comme avant) ; sinon [eventPrincipal, ...extras] (multi-jours). L'event[0] porte
@@ -134,9 +132,9 @@ export async function POST(request) {
       if (!events.length) return NextResponse.json({ success: true, skipped: true })
       const [firstEvent, ...extraEvents] = events
 
-      const result = await upsertEvent({
-        calendar: resolved.calendar, calendarId: resolved.calendarId, compteOauthId: resolved.compteOauthId,
-        googleEventId: intervention.google_event_id, eventBody: firstEvent,
+      const result = await client.upsert({
+        eventBody: firstEvent,
+        externalId: intervention.google_event_id,
         contexte: { type: 'intervention', itemId: id },
       })
       if (result.action === 'inserted') {
@@ -144,10 +142,12 @@ export async function POST(request) {
           await supabaseAdmin.from('interventions_artisans')
             .update({ google_event_id: result.id }).eq('id', id)
         }
+        // Extras (jours 2..n) : insert-only via upsert SANS externalId (→ insert,
+        // exactement comme l'ancien gcalWrite direct). Même appel googleapis, même dry-run.
         for (const evt of extraEvents) {
-          await gcalWrite({
-            calendar: resolved.calendar, action: 'insert', calendarId: resolved.calendarId,
-            requestBody: evt, compteOauthId: resolved.compteOauthId,
+          await client.upsert({
+            eventBody: evt,
+            externalId: null,
             contexte: { type: 'intervention-extra', itemId: id },
           })
         }

@@ -49,37 +49,56 @@ export function buildOAuthClientForCompte(compteOauthId, tokens) {
   return client
 }
 
-// Résout la cible d'un item → { calendar, calendarId, compteOauthId } ou null.
-// null = rien à pousser : cible introuvable, sans compte OAuth, ou compte sans
-// refresh_token (cible inerte). L'appelant logge la raison et skip.
-export async function getCalendarForCible(cibleId) {
+// Résolution MÉTIER d'une cible → { cible, compte } (compte = ligne comptes_oauth
+// complète, TOUS fournisseurs confondus). Partagée par le dispatch, qui lit
+// compte.fournisseur pour router (cf. app/lib/calendar/dispatch.js). null = cible
+// introuvable ou sans compte rattaché → rien à pousser (l'appelant skip, comme avant).
+export async function resolveCible(cibleId) {
   const { data: cible } = await supabaseAdmin
     .from('cibles_calendrier')
     .select('id, calendar_id, compte_oauth_id')
     .eq('id', cibleId)
     .single()
   if (!cible || !cible.compte_oauth_id) return null
-
-  // Garde-fou (lot 6a) : ne résoudre QUE des comptes Google. Tant que le dispatch
-  // multi-fournisseur (6b) n'existe pas, un compte iCloud/Outlook crasherait le client
-  // OAuth Google ci-dessous → on le filtre explicitement.
-  const { data: tokenData } = await supabaseAdmin
+  const { data: compte } = await supabaseAdmin
     .from('comptes_oauth')
     .select('*')
     .eq('id', cible.compte_oauth_id)
-    .eq('fournisseur', 'google')
     .single()
-  if (!tokenData || !tokenData.refresh_token) return null
+  if (!compte) return null
+  return { cible, compte }
+}
 
-  const oauthClient = buildOAuthClientForCompte(cible.compte_oauth_id, {
-    access_token: tokenData.access_token,
-    refresh_token: tokenData.refresh_token,
-    expiry_date: tokenData.expiry_date,
+// Construit l'accès Google (client OAuth + calendar) à partir d'une cible Google
+// résolue. null si le compte n'a pas de refresh_token (cible inerte). EXTRAIT À
+// L'IDENTIQUE de l'ancien getCalendarForCible : mêmes tokens, même client googleapis.
+export function buildGoogleCalendar({ cible, compte }) {
+  if (!compte.refresh_token) return null
+  const oauthClient = buildOAuthClientForCompte(compte.id, {
+    access_token: compte.access_token,
+    refresh_token: compte.refresh_token,
+    expiry_date: compte.expiry_date,
   })
   return {
     calendar: google.calendar({ version: 'v3', auth: oauthClient }),
     calendarId: cible.calendar_id,
     compteOauthId: cible.compte_oauth_id,
+  }
+}
+
+// Handle d'écriture Google à interface commune (upsert/delete), consommé par le
+// dispatch. upsert = upsertEvent (update si externalId présent, sinon insert, avec
+// fallback 404/410) ; delete = deleteEvent. AUCUN changement de comportement Google :
+// ce sont exactement les appels que push/event faisaient en direct avant le 6b-1.
+export function makeGoogleClientHandle({ calendar, calendarId, compteOauthId }) {
+  return {
+    fournisseur: 'google',
+    calendarId,
+    compteOauthId,
+    upsert: ({ eventBody, externalId, contexte }) =>
+      upsertEvent({ calendar, calendarId, compteOauthId, googleEventId: externalId, eventBody, contexte }),
+    delete: ({ externalId, contexte }) =>
+      deleteEvent({ calendar, calendarId, eventId: externalId, contexte }),
   }
 }
 
