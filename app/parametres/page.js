@@ -728,7 +728,7 @@ export default function Parametres() {
                 <h2 className="page" style={{fontSize:18, marginBottom:4}}>Intégrations</h2>
                 <p style={{color:'var(--ink-500)', fontSize:13}}>Services connectés à l'application.</p>
               </div>
-              <MesCalendriers profile={profile} onError={setErreur} onSucces={setSucces} />
+              <MesCalendriers profile={profile} onError={setErreur} onSucces={setSucces} onDefautChange={fetchProfile} />
             </div>
           )}
 

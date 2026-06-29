@@ -15,7 +15,7 @@ import { authHeaders } from '../lib/api-auth-client'
 
 const cardStyle = { padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }
 
-export default function MesCalendriers({ profile, onError, onSucces }) {
+export default function MesCalendriers({ profile, onError, onSucces, onDefautChange }) {
   // Comptes connectés du user + leurs agendas (8b, lecture seule).
   const [comptesCal, setComptesCal] = useState([])
   const [agendas, setAgendas] = useState({}) // { [compteId]: { loading, error, reconnect, items } }
@@ -38,6 +38,7 @@ export default function MesCalendriers({ profile, onError, onSucces }) {
   const [erreurCible, setErreurCible] = useState('')
   const [cibleEditId, setCibleEditId] = useState(null)    // cible en cours de renommage
   const [cibleEditLibelle, setCibleEditLibelle] = useState('')
+  const [cibleDefautId, setCibleDefautId] = useState(null) // profiles.cible_calendrier_defaut_id (8e)
 
   // Charge les comptes calendrier du user (RLS comptes_oauth_own) puis, pour chacun, ses
   // agendas via la route 8a (Bearer authHeaders). LECTURE SEULE. Réutilisable après
@@ -64,12 +65,16 @@ export default function MesCalendriers({ profile, onError, onSucces }) {
 
   useEffect(() => { chargerComptes() }, [chargerComptes])
 
-  // Cibles visibles du user (RLS SELECT = perso ∪ agence ∪ admin-société). LECTURE.
+  // Cibles visibles du user (RLS SELECT = perso ∪ agence ∪ admin-société) + sa cible par
+  // défaut perso (profiles.cible_calendrier_defaut_id, RLS profiles own). LECTURE.
   const chargerCibles = useCallback(async () => {
     if (!profile) return
     const { data } = await supabase.from('cibles_calendrier')
       .select('id, fournisseur, calendar_id, compte_oauth_id, libelle, agenda_nom, user_id, agence_id, actif')
     setCibles(data || [])
+    const { data: prof } = await supabase.from('profiles')
+      .select('cible_calendrier_defaut_id').eq('id', profile.id).single()
+    setCibleDefautId(prof?.cible_calendrier_defaut_id || null)
   }, [profile?.id])
 
   // Agences de la société (admin uniquement, pour créer une cible d'agence).
@@ -214,6 +219,23 @@ export default function MesCalendriers({ profile, onError, onSucces }) {
     else { onSucces('Cible renommée ✓'); setCibleEditId(null); await chargerCibles() }
   }
 
+  // Définit (ou retire si re-clic) SA cible par défaut perso. Le défaut alimente la
+  // pré-sélection à la création d'un RDV (lot 3, resoudreCibleDefaut). Éligibilité = toute
+  // cible visible (= la liste). RLS profiles own (chacun son défaut). FK SET NULL si la
+  // cible défaut est supprimée plus tard (8d).
+  const definirDefaut = async (cible) => {
+    const nouvelId = cibleDefautId === cible.id ? null : cible.id
+    onError(''); onSucces('')
+    const { error } = await supabase.from('profiles')
+      .update({ cible_calendrier_defaut_id: nouvelId }).eq('id', profile.id)
+    if (error) onError('Impossible de définir le défaut : ' + error.message)
+    else {
+      onSucces(nouvelId ? 'Cible par défaut définie ✓' : 'Cible par défaut retirée ✓')
+      setCibleDefautId(nouvelId)
+      onDefautChange?.() // rafraîchit le profil du contexte → pré-sélection planning à jour
+    }
+  }
+
   return (
     <div className="card" style={cardStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -329,6 +351,7 @@ export default function MesCalendriers({ profile, onError, onSucces }) {
                       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)' }}>
                         {c.libelle}
                         <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--ink-100)', color: 'var(--ink-600)' }}>{labelPerimetre(c)}</span>
+                        {cibleDefautId === c.id && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#b45309' }}>★ par défaut</span>}
                         {!c.actif && <span style={{ marginLeft: 6, fontSize: 10.5, color: '#a16207' }}>· inactive</span>}
                       </div>
                     )}
@@ -343,10 +366,17 @@ export default function MesCalendriers({ profile, onError, onSucces }) {
                         <button className="btn btn-primary" style={{ fontSize: 11.5 }} onClick={() => renommerCible(c)} disabled={!cibleEditLibelle.trim()}>Valider</button>
                         <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => setCibleEditId(null)}>Annuler</button>
                       </>
-                    ) : peutSupprimer(c) && (
+                    ) : (
                       <>
-                        <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => { setCibleEditId(c.id); setCibleEditLibelle(c.libelle); onError('') }}>Renommer</button>
-                        <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => supprimerCible(c)}>Supprimer</button>
+                        {/* Défaut : éligible pour TOUTE cible visible (= resoudreCibleDefaut) */}
+                        <button className="btn btn-ghost" style={{ fontSize: 11.5, color: cibleDefautId === c.id ? '#b45309' : undefined }}
+                          onClick={() => definirDefaut(c)}>{cibleDefautId === c.id ? '★ Par défaut' : 'Définir par défaut'}</button>
+                        {peutSupprimer(c) && (
+                          <>
+                            <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => { setCibleEditId(c.id); setCibleEditLibelle(c.libelle); onError('') }}>Renommer</button>
+                            <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => supprimerCible(c)}>Supprimer</button>
+                          </>
+                        )}
                       </>
                     )}
                   </div>

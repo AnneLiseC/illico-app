@@ -298,7 +298,7 @@ export default function Profil() {
       {/* ── Mes calendriers ── Agente : ici. Admin : dans /parametres > Intégrations
           (Placement-2) → on ne l'affiche pas ici pour lui, pour éviter le doublon. */}
       {profile.role !== 'admin' && (
-        <MesCalendriers profile={profile} onError={setError} onSucces={setSucces} />
+        <MesCalendriers profile={profile} onError={setError} onSucces={setSucces} onDefautChange={fetchProfile} />
       )}
     </div>
   )
