@@ -44,7 +44,6 @@ export default function Parametres() {
   const [uploadingRib, setUploadingRib]   = useState(false)
   const [uploadingKbisFranchise, setUploadingKbisFranchise] = useState(false)
   const [section, setSection]             = useState('profil')
-  const [gcalConnected, setGcalConnected] = useState(false)
   const [savingProfil, setSavingProfil]   = useState(false)
   const [savingPwd, setSavingPwd]         = useState(false)
   const [newPwd, setNewPwd]               = useState('')
@@ -218,17 +217,9 @@ export default function Parametres() {
     setProfile(authProfile)
     chargerAgence(authProfile.societe_id)
     chargerObjectifs()
-    Promise.all([
-      chargerAgentes(),
-      supabase.from('comptes_oauth')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', authProfile.id)
-        .eq('fournisseur', 'google')
-        .gt('expiry_date', Date.now()),
-    ]).then(([, { count }]) => {
-      setGcalConnected((count || 0) > 0)
-      setLoading(false)
-    })
+    // Les calendriers (connexion + état) se gèrent dans /profil (lot 8b) ; plus de
+    // détection Google ici (l'ancienne requête sur expiry_date était de toute façon buggée).
+    chargerAgentes().then(() => setLoading(false))
   }, [initialized, authProfile, router])
 
   /* ── Handlers agentes (inchangés) ── */
@@ -736,23 +727,16 @@ export default function Parametres() {
                 <h2 className="page" style={{fontSize:18, marginBottom:4}}>Intégrations</h2>
                 <p style={{color:'var(--ink-500)', fontSize:13}}>Services connectés à l'application.</p>
               </div>
-              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, maxWidth:680}}>
-                {[
-                  { l:'Google Calendar', desc:'Sync des RDV et interventions',   connected: gcalConnected },
-                ].map(int => (
-                  <div key={int.l} style={{padding:18, border:'1px solid var(--ink-200)', borderRadius:12, display:'flex', flexDirection:'column', gap:8}}>
-                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
-                      <div style={{fontWeight:700, fontSize:13.5, color:'var(--ink-900)'}}>{int.l}</div>
-                      <span style={{fontSize:11.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background: int.connected ? 'rgba(22,163,74,0.1)' : 'var(--ink-100)', color: int.connected ? '#15803d' : 'var(--ink-500)'}}>
-                        {int.connected ? 'Connecté' : 'Non connecté'}
-                      </span>
-                    </div>
-                    <div style={{fontSize:12, color:'var(--ink-500)'}}>{int.desc}</div>
-                    {!int.connected && (
-                      <button className="btn btn-ghost" style={{fontSize:11.5, alignSelf:'flex-start', marginTop:2}}>Connecter</button>
-                    )}
+              <div style={{maxWidth:680}}>
+                <div style={{padding:18, border:'1px solid var(--ink-200)', borderRadius:12, display:'flex', flexDirection:'column', gap:10}}>
+                  <div style={{fontWeight:700, fontSize:13.5, color:'var(--ink-900)'}}>Calendriers (Google, iCloud)</div>
+                  <div style={{fontSize:12, color:'var(--ink-500)'}}>
+                    La connexion de tes agendas et la synchro des RDV / interventions se gèrent
+                    désormais depuis ton profil.
                   </div>
-                ))}
+                  <button className="btn btn-ghost" style={{fontSize:12, alignSelf:'flex-start'}}
+                    onClick={() => router.push('/profil')}>Gérer mes calendriers →</button>
+                </div>
               </div>
             </div>
           )}

@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { getObjectifAgente, saveObjectif } from '../lib/objectifs'
+import { authHeaders } from '../lib/api-auth-client'
 
 // Page profil de l'utilisateur connecté (pensée pour les agentes ; l'admin gère
 // tout via /parametres, mais la page reste consultable sans erreur). Réutilise
@@ -32,6 +33,9 @@ export default function Profil() {
   const [objMontant, setObjMontant] = useState('')
   const [objExiste, setObjExiste] = useState(false)
   const [savingObj, setSavingObj] = useState(false)
+  // Mes calendriers (lot 8b, lecture seule) : comptes connectés du user + leurs agendas.
+  const [comptesCal, setComptesCal] = useState([])
+  const [agendas, setAgendas] = useState({}) // { [compteId]: { loading, error, reconnect, items } }
 
   useEffect(() => {
     if (!initialized) return
@@ -49,6 +53,33 @@ export default function Profil() {
     getObjectifAgente(profile.id)
       .then(row => { setObjMontant(row?.montant ?? ''); setObjExiste(!!row) })
       .catch(() => { /* erreur réseau transitoire : on laisse le champ tel quel */ })
+  }, [profile?.id])
+
+  // Charge les comptes calendrier du user (RLS comptes_oauth_own) puis, pour chacun,
+  // ses agendas via la route 8a (Bearer authHeaders). LECTURE SEULE.
+  useEffect(() => {
+    if (!profile) return
+    let annule = false
+    ;(async () => {
+      const { data } = await supabase.from('comptes_oauth')
+        .select('id, fournisseur, compte_email, caldav_username').eq('user_id', profile.id)
+      if (annule) return
+      const list = data || []
+      setComptesCal(list)
+      for (const c of list) {
+        setAgendas(a => ({ ...a, [c.id]: { loading: true } }))
+        try {
+          const res = await fetch(`/api/calendar/list?compte_oauth_id=${c.id}`, { headers: await authHeaders() })
+          const d = await res.json()
+          if (annule) return
+          if (res.ok) setAgendas(a => ({ ...a, [c.id]: { loading: false, items: d.calendriers || [] } }))
+          else setAgendas(a => ({ ...a, [c.id]: { loading: false, error: d.error, reconnect: !!d.reconnect } }))
+        } catch {
+          if (!annule) setAgendas(a => ({ ...a, [c.id]: { loading: false, error: 'Erreur réseau' } }))
+        }
+      }
+    })()
+    return () => { annule = true }
   }, [profile?.id])
 
   if (!initialized || !profile) return <div className="page-loading" />
@@ -125,6 +156,28 @@ export default function Profil() {
     : (profile.part_agente_defaut != null ? [profile.part_agente_defaut] : [])
 
   const cardStyle = { padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }
+
+  // ── Mes calendriers (lot 8b) ──
+  const labelFournisseur = (f) => f === 'google' ? 'Google' : f === 'icloud' ? 'iCloud' : f
+  // Identité affichée : compte_email si présent ; sinon Apple ID iCloud ; sinon, pour
+  // Google, l'id du calendrier principal (= adresse e-mail) renvoyé par la route 8a.
+  const identiteCompte = (c) => {
+    if (c.compte_email) return c.compte_email
+    if (c.fournisseur === 'icloud') return c.caldav_username || 'Compte iCloud'
+    const principal = agendas[c.id]?.items?.find(x => x.primary)
+    return principal?.externalId || 'Compte Google'
+  }
+  const fournisseursConnectes = [...new Set(comptesCal.map(c => c.fournisseur))]
+
+  const connecterGoogle = async () => {
+    setError(''); setSucces('')
+    try {
+      const res = await fetch('/api/auth/google', { method: 'POST', headers: await authHeaders() })
+      const d = await res.json()
+      if (res.ok && d.url) window.location.href = d.url
+      else setError(d.error || 'Erreur de connexion Google')
+    } catch { setError('Erreur de connexion Google') }
+  }
 
   return (
     <div className="page-enter page-pad" style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 980, margin: '0 auto' }}>
@@ -292,6 +345,67 @@ export default function Profil() {
           </button>
         </div>
 
+      </div>
+
+      {/* ── Mes calendriers (lot 8b, lecture seule) ── */}
+      <div className="card" style={cardStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div className="eyebrow">Mes calendriers</div>
+          {/* Badge multi-fournisseur (présence du compte, pas l'expiry) */}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            {fournisseursConnectes.length === 0
+              ? <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Aucun calendrier connecté</span>
+              : fournisseursConnectes.map(f => (
+                  <span key={f} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 600, color: 'var(--ink-700)' }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#15803d', flexShrink: 0 }} />
+                    {labelFournisseur(f)}
+                  </span>
+                ))}
+          </div>
+        </div>
+        <p style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>
+          Connecte tes agendas pour y pousser tes RDV et interventions. La gestion des
+          calendriers cibles arrive prochainement.
+        </p>
+
+        {comptesCal.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {comptesCal.map(c => {
+              const a = agendas[c.id] || {}
+              return (
+                <div key={c.id} style={{ border: '1px solid var(--ink-200)', borderRadius: 12, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink-900)' }}>{labelFournisseur(c.fournisseur)}</div>
+                      <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>{identiteCompte(c)}</div>
+                    </div>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: a.reconnect ? '#dc2626' : '#15803d', flexShrink: 0 }} />
+                  </div>
+                  {a.loading && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Chargement des agendas…</div>}
+                  {a.reconnect && <div style={{ fontSize: 12, color: '#dc2626' }}>Compte à reconnecter.</div>}
+                  {a.error && !a.reconnect && <div style={{ fontSize: 12, color: '#b91c1c' }}>{a.error}</div>}
+                  {a.items && a.items.length === 0 && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Aucun agenda.</div>}
+                  {a.items && a.items.length > 0 && (
+                    <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {a.items.map(cal => (
+                        <li key={cal.externalId} style={{ fontSize: 12.5, color: 'var(--ink-700)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--ink-300)', flexShrink: 0 }} />
+                          {cal.label}{cal.primary ? ' · principal' : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button className="btn btn-ghost" onClick={connecterGoogle} style={{ fontSize: 12.5 }}>📅 Connecter Google</button>
+          <button className="btn btn-ghost" disabled title="Connexion iCloud à venir"
+            style={{ fontSize: 12.5, opacity: 0.5, cursor: 'not-allowed' }}>+ Connecter iCloud</button>
+        </div>
       </div>
     </div>
   )
