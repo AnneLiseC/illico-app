@@ -26,11 +26,11 @@ function buildOAuthClient(userId, tokens) {
   client.setCredentials(tokens)
   client.on('tokens', async (newTokens) => {
     if (newTokens.access_token) {
-      await supabaseAdmin.from('google_tokens').update({
+      await supabaseAdmin.from('comptes_oauth').update({
         access_token: newTokens.access_token,
         expiry_date: newTokens.expiry_date,
         updated_at: new Date().toISOString(),
-      }).eq('user_id', userId)
+      }).eq('user_id', userId).eq('fournisseur', 'google')
     }
   })
   return client
@@ -133,9 +133,10 @@ export async function POST(request) {
     const userId = auth.user.id
 
     const { data: tokenData } = await supabaseAdmin
-      .from('google_tokens')
+      .from('comptes_oauth')
       .select('*')
       .eq('user_id', userId)
+      .eq('fournisseur', 'google')
       .single()
 
     if (!tokenData) {
@@ -160,7 +161,7 @@ export async function POST(request) {
         || err.message?.includes('Token has been expired')
         || err.message?.includes('invalid_client')
       if (isInvalidGrant) {
-        await supabaseAdmin.from('google_tokens').delete().eq('user_id', userId)
+        await supabaseAdmin.from('comptes_oauth').delete().eq('user_id', userId).eq('fournisseur', 'google')
         return NextResponse.json({ error: 'Session Google expirée, reconnectez Google Calendar', needsReconnect: true }, { status: 400 })
       }
       const detail = err.code === 404 ? 'Calendrier introuvable (vérifiez GOOGLE_CALENDAR_ID)'
@@ -403,8 +404,8 @@ export async function POST(request) {
       results.errors.push(`Pull: ${err.message}`)
     }
 
-    await supabaseAdmin.from('google_tokens')
-      .update({ updated_at: new Date().toISOString() }).eq('user_id', userId)
+    await supabaseAdmin.from('comptes_oauth')
+      .update({ updated_at: new Date().toISOString() }).eq('user_id', userId).eq('fournisseur', 'google')
 
     const parts = []
     if (results.pushed > 0) parts.push(`${results.pushed} créé(s)`)
@@ -444,7 +445,7 @@ export async function GET(request) {
     const userId = auth.user.id
 
     const { data } = await supabaseAdmin
-      .from('google_tokens').select('updated_at').eq('user_id', userId).single()
+      .from('comptes_oauth').select('updated_at').eq('user_id', userId).eq('fournisseur', 'google').single()
 
     return NextResponse.json({ connected: !!data, lastSync: data?.updated_at || null })
   } catch {

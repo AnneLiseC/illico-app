@@ -26,7 +26,7 @@ export function nextDay(dateStr) {
   return d.toISOString().slice(0, 10)
 }
 
-// Client OAuth ciblant une LIGNE google_tokens par son id (= compte détenteur de
+// Client OAuth ciblant une LIGNE comptes_oauth par son id (= compte détenteur de
 // la cible). ⚠️ Le refresh on('tokens') réécrit .eq('id', compteOauthId), JAMAIS
 // .eq('user_id', ...) : on rafraîchit les tokens du compte de la cible, pas ceux
 // du user déclencheur. Inverser corromprait le mauvais compte.
@@ -39,7 +39,7 @@ export function buildOAuthClientForCompte(compteOauthId, tokens) {
   client.setCredentials(tokens)
   client.on('tokens', async (newTokens) => {
     if (newTokens.access_token) {
-      await supabaseAdmin.from('google_tokens').update({
+      await supabaseAdmin.from('comptes_oauth').update({
         access_token: newTokens.access_token,
         expiry_date: newTokens.expiry_date,
         updated_at: new Date().toISOString(),
@@ -60,10 +60,14 @@ export async function getCalendarForCible(cibleId) {
     .single()
   if (!cible || !cible.compte_oauth_id) return null
 
+  // Garde-fou (lot 6a) : ne résoudre QUE des comptes Google. Tant que le dispatch
+  // multi-fournisseur (6b) n'existe pas, un compte iCloud/Outlook crasherait le client
+  // OAuth Google ci-dessous → on le filtre explicitement.
   const { data: tokenData } = await supabaseAdmin
-    .from('google_tokens')
+    .from('comptes_oauth')
     .select('*')
     .eq('id', cible.compte_oauth_id)
+    .eq('fournisseur', 'google')
     .single()
   if (!tokenData || !tokenData.refresh_token) return null
 

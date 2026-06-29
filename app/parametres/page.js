@@ -220,9 +220,10 @@ export default function Parametres() {
     chargerObjectifs()
     Promise.all([
       chargerAgentes(),
-      supabase.from('google_tokens')
+      supabase.from('comptes_oauth')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', authProfile.id)
+        .eq('fournisseur', 'google')
         .gt('expiry_date', Date.now()),
     ]).then(([, { count }]) => {
       setGcalConnected((count || 0) > 0)
