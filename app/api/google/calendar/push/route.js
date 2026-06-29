@@ -20,12 +20,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireUser } from '../../../../lib/api-auth'
-import { getClientForCible } from '../../../../lib/calendar/dispatch'
-import {
-  rdvToGoogleEvent,
-  interventionToGoogleEvents,
-  DRY_RUN,
-} from '../../../../lib/calendar/google'
+import { getClientForCible, buildRdvEventBody, buildInterventionEventBodies } from '../../../../lib/calendar/dispatch'
+import { DRY_RUN } from '../../../../lib/calendar/google'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -95,7 +91,7 @@ export async function POST(request) {
       console.log('[push] rdv', id, '→ cible', rdv.cible_id, 'calendar', client.calendarId, 'compte', client.compteOauthId, DRY_RUN ? '(DRY-RUN)' : '')
 
       const result = await client.upsert({
-        eventBody: rdvToGoogleEvent(rdv),
+        eventBody: buildRdvEventBody(client, rdv),
         externalId: rdv.google_event_id,
         contexte: { type: 'rdv', itemId: id },
       })
@@ -128,7 +124,7 @@ export async function POST(request) {
       // Construction des events extraite en lib (lot 5a) : [] → rien à pousser (skip,
       // comme avant) ; sinon [eventPrincipal, ...extras] (multi-jours). L'event[0] porte
       // le google_event_id (upsert + writeback) ; les extras sont insert-only.
-      const events = interventionToGoogleEvents(intervention)
+      const events = buildInterventionEventBodies(client, intervention)
       if (!events.length) return NextResponse.json({ success: true, skipped: true })
       const [firstEvent, ...extraEvents] = events
 
