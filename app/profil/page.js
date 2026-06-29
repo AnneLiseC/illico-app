@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
@@ -36,6 +36,11 @@ export default function Profil() {
   // Mes calendriers (lot 8b, lecture seule) : comptes connectés du user + leurs agendas.
   const [comptesCal, setComptesCal] = useState([])
   const [agendas, setAgendas] = useState({}) // { [compteId]: { loading, error, reconnect, items } }
+  // Formulaire de connexion iCloud (lot 8c)
+  const [icloudOpen, setIcloudOpen] = useState(false)
+  const [appleId, setAppleId] = useState('')
+  const [appPassword, setAppPassword] = useState('')
+  const [connectingIcloud, setConnectingIcloud] = useState(false)
 
   useEffect(() => {
     if (!initialized) return
@@ -55,32 +60,30 @@ export default function Profil() {
       .catch(() => { /* erreur réseau transitoire : on laisse le champ tel quel */ })
   }, [profile?.id])
 
-  // Charge les comptes calendrier du user (RLS comptes_oauth_own) puis, pour chacun,
-  // ses agendas via la route 8a (Bearer authHeaders). LECTURE SEULE.
-  useEffect(() => {
+  // Charge les comptes calendrier du user (RLS comptes_oauth_own) puis, pour chacun, ses
+  // agendas via la route 8a (Bearer authHeaders). LECTURE SEULE. Réutilisable après
+  // connexion / déconnexion d'un compte (8c).
+  const chargerComptes = useCallback(async () => {
     if (!profile) return
-    let annule = false
-    ;(async () => {
-      const { data } = await supabase.from('comptes_oauth')
-        .select('id, fournisseur, compte_email, caldav_username').eq('user_id', profile.id)
-      if (annule) return
-      const list = data || []
-      setComptesCal(list)
-      for (const c of list) {
-        setAgendas(a => ({ ...a, [c.id]: { loading: true } }))
-        try {
-          const res = await fetch(`/api/calendar/list?compte_oauth_id=${c.id}`, { headers: await authHeaders() })
-          const d = await res.json()
-          if (annule) return
-          if (res.ok) setAgendas(a => ({ ...a, [c.id]: { loading: false, items: d.calendriers || [] } }))
-          else setAgendas(a => ({ ...a, [c.id]: { loading: false, error: d.error, reconnect: !!d.reconnect } }))
-        } catch {
-          if (!annule) setAgendas(a => ({ ...a, [c.id]: { loading: false, error: 'Erreur réseau' } }))
-        }
+    const { data } = await supabase.from('comptes_oauth')
+      .select('id, fournisseur, compte_email, caldav_username').eq('user_id', profile.id)
+    const list = data || []
+    setComptesCal(list)
+    setAgendas({})
+    for (const c of list) {
+      setAgendas(a => ({ ...a, [c.id]: { loading: true } }))
+      try {
+        const res = await fetch(`/api/calendar/list?compte_oauth_id=${c.id}`, { headers: await authHeaders() })
+        const d = await res.json()
+        if (res.ok) setAgendas(a => ({ ...a, [c.id]: { loading: false, items: d.calendriers || [] } }))
+        else setAgendas(a => ({ ...a, [c.id]: { loading: false, error: d.error, reconnect: !!d.reconnect } }))
+      } catch {
+        setAgendas(a => ({ ...a, [c.id]: { loading: false, error: 'Erreur réseau' } }))
       }
-    })()
-    return () => { annule = true }
+    }
   }, [profile?.id])
+
+  useEffect(() => { chargerComptes() }, [chargerComptes])
 
   if (!initialized || !profile) return <div className="page-loading" />
 
@@ -177,6 +180,41 @@ export default function Profil() {
       if (res.ok && d.url) window.location.href = d.url
       else setError(d.error || 'Erreur de connexion Google')
     } catch { setError('Erreur de connexion Google') }
+  }
+
+  const connecterIcloud = async () => {
+    setConnectingIcloud(true); setError(''); setSucces('')
+    try {
+      const res = await fetch('/api/calendar/icloud/connect', {
+        method: 'POST', headers: await authHeaders(),
+        body: JSON.stringify({ appleId, appPassword }),
+      })
+      const d = await res.json()
+      if (res.ok) {
+        setSucces('Compte iCloud connecté ✓')
+        setIcloudOpen(false); setAppleId(''); setAppPassword('')
+        await chargerComptes()
+      } else setError(d.error || 'Connexion iCloud impossible')
+    } catch { setError('Connexion iCloud impossible') }
+    setConnectingIcloud(false)
+  }
+
+  const deconnecterCompte = async (c) => {
+    const ok = window.confirm(
+      `Déconnecter ce compte ${labelFournisseur(c.fournisseur)} ?\n\n` +
+      'Les calendriers cibles associés à ce compte seront désactivés.'
+    )
+    if (!ok) return
+    setError(''); setSucces('')
+    try {
+      const res = await fetch('/api/calendar/account/disconnect', {
+        method: 'POST', headers: await authHeaders(),
+        body: JSON.stringify({ compte_oauth_id: c.id }),
+      })
+      const d = await res.json()
+      if (res.ok) { setSucces('Compte déconnecté ✓'); await chargerComptes() }
+      else setError(d.error || 'Déconnexion impossible')
+    } catch { setError('Déconnexion impossible') }
   }
 
   return (
@@ -379,7 +417,10 @@ export default function Profil() {
                       <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink-900)' }}>{labelFournisseur(c.fournisseur)}</div>
                       <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>{identiteCompte(c)}</div>
                     </div>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: a.reconnect ? '#dc2626' : '#15803d', flexShrink: 0 }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: a.reconnect ? '#dc2626' : '#15803d', flexShrink: 0 }} />
+                      <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => deconnecterCompte(c)}>Déconnecter</button>
+                    </div>
                   </div>
                   {a.loading && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Chargement des agendas…</div>}
                   {a.reconnect && <div style={{ fontSize: 12, color: '#dc2626' }}>Compte à reconnecter.</div>}
@@ -403,9 +444,31 @@ export default function Profil() {
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button className="btn btn-ghost" onClick={connecterGoogle} style={{ fontSize: 12.5 }}>📅 Connecter Google</button>
-          <button className="btn btn-ghost" disabled title="Connexion iCloud à venir"
-            style={{ fontSize: 12.5, opacity: 0.5, cursor: 'not-allowed' }}>+ Connecter iCloud</button>
+          <button className="btn btn-ghost" onClick={() => { setIcloudOpen(o => !o); setError('') }}
+            style={{ fontSize: 12.5 }}> Connecter iCloud</button>
         </div>
+
+        {icloudOpen && (
+          <div style={{ border: '1px solid var(--ink-200)', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>
+              Génère un mot de passe d'application sur{' '}
+              <a href="https://appleid.apple.com" target="_blank" rel="noreferrer" style={{ color: 'var(--brand-700)' }}>appleid.apple.com</a>{' '}
+              (Connexion et sécurité → Mots de passe des apps), puis saisis-le ici.
+            </div>
+            <input className="input" placeholder="Apple ID (email)" value={appleId}
+              onChange={e => setAppleId(e.target.value)} style={{ height: 40 }} />
+            <input className="input" type="password" placeholder="Mot de passe d'application" value={appPassword}
+              onChange={e => setAppPassword(e.target.value)} style={{ height: 40 }} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary" style={{ fontSize: 12.5 }} onClick={connecterIcloud}
+                disabled={connectingIcloud || !appleId || !appPassword}>
+                {connectingIcloud ? 'Connexion…' : 'Connecter'}
+              </button>
+              <button className="btn btn-ghost" style={{ fontSize: 12.5 }}
+                onClick={() => { setIcloudOpen(false); setAppleId(''); setAppPassword('') }}>Annuler</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

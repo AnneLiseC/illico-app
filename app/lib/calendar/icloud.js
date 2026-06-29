@@ -95,15 +95,23 @@ export function isCalDAVAuthError(err) {
   return /\b(401|403|unauthor|forbidden)\b/i.test(err?.message || '')
 }
 
-export async function buildICloudClient(compte) {
+// Builder bas-niveau : mot de passe EN CLAIR (jamais déchiffré ici). Sert à VALIDER des
+// credentials à la connexion (lot 8c, avant chiffrement/insert). login() = test d'auth +
+// discovery iCloud (URL par-utilisateur pXX-caldav.icloud.com) ; throw 401 si refusé.
+export async function buildICloudClientRaw(username, password, server) {
   const client = new DAVClient({
-    serverUrl: compte.caldav_server || 'https://caldav.icloud.com',
-    credentials: { username: compte.caldav_username, password: decrypt(compte.caldav_password) },
+    serverUrl: server || 'https://caldav.icloud.com',
+    credentials: { username, password },
     authMethod: 'Basic',
     defaultAccountType: 'caldav',
   })
-  await client.login() // discovery iCloud (URL par-utilisateur pXX-caldav.icloud.com)
+  await client.login()
   return client
+}
+
+// Builder à partir d'un compte stocké (caldav_password CHIFFRÉ) → déchiffre puis délègue.
+export async function buildICloudClient(compte) {
+  return buildICloudClientRaw(compte.caldav_username, decrypt(compte.caldav_password), compte.caldav_server)
 }
 
 // displayName CalDAV peut être une string ou un objet (selon le serveur) → normalise.
