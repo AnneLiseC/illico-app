@@ -73,6 +73,7 @@ export default function Planning() {
   const [erreur, setErreur]                   = useState('')
 
   const [googleConnected, setGoogleConnected] = useState(false)
+  const [fournisseursConnectes, setFournisseursConnectes] = useState([])
   const [syncMessage, setSyncMessage]         = useState('')
   const [calendarView, setCalendarView]       = useState('timeGridWeek')
   const [quickMenu, setQuickMenu]             = useState(null) // { date, x, y }
@@ -132,13 +133,22 @@ export default function Planning() {
     if (!profile) return
     const init = async () => {
       await chargerTout()
+      // Comptes calendrier connectés du user (PRÉSENCE du compte, pas l'expiry) :
+      // Google = refresh_token présent ; iCloud = caldav_username présent. Alimente le
+      // badge multi-fournisseur ET le gate de push (googleConnected = ≥ 1 fournisseur).
       try {
-        const res = await fetch('/api/google/calendar/sync', { headers: await authHeaders() })
-        if (res.ok) { const d = await res.json(); setGoogleConnected(d.connected) }
-      } catch { setGoogleConnected(false) }
+        const { data: comptesCal } = await supabase.from('comptes_oauth')
+          .select('fournisseur, refresh_token, caldav_username').eq('user_id', profile.id)
+        const f = []
+        if ((comptesCal || []).some(c => c.fournisseur === 'google' && c.refresh_token)) f.push('google')
+        if ((comptesCal || []).some(c => c.fournisseur === 'icloud' && c.caldav_username)) f.push('icloud')
+        setFournisseursConnectes(f)
+        setGoogleConnected(f.length > 0)
+      } catch { setFournisseursConnectes([]); setGoogleConnected(false) }
       const params = new URLSearchParams(window.location.search)
       if (params.get('google') === 'connected') {
         setSyncMessage('✅ Google Calendar connecté avec succès !')
+        setFournisseursConnectes(f => f.includes('google') ? f : [...f, 'google'])
         setGoogleConnected(true)
         window.history.replaceState({}, '', '/planning')
       } else if (params.get('google') === 'error') {
@@ -502,9 +512,13 @@ export default function Planning() {
             // Indicateur passif : le push est désormais automatique à chaque sauvegarde
             // (lot 4c). Plus de bouton de synchronisation complète (la route /sync POST
             // reste pour l'étage 3 pull, mais n'est plus déclenchée depuis l'UI).
-            <span className="btn btn-ghost" style={{display:'inline-flex', alignItems:'center', gap:6, cursor:'default'}}>
-              <span style={{width:6, height:6, borderRadius:'50%', background:'#15803d', flexShrink:0}}/>
-              Google <span style={{color:'#15803d'}}>● Connecté</span>
+            <span className="btn btn-ghost" style={{display:'inline-flex', alignItems:'center', gap:10, cursor:'default'}}>
+              {(fournisseursConnectes.length ? fournisseursConnectes : ['calendrier']).map(f => (
+                <span key={f} style={{display:'inline-flex', alignItems:'center', gap:5}}>
+                  <span style={{width:6, height:6, borderRadius:'50%', background:'#15803d', flexShrink:0}}/>
+                  {f === 'google' ? 'Google' : f === 'icloud' ? 'iCloud' : 'Connecté'}
+                </span>
+              ))}
             </span>
           ) : (
             <button
