@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { authHeaders } from '../lib/api-auth-client'
+import MesCalendriers from '../components/MesCalendriers'
 
 const LS = { display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5 }
 
@@ -727,17 +728,7 @@ export default function Parametres() {
                 <h2 className="page" style={{fontSize:18, marginBottom:4}}>Intégrations</h2>
                 <p style={{color:'var(--ink-500)', fontSize:13}}>Services connectés à l'application.</p>
               </div>
-              <div style={{maxWidth:680}}>
-                <div style={{padding:18, border:'1px solid var(--ink-200)', borderRadius:12, display:'flex', flexDirection:'column', gap:10}}>
-                  <div style={{fontWeight:700, fontSize:13.5, color:'var(--ink-900)'}}>Calendriers (Google, iCloud)</div>
-                  <div style={{fontSize:12, color:'var(--ink-500)'}}>
-                    La connexion de tes agendas et la synchro des RDV / interventions se gèrent
-                    désormais depuis ton profil.
-                  </div>
-                  <button className="btn btn-ghost" style={{fontSize:12, alignSelf:'flex-start'}}
-                    onClick={() => router.push('/profil')}>Gérer mes calendriers →</button>
-                </div>
-              </div>
+              <MesCalendriers profile={profile} onError={setErreur} onSucces={setSucces} />
             </div>
           )}
 

@@ -295,8 +295,11 @@ export default function Profil() {
 
       </div>
 
-      {/* ── Mes calendriers (lot 8) — composant extrait (Placement-1) ── */}
-      <MesCalendriers profile={profile} onError={setError} onSucces={setSucces} />
+      {/* ── Mes calendriers ── Agente : ici. Admin : dans /parametres > Intégrations
+          (Placement-2) → on ne l'affiche pas ici pour lui, pour éviter le doublon. */}
+      {profile.role !== 'admin' && (
+        <MesCalendriers profile={profile} onError={setError} onSucces={setSucces} />
+      )}
     </div>
   )
 }
