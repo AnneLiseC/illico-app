@@ -106,6 +106,28 @@ export async function buildICloudClient(compte) {
   return client
 }
 
+// displayName CalDAV peut être une string ou un objet (selon le serveur) → normalise.
+function caldavName(displayName, fallback) {
+  if (typeof displayName === 'string' && displayName.trim()) return displayName
+  if (displayName && typeof displayName === 'object') {
+    return displayName._text || displayName._cdata || displayName['#text'] || fallback
+  }
+  return fallback
+}
+
+// Liste les calendriers d'un compte iCloud connecté (lot 8a) → [{ externalId, label }].
+// LECTURE SEULE (fetchCalendars). externalId = URL de la collection CalDAV (= calendar_id
+// d'une future cible). login() peut throw 401 (app-specific password révoqué) → l'appelant
+// mappe en « identifiants iCloud à reconnecter » via isCalDAVAuthError.
+export async function listICloudCalendars(compte) {
+  const client = await buildICloudClient(compte)
+  const calendars = await client.fetchCalendars()
+  return calendars.map((c) => ({
+    externalId: c.url,
+    label: caldavName(c.displayName, 'Calendrier iCloud'),
+  }))
+}
+
 function ensureSlash(u) {
   return u.endsWith('/') ? u : u + '/'
 }

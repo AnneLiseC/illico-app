@@ -53,6 +53,33 @@ export function buildOAuthClientForCompte(compteOauthId, tokens) {
   return client
 }
 
+// true si l'erreur googleapis ressemble à un échec d'auth (token révoqué / invalid_grant).
+// Sert au listing (lot 8a) pour répondre « compte à reconnecter » au lieu de planter.
+export function isGoogleAuthError(err) {
+  const status = err?.code ?? err?.response?.status
+  if (status === 401) return true
+  return /invalid_grant|unauthor/i.test(err?.message || '')
+}
+
+// Liste les agendas d'un compte Google connecté (lot 8a) → [{ externalId, label,
+// primary, accessRole }]. LECTURE SEULE (calendarList.list). Le primaire (primary:true)
+// a son id = l'adresse e-mail du compte (utile pour backfiller compte_email plus tard).
+export async function listGoogleCalendars(compte) {
+  const oauthClient = buildOAuthClientForCompte(compte.id, {
+    access_token: compte.access_token,
+    refresh_token: compte.refresh_token,
+    expiry_date: compte.expiry_date,
+  })
+  const calendar = google.calendar({ version: 'v3', auth: oauthClient })
+  const { data } = await calendar.calendarList.list({ maxResults: 250 })
+  return (data.items || []).map((c) => ({
+    externalId: c.id,
+    label: c.summaryOverride || c.summary,
+    primary: c.primary || false,
+    accessRole: c.accessRole,
+  }))
+}
+
 // Résolution MÉTIER d'une cible → { cible, compte } (compte = ligne comptes_oauth
 // complète, TOUS fournisseurs confondus). Partagée par le dispatch, qui lit
 // compte.fournisseur pour router (cf. app/lib/calendar/dispatch.js). null = cible
