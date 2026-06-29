@@ -42,6 +42,17 @@ export default function Profil() {
   const [appPassword, setAppPassword] = useState('')
   const [connectingIcloud, setConnectingIcloud] = useState(false)
   const [erreurIcloud, setErreurIcloud] = useState('') // erreur affichée DANS le formulaire
+  // Cibles calendrier (lot 8d) : liste + formulaire de création
+  const [cibles, setCibles] = useState([])
+  const [agences, setAgences] = useState([]) // agences de la société (admin → cible d'agence)
+  const [cibleOpen, setCibleOpen] = useState(false)
+  const [cibleCompteId, setCibleCompteId] = useState('')
+  const [cibleAgenda, setCibleAgenda] = useState('')
+  const [cibleLibelle, setCibleLibelle] = useState('')
+  const [ciblePerimetre, setCiblePerimetre] = useState('perso')
+  const [cibleAgenceId, setCibleAgenceId] = useState('')
+  const [creatingCible, setCreatingCible] = useState(false)
+  const [erreurCible, setErreurCible] = useState('')
 
   useEffect(() => {
     if (!initialized) return
@@ -85,6 +96,24 @@ export default function Profil() {
   }, [profile?.id])
 
   useEffect(() => { chargerComptes() }, [chargerComptes])
+
+  // Cibles visibles du user (RLS SELECT = perso ∪ agence ∪ admin-société). LECTURE.
+  const chargerCibles = useCallback(async () => {
+    if (!profile) return
+    const { data } = await supabase.from('cibles_calendrier')
+      .select('id, fournisseur, calendar_id, compte_oauth_id, libelle, user_id, agence_id, actif')
+    setCibles(data || [])
+  }, [profile?.id])
+
+  // Agences de la société (admin uniquement, pour créer une cible d'agence).
+  const chargerAgences = useCallback(async () => {
+    if (!profile || profile.role !== 'admin') return
+    const { data } = await supabase.from('agences').select('id, nom').eq('societe_id', profile.societe_id)
+    setAgences(data || [])
+    setCibleAgenceId(prev => prev || data?.[0]?.id || '')
+  }, [profile?.id, profile?.role, profile?.societe_id])
+
+  useEffect(() => { chargerCibles(); chargerAgences() }, [chargerCibles, chargerAgences])
 
   if (!initialized || !profile) return <div className="page-loading" />
 
@@ -173,6 +202,18 @@ export default function Profil() {
   }
   const fournisseursConnectes = [...new Set(comptesCal.map(c => c.fournisseur))]
 
+  // ── Cibles (lot 8d) ──
+  const compteSel = comptesCal.find(c => c.id === cibleCompteId)
+  const agendasSel = agendas[cibleCompteId]?.items || []
+  const labelPerimetre = (c) => c.agence_id ? 'Agence' : 'Perso'
+  const labelAgenda = (c) => {
+    const found = agendas[c.compte_oauth_id]?.items?.find(x => x.externalId === c.calendar_id)
+    return found?.label || c.calendar_id
+  }
+  // L'UI reflète la RLS cibles_write : perso supprimable par son propriétaire ; agence par
+  // l'admin. La RLS reste le vrai garde-fou (un delete hors périmètre affecte 0 ligne).
+  const peutSupprimer = (c) => (c.user_id && c.user_id === profile.id) || (profile.role === 'admin' && !!c.agence_id)
+
   const connecterGoogle = async () => {
     setError(''); setSucces('')
     try {
@@ -216,6 +257,50 @@ export default function Profil() {
       if (res.ok) { setSucces('Compte déconnecté ✓'); await chargerComptes() }
       else setError(d.error || 'Déconnexion impossible')
     } catch { setError('Déconnexion impossible') }
+  }
+
+  // Création d'une cible (insert AUTHENTIFIÉ → RLS cibles_write : agente=perso,
+  // admin=perso+agence ; le trigger derive_societe remplit societe_id ; created_by défaut).
+  const creerCible = async () => {
+    setCreatingCible(true); setErreurCible('')
+    if (!compteSel || !cibleAgenda || !cibleLibelle.trim()) {
+      setErreurCible('Compte, agenda et libellé requis'); setCreatingCible(false); return
+    }
+    if (ciblePerimetre === 'agence' && !cibleAgenceId) {
+      setErreurCible('Choisis une agence'); setCreatingCible(false); return
+    }
+    const perimetre = ciblePerimetre === 'agence'
+      ? { agence_id: cibleAgenceId, user_id: null }
+      : { user_id: profile.id, agence_id: null }
+    const { error } = await supabase.from('cibles_calendrier').insert({
+      fournisseur: compteSel.fournisseur,
+      calendar_id: cibleAgenda,
+      compte_oauth_id: cibleCompteId,
+      libelle: cibleLibelle.trim(),
+      ...perimetre,
+    })
+    if (error) setErreurCible('Création refusée : ' + error.message)
+    else {
+      setSucces('Calendrier cible ajouté ✓')
+      setCibleOpen(false); setCibleCompteId(''); setCibleAgenda(''); setCibleLibelle(''); setErreurCible('')
+      await chargerCibles()
+    }
+    setCreatingCible(false)
+  }
+
+  const supprimerCible = async (cible) => {
+    const ok = window.confirm(
+      `Supprimer la cible « ${cible.libelle} » ?\n\n` +
+      'Les RDV / interventions liés ne se synchroniseront plus (les événements déjà créés ' +
+      'restent dans le calendrier du fournisseur).'
+    )
+    if (!ok) return
+    setError(''); setSucces('')
+    // RLS cibles_write borne la suppression ; .select → 0 ligne = hors périmètre (non bloquant).
+    const { data, error } = await supabase.from('cibles_calendrier').delete().eq('id', cible.id).select('id')
+    if (error) setError('Suppression impossible : ' + error.message)
+    else if (!data || data.length === 0) setError('Suppression non autorisée pour cette cible.')
+    else { setSucces('Cible supprimée ✓'); await chargerCibles() }
   }
 
   return (
@@ -475,6 +560,87 @@ export default function Profil() {
             </div>
           </div>
         )}
+
+        {/* ── Calendriers cibles (lot 8d) ── */}
+        <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>Calendriers cibles</div>
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} disabled={comptesCal.length === 0}
+              onClick={() => { setCibleOpen(o => !o); setErreurCible('') }}>+ Ajouter un calendrier cible</button>
+          </div>
+          {comptesCal.length === 0 && (
+            <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Connecte d'abord un compte ci-dessus.</div>
+          )}
+
+          {cibles.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {cibles.map(c => (
+                <div key={c.id} style={{ border: '1px solid var(--ink-200)', borderRadius: 10, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)' }}>
+                      {c.libelle}
+                      <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--ink-100)', color: 'var(--ink-600)' }}>{labelPerimetre(c)}</span>
+                      {!c.actif && <span style={{ marginLeft: 6, fontSize: 10.5, color: '#a16207' }}>· inactive</span>}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>
+                      {labelFournisseur(c.fournisseur)} · {labelAgenda(c)}
+                      {!c.compte_oauth_id && <span style={{ color: '#dc2626' }}> · compte déconnecté</span>}
+                    </div>
+                  </div>
+                  {peutSupprimer(c) && (
+                    <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => supprimerCible(c)}>Supprimer</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {cibleOpen && (
+            <div style={{ border: '1px solid var(--ink-200)', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <select className="input" value={cibleCompteId} style={{ height: 40 }}
+                onChange={e => { setCibleCompteId(e.target.value); setCibleAgenda('') }}>
+                <option value="">— Compte connecté —</option>
+                {comptesCal.map(c => <option key={c.id} value={c.id}>{labelFournisseur(c.fournisseur)} · {identiteCompte(c)}</option>)}
+              </select>
+              <select className="input" value={cibleAgenda} disabled={!cibleCompteId} style={{ height: 40 }}
+                onChange={e => setCibleAgenda(e.target.value)}>
+                <option value="">— Agenda —</option>
+                {agendasSel.map(a => <option key={a.externalId} value={a.externalId}>{a.label}{a.primary ? ' · principal' : ''}</option>)}
+              </select>
+              {cibleCompteId && agendasSel.length === 0 && (
+                <div style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>Aucun agenda (compte à reconnecter ?).</div>
+              )}
+              <input className="input" placeholder="Libellé (ex. Agenda Martigues)" value={cibleLibelle}
+                onChange={e => setCibleLibelle(e.target.value)} style={{ height: 40 }} />
+              {profile.role === 'admin' && (
+                <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <label style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <input type="radio" name="perimetre" checked={ciblePerimetre === 'perso'} onChange={() => setCiblePerimetre('perso')} /> Perso
+                  </label>
+                  <label style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <input type="radio" name="perimetre" checked={ciblePerimetre === 'agence'} onChange={() => setCiblePerimetre('agence')} /> Agence
+                  </label>
+                  {ciblePerimetre === 'agence' && (
+                    <select className="input" value={cibleAgenceId} onChange={e => setCibleAgenceId(e.target.value)} style={{ height: 36, maxWidth: 220 }}>
+                      {agences.map(ag => <option key={ag.id} value={ag.id}>{ag.nom}</option>)}
+                    </select>
+                  )}
+                </div>
+              )}
+              {erreurCible && (
+                <div style={{ fontSize: 12.5, color: '#dc2626', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 12px' }}>{erreurCible}</div>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary" style={{ fontSize: 12.5 }} onClick={creerCible}
+                  disabled={creatingCible || !cibleCompteId || !cibleAgenda || !cibleLibelle.trim()}>
+                  {creatingCible ? 'Création…' : 'Créer la cible'}
+                </button>
+                <button className="btn btn-ghost" style={{ fontSize: 12.5 }}
+                  onClick={() => { setCibleOpen(false); setErreurCible('') }}>Annuler</button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
