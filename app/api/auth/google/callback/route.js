@@ -56,13 +56,14 @@ export async function GET(request) {
   try {
     const { tokens } = await oauth2Client.getToken(code)
 
-    await supabaseAdmin.from('google_tokens').upsert({
+    await supabaseAdmin.from('comptes_oauth').upsert({
       user_id: userId,
+      fournisseur: 'google',
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token || null,
       expiry_date: tokens.expiry_date || null,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' })
+    }, { onConflict: 'user_id,fournisseur' })
 
     return NextResponse.redirect(new URL('/planning?google=connected', request.url))
   } catch (err) {

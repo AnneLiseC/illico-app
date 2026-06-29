@@ -10,6 +10,10 @@ import { calculerAvancement, detecterCategorie } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
+import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
+import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../../lib/cibles'
+import { buildInviteMailto } from '../../lib/inviteMail'
+import { calculerExpiration } from '../../lib/expiration'
 import JSZip from 'jszip'
 
 // Liste des entités supprimées avec un chantier — source unique des 2 libellés
@@ -733,10 +737,12 @@ export default function FicheChantier({ params }) {
   const [interventionEnEdition, setInterventionEnEdition] = useState(null)
   const [modalInterventionOuvert, setModalInterventionOuvert] = useState(false)
   const [interventionsDossier, setInterventionsDossier] = useState([])
-  const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client' })
+  const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client', cible_id: '' })
   const [modalCreerIntervOuvert, setModalCreerIntervOuvert] = useState(false)
   const [nouvIntervArtisanId, setNouvIntervArtisanId] = useState(null)
-  const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client' })
+  const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client', cible_id: '' })
+  // Cibles calendrier (lot 3b). INERTE : le push lit encore GOOGLE_CALENDAR_ID (lot 4).
+  const [cibles, setCibles] = useState([])
   const [fichesTechChantier, setFichesTechChantier] = useState({})
   const [fichesPanelOuvert, setFichesPanelOuvert] = useState(null)
   const [documents, setDocuments] = useState([])
@@ -763,7 +769,7 @@ export default function FicheChantier({ params }) {
       setProfile(profData)
       const isAdmin = profData?.role === 'admin'
 
-      const [dossierRes, adminRes, artisansRes] = await Promise.all([
+      const [dossierRes, adminRes, artisansRes, ciblesRes] = await Promise.all([
         supabase.from('dossiers').select(`
           *,
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role),
@@ -794,9 +800,11 @@ export default function FicheChantier({ params }) {
           ? supabase.from('profiles').select('prenom, nom').eq('role', 'admin').order('prenom').limit(1).maybeSingle()
           : Promise.resolve({ data: null }),
         supabase.from('artisans').select('id, entreprise, metier, partenaire').order('entreprise'),
+        supabase.from('cibles_calendrier').select('*').eq('actif', true).order('created_at'),
       ])
 
       const d = dossierRes.data
+      setCibles(ciblesRes.data || [])
 
       if (adminRes.data) { setPrenomAdmin(adminRes.data.prenom || '—') }
       setDossier(d)
@@ -896,28 +904,43 @@ export default function FicheChantier({ params }) {
     setInterventionsDossier(intData || [])
   }
 
+  // Push unitaire vers Google après une sauvegarde (création/édition). Dupliqué du
+  // planning (plomberie, ~6 lignes) : pas de gate googleConnected ici (indisponible en
+  // fiche chantier) — la route push (lot 4a) skip proprement si pas de cible/tokens, et
+  // l'appel est non bloquant (la sauvegarde DB a déjà réussi). cible_id résout le calendrier.
+  const pushToGoogle = (type, pushId) => {
+    if (!pushId || !profile?.id) return
+    authHeaders().then(headers => fetch('/api/google/calendar/push', {
+      method: 'POST', headers, body: JSON.stringify({ type, id: pushId }),
+    })).catch(() => {})
+  }
+
   const sauvegarderRdvDossier = async () => {
-    const { error } = await supabase.from('rendez_vous').insert({
-      dossier_id: id, type_rdv: nouveauRdvDossier.type_rdv, date_heure: nouveauRdvDossier.date_heure,
+    const { data, error } = await supabase.from('rendez_vous').insert({
+      dossier_id: id, type_rdv: nouveauRdvDossier.type_rdv, date_heure: parisLocalToInstant(nouveauRdvDossier.date_heure),
       duree_minutes: parseInt(nouveauRdvDossier.duree_minutes), artisan_id: nouveauRdvDossier.artisan_id || null, notes: nouveauRdvDossier.notes || null,
       titre: nouveauRdvDossier.type_rdv === 'autres' ? (nouveauRdvDossier.titre || null) : null,
       lieu: nouveauRdvDossier.lieu || 'client',
-    })
+      agence_id: dossier?.agence_id || null,   // agence du dossier (le trigger fait foi, envoyé par cohérence)
+      cible_id: nouveauRdvDossier.cible_id || null,   // calendrier cible (lot 4a) — résolu au push
+    }).select('id').single()
     if (!error) {
+      pushToGoogle('rdv', data?.id)   // non bloquant
       await chargerRdvsDossier()
       setModalRdvOuvert(false)
-      setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client' })
+      setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client', cible_id: '' })
       setSucces('RDV créé ✓')
     } else { setErreur('Erreur : ' + error.message) }
   }
 
-  const deleteGoogleEvent = async (googleEventId) => {
+  const deleteGoogleEvent = async (googleEventId, cibleId) => {
     if (!googleEventId || !profile?.id) return
     try {
       await fetch('/api/google/calendar/event', {
         method: 'DELETE',
         headers: await authHeaders(),
-        body: JSON.stringify({ googleEventId }),
+        // cibleId (lot 5c) : capturé sur l'objet AVANT le delete DB → /event résout le bon calendrier.
+        body: JSON.stringify({ googleEventId, cibleId }),
       })
     } catch (err) {
       console.error('Erreur suppression Google event:', err)
@@ -929,19 +952,21 @@ export default function FicheChantier({ params }) {
     const rdv = rdvsDossier.find(r => r.id === rdvId)
     const { error } = await supabase.from('rendez_vous').delete().eq('id', rdvId)
     if (error) { setErreur('Erreur : ' + error.message); return }
-    if (rdv?.google_event_id) await deleteGoogleEvent(rdv.google_event_id)
+    if (rdv?.google_event_id) await deleteGoogleEvent(rdv.google_event_id, rdv.cible_id)
     await chargerRdvsDossier()
   }
 
   const modifierRdvDossier = async () => {
     if (!rdvEnEdition) return
     const { error } = await supabase.from('rendez_vous').update({
-      type_rdv: rdvEnEdition.type_rdv, date_heure: rdvEnEdition.date_heure,
+      type_rdv: rdvEnEdition.type_rdv, date_heure: parisLocalToInstant(rdvEnEdition.date_heure),
       duree_minutes: parseInt(rdvEnEdition.duree_minutes), artisan_id: rdvEnEdition.artisan_id || null, notes: rdvEnEdition.notes || null,
       titre: rdvEnEdition.type_rdv === 'autres' ? (rdvEnEdition.titre || null) : null,
       lieu: rdvEnEdition.lieu || 'client',
+      cible_id: rdvEnEdition.cible_id || null,   // calendrier cible (lot 4a) — résolu au push
     }).eq('id', rdvEnEdition.id)
     if (error) { setErreur('Erreur : ' + error.message); return }
+    pushToGoogle('rdv', rdvEnEdition.id)   // non bloquant
     await chargerRdvsDossier()
     setModalRdvOuvert(false)
     setRdvEnEdition(null)
@@ -964,21 +989,16 @@ export default function FicheChantier({ params }) {
         heure_debut: nouvIntervForm.heure_debut || null,
         duree_minutes: nouvIntervForm.heure_debut ? (nouvIntervForm.duree_minutes || 60) : null,
         lieu: nouvIntervForm.lieu || 'client',
+        agence_id: dossier?.agence_id || null,   // agence du dossier (le trigger fait foi, envoyé par cohérence)
+        cible_id: nouvIntervForm.cible_id || null,   // calendrier cible (lot 4a) — résolu au push
       }
       const { data: intData, error: insertErr } = await supabase.from('interventions_artisans').insert(payload).select('*, artisan:artisans(id, entreprise)')
       if (insertErr) { setErreur('Erreur : ' + insertErr.message); return }
-      // Sync Google si connecté (non bloquant)
-      if (intData?.[0] && profile?.id) {
-        authHeaders().then(headers => fetch('/api/google/calendar/sync', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ singleIntervId: intData[0].id }),
-        })).catch(() => {})
-      }
+      pushToGoogle('intervention', intData?.[0]?.id)   // push unitaire (lot 4c), non bloquant
       await chargerRdvsDossier()
       setModalCreerIntervOuvert(false)
       setNouvIntervArtisanId(null)
-      setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client' })
+      setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client', cible_id: '' })
       setSucces('Intervention planifiée ✓')
     } catch (err) {
       setErreur('Erreur inattendue : ' + err.message)
@@ -999,8 +1019,10 @@ export default function FicheChantier({ params }) {
       heure_debut: interventionEnEdition.heure_debut || null,
       duree_minutes: interventionEnEdition.heure_debut ? (interventionEnEdition.duree_minutes || 60) : null,
       lieu: interventionEnEdition.lieu || 'client',
+      cible_id: interventionEnEdition.cible_id || null,   // calendrier cible (lot 4a) — résolu au push
     }).eq('id', interventionEnEdition.id)
     if (error) { setErreur('Erreur : ' + error.message); return }
+    pushToGoogle('intervention', interventionEnEdition.id)   // non bloquant
     await chargerRdvsDossier()
     setModalInterventionOuvert(false)
     setInterventionEnEdition(null)
@@ -1012,10 +1034,28 @@ export default function FicheChantier({ params }) {
     const intervention = interventionsDossier.find(i => i.id === intId)
     const { error } = await supabase.from('interventions_artisans').delete().eq('id', intId)
     if (error) { setErreur('Erreur : ' + error.message); return }
-    if (intervention?.google_event_id) await deleteGoogleEvent(intervention.google_event_id)
+    if (intervention?.google_event_id) await deleteGoogleEvent(intervention.google_event_id, intervention.cible_id)
     const { data } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
     setInterventionsDossier(data || [])
   }
+
+  // Pré-sélection de la cible à l'ouverture des modales de CRÉATION (jamais en édition,
+  // où la valeur vient de la base). Le dossier est FIXE ici → agence toujours connue
+  // (dossier.agence_id), donc pas de sélecteur d'agence ni de validation : on résout via
+  // le helper partagé (cohérence avec le planning) et on ne remplit que si le champ est vide.
+  useEffect(() => {
+    if (!modalRdvOuvert || rdvEnEdition) return
+    const agenceConcernee = determinerAgenceConcernee({ dossier, profileAgenceId: profile?.agence_id })
+    const def = resoudreCibleDefaut({ profile, cibles, agenceConcernee }) || ''
+    setNouveauRdvDossier(f => (f.cible_id ? f : { ...f, cible_id: def }))
+  }, [modalRdvOuvert]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!modalCreerIntervOuvert) return
+    const agenceConcernee = determinerAgenceConcernee({ dossier, profileAgenceId: profile?.agence_id })
+    const def = resoudreCibleDefaut({ profile, cibles, agenceConcernee }) || ''
+    setNouvIntervForm(f => (f.cible_id ? f : { ...f, cible_id: def }))
+  }, [modalCreerIntervOuvert]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const chargerFichesTechChantier = async () => {
     const { data } = await supabase.from('chantier_fiches_techniques').select('*, fiche:fiches_techniques(id, nom, description)').eq('dossier_id', id)
@@ -1161,8 +1201,24 @@ export default function FicheChantier({ params }) {
     const ancien = dossier.statut ?? null
     set('statut', valeur)
     setErreur(''); setSucces('')
-    const { error } = await supabase.from('dossiers').update({ statut: valeur }).eq('id', id)
+
+    // Expiration d'accès client (tr.3) — stockage seul, pas encore appliqué (tr.4/5).
+    const payload = { statut: valeur }
+    if (valeur === 'termine') {
+      // date_cloture : on garde la 1ère clôture (ne pas écraser si re-clic).
+      const dateCloture = dossier.date_cloture || new Date().toISOString().slice(0, 10)
+      payload.date_cloture = dateCloture
+      // Recalcul à chaque clôture : base = date_fin_chantier si renseignée, sinon date_cloture.
+      payload.acces_expire_le = calculerExpiration({ date_fin_chantier: dossier.date_fin_chantier, date_cloture: dateCloture })
+    } else if (valeur === null) {
+      // Ré-ouverture : le dossier repart actif → accès de nouveau illimité.
+      payload.acces_expire_le = null
+    }
+    // (valeur === 'annule' : on ne touche pas à l'expiration.)
+
+    const { error } = await supabase.from('dossiers').update(payload).eq('id', id)
     if (error) { setErreur('Erreur : ' + error.message); set('statut', ancien); return }
+    setDossier(d => ({ ...d, ...payload }))
     setSucces(valeur === 'termine' ? 'Dossier marqué terminé ✓' : valeur === 'annule' ? 'Dossier annulé ✓' : 'Dossier ré-ouvert (statut automatique) ✓')
   }
 
@@ -1774,6 +1830,11 @@ export default function FicheChantier({ params }) {
   const [onglet, setOnglet] = useState('apercu')
   const [reponseMsg, setReponseMsg] = useState('')
   const [sendingMsg, setSendingMsg] = useState(false)
+  const [editingMsgId, setEditingMsgId] = useState(null)
+  const [editMsgText, setEditMsgText] = useState('')
+  const [editMsgError, setEditMsgError] = useState('')
+  const [inviting, setInviting] = useState(false)
+  const [inviteMsg, setInviteMsg] = useState(null) // { type:'ok'|'err', text }
   const messagesEndRef = useRef(null)
 
   // Realtime : écoute les nouveaux messages sur ce dossier
@@ -1857,6 +1918,63 @@ export default function FicheChantier({ params }) {
     if (luErr) console.error('Marquage messages lus (non bloquant) :', luErr.message)
     else setNbMsgNonLus(0)
     setSendingMsg(false)
+  }
+
+  // Édition en place d'un message (l'auteur, < 10 min — le trigger SQL est le
+  // vrai gardien ; en cas de rejet, on garde le texte saisi et on l'indique).
+  const modifierMessage = async (msg) => {
+    const txt = editMsgText.trim()
+    if (!txt) return
+    setEditMsgError('')
+    const { error } = await supabase.from('messages').update({ contenu: txt }).eq('id', msg.id)
+    if (error) {
+      setEditMsgError('Édition impossible (délai de 10 min dépassé ?).')
+      return
+    }
+    setMessages(prev => prev.map(m =>
+      m.id === msg.id ? { ...m, contenu: txt, edited_at: new Date().toISOString() } : m))
+    setEditingMsgId(null); setEditMsgText('')
+  }
+
+  const annulerEditionMsg = () => { setEditingMsgId(null); setEditMsgText(''); setEditMsgError('') }
+
+  // Invite le client du dossier : le serveur crée le compte + génère le lien (sans
+  // envoyer d'email), puis on ouvre un brouillon mailto que le référent envoie de
+  // sa boîte. Le scope d'accès est porté par client_id → mes_dossiers_client() (RLS).
+  const inviterClient = async () => {
+    setInviting(true); setInviteMsg(null)
+    try {
+      const res = await fetch('/api/invite-client', {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({ dossierId: id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (data.status === 'invited' || data.status === 'relinked') {
+        setInviteMsg({
+          type: 'ok',
+          text: data.status === 'relinked'
+            ? 'Ce client a déjà un compte. Brouillon de renvoi ouvert — vérifiez et envoyez-le.'
+            : 'Brouillon d\'email ouvert — vérifiez et envoyez-le au client.',
+        })
+        // window.location.href (pas window.open) : éviter le blocage popup après await.
+        const mailto = buildInviteMailto({
+          email: data.email,
+          prenom: data.prenom,
+          actionLink: data.actionLink,
+          loginUrl: `${window.location.origin}/login-client`,
+          isRenvoi: data.status === 'relinked',
+        })
+        window.location.href = mailto
+      } else if (data.error === 'email_manquant') {
+        setInviteMsg({ type: 'err', text: 'Ajoutez un email au client avant de l\'inviter.' })
+      } else {
+        setInviteMsg({ type: 'err', text: data.message || data.error || 'Échec de l\'invitation.' })
+      }
+    } catch {
+      setInviteMsg({ type: 'err', text: 'Erreur réseau, réessayez.' })
+    }
+    setInviting(false)
   }
 
   const typologieLabel = (t) => ({ courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' })[t] || t
@@ -2301,6 +2419,21 @@ export default function FicheChantier({ params }) {
               style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
               <MailIcon /> Email
             </a>
+          )}
+          {/* Invitation espace client : réservée aux dossiers AMO (l'espace client est AMO). */}
+          {dossier.typologie === 'amo' && (
+            <>
+              <button onClick={inviterClient} disabled={inviting} className="btn btn-ghost"
+                style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+                <MailIcon /> {inviting ? 'Invitation…' : 'Inviter le client'}
+              </button>
+              {inviteMsg && (
+                <div style={{width:'100%', fontSize:12, marginTop:2,
+                  color: inviteMsg.type === 'ok' ? '#15803d' : '#b91c1c'}}>
+                  {inviteMsg.text}
+                </div>
+              )}
+            </>
           )}
           <div style={{flex:1}}/>
           <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
@@ -4260,7 +4393,7 @@ export default function FicheChantier({ params }) {
                       </div>
                     </div>
                     <div style={{display:'flex', gap:4}}>
-                      <button onClick={() => { setRdvEnEdition(r); setModalRdvOuvert(true) }}
+                      <button onClick={() => { setRdvEnEdition({ ...r, date_heure: instantToParisLocal(r.date_heure) }); setModalRdvOuvert(true) }}
                         className="btn btn-ghost" style={{padding:'4px 6px'}} title="Modifier">
                         <EditIcon />
                       </button>
@@ -4338,6 +4471,16 @@ export default function FicheChantier({ params }) {
           const setForm = edit
             ? (patch) => setRdvEnEdition(r => ({ ...r, ...(typeof patch === 'function' ? patch(r) : patch) }))
             : (patch) => setNouveauRdvDossier(f => ({ ...f, ...(typeof patch === 'function' ? patch(f) : patch) }))
+          // Réception : artisans ayant un DEVIS ACCEPTÉ sur ce chantier (devis est déjà
+          // restreint au dossier courant → filtre sur statut seul). En édition, on conserve
+          // l'artisan déjà choisi même sans devis accepté (donnée historique) pour ne pas le
+          // faire disparaître du sélecteur.
+          const artisansReceptionList = (() => {
+            const m = new Map()
+            devis.filter(d => d.statut === 'accepte' && d.artisan).forEach(d => m.set(d.artisan.id, d.artisan))
+            if (form.artisan_id && form.artisan && !m.has(form.artisan_id)) m.set(form.artisan.id, form.artisan)
+            return [...m.values()]
+          })()
           const types = [
             { k: 'visite_technique_client',  l: 'R1',       sub: 'Visite client',        color: '#0094d4' },
             { k: 'visite_technique_artisan', l: 'R2',       sub: 'Visite artisan',       color: '#16a34a' },
@@ -4377,7 +4520,7 @@ export default function FicheChantier({ params }) {
                     {types.map(t => {
                       const active = form.type_rdv === t.k
                       return (
-                        <button key={t.k} type="button" onClick={() => setForm(f => ({ type_rdv: t.k, artisan_id: ['visite_technique_artisan', 'reception'].includes(t.k) ? f.artisan_id : '' }))}
+                        <button key={t.k} type="button" onClick={() => setForm(f => ({ type_rdv: t.k, artisan_id: '' }))}
                           style={{
                             padding:'10px 6px', borderRadius:8, border:'1px solid',
                             borderColor: active ? t.color : 'var(--ink-200)',
@@ -4442,8 +4585,11 @@ export default function FicheChantier({ params }) {
                       onChange={e => setForm({ artisan_id: e.target.value })}
                       style={{height:38, padding:'0 12px', fontSize:13}}>
                       <option value="">— Choisir —</option>
-                      {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
+                      {(form.type_rdv === 'reception' ? artisansReceptionList : artisans).map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
                     </select>
+                    {form.type_rdv === 'reception' && artisansReceptionList.length === 0 && (
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Aucun artisan avec devis signé sur ce chantier</div>
+                    )}
                   </ModalField>
                 )}
 
@@ -4454,6 +4600,19 @@ export default function FicheChantier({ params }) {
                     rows={3} placeholder="Points à aborder, préparation…"
                     style={{minHeight:80, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
                 </ModalField>
+
+                {/* Cible calendrier (lot 3b) — INERTE : le push lit encore GOOGLE_CALENDAR_ID (lot 4). */}
+                {cibles.length > 0 && (
+                  <ModalField label="Calendrier">
+                    <select className="input"
+                      value={form.cible_id || ''}
+                      onChange={e => setForm({ cible_id: e.target.value })}
+                      style={{height:38, padding:'0 12px', fontSize:13}}>
+                      <option value="">— Choisir un calendrier —</option>
+                      {cibles.map(c => <option key={c.id} value={c.id}>{libelleCible(c)}</option>)}
+                    </select>
+                  </ModalField>
+                )}
               </div>
             </ModalShell>
           )
@@ -4608,6 +4767,19 @@ export default function FicheChantier({ params }) {
                   rows={3} placeholder="Précisions, accès chantier, contact site…"
                   style={{minHeight:80, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
               </ModalField>
+
+              {/* Cible calendrier (lot 3b) — INERTE : le push lit encore GOOGLE_CALENDAR_ID (lot 4). */}
+              {cibles.length > 0 && (
+                <ModalField label="Calendrier">
+                  <select className="input"
+                    value={i.cible_id || ''}
+                    onChange={e => setI({ cible_id: e.target.value })}
+                    style={{height:38, padding:'0 12px', fontSize:13}}>
+                    <option value="">— Choisir un calendrier —</option>
+                    {cibles.map(c => <option key={c.id} value={c.id}>{libelleCible(c)}</option>)}
+                  </select>
+                </ModalField>
+              )}
 
             </div>
           </ModalShell>
@@ -5205,7 +5377,10 @@ export default function FicheChantier({ params }) {
               const who = isClient
                 ? (msg.auteur?.prenom ? `${msg.auteur.prenom}${msg.auteur.nom ? ' ' + msg.auteur.nom : ''}` : (client ? `${client.prenom || ''} ${client.nom || ''}`.trim() : 'Client'))
                 : (msg.auteur?.prenom ? `${msg.auteur.prenom}${msg.auteur.nom ? ' ' + msg.auteur.nom[0] + '.' : ''}` : 'Équipe')
-              const when = new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+              const when = fmtDateHeureFR(msg.created_at)
+              const editable = msg.auteur_id === profile?.id
+                && !String(msg.id).startsWith('tmp-')
+                && estDansDelaiEdition(msg.created_at)
               return (
                 <div key={msg.id} style={{display:'flex', gap:10, justifyContent: isClient ? 'flex-start' : 'flex-end'}}>
                   {isClient && <Avatar name={who} color="#0094d4" size={28} />}
@@ -5220,10 +5395,26 @@ export default function FicheChantier({ params }) {
                       wordBreak: 'break-word',
                       opacity: String(msg.id).startsWith('tmp-') ? 0.7 : 1,
                     }}>
-                      {msg.contenu}
+                      {editingMsgId === msg.id ? (
+                        <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                          <textarea value={editMsgText} onChange={e => setEditMsgText(e.target.value)} rows={2} autoFocus
+                            style={{width:'100%', resize:'vertical', borderRadius:8, border:'1px solid var(--ink-200)', padding:'6px 8px', fontSize:13.5, color:'var(--ink-900)', background:'#fff'}} />
+                          {editMsgError && <div style={{fontSize:11, color:'#fecaca', fontWeight:600}}>{editMsgError}</div>}
+                          <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
+                            <button onClick={annulerEditionMsg} style={{fontSize:11, background:'transparent', border:0, color:'inherit', opacity:0.85, cursor:'pointer'}}>Annuler</button>
+                            <button onClick={() => modifierMessage(msg)} disabled={!editMsgText.trim()} style={{fontSize:11, fontWeight:700, background:'#fff', color:'var(--brand-700)', border:0, borderRadius:6, padding:'2px 10px', cursor:'pointer'}}>Valider</button>
+                          </div>
+                        </div>
+                      ) : (
+                        msg.contenu
+                      )}
                     </div>
                     <div style={{fontSize:10.5, color:'var(--ink-400)', marginTop:4, textAlign: isClient ? 'left' : 'right'}}>
-                      {who} · {when}
+                      {who} · {when}{msg.edited_at ? ' (modifié)' : ''}
+                      {editable && editingMsgId !== msg.id && (
+                        <button onClick={() => { setEditingMsgId(msg.id); setEditMsgText(msg.contenu); setEditMsgError('') }}
+                          style={{marginLeft:8, fontSize:10.5, background:'transparent', border:0, color:'var(--brand-600)', cursor:'pointer', textDecoration:'underline', padding:0}}>modifier</button>
+                      )}
                     </div>
                   </div>
                   {!isClient && <Avatar name={who} color="#00578e" size={28} />}
@@ -5297,17 +5488,22 @@ export default function FicheChantier({ params }) {
                     <button onClick={() => setNouvIntervArtisanId(null)} className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>Changer</button>
                   </div>
                 ) : (
-                  <select className="input"
-                    value={nouvIntervArtisanId || ''}
-                    onChange={e => setNouvIntervArtisanId(e.target.value)}
-                    style={{height:38, padding:'0 12px', fontSize:13}}>
-                    <option value="">— Choisir un artisan (devis signé) —</option>
-                    {devis.filter(d => d.statut === 'accepte').map(d => (
-                      <option key={d.artisan_id} value={d.artisan_id}>
-                        {d.artisan?.entreprise}{d.artisan?.metier ? ` · ${d.artisan.metier}` : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <>
+                    <select className="input"
+                      value={nouvIntervArtisanId || ''}
+                      onChange={e => setNouvIntervArtisanId(e.target.value)}
+                      style={{height:38, padding:'0 12px', fontSize:13}}>
+                      <option value="">— Choisir un artisan (devis signé) —</option>
+                      {devis.filter(d => d.statut === 'accepte').map(d => (
+                        <option key={d.artisan_id} value={d.artisan_id}>
+                          {d.artisan?.entreprise}{d.artisan?.metier ? ` · ${d.artisan.metier}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {devis.filter(d => d.statut === 'accepte').length === 0 && (
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Aucun artisan avec devis signé sur ce chantier</div>
+                    )}
+                  </>
                 )}
               </ModalField>
 
@@ -5426,6 +5622,19 @@ export default function FicheChantier({ params }) {
                   rows={3} placeholder="Précisions, accès chantier, contact site…"
                   style={{minHeight:80, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
               </ModalField>
+
+              {/* Cible calendrier (lot 3b) — INERTE : le push lit encore GOOGLE_CALENDAR_ID (lot 4). */}
+              {cibles.length > 0 && (
+                <ModalField label="Calendrier">
+                  <select className="input"
+                    value={f.cible_id || ''}
+                    onChange={e => setF({ cible_id: e.target.value })}
+                    style={{height:38, padding:'0 12px', fontSize:13}}>
+                    <option value="">— Choisir un calendrier —</option>
+                    {cibles.map(c => <option key={c.id} value={c.id}>{libelleCible(c)}</option>)}
+                  </select>
+                </ModalField>
+              )}
 
             </div>
           </ModalShell>

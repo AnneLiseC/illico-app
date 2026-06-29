@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { calcStatut, STATUT_CONFIG } from '../lib/dossiers'
 import { authHeaders } from '../lib/api-auth-client'
+import { fmtDateHeureFR, estDansDelaiEdition } from '../lib/dates'
+import { statutAcces, formatDateFR } from '../lib/expiration'
 import MarkdownCR from '../components/MarkdownCR'
 
 // Vue client : les statuts internes de prospection (à contacter / à relancer)
@@ -42,6 +44,25 @@ const TYPE_VISITE_LABELS = {
   reception: 'Réception chantier',
 }
 
+// ── Helpers agenda client ──
+// RDV : date_heure est un timestamptz → afficher en Europe/Paris via new Date()
+// + toLocale*, SANS parseUTC (qui casserait une valeur déjà offsettée).
+const fmtJourLong  = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }) : ''
+const fmtHeureParis = (d) => d ? new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' }) : ''
+
+// Interventions : date_debut/date_fin/jours_specifiques sont des DATES PURES →
+// formatDateFR (lib/expiration), pas de fuseau. heure_debut est un `time`.
+function periodeIntervention(i) {
+  if (i.type_intervention === 'jours_specifiques') {
+    const jours = i.jours_specifiques || []
+    return jours.length ? jours.map(formatDateFR).join(', ') : '—'
+  }
+  if (i.date_fin && i.date_fin !== i.date_debut) return `${formatDateFR(i.date_debut)} → ${formatDateFR(i.date_fin)}`
+  return formatDateFR(i.date_debut)
+}
+
+const lieuLabel = (lieu) => lieu === 'client' ? 'À votre domicile' : (lieu || '')
+
 export default function EspaceClient() {
   const [profile, setProfile]         = useState(null)
   const [dossier, setDossier]         = useState(null)
@@ -51,14 +72,22 @@ export default function EspaceClient() {
   const [messages, setMessages]       = useState([])
   const [loading, setLoading]         = useState(true)
   const [accesDenied, setAccesDenied]  = useState(false)
+  const [accesExpire, setAccesExpire]  = useState(null)   // date d'expiration (string) si accès expiré
+  const [bandeauEcheance, setBandeauEcheance] = useState(null) // date d'expiration (string) si J-21
   const [onglet, setOnglet]           = useState('accueil')
   const [categoriePhoto, setCategoriePhoto] = useState('avant')
   const [lightbox, setLightbox]       = useState({ open: false, index: 0 })
   const [nouveauMessage, setNouveauMessage] = useState('')
   const [msgErreur, setMsgErreur]     = useState('')
   const [sendingMsg, setSendingMsg]   = useState(false)
+  const [editingId, setEditingId]     = useState(null)
+  const [editText, setEditText]       = useState('')
+  const [editError, setEditError]     = useState('')
   const [crOuvert, setCrOuvert]       = useState(null)
   const [pdfErreur, setPdfErreur]     = useState('')
+  const [rdvsClient, setRdvsClient]   = useState([])
+  const [interventionsClient, setInterventionsClient] = useState([])
+  const [voirRdvPasses, setVoirRdvPasses] = useState(false)
   const messagesEndRef                = useRef(null)
   const router                        = useRouter()
 
@@ -91,6 +120,18 @@ export default function EspaceClient() {
       .eq('dossier_id', dossierId)
       .order('created_at', { ascending: false })
     setComptesRendus(data || [])
+  }
+
+  // Agenda client : RDV (types métier, libellé neutre) + interventions, lus via les
+  // vues scopées client_rendez_vous / client_interventions (filtre dossier + expiration
+  // hérité de mes_dossiers_client(), colonnes sûres seulement — ni notes ni coordonnées).
+  const chargerAgenda = async (dossierId) => {
+    const { data: rdvData } = await supabase
+      .from('client_rendez_vous').select('*').eq('dossier_id', dossierId).order('date_heure')
+    setRdvsClient(rdvData || [])
+    const { data: intData } = await supabase
+      .from('client_interventions').select('*').eq('dossier_id', dossierId).order('date_debut')
+    setInterventionsClient(intData || [])
   }
 
   const chargerMessages = async (dossierId, userId) => {
@@ -135,7 +176,33 @@ export default function EspaceClient() {
 
       setProfile({ ...profData, client: clientData })
 
-      // Dossier AMO du client
+      // Expiration d'accès via RPC mon_expiration_client() : NON gatée par la RLS,
+      // donc lisible même quand le dossier est caché (expiré). Pilote l'écran 4a
+      // AVANT le chargement du dossier. La RLS (back) reste la vraie barrière des
+      // données → en cas d'erreur RPC, fail-open sur l'AFFICHAGE (on continue).
+      const { data: expDate, error: expErr } = await supabase.rpc('mon_expiration_client')
+
+      // Compte désactivé par le cron (J+14, acces_actif=false) : on RÉUTILISE l'écran
+      // « accès expiré » avec la date renvoyée par la RPC. Ce check n'est atteint que
+      // par un client (le staff est filtré plus haut par role !== 'client'), et le
+      // staff a de toute façon acces_actif=true.
+      if (profData.acces_actif === false) {
+        setAccesExpire(expDate)
+        setLoading(false)
+        return
+      }
+
+      if (!expErr) {
+        const acces = statutAcces({ acces_expire_le: expDate })
+        if (acces === 'expire') {
+          setAccesExpire(expDate)
+          setLoading(false)
+          return // dossier de toute façon caché par la RLS durcie
+        }
+        if (acces === 'bientot') setBandeauEcheance(expDate)
+      }
+
+      // Dossier AMO du client (visible si non expiré)
       const { data: dossierData } = await supabase
         .from('dossiers')
         .select('*, referente:profiles!dossiers_referente_id_fkey(prenom, nom)')
@@ -152,6 +219,7 @@ export default function EspaceClient() {
           chargerDevis(dossierData.id),
           chargerComptesRendus(dossierData.id),
           chargerMessages(dossierData.id, user.id),
+          chargerAgenda(dossierData.id),
         ])
       }
       setLoading(false)
@@ -198,6 +266,24 @@ export default function EspaceClient() {
     setSendingMsg(false)
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }
+
+  // Édition en place d'un message (l'auteur, < 10 min — le trigger SQL est le
+  // vrai gardien ; en cas de rejet, on garde le texte saisi et on l'indique).
+  const modifierMessage = async (msg) => {
+    const txt = editText.trim()
+    if (!txt) return
+    setEditError('')
+    const { error } = await supabase.from('messages').update({ contenu: txt }).eq('id', msg.id)
+    if (error) {
+      setEditError('Modification impossible (délai de 10 min dépassé ?).')
+      return
+    }
+    setMessages(prev => prev.map(m =>
+      m.id === msg.id ? { ...m, contenu: txt, edited_at: new Date().toISOString() } : m))
+    setEditingId(null); setEditText('')
+  }
+
+  const annulerEdition = () => { setEditingId(null); setEditText(''); setEditError('') }
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -247,6 +333,25 @@ export default function EspaceClient() {
     </div>
   )
 
+  // Accès expiré (dossier clôturé + 3 mois dépassés) : écran global, contenu masqué.
+  if (accesExpire) return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
+      <div className="text-center max-w-sm">
+        <p className="text-4xl mb-4">⏳</p>
+        <p className="text-gray-800 font-semibold text-lg">Votre accès a expiré</p>
+        <p className="text-gray-500 text-sm mt-3 leading-relaxed">
+          Votre accès à votre espace client a pris fin le {formatDateFR(accesExpire)}.
+        </p>
+        <p className="text-gray-500 text-sm mt-2 leading-relaxed">
+          Pour réaccéder à votre espace, contactez votre conseiller.
+        </p>
+        <button onClick={handleLogout} className="mt-6 text-sm text-blue-600 hover:underline">
+          Se déconnecter
+        </button>
+      </div>
+    </div>
+  )
+
   if (!dossier) return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center">
@@ -266,8 +371,21 @@ export default function EspaceClient() {
   const photosCatActuelle = photos.filter(p => p.categorie === categoriePhoto)
   const nbMsgNonLus       = messages.filter(m => m.auteur_role !== 'client' && !m.lu).length
 
+  // ── Agenda : séparer à venir / passés ──
+  const maintenant     = new Date()
+  const auj            = new Date().toISOString().slice(0, 10)  // date pure du jour (interventions)
+  const rdvsAVenir     = rdvsClient.filter(r => new Date(r.date_heure) >= maintenant)
+  const rdvsPasses     = rdvsClient.filter(r => new Date(r.date_heure) <  maintenant).reverse()  // + récents d'abord
+  // intervention « à venir/en cours » : sa dernière date (date_fin, dernier jour, ou date_debut) >= aujourd'hui
+  const finIntervention = (i) => i.type_intervention === 'jours_specifiques'
+    ? (i.jours_specifiques?.length ? [...i.jours_specifiques].sort().at(-1) : i.date_debut)
+    : (i.date_fin || i.date_debut)
+  const interventionsAVenir = interventionsClient.filter(i => (finIntervention(i) || '0000') >= auj)
+  const nbAgendaAVenir = rdvsAVenir.length + interventionsAVenir.length
+
   const onglets = [
     { key: 'accueil',   label: 'Mon chantier',                                    icon: '🏠' },
+    { key: 'agenda',    label: `Mon agenda${nbAgendaAVenir > 0 ? ` (${nbAgendaAVenir})` : ''}`, icon: '📅' },
     { key: 'photos',    label: `Photos (${photos.length})`,                        icon: '📸' },
     { key: 'cr',        label: `Comptes-rendus (${comptesRendus.length})`,          icon: '📄' },
     { key: 'messages',  label: `Messages${nbMsgNonLus > 0 ? ` (${nbMsgNonLus})` : ''}`, icon: '💬' },
@@ -286,6 +404,15 @@ export default function EspaceClient() {
           <button onClick={handleLogout} className="text-xs text-gray-400 hover:text-red-500">Déconnexion</button>
         </div>
       </header>
+
+      {/* Bandeau J-21 : accès bientôt clos (info, pas une erreur). Contenu visible en dessous. */}
+      {bandeauEcheance && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5">
+          <p className="max-w-2xl mx-auto text-xs text-amber-800 text-center">
+            Votre accès à cet espace se fermera le {formatDateFR(bandeauEcheance)}.
+          </p>
+        </div>
+      )}
 
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto flex overflow-x-auto">
@@ -564,6 +691,89 @@ export default function EspaceClient() {
           </div>
         )}
 
+        {/* ── AGENDA ── */}
+        {onglet === 'agenda' && (
+          <div className="space-y-6">
+
+            {/* Rendez-vous */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">📅 Mes rendez-vous</h3>
+              {rdvsAVenir.length === 0 && rdvsPasses.length === 0 ? (
+                <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
+                  <p className="text-4xl mb-3">📅</p>
+                  <p className="text-gray-400">Aucun rendez-vous prévu</p>
+                  <p className="text-xs text-gray-300 mt-1">Votre référente les planifiera avec vous</p>
+                </div>
+              ) : (
+                <>
+                  {rdvsAVenir.map(r => (
+                    <div key={r.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-start gap-3">
+                      <span className="text-xl">📅</span>
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-800 text-sm">{r.libelle || 'Rendez-vous'}</p>
+                        <p className="text-xs text-gray-500 mt-0.5 capitalize">
+                          {fmtJourLong(r.date_heure)} · {fmtHeureParis(r.date_heure)}
+                        </p>
+                        {r.lieu && <p className="text-xs text-gray-400 mt-0.5">📍 {lieuLabel(r.lieu)}</p>}
+                      </div>
+                    </div>
+                  ))}
+
+                  {rdvsPasses.length > 0 && (
+                    <div className="pt-1">
+                      <button onClick={() => setVoirRdvPasses(v => !v)}
+                        className="text-xs text-blue-700 hover:underline">
+                        {voirRdvPasses ? 'Masquer' : 'Voir'} les rendez-vous passés ({rdvsPasses.length})
+                      </button>
+                      {voirRdvPasses && (
+                        <div className="space-y-3 mt-3 opacity-70">
+                          {rdvsPasses.map(r => (
+                            <div key={r.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-start gap-3">
+                              <span className="text-xl grayscale">📅</span>
+                              <div className="min-w-0">
+                                <p className="font-medium text-gray-700 text-sm">{r.libelle || 'Rendez-vous'}</p>
+                                <p className="text-xs text-gray-500 mt-0.5 capitalize">
+                                  {fmtJourLong(r.date_heure)} · {fmtHeureParis(r.date_heure)}
+                                </p>
+                                {r.lieu && <p className="text-xs text-gray-400 mt-0.5">📍 {lieuLabel(r.lieu)}</p>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Interventions des artisans */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">🔨 Interventions des artisans</h3>
+              {interventionsClient.length === 0 ? (
+                <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
+                  <p className="text-gray-400 text-sm">Aucune intervention planifiée pour le moment</p>
+                </div>
+              ) : (
+                interventionsClient.map(i => {
+                  const aVenir = (finIntervention(i) || '0000') >= auj
+                  return (
+                    <div key={i.id} className={`border rounded-xl p-4 flex items-start gap-3 ${aVenir ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-200 opacity-70'}`}>
+                      <span className="text-xl">🔨</span>
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-800 text-sm">{i.artisan_entreprise || 'Artisan'}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{periodeIntervention(i)}{i.heure_debut ? ` · à ${i.heure_debut.slice(0, 5)}` : ''}</p>
+                        {i.lieu && <p className="text-xs text-gray-400 mt-0.5">📍 {lieuLabel(i.lieu)}</p>}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
+          </div>
+        )}
+
         {/* ── MESSAGERIE ── */}
         {onglet === 'messages' && (
           <div className="space-y-4">
@@ -578,15 +788,33 @@ export default function EspaceClient() {
                 ) : (
                   messages.map(msg => {
                     const isClient = msg.auteur_role === 'client'
+                    const editable = msg.auteur_id === profile?.id && estDansDelaiEdition(msg.created_at)
                     return (
                       <div key={msg.id} className={`flex ${isClient ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-xs rounded-2xl px-4 py-2.5 ${isClient ? 'bg-blue-800 text-white' : 'bg-gray-100 text-gray-800'}`}>
                           {!isClient && (
                             <p className="text-xs font-medium mb-1 opacity-70">{msg.auteur?.prenom || 'Équipe illiCO'}</p>
                           )}
-                          <p className="text-sm">{msg.contenu}</p>
+                          {editingId === msg.id ? (
+                            <div className="flex flex-col gap-1.5">
+                              <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={2} autoFocus
+                                className="w-full text-sm text-gray-800 bg-white rounded-lg border border-gray-300 px-2 py-1 resize-y" />
+                              {editError && <p className="text-xs text-red-200 font-medium">{editError}</p>}
+                              <div className="flex gap-2 justify-end">
+                                <button onClick={annulerEdition} className="text-xs opacity-85">Annuler</button>
+                                <button onClick={() => modifierMessage(msg)} disabled={!editText.trim()}
+                                  className="text-xs font-bold bg-white text-blue-800 rounded px-2 py-0.5">Valider</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-sm">{msg.contenu}</p>
+                          )}
                           <p className={`text-xs mt-1 opacity-60 ${isClient ? 'text-right' : ''}`}>
-                            {new Date(msg.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            {fmtDateHeureFR(msg.created_at)}{msg.edited_at ? ' (modifié)' : ''}
+                            {editable && editingId !== msg.id && (
+                              <button onClick={() => { setEditingId(msg.id); setEditText(msg.contenu); setEditError('') }}
+                                className="ml-2 underline">modifier</button>
+                            )}
                           </p>
                         </div>
                       </div>

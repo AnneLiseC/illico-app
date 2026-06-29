@@ -1,17 +1,334 @@
-// Module neutralisé pour le sprint multi-tenant (lot L11).
-// Code complet (chat + 2 souscriptions realtime) conservé dans l'historique git au commit 3dbd6f1.
-// À réactiver et adapter au multi-tenant post-test — voir docs/07 §5.4.
+'use client'
+import { useState, useEffect, useRef } from 'react'
+import { supabase } from '../lib/supabase'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '../lib/auth-context'
+import { fmtDateHeureFR, estDansDelaiEdition } from '../lib/dates'
 
 export default function MessageriePage() {
+  const router = useRouter()
+  const { user, profile, initialized } = useAuth()
+  const [dossiers, setDossiers] = useState([])
+  const [dossierId, setDossierId] = useState(null)
+  const [messages, setMessages] = useState([])
+  const [reponse, setReponse] = useState('')
+  const [sending, setSending] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [editingId, setEditingId] = useState(null)
+  const [editText, setEditText] = useState('')
+  const [editError, setEditError] = useState('')
+  const messagesEndRef = useRef(null)
+
+  useEffect(() => {
+    if (!initialized) return
+    if (!user) { router.replace('/login'); return }
+    if (!profile) return
+
+    const chargerDossiers = async () => {
+      const { data: dossData } = await supabase
+        .from('dossiers')
+        .select('id, reference, client:clients(prenom, nom), referente:profiles!dossiers_referente_id_fkey(prenom, nom)')
+        .eq('typologie', 'amo')
+        .eq('archive', false)
+        .order('created_at', { ascending: false })
+
+      if (!dossData) { setLoading(false); return }
+
+      const dossiersAvecMsgs = await Promise.all(dossData.map(async (d) => {
+        const { data: msgs } = await supabase
+          .from('messages')
+          .select('created_at, auteur_role, lu_agence')
+          .eq('dossier_id', d.id)
+          .order('created_at', { ascending: false })
+        const nbNonLus = (msgs || []).filter(m => m.auteur_role === 'client' && !m.lu_agence).length
+        const dernierMessageAt = msgs?.[0]?.created_at || null
+        return { ...d, nbNonLus, dernierMessageAt }
+      }))
+
+      // Tri par dernier message (récent en haut) ; dossiers sans message en bas.
+      // Tie-break = ordre de la requête (created_at desc) grâce au sort stable.
+      dossiersAvecMsgs.sort((a, b) => {
+        if (a.dernierMessageAt && b.dernierMessageAt)
+          return new Date(b.dernierMessageAt) - new Date(a.dernierMessageAt)
+        if (a.dernierMessageAt) return -1
+        if (b.dernierMessageAt) return 1
+        return 0
+      })
+
+      setDossiers(dossiersAvecMsgs)
+      setLoading(false)
+
+      const premier = dossiersAvecMsgs.find(d => d.nbNonLus > 0) || dossiersAvecMsgs[0]
+      if (premier) setDossierId(premier.id)
+    }
+
+    chargerDossiers()
+  }, [initialized, user?.id, profile?.id, router])
+
+  // Charger messages quand dossier change + realtime
+  useEffect(() => {
+    if (!dossierId) return
+    const charger = async () => {
+      const { data } = await supabase
+        .from('messages')
+        .select('*, auteur:profiles(prenom, nom, role)')
+        .eq('dossier_id', dossierId)
+        .order('created_at', { ascending: true })
+      setMessages(data || [])
+      // Marquer comme lus
+      await supabase.from('messages')
+        .update({ lu_agence: true })
+        .eq('dossier_id', dossierId)
+        .eq('auteur_role', 'client')
+        .eq('lu_agence', false)
+      // Mettre à jour le compteur local
+      setDossiers(prev => prev.map(d => d.id === dossierId ? { ...d, nbNonLus: 0 } : d))
+    }
+    charger()
+
+    // Realtime : nouveaux messages sur ce dossier
+    const channel = supabase
+      .channel(`messagerie:${dossierId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `dossier_id=eq.${dossierId}` },
+        () => charger())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [dossierId])
+
+  // Realtime global : MAJ compteur de non-lus dans la sidebar
+  useEffect(() => {
+    if (!profile) return
+    const channel = supabase
+      .channel('messagerie-global')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: 'auteur_role=eq.client' },
+        (payload) => {
+          const newMsg = payload.new
+          if (!newMsg) return
+          setDossiers(prev => prev.map(d =>
+            d.id === newMsg.dossier_id && d.id !== dossierId
+              ? { ...d, nbNonLus: (d.nbNonLus || 0) + 1 }
+              : d
+          ))
+        })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [profile?.id, dossierId])
+
+  // Scroll en bas à chaque nouveau message
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const envoyer = async () => {
+    if (!reponse.trim() || !profile) return
+    setSending(true)
+    const { data: newMsg, error } = await supabase.from('messages').insert({
+      dossier_id: dossierId,
+      auteur_id: profile.id,
+      auteur_role: profile.role === 'admin' ? 'admin' : 'agente',
+      contenu: reponse.trim(),
+      lu: false,
+      lu_agence: true,
+    }).select('*, auteur:profiles(prenom, nom, role)').single()
+    if (error) {
+      alert('Erreur lors de l\'envoi : ' + error.message)
+    } else {
+      if (newMsg) setMessages(prev => [...prev, newMsg])
+      setReponse('')
+    }
+    setSending(false)
+  }
+
+  // Édition en place d'un message (l'auteur, < 10 min — le trigger SQL est le
+  // vrai gardien ; en cas de rejet, on garde le texte saisi et on l'indique).
+  const modifierMessage = async (msg) => {
+    const txt = editText.trim()
+    if (!txt) return
+    setEditError('')
+    const { error } = await supabase.from('messages').update({ contenu: txt }).eq('id', msg.id)
+    if (error) {
+      setEditError('Édition impossible (délai de 10 min dépassé ?).')
+      return
+    }
+    setMessages(prev => prev.map(m =>
+      m.id === msg.id ? { ...m, contenu: txt, edited_at: new Date().toISOString() } : m))
+    setEditingId(null); setEditText('')
+  }
+
+  const annulerEdition = () => { setEditingId(null); setEditText(''); setEditError('') }
+
+  const nomClient = (d) => {
+    const c = d.client
+    if (!c) return d.reference
+    return `${c.prenom || ''} ${c.nom || ''}`.trim() || d.reference
+  }
+
+  if (!initialized || !profile || loading) return (
+    <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>
+      Chargement…
+    </div>
+  )
+
+  const dossierActif = dossiers.find(d => d.id === dossierId)
+
   return (
     <div className="page-enter page-pad" style={{display:'flex', flexDirection:'column', gap:18}}>
+
+      {/* En-tête */}
       <div>
         <div className="eyebrow" style={{marginBottom:4}}>Communication</div>
-        <h1 className="page">Messagerie</h1>
+        <h1 className="page">Messagerie AMO</h1>
+        <div style={{color:'var(--ink-500)', fontSize:13, marginTop:6}}>
+          {dossiers.length} conversation(s) · uniquement les dossiers AMO
+        </div>
       </div>
-      <div className="card" style={{padding:48, textAlign:'center'}}>
-        <div style={{fontSize:18, fontWeight:800, color:'var(--ink-900)', marginBottom:8}}>Bientôt disponible</div>
-        <div style={{fontSize:13, color:'var(--ink-500)'}}>Ce module est en cours de développement.</div>
+
+      {/* Layout deux colonnes */}
+      <div className="card" style={{padding:0, overflow:'hidden', display:'grid', gridTemplateColumns:'300px 1fr', height:'calc(100vh - 210px)', minHeight:480}}>
+
+        {/* ── Liste des dossiers AMO ── */}
+        <div style={{borderRight:'1px solid var(--ink-200)', display:'flex', flexDirection:'column', overflowY:'auto', minHeight:0}}>
+          {dossiers.length === 0 ? (
+            <div style={{padding:32, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+              Aucun chantier AMO
+            </div>
+          ) : (
+            dossiers.map(d => (
+              <button
+                key={d.id}
+                onClick={() => setDossierId(d.id)}
+                className={d.id !== dossierId ? 'row-hover' : ''}
+                style={{
+                  width:'100%', textAlign:'left', padding:'14px 16px',
+                  display:'flex', alignItems:'center', justifyContent:'space-between', gap:8,
+                  borderBottom:'1px solid var(--ink-100)', cursor:'pointer', border:0,
+                  background: d.id === dossierId ? 'var(--brand-50)' : 'transparent',
+                }}>
+                <div style={{minWidth:0}}>
+                  <div style={{fontWeight:700, color: d.id === dossierId ? 'var(--brand-800)' : 'var(--ink-900)', fontSize:13}} className="clip-1">
+                    {d.reference}
+                  </div>
+                  <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}} className="clip-1">
+                    {nomClient(d)}
+                  </div>
+                </div>
+                {d.nbNonLus > 0 && (
+                  <span style={{background:'var(--brand-500)', color:'#fff', borderRadius:99, padding:'1px 7px', fontSize:10, fontWeight:700, flexShrink:0}}>
+                    {d.nbNonLus}
+                  </span>
+                )}
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* ── Zone de conversation ── */}
+        <div style={{display:'flex', flexDirection:'column', minHeight:0}}>
+          {!dossierId ? (
+            <div style={{flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:48}}>
+              <div style={{color:'var(--ink-400)', fontSize:13}}>Sélectionnez un chantier</div>
+            </div>
+          ) : (
+            <>
+              {/* En-tête conversation */}
+              <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)', display:'flex', alignItems:'center', gap:12}}>
+                <div style={{
+                  width:38, height:38, borderRadius:12, flexShrink:0,
+                  background:'var(--brand-50)', color:'var(--brand-800)',
+                  display:'grid', placeItems:'center', fontSize:15, fontWeight:800,
+                }}>
+                  {(dossierActif ? nomClient(dossierActif) : '').charAt(0).toUpperCase()}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700, color:'var(--ink-900)'}}>{dossierActif ? nomClient(dossierActif) : ''}</div>
+                  <div className="mono" style={{fontSize:11.5, color:'var(--ink-500)'}}>{dossierActif?.reference}</div>
+                </div>
+                <button className="btn btn-ghost" style={{fontSize:12}} onClick={() => router.push(`/chantiers/${dossierId}`)}>
+                  Voir le dossier →
+                </button>
+              </div>
+
+              {/* Messages */}
+              <div style={{flex:1, overflowY:'auto', padding:'24px 22px', display:'flex', flexDirection:'column', gap:14, background:'var(--surface-2)'}}>
+                {messages.length === 0 ? (
+                  <div style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:32}}>
+                    Aucun message pour ce chantier
+                  </div>
+                ) : (
+                  messages.map(msg => {
+                    const isClient = msg.auteur_role === 'client'
+                    const editable = msg.auteur_id === profile?.id && estDansDelaiEdition(msg.created_at)
+                    return (
+                      <div key={msg.id} style={{display:'flex', justifyContent: isClient ? 'flex-start' : 'flex-end'}}>
+                        <div style={{
+                          maxWidth:420, padding:'10px 14px', fontSize:13.5, lineHeight:1.5,
+                          background: isClient ? '#fff' : 'var(--brand-500)',
+                          color: isClient ? 'var(--ink-800)' : '#fff',
+                          borderRadius: isClient ? '12px 12px 12px 4px' : '12px 12px 4px 12px',
+                          boxShadow: isClient ? '0 1px 2px rgba(0,0,0,0.04)' : undefined,
+                        }}>
+                          <div style={{fontSize:11.5, fontWeight:600, marginBottom:4, color: isClient ? 'var(--ink-500)' : 'rgba(255,255,255,0.7)'}}>
+                            {isClient
+                              ? (msg.auteur?.prenom || nomClient(dossierActif) || 'Client')
+                              : (`${dossierActif?.referente?.prenom || ''} ${dossierActif?.referente?.nom || ''}`.trim() || 'Équipe')}
+                          </div>
+                          {editingId === msg.id ? (
+                            <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                              <textarea
+                                value={editText}
+                                onChange={e => setEditText(e.target.value)}
+                                rows={2}
+                                autoFocus
+                                style={{width:'100%', resize:'vertical', borderRadius:8, border:'1px solid var(--ink-200)', padding:'6px 8px', fontSize:13.5, color:'var(--ink-900)', background:'#fff'}}
+                              />
+                              {editError && <div style={{fontSize:11, color:'#fecaca', fontWeight:600}}>{editError}</div>}
+                              <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
+                                <button onClick={annulerEdition}
+                                  style={{fontSize:11, background:'transparent', border:0, color:'inherit', opacity:0.85, cursor:'pointer'}}>Annuler</button>
+                                <button onClick={() => modifierMessage(msg)} disabled={!editText.trim()}
+                                  style={{fontSize:11, fontWeight:700, background:'#fff', color:'var(--brand-700)', border:0, borderRadius:6, padding:'2px 10px', cursor:'pointer'}}>Valider</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div>{msg.contenu}</div>
+                          )}
+                          <div style={{fontSize:11, marginTop:4, opacity:0.6, display:'flex', gap:8, alignItems:'center', justifyContent: isClient ? 'flex-start' : 'flex-end'}}>
+                            <span>{fmtDateHeureFR(msg.created_at)}{msg.edited_at ? ' (modifié)' : ''}</span>
+                            {editable && editingId !== msg.id && (
+                              <button onClick={() => { setEditingId(msg.id); setEditText(msg.contenu); setEditError('') }}
+                                style={{fontSize:11, background:'transparent', border:0, color:'inherit', opacity:0.85, cursor:'pointer', textDecoration:'underline'}}>modifier</button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Champ de réponse */}
+              <div style={{padding:'14px 18px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:10, alignItems:'center'}}>
+                <input
+                  className="input"
+                  type="text"
+                  value={reponse}
+                  onChange={e => setReponse(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && envoyer()}
+                  placeholder="Répondre au client…"
+                  style={{flex:1, height:42}}
+                />
+                <button
+                  className="btn btn-primary"
+                  onClick={envoyer}
+                  disabled={!reponse.trim() || sending}
+                  style={{height:42, flexShrink:0}}>
+                  {sending ? '…' : 'Envoyer'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )

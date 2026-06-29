@@ -26,11 +26,11 @@ function buildOAuthClient(userId, tokens) {
   client.setCredentials(tokens)
   client.on('tokens', async (newTokens) => {
     if (newTokens.access_token) {
-      await supabaseAdmin.from('google_tokens').update({
+      await supabaseAdmin.from('comptes_oauth').update({
         access_token: newTokens.access_token,
         expiry_date: newTokens.expiry_date,
         updated_at: new Date().toISOString(),
-      }).eq('user_id', userId)
+      }).eq('user_id', userId).eq('fournisseur', 'google')
     }
   })
   return client
@@ -46,9 +46,11 @@ function rdvToGoogleEvent(rdv) {
   const client = rdv.dossier?.client
   const nomClient = client ? `${client.civilite || ''} ${client.prenom} ${client.nom}`.trim() : ''
   const artisan = rdv.artisan?.entreprise || ''
+  // date_heure est un timestamptz (instant UTC) → envoyer l'instant ISO COMPLET (offset/Z)
+  // à Google ; timeZone:'Europe/Paris' ne sert qu'à l'affichage/récurrence. Ne PAS faire
+  // slice(0,19) qui couperait l'offset et ré-étiquetterait le wall-clock UTC comme Paris (+offset erroné).
   const start = new Date(rdv.date_heure)
   const end = new Date(start.getTime() + (rdv.duree_minutes || 60) * 60000)
-  const fmtNaive = (d) => d.toISOString().slice(0, 19)
   const summary = rdv.type_rdv === 'autres'
     ? (rdv.titre || rdv.notes || 'Autre RDV')
     : `${typeLabels[rdv.type_rdv] || rdv.type_rdv}${nomClient ? ' | ' + nomClient : ''}${artisan ? ' x ' + artisan : ''}`
@@ -58,8 +60,8 @@ function rdvToGoogleEvent(rdv) {
       rdv.dossier?.reference ? `Chantier : ${rdv.dossier.reference}` : '',
       rdv.notes ? `Notes : ${rdv.notes}` : '',
     ].filter(Boolean).join('\n'),
-    start: { dateTime: fmtNaive(start), timeZone: 'Europe/Paris' },
-    end: { dateTime: fmtNaive(end), timeZone: 'Europe/Paris' },
+    start: { dateTime: start.toISOString(), timeZone: 'Europe/Paris' },
+    end: { dateTime: end.toISOString(), timeZone: 'Europe/Paris' },
   }
 }
 
@@ -131,22 +133,23 @@ export async function POST(request) {
     const userId = auth.user.id
 
     const { data: tokenData } = await supabaseAdmin
-      .from('google_tokens')
+      .from('comptes_oauth')
       .select('*')
       .eq('user_id', userId)
+      .eq('fournisseur', 'google')
       .single()
 
     if (!tokenData) {
       return NextResponse.json({ error: 'Google Calendar non connecté' }, { status: 400 })
     }
 
-    const auth = buildOAuthClient(userId, {
+    const oauthClient = buildOAuthClient(userId, {
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
       expiry_date: tokenData.expiry_date,
     })
 
-    const calendar = google.calendar({ version: 'v3', auth })
+    const calendar = google.calendar({ version: 'v3', auth: oauthClient })
     const results = { pushed: 0, updated: 0, pulled: 0, deleted: 0, errors: [] }
 
     // Vérifier que le calendrier est accessible avant de commencer
@@ -158,7 +161,7 @@ export async function POST(request) {
         || err.message?.includes('Token has been expired')
         || err.message?.includes('invalid_client')
       if (isInvalidGrant) {
-        await supabaseAdmin.from('google_tokens').delete().eq('user_id', userId)
+        await supabaseAdmin.from('comptes_oauth').delete().eq('user_id', userId).eq('fournisseur', 'google')
         return NextResponse.json({ error: 'Session Google expirée, reconnectez Google Calendar', needsReconnect: true }, { status: 400 })
       }
       const detail = err.code === 404 ? 'Calendrier introuvable (vérifiez GOOGLE_CALENDAR_ID)'
@@ -401,8 +404,8 @@ export async function POST(request) {
       results.errors.push(`Pull: ${err.message}`)
     }
 
-    await supabaseAdmin.from('google_tokens')
-      .update({ updated_at: new Date().toISOString() }).eq('user_id', userId)
+    await supabaseAdmin.from('comptes_oauth')
+      .update({ updated_at: new Date().toISOString() }).eq('user_id', userId).eq('fournisseur', 'google')
 
     const parts = []
     if (results.pushed > 0) parts.push(`${results.pushed} créé(s)`)
@@ -442,7 +445,7 @@ export async function GET(request) {
     const userId = auth.user.id
 
     const { data } = await supabaseAdmin
-      .from('google_tokens').select('updated_at').eq('user_id', userId).single()
+      .from('comptes_oauth').select('updated_at').eq('user_id', userId).eq('fournisseur', 'google').single()
 
     return NextResponse.json({ connected: !!data, lastSync: data?.updated_at || null })
   } catch {

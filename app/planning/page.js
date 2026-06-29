@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
@@ -9,7 +9,10 @@ import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import listPlugin from '@fullcalendar/list'
 import interactionPlugin from '@fullcalendar/interaction'
+import luxonPlugin from '@fullcalendar/luxon3'
 import frLocale from '@fullcalendar/core/locales/fr'
+import { parisLocalToInstant, instantToParisLocal } from '../lib/dates'
+import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../lib/cibles'
 
 // ─── PALETTE illiCO TRAVAUX ───────────────────────────────────────────────────
 const COLORS = {
@@ -37,9 +40,13 @@ const TYPE_CONFIG = {
 
 const ARTISAN_COLORS = [COLORS.violet, COLORS.coral, COLORS.mint, COLORS.gold, COLORS.sky, COLORS.teal, '#9333EA', '#0891B2']
 
-const fmtDate    = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) : '—'
-const fmtHeure   = (d) => d ? new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'
-const fmtDateLong = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '—'
+// date_heure est désormais un timestamptz (ISO offsetté) → new Date(d) donne le bon
+// instant ; on force l'affichage en Europe/Paris. (Sur les dates `date` pures des
+// interventions, ce pin Paris ne décale pas le jour pour un usage FR.)
+// ⚠️ Ne PAS passer par lib/dates.parseUTC : il ajoute 'Z' et casserait une valeur déjà suffixée +00:00.
+const fmtDate    = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', timeZone: 'Europe/Paris' }) : '—'
+const fmtHeure   = (d) => d ? new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' }) : '—'
+const fmtDateLong = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Paris' }) : '—'
 
 export default function Planning() {
   const [rdvs, setRdvs]                   = useState([])
@@ -47,6 +54,8 @@ export default function Planning() {
   const [dossiers, setDossiers]           = useState([])
   const [artisans, setArtisans]           = useState([])
   const [agentes, setAgentes]             = useState([])
+  const [agences, setAgences]             = useState([])
+  const [cibles, setCibles]               = useState([])
   const [devis, setDevis]                 = useState([])
   const [loading, setLoading]             = useState(true)
 
@@ -64,7 +73,6 @@ export default function Planning() {
   const [erreur, setErreur]                   = useState('')
 
   const [googleConnected, setGoogleConnected] = useState(false)
-  const [syncing, setSyncing]                 = useState(false)
   const [syncMessage, setSyncMessage]         = useState('')
   const [calendarView, setCalendarView]       = useState('timeGridWeek')
   const [quickMenu, setQuickMenu]             = useState(null) // { date, x, y }
@@ -77,26 +85,33 @@ export default function Planning() {
 
   const [formRdv, setFormRdv] = useState({
     dossier_id: '', type_rdv: 'visite_technique_client',
-    date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '',
+    date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', agence_id: '', cible_id: '',
   })
   const [formIntervention, setFormIntervention] = useState({
     dossier_id: '', artisan_id: '', type_intervention: 'periode',
     date_debut: '', date_fin: '', jours_specifiques: [], notes: '',
-    heure_debut: '', duree_minutes: 60,
+    heure_debut: '', duree_minutes: 60, agence_id: '', cible_id: '',
   })
+  // Mémorise la dernière cible auto-résolue, pour ne pas écraser un choix manuel.
+  const lastAutoCibleRdv = useRef('')
+  const lastAutoCibleInt = useRef('')
   const [formDateCle, setFormDateCle] = useState({ date_demarrage_chantier: '', date_fin_chantier: '' })
 
   const router = useRouter()
   const { user, profile, initialized, agenceActive } = useAuth()
 
   const chargerTout = async () => {
-    const [rdvRes, intRes, dosRes, artRes, devRes, agRes] = await Promise.all([
-      supabase.from('rendez_vous').select('*, dossier:dossiers(id, reference, referente_id, archive, agence_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_heure'),
-      supabase.from('interventions_artisans').select('*, dossier:dossiers(id, reference, referente_id, archive, agence_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_debut'),
-      supabase.from('dossiers').select('id, reference, referente_id, agence_id, date_demarrage_chantier, date_fin_chantier, client:clients(civilite, prenom, nom)').eq('archive', false).order('reference'),
+    const [rdvRes, intRes, dosRes, artRes, devRes, agRes, agencesRes, ciblesRes] = await Promise.all([
+      supabase.from('rendez_vous').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_heure'),
+      supabase.from('interventions_artisans').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_debut'),
+      supabase.from('dossiers').select('id, reference, referente_id, agence_id, date_demarrage_chantier, date_fin_chantier, client:clients(civilite, prenom, nom)').order('reference'),
       supabase.from('artisans').select('id, entreprise').order('entreprise'),
       supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise)'),
       supabase.from('profiles').select('id, prenom, nom, role').in('role', ['admin', 'agente']).order('prenom'),
+      // Agences de la société (RLS agences_select_ma_societe filtre déjà) — pour le sélecteur admin
+      supabase.from('agences').select('id, nom, code').order('nom'),
+      // Cibles de calendrier visibles (RLS = perso ∪ agence ∪ admin-société) — pour le sélecteur calendrier
+      supabase.from('cibles_calendrier').select('*').eq('actif', true).order('created_at'),
     ])
     // Masquage archive : on retire RDV/interventions rattachés à un dossier archivé,
     // tout en CONSERVANT ceux sans dossier (dossier?.archive === undefined → gardés :
@@ -107,6 +122,8 @@ export default function Planning() {
     setArtisans(artRes.data || [])
     setDevis(devRes.data || [])
     setAgentes(agRes.data || [])
+    setAgences(agencesRes.data || [])
+    setCibles(ciblesRes.data || [])
   }
 
   useEffect(() => {
@@ -155,6 +172,61 @@ export default function Planning() {
     [dossiers, agenceActive]
   )
 
+  // ── CALENDRIER (cible) : filtrage dossier modale + résolution du défaut ──────
+  // En vue « toutes agences » (admin, agenceActive null), le sélecteur d'agence de
+  // la modale réduit en plus la liste dossier. Sinon dossiersScoped (déjà filtré navbar).
+  const dossiersRdvModale = useMemo(
+    () => (profile?.role === 'admin' && agenceActive === null && formRdv.agence_id
+      ? dossiersScoped.filter(d => d.agence_id === formRdv.agence_id) : dossiersScoped),
+    [dossiersScoped, profile?.role, agenceActive, formRdv.agence_id]
+  )
+  const dossiersIntModale = useMemo(
+    () => (profile?.role === 'admin' && agenceActive === null && formIntervention.agence_id
+      ? dossiersScoped.filter(d => d.agence_id === formIntervention.agence_id) : dossiersScoped),
+    [dossiersScoped, profile?.role, agenceActive, formIntervention.agence_id]
+  )
+  // Artisans proposés dans les modales : restreints aux artisans ayant un DEVIS ACCEPTÉ
+  // (statut === 'accepte') sur le dossier choisi. `devis` est global (tous dossiers) au
+  // planning → on filtre sur dossier_id ET statut. Hors de ce cas → tous les artisans.
+  const artisansRdvModale = useMemo(() => {
+    if (formRdv.type_rdv === 'reception' && formRdv.dossier_id) {
+      const ids = new Set(devis.filter(d => d.dossier_id === formRdv.dossier_id && d.statut === 'accepte').map(d => d.artisan_id))
+      return artisans.filter(a => ids.has(a.id))
+    }
+    return artisans
+  }, [formRdv.type_rdv, formRdv.dossier_id, devis, artisans])
+  const artisansIntModale = useMemo(() => {
+    if (formIntervention.dossier_id) {
+      const ids = new Set(devis.filter(d => d.dossier_id === formIntervention.dossier_id && d.statut === 'accepte').map(d => d.artisan_id))
+      return artisans.filter(a => ids.has(a.id))
+    }
+    return artisans
+  }, [formIntervention.dossier_id, devis, artisans])
+
+  // Pré-sélection de la cible (création seulement). Recalcule quand le dossier ou
+  // l'agence change ; n'écrase JAMAIS un choix manuel (compare au dernier auto).
+  useEffect(() => {
+    if (!modalOuvert || modalType !== 'rdv' || modeEdition) return
+    const dossier = dossiers.find(d => d.id === formRdv.dossier_id)
+    const agenceConcernee = determinerAgenceConcernee({ dossier, agenceActive, formAgenceId: formRdv.agence_id, profileAgenceId: profile?.agence_id })
+    const def = resoudreCibleDefaut({ profile, cibles, agenceConcernee }) || ''
+    setFormRdv(f => {
+      if (f.cible_id === '' || f.cible_id === lastAutoCibleRdv.current) { lastAutoCibleRdv.current = def; return { ...f, cible_id: def } }
+      return f
+    })
+  }, [modalOuvert, modalType, modeEdition, formRdv.dossier_id, formRdv.agence_id, agenceActive, cibles, profile, dossiers])
+
+  useEffect(() => {
+    if (!modalOuvert || modalType !== 'intervention' || modeEdition) return
+    const dossier = dossiers.find(d => d.id === formIntervention.dossier_id)
+    const agenceConcernee = determinerAgenceConcernee({ dossier, agenceActive, formAgenceId: formIntervention.agence_id, profileAgenceId: profile?.agence_id })
+    const def = resoudreCibleDefaut({ profile, cibles, agenceConcernee }) || ''
+    setFormIntervention(f => {
+      if (f.cible_id === '' || f.cible_id === lastAutoCibleInt.current) { lastAutoCibleInt.current = def; return { ...f, cible_id: def } }
+      return f
+    })
+  }, [modalOuvert, modalType, modeEdition, formIntervention.dossier_id, formIntervention.agence_id, agenceActive, cibles, profile, dossiers])
+
   // ── ÉVÉNEMENTS CALENDRIER ──────────────────────────────────────────────────
 
   const evenementsRdv = useMemo(() => rdvsScoped
@@ -165,8 +237,8 @@ export default function Planning() {
     .map(r => {
       const cfg = TYPE_CONFIG[r.type_rdv] || TYPE_CONFIG.visite_technique_client
       const client = `${r.dossier?.client?.prenom || ''} ${r.dossier?.client?.nom || ''}`.trim()
-      const titre = r.type_rdv === 'autres' && r.titre
-        ? `${cfg.short} · ${r.titre}`
+      const titre = r.type_rdv === 'autres'
+        ? (r.titre || cfg.label)
         : r.type_rdv === 'visite_technique_artisan'
           ? `${cfg.short} · ${client} × ${r.artisan?.entreprise || ''}`
           : `${cfg.short} · ${client}`
@@ -225,7 +297,7 @@ export default function Planning() {
         const client = `${r.dossier?.client?.prenom || ''} ${r.dossier?.client?.nom || ''}`.trim()
         return {
           id: r.id, type: 'rdv', date: new Date(r.date_heure),
-          titre: `${cfg.short} · ${client}`,
+          titre: r.type_rdv === 'autres' ? (r.titre || cfg.label) : `${cfg.short} · ${client}`,
           sous: r.type_rdv === 'visite_technique_artisan' && r.artisan?.entreprise ? `avec ${r.artisan.entreprise}` : fmtHeure(r.date_heure),
           color: cfg.color, data: r,
         }
@@ -281,8 +353,8 @@ export default function Planning() {
   const handleEventClick = (info) => {
     const { type, data, cfg } = info.event.extendedProps
     setElementSelectionne({ type, data, cfg }); setModalType(type); setModeEdition(false)
-    if (type === 'rdv') setFormRdv({ dossier_id: data.dossier_id, type_rdv: data.type_rdv, date_heure: data.date_heure?.slice(0, 16), duree_minutes: data.duree_minutes || 60, artisan_id: data.artisan_id || '', notes: data.notes || '', titre: data.titre || '' })
-    else if (type === 'intervention') setFormIntervention({ dossier_id: data.dossier_id, artisan_id: data.artisan_id, type_intervention: data.type_intervention, date_debut: data.date_debut || '', date_fin: data.date_fin || '', jours_specifiques: data.jours_specifiques || [], notes: data.notes || '' })
+    if (type === 'rdv') setFormRdv({ dossier_id: data.dossier_id, type_rdv: data.type_rdv, date_heure: data.date_heure ? instantToParisLocal(data.date_heure) : '', duree_minutes: data.duree_minutes || 60, artisan_id: data.artisan_id || '', notes: data.notes || '', titre: data.titre || '', agence_id: data.agence_id || '', cible_id: data.cible_id || '' })
+    else if (type === 'intervention') setFormIntervention({ dossier_id: data.dossier_id, artisan_id: data.artisan_id, type_intervention: data.type_intervention, date_debut: data.date_debut || '', date_fin: data.date_fin || '', jours_specifiques: data.jours_specifiques || [], notes: data.notes || '', agence_id: data.agence_id || '', cible_id: data.cible_id || '' })
     else if (type === 'date_cle') setFormDateCle({ date_demarrage_chantier: data.date_demarrage_chantier || '', date_fin_chantier: data.date_fin_chantier || '' })
     setModalOuvert(true)
   }
@@ -290,15 +362,16 @@ export default function Planning() {
   const ouvrirSidebar = (item) => {
     setElementSelectionne({ type: item.type, data: item.data })
     setModalType(item.type); setModeEdition(false)
-    if (item.type === 'rdv') setFormRdv({ dossier_id: item.data.dossier_id, type_rdv: item.data.type_rdv, date_heure: item.data.date_heure?.slice(0, 16), duree_minutes: item.data.duree_minutes || 60, artisan_id: item.data.artisan_id || '', notes: item.data.notes || '', titre: item.data.titre || '' })
-    else if (item.type === 'intervention') setFormIntervention({ dossier_id: item.data.dossier_id, artisan_id: item.data.artisan_id, type_intervention: item.data.type_intervention, date_debut: item.data.date_debut || '', date_fin: item.data.date_fin || '', jours_specifiques: item.data.jours_specifiques || [], notes: item.data.notes || '' })
+    if (item.type === 'rdv') setFormRdv({ dossier_id: item.data.dossier_id, type_rdv: item.data.type_rdv, date_heure: item.data.date_heure ? instantToParisLocal(item.data.date_heure) : '', duree_minutes: item.data.duree_minutes || 60, artisan_id: item.data.artisan_id || '', notes: item.data.notes || '', titre: item.data.titre || '', agence_id: item.data.agence_id || '', cible_id: item.data.cible_id || '' })
+    else if (item.type === 'intervention') setFormIntervention({ dossier_id: item.data.dossier_id, artisan_id: item.data.artisan_id, type_intervention: item.data.type_intervention, date_debut: item.data.date_debut || '', date_fin: item.data.date_fin || '', jours_specifiques: item.data.jours_specifiques || [], notes: item.data.notes || '', agence_id: item.data.agence_id || '', cible_id: item.data.cible_id || '' })
     setModalOuvert(true)
   }
 
   const fermerModal = () => {
     setModalOuvert(false); setElementSelectionne(null); setModeEdition(false); setErreur('')
-    setFormRdv({ dossier_id: '', type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '' })
-    setFormIntervention({ dossier_id: '', artisan_id: '', type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '' })
+    setFormRdv({ dossier_id: '', type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', agence_id: '', cible_id: '' })
+    setFormIntervention({ dossier_id: '', artisan_id: '', type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', agence_id: '', cible_id: '' })
+    lastAutoCibleRdv.current = ''; lastAutoCibleInt.current = ''
   }
 
   const pushToGoogle = (type, id) => {
@@ -312,8 +385,25 @@ export default function Planning() {
 
   const sauvegarderRdv = async () => {
     if (!formRdv.date_heure) return
+    const estAutresSansDossier = formRdv.type_rdv === 'autres' && !formRdv.dossier_id
+    const adminVueToutes = profile?.role === 'admin' && agenceActive === null
+    // Admin en vue « toutes agences », RDV libre sans dossier : l'agence est obligatoire
+    // (le trigger ne peut pas la dériver ; sans elle la RLS rejetterait l'insert).
+    if (adminVueToutes && estAutresSansDossier && !formRdv.agence_id) {
+      setErreur('Il manque une agence'); return
+    }
+    // Admin en vue toutes : un calendrier doit être choisi (pas de défaut résolu sans agence).
+    if (adminVueToutes && cibles.length && !formRdv.cible_id) {
+      setErreur('Choisissez un calendrier'); return
+    }
     setSaving(true); setErreur('')
-    const payload = { type_rdv: formRdv.type_rdv, date_heure: formRdv.date_heure, duree_minutes: parseInt(formRdv.duree_minutes), artisan_id: formRdv.artisan_id || null, notes: formRdv.notes || null, titre: formRdv.type_rdv === 'autres' ? (formRdv.titre || null) : null }
+    // agence_id : du dossier si présent ; sinon (RDV libre) du sélecteur de modale ou de
+    // l'agence active (navbar). Agente sans dossier → null (le trigger met son agence).
+    const agence_id = formRdv.dossier_id
+      ? (dossiers.find(d => d.id === formRdv.dossier_id)?.agence_id || null)
+      : (formRdv.agence_id || agenceActive || null)
+    // date_heure : la saisie <input datetime-local> est en heure de Paris -> convertir en instant UTC pour la colonne timestamptz (le garde `if (!formRdv.date_heure) return` ci-dessus protège le cas vide)
+    const payload = { type_rdv: formRdv.type_rdv, date_heure: parisLocalToInstant(formRdv.date_heure), duree_minutes: parseInt(formRdv.duree_minutes), artisan_id: formRdv.artisan_id || null, notes: formRdv.notes || null, titre: formRdv.type_rdv === 'autres' ? (formRdv.titre || null) : null, agence_id, cible_id: formRdv.cible_id || null }
     let savedId = elementSelectionne?.data?.id
     if (elementSelectionne?.type === 'rdv' && modeEdition) {
       const { error } = await supabase.from('rendez_vous').update(payload).eq('id', savedId)
@@ -330,8 +420,14 @@ export default function Planning() {
 
   const sauvegarderIntervention = async () => {
     if (!formIntervention.artisan_id) return
+    // Admin en vue toutes : un calendrier doit être choisi.
+    if (profile?.role === 'admin' && agenceActive === null && cibles.length && !formIntervention.cible_id) {
+      setErreur('Choisissez un calendrier'); return
+    }
     setSaving(true); setErreur('')
-    const payload = { dossier_id: formIntervention.dossier_id, artisan_id: formIntervention.artisan_id, type_intervention: formIntervention.type_intervention, date_debut: formIntervention.date_debut || null, date_fin: formIntervention.type_intervention === 'periode' ? formIntervention.date_fin || null : null, jours_specifiques: formIntervention.type_intervention === 'jours_specifiques' ? formIntervention.jours_specifiques : null, notes: formIntervention.notes || null, heure_debut: formIntervention.heure_debut || null, duree_minutes: formIntervention.heure_debut ? (formIntervention.duree_minutes || 60) : null }
+    // Une intervention a toujours un dossier → agence dérivée du dossier (le trigger fait foi, on l'envoie par cohérence).
+    const agence_id = dossiers.find(d => d.id === formIntervention.dossier_id)?.agence_id || null
+    const payload = { dossier_id: formIntervention.dossier_id, artisan_id: formIntervention.artisan_id, type_intervention: formIntervention.type_intervention, date_debut: formIntervention.date_debut || null, date_fin: formIntervention.type_intervention === 'periode' ? formIntervention.date_fin || null : null, jours_specifiques: formIntervention.type_intervention === 'jours_specifiques' ? formIntervention.jours_specifiques : null, notes: formIntervention.notes || null, heure_debut: formIntervention.heure_debut || null, duree_minutes: formIntervention.heure_debut ? (formIntervention.duree_minutes || 60) : null, agence_id, cible_id: formIntervention.cible_id || null }
     let savedId = elementSelectionne?.data?.id
     if (elementSelectionne?.type === 'intervention' && modeEdition) {
       const { error } = await supabase.from('interventions_artisans').update(payload).eq('id', savedId)
@@ -364,7 +460,9 @@ export default function Planning() {
       authHeaders().then(headers => fetch('/api/google/calendar/event', {
         method: 'DELETE',
         headers,
-        body: JSON.stringify({ googleEventId }),
+        // cible_id de l'item (lot 5c) : /event résout le bon calendrier. L'item existe
+        // encore ici (appel non bloquant fired avant le delete DB) → cible_id dispo.
+        body: JSON.stringify({ googleEventId, cibleId: elementSelectionne.data.cible_id }),
       })).catch(() => {})
     }
     const { error } = elementSelectionne.type === 'rdv'
@@ -373,24 +471,6 @@ export default function Planning() {
     if (error) { setErreur(error.message); return }
     fermerModal()
     chargerTout()
-  }
-
-  const syncGoogle = async () => {
-    setSyncing(true); setSyncMessage('')
-    try {
-      const res = await fetch('/api/google/calendar/sync', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({}) })
-      const data = await res.json()
-      if (!res.ok) {
-        setSyncMessage(`❌ ${data.error || 'Erreur de synchronisation'}`)
-        if (data.needsReconnect) setGoogleConnected(false)
-      } else if (data.hasErrors && !data.pushed && !data.updated && !data.pulled && !data.deleted) {
-        setSyncMessage(`❌ ${data.message}`)
-      } else {
-        setSyncMessage(`✅ ${data.message}`)
-        if (data.deleted > 0 || data.pulled > 0) await chargerTout()
-      }
-    } catch { setSyncMessage('❌ Google Calendar non configuré') }
-    setSyncing(false)
   }
 
   if (loading) return <div className="page-loading" />
@@ -419,11 +499,13 @@ export default function Planning() {
         </div>
         <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
           {googleConnected ? (
-            <button onClick={syncGoogle} disabled={syncing} className="btn btn-ghost"
-              style={{display:'inline-flex', alignItems:'center', gap:6, opacity: syncing ? 0.6 : 1}}>
-              <span style={{width:6, height:6, borderRadius:'50%', background:'#15803d', flexShrink:0, animation: syncing ? 'pulse 1s infinite' : undefined}}/>
-              Google {syncing ? 'Sync…' : <span style={{color:'#15803d'}}>● Connecté</span>}
-            </button>
+            // Indicateur passif : le push est désormais automatique à chaque sauvegarde
+            // (lot 4c). Plus de bouton de synchronisation complète (la route /sync POST
+            // reste pour l'étage 3 pull, mais n'est plus déclenchée depuis l'UI).
+            <span className="btn btn-ghost" style={{display:'inline-flex', alignItems:'center', gap:6, cursor:'default'}}>
+              <span style={{width:6, height:6, borderRadius:'50%', background:'#15803d', flexShrink:0}}/>
+              Google <span style={{color:'#15803d'}}>● Connecté</span>
+            </span>
           ) : (
             <button
               onClick={async () => {
@@ -557,9 +639,10 @@ export default function Planning() {
               .fc-more-link { font-size: 10px !important; font-weight: 700 !important; color: ${COLORS.blue} !important; }
             `}</style>
             <FullCalendar
-              plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}
+              plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin, luxonPlugin]}
               initialView={calendarView}
               locale={frLocale}
+              timeZone="Europe/Paris"
               headerToolbar={{
                 left: 'prev,next today',
                 center: 'title',
@@ -615,8 +698,8 @@ export default function Planning() {
                       width:48, padding:'6px 0', background:'var(--surface-2)', borderRadius:8,
                       textAlign:'center', borderLeft:`3px solid ${item.color}`
                     }}>
-                      <div className="tnum" style={{fontSize:16, fontWeight:800, color:'var(--ink-900)', lineHeight:1}}>{dt.toLocaleDateString('fr-FR',{day:'2-digit'})}</div>
-                      <div style={{fontSize:8.5, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2}}>{dt.toLocaleDateString('fr-FR',{month:'short'}).replace('.','')}</div>
+                      <div className="tnum" style={{fontSize:16, fontWeight:800, color:'var(--ink-900)', lineHeight:1}}>{dt.toLocaleDateString('fr-FR',{day:'2-digit', timeZone:'Europe/Paris'})}</div>
+                      <div style={{fontSize:8.5, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2}}>{dt.toLocaleDateString('fr-FR',{month:'short', timeZone:'Europe/Paris'}).replace('.','')}</div>
                     </div>
                     <div style={{minWidth:0}}>
                       <div className="clip-1" style={{fontSize:12, fontWeight:600, color:'var(--ink-900)'}}>{item.titre}</div>
@@ -767,7 +850,9 @@ export default function Planning() {
                         type_rdv: newType,
                         titre: newType !== 'autres' ? '' : f.titre,
                         dossier_id: newType === 'autres' ? '' : (f.type_rdv === 'autres' ? '' : f.dossier_id),
-                        artisan_id: ['visite_technique_artisan', 'reception'].includes(newType) ? f.artisan_id : '',
+                        // La liste d'artisans dépend du type (réception = filtrée par devis accepté,
+                        // R2 = tous) → on réinitialise pour éviter un artisan fantôme hors liste.
+                        artisan_id: '',
                       }))
                     }} className={inputCls} style={{marginTop:6}}>
                       <option value="visite_technique_client">R1 — Visite technique client</option>
@@ -782,10 +867,25 @@ export default function Planning() {
                   {formRdv.type_rdv === 'autres' && <div><label className={labelCls}>Titre du rendez-vous *</label>
                     <input type="text" value={formRdv.titre} onChange={e => setFormRdv(f => ({ ...f, titre: e.target.value }))} placeholder="Ex : Réunion de chantier, Appel fournisseur…" className={inputCls} style={{marginTop:6}}/>
                   </div>}
-                  {formRdv.type_rdv !== 'autres' && !formRdv.dossier_id && <div><label className={labelCls}>Chantier *</label>
-                    <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
+                  {/* Sélecteur d'agence (admin en vue « toutes agences ») : filtre les dossiers,
+                      détermine l'agence d'un RDV libre et pilote la résolution du calendrier. */}
+                  {profile?.role === 'admin' && agenceActive === null && <div><label className={labelCls}>Agence{formRdv.type_rdv === 'autres' && !formRdv.dossier_id ? ' *' : ''}</label>
+                    <select value={formRdv.agence_id} onChange={e => setFormRdv(f => ({ ...f, agence_id: e.target.value, dossier_id: '', artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
+                      <option value="">— Choisir une agence —</option>
+                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}{a.code ? ` (${a.code})` : ''}</option>)}
+                    </select>
+                  </div>}
+                  {formRdv.type_rdv !== 'autres' && <div><label className={labelCls}>Chantier *</label>
+                    <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value, artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir un chantier —</option>
-                      {dossiersScoped.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
+                      {dossiersRdvModale.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
+                    </select>
+                  </div>}
+                  {/* Sélecteur de calendrier (cible) — visible pour tout le monde */}
+                  {cibles.length > 0 && <div><label className={labelCls}>Calendrier</label>
+                    <select value={formRdv.cible_id} onChange={e => setFormRdv(f => ({ ...f, cible_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
+                      <option value="">— Choisir un calendrier —</option>
+                      {cibles.map(c => <option key={c.id} value={c.id}>{libelleCible(c)}</option>)}
                     </select>
                   </div>}
                   <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
@@ -799,8 +899,11 @@ export default function Planning() {
                   {['visite_technique_artisan', 'reception'].includes(formRdv.type_rdv) && <div><label className={labelCls}>Artisan</label>
                     <select value={formRdv.artisan_id} onChange={e => setFormRdv(f => ({ ...f, artisan_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir —</option>
-                      {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
+                      {artisansRdvModale.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
                     </select>
+                    {formRdv.type_rdv === 'reception' && formRdv.dossier_id && artisansRdvModale.length === 0 && (
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Aucun artisan avec devis signé sur ce chantier</div>
+                    )}
                   </div>}
                   <div><label className={labelCls}>Notes</label><textarea value={formRdv.notes} onChange={e => setFormRdv(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} style={{marginTop:6}}/></div>
                   <div style={{display:'flex', gap:8, paddingTop:4}}>
@@ -815,19 +918,35 @@ export default function Planning() {
               {/* Formulaire Intervention */}
               {(modalType === 'intervention' || (elementSelectionne?.type === 'intervention' && modeEdition)) && (!elementSelectionne || modeEdition) && (
                 <div style={{display:'flex', flexDirection:'column', gap:16}}>
+                  {!modeEdition && profile?.role === 'admin' && agenceActive === null && <div><label className={labelCls}>Agence</label>
+                    <select value={formIntervention.agence_id} onChange={e => setFormIntervention(f => ({ ...f, agence_id: e.target.value, dossier_id: '', artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
+                      <option value="">— Choisir une agence —</option>
+                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}{a.code ? ` (${a.code})` : ''}</option>)}
+                    </select>
+                  </div>}
                   {!modeEdition && <div><label className={labelCls}>Chantier *</label>
-                    <select value={formIntervention.dossier_id} onChange={e => setFormIntervention(f => ({ ...f, dossier_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
+                    <select value={formIntervention.dossier_id} onChange={e => setFormIntervention(f => ({ ...f, dossier_id: e.target.value, artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir un chantier —</option>
-                      {dossiersScoped.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
+                      {dossiersIntModale.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
+                    </select>
+                  </div>}
+                  {/* Sélecteur de calendrier (cible) — visible aussi en édition */}
+                  {cibles.length > 0 && <div><label className={labelCls}>Calendrier</label>
+                    <select value={formIntervention.cible_id} onChange={e => setFormIntervention(f => ({ ...f, cible_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
+                      <option value="">— Choisir un calendrier —</option>
+                      {cibles.map(c => <option key={c.id} value={c.id}>{libelleCible(c)}</option>)}
                     </select>
                   </div>}
                   <div><label className={labelCls}>Artisan *</label>
                     <select value={formIntervention.artisan_id} onChange={e => setFormIntervention(f => ({ ...f, artisan_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir —</option>
-                      {(formIntervention.dossier_id ? devis.filter(d => d.dossier_id === formIntervention.dossier_id).map(d => d.artisan).filter(Boolean) : artisans).map(a => (
+                      {artisansIntModale.map(a => (
                         <option key={a.id} value={a.id}>{a.entreprise}</option>
                       ))}
                     </select>
+                    {formIntervention.dossier_id && artisansIntModale.length === 0 && (
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Aucun artisan avec devis signé sur ce chantier</div>
+                    )}
                   </div>
                   <div><label className={labelCls}>Type d'intervention</label>
                     <div style={{display:'flex', gap:16, marginTop:8}}>
@@ -914,7 +1033,7 @@ export default function Planning() {
           <div style={{position:'fixed', inset:0, zIndex:40}} onClick={() => setQuickMenu(null)} />
           <div className="card" style={{position:'fixed', zIndex:50, minWidth:180, overflow:'hidden', padding:0, top: quickMenu.y + 8, left: quickMenu.x}}>
             <div className="eyebrow" style={{padding:'12px 16px 6px'}}>
-              {new Date(quickMenu.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}
+              {new Date(quickMenu.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/Paris' })}
             </div>
             <button onClick={() => ouvrirDepuisMenu('rdv')}
               className="row-hover"
