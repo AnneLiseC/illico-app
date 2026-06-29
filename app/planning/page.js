@@ -899,11 +899,11 @@ export default function Planning() {
                   {profile?.role === 'admin' && agenceActive === null && agences.length > 1 && <div><label className={labelCls}>Agence{formRdv.type_rdv === 'autres' && !formRdv.dossier_id ? ' *' : ''}</label>
                     <select value={formRdv.agence_id} onChange={e => setFormRdv(f => ({ ...f, agence_id: e.target.value, dossier_id: '', artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir une agence —</option>
-                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}{a.code ? ` (${a.code})` : ''}</option>)}
+                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
                     </select>
                   </div>}
                   {profile?.role === 'admin' && agenceActive === null && agences.length === 1 && <div><label className={labelCls}>Agence</label>
-                    <div style={{marginTop:6, fontSize:13, color:'var(--ink-700)'}}>{agences[0].nom}{agences[0].code ? ` (${agences[0].code})` : ''}</div>
+                    <div style={{marginTop:6, fontSize:13, color:'var(--ink-700)'}}>{agences[0].nom}</div>
                   </div>}
                   {formRdv.type_rdv !== 'autres' && <div><label className={labelCls}>Chantier *</label>
                     <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value, artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
@@ -951,11 +951,11 @@ export default function Planning() {
                   {!modeEdition && profile?.role === 'admin' && agenceActive === null && agences.length > 1 && <div><label className={labelCls}>Agence</label>
                     <select value={formIntervention.agence_id} onChange={e => setFormIntervention(f => ({ ...f, agence_id: e.target.value, dossier_id: '', artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir une agence —</option>
-                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}{a.code ? ` (${a.code})` : ''}</option>)}
+                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
                     </select>
                   </div>}
                   {!modeEdition && profile?.role === 'admin' && agenceActive === null && agences.length === 1 && <div><label className={labelCls}>Agence</label>
-                    <div style={{marginTop:6, fontSize:13, color:'var(--ink-700)'}}>{agences[0].nom}{agences[0].code ? ` (${agences[0].code})` : ''}</div>
+                    <div style={{marginTop:6, fontSize:13, color:'var(--ink-700)'}}>{agences[0].nom}</div>
                   </div>}
                   {!modeEdition && <div><label className={labelCls}>Chantier *</label>
                     <select value={formIntervention.dossier_id} onChange={e => setFormIntervention(f => ({ ...f, dossier_id: e.target.value, artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
