@@ -460,7 +460,9 @@ export default function Planning() {
       authHeaders().then(headers => fetch('/api/google/calendar/event', {
         method: 'DELETE',
         headers,
-        body: JSON.stringify({ googleEventId }),
+        // cible_id de l'item (lot 5c) : /event résout le bon calendrier. L'item existe
+        // encore ici (appel non bloquant fired avant le delete DB) → cible_id dispo.
+        body: JSON.stringify({ googleEventId, cibleId: elementSelectionne.data.cible_id }),
       })).catch(() => {})
     }
     const { error } = elementSelectionne.type === 'rdv'
