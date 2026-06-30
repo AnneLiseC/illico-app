@@ -242,16 +242,29 @@ export default function Parametres() {
   }
   const ouvrirSupprimer = (agente) => { setAgenteASupprimer(agente); setModal('supprimer'); setErreur('') }
 
-  const supprimerAgente = async () => {
+  // Soft delete : DÉSACTIVE l'agente (ban Auth + actif=false), réversible. La ligne
+  // profiles reste → attribution (dossiers, clients, CR, redevances…) préservée.
+  const desactiverAgente = async () => {
     if (!agenteASupprimer) return
     setSupprimant(true); setErreur('')
     try {
-      const res = await fetch('/api/create-agente', { method: 'DELETE', headers: await authHeaders(), body: JSON.stringify({ id: agenteASupprimer.id }) })
+      const res = await fetch('/api/agente-statut', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ id: agenteASupprimer.id, actif: false }) })
       const data = await res.json()
-      if (!res.ok) { setErreur(data.error || 'Erreur lors de la suppression') }
-      else { setSucces(`${agenteASupprimer.prenom} ${agenteASupprimer.nom} supprimée ✓`); setModal(false); setAgenteASupprimer(null); await chargerAgentes() }
+      if (!res.ok) { setErreur(data.error || 'Erreur lors de la désactivation') }
+      else { setSucces(`${agenteASupprimer.prenom} ${agenteASupprimer.nom} désactivée ✓`); setModal(false); setAgenteASupprimer(null); await chargerAgentes() }
     } catch (err) { setErreur(err.message) }
     setSupprimant(false)
+  }
+
+  const reactiverAgente = async (agente) => {
+    if (!window.confirm(`Réactiver ${agente.prenom} ${agente.nom} ? Elle pourra de nouveau se connecter.`)) return
+    setErreur(''); setSucces('')
+    try {
+      const res = await fetch('/api/agente-statut', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ id: agente.id, actif: true }) })
+      const data = await res.json()
+      if (!res.ok) setErreur(data.error || 'Erreur lors de la réactivation')
+      else { setSucces(`${agente.prenom} ${agente.nom} réactivée ✓`); await chargerAgentes() }
+    } catch (err) { setErreur(err.message) }
   }
 
   const creerAgente = async () => {
@@ -580,10 +593,16 @@ export default function Parametres() {
                             </label>
                           )}
                         </div>
-                        <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(22,163,74,0.1)', color:'#15803d', flexShrink:0}}>Actif</span>
+                        <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, flexShrink:0,
+                          background: agente.actif === false ? 'var(--ink-100)' : 'rgba(22,163,74,0.1)',
+                          color: agente.actif === false ? 'var(--ink-500)' : '#15803d'}}>
+                          {agente.actif === false ? 'Désactivée' : 'Actif'}
+                        </span>
                         <div style={{display:'flex', gap:6, flexShrink:0}}>
                           <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 10px'}} onClick={() => ouvrirModifier(agente)}>Modifier</button>
-                          <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 10px', color:'var(--bad)', borderColor:'rgba(239,68,68,0.3)'}} onClick={() => ouvrirSupprimer(agente)}>Supprimer</button>
+                          {agente.actif === false
+                            ? <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 10px', color:'#15803d', borderColor:'rgba(22,163,74,0.3)'}} onClick={() => reactiverAgente(agente)}>Réactiver</button>
+                            : <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 10px', color:'var(--bad)', borderColor:'rgba(239,68,68,0.3)'}} onClick={() => ouvrirSupprimer(agente)}>Désactiver</button>}
                         </div>
                       </div>
                     )
@@ -920,18 +939,20 @@ export default function Parametres() {
             <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:16}}>
               <div style={{width:40, height:40, borderRadius:99, background:'rgba(239,68,68,0.1)', color:'#DC2626', display:'grid', placeItems:'center', fontSize:18, flexShrink:0}}>⚠</div>
               <div>
-                <div style={{fontWeight:700, color:'var(--ink-900)'}}>Supprimer cette agente ?</div>
+                <div style={{fontWeight:700, color:'var(--ink-900)'}}>Désactiver cette agente ?</div>
                 <div style={{fontSize:13, color:'var(--ink-500)', marginTop:2}}>{agenteASupprimer.prenom} {agenteASupprimer.nom}</div>
               </div>
             </div>
-            <div style={{background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.3)', borderRadius:10, padding:'12px 16px', fontSize:13, color:'var(--ink-700)', marginBottom:14}}>
-              Cette action est <strong>irréversible</strong>. Le compte de connexion sera supprimé. Les chantiers et données associés seront conservés.
+            <div style={{background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.3)', borderRadius:10, padding:'12px 16px', fontSize:13, color:'var(--ink-700)', marginBottom:14, lineHeight:1.5}}>
+              Elle <strong>ne pourra plus se connecter</strong>. Ses chantiers, clients, dossiers,
+              comptes-rendus et documents <strong>restent attribués et conservés</strong>.
+              C'est <strong>réversible</strong> : tu pourras la réactiver à tout moment.
             </div>
             {erreur && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c', marginBottom:12}}>{erreur}</div>}
             <div style={{display:'flex', gap:8}}>
               <button className="btn btn-ghost" style={{flex:1}} onClick={() => { setModal(false); setAgenteASupprimer(null); setErreur('') }}>Annuler</button>
-              <button className="btn btn-primary" style={{flex:1, background:'#DC2626', opacity: supprimant ? 0.5 : 1}} onClick={supprimerAgente} disabled={supprimant}>
-                {supprimant ? 'Suppression…' : 'Supprimer définitivement'}
+              <button className="btn btn-primary" style={{flex:1, background:'#DC2626', opacity: supprimant ? 0.5 : 1}} onClick={desactiverAgente} disabled={supprimant}>
+                {supprimant ? 'Désactivation…' : 'Désactiver'}
               </button>
             </div>
           </div>

@@ -167,66 +167,6 @@ export async function PATCH(request) {
   }
 }
 
-export async function DELETE(request) {
-  const auth = await requireRole(request, ['admin'])
-  if (auth.error) return auth.error
-  try {
-    const body = await request.json()
-    const { id } = body
-
-    if (!id) {
-      return NextResponse.json({ error: 'ID requis' }, { status: 400 })
-    }
-
-    // Contrôle d'appartenance AVANT toute destruction (l'ordre est critique :
-    // rien ne doit être supprimé avant la vérification). service_role contourne
-    // la RLS, on la reflète : même société + bien une agente (pas un admin).
-    const { data: profil } = await supabaseAdmin.from('profiles').select('role, societe_id, kbis_url, rib_url').eq('id', id).single()
-    // 404 uniforme si introuvable OU autre société (pas de fuite d'existence cross-tenant).
-    if (!profil || profil.societe_id !== auth.profile.societe_id) {
-      return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 })
-    }
-    // Dans SA société : on ne supprime pas un admin.
-    if (profil.role !== 'agente') {
-      return NextResponse.json({ error: 'Profil non supprimable' }, { status: 400 })
-    }
-
-    // Lire les paths des fichiers AVANT suppression (SELECT non destructif). La purge
-    // réelle n'aura lieu QU'APRÈS un deleteUser réussi : on ne détruit jamais de
-    // fichiers si la suppression de l'agente échoue (sinon perte de données + agente
-    // survivante). Paths EXACTS, jamais de balayage par préfixe.
-    const { data: facturesAg } = await supabaseAdmin
-      .from('factures_agente').select('facture_path').eq('agente_id', id)
-    const fichiers = [
-      profil.kbis_url,
-      profil.rib_url,
-      ...(facturesAg || []).map(f => f.facture_path),
-    ].filter(Boolean)
-
-    // Supprimer l'utilisateur Supabase Auth (cascade vers le profil si FK configurée)
-    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id)
-    if (authError) {
-      return NextResponse.json({ error: authError.message }, { status: 400 })
-    }
-
-    // Supprimer le profil (sécurité si pas de cascade)
-    await supabaseAdmin.from('profiles').delete().eq('id', id)
-
-    // Purge Storage best-effort APRÈS suppression réussie : la cascade DB a effacé les
-    // lignes, on retire maintenant les documents personnels (KBIS, RIB, factures) pour
-    // ne pas laisser d'orphelins. À ce stade l'agente est déjà supprimée → un échec de
-    // remove est seulement loggué, jamais bloquant.
-    if (fichiers.length > 0) {
-      try {
-        const { error: rmErr } = await supabaseAdmin.storage.from('documents').remove(fichiers)
-        if (rmErr) console.error('Purge Storage agente (non bloquant):', rmErr.message)
-      } catch (e) {
-        console.error('Purge Storage agente (non bloquant):', e.message)
-      }
-    }
-
-    return NextResponse.json({ success: true })
-  } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
-  }
-}
+// La suppression « dure » d'une agente (hard delete) a été RETIRÉE : elle cassait
+// l'attribution (FK NO ACTION) et détruisait des données. On DÉSACTIVE désormais
+// (soft delete réversible) via POST /api/agente-statut { id, actif:false }.

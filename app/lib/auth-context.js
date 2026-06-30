@@ -123,6 +123,16 @@ export function AuthProvider({ children }) {
         // par page (filet existant) rejouera fetchProfile.
         return
       }
+      if (data && data.actif === false) {
+        // Compte DÉSACTIVÉ (soft delete agente) : le ban Auth bloque les NOUVELLES
+        // connexions ; ce check déconnecte une session encore ouverte (le JWT en cours
+        // resterait sinon valide jusqu'à expiration). Traité comme « pas de profil ».
+        await supabase.auth.signOut()
+        setProfile(null)
+        setDisplayAgenceName(null)
+        setProfileStatus('absent')
+        return
+      }
       if (data) {
         setProfile(data)
         loadAgenceName(data)

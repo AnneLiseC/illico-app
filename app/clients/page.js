@@ -58,7 +58,7 @@ export default function Clients() {
     Promise.all([
       query,
       profile.role === 'admin'
-        ? supabase.from('profiles').select('id, prenom, nom').eq('role', 'agente').order('prenom')
+        ? supabase.from('profiles').select('id, prenom, nom').eq('role', 'agente').eq('actif', true).order('prenom')
         : Promise.resolve({ data: [] }),
     ]).then(([{ data }, { data: agentesData }]) => {
       const sorted = (data || []).slice().sort((a, b) =>
