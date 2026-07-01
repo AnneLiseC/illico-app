@@ -11,6 +11,10 @@
 
 import { google } from 'googleapis'
 import { createClient } from '@supabase/supabase-js'
+import {
+  rdvSummary, rdvDescription, rdvBounds,
+  interventionSummary, interventionDescription, interventionOccurrences,
+} from './mapping'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -47,6 +51,33 @@ export function buildOAuthClientForCompte(compteOauthId, tokens) {
     }
   })
   return client
+}
+
+// true si l'erreur googleapis ressemble à un échec d'auth (token révoqué / invalid_grant).
+// Sert au listing (lot 8a) pour répondre « compte à reconnecter » au lieu de planter.
+export function isGoogleAuthError(err) {
+  const status = err?.code ?? err?.response?.status
+  if (status === 401) return true
+  return /invalid_grant|unauthor/i.test(err?.message || '')
+}
+
+// Liste les agendas d'un compte Google connecté (lot 8a) → [{ externalId, label,
+// primary, accessRole }]. LECTURE SEULE (calendarList.list). Le primaire (primary:true)
+// a son id = l'adresse e-mail du compte (utile pour backfiller compte_email plus tard).
+export async function listGoogleCalendars(compte) {
+  const oauthClient = buildOAuthClientForCompte(compte.id, {
+    access_token: compte.access_token,
+    refresh_token: compte.refresh_token,
+    expiry_date: compte.expiry_date,
+  })
+  const calendar = google.calendar({ version: 'v3', auth: oauthClient })
+  const { data } = await calendar.calendarList.list({ maxResults: 250 })
+  return (data.items || []).map((c) => ({
+    externalId: c.id,
+    label: c.summaryOverride || c.summary,
+    primary: c.primary || false,
+    accessRole: c.accessRole,
+  }))
 }
 
 // Résolution MÉTIER d'une cible → { cible, compte } (compte = ligne comptes_oauth
@@ -163,89 +194,37 @@ export function buildIntervTimes(date, heure_debut, duree_minutes) {
 }
 
 export function rdvToGoogleEvent(rdv) {
-  // Préfixes de type SANS tiret final : le « - » est inséré par le join entre le type
-  // et le client (donc pas de tiret pendouillant si pas de client). Le cas 'autres' est
-  // traité à part (titre seul) → pas d'entrée ici (l'ancienne 'Autre - ' était morte).
-  const typeLabels = {
-    visite_technique_client: 'R1',
-    visite_technique_artisan: 'R2',
-    presentation_devis: 'R3',
-  }
-  const client = rdv.dossier?.client
-  const nomClient = client ? `${client.civilite || ''} ${client.prenom} ${client.nom}`.trim() : ''
-  const artisan = rdv.artisan?.entreprise || ''
-  // date_heure est un timestamptz (instant UTC) → envoyer l'instant ISO COMPLET (offset/Z)
-  // à Google ; timeZone:'Europe/Paris' ne sert qu'à l'affichage/récurrence. Ne PAS faire
-  // slice(0,19) qui couperait l'offset et ré-étiquetterait le wall-clock UTC comme Paris (+offset erroné).
-  const start = new Date(rdv.date_heure)
-  const end = new Date(start.getTime() + (rdv.duree_minutes || 60) * 60000)
-  // « R2 - M. Client x Artisan » : type et client assemblés par « - » (parties non vides
-  // seulement → pas de tiret pendouillant sans client), artisan suffixé par « x ».
-  const base = [typeLabels[rdv.type_rdv] || rdv.type_rdv, nomClient].filter(Boolean).join(' - ')
-  const summary = rdv.type_rdv === 'autres'
-    ? (rdv.titre || rdv.notes || 'Autre RDV')
-    : `${base}${artisan ? ' x ' + artisan : ''}`
+  // Habillage JSON Google du mapping partagé (mapping.js). date_heure = instant UTC →
+  // dateTime = ISO COMPLET (offset/Z) ; timeZone:'Europe/Paris' ne sert qu'à l'affichage.
+  const { start, end } = rdvBounds(rdv)
   return {
-    summary,
-    description: [
-      rdv.dossier?.reference ? `Chantier : ${rdv.dossier.reference}` : '',
-      rdv.notes ? `Notes : ${rdv.notes}` : '',
-    ].filter(Boolean).join('\n'),
+    summary: rdvSummary(rdv),
+    description: rdvDescription(rdv),
     start: { dateTime: start.toISOString(), timeZone: 'Europe/Paris' },
     end: { dateTime: end.toISOString(), timeZone: 'Europe/Paris' },
   }
 }
 
-// Extrait À L'IDENTIQUE du bloc inliné de push/route.js (POST, type 'intervention').
-// Renvoie le tableau ordonné [eventPrincipal, ...extraEvents] (multi-jours), ou []
-// pour les cas à ignorer (l'appelant répond alors skipped, comme avant). L'event[0]
-// porte le google_event_id (upsert + writeback) ; les extras sont insert-only.
-export function interventionToGoogleEvents(intervention) {
-  const artisan = intervention.artisan?.entreprise || 'Artisan'
-  const client = intervention.dossier?.client
-  const nomClient = client ? `${client.prenom} ${client.nom}`.trim() : ''
-  const summary = `${artisan}${nomClient ? ' | ' + nomClient : ''}`
-  const baseDesc = [
-    intervention.dossier?.reference ? `Chantier : ${intervention.dossier.reference}` : '',
-    intervention.notes ? `Notes : ${intervention.notes}` : '',
-  ].filter(Boolean)
-
-  let firstEvent
-  let extraEvents = []
-
-  const { heure_debut, duree_minutes } = intervention
-
-  if (intervention.type_intervention === 'periode') {
-    if (!intervention.date_fin && !heure_debut) return []
-    if (heure_debut) {
-      firstEvent = {
-        summary,
-        description: [...baseDesc, `[illico-int:${intervention.id}]`].join('\n'),
-        ...buildIntervTimes(intervention.date_debut, heure_debut, duree_minutes),
-      }
-    } else {
-      const endDate = new Date(intervention.date_fin)
-      endDate.setDate(endDate.getDate() + 1)
-      firstEvent = {
-        summary,
-        description: [...baseDesc, `[illico-int:${intervention.id}]`].join('\n'),
-        start: { date: intervention.date_debut },
-        end: { date: endDate.toISOString().slice(0, 10) },
-      }
-    }
-  } else {
-    const jours = [...(intervention.jours_specifiques || [])].sort()
-    if (!jours.length) return []
-    firstEvent = {
-      summary,
-      description: [...baseDesc, `[illico-int:${intervention.id}:0]`].join('\n'),
-      ...buildIntervTimes(jours[0], heure_debut, duree_minutes),
-    }
-    extraEvents = jours.slice(1).map((jour, i) => ({
-      summary,
-      description: [...baseDesc, `[illico-int:${intervention.id}:${i + 1}]`].join('\n'),
-      ...buildIntervTimes(jour, heure_debut, duree_minutes),
-    }))
+// Bornes Google d'une occurrence (spec neutre de mapping.js → champs start/end Google).
+// 'timed' et 'allday' (jour unique) passent par buildIntervTimes (timed vs date-only selon
+// heure_debut) ; 'allday-range' = période multi-jours (end exclusif = date_fin + 1).
+function googleTimeFields(time) {
+  if (time.kind === 'allday-range') {
+    const endDate = new Date(time.dateFin)
+    endDate.setDate(endDate.getDate() + 1)
+    return { start: { date: time.dateDebut }, end: { date: endDate.toISOString().slice(0, 10) } }
   }
-  return [firstEvent, ...extraEvents]
+  return buildIntervTimes(time.date, time.heure_debut, time.duree_minutes)
+}
+
+// Renvoie le tableau ordonné [eventPrincipal, ...extraEvents] (multi-jours), ou [] pour les
+// cas à ignorer (l'appelant répond alors skipped). L'event[0] porte le google_event_id
+// (upsert + writeback) ; les extras sont insert-only.
+export function interventionToGoogleEvents(intervention) {
+  const summary = interventionSummary(intervention)
+  return interventionOccurrences(intervention).map((o) => ({
+    summary,
+    description: interventionDescription(intervention, o.marker),
+    ...googleTimeFields(o.time),
+  }))
 }

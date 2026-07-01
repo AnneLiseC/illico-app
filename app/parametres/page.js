@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { authHeaders } from '../lib/api-auth-client'
+import MesCalendriers from '../components/MesCalendriers'
 
 const LS = { display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5 }
 
@@ -44,7 +45,6 @@ export default function Parametres() {
   const [uploadingRib, setUploadingRib]   = useState(false)
   const [uploadingKbisFranchise, setUploadingKbisFranchise] = useState(false)
   const [section, setSection]             = useState('profil')
-  const [gcalConnected, setGcalConnected] = useState(false)
   const [savingProfil, setSavingProfil]   = useState(false)
   const [savingPwd, setSavingPwd]         = useState(false)
   const [newPwd, setNewPwd]               = useState('')
@@ -218,17 +218,9 @@ export default function Parametres() {
     setProfile(authProfile)
     chargerAgence(authProfile.societe_id)
     chargerObjectifs()
-    Promise.all([
-      chargerAgentes(),
-      supabase.from('comptes_oauth')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', authProfile.id)
-        .eq('fournisseur', 'google')
-        .gt('expiry_date', Date.now()),
-    ]).then(([, { count }]) => {
-      setGcalConnected((count || 0) > 0)
-      setLoading(false)
-    })
+    // Les calendriers (connexion + état) se gèrent dans /profil (lot 8b) ; plus de
+    // détection Google ici (l'ancienne requête sur expiry_date était de toute façon buggée).
+    chargerAgentes().then(() => setLoading(false))
   }, [initialized, authProfile, router])
 
   /* ── Handlers agentes (inchangés) ── */
@@ -250,16 +242,29 @@ export default function Parametres() {
   }
   const ouvrirSupprimer = (agente) => { setAgenteASupprimer(agente); setModal('supprimer'); setErreur('') }
 
-  const supprimerAgente = async () => {
+  // Soft delete : DÉSACTIVE l'agente (ban Auth + actif=false), réversible. La ligne
+  // profiles reste → attribution (dossiers, clients, CR, redevances…) préservée.
+  const desactiverAgente = async () => {
     if (!agenteASupprimer) return
     setSupprimant(true); setErreur('')
     try {
-      const res = await fetch('/api/create-agente', { method: 'DELETE', headers: await authHeaders(), body: JSON.stringify({ id: agenteASupprimer.id }) })
+      const res = await fetch('/api/agente-statut', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ id: agenteASupprimer.id, actif: false }) })
       const data = await res.json()
-      if (!res.ok) { setErreur(data.error || 'Erreur lors de la suppression') }
-      else { setSucces(`${agenteASupprimer.prenom} ${agenteASupprimer.nom} supprimée ✓`); setModal(false); setAgenteASupprimer(null); await chargerAgentes() }
+      if (!res.ok) { setErreur(data.error || 'Erreur lors de la désactivation') }
+      else { setSucces(`${agenteASupprimer.prenom} ${agenteASupprimer.nom} désactivée ✓`); setModal(false); setAgenteASupprimer(null); await chargerAgentes() }
     } catch (err) { setErreur(err.message) }
     setSupprimant(false)
+  }
+
+  const reactiverAgente = async (agente) => {
+    if (!window.confirm(`Réactiver ${agente.prenom} ${agente.nom} ? Elle pourra de nouveau se connecter.`)) return
+    setErreur(''); setSucces('')
+    try {
+      const res = await fetch('/api/agente-statut', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ id: agente.id, actif: true }) })
+      const data = await res.json()
+      if (!res.ok) setErreur(data.error || 'Erreur lors de la réactivation')
+      else { setSucces(`${agente.prenom} ${agente.nom} réactivée ✓`); await chargerAgentes() }
+    } catch (err) { setErreur(err.message) }
   }
 
   const creerAgente = async () => {
@@ -588,10 +593,16 @@ export default function Parametres() {
                             </label>
                           )}
                         </div>
-                        <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(22,163,74,0.1)', color:'#15803d', flexShrink:0}}>Actif</span>
+                        <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, flexShrink:0,
+                          background: agente.actif === false ? 'var(--ink-100)' : 'rgba(22,163,74,0.1)',
+                          color: agente.actif === false ? 'var(--ink-500)' : '#15803d'}}>
+                          {agente.actif === false ? 'Désactivée' : 'Actif'}
+                        </span>
                         <div style={{display:'flex', gap:6, flexShrink:0}}>
                           <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 10px'}} onClick={() => ouvrirModifier(agente)}>Modifier</button>
-                          <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 10px', color:'var(--bad)', borderColor:'rgba(239,68,68,0.3)'}} onClick={() => ouvrirSupprimer(agente)}>Supprimer</button>
+                          {agente.actif === false
+                            ? <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 10px', color:'#15803d', borderColor:'rgba(22,163,74,0.3)'}} onClick={() => reactiverAgente(agente)}>Réactiver</button>
+                            : <button className="btn btn-ghost" style={{fontSize:12, padding:'5px 10px', color:'var(--bad)', borderColor:'rgba(239,68,68,0.3)'}} onClick={() => ouvrirSupprimer(agente)}>Désactiver</button>}
                         </div>
                       </div>
                     )
@@ -736,24 +747,7 @@ export default function Parametres() {
                 <h2 className="page" style={{fontSize:18, marginBottom:4}}>Intégrations</h2>
                 <p style={{color:'var(--ink-500)', fontSize:13}}>Services connectés à l'application.</p>
               </div>
-              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, maxWidth:680}}>
-                {[
-                  { l:'Google Calendar', desc:'Sync des RDV et interventions',   connected: gcalConnected },
-                ].map(int => (
-                  <div key={int.l} style={{padding:18, border:'1px solid var(--ink-200)', borderRadius:12, display:'flex', flexDirection:'column', gap:8}}>
-                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
-                      <div style={{fontWeight:700, fontSize:13.5, color:'var(--ink-900)'}}>{int.l}</div>
-                      <span style={{fontSize:11.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background: int.connected ? 'rgba(22,163,74,0.1)' : 'var(--ink-100)', color: int.connected ? '#15803d' : 'var(--ink-500)'}}>
-                        {int.connected ? 'Connecté' : 'Non connecté'}
-                      </span>
-                    </div>
-                    <div style={{fontSize:12, color:'var(--ink-500)'}}>{int.desc}</div>
-                    {!int.connected && (
-                      <button className="btn btn-ghost" style={{fontSize:11.5, alignSelf:'flex-start', marginTop:2}}>Connecter</button>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <MesCalendriers profile={profile} onError={setErreur} onSucces={setSucces} onDefautChange={fetchProfile} />
             </div>
           )}
 
@@ -945,18 +939,20 @@ export default function Parametres() {
             <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:16}}>
               <div style={{width:40, height:40, borderRadius:99, background:'rgba(239,68,68,0.1)', color:'#DC2626', display:'grid', placeItems:'center', fontSize:18, flexShrink:0}}>⚠</div>
               <div>
-                <div style={{fontWeight:700, color:'var(--ink-900)'}}>Supprimer cette agente ?</div>
+                <div style={{fontWeight:700, color:'var(--ink-900)'}}>Désactiver cette agente ?</div>
                 <div style={{fontSize:13, color:'var(--ink-500)', marginTop:2}}>{agenteASupprimer.prenom} {agenteASupprimer.nom}</div>
               </div>
             </div>
-            <div style={{background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.3)', borderRadius:10, padding:'12px 16px', fontSize:13, color:'var(--ink-700)', marginBottom:14}}>
-              Cette action est <strong>irréversible</strong>. Le compte de connexion sera supprimé. Les chantiers et données associés seront conservés.
+            <div style={{background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.3)', borderRadius:10, padding:'12px 16px', fontSize:13, color:'var(--ink-700)', marginBottom:14, lineHeight:1.5}}>
+              Elle <strong>ne pourra plus se connecter</strong>. Ses chantiers, clients, dossiers,
+              comptes-rendus et documents <strong>restent attribués et conservés</strong>.
+              C'est <strong>réversible</strong> : tu pourras la réactiver à tout moment.
             </div>
             {erreur && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c', marginBottom:12}}>{erreur}</div>}
             <div style={{display:'flex', gap:8}}>
               <button className="btn btn-ghost" style={{flex:1}} onClick={() => { setModal(false); setAgenteASupprimer(null); setErreur('') }}>Annuler</button>
-              <button className="btn btn-primary" style={{flex:1, background:'#DC2626', opacity: supprimant ? 0.5 : 1}} onClick={supprimerAgente} disabled={supprimant}>
-                {supprimant ? 'Suppression…' : 'Supprimer définitivement'}
+              <button className="btn btn-primary" style={{flex:1, background:'#DC2626', opacity: supprimant ? 0.5 : 1}} onClick={desactiverAgente} disabled={supprimant}>
+                {supprimant ? 'Désactivation…' : 'Désactiver'}
               </button>
             </div>
           </div>

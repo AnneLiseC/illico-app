@@ -73,6 +73,7 @@ export default function Planning() {
   const [erreur, setErreur]                   = useState('')
 
   const [googleConnected, setGoogleConnected] = useState(false)
+  const [fournisseursConnectes, setFournisseursConnectes] = useState([])
   const [syncMessage, setSyncMessage]         = useState('')
   const [calendarView, setCalendarView]       = useState('timeGridWeek')
   const [quickMenu, setQuickMenu]             = useState(null) // { date, x, y }
@@ -132,13 +133,22 @@ export default function Planning() {
     if (!profile) return
     const init = async () => {
       await chargerTout()
+      // Comptes calendrier connectés du user (PRÉSENCE du compte, pas l'expiry) :
+      // Google = refresh_token présent ; iCloud = caldav_username présent. Alimente le
+      // badge multi-fournisseur ET le gate de push (googleConnected = ≥ 1 fournisseur).
       try {
-        const res = await fetch('/api/google/calendar/sync', { headers: await authHeaders() })
-        if (res.ok) { const d = await res.json(); setGoogleConnected(d.connected) }
-      } catch { setGoogleConnected(false) }
+        const { data: comptesCal } = await supabase.from('comptes_oauth')
+          .select('fournisseur, refresh_token, caldav_username').eq('user_id', profile.id)
+        const f = []
+        if ((comptesCal || []).some(c => c.fournisseur === 'google' && c.refresh_token)) f.push('google')
+        if ((comptesCal || []).some(c => c.fournisseur === 'icloud' && c.caldav_username)) f.push('icloud')
+        setFournisseursConnectes(f)
+        setGoogleConnected(f.length > 0)
+      } catch { setFournisseursConnectes([]); setGoogleConnected(false) }
       const params = new URLSearchParams(window.location.search)
       if (params.get('google') === 'connected') {
         setSyncMessage('✅ Google Calendar connecté avec succès !')
+        setFournisseursConnectes(f => f.includes('google') ? f : [...f, 'google'])
         setGoogleConnected(true)
         window.history.replaceState({}, '', '/planning')
       } else if (params.get('google') === 'error') {
@@ -226,6 +236,18 @@ export default function Planning() {
       return f
     })
   }, [modalOuvert, modalType, modeEdition, formIntervention.dossier_id, formIntervention.agence_id, agenceActive, cibles, profile, dossiers])
+
+  // Pré-remplissage de l'agence en CRÉATION quand la société n'a qu'UNE agence : le select
+  // est alors masqué (cf. JSX) → on fixe l'agence unique pour (1) éviter le soft-lock de la
+  // validation « autres sans dossier » (l'agence devient obligatoire) et (2) alimenter la
+  // résolution du calendrier. Idempotent (n'écrase jamais un choix), robuste au timing de
+  // chargement des agences (se redéclenche quand `agences` arrive), édition non concernée.
+  useEffect(() => {
+    if (!modalOuvert || modeEdition || agences.length !== 1) return
+    const uniqueId = agences[0].id
+    setFormRdv(f => f.agence_id ? f : { ...f, agence_id: uniqueId })
+    setFormIntervention(f => f.agence_id ? f : { ...f, agence_id: uniqueId })
+  }, [modalOuvert, modeEdition, agences])
 
   // ── ÉVÉNEMENTS CALENDRIER ──────────────────────────────────────────────────
 
@@ -502,9 +524,13 @@ export default function Planning() {
             // Indicateur passif : le push est désormais automatique à chaque sauvegarde
             // (lot 4c). Plus de bouton de synchronisation complète (la route /sync POST
             // reste pour l'étage 3 pull, mais n'est plus déclenchée depuis l'UI).
-            <span className="btn btn-ghost" style={{display:'inline-flex', alignItems:'center', gap:6, cursor:'default'}}>
-              <span style={{width:6, height:6, borderRadius:'50%', background:'#15803d', flexShrink:0}}/>
-              Google <span style={{color:'#15803d'}}>● Connecté</span>
+            <span className="btn btn-ghost" style={{display:'inline-flex', alignItems:'center', gap:10, cursor:'default'}}>
+              {(fournisseursConnectes.length ? fournisseursConnectes : ['calendrier']).map(f => (
+                <span key={f} style={{display:'inline-flex', alignItems:'center', gap:5}}>
+                  <span style={{width:6, height:6, borderRadius:'50%', background:'#15803d', flexShrink:0}}/>
+                  {f === 'google' ? 'Google' : f === 'icloud' ? 'iCloud' : 'Connecté'}
+                </span>
+              ))}
             </span>
           ) : (
             <button
@@ -868,12 +894,16 @@ export default function Planning() {
                     <input type="text" value={formRdv.titre} onChange={e => setFormRdv(f => ({ ...f, titre: e.target.value }))} placeholder="Ex : Réunion de chantier, Appel fournisseur…" className={inputCls} style={{marginTop:6}}/>
                   </div>}
                   {/* Sélecteur d'agence (admin en vue « toutes agences ») : filtre les dossiers,
-                      détermine l'agence d'un RDV libre et pilote la résolution du calendrier. */}
-                  {profile?.role === 'admin' && agenceActive === null && <div><label className={labelCls}>Agence{formRdv.type_rdv === 'autres' && !formRdv.dossier_id ? ' *' : ''}</label>
+                      détermine l'agence d'un RDV libre et pilote la résolution du calendrier.
+                      Société à 1 agence → select masqué, agence pré-remplie (effet ci-dessus). */}
+                  {profile?.role === 'admin' && agenceActive === null && agences.length > 1 && <div><label className={labelCls}>Agence{formRdv.type_rdv === 'autres' && !formRdv.dossier_id ? ' *' : ''}</label>
                     <select value={formRdv.agence_id} onChange={e => setFormRdv(f => ({ ...f, agence_id: e.target.value, dossier_id: '', artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir une agence —</option>
-                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}{a.code ? ` (${a.code})` : ''}</option>)}
+                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
                     </select>
+                  </div>}
+                  {profile?.role === 'admin' && agenceActive === null && agences.length === 1 && <div><label className={labelCls}>Agence</label>
+                    <div style={{marginTop:6, fontSize:13, color:'var(--ink-700)'}}>{agences[0].nom}</div>
                   </div>}
                   {formRdv.type_rdv !== 'autres' && <div><label className={labelCls}>Chantier *</label>
                     <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value, artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
@@ -918,11 +948,14 @@ export default function Planning() {
               {/* Formulaire Intervention */}
               {(modalType === 'intervention' || (elementSelectionne?.type === 'intervention' && modeEdition)) && (!elementSelectionne || modeEdition) && (
                 <div style={{display:'flex', flexDirection:'column', gap:16}}>
-                  {!modeEdition && profile?.role === 'admin' && agenceActive === null && <div><label className={labelCls}>Agence</label>
+                  {!modeEdition && profile?.role === 'admin' && agenceActive === null && agences.length > 1 && <div><label className={labelCls}>Agence</label>
                     <select value={formIntervention.agence_id} onChange={e => setFormIntervention(f => ({ ...f, agence_id: e.target.value, dossier_id: '', artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir une agence —</option>
-                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}{a.code ? ` (${a.code})` : ''}</option>)}
+                      {agences.map(a => <option key={a.id} value={a.id}>{a.nom}</option>)}
                     </select>
+                  </div>}
+                  {!modeEdition && profile?.role === 'admin' && agenceActive === null && agences.length === 1 && <div><label className={labelCls}>Agence</label>
+                    <div style={{marginTop:6, fontSize:13, color:'var(--ink-700)'}}>{agences[0].nom}</div>
                   </div>}
                   {!modeEdition && <div><label className={labelCls}>Chantier *</label>
                     <select value={formIntervention.dossier_id} onChange={e => setFormIntervention(f => ({ ...f, dossier_id: e.target.value, artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>

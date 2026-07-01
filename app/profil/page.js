@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { getObjectifAgente, saveObjectif } from '../lib/objectifs'
+import MesCalendriers from '../components/MesCalendriers'
 
 // Page profil de l'utilisateur connecté (pensée pour les agentes ; l'admin gère
 // tout via /parametres, mais la page reste consultable sans erreur). Réutilise
@@ -293,6 +294,12 @@ export default function Profil() {
         </div>
 
       </div>
+
+      {/* ── Mes calendriers ── Agente : ici. Admin : dans /parametres > Intégrations
+          (Placement-2) → on ne l'affiche pas ici pour lui, pour éviter le doublon. */}
+      {profile.role !== 'admin' && (
+        <MesCalendriers profile={profile} onError={setError} onSucces={setSucces} onDefautChange={fetchProfile} />
+      )}
     </div>
   )
 }
