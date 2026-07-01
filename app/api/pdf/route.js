@@ -243,7 +243,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
         {preview ? null : (buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier }) || null)}
 
         {/* ── Honoraires illiCO (composant partagé) ── */}
-        <RecapHonoraires dossier={dossier} devis={devis} preview={preview} />
+        <RecapHonoraires dossier={dossier} devis={devis} suiviFinancier={suiviFinancier} preview={preview} />
 
 
         <View style={styles.footer} fixed>

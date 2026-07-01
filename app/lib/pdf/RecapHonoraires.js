@@ -63,13 +63,16 @@ const totalHon = (tauxLabel, value, key) =>
 const totalChantier = (label, value, { std, bg } = {}, key) =>
   h(View, { key, style: std ? S.tcStd : [S.tc, { backgroundColor: bg }] }, h(Text, { style: S.tcLabel }, label), h(Text, { style: S.tcValue }, fmt(value)))
 
-export default function RecapHonoraires({ dossier, devis, preview = false }) {
+export default function RecapHonoraires({ dossier, devis, suiviFinancier, preview = false }) {
   const typologie = dossier?.typologie || ''
   if (!['courtage', 'amo'].includes(typologie)) return null
 
+  // suivi_financier fusionné dans le dossier → getPivotCourtage lit le pivot (TS-1).
+  // Preview : suiviFinancier volontairement vide côté appelant → pivot null → pas de TS.
+  const dossierCalc = { ...dossier, devis_artisans: devis, suivi_financier: suiviFinancier || [] }
   const f = preview
-    ? calculateHonorairesRecuAccepte({ ...dossier, devis_artisans: devis })
-    : calculateHonorairesFinance({ ...dossier, devis_artisans: devis })
+    ? calculateHonorairesRecuAccepte(dossierCalc)
+    : calculateHonorairesFinance(dossierCalc)
 
   const baseTTC = preview ? f.totalDevisTTCRecuAccepte : f.totalDevisTTCSignes
   if (!(baseTTC > 0)) return null
