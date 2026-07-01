@@ -92,6 +92,47 @@ function getSignedTotals(dossier) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TS-1 — Travaux Supplémentaires (re-ventilation courtage → AMO, cas AMO)
+// ─────────────────────────────────────────────────────────────────────────────
+// Un devis signé APRÈS le paiement du courtage (« pivot ») voit sa part courtage
+// basculer en AMO : la ligne courtage est close, seul l'AMO continue de grossir.
+// Re-ventilation PURE : total honoraires / royalties / partage INCHANGÉS, seule
+// la répartition courtage↔AMO se déplace. Cas AMO uniquement (courtage-only = TS-2).
+
+// Pivot = date_paiement de la ligne de suivi honoraires_courtage RÉGLÉE.
+// Absent / non réglé / date invalide → null (fallback sûr : calcul actuel intact).
+function getPivotCourtage(dossier) {
+  const suivi = Array.isArray(dossier?.suivi_financier) ? dossier.suivi_financier : []
+  const ligne = suivi.find(s =>
+    s?.type_echeance === 'honoraires_courtage' &&
+    s?.statut_client === 'regle' &&
+    isTruthyDate(s?.date_paiement)
+  )
+  if (!ligne) return null
+  const d = new Date(ligne.date_paiement)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+// Sous-total (HT/TTC) des devis dont date_signature > pivot (comparaison STRICTE :
+// même jour que le pivot = NON-TS). Devis sans date_signature EXCLUS (comptés
+// ≤ pivot, donc non-TS). pivot null → { htApres: 0, ttcApres: 0 }.
+function sousTotalApresPivot(devisList, pivot) {
+  if (!pivot) return { htApres: 0, ttcApres: 0 }
+  const pivotTime = pivot.getTime()
+  const apres = (Array.isArray(devisList) ? devisList : []).filter(dv => {
+    if (!isTruthyDate(dv?.date_signature)) return false
+    const d = new Date(dv.date_signature)
+    return !Number.isNaN(d.getTime()) && d.getTime() > pivotTime
+  })
+  const htApres  = round2(apres.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
+  const ttcApres = round2(apres.reduce((s, dv) => {
+    if (dv.montant_ttc !== undefined && dv.montant_ttc !== null) return s + toNumber(dv.montant_ttc)
+    return s + toNumber(dv.montant_ht) * TVA_TRAVAUX
+  }, 0))
+  return { htApres, ttcApres }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FRAIS DE CONSULTATION
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -184,7 +225,7 @@ export function calculateCommissionsFinance(dossier) {
 // Cœur de calcul des honoraires — arithmétique commune aux 3 entrées (signés /
 // actifs / recu+accepte). Prend la base (totaux devis) EN PARAMÈTRE ; ne refiltre
 // pas. Déplacement à l'identique de l'arithmétique existante : valeurs inchangées.
-function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC }) {
+function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC, totalHTApres: htApres = 0, totalTTCApres: ttcApres = 0 }) {
   const typologie    = dossier?.typologie || ''
   const partAgente   = getPartAgente(dossier)
   const tauxCourtage = getTauxCourtage(dossier)
@@ -192,6 +233,13 @@ function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC }) {
 
   const isCourtage = typologie === 'courtage'
   const isAmo      = typologie === 'amo'
+
+  // TS-1 : re-ventilation courtage→AMO. `apres` = sous-total des devis signés
+  // après le pivot (posé par les wrappers, AMO + pivot uniquement). Défaut 0 →
+  // base courtage pleine → calcul ACTUEL strict (courtage-only : apres toujours 0).
+  const reventile    = isAmo && ttcApres > 0
+  const baseTTCCourt = reventile ? round2(baseTTC - ttcApres) : baseTTC
+  const baseHTCourt  = reventile ? round2(baseHT - htApres) : baseHT
 
   // Frais remboursés : on retire le PLEIN montant TTC des frais du courtage CALCULÉ
   // (après application du taux), uniquement si frais_statut === 'rembourse'.
@@ -205,8 +253,10 @@ function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC }) {
     // brut = base × taux (AVANT déduction frais). net/ttc = brut − frais remboursés.
     // round2(brut − dedFrais) = round2(base×taux − dedFrais) car dedFrais est déjà
     // à 2 décimales → valeur ttc/ht identique à l'existant.
-    const brut      = round2(baseTTC * tauxCourtage)
-    const htBrut    = round2(baseHT * tauxCourtage)
+    // TS-1 : base courtage amputée des devis après pivot (baseTTCCourt = baseTTC
+    // hors TS ; = baseTTC quand apres=0 → identique à l'existant).
+    const brut      = round2(baseTTCCourt * tauxCourtage)
+    const htBrut    = round2(baseHTCourt * tauxCourtage)
     const ttc       = round2(brut - deductionFraisTTC)
     const ht        = round2(htBrut - deductionFraisHT)
     const royalties = round2(ht * ROYALTIES_RATE)
@@ -217,8 +267,15 @@ function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC }) {
 
   let soldeAmo = { ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
   if (isAmo) {
-    const ttc       = round2(baseTTC * tauxAmo)
-    const ht        = round2(baseHT * tauxAmo)
+    // AMO = part AMO de toute la base + part courtage BASCULÉE des devis après
+    // pivot (taux_courtage + taux_amo sur ttcApres). apres=0 → base × tauxAmo →
+    // identique à l'existant.
+    const ttc       = reventile
+      ? round2((baseTTC - ttcApres) * tauxAmo + ttcApres * (tauxCourtage + tauxAmo))
+      : round2(baseTTC * tauxAmo)
+    const ht        = reventile
+      ? round2((baseHT - htApres) * tauxAmo + htApres * (tauxCourtage + tauxAmo))
+      : round2(baseHT * tauxAmo)
     const royalties = round2(ht * ROYALTIES_RATE)
     const net       = round2(ht - royalties)
     const parts     = split(net, partAgente)
@@ -248,7 +305,10 @@ function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC }) {
 
 export function calculateHonorairesFinance(dossier) {
   const { totalHT, totalTTC } = getSignedTotals(dossier)
-  const core = honorairesCore(dossier, { totalHT, totalTTC })
+  // TS-1 (AMO + pivot) : part courtage des devis signés après le pivot basculée en AMO.
+  const pivot = dossier?.typologie === 'amo' ? getPivotCourtage(dossier) : null
+  const { htApres, ttcApres } = sousTotalApresPivot(getSignedDevis(dossier), pivot)
+  const core = honorairesCore(dossier, { totalHT, totalTTC, totalHTApres: htApres, totalTTCApres: ttcApres })
 
   return {
     totalDevisTTCSignes: totalTTC,
@@ -278,7 +338,11 @@ function getActiveTotals(dossier) {
 
 export function calculateHonorairesPrevi(dossier) {
   const { totalHT, totalTTC } = getActiveTotals(dossier)
-  const core = honorairesCore(dossier, { totalHT, totalTTC })
+  // TS-1 : re-ventilation sur les devis actifs signés après le pivot → la ligne
+  // solde_amo à encaisser reflète le courtage tardif basculé.
+  const pivot = dossier?.typologie === 'amo' ? getPivotCourtage(dossier) : null
+  const { htApres, ttcApres } = sousTotalApresPivot(getActiveDevis(dossier), pivot)
+  const core = honorairesCore(dossier, { totalHT, totalTTC, totalHTApres: htApres, totalTTCApres: ttcApres })
 
   return {
     courtage: core.courtage,
@@ -311,7 +375,11 @@ function getRecuAccepteTotals(dossier) {
 
 export function calculateHonorairesRecuAccepte(dossier) {
   const { totalHT, totalTTC } = getRecuAccepteTotals(dossier)
-  const core = honorairesCore(dossier, { totalHT, totalTTC })
+  // TS-1 (décision actée : le PDF client montre le split courtage/AMO → cohérence).
+  const pivot = dossier?.typologie === 'amo' ? getPivotCourtage(dossier) : null
+  const recuAccepte = getDevisList(dossier).filter(dv => dv?.statut === 'recu' || dv?.statut === 'accepte')
+  const { htApres, ttcApres } = sousTotalApresPivot(recuAccepte, pivot)
+  const core = honorairesCore(dossier, { totalHT, totalTTC, totalHTApres: htApres, totalTTCApres: ttcApres })
 
   return {
     courtage: core.courtage,

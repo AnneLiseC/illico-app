@@ -409,7 +409,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
         ),
       ),
       // Honoraires — composant partagé (source unique, branché finance.js)
-      React.createElement(RecapHonoraires, { dossier, devis, preview: false }),
+      React.createElement(RecapHonoraires, { dossier, devis, suiviFinancier, preview: false }),
       React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
     )
   )
