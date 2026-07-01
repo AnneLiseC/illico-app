@@ -472,7 +472,14 @@ export async function POST(request) {
     let cr = null
 
     if (type === 'recapitulatif_prev') {
-      const doc = buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: [], factures: [], preview: true })
+      // Recap_Financier = doc client remis en réel : charger le vrai suivi_financier
+      // pour que getPivotCourtage voie le pivot et applique la TS-1 (cohérence avec
+      // le Suivi_Financier et le DossierSuivi). Base devis inchangée (recu+accepte,
+      // preview:true) ; seul le suivi passe de [] au réel.
+      const { data: suiviFinancier, error: suiviError } = await supabaseAdmin
+        .from('suivi_financier').select('*').eq('dossier_id', dossierId)
+      if (suiviError) return NextResponse.json({ error: suiviError.message }, { status: 500 })
+      const doc = buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], factures: [], preview: true })
       pdfBuffer = await renderToBuffer(doc)
 
     } else if (type === 'recapitulatif') {
