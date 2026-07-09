@@ -36,6 +36,7 @@ const S = StyleSheet.create({
   remiseRow:    { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2, marginTop: 2 },
   remiseLabel:  { fontSize: 7.5, fontStyle: 'italic', flex: 1, paddingRight: 12 },
   remiseValue:  { fontSize: 7.5, fontFamily: 'Roboto-Bold' },
+  statutCol:    { fontSize: 7.5, color: GRIS, fontStyle: 'italic', marginRight: 8 },
   totalHonRow:  { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2, borderTopWidth: 1, borderTopColor: '#e5e7eb', marginTop: 2 },
   totalHonLbl:  { fontSize: 8, fontFamily: 'Roboto-Bold', flex: 1 },
   totalHonVal:  { fontSize: 8, fontFamily: 'Roboto-Bold' },
@@ -53,9 +54,17 @@ const fmt = (n) => {
 // Pourcentage à la française : 1 décimale, virgule (ex. « 6,0% », « 14,4% »).
 const pct = (taux) => (taux * 100).toFixed(1).replace('.', ',') + '%'
 const toNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
+const round2 = (n) => Math.round((toNum(n) + Number.EPSILON) * 100) / 100
 
 const ligneHon = (label, value, key) =>
   h(View, { key, style: S.row }, h(Text, { style: S.label }, label), h(Text, { style: S.value }, fmt(value)))
+// TS-2 : ligne de ventilation courtage (initial / travaux supplémentaires). Statut
+// optionnel (affiché dans le Suivi_Financier, omis dans le Recap_Financier preview).
+const ligneVentil = (label, value, statut, key) =>
+  h(View, { key, style: S.row },
+    h(Text, { style: S.label }, label),
+    statut ? h(Text, { style: S.statutCol }, statut) : null,
+    h(Text, { style: S.value }, fmt(value)))
 const ligneRemise = (label, value, color, key) =>
   h(View, { key, style: S.remiseRow }, h(Text, { style: [S.remiseLabel, { color }] }, label), h(Text, { style: [S.remiseValue, { color }] }, '— ' + fmt(value)))
 const totalHon = (tauxLabel, value, key) =>
@@ -98,6 +107,41 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
 
   const courtageRemise = tauxCourtage < COURTAGE_STANDARD
 
+  // ── TS-2 : ventilation courtage initial / travaux supplémentaires (courtage-only) ──
+  // On REMPLACE la ligne courtage unique par : initial + une ligne par honoraires_courtage_ts.
+  // Total INCHANGÉ (= courtageReel) : initial = courtageReel − Σ(lignes TS persistées), donc
+  // initial + Σ TS = courtageReel exactement (valable preview ET réel, pas de double comptage).
+  // On lit les montant_ttc PERSISTÉS des lignes (source de vérité de l'encaissement), pas un
+  // recalcul — d'où l'indépendance à l'écart de base preview/signés. AMO / sans TS → non touché.
+  const tsLines = typologie === 'courtage'
+    ? (suiviFinancier || [])
+        .filter(s => s?.type_echeance === 'honoraires_courtage_ts')
+        .sort((a, b) => new Date(a?.created_at || 0) - new Date(b?.created_at || 0))
+    : []
+  const sumTs = round2(tsLines.reduce((s, l) => s + toNum(l?.montant_ttc), 0))
+  const hasTS = tsLines.length > 0 && sumTs > 0
+  // Statut : Suivi_Financier (réel) l'affiche ; Recap_Financier (preview) l'omet.
+  const statutTxt = (ligne) => {
+    if (ligne?.statut_client === 'regle') {
+      const d = ligne.date_paiement ? new Date(ligne.date_paiement).toLocaleDateString('fr-FR') : null
+      return d ? `réglé le ${d}` : 'réglé'
+    }
+    return 'en attente'
+  }
+  // Lignes de la partie « votre tarif » courtage : ventilées si TS, sinon la ligne unique actuelle.
+  const courtageReelLignes = (kp) => {
+    if (!hasTS) return [ligneHon('Honoraires courtage — à la signature des devis', courtageReel, kp + '-hr')]
+    const suiviCourtage = (suiviFinancier || []).find(s => s?.type_echeance === 'honoraires_courtage')
+    const out = [
+      ligneVentil('Honoraires courtage — initial', round2(courtageReel - sumTs), preview ? null : statutTxt(suiviCourtage), kp + '-init'),
+    ]
+    tsLines.forEach((l, i) => {
+      const lbl = `Courtage — travaux supplémentaires${tsLines.length > 1 ? ` (TS ${i + 1})` : ''}`
+      out.push(ligneVentil(lbl, toNum(l?.montant_ttc), preview ? null : statutTxt(l), `${kp}-ts${i}`))
+    })
+    return out
+  }
+
   // ── Scénario COURTAGE ──
   const totalChCourtageStd  = baseTTC + courtageStd + fraisComp
   const totalChCourtageReel = baseTTC + courtageReel + fraisComp
@@ -112,13 +156,13 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
       totalChantier('TOTAL CHANTIER si COURTAGE (tarif standard)', totalChCourtageStd, { std: true }, 'tcs'),
       ligneRemise(`Remise commerciale sur honoraire courtage (${pct(COURTAGE_STANDARD - tauxCourtage)})`, courtageStd - courtageReel, BLEU, 'rem'),
       h(Text, { key: 'nr', style: S.niveau }, 'Votre tarif'),
-      ligneHon('Honoraires courtage — à la signature des devis', courtageReel, 'hr'),
+      ...courtageReelLignes('cr'),
       totalHon(pct(tauxCourtage), courtageReel, 'thr'),
       totalChantier('TOTAL CHANTIER si COURTAGE', totalChCourtageReel, { bg: BLEU }, 'tcr'),
     )
   } else {
     courtageChildren.push(
-      ligneHon('Honoraires courtage — à la signature des devis', courtageReel, 'hr'),
+      ...courtageReelLignes('cn'),
       totalHon(pct(tauxCourtage), courtageReel, 'thr'),
       totalChantier('TOTAL CHANTIER si COURTAGE', totalChCourtageReel, { bg: BLEU }, 'tcr'),
     )
