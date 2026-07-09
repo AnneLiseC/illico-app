@@ -101,7 +101,8 @@ function getSignedTotals(dossier) {
 
 // Pivot = date_paiement de la ligne de suivi honoraires_courtage RÉGLÉE.
 // Absent / non réglé / date invalide → null (fallback sûr : calcul actuel intact).
-function getPivotCourtage(dossier) {
+// Exporté pour TS-2 (courtage-only) — corps INCHANGÉ (déjà écrit pour TS-1).
+export function getPivotCourtage(dossier) {
   const suivi = Array.isArray(dossier?.suivi_financier) ? dossier.suivi_financier : []
   const ligne = suivi.find(s =>
     s?.type_echeance === 'honoraires_courtage' &&
@@ -116,7 +117,8 @@ function getPivotCourtage(dossier) {
 // Sous-total (HT/TTC) des devis dont date_signature > pivot (comparaison STRICTE :
 // même jour que le pivot = NON-TS). Devis sans date_signature EXCLUS (comptés
 // ≤ pivot, donc non-TS). pivot null → { htApres: 0, ttcApres: 0 }.
-function sousTotalApresPivot(devisList, pivot) {
+// Exporté pour TS-2 (courtage-only) — corps INCHANGÉ (déjà écrit pour TS-1).
+export function sousTotalApresPivot(devisList, pivot) {
   if (!pivot) return { htApres: 0, ttcApres: 0 }
   const pivotTime = pivot.getTime()
   const apres = (Array.isArray(devisList) ? devisList : []).filter(dv => {
@@ -130,6 +132,36 @@ function sousTotalApresPivot(devisList, pivot) {
     return s + toNumber(dv.montant_ht) * TVA_TRAVAUX
   }, 0))
   return { htApres, ttcApres }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TS-2 — Travaux Supplémentaires (cas COURTAGE-ONLY : encaissement supplémentaire)
+// ─────────────────────────────────────────────────────────────────────────────
+// Un devis signé APRÈS le pivot (paiement du courtage initial) sur un dossier
+// COURTAGE génère un supplément de courtage à encaisser (montant_TS × taux). C'est
+// un SUPPLÉMENT (nouvelle ligne honoraires_courtage_ts), PAS une re-ventilation :
+// le total courtage dû (base complète × taux) est INCHANGÉ, seulement ventilé en
+// « initial » (base hors TS) + « TS » (base post-pivot).
+//
+// AUCUN impact sur honorairesCore ni les 3 wrappers : fonction PURE, indépendante,
+// lue seulement par le front (déclenchement + affichage). AMO → montantTSttc = 0
+// (getPivotCourtage lu ici, mais on gate sur typologie='courtage' ; le cas AMO reste
+// géré par la re-ventilation TS-1).
+export function calculateCourtageTS(dossier) {
+  const zero = { montantTSttc: 0, courtageInitialTtc: 0, courtageTotalTtc: 0 }
+  if (dossier?.typologie !== 'courtage') return zero
+
+  const taux = getTauxCourtage(dossier)
+  const { totalTTC } = getSignedTotals(dossier)          // base complète signés (TTC)
+  const courtageTotalTtc = round2(totalTTC * taux)       // total courtage dû (INCHANGÉ)
+
+  const pivot = getPivotCourtage(dossier)
+  if (!pivot) return { ...zero, courtageTotalTtc, courtageInitialTtc: courtageTotalTtc }
+
+  const { ttcApres } = sousTotalApresPivot(getSignedDevis(dossier), pivot)
+  const montantTSttc = round2(ttcApres * taux)           // courtage dû sur les TS
+  const courtageInitialTtc = round2(courtageTotalTtc - montantTSttc) // base hors TS × taux
+  return { montantTSttc, courtageInitialTtc, courtageTotalTtc }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
