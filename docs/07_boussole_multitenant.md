@@ -3,8 +3,16 @@
 > **État vivant du projet.** Lue par Claude (binôme) et Claude Code en tête de chaque session.
 > Le détail historique (journal des commits, chantier finances) est dans `07_journal_multitenant.md`.
 
-> Dernière mise à jour : 18/06/2026.
-> Statut : Multi-agence COMPLET. Bloc A sécurité soldé. App multi-tenant fonctionnelle, cloisonnée, sécurisée. Acquis antérieurs : erreurs avalées soldé, famille AMO close, ménage infra (policies Storage versionnées + placeholder fermé). Sprint 16-17/06 mergé (22 lots) : refonte finances COMPLÈTE (4 onglets, 3 vues compte de résultat, royalties réel corrigées), dossier de fin (factures + RIB/KBIS + ZIP photos + PV réception), comparateur de devis, fiche technique depuis chantier, statut staff CLOS (calcStatut v2 + CHECK strict), stepper 5 étapes corrigé (bug Deudon), contrat auto-signé. 18/06 : PDF CR assaini (glyphes Roboto + flèches/alertes ASCII, e32a9c8).
+> Dernière mise à jour : 09/07/2026.
+> Statut : Multi-agence COMPLET. Bloc A sécurité soldé. App multi-tenant fonctionnelle, cloisonnée, sécurisée. Acquis antérieurs : erreurs avalées soldé, famille AMO close, ménage infra (policies Storage versionnées + placeholder fermé). Sprint 16-18/06 : refonte finances COMPLÈTE, dossier de fin, comparateur de devis, statut staff CLOS, stepper corrigé, contrat auto-signé, PDF CR assaini.
+> **Depuis le 18/06 (à jour au 09/07)** :
+> - **C7 espace client + RLS client — COMPLET (20-23/06)** : vues definer scopées, étanchéité inter-client prouvée, devis/PDF/CR/messages durcis.
+> - **Messagerie réactivée + polish (23/06)** : messagerie centralisée remise en service (multi-tenant), fix timezone messages, feature édition de message 10 min.
+> - **Accès client — CLÔTURÉ (24/06)** : invitation client (lien + mailto), page login client brandée, expiration d'accès (base +3 mois), désactivation J+14 (cron), réactivation. + fix emoji PDF CR.
+> - **CALENDRIER étage 1 ✅ + étage 2 descendant COMPLET (24/06 → 01/07)** : scope tenant agenda, migration timestamptz UTC, vues client, cibles multi-agenda (`cibles_calendrier`), comptes_oauth multi-fournisseur, sync push Google ACTIVÉE EN RÉEL, iCloud CalDAV réel, lot 8 « Mes calendriers » (self-service connexion + gestion cibles). Outlook ABANDONNÉ (blocage tenant HEXARESO). 🟡 **SEUL RESTE = étage 3 : pull retour (Google/externe → BATILIS) + nettoyage 214 orphelins + sync/route.js refait.**
+> - **SOFT DELETE agente (30/06-01/07)** : désactiver au lieu de supprimer (résout le blocage FK). Nettoyage des comptes test.
+> - **TS — Travaux Supplémentaires COMPLET (01/07 + 09/07)** : TS-1 (cas AMO = re-ventilation, total inchangé) + TS-2 (cas courtage-only = échelonnement encaissement, lignes L1/L2). Écran + 3 PDF. Testé réel sur Jadras.
+> **Business** : droit de commercialiser BATILIS confirmé (juridique OK, pas de non-concurrence), statut auto-entrepreneur validé (comptable). 1er client en vue = illiCO travaux Rodez (présentation faite/OK, proposition financière à partir du 20/07, prix fixé avec conseillère le 15/07).
 ---
 
 ## 0. CADRE
@@ -108,11 +116,27 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
   - 3c : fonction atomique `onboarding_create_societe` + route `/api/onboarding/create-societe` + formulaire.
   - **Parcours testé E2E réel** : société « TEST 1 » créée de bout en bout, code agence auto, invitation consommée.
 - **Cloisonnement multi-société : VALIDÉ étanche bidirectionnel** (07/06). 2 sociétés réelles, RLS prouvée en base sur 22 tables (dont filles), 0 fuite dans les 2 sens.
+- **SPRINT 16-18/06 (finances + chantier + dossier de fin)** : refonte finances COMPLÈTE (4 onglets, 3 vues compte de résultat CA généré, royalties réel corrigées, objectif agente RLS), dossier de fin (factures + RIB/KBIS + ZIP photos + PV réception), comparateur de devis, fiche technique depuis chantier, statut staff CLOS (calcStatut v2 + CHECK strict), stepper 5 étapes, contrat auto-signé, CR IA fiabilisé, PDF CR assaini. Détail → journal (#199 à #257).
+- **✅ C7 — ESPACE CLIENT + RLS CLIENT — COMPLET (20-23/06)**. Vues SECURITY DEFINER scopées (mes_dossiers_client()), étanchéité inter-client prouvée. C7-1 devis acceptés, C7-3 PDF devis signé, C7-4 durcir CR (R1/R2/R3 + notes internes invisibles), C7-5 durcir messages (anti-usurpation + verrou colonnes). Détail → journal + §Reliquats.
+- **✅ MESSAGERIE — RÉACTIVÉE + POLISH — COMPLET (23/06)**. Messagerie centralisée remise en service multi-tenant (#267), fix timezone messages UTC→local (#268), feature édition de message 10 min (#269+#270), badge messages navbar (#271). + fix police PDF italic (#265).
+- **✅ ACCÈS CLIENT — CLÔTURÉ (24/06)**. Système complet : invitation (lien+mailto, #273), page /login-client brandée (#274), expiration d'accès 3 mois (colonnes + helper), application front+RLS (guard + bandeau J-21), désactivation J+14 (RPC + cron), réactivation. + fix emoji PDF CR (#272). Détail → §3-ter.
+- **✅ CALENDRIER — ÉTAGE 1 + ÉTAGE 2 DESCENDANT — COMPLET (24/06→01/07)**. Socle (scope tenant agenda, timestamptz UTC, vues client, created_by) + sync DESCENDANTE (BATILIS→externe) : cibles multi-agenda (`cibles_calendrier`), lots 1-5 Google, ACTIVATION RÉELLE Google, comptes_oauth multi-fournisseur, iCloud CalDAV réel, lot 8 « Mes calendriers ». Outlook ABANDONNÉ (blocage tenant HEXARESO). 🟡 SEUL RESTE = étage 3 (pull retour → BATILIS). Détail → §3-ter.
+- **✅ SOFT DELETE AGENTE — COMPLET (30/06-01/07, #300)**. Désactiver au lieu de supprimer (réversible), résout le blocage FK. Nettoyage comptes test. Détail → bloc A + §3-ter.
+- **✅ TS — TRAVAUX SUPPLÉMENTAIRES — COMPLET (01/07 #301 + 09/07 #302/#303)**. TS-1 (cas AMO = re-ventilation courtage→AMO, total inchangé) + TS-2 (cas courtage-only = échelonnement encaissement, lignes L1/L2). finance.js additif non-régression prouvée, écran + 3 PDF. Testé réel Jadras. Détail → §3-ter.
 
-### 🔜 RESTE À FAIRE
+### 🔜 RESTE À FAIRE — SYNTHÈSE (le détail par bloc suit plus bas)
+> **Rien ne bloque l'ouverture à un franchisé côté sécurité/fonctionnel.** Ce qui reste :
+> - 🟡 **Calendrier étage 3 (pull retour Google/externe → BATILIS)** + nettoyage 214 orphelins + sync/route.js refait — chantier dédié tête fraîche, ne bloque pas l'ouverture (le push descendant est fait et sûr).
+> - 🔵 **Chiffrement des tokens OAuth Google** en base (iCloud déjà chiffré AES-256-GCM) — dette, lot dédié.
+> - 🔵 **Dépendances externes** : leaked password protection (attend plan Pro Supabase), SMTP custom pour onboarding en volume.
+> - 🔵 **Pricing / gating quota** : architecture actée, MONTANTS non validés terrain (sondage 5-6 franchisés + décision downgrade) — voir §MODÈLE PRICING.
+> - 🟢 **Petits restes fonctionnels** : Messagerie AMO bug raison_sociale (si persiste), notif mail upload facture, réactivation Statistiques, idées futures. Voir bloc F.
+> - 🟢 **Business (hors code)** : proposition financière Rodez (dès 20/07), RDV comptable avant 1er encaissement, sondage prix.
 
-#### Bloc A — Sécurité — SOLDÉ (restants = dépendances externes / refonte calendrier)
-> La vraie surface d'attaque avant ouverture franchisé est fermée. Ce qui reste est soit bloqué par une dépendance (plan Pro), soit rattaché à la refonte calendrier dédiée, soit de l'hygiène cosmétique. Côté sécurité, l'ouverture à un franchisé est possible AVEC le garde-fou « pas de sync Google Calendar active » (cf. module calendrier ci-dessous).
+### 🔜 DÉTAIL PAR BLOC (historique + restes)
+
+#### Bloc A — Sécurité — SOLDÉ (restants = dépendances externes)
+> La vraie surface d'attaque avant ouverture franchisé est fermée. Ce qui reste est bloqué par une dépendance (plan Pro Supabase) ou de l'hygiène cosmétique. Le module calendrier a été REFAIT (étage 2 descendant, cibles multi-agenda + scope tenant + fix RLS confidentialité) → l'ancien garde-fou « pas de sync active » est LEVÉ pour le PUSH (Google + iCloud activés en réel). Seul l'étage 3 (pull) reste, mais il ne bloque pas l'ouverture (le push descendant est sûr et cloisonné).
 ##### ✅ Fait
 - [x] **🔴 Purge Storage à la suppression SOLDÉE** (10/06, mergé `219720e`, branche fix/storage-purge-entites). Carte d'audit : chantier déjà purgé correctement (cr/ inclus, ordre OK), client sans objet (aucun préfixe clients/, FK NO ACTION bloque). 2 vrais gaps corrigés : (1) agente DELETE purge kbis_url/rib_url/factures_agente — ORDRE CRITIQUE corrigé après bug : purge APRÈS deleteUser réussi (sinon fichiers détruits alors que l'agente survit si deleteUser échoue) ; (2) artisan delete balaie artisans/{id}/fiches/ (scopé id exact). Prouvé E2E : agente cas échec (KBIS survit à l'échec, ×2 sur TEST AI + Manon réelles), artisan purge=0 + témoin LS TRAVAUX=20 intact. Reste (fonctionnel, pas dette) : flux RGPD orchestré « effacer client + ses dossiers + fichiers » en 1 action → backlog.
 - [x] **Faille route /api/cr corrigée + PROUVÉE E2E** (10/06, mergé `fd2b2cd`). dossierId et docsPaths du body consommés en service_role sans contrôle → lecture cross-tenant + téléchargement arbitraire du bucket documents. Fix : appartenance reflétant la RLS (admin→societe_id, agente→agence_id), 404 uniforme ; docsPaths ceinture-bretelles (match exact Set contre chantier_documents du dossier + préfixe chantiers/{dossierId}/), 400 au 1er invalide. 8 tests E2E : T4 admin TEST1→dossier CTP 404 ; T5 uuid inexistant 404 corps IDENTIQUE (pas de fuite d'existence) ; T6 agente Marseille→dossier Montpellier 404 (amendement agence) ; T7/T8a/T8b/T9 paths hostiles 400 (T8b = bon préfixe absent table → match exact prouvé) ; contre-test positif Marie→son dossier Marseille 200.
@@ -125,13 +149,12 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **Surface ANON sur les TABLES soldée** (10/06). RLS active sur 25/25 tables, GRANT anon (défaut Supabase) neutralisé par la RLS. 24 tables sûres (policies TO authenticated → anon deny). 1 faille corrigée : policy INSERT notifications « Service role inserts notifications » était TO public WITH CHECK true (anon pouvait forger des notifs pour tout user_id) → re-scopée TO authenticated WITH CHECK (auth.uid()=user_id) via docs/sql/fix_notifications_insert_policy.sql. Prouvé : INSERT anon → 42501 RLS violation. service_role (cron) non affecté (bypass RLS). admin_invitations : 0 policy = deny total, voulu.
 - [x] **Policies Storage versionnées (#5)** ✅ (15/06, f06bb0, complété par #7). docs/sql/storage_policies.sql = source de vérité. NB : l'export #5 initial avait omis les 2 policies DELETE (réparé en #7 → fichier complet à 8). 5 anciens fichiers obsolètes supprimés. Cloisonnement tenant confirmé solide (pas de sécurité par obscurité).
 - [x] **Placeholder cross-société (#7)** ✅ (15/06, 0ee864c). Exemption .emptyFolderPlaceholder retirée des 6 policies Storage (scoping tenant désormais appliqué à tout chemin) — vérifié 8 policies a_exemption=false en base, T1 non-régression OK (lecture/upload/suppression docs intacts). Au passage : réparé l'omission #5 (storage_policies.sql avait 6/8 policies, les 2 DELETE manquaient → désormais complet à 8 sans exemption). Reste geste manuel cosmétique : supprimer le placeholder 0 octet via UI Storage (DELETE SQL bloqué par Supabase ; inerte car soumis au scoping normal).
+- [x] **🔴 Suppression agente impossible si google_tokens/comptes_oauth existe → RÉSOLU par SOFT DELETE** (30/06-01/07, mergé 69b2e39). Bug : 7 FK vers profiles en NO ACTION bloquaient auth.admin.deleteUser (« Database error deleting user »). Choix produit = SOFT DELETE (désactiver au lieu de supprimer) pour préserver l'attribution des dossiers + l'historique comptable. Colonne profiles.actif (NOT NULL DEFAULT true). Route /api/agente-statut (ban/unban Supabase Auth ban_duration '876000h'|'none' + update actif). auth-context fetchProfile déconnecte (signOut) une session dont actif=false (double blocage : ban = nouvelles connexions, signOut = session en cours). UI parametres>Équipe Désactiver/Réactiver + badge. Filtres : chantiers/clients → actif=true (assignation) ; parametres+finances → toutes (historique). Testé E2E. NB : fix FK hard-delete (6 FK→SET NULL, factures→CASCADE) appliqué prod AVANT comme filet de sécurité. Comptes test TEST AI + TEST 2 AGENTE ensuite supprimés (reste 3 vraies agentes : Anne-Lise, Manon, Marie). ⚠️ PIÈGE : le dashboard Supabase ne propage PAS bien les cascades SET NULL → pour un vrai hard delete futur (RGPD), script admin.deleteUser + vérif cascades, PAS le dashboard.
+- [x] **✅ Module calendrier REFAIT — quarantaine LEVÉE (24/06 → 01/07)**. L'ancien défaut structurel (CALENDAR_ID global mono-franchise) est corrigé : architecture CIBLES (`cibles_calendrier`, un RDV → un agenda précis via calendar_id + compte_oauth_id), scope tenant sur rendez_vous/interventions (RLS agence/société), comptes_oauth multi-fournisseur. Push (BATILIS → externe) : Google ACTIVÉ EN RÉEL + iCloud CalDAV réel. Le fix RLS confidentialité cibles (admin ne voit plus les cibles perso des agents) est appliqué. Les anciens garde-fous « ne pas activer la sync » sont donc LEVÉS pour le PUSH. 🟡 **RESTE = étage 3 (pull) seulement**, voir chantier calendrier ci-dessous.
+- [x] Policy UPDATE bucket photos — ABANDONNÉ 18/06 : le remplacement de photo n'est pas un besoin.
+
 ##### 🔶 Restants — bloqués par dépendance ou refonte (PAS des trous exploitables avant ouverture)
 - [ ] **Durcissements bloqués** : (c) leaked password protection → attend le plan Pro Supabase ; (d) captcha → optionnel. [(a) EXECUTE anon et (b) policy notifications INSERT : FAITS le 10/06, voir ci-dessus.]
-- [ ] **🔴 Suppression agente impossible si google_tokens existe** : FK google_tokens.user_id → auth.users en NO ACTION/RESTRICT → deleteUser échoue (« Database error deleting user ») pour toute agente ayant connecté Google. Touche les agentes RÉELLES (Manon, TEST AI sur TEST 1). À corriger AVEC la refonte calendrier : FK CASCADE ou purge google_tokens avant deleteUser. NB : TEST AI a perdu son KBIS au 1er test purge (avant correctif d'ordre).
-- [~] **🔶 Module calendrier Google EN QUARANTAINE** (push/sync/event) — décision 10/06 : NON patché isolément. Défaut structurel mono-franchise (CALENDAR_ID global hérité, jamais migré multi-agence/société), pas juste un contrôle d'appartenance manquant. Patcher route par route donnerait une fausse sécurité tant que l'agenda cible reste partagé. À traiter EN BLOC lors de la refonte calendrier multi-agence (chantier dédié).
-  - Failles à corriger DANS la refonte : push (mutation google_event_id sur id du body sans contrôle tenant, route.js:125-129/141-145/208-209) ; sync (SELECT non filtrés rendez_vous/interventions/dossiers → tous tenants, route.js:175-177/200-202/238-239 + writes google_*_event_id) ; event (event du body, appartenance à reverifier).
-  - 🔴 GARDE-FOU IMMÉDIAT : NE PAS activer la sync Google Calendar pour un franchisé réel tant que le module n'est pas refait. Aujourd'hui = tes comptes uniquement, fuite non exploitable par un tiers.
-- [x] Policy UPDATE bucket photos — ABANDONNÉ 18/06 : le remplacement de photo n'est pas un besoin.
 
 #### Bloc B — Multi-agence réel (chantier en cours, découpé en 5 lots)
 > **Principes verrouillés** : la « vue active » est un filtre d'AFFICHAGE (UX), PAS une frontière de sécurité — la RLS reste l'unique frontière (admin = toute sa société, il a le droit de tout voir). Défaut admin multi-agences = vue Consolidée (toutes agences). Agente = une seule agence, aucun sélecteur. **Garde-fou permanent** : une société à 1 agence (CTP/Marine) ne doit voir AUCUN changement à aucun lot. ⚠️ CTP reste mono-agence jusqu'à la fin du chantier ; le terrain de test multi-agence = société TEST 1 (2 agences : MA00 Marseille + MO00 Montpellier).
@@ -218,11 +241,11 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] **prenomAdmin maybeSingle** ✅ (15/06, 92c2ce5). .order('prenom').limit(1) → ne casse plus si 2 admins. RLS cloisonne (pas de filtre societe_id ajouté).
 - [x] **suiviAcompteAMO vestige mort** ✅ (15/06, 92c2ce5). Supprimé (0 usage).
 - [x] **Code mort** finance.js restants ✅ 16/06 (b4d7ae2)
+- [x] **L22 bug synchro Google Calendar (TDZ)** ✅ CORRIGÉ (lot 1 étage 2, feat/sync-tdz-fix bac38d7). Rename auth→oauthClient dans sync + event. Plus de plantage runtime. (Le fond « calendrier partagé entre agences » a été traité par la refonte étage 2 : cibles multi-agenda + scope tenant.)
 
 ##### A FAIRE
 - [ ] **#8 dashboard admin scope** (à arbitrer selon scénario testeur).
 - [ ] **L18 bug ajout intervention** : ⚠️ audit d'abord, STOP si lié à la sync Google Calendar.
-- [ ] **L22 bug synchro Google Calendar** : `Cannot access 'n' before initialization` (TDZ — `const auth` l.143 shadow l.128 dans `api/google/calendar/sync/route.js`). Fix : renommer le 2e `auth` en `oauthClient`. ⚠️ Lié au calendrier Google partagé entre agences (fuite multi-tenant à creuser).
 - [ ] **Messagerie AMO : aucun dossier affiché** : la page lit `clients.raison_sociale` (colonne cible jamais créée — cf. doc 02). Créer la colonne OU rebrancher la lecture. ⚠️ lié à la réactivation Messagerie (bloc F).
 
 #### Bloc E — Refonte UX vues finances SOLDÉ
@@ -288,19 +311,19 @@ Prévisionnel · Réel · Suivi financier · Facturation
 
 #### Bloc F — En dernier : réactiver modules neutralisés
 ##### A FAIRE
-- [ ] **Réactiver Messagerie + Statistiques** (code conservé à `3dbd6f1`). Adapter au multi-tenant (RLS agence messages, scope agence stats). + resserrer policy INSERT `notifications` ici.
 - [ ] **Notif mail upload facture** : agente upload F1 → mail admin ; admin upload → mail agente + redevance cochée des deux côtés ? À cadrer (déclencheur, destinataire, contenu).
-- [ ] **Automatisme cochage redevance** : statut « reçu » auto quand l'admin rentre sa facture du mois ? Lié à la notif ci-dessus.
 - [ ] **Intégration Google Drive** (piste future) : connecter les documents chantier à Drive. Carte retirée le 12/06 (bouton mort). À construire si besoin confirmé.
-- [ ] **Bouton « Connecter » générique mort** (paramètres l.708, sert Google Calendar) : à câbler/retirer DANS la refonte calendrier (module en quarantaine).
-- [ ] **Bug emoji ⚠️** mal rendu dans le PDF de CR téléchargé (carré/tofu). Origine à localiser : emoji en dur dans buildCRDocument OU dans contenu_final (généré IA/saisi). Distinct de C7-4 et du fix police italic. Police Roboto sans glyphes emoji. À auditer plus tard.
-- [ ] **Page login client brandée** (image, PAS sécurité) — séparer visuellement l'entrée client de l'entrée staff. Aujourd'hui /login unique + redirectByRole (fonctionne, aiguille client→espace-client / staff→dashboard). Souhait : page login à l'image illiCO, rassurante pour le particulier (logo, « Espace client »), distincte de la page technique staff. Même signInWithPassword derrière (cloisonnement porté par role+guards+RLS, pas par l'URL). Front pur, cosmétique, hors chemin critique.
-- [ ] **Feature édition de message (10 min)** — permettre à chacun de corriger son propre message dans les 10 min suivant l'envoi (faute d'orthographe). Concerne client ET staff symétriquement. Nécessite : UI bouton « modifier » (espace-client + chantiers/messagerie staff) + assouplir le trigger C7-5 (autoriser contenu si auteur_id=uid ET now()-created_at < 10min). Spec figée. NB : ajouter un edited_at si on veut afficher « modifié ».
-- [ ] **Bug affichage timezone** (dates en UTC non converties). La messagerie affiche created_at en UTC brut (ex : 16h45 au lieu de 18h45 en heure d'été FR = UTC+2). Donnée en base correcte (UTC), c'est l'AFFICHAGE front qui ne localise pas. Préexistant (pas lié au trigger C7-5). À corriger côté front (conversion UTC→local). ⚠️ Vérifier TOUS les endroits qui affichent des dates (messagerie, CR, dates dossier, PDF ?), pas seulement la messagerie. Lot front dédié. A VERIFIER DANS TOUTE L'APPLI
 - [ ] **Idées futures** : `artisans.metier` texte libre → liste depuis `specialites` + `artisans_specialites` ; IA lecture attestations décennales → spécialités auto.
 - [ ] **Chantiers : résumé en panneau latéral** sans quitter la liste.
 
 ##### ✅ FAIT
+- [x] **Réactiver Messagerie** ✅ FAIT (23/06). Messagerie centralisée remise en service, adaptée au multi-tenant (RLS agence). Polish + fix timezone + édition 10 min (voir bloc D). Statistiques : reste à réactiver si besoin (pas prioritaire tant qu'un seul franchisé). NB : si le bug « Messagerie AMO aucun dossier affiché » (clients.raison_sociale) persiste quelque part, le traiter à l'usage — la réactivation principale est faite.
+- [x] **Automatisme cochage redevance** ✅ FAIT. Statut « reçu » automatisé (lié à la saisie facture du mois).
+- [x] **Bouton « Connecter » générique (Google Calendar)** ✅ FAIT (traité dans le lot 8 « Mes calendriers » : l'écran self-service de connexion des comptes/cibles remplace l'ancien bouton mort).
+- [x] **Bug emoji ⚠️ dans le PDF de CR** ✅ FAIT (24/06). Emoji mal rendu (carré/tofu, Roboto sans glyphes emoji) corrigé. (+ fix police italic PDF au passage.)
+- [x] **Page login client brandée** ✅ FAIT (24/06, tranche T2 du chantier accès client, 9ddedf6). Page /login-client à l'image BATILIS/illiCO (« Espace client »), distincte de l'entrée staff. Même signInWithPassword derrière (cloisonnement porté par role+guards+RLS).
+- [x] **Feature édition de message (10 min)** ✅ FAIT (23/06). Chacun peut corriger son propre message dans les 10 min suivant l'envoi (client ET staff symétriquement). Trigger C7-5 assoupli (contenu mutable si auteur_id=uid ET now()-created_at < 10min) + UI bouton « modifier » + edited_at pour afficher « modifié ». Staff ne peut pas modifier un message client et inversement (verrou préservé).
+- [x] **Bug affichage timezone** ✅ FAIT (23/06). La messagerie affichait created_at en UTC brut → conversion UTC→local FR côté front. Donnée en base restée correcte (UTC). (Vérifier ponctuellement que d'autres écrans affichant des dates localisent bien — CR, dates dossier, PDF — si un cas UTC brut réapparaît.)
 - [x] Comparateur de devis dans les dossiers ✅ 17/06 (8faf611)
 - [x] KPIs page chantier : montant prévu + réel ✅ 17/06 (3401841)
 - [x] Restitution : factures artisans + RIB/KBIS franchisé ✅ 17/06 (6ef0cfd)
@@ -348,6 +371,42 @@ Reste hors staff : C7 espace-client + RLS client → BLOC ESPACE CLIENT dédié 
 
 ---
 
+## 3-ter. CHANTIERS 24/06 → 09/07 (post-C7) — état pour reprise
+
+### ✅ ACCÈS CLIENT — CLÔTURÉ 24/06 (5 tranches + fix sécu)
+> Parti d'une « page login cosmétique », devenu un système complet d'accès client : invitation, connexion brandée, expiration d'accès (3 mois après clôture), désactivation J+14, réactivation.
+- [x] T1 invitation client — bouton AMO-only sur fiche chantier, route invite-client (generateLink invite/recovery, sans envoi auto), mailto que le référent envoie de sa boîte (contourne blocage @illico). ✅ 203b48b
+- [x] T2 page /login-client brandée BATILIS. ✅ 9ddedf6
+- [x] T3 stockage expiration — colonnes date_cloture, acces_expire_le (base+3mois, base=date_fin_chantier sinon date_cloture), profiles.acces_actif. Stamp au « Marquer terminé ». Helper lib/expiration.js. ✅ 9a7f205
+- [x] T4 application front+RLS — guard espace-client (écran expiré + bandeau J-21) ; chokepoint mes_dossiers_client() + condition expiration ; 4 policies routées ; mon_expiration_client() pour la date. Étanchéité prouvée. ✅ 7d3e91
+- [x] T5 désactivation J+14 — RPC desactiver_acces_expires() (garde-fou multi-dossiers), cron bloc [8], écran réutilisé, réactivation au re-invite. ✅ f1e1a22
+- [x] Fix sécu : REVOKE anon sur les 2 fonctions DEFINER (grant Supabase par défaut). ✅ f1e1a22
+
+### ✅ CALENDRIER — étage 1 + étage 2 descendant COMPLETS (24/06 → 01/07)
+> Architecture 3 étages (décidée 24/06) : étage 1 = socle (scope tenant + timestamptz UTC + vues client) ✅ ; étage 2 = sync DESCENDANTE (BATILIS → agendas externes) ✅ ; étage 3 = retour bidirectionnel (pull) ⏳ SEUL RESTE. Archi BRIQUES (libs par fournisseur googleapis/tsdav + colle maison), PAS d'API unifiée payante. Conflit = LAST-WRITE-WINS.
+**ÉTAGE 1 (socle) — COMPLET 24/06** : scope tenant agenda (agence_id+societe_id sur rendez_vous/interventions + RLS + trigger agenda_derive_tenant, b3dbc2f — fuite inter-agences colmatée) ; date_heure → timestamptz UTC (edd3543, tout était en local Paris) ; vues client_rendez_vous + client_interventions (d188dd5+f9b571d) + front « Mon agenda » ; trigger dossier + sélecteur agence admin (06c67f6) ; created_by. date_heure_old conservé (filet, DROP plus tard).
+**ÉTAGE 2 (descendant) — COMPLET** :
+- Lot 1 fix TDZ (bac38d7). Lot 2 structure ciblage (`cibles_calendrier` agence XOR perso, 0557fdd) + seed cible Martigues + rétro-mapping 260 RDV/9 interv. Lot 3 sélecteurs cible+agence front. Lot 4 bascule push sur les cibles + scoping tenant (feat/sync-push-bascule) + retrait bouton « Synchroniser » → indicateur passif. Lot 5 lib unique app/lib/calendar/google.js + nettoyage summaries + bascule event/route.js sur les cibles (fix/calendar-lib-5a).
+- **ACTIVATION RÉELLE Google (29/06)** : dry-run retiré, testé sur calendrier partagé Martigues (INSERT/UPDATE/DELETE). GOOGLE_CALENDAR_ID supprimé de Vercel (résidu mort).
+- Lot 6a comptes_oauth (ex-google_tokens renommé, multi-fournisseur google/outlook/icloud, UNIQUE (user_id, fournisseur), d5da4a8). Lot 6b iCloud CalDAV RÉEL (crypto.js AES-256-GCM + icloud.js tsdav/ICS, testé create/update/delete, 7ec328a). 7-mapping (mapping.js partagé Google+iCloud).
+- **Lot 8 « Mes calendriers » COMPLET (mergé f368318)** : écran self-service (composant partagé MesCalendriers.jsx) pour connecter comptes OAuth/iCloud + gérer cibles sans toucher la base. Placement role-aware (agente → /profil ; admin → /parametres>Intégrations). Badge multi-fournisseur, connexion/déconnexion iCloud, création/suppression cibles, cible par défaut (profiles.cible_calendrier_defaut_id), libellé éditable (cibles.agenda_nom). 🔴 FIX RLS CONFIDENTIALITÉ appliqué (admin voyait les cibles PERSO des agents → gaté sur agence_id IS NOT NULL).
+- **OUTLOOK ABANDONNÉ (29/06)** : blocage organisationnel (compte @illico-travaux.com = tenant HEXARESO non contrôlé bloque le consentement app externe ; perso outlook.com sans tenant Azure refuse la création d'app). Mapping + dispatch prêts si tenant Azure dispo.
+**🟡 ÉTAGE 3 (retour bidirectionnel) — SEUL RESTE (gros chantier, pas commencé)** :
+- Pull/import calendriers externes → BATILIS refait en UTC propre.
+- Nettoyage des 214 orphelins (impossible avant : la sync les réimporterait).
+- sync/route.js refait (unifier les copies divergentes sur mapping.js).
+- Dette : tokens OAuth Google en CLAIR en base (iCloud chiffré AES-256-GCM, Google non → à chiffrer, lot dédié). Backup _backup_rdv_autres_titre_20260526 à DROP quand sûr. date_heure_old à DROP.
+
+### ✅ SOFT DELETE AGENTE + nettoyage comptes test (30/06-01/07)
+Voir bloc A ci-dessus (item détaillé). Désactiver au lieu de supprimer, réversible, résout le blocage FK. 3 vraies agentes restantes.
+
+### ✅ TS — TRAVAUX SUPPLÉMENTAIRES (finance.js) — COMPLET (01/07 + 09/07)
+Règle (validée Marine) : devis dont `devis_artisans.date_signature > pivot` = TS. **Pivot** = `suivi_financier.date_paiement` de la ligne `honoraires_courtage` réglée. date_signature du DEVIS (pas du contrat). Seuls devis signés comptent. Comparaison STRICTE. Pas de pivot → aucun TS.
+- **TS-1 — cas AMO** (mergé 227622f) = RE-VENTILATION, total INCHANGÉ : le courtage des devis TS bascule en AMO. finance.js additif (getPivotCourtage, sousTotalApresPivot, honorairesCore + {totalHTApres, totalTTCApres} défaut 0 = non-régression prouvée) + plumbing suiviFinancier → 3 PDF. Testé réel Jadras (courtage 8090,09→7664,26, total 17528,53 inchangé).
+- **TS-2 — cas courtage-only** (mergé 52f181e + 4db5941, socle SQL appliqué) = ÉCHELONNEMENT de l'encaissement (pas un supplément au total). Total courtage = base × taux INCHANGÉ, ventilé en « courtage initial » (hors TS) + lignes « courtage TS » (type_echeance='honoraires_courtage_ts', cochables). Mécanique L1/L2 : un TS s'ajoute à la dernière ligne TS non-payée (recompute idempotent) sinon nouvelle ligne ; une ligne payée est close. RPC suivi_courtage_ts_upsert. Index unique partiel relâché pour ce type. Déclenchement AUTO à la signature (2 handlers). finance.js calculateCourtageTS (additif, non-régression prouvée). Garde-fou : dé-cochage du courtage initial bloqué tant qu'il y a des TS (sinon perte du pivot). Écran + 3 PDF (Suivi/Dossier avec statut, Recap sans). Testé réel, total identique. → **Feature TS COMPLÈTE.**
+
+---
+
 ## 4. CONVENTIONS & RÉFÉRENCES TECHNIQUES
 
 ### Stack & identifiants
@@ -361,8 +420,9 @@ Reste hors staff : C7 espace-client + RLS client → BLOC ESPACE CLIENT dédié 
 - Compte onboarding test : `anne-lise.caillet@epfedu.fr` (exception STAFF_EMAIL_EXCEPTIONS).
 - Exceptions domaine staff : `anne-lise.caillet@outlook.com,anne-lise.caillet@epfedu.fr` (définies dans Vercel Prod+Preview).
 
-### Tables (22 métier)
-artisans (société-wide), artisans_specialites, chantier_documents, chantier_fiches_techniques, clients, comptes_rendus, devis_artisans, dossiers, factures_agente, factures_artisans, fiches_techniques, google_tokens, interventions_artisans, messages, notifications, objectifs_ca, photos, profiles, redevances, rendez_vous, specialites, suivi_financier. + `admin_invitations` (onboarding, service_role-only). + `societes`, `agences`.
+### Tables (métier)
+artisans (société-wide), artisans_specialites, chantier_documents, chantier_fiches_techniques, clients, comptes_rendus, devis_artisans, dossiers, factures_agente, factures_artisans, fiches_techniques, **comptes_oauth** (ex-google_tokens, renommé lot 6a : multi-fournisseur google/outlook/icloud, UNIQUE (user_id, fournisseur)), interventions_artisans, messages, notifications, objectifs_ca, photos, profiles, redevances, rendez_vous, specialites, suivi_financier. + `admin_invitations` (onboarding, service_role-only). + `societes`, `agences`. + **`cibles_calendrier`** (calendrier étage 2 : un RDV → une cible = agenda externe précis, calendar_id + compte_oauth_id + agenda_nom, agence XOR perso). + `comparateur_simulations`, `comparateur_lignes`.
+Colonnes ajoutées notables : `profiles.actif` (soft delete agente), `profiles.acces_actif` + `profiles.cible_calendrier_defaut_id`, `dossiers.date_cloture` + `acces_expire_le`, `devis_artisans.pv_path`, `rendez_vous/interventions.cible_id` + `agence_id`/`societe_id`, `messages.edited_at`. `suivi_financier.type_echeance` inclut `honoraires_courtage_ts` (TS-2). RPC ajoutées : `suivi_courtage_ts_upsert`, `desactiver_acces_expires`, `mon_expiration_client`, `mes_dossiers_client`.
 
 ### Leçons clés
 - **SQL editor Supabase tourne en `authenticated` par défaut** → `RESET ROLE;` en tête de chaque bloc privilégié (DDL, tables protégées, REVOKE/GRANT, fonctions service_role-only).
@@ -382,7 +442,7 @@ artisans (société-wide), artisans_specialites, chantier_documents, chantier_fi
 
 ---
 
-## MODÈLE PRICING & QUOTAS — architecture actée (10/06), montants en hypothèse à valider
+## MODÈLE PRICING & QUOTAS — architecture actée (10/06), montants en hypothèse à valider. VU AVEC UN EXPERT. CA CONCERNE UN EXPERT MAINTENANT;
 
 ### Décision d'enforcement (ACTÉE, à coder — étape 1)
 Gating par QUOTA, pas par autorisation manuelle. Le franchisé crée librement DANS son quota (autonome, Anne-Lise hors boucle) ; au-delà → refus + message d'upgrade. Ne JAMAIS reproduire « contactez Anne-Lise » (goulot manuel, ne facture/trace rien).
@@ -406,8 +466,8 @@ Gating par QUOTA, pas par autorisation manuelle. Le franchisé crée librement D
 - [x] ANCRE : logiciel franchise = 150€/AGENTE/mois, COÛT SUBI obligatoire (franchisé → illiCO France). BATILIS = outil CHOISI, préféré, à 1/3 du prix → forte élasticité, comparaison mentale = 150€ pas 0.
 - [x] Marché : ~150 franchisés, cible réaliste ~50.
 - [x] Coût de revient CALCULÉ : API Claude (Haiku, ~0,014$/CR × 30 CR/mois) ≈ 0,40€/agente/mois. Infra (Supabase + Vercel) FIXE partagée, ~3-4€/franchisé à 50. Marge brute ~96-98%. Le prix N'EST PAS contraint par les coûts — vrai coût limitant = TEMPS d'Anne-Lise (support solo). Le prix doit financer la délégation.
-- [ ] 🔴 SONDER 5-6 franchisés favorables avec prix CONCRET (« 60€/agence + 50€/agente, soit ~210€ pour ton agence type — OK ? »). Seul vrai inconnu restant. Teste aussi l'INTENTION D'ACHAT (≠ préférence produit). À faire avant de figer.
-- [ ] 🔴 RDV COMPTABLE (prérequis bloquant) : passage en société, seuil micro, impact ARE, TVA, SASU/EURL, salaire vs dividendes.
+- [x] SONDER 5-6 franchisés favorables avec prix CONCRET (« 60€/agence + 50€/agente, soit ~210€ pour ton agence type — OK ? »). Seul vrai inconnu restant. Teste aussi l'INTENTION D'ACHAT (≠ préférence produit). À faire avant de figer.
+- [x] RDV COMPTABLE (prérequis bloquant) : passage en société, seuil micro, impact ARE, TVA, SASU/EURL, salaire vs dividendes.
 
 ### Prévisionnel chiffré (10/06) — grille 60/50, trajectoire 5→50 sur 2 ans
 - CA état stable : 5 clients 14,5k€ | 10 : 29k€ | 25 : 72,6k€ | 50 : 145k€/an.
@@ -417,5 +477,5 @@ Gating par QUOTA, pas par autorisation manuelle. Le franchisé crée librement D
 - ⚠️ TRAVERSÉE : 5→~20 clients (An1) ne couvre PAS un salaire plein → garder AMO en parallèle / réserves jusqu'à ~25-30 clients. ~18 mois avant que ça nourrisse.
 - ⚠️ PLAFOND SUPPORT SOLO ~20-25 clients : embaucher (résultat An2 le permet) ou plafonner. Ne pas descendre le socle sous 60€/agence ni l'agente sous 50€.
 
-> NON dans ce top  (et pourquoi) : gating quota (bloqué par décision downgrade + RDV comptable, ne pas figer une grille hypothétique) ; L18/L22 + google_tokens + refonte calendrier (module en quarantaine, chantier dédié) ; optimisation BDD advisor (dette d'échelle, inutile au volume actuel).
+> NON dans ce top (et pourquoi) : gating quota (bloqué par décision downgrade + RDV comptable, ne pas figer une grille hypothétique) ; calendrier étage 3 (pull retour → BATILIS + nettoyage 214 orphelins, chantier dédié tête fraîche — l'étage 2 descendant EST fait) + chiffrement tokens Google ; optimisation BDD advisor (dette d'échelle, inutile au volume actuel).
 > Hors-code prioritaires (rappel) : 🔴 RDV comptable, 🔴 sondage prix terrain.
