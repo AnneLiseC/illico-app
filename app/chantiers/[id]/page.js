@@ -149,22 +149,30 @@ function LieuPicker({ value, onChange }) {
   )
 }
 
-function EcheanceRow({ label, sub, statut, date, variant, onToggle, fmtDateFn }) {
+function EcheanceRow({ label, sub, statut, date, variant, onToggle, fmtDateFn, lock, lockMsg }) {
   const isRegle = statut === 'regle' || statut === 'recu'
   const isIllico = variant === 'illico'
+  // lock : case verrouillée (dé-cochage interdit). onToggle reste ignoré tant que lock=true.
+  const canClick = Boolean(onToggle) && !lock
   return (
     <div style={{
       display:'grid', gridTemplateColumns:'auto 1fr auto auto', gap:14, alignItems:'center',
       padding:'10px 14px', borderRadius:10, border:'1px solid var(--ink-200)',
       background: isRegle ? 'rgba(22,163,74,0.05)' : '#fff',
     }}>
-      <label style={{display:'flex', alignItems:'center', gap:8, cursor: onToggle ? 'pointer' : 'default'}}>
-        <input type="checkbox" checked={isRegle} onChange={() => onToggle && onToggle()} readOnly={!onToggle}
-          style={{accentColor: isIllico ? '#6366f1' : 'var(--brand-500)', width:18, height:18, cursor: onToggle ? 'pointer' : 'default'}} />
+      <label title={lock ? lockMsg : undefined}
+        style={{display:'flex', alignItems:'center', gap:8, cursor: canClick ? 'pointer' : (lock ? 'not-allowed' : 'default')}}>
+        <input type="checkbox" checked={isRegle} onChange={() => { if (lock) return; onToggle && onToggle() }} readOnly={!canClick}
+          style={{accentColor: isIllico ? '#6366f1' : 'var(--brand-500)', width:18, height:18, cursor: canClick ? 'pointer' : (lock ? 'not-allowed' : 'default')}} />
       </label>
       <div style={{minWidth:0}}>
         <div style={{fontSize:13, fontWeight:600, color: isIllico ? '#4f46e5' : 'var(--ink-900)'}}>{label}</div>
         <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{sub}</div>
+        {lock && lockMsg && (
+          <div style={{fontSize:11, color:'#b45309', marginTop:3, display:'flex', gap:4, alignItems:'flex-start'}}>
+            <span aria-hidden="true">🔒</span><span>{lockMsg}</span>
+          </div>
+        )}
       </div>
       <div style={{textAlign:'right', minWidth:80}}>
         {isRegle
@@ -3896,6 +3904,8 @@ export default function FicheChantier({ params }) {
                       majSuiviChantier('honoraires_courtage', courtageTS.courtageInitialTtc, newStatut)
                     }}
                     fmtDateFn={fmtD}
+                    lock={suiviCourtage?.statut_client === 'regle' && suiviCourtageTS.length > 0}
+                    lockMsg="Le courtage initial ne peut pas être décoché tant qu'il existe des travaux supplémentaires (cela supprimerait la date de référence des TS). Supprimez d'abord les lignes TS."
                   />
                   {suiviCourtageTS.map((l, i) => (
                     <EcheanceRow
