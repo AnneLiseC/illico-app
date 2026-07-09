@@ -7,7 +7,7 @@ import { formatNomClient } from '../../lib/clients'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement, detecterCategorie } from '../../lib/dossiers'
-import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
 import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
@@ -1567,6 +1567,32 @@ export default function FicheChantier({ params }) {
     return `${a}-${m.padStart(2,'0')}-${j.padStart(2,'0')}`
   }
 
+  // TS-2 (courtage-only) : après signature d'un devis APRÈS le pivot, (re)calculer
+  // le montant de la ligne courtage TS NON-PAYÉE via RECOMPUTE (idempotent : total TS
+  // dû − TS déjà réglés). Recharge devis + suivi frais pour éviter tout état périmé.
+  // Ne fait rien hors courtage / sans pivot. montant <= 0 → la RPC supprime la ligne vide.
+  const declencherCourtageTS = async () => {
+    if (dossier?.typologie !== 'courtage') return
+    const [{ data: devisFrais }, { data: suiviFrais }] = await Promise.all([
+      supabase.from('devis_artisans').select('*').eq('dossier_id', id),
+      supabase.from('suivi_financier').select('*').eq('dossier_id', id),
+    ])
+    const dossierCalc = { ...dossier, devis_artisans: devisFrais || [], suivi_financier: suiviFrais || [] }
+    if (!getPivotCourtage(dossierCalc)) return
+    const { montantTSttc } = calculateCourtageTS(dossierCalc)
+    const dejaRegle = (suiviFrais || [])
+      .filter(s => s.type_echeance === 'honoraires_courtage_ts' && s.statut_client === 'regle')
+      .reduce((sum, s) => sum + Number(s.montant_ttc || 0), 0)
+    const montantLigneNonPayee = Math.round((montantTSttc - dejaRegle + Number.EPSILON) * 100) / 100
+    const { error } = await supabase.rpc('suivi_courtage_ts_upsert', {
+      p_dossier_id: id,
+      p_montant: montantLigneNonPayee,
+    })
+    if (error) { setErreur('Erreur TS courtage : ' + error.message); return }
+    const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(data || [])
+  }
+
   const changerStatutDevis = async (devisId, statut) => {
     let error
     if (statut === 'accepte') {
@@ -1587,6 +1613,8 @@ export default function FicheChantier({ params }) {
     // désormais des devis (cascade v2). La colonne ne porte que les overrides
     // manuels (NULL/annule/termine). Persister le calculé la re-périmerait.
     await chargerDevis()
+    // TS-2 : une signature (statut 'accepte' + date_signature) peut créer un TS courtage.
+    if (statut === 'accepte') await declencherCourtageTS()
   }
 
   const supprimerDevis = async (devisId) => {
@@ -1622,6 +1650,8 @@ export default function FicheChantier({ params }) {
         }
       }
       await chargerDevis()
+      // TS-2 : l'upload d'un devis signé pose date_signature → peut créer un TS courtage.
+      if (statutOk) await declencherCourtageTS()
       if (statutOk) setSucces('Devis signé uploadé ✓')
       else setErreur('Devis signé enregistré, mais le statut n\'a pas pu être mis à jour — réessayez.')
     } else { setErreur('Erreur upload : ' + error.message) }
@@ -2012,6 +2042,13 @@ export default function FicheChantier({ params }) {
   const honorairesAMOPrev      = finDossier.honorairesPrevi.courtage.ttc + finDossier.honorairesPrevi.soldeAmo.ttc
   const suiviCourtage = suiviFinancier.find(s => s.type_echeance === 'honoraires_courtage')
   const suiviSoldeAMO = suiviFinancier.find(s => s.type_echeance === 'solde_amo')
+  // TS-2 (courtage-only) : lignes d'encaissement du courtage supplémentaire (L1, L2…),
+  // ordonnées par ancienneté. courtageTS ventile le total (base × taux, INCHANGÉ) en
+  // initial (hors TS) + TS. Renvoie des zéros hors courtage → aucun impact AMO.
+  const suiviCourtageTS = suiviFinancier
+    .filter(s => s.type_echeance === 'honoraires_courtage_ts')
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+  const courtageTS = calculateCourtageTS({ ...dossier, devis_artisans: devis })
   // Statut frais = dossiers.frais_statut (source unique) ; date = ligne frais_consultation si réglé.
   const suiviFrais = suiviFinancier.find(s => s.type_echeance === 'frais_consultation')
 
@@ -2145,6 +2182,20 @@ export default function FicheChantier({ params }) {
       p_today: today,
     })
     if (error) setErreur('Erreur : ' + error.message)
+    const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(data || [])
+  }
+
+  // TS-2 : marquer une ligne courtage TS payée/non-payée PAR ID (jamais via
+  // suivi_toggle_honoraires, qui fige le montant à l'INSERT). Une ligne réglée est
+  // close ; la décocher la rouvre (redevient absorbable par le recompute au prochain TS).
+  const setCourtageTSPaye = async (ligne, paye) => {
+    const today = new Date().toISOString().slice(0, 10)
+    const payload = paye
+      ? { statut_client: 'regle', date_paiement: today }
+      : { statut_client: 'en_attente', date_paiement: null }
+    const { error } = await supabase.from('suivi_financier').update(payload).eq('id', ligne.id)
+    if (error) { setErreur('Erreur : ' + error.message); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -3816,8 +3867,8 @@ export default function FicheChantier({ params }) {
                 )
               })}
 
-              {/* Honoraires courtage (toujours pour courtage/amo) */}
-              {['courtage', 'amo'].includes(dossier.typologie) && (
+              {/* Honoraires courtage — AMO, ou courtage SANS travaux supplémentaires (inchangé) */}
+              {(dossier.typologie === 'amo' || (dossier.typologie === 'courtage' && suiviCourtageTS.length === 0)) && (
                 <EcheanceRow
                   label="Honoraires courtage"
                   sub={`${tauxCourtagePct}% travaux HT · ${fmt(honorairesCourtagePrev)}`}
@@ -3829,6 +3880,39 @@ export default function FicheChantier({ params }) {
                   }}
                   fmtDateFn={fmtD}
                 />
+              )}
+
+              {/* Courtage AVEC travaux supplémentaires : initial (hors TS) + 1 ligne par TS + total.
+                  Total = base complète × taux INCHANGÉ, seulement ventilé. */}
+              {dossier.typologie === 'courtage' && suiviCourtageTS.length > 0 && (
+                <>
+                  <EcheanceRow
+                    label="Honoraires courtage — initial"
+                    sub={`${tauxCourtagePct}% travaux HT (hors TS) · ${fmt(courtageTS.courtageInitialTtc)}`}
+                    statut={suiviCourtage?.statut_client || 'en_attente'}
+                    date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || null}
+                    onToggle={() => {
+                      const newStatut = suiviCourtage?.statut_client === 'regle' ? 'en_attente' : 'regle'
+                      majSuiviChantier('honoraires_courtage', courtageTS.courtageInitialTtc, newStatut)
+                    }}
+                    fmtDateFn={fmtD}
+                  />
+                  {suiviCourtageTS.map((l, i) => (
+                    <EcheanceRow
+                      key={l.id}
+                      label={`Courtage — travaux supplémentaires${suiviCourtageTS.length > 1 ? ` (TS ${i + 1})` : ''}`}
+                      sub={`${tauxCourtagePct}% travaux HT · ${fmt(Number(l.montant_ttc || 0))}`}
+                      statut={l.statut_client === 'regle' ? 'regle' : 'en_attente'}
+                      date={(l.statut_client === 'regle' && l.date_paiement) || null}
+                      onToggle={() => setCourtageTSPaye(l, l.statut_client !== 'regle')}
+                      fmtDateFn={fmtD}
+                    />
+                  ))}
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', padding:'6px 14px', fontSize:12.5}}>
+                    <span style={{color:'var(--ink-500)', fontWeight:600}}>Total courtage (initial + TS)</span>
+                    <span className="tnum" style={{color:'var(--ink-900)', fontWeight:800}}>{fmt(courtageTS.courtageTotalTtc)}</span>
+                  </div>
+                </>
               )}
 
               {/* Honoraires AMO solde (typologie AMO uniquement) */}
