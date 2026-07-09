@@ -13,7 +13,7 @@
 | 28/05 | **L17 Durcissements (vérifiés/dégonflés)** | ✅ traité |
 | 28/05 | **PHASE 1 COMPLÈTE** | ✅✅ |
 | 28/05 | Phase 2 — SQL versionnés `docs/sql/MT1-MT4` (commit `f905c2b`) | ✅ |
-| 28/05 | **L1 — MT1 tables societes/agences créées + RLS fermée** | ✅ appliqué main |
+| 28/05 | **L1 — MT1 tables societes/agences créées + RLS fermée** | ✅ appliqué main | 
 | 28/05 | **L2 — MT2 seed CTP+Martigues + colonnes nullable** | ✅ appliqué main |
 | 28/05 | **L3 — MT3 backfill 102 lignes + NOT NULL** | ✅ appliqué main |
 | 28/05 | **L4 — MT4 helpers + REVOKE anon/PUBLIC** | ✅ appliqué main |

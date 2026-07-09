@@ -196,7 +196,7 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 - [x] Légende « mois d'activité » sur grille redevances (lève l'ambiguïté vs mois de facture du tableau F1/F2) ✅ 18/06 (cafe6dd)
 - [x] Label F1 « courtage + AMO » → « Honoraires » ✅ 18/06 (cafe6dd)
 - [x] Convention d'affichage asymétrique commissions/honoraires homogénéisée ✅ 18/06 (386ce8b) — colonne Honoraires (brut) ajoutée au tableau Réel/Prévi, Net inchangé.
-- [x] Fiabilité génération CR (IA) ✅ 18/06 (fix/cr-join-notes, 3 lots) — mots collés corrigés (join '' → '\n\n', cause des « lansuite » = bug code, pas l'IA) ; numérotation retirée (CR = type+date) ; consigne orthographe (corrige la prose, préserve les noms propres) + temperature 0.3.  Lot 1 ✅ mots collés (join → \n\n, 1b00cbd). Lot 2 ✅ retrait numérotation (CR = type+date). Reste : Lot 3 consigne orthographe + temperature 0.3. ✅ 18/06 (bde261b)
+- [x] Fiabilité génération CR (IA) ✅ 18/06 (fix/cr-join-notes, 3 lots) — mots collés corrigés (join '' → '\n\n', cause des « lansuite » = bug code, pas l'IA) ; numérotation retirée (CR = type+date) ; consigne orthographe (corrige la prose, préserve les noms propres) + temperature 0.3.  Lot 1 ✅ mots collés (join → \n\n, 1b00cbd). Lot 2 ✅ retrait numérotation (CR = type+date). Reste : Lot 3 consigne orthographe + temperature 0.3. ✅ 18/06 (bde261b) 
 - [x] Accent prénom client (Jerome/Jérôme) ✅ 18/06 (abda085) — source de vérité = clients.prenom (fiche client). Le CR la lit déjà verbatim ; l'IA la ré-accentuait → consigne prompt étendue (nom+prénom client protégés). Probabiliste ; post-traitement déterministe seulement si récidive.
 
 ##### A FAIRE
