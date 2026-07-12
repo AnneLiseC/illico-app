@@ -88,13 +88,24 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
     .from('cible_sync_state').select('sync_token').eq('cible_id', cibleRow.id).maybeSingle()
   const syncToken = state?.sync_token || null
 
-  // Index des RDV de CETTE cible : google_event_id -> [ids] (réappariement + ambiguïté).
-  const { data: rdvRows } = await supabaseAdmin
-    .from('rendez_vous').select('id, google_event_id')
-    .eq('cible_id', cibleRow.id).not('google_event_id', 'is', null)
+  // Index COMPLET des RDV de CETTE cible : google_event_id -> [ids] (réappariement + ambiguïté).
+  // ⚠️ Pagination OBLIGATOIRE : sans .range(), la requête est plafonnée à la limite par
+  // défaut Supabase (~1000 lignes). Une cible dépassant ce seuil voyait son index tronqué
+  // -> matches ratés au-delà (cancelled non supprimés) ET re-insert des inconnus en doublon.
+  // .order('id') = pagination stable.
   const byGid = new Map()
-  for (const r of rdvRows || []) {
-    const arr = byGid.get(r.google_event_id) || []; arr.push(r.id); byGid.set(r.google_event_id, arr)
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    const { data: rows, error } = await supabaseAdmin
+      .from('rendez_vous').select('id, google_event_id')
+      .eq('cible_id', cibleRow.id).not('google_event_id', 'is', null)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error || !rows || rows.length === 0) break
+    for (const r of rows) {
+      const arr = byGid.get(r.google_event_id) || []; arr.push(r.id); byGid.set(r.google_event_id, arr)
+    }
+    if (rows.length < PAGE) break
   }
 
   const classify = (evt) => {
