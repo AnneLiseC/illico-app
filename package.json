@@ -23,6 +23,7 @@
     "claude": "^0.1.1",
     "googleapis": "^171.4.0",
     "ical-generator": "^11.0.0",
+    "ical.js": "^2.1.0",
     "jszip": "^3.10.1",
     "luxon": "^3.7.2",
     "next": "16.2.0",

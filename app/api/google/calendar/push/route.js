@@ -96,7 +96,11 @@ export async function POST(request) {
         contexte: { type: 'rdv', itemId: id },
       })
       if (result.action === 'inserted' && !result.dryRun && result.id) {
-        await supabaseAdmin.from('rendez_vous').update({ google_event_id: result.id }).eq('id', id)
+        // google_event_id = id externe générique (eventId Google OU URL CalDAV iCloud).
+        // google_etag stocké seulement si le handle le fournit (iCloud, B9-3) — anti-écho pull.
+        const patch = { google_event_id: result.id }
+        if (result.etag) patch.google_etag = result.etag
+        await supabaseAdmin.from('rendez_vous').update(patch).eq('id', id)
       }
     }
 

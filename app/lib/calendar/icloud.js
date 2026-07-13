@@ -162,24 +162,30 @@ export function makeICloudClientHandle(client, cible) {
     compteOauthId: cible.compte_oauth_id,
 
     // eventBody = chaîne ICS. externalId = URL de l'objet CalDAV (ou null = create).
+    // Renvoie aussi l'ETag CalDAV courant (B9-3, anti-écho pull) : re-GET après écriture
+    // (l'ETag change à chaque PUT). null si indisponible → le pull backfillera l'etag.
     upsert: async ({ eventBody, externalId, contexte }) => {
       if (DRY_RUN) {
         logDryRun(externalId ? 'update' : 'insert', externalId, contexte)
-        return { action: externalId ? 'updated' : 'inserted', id: externalId, dryRun: true }
+        return { action: externalId ? 'updated' : 'inserted', id: externalId, etag: null, dryRun: true }
+      }
+      const readEtag = async (objUrl) => {
+        try { const [o] = await client.fetchCalendarObjects({ calendar, objectUrls: [objUrl] }); return o?.etag || null }
+        catch { return null }
       }
       if (externalId) {
         // update : re-GET de l'ETag courant (jamais stocké) puis remplacement.
         const [obj] = await client.fetchCalendarObjects({ calendar, objectUrls: [externalId] })
         if (obj) {
           await client.updateCalendarObject({ calendarObject: { url: externalId, data: eventBody, etag: obj.etag } })
-          return { action: 'updated', id: externalId, dryRun: false }
+          return { action: 'updated', id: externalId, etag: await readEtag(externalId), dryRun: false }
         }
         // objet disparu côté iCloud → on recrée (fall-through vers le create).
       }
       const filename = `${extractUID(eventBody)}.ics`
       const url = new URL(filename, ensureSlash(cible.calendar_id)).href
       await client.createCalendarObject({ calendar, filename, iCalString: eventBody })
-      return { action: 'inserted', id: url, dryRun: false }
+      return { action: 'inserted', id: url, etag: await readEtag(url), dryRun: false }
     },
 
     delete: async ({ externalId, contexte }) => {
