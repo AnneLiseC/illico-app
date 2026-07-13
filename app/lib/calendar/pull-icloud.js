@@ -102,6 +102,14 @@ async function readICloudChanges(client, calendarUrl, syncToken) {
     collection: { url: calendarUrl, syncToken: syncToken || undefined, objects: [] },
     method: 'webdav', syncLevel: 1, detailedResult: true,
   })
+  // ⚠️ LOGS DIAGNOSTIC TEMPORAIRES (B9-4) — à retirer une fois la shape confirmée.
+  const objs = synced?.objects
+  const shape = Array.isArray(objs) ? `array(${objs.length})` : (objs && typeof objs === 'object' ? `obj{${Object.keys(objs).join(',')}}` : typeof objs)
+  console.log('[icloud-diag] url=', calendarUrl, 'syncTokenIn=', !!syncToken, 'synced.keys=', Object.keys(synced || {}), 'objects.shape=', shape, 'nextToken=', !!synced?.syncToken)
+  const flat = Array.isArray(objs) ? objs : [...(objs?.created || []), ...(objs?.updated || [])]
+  console.log('[icloud-diag] nb objets (array|created+updated) =', flat.length, '| deleted =', (Array.isArray(objs) ? 0 : (objs?.deleted || []).length))
+  if (flat[0]) console.log('[icloud-diag] 1er objet keys=', Object.keys(flat[0]), 'url=', flat[0].url, 'etag=', flat[0].etag, 'data_len=', (flat[0].data || '').length, 'data_head=', JSON.stringify((flat[0].data || '').slice(0, 90)))
+
   const o = synced?.objects || {}
   const changed = [...(o.created || []), ...(o.updated || [])]
     .filter((x) => x && x.data).map((x) => ({ url: x.url, etag: x.etag, data: x.data }))
@@ -168,6 +176,13 @@ export async function applyPullCibleICloud(cibleRow) {
     report.erreur = err?.message || String(err)
     return engine.applyActions(cibleRow, { report, actions, nextSyncToken: null, syncFloor, status: 'error' }, writer)
   }
+
+  // ⚠️ LOG DIAGNOSTIC TEMPORAIRE (B9-4) — compteurs après classification.
+  console.log('[icloud-diag] compteurs=', JSON.stringify({
+    mode: report.mode, events_lus: report.events_lus, ignores_plancher: report.ignores_plancher,
+    inconnus: report.inconnus, reconnus: report.reconnus, cancelled: report.cancelled,
+    sync_floor: syncFloor, exemples_utc: report.exemples_utc,
+  }))
 
   return engine.applyActions(cibleRow, { report, actions, nextSyncToken: nextToken, syncFloor, status: 'ok' }, writer)
 }
