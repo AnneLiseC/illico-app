@@ -1,15 +1,15 @@
 // app/api/cron/pull-google-recurrents/route.js
-// B8 — CRON balayage des RÉCURRENTS Google -> BATILIS (B7). TOUS-TENANTS.
-// Fenêtre [now ; now+180j], 1×/jour : matérialise les occurrences futures des séries que le
-// canal incrémental ne re-signale jamais. Itère toutes les cibles google actives de toutes
-// les sociétés, service_role, isolation d'erreur par cible.
+// B8/B9-6 — CRON balayage des RÉCURRENTS external -> BATILIS (B7 Google / B9-5 iCloud).
+// TOUS-TENANTS, TOUS FOURNISSEURS. Fenêtre [now ; now+180j], 1×/jour : matérialise les
+// occurrences futures des séries que le canal incrémental ne re-signale jamais. Dispatch par
+// fournisseur (pull-dispatch), service_role, isolation d'erreur par cible.
 //
 // Auth : header Authorization: Bearer ${CRON_SECRET} (injecté automatiquement par Vercel Cron
 // quand CRON_SECRET est défini). Déclenchement : 1×/jour via VERCEL CRON NATIF (cf. vercel.json).
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { pullRecurrentsCibleGoogle } from '../../../lib/calendar/pull-google'
+import { pullRecurrentsCible } from '../../../lib/calendar/pull-dispatch'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -24,25 +24,26 @@ export async function GET(req) {
   const { data: cibles, error } = await supabaseAdmin
     .from('cibles_calendrier')
     .select('id, agenda_nom, calendar_id, agence_id, societe_id, actif, fournisseur')
-    .eq('fournisseur', 'google').eq('actif', true)
+    .eq('actif', true)   // TOUTES sociétés, TOUS fournisseurs
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  console.log('[cron][pull-recurrents] cibles google actives (toutes sociétés) :', (cibles || []).length)
+  console.log('[cron][pull-recurrents] cibles actives (toutes sociétés, tous fournisseurs) :', (cibles || []).length)
 
   const resultats = []
   for (const cible of cibles || []) {
     try {
-      const { report, applied } = await pullRecurrentsCibleGoogle(cible, { horizonDays: 180 })
+      const { report, applied } = await pullRecurrentsCible(cible)
+      // Champs de rapport diffèrent selon fournisseur (Google: recurrentes ; iCloud: series/occurrences).
       resultats.push({
-        cible: cible.agenda_nom, societe_id: cible.societe_id,
-        recurrentes: report.recurrentes, deja_presentes: report.deja_presentes,
+        cible: cible.agenda_nom, fournisseur: cible.fournisseur, societe_id: cible.societe_id,
+        series: report.recurrentes ?? report.series, deja_presentes: report.deja_presentes,
         nouvelles: applied.inserts, erreur: report.erreur || undefined,
       })
-      console.log(`[cron][pull-recurrents] ${cible.agenda_nom} (${cible.id})`,
-        `récurrentes=${report.recurrentes} déjà=${report.deja_presentes} NOUVELLES=${applied.inserts}`,
+      console.log(`[cron][pull-recurrents] ${cible.fournisseur} ${cible.agenda_nom} (${cible.id})`,
+        `séries=${report.recurrentes ?? report.series} déjà=${report.deja_presentes} NOUVELLES=${applied.inserts}`,
         report.erreur ? `ERREUR=${report.erreur}` : '')
     } catch (e) {
-      resultats.push({ cible: cible.agenda_nom, societe_id: cible.societe_id, erreur: e?.message || String(e) })
+      resultats.push({ cible: cible.agenda_nom, fournisseur: cible.fournisseur, societe_id: cible.societe_id, erreur: e?.message || String(e) })
       console.error('[cron][pull-recurrents] cible', cible.id, 'KO:', e?.message || e)
     }
   }

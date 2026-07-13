@@ -140,6 +140,17 @@ function ensureSlash(u) {
   return u.endsWith('/') ? u : u + '/'
 }
 
+// Forme CANONIQUE d'une URL d'objet CalDAV, utilisée comme google_event_id (réappariement).
+// iCloud stocke/retourne le chemin BRUT : `@`, espaces, accents LITTÉRAUX (c'est ce que renvoie
+// fetchCalendarObjects). `new URL().href` les PERCENT-ENCODE (%40, %20…) -> divergence avec le
+// serveur, d'où le doublon au bootstrap. On DÉCODE pour obtenir une forme unique, identique des
+// deux côtés (push ET pull). decodeURIComponent est idempotent ici (les UID BATILIS ne
+// contiennent pas de littéral « %xx »). try/catch : une séquence % invalide retombe sur l'entrée.
+export function canonicalIcloudUrl(u) {
+  if (!u) return u
+  try { return decodeURIComponent(u) } catch { return u }
+}
+
 // Extrait l'UID d'un VCALENDAR (déplie les lignes repliées RFC 5545 d'abord).
 function extractUID(ics) {
   const unfolded = ics.replace(/\r\n[ \t]/g, '')
@@ -162,24 +173,32 @@ export function makeICloudClientHandle(client, cible) {
     compteOauthId: cible.compte_oauth_id,
 
     // eventBody = chaîne ICS. externalId = URL de l'objet CalDAV (ou null = create).
+    // Renvoie aussi l'ETag CalDAV courant (B9-3, anti-écho pull) : re-GET après écriture
+    // (l'ETag change à chaque PUT). null si indisponible → le pull backfillera l'etag.
     upsert: async ({ eventBody, externalId, contexte }) => {
       if (DRY_RUN) {
         logDryRun(externalId ? 'update' : 'insert', externalId, contexte)
-        return { action: externalId ? 'updated' : 'inserted', id: externalId, dryRun: true }
+        return { action: externalId ? 'updated' : 'inserted', id: externalId, etag: null, dryRun: true }
+      }
+      const readEtag = async (objUrl) => {
+        try { const [o] = await client.fetchCalendarObjects({ calendar, objectUrls: [objUrl] }); return o?.etag || null }
+        catch { return null }
       }
       if (externalId) {
-        // update : re-GET de l'ETag courant (jamais stocké) puis remplacement.
-        const [obj] = await client.fetchCalendarObjects({ calendar, objectUrls: [externalId] })
+        // update : URL canonique (les anciennes lignes stockées en %40 doivent matcher le href
+        // brut du serveur), re-GET de l'ETag courant (jamais stocké) puis remplacement.
+        const objUrl = canonicalIcloudUrl(externalId)
+        const [obj] = await client.fetchCalendarObjects({ calendar, objectUrls: [objUrl] })
         if (obj) {
-          await client.updateCalendarObject({ calendarObject: { url: externalId, data: eventBody, etag: obj.etag } })
-          return { action: 'updated', id: externalId, dryRun: false }
+          await client.updateCalendarObject({ calendarObject: { url: objUrl, data: eventBody, etag: obj.etag } })
+          return { action: 'updated', id: objUrl, etag: await readEtag(objUrl), dryRun: false }
         }
         // objet disparu côté iCloud → on recrée (fall-through vers le create).
       }
       const filename = `${extractUID(eventBody)}.ics`
-      const url = new URL(filename, ensureSlash(cible.calendar_id)).href
+      const url = canonicalIcloudUrl(new URL(filename, ensureSlash(cible.calendar_id)).href)
       await client.createCalendarObject({ calendar, filename, iCalString: eventBody })
-      return { action: 'inserted', id: url, dryRun: false }
+      return { action: 'inserted', id: url, etag: await readEtag(url), dryRun: false }
     },
 
     delete: async ({ externalId, contexte }) => {
@@ -187,9 +206,10 @@ export function makeICloudClientHandle(client, cible) {
         logDryRun('delete', externalId, contexte)
         return { dryRun: true }
       }
-      const [obj] = await client.fetchCalendarObjects({ calendar, objectUrls: [externalId] })
+      const objUrl = canonicalIcloudUrl(externalId)
+      const [obj] = await client.fetchCalendarObjects({ calendar, objectUrls: [objUrl] })
       if (!obj) return { dryRun: false } // déjà supprimé côté iCloud → no-op
-      await client.deleteCalendarObject({ calendarObject: { url: externalId, etag: obj.etag } })
+      await client.deleteCalendarObject({ calendarObject: { url: objUrl, etag: obj.etag } })
       return { dryRun: false }
     },
   }
