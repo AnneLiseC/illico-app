@@ -1,34 +1,18 @@
 // app/lib/calendar/pull-google.js
-// Étage 3 — PULL Google external -> BATILIS.
+// Étage 3 — ADAPTATEUR GOOGLE du pull (B9-1). La logique commune (classification, plancher,
+// anti-écho, B6, apply) vit dans pull-engine.js ; ce fichier ne fait que :
+//   1. LIRE les events Google (events.list incrémental/full, gestion 410) ;
+//   2. les NORMALISER vers { id, etag, start_utc, end_utc, kind, summary, status, ... } ;
+//   3. fournir le WRITER Google (events.patch pour la réécriture de trame) ;
+//   4. déléguer l'écriture base à engine.applyActions.
+// B7 (récurrents) reste ici : lecture fenêtrée singleEvents propre à Google.
 //
-//  LOT B : lecture incrémentale + classement RECONNU / INCONNU / CANCELLED, DRY-RUN
-//          (dryRunPullCibleGoogle) — n'écrit rien. TOUJOURS DISPONIBLE (GET).
-//  LOT C : mêmes lecture + classement, PLUS les écritures réelles
-//          (applyPullCibleGoogle) — INSERT des inconnus, DELETE des cancelled matchés,
-//          upsert du curseur cible_sync_state. Les deux chemins partagent readAndClassify.
-//  B3    : plancher de sync (sync_floor) — aucun import d'historique.
-//  B4    : parsing des events INCONNUS (parseEvent) -> type_rdv + dossier_id + artisan_id.
-//  B5    : réécriture de la trame BATILIS dans Google pour les events TYPÉS rattachés
-//          (rdvSummary) + ANTI-ÉCHO par etag (SPEC 2.4) : on stocke l'etag écrit/vu ;
-//          au pull suivant, etag identique = notre reflet -> NO-OP (pas de boucle).
-//
-// Invariants (verrouillés) :
-//  - itère par CALENDAR_ID de la cible (jamais calendarList du compte) ;
-//  - sync INCRÉMENTALE si sync_token présent, sinon FULL ;
-//  - suppression = SEULEMENT event.status==='cancelled' (jamais par absence) ;
-//  - réappariement = rendez_vous.google_event_id === event.id ET cible_id === cible courante ;
-//  - INCONNU -> parse + INSERT ; CANCELLED+1match -> DELETE ; RECONNU -> NO-OP (B6 fera l'update) ;
-//  - agence_id/societe_id DÉRIVÉS DE LA CIBLE, cible_id=cible, created_by=NULL,
-//    google_event_id=event.id (ANTI-DOUBLON), google_etag=etag (ANTI-ÉCHO) ;
-//  - GARDE-FOU : on n'applique les écritures d'une cible QU'APRÈS lecture complète réussie.
-//
-// ⚠️ Le refresh OAuth (buildOAuthClientForCompte) peut mettre à jour comptes_oauth.access_token
-//    (mécanique OAuth de google.js) — hors des tables métier écrites ici.
+// ⚠️ Comportement Google STRICTEMENT INCHANGÉ vs avant l'extraction (B9-1).
 
 import { createClient } from '@supabase/supabase-js'
 import { resolveCible, buildGoogleCalendar } from './google'
 import { parseEvent } from './parse-event'
-import { rdvSummary } from './mapping'
+import * as engine from './pull-engine'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -51,213 +35,53 @@ export function googleEndToUtc(event) {
   return googleStartToUtc(event).utc
 }
 
-// Charge (paginé, scopé société de la cible) les candidats du parsing. Read-only.
-async function loadCandidates(societeId) {
-  const fetchAll = async (table, cols) => {
-    const rows = []; const PAGE = 1000
-    for (let from = 0; ; from += PAGE) {
-      const { data, error } = await supabaseAdmin.from(table).select(cols)
-        .eq('societe_id', societeId).order('id', { ascending: true }).range(from, from + PAGE - 1)
-      if (error || !data || data.length === 0) break
-      rows.push(...data)
-      if (data.length < PAGE) break
-    }
-    return rows
-  }
-  const [clients, dossiers, artisans] = await Promise.all([
-    fetchAll('clients', 'id, nom, prenom, nom2, prenom2, civilite'),
-    fetchAll('dossiers', 'id, client_id, archive, statut'),
-    fetchAll('artisans', 'id, entreprise'),
-  ])
+// Event Google (JSON) -> event NORMALISÉ consommé par le moteur agnostique.
+function normalizeGoogleEvent(evt) {
+  const s = googleStartToUtc(evt)
   return {
-    clients, dossiers, artisans,
-    clientsById: new Map(clients.map((c) => [c.id, c])),
-    dossiersById: new Map(dossiers.map((d) => [d.id, d])),
-    artisansById: new Map(artisans.map((a) => [a.id, a])),
+    id: evt.id,
+    etag: evt.etag || null,
+    status: evt.status,
+    summary: evt.summary,
+    start_utc: s.utc,
+    start_raw: s.raw,
+    kind: s.kind,
+    end_utc: googleEndToUtc(evt),
+    isRecurringInstance: !!evt.recurringEventId,
   }
 }
 
-// Trame BATILIS d'un event typé rattaché : réutilise rdvSummary (mapping du push) à partir
-// des ids parsés + candidats en mémoire (aucune requête). Renvoie le summary à réécrire.
-function trameSummary(parsed, cand) {
-  const dossier = parsed.dossier_id ? cand.dossiersById.get(parsed.dossier_id) : null
-  const client = dossier?.client_id ? cand.clientsById.get(dossier.client_id) : null
-  const artisan = parsed.artisan_id ? cand.artisansById.get(parsed.artisan_id) : null
-  return rdvSummary({
-    type_rdv: parsed.type_rdv,
-    dossier: client ? { client: { civilite: client.civilite, prenom: client.prenom, nom: client.nom } } : null,
-    artisan: artisan ? { entreprise: artisan.entreprise } : null,
-  })
-}
-
-// Construit la ligne rendez_vous d'un event INCONNU parsé. Tenant dérivé de la CIBLE.
-// titre : 'autres' ou typé-non-rattaché -> on garde le titre Google (pas de trame lossy) ;
-// typé + dossier rattaché -> null (la trame BATILIS fait foi, réécrite en B5).
-function buildInsertRow(cibleRow, evt, utc, parsed, needsTrame) {
+// Writer Google injecté au moteur : réécriture de trame = events.patch(summary), renvoie l'etag.
+function makeGoogleWriter(calendar, calendarId) {
   return {
-    type_rdv: parsed.type_rdv,
-    date_heure: utc,
-    titre: needsTrame ? null : (evt.summary || ''),
-    dossier_id: parsed.dossier_id,
-    artisan_id: parsed.artisan_id,
-    agence_id: cibleRow.agence_id,
-    societe_id: cibleRow.societe_id,
-    cible_id: cibleRow.id,
-    google_event_id: evt.id,
-    google_etag: evt.etag || null,
-    created_by: null,
+    rewriteTrame: async (externalId, summary) => {
+      const res = await calendar.events.patch({ calendarId, eventId: externalId, requestBody: { summary } })
+      return res?.data?.etag || null
+    },
   }
 }
 
-// ── LECTURE + CLASSEMENT (partagé dry-run / apply) — AUCUNE écriture ici. ──────────────
-async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } = {}) {
-  const report = {
-    cible_id: cibleRow.id, agenda_nom: cibleRow.agenda_nom, calendar_id: cibleRow.calendar_id,
-    agence_id: cibleRow.agence_id, societe_id: cibleRow.societe_id,
-    mode: null,
-    events_lus: 0, reconnus: 0, inconnus: 0, cancelled: 0,
-    reconnus_echo: 0,                 // RECONNU dont l'etag == stocké (notre propre écriture)
-    reconnus_modifies: 0,             // RECONNU modif humaine RÉELLEMENT traitée (B6, etag connu)
-    reconnus_etag_init: 0,            // RECONNU etag stocké NULL : on capte l'etag, on NE re-parse PAS
-    reconnus_sans_etag: 0,            // RECONNU sans etag Google (anormal) : no-op de sûreté
-    inconnus_typed: 0,                // inconnus non-'autres' après parsing
-    trame_a_reecrire: 0,             // inconnus typés + rattachés -> réécriture de trame prévue
-    inconnus_sans_date: 0,
-    ignores_plancher: 0,
-    cancelled_sans_match: 0,
-    matches_ambigus: 0,
-    next_sync_token: null,
-    exemples_utc: [],
-    inconnus_insert: [],
-    erreur: null,
-  }
-  // trame: [{ google_event_id, summary }] (inserts typés B5)
-  // updates: [{ id, google_event_id, payload, trameSummary|null, currentEtag }] (B6 last-write-wins)
-  // etagBackfill: [{ id, etag }] (RECONNU sans etag de référence : on ne fait QUE capter l'etag)
-  const actions = { inserts: [], deletes: [], trame: [], updates: [], etagBackfill: [] }
+// ── LECTURE + CLASSEMENT Google (partagé dry-run / apply) — AUCUNE écriture ici. ──────
+async function readAndClassifyGoogle(cibleRow, { reclassifyOn410 = true } = {}) {
+  const report = engine.makeReport(cibleRow)
+  const actions = engine.makeActions()
 
   const resolved = await resolveCible(cibleRow.id)
-  if (!resolved) { report.erreur = 'cible sans compte'; return { report, actions, nextSyncToken: null, syncFloor: null, googleClient: null, status: 'error' } }
+  if (!resolved) { report.erreur = 'cible sans compte'; return { report, actions, nextSyncToken: null, syncFloor: null, status: 'error', writer: null } }
   const gc = buildGoogleCalendar(resolved)
-  if (!gc) { report.erreur = 'compte sans refresh_token (cible inerte)'; return { report, actions, nextSyncToken: null, syncFloor: null, googleClient: null, status: 'error' } }
+  if (!gc) { report.erreur = 'compte sans refresh_token (cible inerte)'; return { report, actions, nextSyncToken: null, syncFloor: null, status: 'error', writer: null } }
   const { calendar, calendarId } = gc
 
   const { data: state } = await supabaseAdmin
     .from('cible_sync_state').select('sync_token, sync_floor').eq('cible_id', cibleRow.id).maybeSingle()
   const syncToken = state?.sync_token || null
-
   const syncFloor = state?.sync_floor || new Date().toISOString()
   const floorMs = new Date(syncFloor).getTime()
 
-  // Candidats du parsing (B4), scopés société de la cible, chargés une fois.
-  const cand = await loadCandidates(cibleRow.societe_id)
-
-  // Index COMPLET des RDV de CETTE cible : google_event_id -> [{ id, etag }] (pagination
-  // OBLIGATOIRE, cf. limite Supabase ~1000). Sert au réappariement + à l'anti-écho (etag).
-  const byGid = new Map()
-  const PAGE = 1000
-  for (let from = 0; ; from += PAGE) {
-    const { data: rows, error } = await supabaseAdmin
-      .from('rendez_vous').select('id, google_event_id, google_etag, dossier_id')
-      .eq('cible_id', cibleRow.id).not('google_event_id', 'is', null)
-      .order('id', { ascending: true }).range(from, from + PAGE - 1)
-    if (error || !rows || rows.length === 0) break
-    for (const r of rows) {
-      const arr = byGid.get(r.google_event_id) || []
-      arr.push({ id: r.id, etag: r.google_etag, dossier_id: r.dossier_id }); byGid.set(r.google_event_id, arr)
-    }
-    if (rows.length < PAGE) break
-  }
-
-  const classify = (evt) => {
-    report.events_lus++
-    const endUtc = googleEndToUtc(evt)
-    if (endUtc && new Date(endUtc).getTime() < floorMs) { report.ignores_plancher++; return }
-    const n = googleStartToUtc(evt)
-    if (report.exemples_utc.length < 3) {
-      report.exemples_utc.push({ event_id: evt.id, google_start: n.raw, kind: n.kind, utc_prevu: n.utc })
-    }
-    const matched = byGid.get(evt.id) || []
-
-    // CANCELLED : suppression uniquement, et seulement si match UNIQUE.
-    if (evt.status === 'cancelled') {
-      report.cancelled++
-      if (matched.length === 0) { report.cancelled_sans_match++; return }
-      if (matched.length > 1)  { report.matches_ambigus++; return }
-      actions.deletes.push(matched[0].id)
-      return
-    }
-
-    // RECONNU (match) -> NO-OP en B5. Anti-écho : etag identique = notre reflet ; sinon modif
-    // humaine (traitée en B6). On COMPTE seulement, on n'écrit pas encore.
-    if (matched.length > 1) { report.matches_ambigus++; report.reconnus++; return }
-    if (matched.length === 1) {
-      report.reconnus++
-      const cur = matched[0]                         // { id, etag, dossier_id }
-      const stored = cur.etag
-
-      // ANTI-ÉCHO : etag identique = notre propre écriture -> NO-OP.
-      if (stored && evt.etag && evt.etag === stored) { report.reconnus_echo++; return }
-
-      // Pré-requis (angle mort B5 n°2) : pas d'etag de référence (RDV natif google_etag NULL)
-      // -> on NE re-parse PAS (on ignore notre dernière écriture). On capte juste l'etag.
-      if (!stored) {
-        report.reconnus_etag_init++
-        if (evt.etag) actions.etagBackfill.push({ id: cur.id, etag: evt.etag })
-        return
-      }
-
-      // SÛRETÉ : Google renvoie normalement toujours un etag. S'il est absent, on n'a pas de
-      // référence fiable pour distinguer notre écho d'une modif -> on NE re-parse PAS (no-op).
-      if (!evt.etag) { report.reconnus_sans_etag++; return }
-
-      // etag connu ET différent = VRAIE modif humaine -> LAST-WRITE-WINS SÉLECTIF (SPEC 2.2).
-      report.reconnus_modifies++
-      const parsed = parseEvent(evt.summary, cand)
-      const start = googleStartToUtc(evt)
-      const endUtc = googleEndToUtc(evt)
-      // DOSSIER : rattachement certain -> on met à jour ; ambiguïté (parsed.dossier_id null)
-      // -> on GARDE l'existant (jamais casser un rattachement).
-      const finalDossierId = parsed.dossier_id != null ? parsed.dossier_id : (cur.dossier_id ?? null)
-      const needsTrame = parsed.type_rdv !== 'autres' && finalDossierId != null
-      const payload = {
-        type_rdv: parsed.type_rdv,             // TYPE : re-parsé à chaque fois
-        artisan_id: parsed.artisan_id,         // ARTISAN : 1 match -> maj, sinon vide
-        titre: needsTrame ? null : (evt.summary || ''),
-      }
-      if (start.utc) payload.date_heure = start.utc                      // DATE/HEURE : écrase
-      if (start.kind !== 'allday' && start.utc && endUtc) {              // DURÉE : recalcul sauf all-day
-        const dm = Math.round((new Date(endUtc).getTime() - new Date(start.utc).getTime()) / 60000)
-        if (dm > 0) payload.duree_minutes = dm
-      }
-      if (parsed.dossier_id != null) payload.dossier_id = parsed.dossier_id   // sinon on omet -> gardé
-      actions.updates.push({
-        id: cur.id, google_event_id: evt.id, currentEtag: evt.etag || null, payload,
-        trameSummary: needsTrame
-          ? trameSummary({ type_rdv: parsed.type_rdv, dossier_id: finalDossierId, artisan_id: parsed.artisan_id }, cand)
-          : null,
-      })
-      return
-    }
-
-    // INCONNU -> parse (B4) + INSERT.
-    report.inconnus++
-    if (!n.utc) { report.inconnus_sans_date++; return }
-    const parsed = parseEvent(evt.summary, cand)
-    const needsTrame = parsed.type_rdv !== 'autres' && parsed.dossier_id != null
-    if (parsed.type_rdv !== 'autres') report.inconnus_typed++
-    actions.inserts.push(buildInsertRow(cibleRow, evt, n.utc, parsed, needsTrame))
-    if (needsTrame) {
-      report.trame_a_reecrire++
-      actions.trame.push({ google_event_id: evt.id, summary: trameSummary(parsed, cand) })
-    }
-    if (report.inconnus_insert.length < 5) {
-      report.inconnus_insert.push({
-        event_id: evt.id, summary: evt.summary || null, start_utc: n.utc,
-        type_rdv: parsed.type_rdv, dossier_id: parsed.dossier_id, artisan_id: parsed.artisan_id, trame: needsTrame,
-      })
-    }
-  }
+  const cand = await engine.loadCandidates(cibleRow.societe_id)
+  const byGid = await engine.loadByGid(cibleRow)
+  const ctx = { report, actions, byGid, cand, floorMs, cibleRow }
+  const writer = makeGoogleWriter(calendar, calendarId)
 
   const runList = async (useToken) => {
     let pageToken = null
@@ -266,209 +90,51 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
       if (useToken)  params.syncToken = useToken
       if (pageToken) params.pageToken = pageToken
       const { data } = await calendar.events.list(params)
-      for (const evt of data.items || []) classify(evt)
+      for (const evt of data.items || []) engine.classifyNormalized(normalizeGoogleEvent(evt), ctx)
       pageToken = data.nextPageToken || null
       if (!pageToken && data.nextSyncToken) report.next_sync_token = data.nextSyncToken
     } while (pageToken)
   }
 
-  const reset = () => {
-    report.events_lus = 0; report.reconnus = 0; report.inconnus = 0; report.cancelled = 0
-    report.reconnus_echo = 0; report.reconnus_modifies = 0; report.reconnus_etag_init = 0; report.reconnus_sans_etag = 0
-    report.inconnus_typed = 0; report.trame_a_reecrire = 0
-    report.inconnus_sans_date = 0; report.ignores_plancher = 0
-    report.cancelled_sans_match = 0; report.matches_ambigus = 0
-    report.exemples_utc = []; report.inconnus_insert = []
-    actions.inserts.length = 0; actions.deletes.length = 0; actions.trame.length = 0
-    actions.updates.length = 0; actions.etagBackfill.length = 0
-  }
-
-  const googleClient = { calendar, calendarId }
   try {
     if (syncToken) { report.mode = 'incremental'; await runList(syncToken) }
     else           { report.mode = 'full';        await runList(null) }
-    return { report, actions, nextSyncToken: report.next_sync_token, syncFloor, googleClient, status: 'ok' }
+    return { report, actions, nextSyncToken: report.next_sync_token, syncFloor, status: 'ok', writer }
   } catch (err) {
     if (err?.code === 410) {
       report.mode = 'full_after_410'
       report.erreur = 'full_resync_needed (410 Gone)'
-      reset()
+      engine.resetReport(report, actions)
       if (reclassifyOn410) {
         try { await runList(null) } catch (e2) { report.erreur += ' | full sync KO: ' + (e2?.message || e2) }
       }
-      return { report, actions, nextSyncToken: report.next_sync_token, syncFloor, googleClient, status: 'full_resync_needed' }
+      return { report, actions, nextSyncToken: report.next_sync_token, syncFloor, status: 'full_resync_needed', writer }
     }
     report.erreur = err?.message || String(err)
-    return { report, actions, nextSyncToken: null, syncFloor, googleClient, status: 'error' }
+    return { report, actions, nextSyncToken: null, syncFloor, status: 'error', writer }
   }
 }
 
 // ── DRY-RUN (LOT B) — n'écrit rien (ni base, ni Google). Montre le parsing (B4). ───────
 export async function dryRunPullCibleGoogle(cibleRow) {
-  const { report } = await readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410: true })
+  const { report } = await readAndClassifyGoogle(cibleRow, { reclassifyOn410: true })
   if (report.erreur && report.erreur.startsWith('full_resync_needed')) {
     report.erreur += ' — cible_sync_state NON réinitialisé (dry-run)'
   }
   return report
 }
 
-// Écrit le curseur en 'error' SANS toucher sync_token (on ne perd pas le curseur sur panne).
-async function markCursorError(cibleId, message) {
-  const nowIso = new Date().toISOString()
-  const { data: existing } = await supabaseAdmin
-    .from('cible_sync_state').select('cible_id').eq('cible_id', cibleId).maybeSingle()
-  if (existing) {
-    await supabaseAdmin.from('cible_sync_state')
-      .update({ last_status: 'error', last_error: message, last_sync_at: nowIso }).eq('cible_id', cibleId)
-  } else {
-    await supabaseAdmin.from('cible_sync_state')
-      .insert({ cible_id: cibleId, sync_token: null, last_status: 'error', last_error: message, last_sync_at: nowIso })
-  }
-}
-
-// B5 — réécrit la trame BATILIS dans Google pour les inserts typés+rattachés, puis stocke
-// l'etag renvoyé par Google (ANTI-ÉCHO). Non bloquant : un échec Google laisse le RDV en
-// base (correct) avec l'etag lu ; la trame sera retentée quand l'event rechangera. Renvoie
-// { ok, ko }.
-async function reecrireTrames(googleClient, trame, idByGid) {
-  const out = { ok: 0, ko: 0 }
-  for (const t of trame) {
-    const rdvId = idByGid.get(t.google_event_id)
-    if (!rdvId) { out.ko++; continue }
-    try {
-      const res = await googleClient.calendar.events.patch({
-        calendarId: googleClient.calendarId,
-        eventId: t.google_event_id,
-        requestBody: { summary: t.summary },
-      })
-      const newEtag = res?.data?.etag || null
-      await supabaseAdmin.from('rendez_vous').update({ google_etag: newEtag }).eq('id', rdvId)
-      out.ok++
-    } catch (e) {
-      console.error('[pull][B5] trame KO event', t.google_event_id, e?.message || e)
-      out.ko++
-    }
-  }
-  return out
-}
-
-// B6 — applique les modifs humaines (last-write-wins sélectif SPEC 2.2) : UPDATE des champs
-// re-parsés, puis réécriture de trame si typé+rattaché (sinon on stocke l'etag humain courant
-// -> anti-écho, pas de reboucle). Non bloquant. Renvoie { ok, ko, trame_ok, trame_ko }.
-async function appliquerUpdatesB6(googleClient, updates) {
-  const out = { ok: 0, ko: 0, trame_ok: 0, trame_ko: 0 }
-  for (const u of updates) {
-    const { error } = await supabaseAdmin.from('rendez_vous').update(u.payload).eq('id', u.id)
-    if (error) { console.error('[pull][B6] update KO', u.id, error.message); out.ko++; continue }
-    out.ok++
-    if (u.trameSummary) {
-      try {
-        const res = await googleClient.calendar.events.patch({
-          calendarId: googleClient.calendarId, eventId: u.google_event_id,
-          requestBody: { summary: u.trameSummary },
-        })
-        await supabaseAdmin.from('rendez_vous').update({ google_etag: res?.data?.etag || null }).eq('id', u.id)
-        out.trame_ok++
-      } catch (e) {
-        console.error('[pull][B6] trame KO', u.google_event_id, e?.message || e)
-        out.trame_ko++
-        // patch KO : on stocke l'etag humain courant pour ne pas reboucler (event Google inchangé).
-        await supabaseAdmin.from('rendez_vous').update({ google_etag: u.currentEtag }).eq('id', u.id)
-      }
-    } else {
-      // pas de trame (autres, ou typé non rattaché) : l'event Google reste la version humaine
-      // -> on stocke SON etag comme référence.
-      await supabaseAdmin.from('rendez_vous').update({ google_etag: u.currentEtag }).eq('id', u.id)
-    }
-  }
-  return out
-}
-
-// ── APPLY (LOT C + B4/B5/B6) — écrit rendez_vous + cible_sync_state, réécrit les trames. ──
+// ── APPLY (LOT C + B4/B5/B6) — lecture Google puis écriture via le moteur. ─────────────
 export async function applyPullCibleGoogle(cibleRow) {
-  const { report, actions, nextSyncToken, syncFloor, googleClient, status } =
-    await readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410: false })
-  const applied = { inserts: 0, deletes: 0, trame_ok: 0, trame_ko: 0,
-    etag_init: 0, updates: 0, updates_trame_ok: 0, updates_trame_ko: 0, cursor: null }
-  const nowIso = new Date().toISOString()
-
-  // 410 : reset curseur -> full au prochain run. AUCUNE écriture rendez_vous. sync_floor préservé.
-  if (status === 'full_resync_needed') {
-    await supabaseAdmin.from('cible_sync_state').upsert({
-      cible_id: cibleRow.id, sync_token: null, last_sync_at: nowIso, sync_floor: syncFloor,
-      last_status: 'full_resync_needed', last_error: report.erreur,
-    }, { onConflict: 'cible_id' })
-    applied.cursor = 'full_resync_needed'
-    return { report, applied }
-  }
-
-  if (status === 'error') {
-    await markCursorError(cibleRow.id, report.erreur || 'erreur inconnue')
-    applied.cursor = 'error'
-    return { report, applied }
-  }
-
-  // status === 'ok' -> GARDE-FOU levé : lecture complète réussie, on applique.
-  let writeError = null
-  if (actions.deletes.length) {
-    const { error } = await supabaseAdmin.from('rendez_vous').delete().in('id', actions.deletes)
-    if (error) writeError = 'delete KO: ' + error.message
-    else applied.deletes = actions.deletes.length
-  }
-
-  let idByGid = new Map()
-  if (actions.inserts.length) {
-    // .select() pour récupérer les ids (nécessaires à la réécriture de trame B5).
-    const { data: inserted, error } = await supabaseAdmin
-      .from('rendez_vous').insert(actions.inserts).select('id, google_event_id')
-    if (error) writeError = (writeError ? writeError + ' | ' : '') + 'insert KO: ' + error.message
-    else {
-      applied.inserts = inserted.length
-      idByGid = new Map((inserted || []).map((r) => [r.google_event_id, r.id]))
-    }
-  }
-
-  if (writeError) {
-    // Écriture base en échec : on N'AVANCE PAS le curseur, PAS de réécriture Google.
-    report.erreur = writeError
-    await markCursorError(cibleRow.id, writeError)
-    applied.cursor = 'error'
-    return { report, applied }
-  }
-
-  // B5 — réécriture des trames (typés rattachés) + anti-écho (etag). Non bloquant.
-  if (actions.trame.length) {
-    const r = await reecrireTrames(googleClient, actions.trame, idByGid)
-    applied.trame_ok = r.ok; applied.trame_ko = r.ko
-  }
-
-  // B6 — backfill etag des RDV sans référence (google_etag NULL) : capte l'etag, NE modifie rien.
-  for (const b of actions.etagBackfill) {
-    await supabaseAdmin.from('rendez_vous').update({ google_etag: b.etag }).eq('id', b.id)
-  }
-  applied.etag_init = actions.etagBackfill.length
-
-  // B6 — modifs humaines (last-write-wins sélectif). Non bloquant.
-  if (actions.updates.length) {
-    const r = await appliquerUpdatesB6(googleClient, actions.updates)
-    applied.updates = r.ok; applied.updates_trame_ok = r.trame_ok; applied.updates_trame_ko = r.trame_ko
-  }
-
-  await supabaseAdmin.from('cible_sync_state').upsert({
-    cible_id: cibleRow.id, sync_token: nextSyncToken, last_sync_at: nowIso, sync_floor: syncFloor,
-    last_status: 'ok', last_error: null,
-  }, { onConflict: 'cible_id' })
-  applied.cursor = 'ok'
-  return { report, applied }
+  const res = await readAndClassifyGoogle(cibleRow, { reclassifyOn410: false })
+  return engine.applyActions(cibleRow, res, res.writer)
 }
 
-// ── B7 — BALAYAGE DES RÉCURRENTS (canal séparé, 1×/jour) ───────────────────────────────
+// ── B7 — BALAYAGE DES RÉCURRENTS (canal séparé, 1×/jour) — spécifique Google ───────────
 // Le pull incrémental (syncToken) ne re-signale JAMAIS les occurrences futures d'une série
-// inchangée (BNI…). Ce canal les matérialise : events.list fenêtré [now ; now+180j],
-// singleEvents:true, et ne garde QUE les occurrences de séries (recurringEventId présent).
-// INSERT seulement (parsing B4), anti-doublon par google_event_id d'instance (stable). PAS de
-// réécriture de trame (n'éclate pas la série en exceptions), PAS de delete (l'annulation d'une
-// occurrence passe par le canal incrémental), PAS de curseur syncToken.
+// inchangée. Ce canal les matérialise : events.list fenêtré [now ; now+180j], singleEvents:true,
+// et ne garde QUE les occurrences de séries (recurringEventId présent). INSERT seulement (parsing
+// B4), anti-doublon par google_event_id d'instance. PAS de trame, PAS de delete, PAS de curseur.
 export async function pullRecurrentsCibleGoogle(cibleRow, { horizonDays = 180 } = {}) {
   const report = {
     cible_id: cibleRow.id, agenda_nom: cibleRow.agenda_nom,
@@ -483,7 +149,7 @@ export async function pullRecurrentsCibleGoogle(cibleRow, { horizonDays = 180 } 
   if (!gc) { report.erreur = 'compte sans refresh_token (cible inerte)'; return { report, applied } }
   const { calendar, calendarId } = gc
 
-  const cand = await loadCandidates(cibleRow.societe_id)
+  const cand = await engine.loadCandidates(cibleRow.societe_id)
 
   // Set des google_event_id déjà présents (anti-doublon), paginé.
   const seen = new Set()
@@ -509,14 +175,14 @@ export async function pullRecurrentsCibleGoogle(cibleRow, { horizonDays = 180 } 
       const { data } = await calendar.events.list(params)
       for (const evt of data.items || []) {
         report.instances_lues++
-        if (!evt.recurringEventId) { report.non_recurrentes++; continue }   // seulement les séries
+        if (!evt.recurringEventId) { report.non_recurrentes++; continue }
         report.recurrentes++
-        if (seen.has(evt.id)) { report.deja_presentes++; continue }         // anti-doublon
+        if (seen.has(evt.id)) { report.deja_presentes++; continue }
         const n = googleStartToUtc(evt)
         if (!n.utc) { report.sans_date++; continue }
         const parsed = parseEvent(evt.summary, cand)
-        inserts.push(buildInsertRow(cibleRow, evt, n.utc, parsed, false))   // false = pas de trame
-        seen.add(evt.id)   // évite un doublon intra-run si Google renvoie l'instance 2×
+        inserts.push(engine.buildInsertRow(cibleRow, evt, n.utc, parsed, false))
+        seen.add(evt.id)
       }
       pageToken = data.nextPageToken || null
     } while (pageToken)
