@@ -8,7 +8,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { pullRecurrentsCibleGoogle } from '../../../../lib/calendar/pull-google'
+import { pullRecurrentsCibleGoogle } from '../../../lib/calendar/pull-google'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
