@@ -1,7 +1,6 @@
 # .github/workflows/pull-calendar.yml
-# B8 — déclenchement du pull calendrier Google -> BATILIS (plan Vercel gratuit, cf. SPEC).
-#   - incrémental (B4-B6) toutes les 15 min  -> /api/cron/pull-google
-#   - récurrents (B7, fenêtre 180 j) 1×/jour -> /api/cron/pull-google-recurrents
+# B8 — déclenchement du pull calendrier INCRÉMENTAL Google -> BATILIS (B4-B6), toutes les 15 min.
+# (Le balayage des RÉCURRENTS B7 est, lui, déclenché par Vercel Cron natif — cf. vercel.json.)
 #
 # ⚠️ INERTE tant que :
 #   1) ce workflow n'est pas sur la branche PAR DÉFAUT (les schedules GitHub ne tournent que là) ;
@@ -10,34 +9,22 @@
 #        CRON_SECRET  = même valeur que la variable d'env Vercel CRON_SECRET
 # GitHub Cron est en UTC et peut être décalé de quelques minutes (best-effort).
 
-name: Pull calendrier (Google -> BATILIS)
+name: Pull calendrier incrémental (Google -> BATILIS)
 
 on:
   schedule:
     - cron: '*/15 * * * *'   # incrémental — toutes les 15 min
-    - cron: '30 3 * * *'     # récurrents — 1×/jour (03:30 UTC)
-  workflow_dispatch:          # déclenchement manuel (lance les deux canaux)
+  workflow_dispatch:          # déclenchement manuel
 
 jobs:
   pull:
     runs-on: ubuntu-latest
     steps:
-      - name: Pull incrémental (15 min)
-        if: github.event.schedule == '*/15 * * * *' || github.event_name == 'workflow_dispatch'
+      - name: Pull incrémental
         env:
           APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           curl -fsS --max-time 300 -X GET \
             "$APP_BASE_URL/api/cron/pull-google" \
-            -H "Authorization: Bearer $CRON_SECRET"
-
-      - name: Pull récurrents (1×/jour)
-        if: github.event.schedule == '30 3 * * *' || github.event_name == 'workflow_dispatch'
-        env:
-          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-        run: |
-          curl -fsS --max-time 300 -X GET \
-            "$APP_BASE_URL/api/cron/pull-google-recurrents" \
             -H "Authorization: Bearer $CRON_SECRET"

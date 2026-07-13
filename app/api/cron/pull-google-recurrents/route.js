@@ -4,7 +4,8 @@
 // canal incrémental ne re-signale jamais. Itère toutes les cibles google actives de toutes
 // les sociétés, service_role, isolation d'erreur par cible.
 //
-// Auth : header Authorization: Bearer ${CRON_SECRET}. Déclenchement : 1×/jour (GitHub Actions).
+// Auth : header Authorization: Bearer ${CRON_SECRET} (injecté automatiquement par Vercel Cron
+// quand CRON_SECRET est défini). Déclenchement : 1×/jour via VERCEL CRON NATIF (cf. vercel.json).
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'

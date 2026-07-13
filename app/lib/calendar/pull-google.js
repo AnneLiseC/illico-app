@@ -119,6 +119,7 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
     reconnus_echo: 0,                 // RECONNU dont l'etag == stocké (notre propre écriture)
     reconnus_modifies: 0,             // RECONNU modif humaine RÉELLEMENT traitée (B6, etag connu)
     reconnus_etag_init: 0,            // RECONNU etag stocké NULL : on capte l'etag, on NE re-parse PAS
+    reconnus_sans_etag: 0,            // RECONNU sans etag Google (anormal) : no-op de sûreté
     inconnus_typed: 0,                // inconnus non-'autres' après parsing
     trame_a_reecrire: 0,             // inconnus typés + rattachés -> réécriture de trame prévue
     inconnus_sans_date: 0,
@@ -206,6 +207,10 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
         return
       }
 
+      // SÛRETÉ : Google renvoie normalement toujours un etag. S'il est absent, on n'a pas de
+      // référence fiable pour distinguer notre écho d'une modif -> on NE re-parse PAS (no-op).
+      if (!evt.etag) { report.reconnus_sans_etag++; return }
+
       // etag connu ET différent = VRAIE modif humaine -> LAST-WRITE-WINS SÉLECTIF (SPEC 2.2).
       report.reconnus_modifies++
       const parsed = parseEvent(evt.summary, cand)
@@ -269,7 +274,7 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
 
   const reset = () => {
     report.events_lus = 0; report.reconnus = 0; report.inconnus = 0; report.cancelled = 0
-    report.reconnus_echo = 0; report.reconnus_modifies = 0; report.reconnus_etag_init = 0
+    report.reconnus_echo = 0; report.reconnus_modifies = 0; report.reconnus_etag_init = 0; report.reconnus_sans_etag = 0
     report.inconnus_typed = 0; report.trame_a_reecrire = 0
     report.inconnus_sans_date = 0; report.ignores_plancher = 0
     report.cancelled_sans_match = 0; report.matches_ambigus = 0
