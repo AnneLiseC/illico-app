@@ -47,7 +47,8 @@ export async function GET(request) {
     console.log(
       `[pull][DRY-RUN] cible ${rapport.agenda_nom} (${rapport.cible_id}) mode=${rapport.mode}`,
       `lus=${rapport.events_lus} reconnus=${rapport.reconnus} inconnus=${rapport.inconnus}`,
-      `(sans_date=${rapport.inconnus_sans_date}) cancelled=${rapport.cancelled} (sans_match=${rapport.cancelled_sans_match})`,
+      `(sans_date=${rapport.inconnus_sans_date}) plancher_ignores=${rapport.ignores_plancher}`,
+      `cancelled=${rapport.cancelled} (sans_match=${rapport.cancelled_sans_match})`,
       `ambigus=${rapport.matches_ambigus}`,
       rapport.erreur ? `ERREUR=${rapport.erreur}` : '',
     )
@@ -80,7 +81,8 @@ export async function POST(request) {
     console.log(
       `[pull][APPLY] cible ${report.agenda_nom} (${report.cible_id}) mode=${report.mode}`,
       `lus=${report.events_lus} reconnus=${report.reconnus} inconnus=${report.inconnus}`,
-      `(sans_date=${report.inconnus_sans_date}) cancelled=${report.cancelled} (sans_match=${report.cancelled_sans_match})`,
+      `(sans_date=${report.inconnus_sans_date}) plancher_ignores=${report.ignores_plancher}`,
+      `cancelled=${report.cancelled} (sans_match=${report.cancelled_sans_match})`,
       `ambigus=${report.matches_ambigus}`,
       `=> INSERÉS=${applied.inserts} SUPPRIMÉS=${applied.deletes} curseur=${applied.cursor}`,
       report.erreur ? `ERREUR=${report.erreur}` : '',
