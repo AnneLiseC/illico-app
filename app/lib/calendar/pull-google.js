@@ -456,3 +456,75 @@ export async function applyPullCibleGoogle(cibleRow) {
   applied.cursor = 'ok'
   return { report, applied }
 }
+
+// ── B7 — BALAYAGE DES RÉCURRENTS (canal séparé, 1×/jour) ───────────────────────────────
+// Le pull incrémental (syncToken) ne re-signale JAMAIS les occurrences futures d'une série
+// inchangée (BNI…). Ce canal les matérialise : events.list fenêtré [now ; now+180j],
+// singleEvents:true, et ne garde QUE les occurrences de séries (recurringEventId présent).
+// INSERT seulement (parsing B4), anti-doublon par google_event_id d'instance (stable). PAS de
+// réécriture de trame (n'éclate pas la série en exceptions), PAS de delete (l'annulation d'une
+// occurrence passe par le canal incrémental), PAS de curseur syncToken.
+export async function pullRecurrentsCibleGoogle(cibleRow, { horizonDays = 180 } = {}) {
+  const report = {
+    cible_id: cibleRow.id, agenda_nom: cibleRow.agenda_nom,
+    instances_lues: 0, non_recurrentes: 0, recurrentes: 0,
+    deja_presentes: 0, sans_date: 0, nouvelles: 0, erreur: null,
+  }
+  const applied = { inserts: 0 }
+
+  const resolved = await resolveCible(cibleRow.id)
+  if (!resolved) { report.erreur = 'cible sans compte'; return { report, applied } }
+  const gc = buildGoogleCalendar(resolved)
+  if (!gc) { report.erreur = 'compte sans refresh_token (cible inerte)'; return { report, applied } }
+  const { calendar, calendarId } = gc
+
+  const cand = await loadCandidates(cibleRow.societe_id)
+
+  // Set des google_event_id déjà présents (anti-doublon), paginé.
+  const seen = new Set()
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseAdmin
+      .from('rendez_vous').select('google_event_id')
+      .eq('cible_id', cibleRow.id).not('google_event_id', 'is', null)
+      .order('google_event_id', { ascending: true }).range(from, from + PAGE - 1)
+    if (error || !data || data.length === 0) break
+    for (const r of data) seen.add(r.google_event_id)
+    if (data.length < PAGE) break
+  }
+
+  const timeMin = new Date().toISOString()
+  const timeMax = new Date(Date.now() + horizonDays * 86400000).toISOString()
+  const inserts = []
+  try {
+    let pageToken = null
+    do {
+      const params = { calendarId, singleEvents: true, showDeleted: false, maxResults: 250, timeMin, timeMax }
+      if (pageToken) params.pageToken = pageToken
+      const { data } = await calendar.events.list(params)
+      for (const evt of data.items || []) {
+        report.instances_lues++
+        if (!evt.recurringEventId) { report.non_recurrentes++; continue }   // seulement les séries
+        report.recurrentes++
+        if (seen.has(evt.id)) { report.deja_presentes++; continue }         // anti-doublon
+        const n = googleStartToUtc(evt)
+        if (!n.utc) { report.sans_date++; continue }
+        const parsed = parseEvent(evt.summary, cand)
+        inserts.push(buildInsertRow(cibleRow, evt, n.utc, parsed, false))   // false = pas de trame
+        seen.add(evt.id)   // évite un doublon intra-run si Google renvoie l'instance 2×
+      }
+      pageToken = data.nextPageToken || null
+    } while (pageToken)
+  } catch (err) {
+    report.erreur = err?.message || String(err)
+    return { report, applied }
+  }
+
+  report.nouvelles = inserts.length
+  if (inserts.length) {
+    const { error } = await supabaseAdmin.from('rendez_vous').insert(inserts)
+    if (error) report.erreur = 'insert KO: ' + error.message
+    else applied.inserts = inserts.length
+  }
+  return { report, applied }
+}
