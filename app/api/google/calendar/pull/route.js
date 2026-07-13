@@ -46,7 +46,7 @@ export async function GET(request) {
     rapports.push(rapport)
     console.log(
       `[pull][DRY-RUN] cible ${rapport.agenda_nom} (${rapport.cible_id}) mode=${rapport.mode}`,
-      `lus=${rapport.events_lus} reconnus=${rapport.reconnus} (echo=${rapport.reconnus_echo} modif=${rapport.reconnus_modifies})`,
+      `lus=${rapport.events_lus} reconnus=${rapport.reconnus} (echo=${rapport.reconnus_echo} modif=${rapport.reconnus_modifies} etag_init=${rapport.reconnus_etag_init})`,
       `inconnus=${rapport.inconnus} (typés=${rapport.inconnus_typed} trame=${rapport.trame_a_reecrire} sans_date=${rapport.inconnus_sans_date})`,
       `plancher_ignores=${rapport.ignores_plancher} cancelled=${rapport.cancelled} (sans_match=${rapport.cancelled_sans_match})`,
       `ambigus=${rapport.matches_ambigus}`,
@@ -80,11 +80,11 @@ export async function POST(request) {
     resultats.push({ ...report, applied })
     console.log(
       `[pull][APPLY] cible ${report.agenda_nom} (${report.cible_id}) mode=${report.mode}`,
-      `lus=${report.events_lus} reconnus=${report.reconnus} (echo=${report.reconnus_echo} modif=${report.reconnus_modifies})`,
+      `lus=${report.events_lus} reconnus=${report.reconnus} (echo=${report.reconnus_echo} modif=${report.reconnus_modifies} etag_init=${report.reconnus_etag_init})`,
       `inconnus=${report.inconnus} (typés=${report.inconnus_typed} sans_date=${report.inconnus_sans_date})`,
       `plancher_ignores=${report.ignores_plancher} cancelled=${report.cancelled} (sans_match=${report.cancelled_sans_match})`,
       `ambigus=${report.matches_ambigus}`,
-      `=> INSERÉS=${applied.inserts} SUPPRIMÉS=${applied.deletes} TRAME=${applied.trame_ok}/${applied.trame_ok + applied.trame_ko} curseur=${applied.cursor}`,
+      `=> INSERÉS=${applied.inserts} SUPPRIMÉS=${applied.deletes} MAJ=${applied.updates} TRAME=${applied.trame_ok}/${applied.trame_ok + applied.trame_ko}+${applied.updates_trame_ok} etag_init=${applied.etag_init} curseur=${applied.cursor}`,
       report.erreur ? `ERREUR=${report.erreur}` : '',
     )
   }

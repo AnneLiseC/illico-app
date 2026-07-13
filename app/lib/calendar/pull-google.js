@@ -117,7 +117,8 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
     mode: null,
     events_lus: 0, reconnus: 0, inconnus: 0, cancelled: 0,
     reconnus_echo: 0,                 // RECONNU dont l'etag == stocké (notre propre écriture)
-    reconnus_modifies: 0,             // RECONNU dont l'etag diffère (modif humaine — B6)
+    reconnus_modifies: 0,             // RECONNU modif humaine RÉELLEMENT traitée (B6, etag connu)
+    reconnus_etag_init: 0,            // RECONNU etag stocké NULL : on capte l'etag, on NE re-parse PAS
     inconnus_typed: 0,                // inconnus non-'autres' après parsing
     trame_a_reecrire: 0,             // inconnus typés + rattachés -> réécriture de trame prévue
     inconnus_sans_date: 0,
@@ -129,7 +130,10 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
     inconnus_insert: [],
     erreur: null,
   }
-  const actions = { inserts: [], deletes: [], trame: [] }   // trame: [{ google_event_id, summary }]
+  // trame: [{ google_event_id, summary }] (inserts typés B5)
+  // updates: [{ id, google_event_id, payload, trameSummary|null, currentEtag }] (B6 last-write-wins)
+  // etagBackfill: [{ id, etag }] (RECONNU sans etag de référence : on ne fait QUE capter l'etag)
+  const actions = { inserts: [], deletes: [], trame: [], updates: [], etagBackfill: [] }
 
   const resolved = await resolveCible(cibleRow.id)
   if (!resolved) { report.erreur = 'cible sans compte'; return { report, actions, nextSyncToken: null, syncFloor: null, googleClient: null, status: 'error' } }
@@ -153,13 +157,13 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
   const PAGE = 1000
   for (let from = 0; ; from += PAGE) {
     const { data: rows, error } = await supabaseAdmin
-      .from('rendez_vous').select('id, google_event_id, google_etag')
+      .from('rendez_vous').select('id, google_event_id, google_etag, dossier_id')
       .eq('cible_id', cibleRow.id).not('google_event_id', 'is', null)
       .order('id', { ascending: true }).range(from, from + PAGE - 1)
     if (error || !rows || rows.length === 0) break
     for (const r of rows) {
       const arr = byGid.get(r.google_event_id) || []
-      arr.push({ id: r.id, etag: r.google_etag }); byGid.set(r.google_event_id, arr)
+      arr.push({ id: r.id, etag: r.google_etag, dossier_id: r.dossier_id }); byGid.set(r.google_event_id, arr)
     }
     if (rows.length < PAGE) break
   }
@@ -188,9 +192,46 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
     if (matched.length > 1) { report.matches_ambigus++; report.reconnus++; return }
     if (matched.length === 1) {
       report.reconnus++
-      const stored = matched[0].etag
-      if (stored && evt.etag && evt.etag === stored) report.reconnus_echo++
-      else report.reconnus_modifies++
+      const cur = matched[0]                         // { id, etag, dossier_id }
+      const stored = cur.etag
+
+      // ANTI-ÉCHO : etag identique = notre propre écriture -> NO-OP.
+      if (stored && evt.etag && evt.etag === stored) { report.reconnus_echo++; return }
+
+      // Pré-requis (angle mort B5 n°2) : pas d'etag de référence (RDV natif google_etag NULL)
+      // -> on NE re-parse PAS (on ignore notre dernière écriture). On capte juste l'etag.
+      if (!stored) {
+        report.reconnus_etag_init++
+        if (evt.etag) actions.etagBackfill.push({ id: cur.id, etag: evt.etag })
+        return
+      }
+
+      // etag connu ET différent = VRAIE modif humaine -> LAST-WRITE-WINS SÉLECTIF (SPEC 2.2).
+      report.reconnus_modifies++
+      const parsed = parseEvent(evt.summary, cand)
+      const start = googleStartToUtc(evt)
+      const endUtc = googleEndToUtc(evt)
+      // DOSSIER : rattachement certain -> on met à jour ; ambiguïté (parsed.dossier_id null)
+      // -> on GARDE l'existant (jamais casser un rattachement).
+      const finalDossierId = parsed.dossier_id != null ? parsed.dossier_id : (cur.dossier_id ?? null)
+      const needsTrame = parsed.type_rdv !== 'autres' && finalDossierId != null
+      const payload = {
+        type_rdv: parsed.type_rdv,             // TYPE : re-parsé à chaque fois
+        artisan_id: parsed.artisan_id,         // ARTISAN : 1 match -> maj, sinon vide
+        titre: needsTrame ? null : (evt.summary || ''),
+      }
+      if (start.utc) payload.date_heure = start.utc                      // DATE/HEURE : écrase
+      if (start.kind !== 'allday' && start.utc && endUtc) {              // DURÉE : recalcul sauf all-day
+        const dm = Math.round((new Date(endUtc).getTime() - new Date(start.utc).getTime()) / 60000)
+        if (dm > 0) payload.duree_minutes = dm
+      }
+      if (parsed.dossier_id != null) payload.dossier_id = parsed.dossier_id   // sinon on omet -> gardé
+      actions.updates.push({
+        id: cur.id, google_event_id: evt.id, currentEtag: evt.etag || null, payload,
+        trameSummary: needsTrame
+          ? trameSummary({ type_rdv: parsed.type_rdv, dossier_id: finalDossierId, artisan_id: parsed.artisan_id }, cand)
+          : null,
+      })
       return
     }
 
@@ -228,11 +269,13 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
 
   const reset = () => {
     report.events_lus = 0; report.reconnus = 0; report.inconnus = 0; report.cancelled = 0
-    report.reconnus_echo = 0; report.reconnus_modifies = 0; report.inconnus_typed = 0; report.trame_a_reecrire = 0
+    report.reconnus_echo = 0; report.reconnus_modifies = 0; report.reconnus_etag_init = 0
+    report.inconnus_typed = 0; report.trame_a_reecrire = 0
     report.inconnus_sans_date = 0; report.ignores_plancher = 0
     report.cancelled_sans_match = 0; report.matches_ambigus = 0
     report.exemples_utc = []; report.inconnus_insert = []
     actions.inserts.length = 0; actions.deletes.length = 0; actions.trame.length = 0
+    actions.updates.length = 0; actions.etagBackfill.length = 0
   }
 
   const googleClient = { calendar, calendarId }
@@ -304,11 +347,44 @@ async function reecrireTrames(googleClient, trame, idByGid) {
   return out
 }
 
-// ── APPLY (LOT C + B4/B5) — écrit rendez_vous + cible_sync_state, réécrit les trames. ──
+// B6 — applique les modifs humaines (last-write-wins sélectif SPEC 2.2) : UPDATE des champs
+// re-parsés, puis réécriture de trame si typé+rattaché (sinon on stocke l'etag humain courant
+// -> anti-écho, pas de reboucle). Non bloquant. Renvoie { ok, ko, trame_ok, trame_ko }.
+async function appliquerUpdatesB6(googleClient, updates) {
+  const out = { ok: 0, ko: 0, trame_ok: 0, trame_ko: 0 }
+  for (const u of updates) {
+    const { error } = await supabaseAdmin.from('rendez_vous').update(u.payload).eq('id', u.id)
+    if (error) { console.error('[pull][B6] update KO', u.id, error.message); out.ko++; continue }
+    out.ok++
+    if (u.trameSummary) {
+      try {
+        const res = await googleClient.calendar.events.patch({
+          calendarId: googleClient.calendarId, eventId: u.google_event_id,
+          requestBody: { summary: u.trameSummary },
+        })
+        await supabaseAdmin.from('rendez_vous').update({ google_etag: res?.data?.etag || null }).eq('id', u.id)
+        out.trame_ok++
+      } catch (e) {
+        console.error('[pull][B6] trame KO', u.google_event_id, e?.message || e)
+        out.trame_ko++
+        // patch KO : on stocke l'etag humain courant pour ne pas reboucler (event Google inchangé).
+        await supabaseAdmin.from('rendez_vous').update({ google_etag: u.currentEtag }).eq('id', u.id)
+      }
+    } else {
+      // pas de trame (autres, ou typé non rattaché) : l'event Google reste la version humaine
+      // -> on stocke SON etag comme référence.
+      await supabaseAdmin.from('rendez_vous').update({ google_etag: u.currentEtag }).eq('id', u.id)
+    }
+  }
+  return out
+}
+
+// ── APPLY (LOT C + B4/B5/B6) — écrit rendez_vous + cible_sync_state, réécrit les trames. ──
 export async function applyPullCibleGoogle(cibleRow) {
   const { report, actions, nextSyncToken, syncFloor, googleClient, status } =
     await readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410: false })
-  const applied = { inserts: 0, deletes: 0, trame_ok: 0, trame_ko: 0, cursor: null }
+  const applied = { inserts: 0, deletes: 0, trame_ok: 0, trame_ko: 0,
+    etag_init: 0, updates: 0, updates_trame_ok: 0, updates_trame_ko: 0, cursor: null }
   const nowIso = new Date().toISOString()
 
   // 410 : reset curseur -> full au prochain run. AUCUNE écriture rendez_vous. sync_floor préservé.
@@ -359,6 +435,18 @@ export async function applyPullCibleGoogle(cibleRow) {
   if (actions.trame.length) {
     const r = await reecrireTrames(googleClient, actions.trame, idByGid)
     applied.trame_ok = r.ok; applied.trame_ko = r.ko
+  }
+
+  // B6 — backfill etag des RDV sans référence (google_etag NULL) : capte l'etag, NE modifie rien.
+  for (const b of actions.etagBackfill) {
+    await supabaseAdmin.from('rendez_vous').update({ google_etag: b.etag }).eq('id', b.id)
+  }
+  applied.etag_init = actions.etagBackfill.length
+
+  // B6 — modifs humaines (last-write-wins sélectif). Non bloquant.
+  if (actions.updates.length) {
+    const r = await appliquerUpdatesB6(googleClient, actions.updates)
+    applied.updates = r.ok; applied.updates_trame_ok = r.trame_ok; applied.updates_trame_ko = r.trame_ko
   }
 
   await supabaseAdmin.from('cible_sync_state').upsert({
