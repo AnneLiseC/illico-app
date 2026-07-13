@@ -15,7 +15,7 @@
 import { createClient } from '@supabase/supabase-js'
 import ICAL from 'ical.js'
 import { resolveCible } from './google'
-import { buildICloudClient, isCalDAVAuthError } from './icloud'
+import { buildICloudClient, isCalDAVAuthError, canonicalIcloudUrl } from './icloud'
 import { parseEvent } from './parse-event'
 import * as engine from './pull-engine'
 
@@ -120,7 +120,7 @@ async function readICloudChanges(client, calendarUrl, syncToken) {
     // 2) Charger TOUT l'existant (fetchCalendarObjects voit les membres que la sync-delta rate).
     const objects = await client.fetchCalendarObjects({ calendar: { url: calendarUrl } })
     const changed = (objects || [])
-      .filter((x) => x && x.data).map((x) => ({ url: x.url, etag: x.etag, data: x.data }))
+      .filter((x) => x && x.data).map((x) => ({ url: canonicalIcloudUrl(x.url), etag: x.etag, data: x.data }))
     return { changed, deleted: [], nextToken: startToken }
   }
 
@@ -131,8 +131,8 @@ async function readICloudChanges(client, calendarUrl, syncToken) {
   })
   const o = synced?.objects || {}
   const changed = [...(o.created || []), ...(o.updated || [])]
-    .filter((x) => x && x.data).map((x) => ({ url: x.url, etag: x.etag, data: x.data }))
-  const deleted = (o.deleted || []).map((x) => (x && x.url) ? x.url : x).filter(Boolean)
+    .filter((x) => x && x.data).map((x) => ({ url: canonicalIcloudUrl(x.url), etag: x.etag, data: x.data }))
+  const deleted = (o.deleted || []).map((x) => canonicalIcloudUrl((x && x.url) ? x.url : x)).filter(Boolean)
   return { changed, deleted, nextToken: synced?.syncToken || syncToken || null }
 }
 
@@ -160,7 +160,15 @@ export async function applyPullCibleICloud(cibleRow) {
   const floorMs = new Date(syncFloor).getTime()
 
   const cand = await engine.loadCandidates(cibleRow.societe_id)
-  const byGid = await engine.loadByGid(cibleRow)
+  // Réappariement iCloud sur URL CANONIQUE (décodée) : les lignes déjà en base peuvent être
+  // stockées en %40 (push historique), le serveur renvoie le href brut. On décode les clés du
+  // moteur pour que %40 et @ matchent (fusion des collisions éventuelles).
+  const byGidRaw = await engine.loadByGid(cibleRow)
+  const byGid = new Map()
+  for (const [gid, arr] of byGidRaw) {
+    const key = canonicalIcloudUrl(gid)
+    byGid.set(key, (byGid.get(key) || []).concat(arr))
+  }
   const ctx = { report, actions, byGid, cand, floorMs, cibleRow }
   const writer = makeICloudWriter(client, calendarUrl)
   report.mode = syncToken ? 'incremental' : 'full'
@@ -229,7 +237,7 @@ export async function pullRecurrentsCibleICloud(cibleRow, { horizonDays = 180 } 
       .eq('cible_id', cibleRow.id).not('google_event_id', 'is', null)
       .order('google_event_id', { ascending: true }).range(from, from + PAGE - 1)
     if (error || !data || data.length === 0) break
-    for (const r of data) seen.add(r.google_event_id)
+    for (const r of data) seen.add(canonicalIcloudUrl(r.google_event_id))
     if (data.length < PAGE) break
   }
 
@@ -263,7 +271,7 @@ export async function pullRecurrentsCibleICloud(cibleRow, { horizonDays = 180 } 
         const s = timeToUtc(det.startDate)
         if (!s.utc) { report.sans_date++; continue }
         const ymd = `${next.year}${String(next.month).padStart(2, '0')}${String(next.day).padStart(2, '0')}`
-        const occId = `${obj.url}#${ymd}`
+        const occId = `${canonicalIcloudUrl(obj.url)}#${ymd}`
         if (seen.has(occId)) { report.deja_presentes++; continue }
         const summary = det.item?.summary || event.summary || ''
         const parsed = parseEvent(summary, cand)
