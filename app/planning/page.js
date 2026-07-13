@@ -259,11 +259,13 @@ export default function Planning() {
     .map(r => {
       const cfg = TYPE_CONFIG[r.type_rdv] || TYPE_CONFIG.visite_technique_client
       const client = `${r.dossier?.client?.prenom || ''} ${r.dossier?.client?.nom || ''}`.trim()
+      // Typé sans client (ex. import Google typé mais non rattaché) : on retombe sur le
+      // titre Google stocké plutôt que d'afficher un libellé tronqué "R3 · ".
       const titre = r.type_rdv === 'autres'
         ? (r.titre || cfg.label)
         : r.type_rdv === 'visite_technique_artisan'
-          ? `${cfg.short} · ${client} × ${r.artisan?.entreprise || ''}`
-          : `${cfg.short} · ${client}`
+          ? `${cfg.short} · ${client || r.titre || ''} × ${r.artisan?.entreprise || ''}`
+          : `${cfg.short} · ${client || r.titre || ''}`
       return {
         id: 'rdv-' + r.id, title: titre,
         start: r.date_heure,
