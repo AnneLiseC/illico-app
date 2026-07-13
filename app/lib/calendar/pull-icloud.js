@@ -96,44 +96,62 @@ function isStaleSyncToken(err) {
   return /sync.?token|invalid.?token|410|gone/i.test(err?.message || '')
 }
 
-// Lecture des changements CalDAV depuis le sync-token, ou BOOTSTRAP si absent (1er sync).
+// Lecture des changements CalDAV par CTag + DIFF (remplace smartCollectionSync).
 //
-// BOOTSTRAP (pas de sync-token) — smartCollectionSync est une sync DELTA : au 1er appel (cache
-// objects:[] vide) iCloud renvoie 0 membre + un sync-token de départ, PAS l'existant. On charge
-// donc l'existant via fetchCalendarObjects. ORDRE CRITIQUE : on capte le sync-token AVANT le
-// fetch. Le token représente alors « l'état à T0 » ; toute création postérieure à T0 ressortira
-// comme delta au prochain pull. Voir la garantie détaillée plus bas.
+// POURQUOI : iCloud est notoirement défaillant sur sync-collection (RFC 6578) / calendar-multiget —
+// smartCollectionSync renvoie systématiquement created/updated/deleted VIDES même après un ajout.
+// fetchCalendarObjects, lui, est FIABLE (10 objets vus au bootstrap). Stratégie retenue :
+//   1. CTag (getctag) : si le CTag serveur == CTag stocké -> RIEN n'a changé -> retour vide, pas de
+//      fetch. (best-effort : si indispo, on fetch quand même — la corrección ne dépend pas du CTag.)
+//   2. fetchCalendarObjects COMPLET (sans timeRange : le DIFF de suppression a besoin de la liste
+//      complète des URL, sinon un event hors fenêtre serait faussement vu comme supprimé).
+//   3. DIFF contre la base (knownUrls = google_event_id des RDV de la cible, URL canonique) :
+//        - URL absente en base            -> le moteur (byGid) la classe INCONNU  = CREATED
+//        - URL présente, etag différent   -> le moteur (byGid+etag) la classe MODIF = UPDATED
+//        - URL en base mais absente du fetch -> DELETED (déduit ici, appliqué si le fetch a réussi)
+//      created/updated sont laissés au moteur (on lui passe TOUT le fetch ; l'anti-écho par etag
+//      neutralise les inchangés). Seul DELETED doit être calculé ici (par absence).
+//   4. Le CTag serveur est renvoyé comme nextToken -> stocké dans cible_sync_state.sync_token
+//      (on RÉUTILISE la colonne sync_token pour porter le CTag iCloud : aucune migration).
 //
-// DELTA (sync-token présent) — smartCollectionSync renvoie { created, updated, deleted } depuis
-// le token. Shape validée en réel (B9-4).
-async function readICloudChanges(client, calendarUrl, syncToken) {
-  if (!syncToken) {
-    // 1) Capter le sync-token de départ (état T0) AVANT de lire l'existant.
-    let startToken = null
-    try {
-      const synced = await client.smartCollectionSync({
-        collection: { url: calendarUrl, syncToken: undefined, objects: [] },
-        method: 'webdav', syncLevel: 1, detailedResult: true,
-      })
-      startToken = synced?.syncToken || null
-    } catch { /* token non captable : nextToken=null -> le bootstrap se rejouera (idempotent via byGid) */ }
-    // 2) Charger TOUT l'existant (fetchCalendarObjects voit les membres que la sync-delta rate).
-    const objects = await client.fetchCalendarObjects({ calendar: { url: calendarUrl } })
-    const changed = (objects || [])
-      .filter((x) => x && x.data).map((x) => ({ url: canonicalIcloudUrl(x.url), etag: x.etag, data: x.data }))
-    return { changed, deleted: [], nextToken: startToken }
+// ⚠️ SÛRETÉ SUPPRESSION : deleted n'est calculé qu'APRÈS un fetch RÉUSSI (si fetch throw -> exception
+//   -> status 'error' -> applyActions n'applique AUCUN delete). Même garde que le lot C Google.
+// ⚠️ On exclut du DIFF de suppression les occurrences récurrentes (google_event_id = URL#YYYYMMDD,
+//   gérées par le canal B9-5, insert-only) : elles ne correspondent à aucune URL d'objet CalDAV.
+async function readICloudChanges(client, calendarUrl, storedCtag, knownUrls) {
+  console.log('[icloud-delta] IN storedCtag=', JSON.stringify(storedCtag), 'knownUrls=', knownUrls.size)
+
+  // 1. CTag (best-effort) : court-circuit si inchangé.
+  let serverCtag = null
+  try {
+    if (typeof client.isCollectionDirty === 'function') {
+      const r = await client.isCollectionDirty({ collection: { url: calendarUrl, ctag: storedCtag || undefined } })
+      serverCtag = r?.newCtag || null
+      console.log('[icloud-delta] CTag serveur=', JSON.stringify(serverCtag), 'isDirty=', r?.isDirty)
+    } else {
+      console.log('[icloud-delta] isCollectionDirty indisponible -> fetch complet systématique')
+    }
+  } catch (e) { console.log('[icloud-delta] isCollectionDirty KO -> fetch complet :', e?.message || e) }
+
+  if (storedCtag && serverCtag && storedCtag === serverCtag) {
+    console.log('[icloud-delta] CTag INCHANGÉ -> skip fetch (0 changement)')
+    return { changed: [], deleted: [], nextToken: storedCtag }
   }
 
-  // Syncs suivants : delta incrémental depuis le token.
-  const synced = await client.smartCollectionSync({
-    collection: { url: calendarUrl, syncToken, objects: [] },
-    method: 'webdav', syncLevel: 1, detailedResult: true,
-  })
-  const o = synced?.objects || {}
-  const changed = [...(o.created || []), ...(o.updated || [])]
-    .filter((x) => x && x.data).map((x) => ({ url: canonicalIcloudUrl(x.url), etag: x.etag, data: x.data }))
-  const deleted = (o.deleted || []).map((x) => canonicalIcloudUrl((x && x.url) ? x.url : x)).filter(Boolean)
-  return { changed, deleted, nextToken: synced?.syncToken || syncToken || null }
+  // 2. fetch COMPLET (fiable). Une exception ici -> propagée -> aucun delete appliqué.
+  const objects = await client.fetchCalendarObjects({ calendar: { url: calendarUrl } })
+  const fetched = (objects || []).filter((x) => x && x.data)
+    .map((x) => ({ url: canonicalIcloudUrl(x.url), etag: x.etag, data: x.data }))
+  const fetchedSet = new Set(fetched.map((x) => x.url))
+
+  // 3. DIFF suppression : URL connue (objet simple, sans '#') absente du fetch.
+  const knownSingle = [...knownUrls].filter((u) => u && !u.includes('#'))
+  const deleted = knownSingle.filter((u) => !fetchedSet.has(u))
+
+  console.log('[icloud-delta] fetch N=', fetched.length, '| knownSingle=', knownSingle.length,
+    '| deleted(absents)=', deleted.length, '| nextCtag=', JSON.stringify(serverCtag))
+
+  return { changed: fetched, deleted, nextToken: serverCtag || storedCtag || null }
 }
 
 // ── B9-4 — PULL iCLOUD INCRÉMENTAL (branché sur le moteur agnostique) ──────────────────
@@ -155,9 +173,11 @@ export async function applyPullCibleICloud(cibleRow) {
 
   const { data: state } = await supabaseAdmin
     .from('cible_sync_state').select('sync_token, sync_floor').eq('cible_id', cibleRow.id).maybeSingle()
+  // sync_token porte désormais le CTag iCloud (réutilisation de colonne, pas de migration).
   const syncToken = state?.sync_token || null
   const syncFloor = state?.sync_floor || new Date().toISOString()
   const floorMs = new Date(syncFloor).getTime()
+  console.log('[icloud-delta] cible=', cibleRow.id, 'CTag stocké (sync_token brut)=', JSON.stringify(syncToken), 'syncFloor=', syncFloor)
 
   const cand = await engine.loadCandidates(cibleRow.societe_id)
   // Réappariement iCloud sur URL CANONIQUE (décodée) : les lignes déjà en base peuvent être
@@ -175,8 +195,10 @@ export async function applyPullCibleICloud(cibleRow) {
 
   let nextToken = syncToken
   try {
-    const { changed, deleted, nextToken: nt } = await readICloudChanges(client, calendarUrl, syncToken)
+    const knownUrls = new Set(byGid.keys())
+    const { changed, deleted, nextToken: nt } = await readICloudChanges(client, calendarUrl, syncToken, knownUrls)
     nextToken = nt
+    console.log('[icloud-delta] classification -> changed=', changed.length, 'deleted=', deleted.length)
     // Suppressions (objet 404) -> event 'cancelled' pour le moteur (delete si match unique).
     for (const url of deleted) {
       engine.classifyNormalized(
@@ -204,6 +226,9 @@ export async function applyPullCibleICloud(cibleRow) {
     return engine.applyActions(cibleRow, { report, actions, nextSyncToken: null, syncFloor, status: 'error' }, writer)
   }
 
+  console.log('[icloud-delta] moteur -> inserts=', actions.inserts.length, 'updates=', actions.updates.length,
+    'deletes=', actions.deletes.length, 'echos=', report.reconnus_echo, 'reconnus=', report.reconnus,
+    'ignores_plancher=', report.ignores_plancher, '| nextCTag=', JSON.stringify(nextToken))
   return engine.applyActions(cibleRow, { report, actions, nextSyncToken: nextToken, syncFloor, status: 'ok' }, writer)
 }
 
