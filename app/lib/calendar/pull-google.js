@@ -40,6 +40,16 @@ export function googleStartToUtc(event) {
   return { kind: 'unknown', utc: null, raw: null }
 }
 
+// Instant UTC de FIN d'un event (pour le plancher de sync). end.dateTime / end.date ;
+// à défaut, le start. null si aucune date (typique d'un cancelled sans corps) -> le
+// plancher ne s'applique pas (la classification cancelled prend le relais).
+export function googleEndToUtc(event) {
+  const e = event.end || {}
+  if (e.dateTime) return new Date(e.dateTime).toISOString()
+  if (e.date)     return new Date(e.date + 'T00:00:00Z').toISOString()
+  return googleStartToUtc(event).utc
+}
+
 // Construit la ligne rendez_vous d'un event INCONNU (event externe pur). Tenant dérivé
 // de la CIBLE, jamais du body Google. google_event_id = event.id (invariant anti-boucle).
 function buildInsertRow(cibleRow, evt, utc) {
@@ -68,6 +78,7 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
     mode: null,                       // 'incremental' | 'full' | 'full_after_410'
     events_lus: 0, reconnus: 0, inconnus: 0, cancelled: 0,
     inconnus_sans_date: 0,            // inconnus non insérables (start non normalisable) — SKIP
+    ignores_plancher: 0,              // events écartés car finis avant sync_floor (pas d'historique)
     cancelled_sans_match: 0,          // delete qui tomberait sur 0 ligne (no-op)
     matches_ambigus: 0,               // google_event_id matchant >1 ligne — NI insert NI delete
     next_sync_token: null,            // curseur à stocker (écrit seulement en apply)
@@ -83,10 +94,15 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
   if (!gc) { report.erreur = 'compte sans refresh_token (cible inerte)'; return { report, actions, nextSyncToken: null, status: 'error' } }
   const { calendar, calendarId } = gc
 
-  // Curseur existant.
+  // Curseur + plancher existants.
   const { data: state } = await supabaseAdmin
-    .from('cible_sync_state').select('sync_token').eq('cible_id', cibleRow.id).maybeSingle()
+    .from('cible_sync_state').select('sync_token, sync_floor').eq('cible_id', cibleRow.id).maybeSingle()
   const syncToken = state?.sync_token || null
+
+  // PLANCHER : plancher existant, sinon l'instant de CE run (1re sync). En apply on le
+  // persiste ; en dry-run il sert juste à filtrer. Tout event fini avant est ignoré.
+  const syncFloor = state?.sync_floor || new Date().toISOString()
+  const floorMs = new Date(syncFloor).getTime()
 
   // Index COMPLET des RDV de CETTE cible : google_event_id -> [ids] (réappariement + ambiguïté).
   // ⚠️ Pagination OBLIGATOIRE : sans .range(), la requête est plafonnée à la limite par
@@ -110,6 +126,11 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
 
   const classify = (evt) => {
     report.events_lus++
+    // PLANCHER : event fini avant sync_floor -> ignoré (aucun import d'historique).
+    // endUtc null (cancelled sans corps daté) -> on laisse passer : la classification
+    // cancelled décidera (un event pré-plancher n'a jamais été importé -> no-op).
+    const endUtc = googleEndToUtc(evt)
+    if (endUtc && new Date(endUtc).getTime() < floorMs) { report.ignores_plancher++; return }
     const n = googleStartToUtc(evt)
     if (report.exemples_utc.length < 3) {
       report.exemples_utc.push({ event_id: evt.id, google_start: n.raw, kind: n.kind, utc_prevu: n.utc })
@@ -155,7 +176,8 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
 
   const reset = () => {
     report.events_lus = 0; report.reconnus = 0; report.inconnus = 0; report.cancelled = 0
-    report.inconnus_sans_date = 0; report.cancelled_sans_match = 0; report.matches_ambigus = 0
+    report.inconnus_sans_date = 0; report.ignores_plancher = 0
+    report.cancelled_sans_match = 0; report.matches_ambigus = 0
     report.exemples_utc = []; report.inconnus_insert = []
     actions.inserts.length = 0; actions.deletes.length = 0
   }
@@ -163,7 +185,7 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
   try {
     if (syncToken) { report.mode = 'incremental'; await runList(syncToken) }
     else           { report.mode = 'full';        await runList(null) }
-    return { report, actions, nextSyncToken: report.next_sync_token, status: 'ok' }
+    return { report, actions, nextSyncToken: report.next_sync_token, syncFloor, status: 'ok' }
   } catch (err) {
     if (err?.code === 410) {
       // syncToken périmé. On SIGNALE full_resync_needed. Les actions de la lecture
@@ -174,10 +196,10 @@ async function readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410 = true } =
       if (reclassifyOn410) {   // dry-run : refait un full pour montrer la classification.
         try { await runList(null) } catch (e2) { report.erreur += ' | full sync KO: ' + (e2?.message || e2) }
       }
-      return { report, actions, nextSyncToken: report.next_sync_token, status: 'full_resync_needed' }
+      return { report, actions, nextSyncToken: report.next_sync_token, syncFloor, status: 'full_resync_needed' }
     }
     report.erreur = err?.message || String(err)
-    return { report, actions, nextSyncToken: null, status: 'error' }
+    return { report, actions, nextSyncToken: null, syncFloor, status: 'error' }
   }
 }
 
@@ -206,15 +228,16 @@ async function markCursorError(cibleId, message) {
 
 // ── APPLY (LOT C) — écrit réellement rendez_vous + cible_sync_state. ───────────────────
 export async function applyPullCibleGoogle(cibleRow) {
-  const { report, actions, nextSyncToken, status } =
+  const { report, actions, nextSyncToken, syncFloor, status } =
     await readAndClassifyCibleGoogle(cibleRow, { reclassifyOn410: false })
   const applied = { inserts: 0, deletes: 0, cursor: null }
   const nowIso = new Date().toISOString()
 
   // 410 : reset curseur -> full au prochain run. AUCUNE écriture rendez_vous.
+  // sync_floor RÉÉCRIT à sa valeur courante (préservé, jamais réinitialisé par le 410).
   if (status === 'full_resync_needed') {
     await supabaseAdmin.from('cible_sync_state').upsert({
-      cible_id: cibleRow.id, sync_token: null, last_sync_at: nowIso,
+      cible_id: cibleRow.id, sync_token: null, last_sync_at: nowIso, sync_floor: syncFloor,
       last_status: 'full_resync_needed', last_error: report.erreur,
     }, { onConflict: 'cible_id' })
     applied.cursor = 'full_resync_needed'
@@ -247,8 +270,10 @@ export async function applyPullCibleGoogle(cibleRow) {
     await markCursorError(cibleRow.id, writeError)
     applied.cursor = 'error'
   } else {
+    // 1er pull : sync_floor posé à sa valeur du run (now()) ; runs suivants : réécrit à
+    // l'identique (idempotent). C'est ici que le plancher est PERSISTÉ.
     await supabaseAdmin.from('cible_sync_state').upsert({
-      cible_id: cibleRow.id, sync_token: nextSyncToken, last_sync_at: nowIso,
+      cible_id: cibleRow.id, sync_token: nextSyncToken, last_sync_at: nowIso, sync_floor: syncFloor,
       last_status: 'ok', last_error: null,
     }, { onConflict: 'cible_id' })
     applied.cursor = 'ok'
