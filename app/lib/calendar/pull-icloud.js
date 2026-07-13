@@ -109,6 +109,12 @@ async function readICloudChanges(client, calendarUrl, syncToken) {
   const flat = Array.isArray(objs) ? objs : [...(objs?.created || []), ...(objs?.updated || [])]
   console.log('[icloud-diag] nb objets (array|created+updated) =', flat.length, '| deleted =', (Array.isArray(objs) ? 0 : (objs?.deleted || []).length))
   if (flat[0]) console.log('[icloud-diag] 1er objet keys=', Object.keys(flat[0]), 'url=', flat[0].url, 'etag=', flat[0].etag, 'data_len=', (flat[0].data || '').length, 'data_head=', JSON.stringify((flat[0].data || '').slice(0, 90)))
+  // SONDE DÉCISIVE : fetchCalendarObjects direct (sans token) voit-il l'existant que la sync rate ?
+  try {
+    const probe = await client.fetchCalendarObjects({ calendar: { url: calendarUrl } })
+    console.log('[icloud-diag] fetchCalendarObjects DIRECT -> nb objets =', (probe || []).length,
+      '| 1er url=', probe?.[0]?.url, '| 1er etag=', probe?.[0]?.etag, '| 1er data_len=', ((probe?.[0]?.data) || '').length)
+  } catch (e) { console.log('[icloud-diag] fetchCalendarObjects KO:', e?.message || e) }
 
   const o = synced?.objects || {}
   const changed = [...(o.created || []), ...(o.updated || [])]
