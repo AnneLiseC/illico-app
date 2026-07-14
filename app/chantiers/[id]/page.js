@@ -3724,7 +3724,62 @@ export default function FicheChantier({ params }) {
                 Coche au fur et à mesure des règlements et déclenchements illiCO
               </div>
             </div>
-            <div style={{padding:'14px 22px', display:'flex', flexDirection:'column', gap:12}}>
+            {/* Deux blocs côte à côte : (A) par devis · (B) autres échéances */}
+            <div className="suivi-grid">
+
+              {/* ── BLOC A — PAR DEVIS ── */}
+              <div className="suivi-bloc">
+                <div className="suivi-bloc-title">Par devis</div>
+                <div className="suivi-table">
+                  <div className="suivi-thead">
+                    <span>Devis</span>
+                    <span>Acompte client</span>
+                    <span>Commission illiCO</span>
+                  </div>
+                  {/* Acompte client + illiCO débloqué (par devis signé) */}
+                  {devisSignes.map(dv => {
+                    const artId = dv.artisan_id || dv.artisan?.id
+                    const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId)
+                    const finDv = calculateDevisFinance(dv, dossier)
+                    const acompteMontant = finDv.acompte
+                    const comDevisHT = finDv.comHT
+                    return (
+                      <div key={`ech-${dv.id}`} className="suivi-devis-row">
+                        <div className="suivi-devis-name">{dv.artisan?.entreprise || '—'}</div>
+                        <div className="suivi-devis-cell">
+                          <EcheanceRow
+                            label="Acompte client"
+                            sub={`${finDv.acompteMode === 'fixe' ? 'fixe' : finDv.acomptePct + '%'} acompte · ${fmt(acompteMontant)} TTC`}
+                            statut={sf?.statut_client || 'en_attente'}
+                            date={sf?.date_paiement || null}
+                            onToggle={() => {
+                              const paye = sf?.statut_client !== 'regle'
+                              setAcompteArtisanPaye(artId, paye, sf?.date_paiement)
+                            }}
+                            fmtDateFn={fmtD}
+                          />
+                        </div>
+                        <div className="suivi-devis-cell">
+                          <EcheanceRow
+                            label={dv.artisan?.paiement_direct ? 'Paiement direct' : 'Acompte débloqué'}
+                            sub={`Commission ${fmt(comDevisHT)} HT`}
+                            statut={sf?.statut_illico === 'recu' ? 'regle' : 'en_attente'}
+                            date={sf?.date_deblocage || null}
+                            onToggle={() => setDeblocagePaye(artId, sf?.statut_illico !== 'recu')}
+                            variant="illico"
+                            fmtDateFn={fmtD}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* ── BLOC B — AUTRES ÉCHÉANCES ── */}
+              <div className="suivi-bloc">
+                <div className="suivi-bloc-title">Autres échéances</div>
+                <div className="suivi-autres">
 
               {/* Frais de consultation */}
               {(dossier.frais_consultation || 0) > 0 && (
@@ -3736,39 +3791,6 @@ export default function FicheChantier({ params }) {
                   fmtDateFn={fmtD}
                 />
               )}
-
-              {/* Acompte client + illiCO débloqué (par devis signé) */}
-              {devisSignes.map(dv => {
-                const artId = dv.artisan_id || dv.artisan?.id
-                const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId)
-                const finDv = calculateDevisFinance(dv, dossier)
-                const acompteMontant = finDv.acompte
-                const comDevisHT = finDv.comHT
-                return (
-                  <div key={`ech-${dv.id}`} style={{display:'flex', flexDirection:'column', gap:8}}>
-                    <EcheanceRow
-                      label={`Acompte client — ${dv.artisan?.entreprise || '—'}`}
-                      sub={`${finDv.acompteMode === 'fixe' ? 'fixe' : finDv.acomptePct + '%'} acompte · ${fmt(acompteMontant)} TTC`}
-                      statut={sf?.statut_client || 'en_attente'}
-                      date={sf?.date_paiement || null}
-                      onToggle={() => {
-                        const paye = sf?.statut_client !== 'regle'
-                        setAcompteArtisanPaye(artId, paye, sf?.date_paiement)
-                      }}
-                      fmtDateFn={fmtD}
-                    />
-                    <EcheanceRow
-                      label={dv.artisan?.paiement_direct ? 'Paiement direct à l’entreprise' : 'illiCO France — acompte débloqué'}
-                      sub={`Commission ${fmt(comDevisHT)} HT · ${dv.artisan?.entreprise || ''}`}
-                      statut={sf?.statut_illico === 'recu' ? 'regle' : 'en_attente'}
-                      date={sf?.date_deblocage || null}
-                      onToggle={() => setDeblocagePaye(artId, sf?.statut_illico !== 'recu')}
-                      variant="illico"
-                      fmtDateFn={fmtD}
-                    />
-                  </div>
-                )
-              })}
 
               {/* Honoraires courtage — AMO, ou courtage SANS travaux supplémentaires (inchangé) */}
               {(dossier.typologie === 'amo' || (dossier.typologie === 'courtage' && suiviCourtageTS.length === 0)) && (
@@ -3899,12 +3921,16 @@ export default function FicheChantier({ params }) {
                 )
               })()}
 
-              {devisSignes.length === 0 && (dossier.frais_consultation || 0) === 0 && (
-                <div style={{padding:'24px 0', textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
-                  Aucune échéance pour le moment
                 </div>
-              )}
+              </div>
+
             </div>
+
+            {devisSignes.length === 0 && (dossier.frais_consultation || 0) === 0 && (
+              <div style={{padding:'24px 0', textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+                Aucune échéance pour le moment
+              </div>
+            )}
           </div>
 
         </div>
