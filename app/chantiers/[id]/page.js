@@ -3048,50 +3048,6 @@ export default function FicheChantier({ params }) {
       {onglet === 'devis' && (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
-        {/* Honoraires client (restylé tokens) */}
-        {['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCRecus > 0 && (
-          <div className="card" style={{padding:0, overflow:'hidden'}}>
-            <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
-              <h2 className="page" style={{fontSize:16}}>Honoraires client</h2>
-              <div className="eyebrow" style={{marginTop:4}}>
-                Calculés sur <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(finDossier.honorairesPrevi.totalDevisTTCRecus)}</span> TTC (devis reçus + signés)
-              </div>
-            </div>
-            <div className="hono-settings">
-              <div className="hono-taux">
-                <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux courtage</label>
-                <input
-                  type="number" step="0.1" min="0" max="20"
-                  value={(dossier.taux_courtage ?? COURTAGE_STANDARD) * 100}
-                  onFocus={() => { tauxAvantEditRef.current.taux_courtage = dossier.taux_courtage }}
-                  onChange={e => set('taux_courtage', parseFloat(e.target.value || 0) / 100)}
-                  onBlur={e => persistTaux('taux_courtage', parseFloat(e.target.value || 0) / 100)}
-                  onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                  className="input"
-                  style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
-                />
-                <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
-              </div>
-              {dossier.typologie === 'amo' && (
-                <div className="hono-taux">
-                  <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux AMO</label>
-                  <input
-                    type="number" step="0.1" min="0" max="20"
-                    value={dossier.honoraires_amo_taux ?? AMO_STANDARD * 100}
-                    onFocus={() => { tauxAvantEditRef.current.honoraires_amo_taux = dossier.honoraires_amo_taux }}
-                    onChange={e => set('honoraires_amo_taux', parseFloat(e.target.value || 0))}
-                    onBlur={e => persistTaux('honoraires_amo_taux', parseFloat(e.target.value || 0))}
-                    onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                    className="input"
-                    style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
-                  />
-                  <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Devis artisans */}
         <div className="card" style={{padding:0, overflow:'hidden'}}>
           <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)', display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -3571,6 +3527,50 @@ export default function FicheChantier({ params }) {
           )}
 
         </div>
+
+        {/* Honoraires client (restylé tokens) */}
+        {['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCRecus > 0 && (
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
+              <h2 className="page" style={{fontSize:16}}>Honoraires client</h2>
+              <div className="eyebrow" style={{marginTop:4}}>
+                Calculés sur <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(finDossier.honorairesPrevi.totalDevisTTCRecus)}</span> TTC (devis reçus + signés)
+              </div>
+            </div>
+            <div className="hono-settings">
+              <div className="hono-taux">
+                <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux courtage</label>
+                <input
+                  type="number" step="0.1" min="0" max="20"
+                  value={(dossier.taux_courtage ?? COURTAGE_STANDARD) * 100}
+                  onFocus={() => { tauxAvantEditRef.current.taux_courtage = dossier.taux_courtage }}
+                  onChange={e => set('taux_courtage', parseFloat(e.target.value || 0) / 100)}
+                  onBlur={e => persistTaux('taux_courtage', parseFloat(e.target.value || 0) / 100)}
+                  onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                  className="input"
+                  style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
+                />
+                <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
+              </div>
+              {dossier.typologie === 'amo' && (
+                <div className="hono-taux">
+                  <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux AMO</label>
+                  <input
+                    type="number" step="0.1" min="0" max="20"
+                    value={dossier.honoraires_amo_taux ?? AMO_STANDARD * 100}
+                    onFocus={() => { tauxAvantEditRef.current.honoraires_amo_taux = dossier.honoraires_amo_taux }}
+                    onChange={e => set('honoraires_amo_taux', parseFloat(e.target.value || 0))}
+                    onBlur={e => persistTaux('honoraires_amo_taux', parseFloat(e.target.value || 0))}
+                    onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                    className="input"
+                    style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
+                  />
+                  <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Récapitulatif chantier (restylé tokens, déplacé depuis Finance) */}
         {devis.length > 0 && (
