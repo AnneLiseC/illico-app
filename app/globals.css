@@ -1371,3 +1371,36 @@ img, svg, video, canvas { max-width: 100%; }
   }
   .suivi-devis-name { padding-bottom: 6px; border-bottom: 1px solid var(--ink-100); }
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   Page Finances — tableaux responsive. Classes `fin-`, scopées à
+   `.fin-page` (zéro impact autres pages).
+   L'infra globale ne rend les tables scrollables qu'à ≤767px ; entre
+   768 et 1024px (tablette) les colonnes étaient coupées (body en
+   overflow-x:clip). On étend le scroll horizontal jusqu'à ≤1024px.
+   ───────────────────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .fin-page .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+  /* Largeur naturelle : les colonnes ne se compriment plus, elles
+     deviennent accessibles au scroll (comme le fait déjà l'infra ≤767). */
+  .fin-page .table-scroll > table { min-width: max-content; }
+}
+
+/* 1ʳᵉ colonne figée pendant le scroll horizontal (tableaux A « Détail par
+   chantier » et C « Facturation mensuelle »). Fonds opaques pour que les
+   cellules qui défilent dessous ne transparaissent pas. En l'absence de
+   scroll (desktop > 1024px), sticky est un no-op → rendu inchangé. */
+.fin-sticky-col thead th:first-child {
+  position: sticky; left: 0; z-index: 3; background: var(--surface-2);
+}
+.fin-sticky-col tbody td:first-child {
+  position: sticky; left: 0; z-index: 1; background: var(--surface);
+}
+.fin-sticky-col tfoot td:first-child {
+  position: sticky; left: 0; z-index: 1; background: var(--surface-2);
+}
+.fin-sticky-col tbody tr.row-hover:hover td:first-child { background: var(--brand-50); }

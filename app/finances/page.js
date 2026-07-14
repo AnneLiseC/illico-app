@@ -483,7 +483,8 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
             <div className="eyebrow" style={{marginTop:4}}>F1 = facture émise par l&apos;agente · F2 = facture émise par la franchisée</div>
           </div>
         </div>
-        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+        <div className="table-scroll">
+        <table className="fin-sticky-col" style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
           <thead style={{background:'var(--surface-2)'}}>
             <tr>
               {thL('Mois')}
@@ -595,6 +596,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
             </tfoot>
           )}
         </table>
+        </div>
       </div>
 
       {/* Détail factures F1 + F2 côte à côte */}
@@ -1564,7 +1566,7 @@ export default function Finances() {
           </div>
         </div>
         <div className="table-scroll">
-        <table style={{width:'100%',borderCollapse:'collapse'}}>
+        <table className="fin-sticky-col" style={{width:'100%',borderCollapse:'collapse'}}>
           <thead style={{position:'sticky',top:0,zIndex:1}}>
             <tr style={{borderBottom:'1px solid var(--ink-200)'}}>
               <Th>Dossier</Th>
@@ -1687,6 +1689,7 @@ export default function Finances() {
 
   const renderTableauPeriode = (listeDossiers, rows, colLabel, colonnes, getMontant, getDossierMontant) => (
     <div className="card" style={{overflow:'hidden'}}>
+      <div className="table-scroll">
       <table style={{width:'100%',fontSize:13}}>
         <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
           <tr>
@@ -1754,6 +1757,7 @@ export default function Finances() {
           </tr>
         </tfoot>
       </table>
+      </div>
     </div>
   )
 
@@ -1773,6 +1777,7 @@ export default function Finances() {
       const thR = { textAlign:'right', padding:'12px 16px', fontSize:11, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', whiteSpace:'nowrap' }
       return (
         <div className="card" style={{overflow:'hidden'}}>
+          <div className="table-scroll">
           <table style={{width:'100%',fontSize:13}}>
             <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
               <tr>
@@ -1831,6 +1836,7 @@ export default function Finances() {
               {rows.length === 0 && <tr><td colSpan={cols.length + 1} style={{padding:'32px 12px',textAlign:'center',color:'var(--ink-400)'}}>Aucune donnée</td></tr>}
             </tbody>
           </table>
+          </div>
         </div>
       )
     }
@@ -2048,6 +2054,7 @@ export default function Finances() {
             reel={totalCAGenere}
             objectifMontant={objectifAnnuelCible} cible="agence" canEdit={false} />
           <div className="card" style={{overflow:'hidden'}}>
+          <div className="table-scroll">
           <table style={{width:'100%',fontSize:13}}>
             <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
               <tr>
@@ -2088,6 +2095,7 @@ export default function Finances() {
             </tbody>
           </table>
           </div>
+          </div>
           <SuiviCTPChart labels={chartLabelsAnnee} produitsData={chartProduitsAnnee} chargesData={chartChargesAnnee} netData={chartNetAnnee} chartId={`chart_${mode}_annee`} />
         </div>
       )
@@ -2111,6 +2119,7 @@ export default function Finances() {
               reel={caGenerePourCle(moisCourantCle)}
               objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
             <div className="card" style={{overflow:'hidden'}}>
+              <div className="table-scroll">
               <table style={{width:'100%',fontSize:11}}>
                 {moisTableHead}
                 <tbody>
@@ -2123,6 +2132,7 @@ export default function Finances() {
                   </tr>
                 </tbody>
               </table>
+              </div>
             </div>
             <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId={`chart_${mode}_mois`} />
           </div>
@@ -2159,7 +2169,7 @@ export default function Finances() {
   )
 
   return (
-    <div className="page-enter page-pad" style={{display:'flex',flexDirection:'column',gap:20,maxWidth:1400,margin:'0 auto'}}>
+    <div className="page-enter page-pad fin-page" style={{display:'flex',flexDirection:'column',gap:20,maxWidth:1400,margin:'0 auto'}}>
 
       {/* En-tête page */}
       <div className="header-row" style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:16,flexWrap:'wrap'}}>
