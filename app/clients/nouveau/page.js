@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../lib/auth-context'
 
-const FORMES_JURIDIQUES = ['SCI', 'SARL', 'EURL', 'SAS', 'SASU', 'SA', 'SNC', 'SCEA', 'SCM', 'auto-entrepreneur / micro-entreprise', 'EI', 'autre']
+const FORMES_JURIDIQUES = ['SCI', 'SARL', 'EURL', 'SAS', 'SASU', 'SA', 'SNC', 'SCEA', 'SCM', 'auto-entrepreneur / micro-entreprise', 'EI']
 
 export default function NouveauClient() {
   const { user, profile, initialized, agences, agenceActive } = useAuth()

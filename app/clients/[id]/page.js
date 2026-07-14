@@ -62,7 +62,7 @@ function MiniKpi({ label, value, sub, tone = 'brand' }) {
   )
 }
 
-const FORMES_JURIDIQUES = ['SCI', 'SARL', 'EURL', 'SAS', 'SASU', 'SA', 'SNC', 'SCEA', 'SCM', 'auto-entrepreneur / micro-entreprise', 'EI', 'autre']
+const FORMES_JURIDIQUES = ['SCI', 'SARL', 'EURL', 'SAS', 'SASU', 'SA', 'SNC', 'SCEA', 'SCM', 'auto-entrepreneur / micro-entreprise', 'EI']
 const labelStyle = { display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 6 }
 const inputProps = { className: 'input', style: { width: '100%', height: 40 } }
 
