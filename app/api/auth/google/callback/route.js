@@ -3,6 +3,7 @@ import { google } from 'googleapis'
 import crypto from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { encrypt } from '../../../../lib/calendar/crypto'
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
@@ -56,11 +57,13 @@ export async function GET(request) {
   try {
     const { tokens } = await oauth2Client.getToken(code)
 
+    // W1 — tokens stockés CHIFFRÉS (AES-256-GCM). refresh_token peut être null (Google ne le
+    // renvoie qu'au 1er consentement) → on ne chiffre que s'il est présent. expiry_date en clair.
     await supabaseAdmin.from('comptes_oauth').upsert({
       user_id: userId,
       fournisseur: 'google',
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token || null,
+      access_token: encrypt(tokens.access_token),
+      refresh_token: tokens.refresh_token ? encrypt(tokens.refresh_token) : null,
       expiry_date: tokens.expiry_date || null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id,fournisseur' })
