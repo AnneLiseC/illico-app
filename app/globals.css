@@ -1420,9 +1420,13 @@ img, svg, video, canvas { max-width: 100%; }
   border-radius: 8px; width: 30px; height: 28px; cursor: pointer; font-size: 11px; flex-shrink: 0;
 }
 .suivi-amo-chevron:hover { background: var(--surface-2); }
+/* Rattaché à la ligne « Honoraires AMO — solde » : indenté sous son libellé
+   (padding 14 + case à cocher 18 + gap 14 = 46px), et remonté contre la ligne,
+   pour montrer qu'il agit sur CETTE échéance et non sur le bloc entier. */
 .suivi-amo-add-link {
   align-self: flex-start; border: none; background: none; cursor: pointer;
-  font-size: 12px; font-weight: 600; color: var(--brand-700); padding: 2px 4px;
+  font-size: 12px; font-weight: 600; color: var(--brand-700);
+  padding: 2px 4px; margin-left: 46px; margin-top: -2px;
 }
 .suivi-amo-add-link:hover { text-decoration: underline; }
 /* Panneau = DÉTAIL de la ligne AMO ci-dessus, pas une échéance séparée :
