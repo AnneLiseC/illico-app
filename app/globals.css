@@ -1324,3 +1324,56 @@ img, svg, video, canvas { max-width: 100%; }
 }
 .recap-total-val { font-size: 18px; font-weight: 800; color: var(--brand-800); letter-spacing: -0.01em; }
 @media (max-width: 560px) { .recap-grid { grid-template-columns: 1fr; } }
+
+/* ─────────────────────────────────────────────────────────────────
+   Onglet « Suivi financier » — carte Échéances : 2 blocs côte à côte
+   (A = par devis · B = autres échéances). Classes `suivi-`.
+   ───────────────────────────────────────────────────────────────── */
+
+/* Légende ✓ / ⏳ */
+.suivi-legend {
+  display: flex; gap: 18px; align-items: center;
+  padding: 12px 22px 0; font-size: 12px; color: var(--ink-500);
+}
+
+/* Les 2 blocs côte à côte (> 900px), empilés en dessous */
+.suivi-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 22px;
+  padding: 14px 22px;
+}
+.suivi-bloc { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.suivi-bloc-title {
+  font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--brand-800); padding-bottom: 6px; border-bottom: 1px solid var(--ink-200);
+}
+
+/* BLOC A — tableau à double entrée (devis | acompte | commission) */
+.suivi-table { display: flex; flex-direction: column; gap: 8px; overflow-x: auto; }
+.suivi-thead, .suivi-devis-row {
+  display: grid; grid-template-columns: minmax(80px, 0.55fr) minmax(210px, 1fr) minmax(210px, 1fr);
+  gap: 10px; align-items: center; min-width: 0;
+}
+.suivi-thead {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--ink-400); padding: 0 4px 2px;
+}
+.suivi-devis-name {
+  font-size: 12.5px; font-weight: 700; color: var(--ink-900);
+  overflow-wrap: anywhere; min-width: 0;
+}
+.suivi-devis-cell { min-width: 0; }
+
+/* BLOC B — autres échéances empilées */
+.suivi-autres { display: flex; flex-direction: column; gap: 12px; }
+
+/* Mobile : blocs empilés ; le tableau A devient des cartes par devis */
+@media (max-width: 900px) {
+  .suivi-grid { grid-template-columns: 1fr; }
+  .suivi-table { overflow-x: visible; }
+  .suivi-thead { display: none; }
+  .suivi-devis-row {
+    grid-template-columns: 1fr; gap: 8px;
+    border: 1px solid var(--ink-200); border-radius: 12px; padding: 12px; background: var(--surface);
+  }
+  .suivi-devis-name { padding-bottom: 6px; border-bottom: 1px solid var(--ink-100); }
+}
