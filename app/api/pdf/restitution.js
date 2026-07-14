@@ -295,7 +295,7 @@ async function makeCoverPage({ nomRef, telRef, agence }) {
 async function buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo, resumeGenere }) {
   const client = dossier.client
   const ref = dossier.referente
-  const nomClient = formatNomClient(client, { civilite: true })
+  const nomClient = formatNomClient(client, { civilite: true, withRepresentant: true })
   const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
   const nomRef = getNomRef(ref)
   const dateAuj = new Date().toLocaleDateString('fr-FR')
@@ -535,7 +535,7 @@ async function downloadPDF(supabaseAdmin, bucket, path) {
 async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
   const client = dossier.client
   const ref = dossier.referente
-  const nomClient = formatNomClient(client, { civilite: true })
+  const nomClient = formatNomClient(client, { civilite: true, withRepresentant: true })
   const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
   const nomRef = getNomRef(ref)
   const dateAuj = new Date().toLocaleDateString('fr-FR')

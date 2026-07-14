@@ -74,7 +74,7 @@ RÉPONSE : JSON strict uniquement, aucun texte avant ou après :
 
 function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants, notesBrutes }) {
   const client = dossier.client
-  const nomClient = client ? formatNomClient(client, { civilite: true }) : 'Client inconnu'
+  const nomClient = client ? formatNomClient(client, { civilite: true, withRepresentant: true }) : 'Client inconnu'
 
   const artisansChantier = (devis || [])
     .filter(d => d.statut === 'accepte').map(d => d.artisan?.entreprise).filter(Boolean)

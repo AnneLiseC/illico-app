@@ -62,6 +62,7 @@ function MiniKpi({ label, value, sub, tone = 'brand' }) {
   )
 }
 
+const FORMES_JURIDIQUES = ['SCI', 'SARL', 'EURL', 'SAS', 'SASU', 'SA', 'SNC', 'SCEA', 'SCM', 'auto-entrepreneur / micro-entreprise', 'EI']
 const labelStyle = { display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink-700)', marginBottom: 6 }
 const inputProps = { className: 'input', style: { width: '100%', height: 40 } }
 
@@ -128,16 +129,42 @@ function FicheClientInner({ params }) {
     setErreur('')
     setSucces('')
 
+    // Validation identité selon le type de client.
+    if (client.type_client === 'professionnel') {
+      if (!(client.raison_sociale || '').trim()) {
+        setErreur('La raison sociale est obligatoire pour un client professionnel.')
+        setSaving(false)
+        return
+      }
+    } else if (!(client.nom || '').trim() || !(client.prenom || '').trim()) {
+      setErreur('Le nom et le prénom sont obligatoires.')
+      setSaving(false)
+      return
+    }
+
     const adresseChantier = client.adresse_chantier_identique
       ? client.adresse || null
       : client.adresse_chantier || null
 
+    // Option A : re-synchroniser `nom` selon le type au moment du save.
+    // Pro → « <forme_juridique> <raison_sociale> », prenom = '' ; colonnes pro stockées.
+    // Particulier → nom/prénom des champs ; colonnes pro remises à null (nettoyage).
+    const estPro = client.type_client === 'professionnel'
+    const nomFinal = estPro
+      ? `${client.forme_juridique ? client.forme_juridique + ' ' : ''}${client.raison_sociale || ''}`.trim()
+      : client.nom
+
     const { error } = await supabase.from('clients').update({
       civilite:             client.civilite,
-      nom:                  client.nom,
-      prenom:               client.prenom,
-      nom2:                 client.nom2 || null,
-      prenom2:              client.prenom2 || null,
+      nom:                  nomFinal,
+      prenom:               estPro ? '' : client.prenom,
+      nom2:                 estPro ? null : (client.nom2 || null),
+      prenom2:              estPro ? null : (client.prenom2 || null),
+      forme_juridique:      estPro ? (client.forme_juridique || null) : null,
+      raison_sociale:       estPro ? client.raison_sociale : null,
+      representant_nom:     estPro ? (client.representant_nom || null) : null,
+      representant_prenom:  estPro ? (client.representant_prenom || null) : null,
+      siret:                estPro ? (client.siret || null) : null,
       email:                client.email || null,
       email2:               client.email2 || null,
       telephone:            client.telephone || null,
@@ -494,39 +521,92 @@ function FicheClientInner({ params }) {
       <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="eyebrow">Informations client</div>
 
+        {/* Type de client — pilote les champs d'identité */}
         <div>
-          <label style={labelStyle}>Civilité</label>
-          <select {...inputProps} value={client.civilite} onChange={e => set('civilite', e.target.value)}>
-            <option value="M.">M.</option>
-            <option value="Mme">Mme</option>
-            <option value="M. et Mme">M. et Mme</option>
-            <option value="Mme et Mme">Mme et Mme</option>
-            <option value="M. et M.">M. et M.</option>
+          <label style={labelStyle}>Type de client</label>
+          <select {...inputProps} value={client.type_client || 'particulier'} onChange={e => set('type_client', e.target.value)}>
+            <option value="particulier">Particulier</option>
+            <option value="professionnel">Professionnel</option>
           </select>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div>
-            <label style={labelStyle}>Prénom{estCouple ? ' 1' : ''}</label>
-            <input {...inputProps} type="text" value={client.prenom || ''} onChange={e => set('prenom', e.target.value)}/>
-          </div>
-          <div>
-            <label style={labelStyle}>Nom{estCouple ? ' 1' : ''}</label>
-            <input {...inputProps} type="text" value={client.nom || ''} onChange={e => set('nom', e.target.value)}/>
-          </div>
-        </div>
+        {client.type_client === 'professionnel' ? (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <label style={labelStyle}>Forme juridique <span style={{ color: 'var(--ink-400)', fontWeight: 400 }}>(optionnel)</span></label>
+                <select {...inputProps} value={client.forme_juridique || ''} onChange={e => set('forme_juridique', e.target.value)}>
+                  <option value="">— Choisir —</option>
+                  {FORMES_JURIDIQUES.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Raison sociale *</label>
+                <input {...inputProps} type="text" value={client.raison_sociale || ''} onChange={e => set('raison_sociale', e.target.value)} placeholder="Coucou"/>
+              </div>
+            </div>
 
-        {estCouple && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, paddingTop: 12, borderTop: '1px solid var(--ink-100)' }}>
-            <div>
-              <label style={labelStyle}>Prénom 2</label>
-              <input {...inputProps} type="text" value={client.prenom2 || ''} onChange={e => set('prenom2', e.target.value)}/>
+            {/* Représentant / gérant — optionnel. La civilité saisie est celle du représentant. */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, paddingTop: 12, borderTop: '1px solid var(--ink-100)' }}>
+              <div>
+                <label style={labelStyle}>Civilité représentant</label>
+                <select {...inputProps} value={client.civilite === 'Mme' ? 'Mme' : 'M.'} onChange={e => set('civilite', e.target.value)}>
+                  <option value="M.">M.</option>
+                  <option value="Mme">Mme</option>
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Prénom représentant <span style={{ color: 'var(--ink-400)', fontWeight: 400 }}>(optionnel)</span></label>
+                <input {...inputProps} type="text" value={client.representant_prenom || ''} onChange={e => set('representant_prenom', e.target.value)}/>
+              </div>
+              <div>
+                <label style={labelStyle}>Nom représentant <span style={{ color: 'var(--ink-400)', fontWeight: 400 }}>(optionnel)</span></label>
+                <input {...inputProps} type="text" value={client.representant_nom || ''} onChange={e => set('representant_nom', e.target.value)}/>
+              </div>
             </div>
+
             <div>
-              <label style={labelStyle}>Nom 2</label>
-              <input {...inputProps} type="text" value={client.nom2 || ''} onChange={e => set('nom2', e.target.value)}/>
+              <label style={labelStyle}>SIRET <span style={{ color: 'var(--ink-400)', fontWeight: 400 }}>(optionnel)</span></label>
+              <input {...inputProps} type="text" value={client.siret || ''} onChange={e => set('siret', e.target.value)} placeholder="123 456 789 00012"/>
             </div>
-          </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <label style={labelStyle}>Civilité</label>
+              <select {...inputProps} value={client.civilite} onChange={e => set('civilite', e.target.value)}>
+                <option value="M.">M.</option>
+                <option value="Mme">Mme</option>
+                <option value="M. et Mme">M. et Mme</option>
+                <option value="Mme et Mme">Mme et Mme</option>
+                <option value="M. et M.">M. et M.</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <label style={labelStyle}>Prénom{estCouple ? ' 1' : ''}</label>
+                <input {...inputProps} type="text" value={client.prenom || ''} onChange={e => set('prenom', e.target.value)}/>
+              </div>
+              <div>
+                <label style={labelStyle}>Nom{estCouple ? ' 1' : ''}</label>
+                <input {...inputProps} type="text" value={client.nom || ''} onChange={e => set('nom', e.target.value)}/>
+              </div>
+            </div>
+
+            {estCouple && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, paddingTop: 12, borderTop: '1px solid var(--ink-100)' }}>
+                <div>
+                  <label style={labelStyle}>Prénom 2</label>
+                  <input {...inputProps} type="text" value={client.prenom2 || ''} onChange={e => set('prenom2', e.target.value)}/>
+                </div>
+                <div>
+                  <label style={labelStyle}>Nom 2</label>
+                  <input {...inputProps} type="text" value={client.nom2 || ''} onChange={e => set('nom2', e.target.value)}/>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -572,13 +652,6 @@ function FicheClientInner({ params }) {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div>
-            <label style={labelStyle}>Type</label>
-            <select {...inputProps} value={client.type_client || ''} onChange={e => set('type_client', e.target.value)}>
-              <option value="particulier">Particulier</option>
-              <option value="professionnel">Professionnel</option>
-            </select>
-          </div>
           <div>
             <label style={labelStyle}>Référente</label>
             {authProfile?.role === 'admin' ? (
