@@ -1330,12 +1330,6 @@ img, svg, video, canvas { max-width: 100%; }
    (A = par devis · B = autres échéances). Classes `suivi-`.
    ───────────────────────────────────────────────────────────────── */
 
-/* Légende ✓ / ⏳ */
-.suivi-legend {
-  display: flex; gap: 18px; align-items: center;
-  padding: 12px 22px 0; font-size: 12px; color: var(--ink-500);
-}
-
 /* Les 2 blocs côte à côte (> 900px), empilés en dessous */
 .suivi-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 22px;

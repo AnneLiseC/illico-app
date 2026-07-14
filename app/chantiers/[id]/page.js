@@ -3724,12 +3724,6 @@ export default function FicheChantier({ params }) {
                 Coche au fur et à mesure des règlements et déclenchements illiCO
               </div>
             </div>
-            {/* Légende */}
-            <div className="suivi-legend">
-              <span>✓ réglé</span>
-              <span>⏳ en attente</span>
-            </div>
-
             {/* Deux blocs côte à côte : (A) par devis · (B) autres échéances */}
             <div className="suivi-grid">
 
