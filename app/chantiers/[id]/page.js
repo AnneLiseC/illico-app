@@ -3754,7 +3754,7 @@ export default function FicheChantier({ params }) {
                         <div className="suivi-devis-name">{dv.artisan?.entreprise || '—'}</div>
                         <div className="suivi-devis-cell">
                           <EcheanceRow
-                            label={`Acompte client — ${dv.artisan?.entreprise || '—'}`}
+                            label="Acompte client"
                             sub={`${finDv.acompteMode === 'fixe' ? 'fixe' : finDv.acomptePct + '%'} acompte · ${fmt(acompteMontant)} TTC`}
                             statut={sf?.statut_client || 'en_attente'}
                             date={sf?.date_paiement || null}
@@ -3767,8 +3767,8 @@ export default function FicheChantier({ params }) {
                         </div>
                         <div className="suivi-devis-cell">
                           <EcheanceRow
-                            label={dv.artisan?.paiement_direct ? 'Paiement direct à l’entreprise' : 'illiCO France — acompte débloqué'}
-                            sub={`Commission ${fmt(comDevisHT)} HT · ${dv.artisan?.entreprise || ''}`}
+                            label={dv.artisan?.paiement_direct ? 'Paiement direct' : 'Acompte débloqué'}
+                            sub={`Commission ${fmt(comDevisHT)} HT`}
                             statut={sf?.statut_illico === 'recu' ? 'regle' : 'en_attente'}
                             date={sf?.date_deblocage || null}
                             onToggle={() => setDeblocagePaye(artId, sf?.statut_illico !== 'recu')}
