@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import { formatNomClient } from '../lib/clients'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { calculateDossierFinance, getActiveDevis, getSignedDevis, DEFAULT_PART_AGENTE } from '../lib/finance'
+import { calculateDossierFinance, getActiveDevis, getSignedDevis, calculateSoldeAmoReel, DEFAULT_PART_AGENTE } from '../lib/finance'
 import { calcStatut } from '../lib/dossiers'
 import { Avatar } from '../components/shared'
 
@@ -921,9 +921,12 @@ export default function Finances() {
       const fraisReel = d.frais_statut === 'regle' ? c.fraisNet : 0
       const courtageRegle = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
       const amoRegle = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
+      // Cohabitation solde AMO échelonné : Σ tranches encaissées si le dossier en a,
+      // sinon le gate tout-ou-rien actuel (branche else laissée verbatim).
+      const soldeAmoR = calculateSoldeAmoReel(d)
       // AMO : l'acompte AMO = la part courtage (même encaissement, compté via le courtage).
       // Le solde AMO ajoute la part AMO pleine (finance.js) quand il est réglé. Jamais les deux.
-      const soldeAmoNetM = amoRegle ? c.amoNet : 0
+      const soldeAmoNetM = soldeAmoR.hasTranches ? soldeAmoR.recognizedNet : (amoRegle ? c.amoNet : 0)
       const honReel = round2((courtageRegle ? c.courtNet : 0) + soldeAmoNetM)
       let comReelNet = 0
       let comBruteEncaissee = 0       // AJOUT affichage : Σ comHT brut des devis encaissés
@@ -950,11 +953,11 @@ export default function Finances() {
 
       // AJOUTS affichage (brut/royalty réels) — n'entrent PAS dans le calcul du net.
       const fraisBrutReel = d.frais_statut === 'regle' ? c.fraisHT : 0
-      const honReelBrut = round2((courtageRegle ? c.finance.honoraires.courtage.ht : 0) + (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0))
+      const honReelBrut = round2((courtageRegle ? c.finance.honoraires.courtage.ht : 0) + (soldeAmoR.hasTranches ? soldeAmoR.recognizedHt : (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0)))
       const royaltyReelle = round2(
         (d.frais_statut === 'regle' ? c.fraisRoyalties : 0) +
         royaltiesComReel + royaltiesComApporteursReel +
-        (courtageRegle ? c.courtRoyalties : 0) + (amoRegle ? c.amoRoyalties : 0)
+        (courtageRegle ? c.courtRoyalties : 0) + (soldeAmoR.hasTranches ? soldeAmoR.recognizedRoyalties : (amoRegle ? c.amoRoyalties : 0))
       )
 
       const gainAdminReel = round2(fraisReel + honReel + comReelNet + comApporteursReel - apporteurRetire)
@@ -970,16 +973,19 @@ export default function Finances() {
     // Honoraires — HT net si réglé
     const courtageRegle  = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
     const amoRegle       = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
+    // Cohabitation solde AMO échelonné : Σ tranches encaissées si le dossier en a,
+    // sinon le gate tout-ou-rien actuel (branches else laissées verbatim).
+    const soldeAmoR = calculateSoldeAmoReel(d)
     // AMO : l'acompte AMO = la part courtage (même encaissement, compté via le courtage).
     // Le solde AMO ajoute la part AMO pleine (finance.js) quand il est réglé. Jamais les deux.
     const honCourtageReel = courtageRegle ? c.courtNet : 0
-    const soldeAmoNet    = amoRegle ? c.amoNet : 0
-    const soldeAmoAgente = amoRegle ? c.amoAgente : 0
+    const soldeAmoNet    = soldeAmoR.hasTranches ? soldeAmoR.recognizedNet : (amoRegle ? c.amoNet : 0)
+    const soldeAmoAgente = soldeAmoR.hasTranches ? soldeAmoR.parts.agente : (amoRegle ? c.amoAgente : 0)
     const honAMOReel     = soldeAmoNet
     const honReel        = round2(honCourtageReel + honAMOReel)
     const royaltiesHonReel = round2(
       (courtageRegle ? c.courtRoyalties : 0) +
-      (amoRegle ? c.amoRoyalties : 0)
+      (soldeAmoR.hasTranches ? soldeAmoR.recognizedRoyalties : (amoRegle ? c.amoRoyalties : 0))
     )
     const honAgenteReel  = round2(
       (courtageRegle ? c.courtAgente : 0) +
@@ -1025,7 +1031,7 @@ export default function Finances() {
     const fraisBrutReel = fraisRegle ? c.fraisHT : 0
     const honReelBrut = round2(
       (courtageRegle ? c.finance.honoraires.courtage.ht : 0) +
-      (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0)
+      (soldeAmoR.hasTranches ? soldeAmoR.recognizedHt : (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0))
     )
     const royaltyReelle = round2(
       fraisRoyaltiesReel + royaltiesComReel + royaltiesComApporteursReel + royaltiesHonReel
@@ -1251,14 +1257,28 @@ export default function Finances() {
       // Solde AMO — part AMO pleine (finance.js), gated par solde_amo réglé.
       // L'acompte AMO n'ajoute PLUS son montant : c'est la part courtage, déjà
       // comptée par le bloc « Honoraires courtage » ci-dessus (même encaissement).
-      const suiviAmo = suivi.find(s => s.type_echeance === 'solde_amo' && s.statut_client === 'regle')
-      if (c.soldeAmoNet > 0 && suiviAmo) {
-        const dateAmo = suiviAmo?.date_paiement || d.date_fin_chantier
-        const key = getKeyFromDate(dateAmo, isAnnee)
-        addToKey(key, 'amoNet', c.soldeAmoNet, d.id)
-        addToKey(key, 'honAgenteNet', c.soldeAmoAgente, d.id)
-        addToKey(key, 'honBrut', c.finance.honoraires.soldeAmo.ht, d.id)
-        addToKey(key, 'royaltyBucket', c.amoRoyalties, d.id)
+      // Cohabitation échelonné : si tranches, chacune sur SA date_paiement ; sinon
+      // le bloc tout-ou-rien actuel (branche else laissée verbatim).
+      const soldeAmoR = calculateSoldeAmoReel(d)
+      if (soldeAmoR.hasTranches) {
+        for (const t of soldeAmoR.tranches) {
+          if (t.net <= 0 && t.ht <= 0) continue
+          const key = getKeyFromDate(t.date_paiement || d.date_fin_chantier, isAnnee)
+          addToKey(key, 'amoNet', t.net, d.id)
+          addToKey(key, 'honAgenteNet', t.parts.agente, d.id)
+          addToKey(key, 'honBrut', t.ht, d.id)
+          addToKey(key, 'royaltyBucket', t.royalties, d.id)
+        }
+      } else {
+        const suiviAmo = suivi.find(s => s.type_echeance === 'solde_amo' && s.statut_client === 'regle')
+        if (c.soldeAmoNet > 0 && suiviAmo) {
+          const dateAmo = suiviAmo?.date_paiement || d.date_fin_chantier
+          const key = getKeyFromDate(dateAmo, isAnnee)
+          addToKey(key, 'amoNet', c.soldeAmoNet, d.id)
+          addToKey(key, 'honAgenteNet', c.soldeAmoAgente, d.id)
+          addToKey(key, 'honBrut', c.finance.honoraires.soldeAmo.ht, d.id)
+          addToKey(key, 'royaltyBucket', c.amoRoyalties, d.id)
+        }
       }
 
       // Commissions artisans normaux

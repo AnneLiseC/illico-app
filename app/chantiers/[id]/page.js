@@ -7,7 +7,7 @@ import { formatNomClient } from '../../lib/clients'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement, detecterCategorie } from '../../lib/dossiers'
-import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
 import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
@@ -758,6 +758,9 @@ export default function FicheChantier({ params }) {
   const [uploadingContrat, setUploadingContrat] = useState(false)
   const [docViewer, setDocViewer] = useState(null) // { url, nom }
   const [suiviFinancier, setSuiviFinancier] = useState([])
+  // Solde AMO échelonné (UI) : panneau déplié + mini-formulaire d'ajout de tranche.
+  const [soldeAmoDeplie, setSoldeAmoDeplie] = useState(false)
+  const [soldeAmoForm, setSoldeAmoForm] = useState({ montant: '', date: '' })
   const router = useRouter()
 
   useEffect(() => {
@@ -2204,6 +2207,34 @@ export default function FicheChantier({ params }) {
       ? { statut_client: 'regle', date_paiement: today }
       : { statut_client: 'en_attente', date_paiement: null }
     const { error } = await supabase.from('suivi_financier').update(payload).eq('id', ligne.id)
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(data || [])
+  }
+
+  // Solde AMO échelonné — ajoute une tranche encaissée (montant TTC libre + date).
+  // À la 1ʳᵉ tranche (c2), neutralise le conteneur solde_amo resté éventuellement
+  // 'regle' → une suppression ultérieure de toutes les tranches ne repasserait pas
+  // le solde à « payé d'un coup ». RPC lot 1 ; rafraîchissement = pattern existant.
+  const addSoldeAmoPaiement = async (montant, date) => {
+    const m = parseFloat(String(montant).replace(',', '.'))
+    if (!Number.isFinite(m) || m <= 0) { setErreur('Montant invalide'); return }
+    const dejaDesTranches = suiviFinancier.some(s => s.type_echeance === 'solde_amo_paiement')
+    const { error } = await supabase.rpc('solde_amo_paiement_add', {
+      p_dossier_id: id, p_montant: m, p_date: date || new Date().toISOString().slice(0, 10),
+    })
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (!dejaDesTranches) {
+      await majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'en_attente')
+    }
+    const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(data || [])
+    setSoldeAmoForm({ montant: '', date: '' })
+  }
+
+  // Solde AMO échelonné — supprime une tranche par id (RPC lot 1).
+  const deleteSoldeAmoPaiement = async (rowId) => {
+    const { error } = await supabase.rpc('solde_amo_paiement_delete', { p_id: rowId })
     if (error) { setErreur('Erreur : ' + error.message); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
@@ -3671,9 +3702,12 @@ export default function FicheChantier({ params }) {
         // Honoraires — comptés par composant seulement si réglé (courtage / AMO solde)
         const courtageRegle    = suiviCourtage?.statut_client === 'regle'
         const amoSoldeRegle    = suiviSoldeAMO?.statut_client === 'regle'
-        const honRoyalties     = (courtageRegle ? fin.honoraires.courtage.royalties : 0) + (amoSoldeRegle ? fin.honoraires.soldeAmo.royalties : 0)
-        const honAgente        = (courtageRegle ? fin.honoraires.courtage.parts.agente : 0) + (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.agente : 0)
-        const honAdmin         = (courtageRegle ? fin.honoraires.courtage.parts.admin : 0) + (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.admin : 0)
+        // Cohabitation solde AMO échelonné : Σ tranches si présentes, sinon gate
+        // tout-ou-rien actuel (branches else laissées verbatim).
+        const soldeAmoR        = calculateSoldeAmoReel({ ...dossier, devis_artisans: devis, suivi_financier: suiviFinancier })
+        const honRoyalties     = (courtageRegle ? fin.honoraires.courtage.royalties : 0) + (soldeAmoR.hasTranches ? soldeAmoR.recognizedRoyalties : (amoSoldeRegle ? fin.honoraires.soldeAmo.royalties : 0))
+        const honAgente        = (courtageRegle ? fin.honoraires.courtage.parts.agente : 0) + (soldeAmoR.hasTranches ? soldeAmoR.parts.agente : (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.agente : 0))
+        const honAdmin         = (courtageRegle ? fin.honoraires.courtage.parts.admin : 0) + (soldeAmoR.hasTranches ? soldeAmoR.parts.admin : (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.admin : 0))
 
         // Réel = somme des flux réellement comptés ; net déduit du coût apporteur RÉEL (acomptes débloqués)
         const royaltiesTotal   = fraisRoyalties + honRoyalties + comRoyalties
@@ -3842,20 +3876,89 @@ export default function FicheChantier({ params }) {
                 </>
               )}
 
-              {/* Honoraires AMO solde (typologie AMO uniquement) */}
-              {dossier.typologie === 'amo' && (
-                <EcheanceRow
-                  label="Honoraires AMO — solde"
-                  sub={`${tauxAmoPct}% travaux HT · ${fmt(honorairesAMOPrev - honorairesCourtagePrev)}`}
-                  statut={suiviSoldeAMO?.statut_client || 'en_attente'}
-                  date={(suiviSoldeAMO?.statut_client === 'regle' && suiviSoldeAMO.date_paiement) || null}
-                  onToggle={() => {
-                    const newStatut = suiviSoldeAMO?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                    majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, newStatut)
-                  }}
-                  fmtDateFn={fmtD}
-                />
-              )}
+              {/* Honoraires AMO solde (typologie AMO) — échelonnable en tranches encaissées.
+                  Cohabitation : 0 tranche → EcheanceRow tout-ou-rien actuel (inchangé) ;
+                  ≥1 tranche → synthèse « encaissé / reste » + panneau liste + ajout. */}
+              {dossier.typologie === 'amo' && (() => {
+                const tranchesAmo = suiviFinancier
+                  .filter(s => s.type_echeance === 'solde_amo_paiement')
+                  .sort((a, b) => new Date(a.date_paiement || 0) - new Date(b.date_paiement || 0))
+                const hasTranches   = tranchesAmo.length > 0
+                const soldeTotalTtc = fin.honoraires.soldeAmo.ttc   // réel/signés (décision a)
+                const encaisse      = tranchesAmo.reduce((s, t) => s + Number(t.montant_ttc || 0), 0)
+                const reste         = soldeTotalTtc - encaisse
+                const soldeState    = Math.abs(reste) < 0.01 ? 'solde' : reste > 0 ? 'reste' : 'trop'
+                const soldeColor    = soldeState === 'solde' ? '#15803d' : soldeState === 'trop' ? '#b91c1c' : '#c2410c'
+                const today         = new Date().toISOString().slice(0, 10)
+                return (
+                  <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                    {hasTranches ? (
+                      <div className="suivi-amo-synth">
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)'}}>Honoraires AMO — solde</div>
+                          <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>
+                            {tauxAmoPct}% travaux HT · {fmt(soldeTotalTtc)} attendu
+                          </div>
+                        </div>
+                        <div style={{display:'flex', alignItems:'center', gap:10}}>
+                          <span className="tnum" style={{fontSize:12, fontWeight:700, color: soldeColor}}>
+                            {fmt(encaisse)} encaissés · {soldeState === 'trop' ? `trop-perçu ${fmt(-reste)}` : soldeState === 'solde' ? 'soldé' : `reste ${fmt(reste)}`}
+                          </span>
+                          <button type="button" className="suivi-amo-chevron" onClick={() => setSoldeAmoDeplie(v => !v)}>
+                            {soldeAmoDeplie ? '▲' : '▼'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <EcheanceRow
+                          label="Honoraires AMO — solde"
+                          sub={`${tauxAmoPct}% travaux HT · ${fmt(honorairesAMOPrev - honorairesCourtagePrev)}`}
+                          statut={suiviSoldeAMO?.statut_client || 'en_attente'}
+                          date={(suiviSoldeAMO?.statut_client === 'regle' && suiviSoldeAMO.date_paiement) || null}
+                          onToggle={() => {
+                            const newStatut = suiviSoldeAMO?.statut_client === 'regle' ? 'en_attente' : 'regle'
+                            majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, newStatut)
+                          }}
+                          fmtDateFn={fmtD}
+                        />
+                        <button type="button" className="suivi-amo-add-link" onClick={() => setSoldeAmoDeplie(v => !v)}>
+                          + paiement échelonné
+                        </button>
+                      </>
+                    )}
+
+                    {soldeAmoDeplie && (
+                      <div className="suivi-amo-panel">
+                        {tranchesAmo.map(t => (
+                          <div key={t.id} className="suivi-amo-tranche">
+                            <span className="tnum" style={{fontWeight:600}}>{fmt(Number(t.montant_ttc || 0))} TTC</span>
+                            <span style={{fontSize:12, color:'var(--ink-500)'}}>{t.date_paiement ? fmtD(t.date_paiement) : '—'}</span>
+                            <button type="button" className="suivi-amo-del" title="Supprimer cette tranche"
+                              onClick={() => deleteSoldeAmoPaiement(t.id)}>✕</button>
+                          </div>
+                        ))}
+                        {!hasTranches && (
+                          <div style={{fontSize:12, color:'var(--ink-400)'}}>Aucun paiement enregistré pour l’instant.</div>
+                        )}
+                        <div className="suivi-amo-form">
+                          <input className="input" type="number" step="0.01" min="0" inputMode="decimal"
+                            placeholder="Montant TTC"
+                            value={soldeAmoForm.montant}
+                            onChange={e => setSoldeAmoForm(f => ({ ...f, montant: e.target.value }))} />
+                          <input className="input" type="date"
+                            value={soldeAmoForm.date || today}
+                            onChange={e => setSoldeAmoForm(f => ({ ...f, date: e.target.value }))} />
+                          <button type="button" className="btn btn-primary"
+                            onClick={() => addSoldeAmoPaiement(soldeAmoForm.montant, soldeAmoForm.date || today)}>
+                            Ajouter
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* ── Apporteur d'affaires — règlements dus ── */}
               {fin.apporteur?.enabled && fin.apporteur.totalHT > 0 && (() => {
