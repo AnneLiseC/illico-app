@@ -1866,6 +1866,7 @@ export default function FicheChantier({ params }) {
 
   // ── MESSAGES AGENTE → CLIENT (schéma : messages avec auteur_role + lu_agence) ──
   const [onglet, setOnglet] = useState('apercu')
+  const [recapMode, setRecapMode] = useState('previsionnel') // Récapitulatif : bascule visuelle prévisionnel/signé
   const [reponseMsg, setReponseMsg] = useState('')
   const [sendingMsg, setSendingMsg] = useState(false)
   const [editingMsgId, setEditingMsgId] = useState(null)
@@ -3047,109 +3048,6 @@ export default function FicheChantier({ params }) {
       {onglet === 'devis' && (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
-        {/* Honoraires client (restylé tokens) */}
-        {['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCRecus > 0 && (
-          <div className="card" style={{padding:0, overflow:'hidden'}}>
-            <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
-              <h2 className="page" style={{fontSize:16}}>Honoraires client</h2>
-              <div className="eyebrow" style={{marginTop:4}}>
-                Calculés sur <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(finDossier.honorairesPrevi.totalDevisTTCRecus)}</span> TTC (devis reçus + signés)
-              </div>
-            </div>
-            <div style={{padding:16, display:'flex', flexDirection:'column', gap:12}}>
-
-              {/* Bloc Honoraires courtage */}
-              <div style={{border:'1px solid var(--ink-200)', borderRadius:10, padding:14}}>
-                <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:10, flexWrap:'wrap'}}>
-                  <div style={{minWidth:0}}>
-                    <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>
-                      Honoraires courtage <span style={{color:'var(--brand-800)'}}>({tauxCourtagePct}%)</span>
-                    </div>
-                    <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:3}}>
-                      {tauxCourtagePct}% × <span className="tnum">{fmt(finDossier.honorairesPrevi.totalDevisTTCRecus)}</span> TTC · Échéance 48h après signature devis
-                    </div>
-                    {dossier.frais_statut === 'rembourse' && fraisTTC > 0 && (
-                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:3}}>
-                        dont frais consultation déduits : −{fmt(fraisTTC)}
-                      </div>
-                    )}
-                  </div>
-                  <span className="tnum" style={{fontSize:17, fontWeight:800, color:'var(--ink-900)', letterSpacing:-0.01}}>{fmt(honorairesCourtagePrev)}</span>
-                </div>
-                <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
-                  <div style={{display:'flex', alignItems:'center', gap:6}}>
-                    <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux courtage</label>
-                    <input
-                      type="number" step="0.1" min="0" max="20"
-                      value={(dossier.taux_courtage ?? COURTAGE_STANDARD) * 100}
-                      onFocus={() => { tauxAvantEditRef.current.taux_courtage = dossier.taux_courtage }}
-                      onChange={e => set('taux_courtage', parseFloat(e.target.value || 0) / 100)}
-                      onBlur={e => persistTaux('taux_courtage', parseFloat(e.target.value || 0) / 100)}
-                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                      className="input"
-                      style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
-                    />
-                    <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bloc Honoraires AMO (typologie AMO uniquement) */}
-              {dossier.typologie === 'amo' && (
-                <div style={{border:'1px solid var(--brand-200)', borderRadius:10, padding:14, background:'rgba(0,148,212,0.04)'}}>
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:10, flexWrap:'wrap'}}>
-                    <div style={{minWidth:0}}>
-                      <div style={{fontSize:13.5, fontWeight:700, color:'var(--brand-900)'}}>
-                        Honoraires AMO <span style={{color:'var(--brand-700)'}}>({parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)</span>
-                      </div>
-                      <div style={{fontSize:11.5, color:'var(--brand-700)', marginTop:3}}>
-                        {tauxCourtagePct}% courtage + {tauxAmoPct}% AMO × <span className="tnum">{fmt(finDossier.honorairesPrevi.totalDevisTTCRecus)}</span> TTC
-                      </div>
-                      {dossier.frais_statut === 'rembourse' && fraisTTC > 0 && (
-                        <div style={{fontSize:11.5, color:'var(--brand-700)', marginTop:3}}>
-                          dont frais consultation déduits : −{fmt(fraisTTC)}
-                        </div>
-                      )}
-                    </div>
-                    <span className="tnum" style={{fontSize:17, fontWeight:800, color:'var(--brand-900)', letterSpacing:-0.01}}>{fmt(honorairesAMOPrev)}</span>
-                  </div>
-
-                  <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap', marginBottom:12}}>
-                    <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux AMO</label>
-                    <input
-                      type="number" step="0.1" min="0" max="20"
-                      value={dossier.honoraires_amo_taux ?? AMO_STANDARD * 100}
-                      onFocus={() => { tauxAvantEditRef.current.honoraires_amo_taux = dossier.honoraires_amo_taux }}
-                      onChange={e => set('honoraires_amo_taux', parseFloat(e.target.value || 0))}
-                      onBlur={e => persistTaux('honoraires_amo_taux', parseFloat(e.target.value || 0))}
-                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                      className="input"
-                      style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
-                    />
-                    <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
-                  </div>
-
-                  <div style={{display:'flex', flexDirection:'column', gap:8}}>
-                    <div style={{background:'#fff', borderRadius:8, padding:'10px 12px', border:'1px solid var(--brand-100)'}}>
-                      <div style={{fontSize:12, fontWeight:700, color:'var(--brand-800)'}}>
-                        Acompte AMO <span style={{color:'var(--brand-700)'}}>({tauxCourtagePct}%)</span> · <span className="tnum" style={{color:'var(--ink-900)'}}>{fmt(honorairesCourtagePrev)}</span>
-                      </div>
-                      <div style={{fontSize:10.5, color:'var(--brand-700)', marginTop:2}}>Signature devis</div>
-                    </div>
-
-                    <div style={{background:'#fff', borderRadius:8, padding:'10px 12px', border:'1px solid var(--brand-100)'}}>
-                      <div style={{fontSize:12, fontWeight:700, color:'var(--brand-800)'}}>
-                        Solde AMO <span style={{color:'var(--brand-700)'}}>({tauxAmoPct}%)</span> · <span className="tnum" style={{color:'var(--ink-900)'}}>{fmt(honorairesAMOPrev - honorairesCourtagePrev)}</span>
-                      </div>
-                      <div style={{fontSize:10.5, color:'var(--brand-700)', marginTop:2}}>Fin de chantier</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Devis artisans */}
         <div className="card" style={{padding:0, overflow:'hidden'}}>
           <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)', display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -3630,6 +3528,50 @@ export default function FicheChantier({ params }) {
 
         </div>
 
+        {/* Honoraires client (restylé tokens) */}
+        {['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCRecus > 0 && (
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
+              <h2 className="page" style={{fontSize:16}}>Honoraires client</h2>
+              <div className="eyebrow" style={{marginTop:4}}>
+                Calculés sur <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(finDossier.honorairesPrevi.totalDevisTTCRecus)}</span> TTC (devis reçus + signés)
+              </div>
+            </div>
+            <div className="hono-settings">
+              <div className="hono-taux">
+                <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux courtage</label>
+                <input
+                  type="number" step="0.1" min="0" max="20"
+                  value={(dossier.taux_courtage ?? COURTAGE_STANDARD) * 100}
+                  onFocus={() => { tauxAvantEditRef.current.taux_courtage = dossier.taux_courtage }}
+                  onChange={e => set('taux_courtage', parseFloat(e.target.value || 0) / 100)}
+                  onBlur={e => persistTaux('taux_courtage', parseFloat(e.target.value || 0) / 100)}
+                  onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                  className="input"
+                  style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
+                />
+                <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
+              </div>
+              {dossier.typologie === 'amo' && (
+                <div className="hono-taux">
+                  <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux AMO</label>
+                  <input
+                    type="number" step="0.1" min="0" max="20"
+                    value={dossier.honoraires_amo_taux ?? AMO_STANDARD * 100}
+                    onFocus={() => { tauxAvantEditRef.current.honoraires_amo_taux = dossier.honoraires_amo_taux }}
+                    onChange={e => set('honoraires_amo_taux', parseFloat(e.target.value || 0))}
+                    onBlur={e => persistTaux('honoraires_amo_taux', parseFloat(e.target.value || 0))}
+                    onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                    className="input"
+                    style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
+                  />
+                  <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Récapitulatif chantier (restylé tokens, déplacé depuis Finance) */}
         {devis.length > 0 && (
           <div className="card" style={{padding:0, overflow:'hidden'}}>
@@ -3639,77 +3581,59 @@ export default function FicheChantier({ params }) {
             </div>
             <div style={{padding:16, display:'flex', flexDirection:'column', gap:12}}>
 
-              {/* Bloc prévisionnel */}
-              {devisRecus.length > 0 && (
-                <div style={{borderRadius:10, padding:14, background:'rgba(0,148,212,0.06)', border:'1px solid var(--brand-200)'}}>
-                  <div className="eyebrow" style={{color:'var(--brand-800)', marginBottom:8}}>
-                    Prévisionnel · {devisRecus.length} devis
+              {(() => {
+                // Bascule visuelle : le mode affiché retombe sur l'autre si le sien est vide.
+                const recapAff = (recapMode === 'previsionnel' && devisRecus.length === 0) ? 'signe'
+                  : (recapMode === 'signe' && devisSignes.length === 0) ? 'previsionnel'
+                  : recapMode
+                return (
+                <>
+                  {/* Bascule Prévisionnel / Signé */}
+                  <div className="recap-toggle">
+                    <button className={`recap-tab ${recapAff === 'previsionnel' ? 'active' : ''}`}
+                      onClick={() => setRecapMode('previsionnel')}>Prévisionnel · {devisRecus.length} devis</button>
+                    <button className={`recap-tab ${recapAff === 'signe' ? 'active' : ''}`}
+                      onClick={() => setRecapMode('signe')}>Signé · {devisSignes.length} devis</button>
                   </div>
-                  <RecapRow label="Total HT" value={fmt(totalDevisHTRecus)} tone="brand" />
-                  <RecapRow label="Total TTC" value={fmt(totalDevisTTCRecus)} tone="brand" />
-                  {['courtage', 'amo'].includes(dossier?.typologie) && (
-                    <div style={{borderTop:'1px solid var(--brand-200)', marginTop:6, paddingTop:6}}>
-                      <RecapRow label={`Honoraires courtage (${tauxCourtagePct}%)`} value={fmt(honorairesCourtagePrev)} tone="brand" />
-                      <div style={{borderTop:'2px solid var(--brand-500)', marginTop:8, paddingTop:8}}>
-                        <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + honorairesCourtagePrev + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
-                      </div>
-                      {dossier.typologie === 'amo' && (
-                        <div style={{marginTop:10, paddingTop:10, borderTop:'1px dashed var(--brand-200)'}}>
-                          <RecapRow label="Total honoraires (15%)" value={fmt(finDossier.honorairesPrevi.standard.totalTTC)} tone="brand" />
-                          <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + finDossier.honorairesPrevi.standard.totalTTC + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
-                          {tauxAmoPct !== AMO_STANDARD * 100 && (
-                            <div style={{marginTop:8, paddingTop:8, borderTop:'1px dashed var(--brand-200)'}}>
-                              <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMOPrev)} tone="brand" />
-                              <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + honorairesAMOPrev + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      {fraisInclus && (
-                        <div style={{marginTop:6, fontSize:11, color:'var(--ink-500)', textAlign:'right'}}>
-                          dont frais consultation {fmt(fraisTTC)}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {/* Bloc signé */}
-              {devisSignes.length > 0 && (
-                <div style={{borderRadius:10, padding:14, background:'var(--surface-2)', border:'1px solid var(--ink-200)'}}>
-                  <div className="eyebrow" style={{marginBottom:8}}>
-                    Signé · {devisSignes.length} devis
-                  </div>
-                  <RecapRow label="Total HT" value={fmt(totalDevisHTSignes)} />
-                  <RecapRow label="Total TTC" value={fmt(totalDevisTTCSignes)} />
-                  {['courtage', 'amo'].includes(dossier?.typologie) && (
-                    <div style={{borderTop:'1px solid var(--ink-200)', marginTop:6, paddingTop:6}}>
-                      <RecapRow label={`Honoraires courtage (${tauxCourtagePct}%)`} value={fmt(honorairesCourtage)} />
-                      <div style={{borderTop:'2px solid var(--brand-500)', marginTop:8, paddingTop:8}}>
-                        <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + honorairesCourtage + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
+                  {/* 3 formules côte à côte */}
+                  <div className="recap-grid">
+                    {/* Colonne 1 — Courtage seul */}
+                    {['courtage', 'amo'].includes(dossier?.typologie) && (
+                      <div className="recap-col">
+                        <div className="recap-col-head"><span>Courtage seul</span><span className="recap-col-pct">{tauxCourtagePct}%</span></div>
+                        <div className="recap-kv"><span>Travaux TTC</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus) : fmt(totalDevisTTCSignes)}</span></div>
+                        <div className="recap-kv"><span>Honoraires ({tauxCourtagePct}%)</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(honorairesCourtagePrev) : fmt(honorairesCourtage)}</span></div>
+                        <div className="recap-total"><span>Total chantier</span><span className="tnum recap-total-val">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus + honorairesCourtagePrev + (fraisInclus ? fraisTTC : 0)) : fmt(totalDevisTTCSignes + honorairesCourtage + (fraisInclus ? fraisTTC : 0))}</span></div>
                       </div>
-                      {dossier.typologie === 'amo' && (
-                        <div style={{marginTop:10, paddingTop:10, borderTop:'1px dashed var(--ink-200)'}}>
-                          <RecapRow label="Total honoraires (15%)" value={fmt(finDossier.honoraires.standard.totalTTC)} />
-                          <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + finDossier.honoraires.standard.totalTTC + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
-                          {tauxAmoPct !== AMO_STANDARD * 100 && (
-                            <div style={{marginTop:8, paddingTop:8, borderTop:'1px dashed var(--ink-200)'}}>
-                              <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMO)} />
-                              <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + honorairesAMO + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      {fraisInclus && (
-                        <div style={{marginTop:6, fontSize:11, color:'var(--ink-500)', textAlign:'right'}}>
-                          dont frais consultation {fmt(fraisTTC)}
-                        </div>
-                      )}
+                    )}
+                    {/* Colonne 2 — + AMO plein tarif (15%) */}
+                    {dossier.typologie === 'amo' && (
+                      <div className="recap-col">
+                        <div className="recap-col-head"><span>+ AMO plein tarif</span><span className="recap-col-pct">15%</span></div>
+                        <div className="recap-kv"><span>Travaux TTC</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus) : fmt(totalDevisTTCSignes)}</span></div>
+                        <div className="recap-kv"><span>Honoraires (15%)</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(finDossier.honorairesPrevi.standard.totalTTC) : fmt(finDossier.honoraires.standard.totalTTC)}</span></div>
+                        <div className="recap-total"><span>Total chantier</span><span className="tnum recap-total-val">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus + finDossier.honorairesPrevi.standard.totalTTC + (fraisInclus ? fraisTTC : 0)) : fmt(totalDevisTTCSignes + finDossier.honoraires.standard.totalTTC + (fraisInclus ? fraisTTC : 0))}</span></div>
+                      </div>
+                    )}
+                    {/* Colonne 3 — + AMO remisé */}
+                    {dossier.typologie === 'amo' && tauxAmoPct !== AMO_STANDARD * 100 && (
+                      <div className="recap-col recap-col-remise">
+                        <div className="recap-col-head"><span>+ AMO remisé</span><span className="recap-col-pct">{parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%</span></div>
+                        <div className="recap-kv"><span>Travaux TTC</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus) : fmt(totalDevisTTCSignes)}</span></div>
+                        <div className="recap-kv"><span>Honoraires ({parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(honorairesAMOPrev) : fmt(honorairesAMO)}</span></div>
+                        <div className="recap-total"><span>Total chantier</span><span className="tnum recap-total-val">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus + honorairesAMOPrev + (fraisInclus ? fraisTTC : 0)) : fmt(totalDevisTTCSignes + honorairesAMO + (fraisInclus ? fraisTTC : 0))}</span></div>
+                      </div>
+                    )}
+                  </div>
+                  {fraisInclus && (
+                    <div style={{marginTop:2, fontSize:11, color:'var(--ink-500)', textAlign:'right'}}>
+                      dont frais consultation {fmt(fraisTTC)}
                     </div>
                   )}
-                </div>
-              )}
+                </>
+                )
+              })()}
             </div>
           </div>
         )}

@@ -1283,3 +1283,44 @@ img, svg, video, canvas { max-width: 100%; }
   font-size: 11px; padding: 3px 10px; border-radius: 6px;
   border: 1px dashed var(--brand-200); transition: all 150ms; cursor: pointer;
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   Onglet « Devis & artisans » — Honoraires client (ligne de réglages)
+   + Récapitulatif (bascule + 3 formules). Classes `hono-` / `recap-`.
+   ───────────────────────────────────────────────────────────────── */
+
+/* Honoraires client : réduit à une ligne de réglages (taux courtage + AMO) */
+.hono-settings { padding: 16px; display: flex; gap: 24px; flex-wrap: wrap; align-items: center; }
+.hono-taux { display: flex; align-items: center; gap: 6px; }
+
+/* Récapitulatif : bascule prévisionnel / signé */
+.recap-toggle {
+  display: inline-flex; gap: 4px; align-self: flex-start;
+  background: var(--ink-100); padding: 3px; border-radius: 9px;
+}
+.recap-tab {
+  border: none; background: none; padding: 6px 14px; border-radius: 7px;
+  font-size: 12.5px; font-weight: 600; color: var(--ink-500); cursor: pointer; white-space: nowrap;
+}
+.recap-tab.active { background: #fff; color: var(--brand-800); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+/* Récapitulatif : 3 formules côte à côte */
+.recap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 12px; }
+.recap-col {
+  border: 1px solid var(--brand-200); border-radius: 10px; padding: 14px;
+  background: rgba(0,148,212,0.05); display: flex; flex-direction: column; gap: 8px;
+}
+.recap-col-remise { background: rgba(0,148,212,0.09); }
+.recap-col-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--brand-800);
+}
+.recap-col-pct { font-size: 13px; font-weight: 700; color: var(--brand-700); }
+.recap-kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--ink-600); }
+.recap-total {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  border-top: 2px solid var(--brand-500); margin-top: 4px; padding-top: 8px;
+  font-weight: 700; color: var(--ink-900);
+}
+.recap-total-val { font-size: 18px; font-weight: 800; color: var(--brand-800); letter-spacing: -0.01em; }
+@media (max-width: 560px) { .recap-grid { grid-template-columns: 1fr; } }
