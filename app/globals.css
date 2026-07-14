@@ -1409,8 +1409,10 @@ img, svg, video, canvas { max-width: 100%; }
    Onglet « Suivi financier » — Solde AMO échelonné (tranches encaissées).
    Classes `suivi-amo-`.
    ───────────────────────────────────────────────────────────────── */
+/* Ligne de synthèse = MÊME cadre qu'un EcheanceRow (bordure/fond/padding/radius),
+   pour rester alignée avec les autres lignes du bloc « Autres échéances ». */
 .suivi-amo-synth {
-  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  display: flex; justify-content: space-between; align-items: center; gap: 14px;
   padding: 10px 14px; border-radius: 10px; border: 1px solid var(--ink-200); background: #fff;
 }
 .suivi-amo-chevron {
@@ -1423,9 +1425,17 @@ img, svg, video, canvas { max-width: 100%; }
   font-size: 12px; font-weight: 600; color: var(--brand-700); padding: 2px 4px;
 }
 .suivi-amo-add-link:hover { text-decoration: underline; }
+/* Panneau = DÉTAIL de la ligne AMO ci-dessus, pas une échéance séparée :
+   indenté (pas pleine largeur) + accent gauche + fond distinct pour le rattacher
+   visuellement à la ligne de synthèse. */
 .suivi-amo-panel {
   display: flex; flex-direction: column; gap: 8px;
-  padding: 12px 14px; border-radius: 10px; border: 1px dashed var(--ink-200); background: var(--surface-2);
+  margin-left: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--ink-200);
+  border-left: 3px solid var(--brand-200);
+  border-radius: 8px;
+  background: var(--surface-2);
 }
 .suivi-amo-tranche {
   display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center;
