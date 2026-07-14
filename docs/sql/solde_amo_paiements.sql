@@ -32,7 +32,26 @@
 
 BEGIN;
 
--- a) Index d'unicité : exclure AUSSI 'solde_amo_paiement'
+-- DEUX garde-fous verrouillent le type d'échéance : il faut lever les DEUX pour
+-- pouvoir insérer une ligne 'solde_amo_paiement'.
+--   (1) la contrainte CHECK suivi_financier_type_echeance_check (liste blanche des
+--       types autorisés) — sinon l'INSERT est rejeté « violates check constraint » ;
+--   (2) l'index unique partiel suivi_financier_unique_sans_artisan (autorise les
+--       multi-lignes en excluant le type).
+-- Découvert en simulation : sans (1), l'ajout d'une tranche échoue AVANT même
+-- d'atteindre (2). On lève donc le CHECK d'abord, puis l'index.
+
+-- a) Contrainte CHECK : recréée À L'IDENTIQUE (11 types existants) + 'solde_amo_paiement'.
+ALTER TABLE public.suivi_financier DROP CONSTRAINT suivi_financier_type_echeance_check;
+ALTER TABLE public.suivi_financier ADD CONSTRAINT suivi_financier_type_echeance_check
+  CHECK (type_echeance = ANY (ARRAY[
+    'frais_consultation'::text, 'acompte_artisan'::text, 'facture_intermediaire'::text,
+    'facture_finale'::text, 'honoraires_illico'::text, 'commission_artisan'::text,
+    'apporteur_agente'::text, 'honoraires_courtage'::text, 'acompte_amo'::text,
+    'solde_amo'::text, 'honoraires_courtage_ts'::text, 'solde_amo_paiement'::text
+  ]));
+
+-- b) Index d'unicité : exclure AUSSI 'solde_amo_paiement'
 DROP INDEX IF EXISTS public.suivi_financier_unique_sans_artisan;
 
 CREATE UNIQUE INDEX suivi_financier_unique_sans_artisan
@@ -43,12 +62,12 @@ CREATE UNIQUE INDEX suivi_financier_unique_sans_artisan
     AND (type_echeance <> 'solde_amo_paiement'::text)
   );
 
--- b) RPC de saisie libre — miroir de suivi_courtage_ts_upsert (SECURITY INVOKER :
+-- c) RPC de saisie libre — miroir de suivi_courtage_ts_upsert (SECURITY INVOKER :
 --    pas de SECURITY DEFINER → la RLS de suivi_financier (policies *_scope) fait le
 --    contrôle d'accès dossier de l'appelant ; SET search_path TO 'public' ; grants
 --    identiques : authenticated + service_role).
 
--- b.1) AJOUTER une tranche encaissée. Retourne l'id de la ligne créée (NULL si montant <= 0).
+-- c.1) AJOUTER une tranche encaissée. Retourne l'id de la ligne créée (NULL si montant <= 0).
 CREATE OR REPLACE FUNCTION public.solde_amo_paiement_add(
   p_dossier_id uuid,
   p_montant    numeric,
@@ -80,7 +99,7 @@ BEGIN
 END;
 $function$;
 
--- b.2) SUPPRIMER une tranche par id (ciblé sur solde_amo_paiement uniquement).
+-- c.2) SUPPRIMER une tranche par id (ciblé sur solde_amo_paiement uniquement).
 CREATE OR REPLACE FUNCTION public.solde_amo_paiement_delete(
   p_id uuid
 )
