@@ -32,7 +32,7 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
   const [cibleCompteId, setCibleCompteId] = useState('')
   const [cibleAgenda, setCibleAgenda] = useState('')
   const [cibleLibelle, setCibleLibelle] = useState('')
-  const [ciblePerimetre, setCiblePerimetre] = useState('perso')
+  const [ciblePerimetre, setCiblePerimetre] = useState('') // admin : choix FORCÉ (pas de défaut) ; agente : ignoré → perso d'office (creerCible)
   const [cibleAgenceId, setCibleAgenceId] = useState('')
   const [creatingCible, setCreatingCible] = useState(false)
   const [erreurCible, setErreurCible] = useState('')
@@ -167,6 +167,11 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
     if (!compteSel || !cibleAgenda || !cibleLibelle.trim()) {
       setErreurCible('Compte, agenda et libellé requis'); setCreatingCible(false); return
     }
+    // Admin : le périmètre est un CHOIX FORCÉ (ni défaut, ni déduction). L'agente n'a pas de
+    // sélecteur → ciblePerimetre reste '' et retombe sur la branche perso (user_id = self).
+    if (profile.role === 'admin' && !ciblePerimetre) {
+      setErreurCible('Choisis un périmètre : Perso ou Agence'); setCreatingCible(false); return
+    }
     if (ciblePerimetre === 'agence' && !cibleAgenceId) {
       setErreurCible('Choisis une agence'); setCreatingCible(false); return
     }
@@ -185,7 +190,7 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
     if (error) setErreurCible('Création refusée : ' + error.message)
     else {
       onSucces('Calendrier cible ajouté ✓')
-      setCibleOpen(false); setCibleCompteId(''); setCibleAgenda(''); setCibleLibelle(''); setErreurCible('')
+      setCibleOpen(false); setCibleCompteId(''); setCibleAgenda(''); setCibleLibelle(''); setCiblePerimetre(''); setErreurCible('')
       await chargerCibles()
     }
     setCreatingCible(false)
@@ -421,6 +426,9 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
                 {ciblePerimetre === 'agence' && agences.length === 1 && (
                   <span style={{ fontSize: 12.5, color: 'var(--ink-600)' }}>Agence : {agences[0].nom}</span>
                 )}
+                {!ciblePerimetre && (
+                  <span style={{ fontSize: 11.5, color: '#a16207' }}>Choisis Perso ou Agence pour continuer.</span>
+                )}
               </div>
             )}
             {erreurCible && (
@@ -428,7 +436,8 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
             )}
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-primary" style={{ fontSize: 12.5 }} onClick={creerCible}
-                disabled={creatingCible || !cibleCompteId || !cibleAgenda || !cibleLibelle.trim()}>
+                disabled={creatingCible || !cibleCompteId || !cibleAgenda || !cibleLibelle.trim()
+                  || (profile.role === 'admin' && (!ciblePerimetre || (ciblePerimetre === 'agence' && !cibleAgenceId)))}>
                 {creatingCible ? 'Création…' : 'Créer la cible'}
               </button>
               <button className="btn btn-ghost" style={{ fontSize: 12.5 }}
