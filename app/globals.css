@@ -1205,3 +1205,81 @@ img, svg, video, canvas { max-width: 100%; }
   .fc .fc-col-header-cell-cushion,
   .fc .fc-daygrid-day-number { font-size: 11px !important; }
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   Onglet « Devis & artisans » — carte de devis (refonte visuelle).
+   Classes préfixées `devis-` : uniques à ce bloc, zéro collision ailleurs.
+   ───────────────────────────────────────────────────────────────── */
+
+/* En-tête replié : nom | montant HT + com. | statut | chevron */
+.devis-head {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 14px;
+  align-items: center;
+  cursor: pointer;
+}
+.devis-head-main { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.devis-ico {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: var(--brand-50); color: var(--brand-800);
+  display: grid; place-items: center; flex: 0 0 40px;
+}
+.devis-name { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; min-width: 0; }
+.devis-sub { display: flex; gap: 12px; margin-top: 4px; font-size: 12px; color: var(--ink-500); flex-wrap: wrap; min-width: 0; }
+.devis-amount { text-align: right; white-space: nowrap; }
+.devis-amount-ht { font-size: 17px; font-weight: 800; color: var(--ink-900); letter-spacing: -0.01em; }
+.devis-amount-unit { font-size: 11px; font-weight: 600; color: var(--ink-400); }
+.devis-amount-com { font-size: 11.5px; color: var(--ink-500); margin-top: 2px; }
+.devis-badge { display: flex; align-items: center; }
+.devis-chevron { padding: 4px 8px; }
+
+/* Mobile : le montant passe sous le nom, le badge à droite. */
+@media (max-width: 560px) {
+  .devis-head {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "main chevron" "amount badge";
+    row-gap: 8px;
+  }
+  .devis-head-main { grid-area: main; }
+  .devis-chevron   { grid-area: chevron; align-self: start; }
+  .devis-amount    { grid-area: amount; text-align: left; }
+  .devis-badge     { grid-area: badge; justify-content: flex-end; }
+}
+
+/* Détail déplié */
+.devis-detail {
+  margin-top: 14px; padding: 14px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--ink-200);
+  display: flex; flex-direction: column; gap: 14px;
+}
+.devis-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.devis-actions-left { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.devis-statuts { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Infos côte à côte : Montants | Commission | Parts */
+.devis-info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.devis-info-block {
+  background: #fff; border: 1px solid var(--ink-200); border-radius: 10px;
+  padding: 12px; display: flex; flex-direction: column; gap: 6px;
+}
+.devis-info-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-400); margin-bottom: 2px; }
+.devis-kv { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.devis-kv > span:first-child { font-size: 11px; color: var(--ink-400); }
+
+/* Acompte + Solde côte à côte */
+.devis-facture-lines { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 560px) { .devis-facture-lines { grid-template-columns: 1fr; } }
+
+/* Documents en grille */
+.devis-docs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.devis-doc {
+  background: #fff; border: 1px solid var(--ink-200); border-radius: 10px;
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0;
+}
+.devis-doc-label { font-size: 11px; color: var(--ink-500); font-weight: 600; }
+.devis-doc-act { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.devis-doc-upload {
+  font-size: 11px; padding: 3px 10px; border-radius: 6px;
+  border: 1px dashed var(--brand-200); transition: all 150ms; cursor: pointer;
+}
