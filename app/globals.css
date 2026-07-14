@@ -1404,3 +1404,41 @@ img, svg, video, canvas { max-width: 100%; }
   position: sticky; left: 0; z-index: 1; background: var(--surface-2);
 }
 .fin-sticky-col tbody tr.row-hover:hover td:first-child { background: var(--brand-50); }
+
+/* ─────────────────────────────────────────────────────────────────
+   Onglet « Suivi financier » — Solde AMO échelonné (tranches encaissées).
+   Classes `suivi-amo-`.
+   ───────────────────────────────────────────────────────────────── */
+.suivi-amo-synth {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 10px 14px; border-radius: 10px; border: 1px solid var(--ink-200); background: #fff;
+}
+.suivi-amo-chevron {
+  border: 1px solid var(--ink-200); background: var(--surface); color: var(--ink-500);
+  border-radius: 8px; width: 30px; height: 28px; cursor: pointer; font-size: 11px; flex-shrink: 0;
+}
+.suivi-amo-chevron:hover { background: var(--surface-2); }
+.suivi-amo-add-link {
+  align-self: flex-start; border: none; background: none; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--brand-700); padding: 2px 4px;
+}
+.suivi-amo-add-link:hover { text-decoration: underline; }
+.suivi-amo-panel {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px; border-radius: 10px; border: 1px dashed var(--ink-200); background: var(--surface-2);
+}
+.suivi-amo-tranche {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center;
+  padding: 6px 10px; border-radius: 8px; border: 1px solid var(--ink-200); background: #fff;
+}
+.suivi-amo-del {
+  border: none; background: none; cursor: pointer; color: #b91c1c; font-size: 13px;
+  padding: 2px 6px; border-radius: 6px; line-height: 1;
+}
+.suivi-amo-del:hover { background: rgba(185, 28, 28, 0.08); }
+.suivi-amo-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.suivi-amo-form .input { height: 36px; max-width: 160px; }
+@media (max-width: 560px) {
+  .suivi-amo-form { flex-direction: column; align-items: stretch; }
+  .suivi-amo-form .input { max-width: none; }
+}
