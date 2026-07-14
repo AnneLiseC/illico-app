@@ -7,7 +7,7 @@ import { formatNomClient } from '../../lib/clients'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement, detecterCategorie } from '../../lib/dossiers'
-import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
 import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
@@ -3671,9 +3671,12 @@ export default function FicheChantier({ params }) {
         // Honoraires — comptés par composant seulement si réglé (courtage / AMO solde)
         const courtageRegle    = suiviCourtage?.statut_client === 'regle'
         const amoSoldeRegle    = suiviSoldeAMO?.statut_client === 'regle'
-        const honRoyalties     = (courtageRegle ? fin.honoraires.courtage.royalties : 0) + (amoSoldeRegle ? fin.honoraires.soldeAmo.royalties : 0)
-        const honAgente        = (courtageRegle ? fin.honoraires.courtage.parts.agente : 0) + (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.agente : 0)
-        const honAdmin         = (courtageRegle ? fin.honoraires.courtage.parts.admin : 0) + (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.admin : 0)
+        // Cohabitation solde AMO échelonné : Σ tranches si présentes, sinon gate
+        // tout-ou-rien actuel (branches else laissées verbatim).
+        const soldeAmoR        = calculateSoldeAmoReel({ ...dossier, devis_artisans: devis, suivi_financier: suiviFinancier })
+        const honRoyalties     = (courtageRegle ? fin.honoraires.courtage.royalties : 0) + (soldeAmoR.hasTranches ? soldeAmoR.recognizedRoyalties : (amoSoldeRegle ? fin.honoraires.soldeAmo.royalties : 0))
+        const honAgente        = (courtageRegle ? fin.honoraires.courtage.parts.agente : 0) + (soldeAmoR.hasTranches ? soldeAmoR.parts.agente : (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.agente : 0))
+        const honAdmin         = (courtageRegle ? fin.honoraires.courtage.parts.admin : 0) + (soldeAmoR.hasTranches ? soldeAmoR.parts.admin : (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.admin : 0))
 
         // Réel = somme des flux réellement comptés ; net déduit du coût apporteur RÉEL (acomptes débloqués)
         const royaltiesTotal   = fraisRoyalties + honRoyalties + comRoyalties
