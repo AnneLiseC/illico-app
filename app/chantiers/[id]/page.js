@@ -3181,69 +3181,199 @@ export default function FicheChantier({ params }) {
                 return (
                   <div key={d.id} style={{padding:'18px 22px', borderTop: idx === 0 ? 'none' : '1px solid var(--ink-100)'}}>
 
-                    {/* Header maquette : avatar | info+stats | badge | actions */}
-                    <div style={{display:'grid', gridTemplateColumns:'auto 1fr auto auto', gap:14, alignItems:'flex-start'}}>
-                      <div style={{width:40, height:40, borderRadius:10, background:'var(--brand-50)', color:'var(--brand-800)', display:'grid', placeItems:'center', flex:'0 0 40px'}}>
-                        <HammerIcon/>
-                      </div>
-                      <div style={{minWidth:0}}>
-                        <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
-                          <span style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>{d.artisan?.entreprise || '—'}</span>
-                          {d.artisan?.metier && <span style={{fontSize:11.5, color:'var(--ink-500)'}}>· {d.artisan.metier}</span>}
-                          {d.notes && <span className="clip-1" style={{fontSize:12, color:'var(--ink-500)', fontStyle:'italic', minWidth:0, flex:'1 1 auto'}}>— {d.notes}</span>}
-                        </div>
-                        <div style={{display:'flex', gap:14, marginTop:6, fontSize:12, color:'var(--ink-500)', flexWrap:'wrap'}}>
-                          {d.montant_ht > 0 && <span><span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(d.montant_ht)}</span> HT</span>}
-                          {d.montant_ttc > 0 && <span><span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(d.montant_ttc)}</span> TTC</span>}
-                          {d.commission_pourcentage > 0 && (
-                            <span>
-                              <strong style={{color:'var(--brand-800)'}}>Com. {(d.commission_pourcentage * 100).toFixed(1)}%</strong>
-                              {' → '}
-                              <span className="tnum">{fmt(finAc.comHT)}</span> HT
-                            </span>
-                          )}
-                          {d.date_signature && d.statut === 'accepte' && (
-                            <span>Signé le {new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
-                          )}
-                        </div>
-                        {!referentEstAdmin && d.commission_pourcentage > 0 && (() => {
-                          const finDevis = calculateDevisFinance(d, dossier)
-                          return (
-                            <div style={{marginTop:4, display:'flex', gap:14, flexWrap:'wrap', fontSize:12, color:'var(--ink-500)'}}>
-                              <span>Part {dossier.referente?.prenom || 'agente'} → <span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.parts.agente)}</span></span>
-                              <span>Part {prenomAdmin} → <span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.parts.admin)}</span></span>
+                    {/* En-tête replié — nom+métier | montant HT + com. | statut | chevron */}
+                    <div className="devis-head" onClick={() => toggleDevisExpand(d.id)}>
+                      <div className="devis-head-main">
+                        <div className="devis-ico"><HammerIcon/></div>
+                        <div style={{minWidth:0}}>
+                          <div className="devis-name">
+                            <span style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>{d.artisan?.entreprise || '—'}</span>
+                            {d.artisan?.metier && <span style={{fontSize:11.5, color:'var(--ink-500)'}}>· {d.artisan.metier}</span>}
+                          </div>
+                          {(d.notes || (d.date_signature && d.statut === 'accepte')) && (
+                            <div className="devis-sub">
+                              {d.notes && <span className="clip-1" style={{fontStyle:'italic', minWidth:0}}>{d.notes}</span>}
+                              {d.date_signature && d.statut === 'accepte' && (
+                                <span>Signé le {new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
+                              )}
                             </div>
-                          )
-                        })()}
+                          )}
+                        </div>
                       </div>
-                      <div style={{textAlign:'right'}}>
+                      <div className="devis-amount">
+                        {d.montant_ht > 0 && <div className="devis-amount-ht tnum">{fmt(d.montant_ht)} <span className="devis-amount-unit">HT</span></div>}
+                        {d.commission_pourcentage > 0 && (
+                          <div className="devis-amount-com">
+                            <strong style={{color:'var(--brand-800)'}}>Com. {(d.commission_pourcentage * 100).toFixed(1)}%</strong>{' → '}<span className="tnum">{fmt(finAc.comHT)}</span> HT
+                          </div>
+                        )}
+                      </div>
+                      <div className="devis-badge">
                         {d.statut === 'accepte'    && <Badge tone="ok">Signé</Badge>}
                         {d.statut === 'recu'       && <Badge tone="info">Reçu</Badge>}
                         {d.statut === 'a_modifier' && <Badge tone="warn">À modifier</Badge>}
                         {d.statut === 'refuse'     && <Badge tone="bad">Refusé</Badge>}
                         {d.statut === 'en_attente' && <Badge tone="mute">En attente</Badge>}
                       </div>
-                      <div style={{display:'flex', gap:4, alignItems:'center'}}>
-                        {d.devis_pdf_path && (
-                          <button onClick={() => ouvrirDocument(d.devis_pdf_path, `Devis ${d.artisan?.entreprise || ''}.pdf`)}
-                            className="btn btn-ghost" style={{padding:'4px 8px'}} title="Voir le PDF du devis">
-                            <DocIcon/>
-                          </button>
-                        )}
-                        <button onClick={() => setDevisModal({ open: true, devis: d })}
-                          className="btn btn-ghost" style={{padding:'4px 8px'}} title="Modifier le devis">
-                          <EditIcon/>
-                        </button>
-                        <button onClick={() => toggleDevisExpand(d.id)}
-                          className="btn btn-ghost" style={{padding:'4px 8px'}} title={expanded ? 'Masquer les détails' : 'Voir les détails'}>
-                          <span style={{display:'inline-block', fontSize:10, lineHeight:1, transition:'transform 200ms', transform: expanded ? 'rotate(180deg)' : 'none'}}>▼</span>
-                        </button>
-                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); toggleDevisExpand(d.id) }}
+                        className="btn btn-ghost devis-chevron" title={expanded ? 'Masquer les détails' : 'Voir les détails'}>
+                        <span style={{display:'inline-block', fontSize:10, lineHeight:1, transition:'transform 200ms', transform: expanded ? 'rotate(180deg)' : 'none'}}>▼</span>
+                      </button>
                     </div>
 
-                    {/* FactureLines : Acompte + Solde (signés uniquement) */}
+                    {/* Détails dépliable */}
+                    {expanded && (
+                    <div className="devis-detail">
+
+                    {/* 1 — Barre d'actions */}
+                    <div className="devis-actions">
+                      <div className="devis-actions-left">
+                        <span style={{fontSize:11.5, color:'var(--ink-500)'}}>Ordre</span>
+                        <button onClick={() => deplacerDevis(d.id, 'up')} disabled={idx === 0}
+                          className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>▲</button>
+                        <button onClick={() => deplacerDevis(d.id, 'down')} disabled={idx === devis.length - 1}
+                          className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>▼</button>
+                        <button onClick={() => setDevisModal({ open: true, devis: d })}
+                          className="btn btn-ghost" style={{fontSize:11.5}}>✎ Modifier</button>
+                        {d.statut === 'accepte' && (
+                          <button onClick={() => { setNouvIntervArtisanId(d.artisan_id); setModalCreerIntervOuvert(true) }}
+                            className="btn btn-ghost" style={{fontSize:11.5, color:'#15803d'}}>📅 Planifier une intervention</button>
+                        )}
+                      </div>
+                      <button onClick={() => supprimerDevis(d.id)} className="btn btn-ghost" style={{padding:'4px 10px', fontSize:11, color:'#b91c1c'}}>🗑 Supprimer</button>
+                    </div>
+                    {d.statut === 'accepte' && interventionsDossier.filter(i => i.artisan_id === d.artisan_id).length > 0 && (
+                      <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                        {interventionsDossier.filter(i => i.artisan_id === d.artisan_id).map(i => (
+                          <div key={i.id} style={{fontSize:11, color:'var(--ink-500)', display:'flex', alignItems:'center', gap:8}}>
+                            <span>🔨</span>
+                            {i.type_intervention === 'periode'
+                              ? `${new Date(i.date_debut).toLocaleDateString('fr-FR')} → ${new Date(i.date_fin).toLocaleDateString('fr-FR')}`
+                              : `${i.jours_specifiques?.length} jour(s)`}
+                            {i.notes && <span style={{color:'var(--ink-400)'}}>— {i.notes}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 2 — Statut cliquable */}
+                    <div className="devis-statuts">
+                      {['en_attente', 'recu', 'accepte', 'refuse', 'a_modifier'].map(st => {
+                        const cfg = statutDevisConfig[st]
+                        const active = d.statut === st
+                        return (
+                          <button key={st} onClick={() => changerStatutDevis(d.id, st)}
+                            style={{
+                              fontSize:11, fontWeight: active ? 700 : 600, padding:'4px 10px', borderRadius:99,
+                              border:'1px solid', cursor:'pointer', transition:'all 150ms',
+                              borderColor: active ? 'transparent' : 'var(--ink-200)',
+                              background: active ? TONE_BG[cfg.tone] : 'transparent',
+                              color: active ? TONE_FG[cfg.tone] : 'var(--ink-400)',
+                            }}
+                            onMouseEnter={e => { if (!active) e.currentTarget.style.borderColor = 'var(--ink-300)' }}
+                            onMouseLeave={e => { if (!active) e.currentTarget.style.borderColor = 'var(--ink-200)' }}>
+                            {cfg.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {/* 3 — Infos côte à côte : Montants | Commission | Parts */}
+                    <div className="devis-info-grid">
+                      {/* Montants */}
+                      <div className="devis-info-block">
+                        <div className="devis-info-title">Montants</div>
+                        <div className="devis-kv"><span>Montant HT</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.montant_ht ? fmt(d.montant_ht) : '—'}</span></div>
+                        <div className="devis-kv"><span>Montant TTC</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.montant_ttc ? fmt(d.montant_ttc) : '—'}</span></div>
+                        <div className="devis-kv" style={{alignItems:'center'}}>
+                          <span>Acompte</span>
+                          <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', justifyContent:'flex-end'}}>
+                            <select value={d.acompte_pourcentage ?? 30}
+                              onChange={async e => {
+                                const newVal = parseFloat(e.target.value)
+                                if (newVal === 0 && (d.commission_pourcentage || 0) > 0 && d.artisan?.partenaire !== true) {
+                                  if (!window.confirm('Attention, acompte 0 : la commission ne sera pas prélevée. Confirmer ?')) {
+                                    await chargerDevis()
+                                    return
+                                  }
+                                }
+                                const { error } = await supabase.from('devis_artisans').update({ acompte_pourcentage: newVal }).eq('id', d.id)
+                                if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
+                                await chargerDevis()
+                              }}
+                              className="input" style={{height:26, fontSize:11, padding:'0 6px', minWidth:80}}>
+                              <option value={30}>30%</option>
+                              <option value={40}>40%</option>
+                              <option value={-1}>Montant</option>
+                              <option value={0}>Sans acompte</option>
+                            </select>
+                            {finAc.acompteMode === 'fixe' && (
+                              <input type="number" step="0.01" placeholder="Montant TTC" defaultValue={d.acompte_montant_fixe || ''}
+                                onBlur={async e => {
+                                  const v = e.target.value !== '' && Number.isFinite(parseFloat(e.target.value)) ? parseFloat(e.target.value) : null
+                                  const { error } = await supabase.from('devis_artisans').update({ acompte_montant_fixe: v }).eq('id', d.id)
+                                  if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
+                                  await chargerDevis()
+                                }}
+                                className="input" style={{width:96, height:26, fontSize:11, padding:'0 6px'}} />
+                            )}
+                            <span className="tnum" style={{fontSize:11, fontWeight:600, color:'var(--ink-900)'}}>
+                              {fmt(finAc.acompte)} TTC
+                            </span>
+                          </div>
+                        </div>
+                        {d.date_signature && d.statut === 'accepte' && (
+                          <div className="devis-kv"><span style={{color:'#15803d'}}>Signé le</span><span style={{fontWeight:600, color:'#15803d'}}>{new Date(d.date_signature).toLocaleDateString('fr-FR')}</span></div>
+                        )}
+                        {d.statut === 'accepte' && (() => {
+                          const suiviAcompte = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && (s.artisan_id === d.artisan_id || s.artisan_id === d.artisan?.id))
+                          const acomptePaye = suiviAcompte?.statut_client === 'regle'
+                          const dateAcompte = suiviAcompte?.date_paiement
+                          return (
+                            <div className="devis-kv" style={{alignItems:'center'}}>
+                              <span>
+                                Acompte client {acomptePaye && dateAcompte && <span style={{color:'#15803d', fontWeight:600}}>· {new Date(dateAcompte).toLocaleDateString('fr-FR')}</span>}
+                              </span>
+                              <button onClick={async () => {
+                                const artId = d.artisan_id || d.artisan?.id
+                                await setAcompteArtisanPaye(artId, !acomptePaye, dateAcompte)
+                              }}
+                                style={{
+                                  fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
+                                  background: acomptePaye ? TONE_BG.ok : TONE_BG.warn,
+                                  color: acomptePaye ? TONE_FG.ok : TONE_FG.warn,
+                                }}>
+                                {acomptePaye ? '✓ Payé' : '⏳ En attente'}
+                              </button>
+                            </div>
+                          )
+                        })()}
+                      </div>
+                      {/* Commission */}
+                      <div className="devis-info-block">
+                        <div className="devis-info-title">Commission</div>
+                        <div className="devis-kv"><span>Taux</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.commission_pourcentage ? `${(d.commission_pourcentage * 100).toFixed(1)} %` : '—'}</span></div>
+                        <div className="devis-kv"><span>Montant HT</span><span className="tnum" style={{fontWeight:600, color:'var(--brand-800)'}}>{fmt(finAc.comHT)}</span></div>
+                        {!referentEstAdmin && (
+                          <div className="devis-kv"><span>Répartition</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{`${Math.round((dossier.part_agente ?? 0.5) * 100)} / ${Math.round((1 - (dossier.part_agente ?? 0.5)) * 100)}`}</span></div>
+                        )}
+                      </div>
+                      {/* Parts */}
+                      {!referentEstAdmin && d.commission_pourcentage > 0 && (() => {
+                        const finDevis = calculateDevisFinance(d, dossier)
+                        return (
+                          <div className="devis-info-block">
+                            <div className="devis-info-title">Parts</div>
+                            <div className="devis-kv"><span>{dossier.referente?.prenom || 'agente'}</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.parts.agente)}</span></div>
+                            <div className="devis-kv"><span>{prenomAdmin}</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.parts.admin)}</span></div>
+                          </div>
+                        )
+                      })()}
+                    </div>
+
+                    {/* 4 — Acompte + Solde côte à côte (facturation) */}
                     {d.statut === 'accepte' && (
-                      <div style={{marginTop:14, marginLeft:54, display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
+                      <div className="devis-facture-lines">
                         <FactureMiniLine
                           title={`Acompte ${finAc.acompteMode === 'fixe' ? '(fixe)' : finAc.acomptePct + '%'}`}
                           fact={factAcompte} expected={acompteExpected}
@@ -3269,145 +3399,12 @@ export default function FicheChantier({ params }) {
                       </div>
                     )}
 
-                    {/* Détails dépliable */}
-                    {expanded && (
-                    <div style={{marginTop:14, padding:14, borderRadius:12, background:'var(--surface-2)', border:'1px solid var(--ink-200)', display:'flex', flexDirection:'column', gap:14}}>
-
-                    {/* Réorganiser + supprimer */}
-                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                      <div style={{display:'flex', alignItems:'center', gap:6, fontSize:11.5, color:'var(--ink-500)'}}>
-                        Ordre :
-                        <button onClick={() => deplacerDevis(d.id, 'up')} disabled={idx === 0}
-                          className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>▲</button>
-                        <button onClick={() => deplacerDevis(d.id, 'down')} disabled={idx === devis.length - 1}
-                          className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>▼</button>
-                      </div>
-                      <button onClick={() => supprimerDevis(d.id)} className="btn btn-ghost" style={{padding:'4px 10px', fontSize:11, color:'#b91c1c'}}>
-                        Supprimer ce devis
-                      </button>
-                    </div>
-
-                    {/* Infos détaillées + acompte custom */}
-                    <div style={{
-                      background:'var(--surface-2)', borderRadius:10, padding:12,
-                      display:'flex', flexDirection:'column', gap:6, fontSize:13,
-                    }}>
-                      <div style={{display:'flex', justifyContent:'space-between'}}>
-                        <span style={{fontSize:11, color:'var(--ink-400)'}}>Montant HT</span>
-                        <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.montant_ht ? fmt(d.montant_ht) : '—'}</span>
-                      </div>
-                      <div style={{display:'flex', justifyContent:'space-between'}}>
-                        <span style={{fontSize:11, color:'var(--ink-400)'}}>Montant TTC</span>
-                        <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.montant_ttc ? fmt(d.montant_ttc) : '—'}</span>
-                      </div>
-                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                        <span style={{fontSize:11, color:'var(--ink-400)'}}>Acompte</span>
-                        <div style={{display:'flex', alignItems:'center', gap:8}}>
-                          <select value={d.acompte_pourcentage ?? 30}
-                            onChange={async e => {
-                              const newVal = parseFloat(e.target.value)
-                              if (newVal === 0 && (d.commission_pourcentage || 0) > 0 && d.artisan?.partenaire !== true) {
-                                if (!window.confirm('Attention, acompte 0 : la commission ne sera pas prélevée. Confirmer ?')) {
-                                  await chargerDevis()
-                                  return
-                                }
-                              }
-                              const { error } = await supabase.from('devis_artisans').update({ acompte_pourcentage: newVal }).eq('id', d.id)
-                              if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
-                              await chargerDevis()
-                            }}
-                            className="input" style={{height:26, fontSize:11, padding:'0 6px', minWidth:80}}>
-                            <option value={30}>30%</option>
-                            <option value={40}>40%</option>
-                            <option value={-1}>Montant</option>
-                            <option value={0}>Sans acompte</option>
-                          </select>
-                          {finAc.acompteMode === 'fixe' && (
-                            <input type="number" step="0.01" placeholder="Montant TTC" defaultValue={d.acompte_montant_fixe || ''}
-                              onBlur={async e => {
-                                const v = e.target.value !== '' && Number.isFinite(parseFloat(e.target.value)) ? parseFloat(e.target.value) : null
-                                const { error } = await supabase.from('devis_artisans').update({ acompte_montant_fixe: v }).eq('id', d.id)
-                                if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
-                                await chargerDevis()
-                              }}
-                              className="input" style={{width:96, height:26, fontSize:11, padding:'0 6px'}} />
-                          )}
-                          <span className="tnum" style={{fontSize:11, fontWeight:600, color:'var(--ink-900)'}}>
-                            {fmt(finAc.acompte)} TTC
-                          </span>
-                        </div>
-                      </div>
-                      <div style={{display:'flex', justifyContent:'space-between'}}>
-                        <span style={{fontSize:11, color:'var(--ink-400)'}}>Commission</span>
-                        <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.commission_pourcentage ? `${(d.commission_pourcentage * 100).toFixed(1)} %` : '—'}</span>
-                      </div>
-                      {!referentEstAdmin && (
-                        <div style={{display:'flex', justifyContent:'space-between'}}>
-                          <span style={{fontSize:11, color:'var(--ink-400)'}}>Répartition</span>
-                          <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{`${Math.round((dossier.part_agente ?? 0.5) * 100)} / ${Math.round((1 - (dossier.part_agente ?? 0.5)) * 100)}`}</span>
-                        </div>
-                      )}
-                      {d.date_signature && d.statut === 'accepte' && (
-                        <div style={{display:'flex', justifyContent:'space-between'}}>
-                          <span style={{fontSize:11, color:'#15803d'}}>Signé le</span>
-                          <span style={{fontWeight:600, color:'#15803d'}}>{new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
-                        </div>
-                      )}
-                      {d.statut === 'accepte' && (() => {
-                        const suiviAcompte = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && (s.artisan_id === d.artisan_id || s.artisan_id === d.artisan?.id))
-                        const acomptePaye = suiviAcompte?.statut_client === 'regle'
-                        const dateAcompte = suiviAcompte?.date_paiement
-                        return (
-                          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                            <span style={{fontSize:11, color:'var(--ink-400)'}}>
-                              Acompte client {acomptePaye && dateAcompte && <span style={{color:'#15803d', fontWeight:600}}>· {new Date(dateAcompte).toLocaleDateString('fr-FR')}</span>}
-                            </span>
-                            <button onClick={async () => {
-                              const artId = d.artisan_id || d.artisan?.id
-                              await setAcompteArtisanPaye(artId, !acomptePaye, dateAcompte)
-                            }}
-                              style={{
-                                fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
-                                background: acomptePaye ? TONE_BG.ok : TONE_BG.warn,
-                                color: acomptePaye ? TONE_FG.ok : TONE_FG.warn,
-                              }}>
-                              {acomptePaye ? '✓ Payé' : '⏳ En attente'}
-                            </button>
-                          </div>
-                        )
-                      })()}
-                    </div>
-                    {d.notes && (
-                      <p style={{fontSize:11.5, color:'var(--ink-500)', fontStyle:'italic', margin:0}}>{d.notes}</p>
-                    )}
-
-                    <div style={{display:'flex', gap:6, flexWrap:'wrap', paddingTop:8, borderTop:'1px solid var(--ink-100)'}}>
-                      {['en_attente', 'recu', 'accepte', 'refuse', 'a_modifier'].map(st => {
-                        const cfg = statutDevisConfig[st]
-                        const active = d.statut === st
-                        return (
-                          <button key={st} onClick={() => changerStatutDevis(d.id, st)}
-                            style={{
-                              fontSize:11, fontWeight: active ? 700 : 600, padding:'4px 10px', borderRadius:99,
-                              border:'1px solid', cursor:'pointer', transition:'all 150ms',
-                              borderColor: active ? 'transparent' : 'var(--ink-200)',
-                              background: active ? TONE_BG[cfg.tone] : 'transparent',
-                              color: active ? TONE_FG[cfg.tone] : 'var(--ink-400)',
-                            }}
-                            onMouseEnter={e => { if (!active) e.currentTarget.style.borderColor = 'var(--ink-300)' }}
-                            onMouseLeave={e => { if (!active) e.currentTarget.style.borderColor = 'var(--ink-200)' }}>
-                            {cfg.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-
-                    {/* ── DOCUMENTS : Devis signé + Facture ── */}
-                    <div style={{paddingTop:8, borderTop:'1px solid var(--ink-100)', display:'flex', flexDirection:'column', gap:10}}>
+                    {/* 5 — Documents en grille */}
+                    <div className="devis-docs">
                       {/* Devis artisan */}
-                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-                        <span style={{fontSize:11, color:'var(--ink-500)', fontWeight:600}}>📄 Devis artisan</span>
-                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                      <div className="devis-doc">
+                        <span className="devis-doc-label">📄 Devis artisan</span>
+                        <div className="devis-doc-act">
                           {d.devis_pdf_path ? (
                             <>
                               <button onClick={() => ouvrirDocument(d.devis_pdf_path, `Devis ${d.artisan?.entreprise || ''}.pdf`)}
@@ -3422,13 +3419,7 @@ export default function FicheChantier({ params }) {
                               }} style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
                             </>
                           ) : (
-                            <label style={{
-                              fontSize:11, cursor: uploadingDoc === d.id + '_devis' ? 'wait' : 'pointer',
-                              padding:'3px 10px', borderRadius:6, border:'1px solid',
-                              color: uploadingDoc === d.id + '_devis' ? 'var(--ink-400)' : 'var(--brand-700)',
-                              borderColor: uploadingDoc === d.id + '_devis' ? 'var(--ink-200)' : 'var(--brand-200)',
-                              transition:'all 150ms',
-                            }}>
+                            <label className="devis-doc-upload" style={{cursor: uploadingDoc === d.id + '_devis' ? 'wait' : 'pointer', color: uploadingDoc === d.id + '_devis' ? 'var(--ink-400)' : 'var(--brand-700)'}}>
                               {uploadingDoc === d.id + '_devis' ? 'Upload…' : '+ Uploader'}
                               <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id + '_devis'}
                                 onChange={async e => {
@@ -3451,9 +3442,9 @@ export default function FicheChantier({ params }) {
                         </div>
                       </div>
                       {/* Devis signé client */}
-                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-                        <span style={{fontSize:11, color:'var(--ink-500)', fontWeight:600}}>📄 Devis signé client</span>
-                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                      <div className="devis-doc">
+                        <span className="devis-doc-label">📄 Devis signé client</span>
+                        <div className="devis-doc-act">
                           {d.devis_signe_path ? (
                             <>
                               <button onClick={() => ouvrirDocument(d.devis_signe_path, `Devis signé ${d.artisan?.entreprise || ''}.pdf`)}
@@ -3462,12 +3453,7 @@ export default function FicheChantier({ params }) {
                                 style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
                             </>
                           ) : (
-                            <label style={{
-                              fontSize:11, cursor: uploadingDoc === d.id ? 'wait' : 'pointer',
-                              padding:'3px 10px', borderRadius:6, border:'1px solid',
-                              color: uploadingDoc === d.id ? 'var(--ink-400)' : 'var(--brand-700)',
-                              borderColor: uploadingDoc === d.id ? 'var(--ink-200)' : 'var(--brand-200)',
-                            }}>
+                            <label className="devis-doc-upload" style={{cursor: uploadingDoc === d.id ? 'wait' : 'pointer', color: uploadingDoc === d.id ? 'var(--ink-400)' : 'var(--brand-700)'}}>
                               {uploadingDoc === d.id ? 'Upload…' : '+ Uploader'}
                               <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id}
                                 onChange={e => e.target.files[0] && uploadDevisSigne(d.id, e.target.files[0])} />
@@ -3476,9 +3462,9 @@ export default function FicheChantier({ params }) {
                         </div>
                       </div>
                       {/* PV de réception */}
-                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-                        <span style={{fontSize:11, color:'var(--ink-500)', fontWeight:600}}>📋 PV de réception</span>
-                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                      <div className="devis-doc">
+                        <span className="devis-doc-label">📋 PV de réception</span>
+                        <div className="devis-doc-act">
                           {d.pv_path ? (
                             <>
                               <button onClick={() => ouvrirDocument(d.pv_path, `PV réception ${d.artisan?.entreprise || ''}.pdf`)}
@@ -3487,12 +3473,7 @@ export default function FicheChantier({ params }) {
                                 style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
                             </>
                           ) : (
-                            <label style={{
-                              fontSize:11, cursor: uploadingDoc === d.id ? 'wait' : 'pointer',
-                              padding:'3px 10px', borderRadius:6, border:'1px solid',
-                              color: uploadingDoc === d.id ? 'var(--ink-400)' : 'var(--brand-700)',
-                              borderColor: uploadingDoc === d.id ? 'var(--ink-200)' : 'var(--brand-200)',
-                            }}>
+                            <label className="devis-doc-upload" style={{cursor: uploadingDoc === d.id ? 'wait' : 'pointer', color: uploadingDoc === d.id ? 'var(--ink-400)' : 'var(--brand-700)'}}>
                               {uploadingDoc === d.id ? 'Upload…' : '+ Uploader'}
                               <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id}
                                 onChange={e => e.target.files[0] && uploadPV(d.id, e.target.files[0])} />
@@ -3500,10 +3481,10 @@ export default function FicheChantier({ params }) {
                           )}
                         </div>
                       </div>
-                      {/* Factures artisan */}
-                      <div style={{paddingTop:8, borderTop:'1px solid var(--ink-100)', display:'flex', flexDirection:'column', gap:6}}>
-                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                          <span style={{fontSize:11, color:'var(--ink-500)', fontWeight:600}}>🧾 Factures artisan</span>
+                      {/* Factures artisan (tuile) */}
+                      <div className="devis-doc">
+                        <span className="devis-doc-label">🧾 Factures artisan · {factures.filter(f => f.devis_id === d.id).length}</span>
+                        <div className="devis-doc-act">
                           <button onClick={() => {
                             const acompteMontant = finAc.acompte
                             setAjouterFacture(d.id)
@@ -3513,6 +3494,22 @@ export default function FicheChantier({ params }) {
                             + Ajouter
                           </button>
                         </div>
+                      </div>
+                      {/* Fiches techniques (tuile) */}
+                      <div className="devis-doc">
+                        <span className="devis-doc-label">🗂 Fiches techniques · {fichesTechChantier[d.artisan_id]?.length || 0}</span>
+                        <div className="devis-doc-act">
+                          <button onClick={() => setFichesPanelOuvert(fichesPanelOuvert === d.id ? null : d.id)}
+                            style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>
+                            {fichesPanelOuvert === d.id ? 'Masquer' : 'Gérer'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Factures — liste + formulaire (pleine largeur) */}
+                    {factures.filter(f => f.devis_id === d.id).length > 0 && (
+                      <div style={{display:'flex', flexDirection:'column', gap:6}}>
                         {factures.filter(f => f.devis_id === d.id).map(f => (
                           <div key={f.id} style={{background:'var(--surface-2)', borderRadius:8, padding:8, display:'flex', flexDirection:'column', gap:6}}>
                             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
@@ -3554,7 +3551,9 @@ export default function FicheChantier({ params }) {
                             </div>
                           </div>
                         ))}
-                        {ajouterFacture === d.id && (
+                      </div>
+                    )}
+                    {ajouterFacture === d.id && (
                           <div style={{border:'1px solid rgba(22,163,74,0.2)', background:'rgba(22,163,74,0.05)', borderRadius:10, padding:12, display:'flex', flexDirection:'column', gap:8}}>
                             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
                               <ModalField label="Montant TTC (€)" required>
@@ -3616,39 +3615,11 @@ export default function FicheChantier({ params }) {
                                 className="btn btn-primary" style={{flex:1, fontSize:12, justifyContent:'center', background:'#15803d', borderColor:'#15803d'}}>Enregistrer</button>
                             </div>
                           </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div style={{paddingTop:8, borderTop:'1px solid var(--ink-100)'}}>
-                      <button onClick={() => setFichesPanelOuvert(fichesPanelOuvert === d.id ? null : d.id)}
-                        style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>
-                        🗂 Fiches techniques ({fichesTechChantier[d.artisan_id]?.length || 0})
-                      </button>
-                      {fichesPanelOuvert === d.id && (
-                        <FichesTechPanel artisanId={d.artisan_id} dossierId={id} fichesCochees={fichesTechChantier[d.artisan_id] || []} onToggle={toggleFicheTech} onCreated={chargerFichesTechChantier} />
-                      )}
-                    </div>
-                    {/* Bouton intervention rapide sur devis accepté */}
-                    {d.statut === 'accepte' && (
-                      <div style={{paddingTop:8, borderTop:'1px solid var(--ink-100)'}}>
-                        <button
-                          onClick={() => { setNouvIntervArtisanId(d.artisan_id); setModalCreerIntervOuvert(true) }}
-                          style={{fontSize:11, color:'#15803d', border:'1px solid rgba(22,163,74,0.3)', padding:'4px 10px', borderRadius:6, background:'transparent', cursor:'pointer'}}>
-                          📅 Planifier une intervention
-                        </button>
-                        {/* Interventions existantes pour cet artisan */}
-                        {interventionsDossier.filter(i => i.artisan_id === d.artisan_id).map(i => (
-                          <div key={i.id} style={{marginTop:4, fontSize:11, color:'var(--ink-500)', display:'flex', alignItems:'center', gap:8}}>
-                            <span>🔨</span>
-                            {i.type_intervention === 'periode'
-                              ? `${new Date(i.date_debut).toLocaleDateString('fr-FR')} → ${new Date(i.date_fin).toLocaleDateString('fr-FR')}`
-                              : `${i.jours_specifiques?.length} jour(s)`}
-                            {i.notes && <span style={{color:'var(--ink-400)'}}>— {i.notes}</span>}
-                          </div>
-                        ))}
-                      </div>
                     )}
+                    {fichesPanelOuvert === d.id && (
+                      <FichesTechPanel artisanId={d.artisan_id} dossierId={id} fichesCochees={fichesTechChantier[d.artisan_id] || []} onToggle={toggleFicheTech} onCreated={chargerFichesTechChantier} />
+                    )}
+
                     </div>
                     )}
                   </div>
