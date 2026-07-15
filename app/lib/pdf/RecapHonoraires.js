@@ -99,7 +99,11 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
   const fraisInTable   = fraisTTC > 0 && fraisStatut !== 'offerts' && fraisStatut !== 'rembourse'
   const fraisRembourse = fraisStatut === 'rembourse' && fraisTTC > 0
   const totalFraisTable = fraisInTable ? fraisTTC : 0
-  const fraisComp      = totalFraisTable - (fraisRembourse ? fraisTTC : 0) // composante frais du total chantier
+  // Remise commerciale sur frais de consultation (frais remboursés) — SOURCE UNIQUE,
+  // partagée par le TOTAL CHANTIER (via fraisComp, inchangé) ET le Total honoraire
+  // (déduction). Corrige la divergence : le total chantier déduisait, pas le total honoraire.
+  const remiseFraisConso = fraisRembourse ? fraisTTC : 0
+  const fraisComp      = totalFraisTable - remiseFraisConso // composante frais du total chantier
 
   const isAMO   = typologie === 'amo'
   const hasNego = (devis || []).some(d => ['recu', 'a_modifier', 'en_attente'].includes(d?.statut))
@@ -152,18 +156,18 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
     courtageChildren.push(
       h(Text, { key: 'ns', style: S.niveau }, 'Tarif standard'),
       ligneHon('Honoraires courtage — à la signature des devis', courtageStd, 'hs'),
-      totalHon(pct(COURTAGE_STANDARD), courtageStd, 'ths'),
+      totalHon(pct(COURTAGE_STANDARD), round2(courtageStd - remiseFraisConso), 'ths'),
       totalChantier('TOTAL CHANTIER si COURTAGE (tarif standard)', totalChCourtageStd, { std: true }, 'tcs'),
       ligneRemise(`Remise commerciale sur honoraire courtage (${pct(COURTAGE_STANDARD - tauxCourtage)})`, courtageStd - courtageReel, BLEU, 'rem'),
       h(Text, { key: 'nr', style: S.niveau }, 'Votre tarif'),
       ...courtageReelLignes('cr'),
-      totalHon(pct(tauxCourtage), courtageReel, 'thr'),
+      totalHon(pct(tauxCourtage), round2(courtageReel - remiseFraisConso), 'thr'),
       totalChantier('TOTAL CHANTIER si COURTAGE', totalChCourtageReel, { bg: BLEU }, 'tcr'),
     )
   } else {
     courtageChildren.push(
       ...courtageReelLignes('cn'),
-      totalHon(pct(tauxCourtage), courtageReel, 'thr'),
+      totalHon(pct(tauxCourtage), round2(courtageReel - remiseFraisConso), 'thr'),
       totalChantier('TOTAL CHANTIER si COURTAGE', totalChCourtageReel, { bg: BLEU }, 'tcr'),
     )
   }
@@ -191,7 +195,7 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
         h(Text, { key: 'ns', style: S.niveau }, 'Tarif standard'),
         ligneHon(`Acompte AMO (${pct(COURTAGE_STANDARD)}) — à la signature des devis`, courtageStd, 'as'),
         ligneHon(`Solde AMO (${pct(AMO_STANDARD)}) — à l'avancement du chantier`, amoStd, 'ss'),
-        totalHon(pct(tauxCombineStd), honStd, 'ths'),
+        totalHon(pct(tauxCombineStd), round2(honStd - remiseFraisConso), 'ths'),
         totalChantier('TOTAL CHANTIER si AMO (tarif standard)', totalChAmoStd, { std: true }, 'tcs'),
       )
       if (courtageRemise) amoChildren.push(ligneRemise(`Remise commerciale sur honoraire courtage (${pct(COURTAGE_STANDARD - tauxCourtage)})`, courtageStd - courtageReel, BLEU, 'remc'))
@@ -200,14 +204,14 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
         h(Text, { key: 'nr', style: S.niveau }, 'Votre tarif'),
         ligneHon(`Acompte AMO (${pct(tauxCourtage)}) — à la signature des devis`, courtageReel, 'ar'),
         ligneHon(`Solde AMO (${pct(tauxAmoReel)}) — à l'avancement du chantier`, soldeReel, 'sr'),
-        totalHon(pct(tauxCombineReel), honReel, 'thr'),
+        totalHon(pct(tauxCombineReel), round2(honReel - remiseFraisConso), 'thr'),
         totalChantier('TOTAL CHANTIER si AMO', totalChAmoReel, { bg: ORANGE_FONCE }, 'tcr'),
       )
     } else {
       amoChildren.push(
         ligneHon(`Acompte AMO (${pct(tauxCourtage)}) — à la signature des devis`, courtageReel, 'ar'),
         ligneHon(`Solde AMO (${pct(tauxAmoReel)}) — à l'avancement du chantier`, soldeReel, 'sr'),
-        totalHon(pct(tauxCombineReel), honReel, 'thr'),
+        totalHon(pct(tauxCombineReel), round2(honReel - remiseFraisConso), 'thr'),
         totalChantier('TOTAL CHANTIER si AMO', totalChAmoReel, { bg: ORANGE_FONCE }, 'tcr'),
       )
     }
