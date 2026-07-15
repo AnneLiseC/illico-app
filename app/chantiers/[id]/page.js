@@ -2040,7 +2040,10 @@ export default function FicheChantier({ params }) {
   const totalDevisTTCRecus = devisRecus.reduce((s, d) => s + (d.montant_ttc || 0), 0)
   const totalDevisHTRecus  = devisRecus.reduce((s, d) => s + (d.montant_ht  || 0), 0)
   const fraisTTC = dossier?.frais_consultation || 0
-  const fraisInclus = fraisTTC > 0 && dossier?.frais_statut !== 'offerts'
+  // Frais RÉELLEMENT dans le total chantier (= reste à payer) : exclut 'offerts' ET
+  // 'rembourse' (remboursé = déjà déduit du courtage par finance.js). Aligne l'écran
+  // sur le PDF (RecapHonoraires.js, fraisInTable).
+  const fraisDansTotal = fraisTTC > 0 && dossier?.frais_statut !== 'offerts' && dossier?.frais_statut !== 'rembourse'
   const tauxCourtage = (dossier?.taux_courtage ?? COURTAGE_STANDARD)
   const tauxCourtagePct = parseFloat((tauxCourtage * 100).toFixed(1))
   const tauxAmo = ((dossier?.honoraires_amo_taux ?? AMO_STANDARD * 100) / 100)
@@ -3635,7 +3638,7 @@ export default function FicheChantier({ params }) {
                         <div className="recap-col-head"><span>Courtage seul</span><span className="recap-col-pct">{tauxCourtagePct}%</span></div>
                         <div className="recap-kv"><span>Travaux TTC</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus) : fmt(totalDevisTTCSignes)}</span></div>
                         <div className="recap-kv"><span>Honoraires ({tauxCourtagePct}%)</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(honorairesCourtagePrev) : fmt(honorairesCourtage)}</span></div>
-                        <div className="recap-total"><span>Total chantier</span><span className="tnum recap-total-val">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus + honorairesCourtagePrev + (fraisInclus ? fraisTTC : 0)) : fmt(totalDevisTTCSignes + honorairesCourtage + (fraisInclus ? fraisTTC : 0))}</span></div>
+                        <div className="recap-total"><span>Total chantier</span><span className="tnum recap-total-val">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus + honorairesCourtagePrev + (fraisDansTotal ? fraisTTC : 0)) : fmt(totalDevisTTCSignes + honorairesCourtage + (fraisDansTotal ? fraisTTC : 0))}</span></div>
                       </div>
                     )}
                     {/* Colonne 2 — + AMO plein tarif (15%) */}
@@ -3644,7 +3647,7 @@ export default function FicheChantier({ params }) {
                         <div className="recap-col-head"><span>+ AMO plein tarif</span><span className="recap-col-pct">15%</span></div>
                         <div className="recap-kv"><span>Travaux TTC</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus) : fmt(totalDevisTTCSignes)}</span></div>
                         <div className="recap-kv"><span>Honoraires (15%)</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(finDossier.honorairesPrevi.standard.totalTTC) : fmt(finDossier.honoraires.standard.totalTTC)}</span></div>
-                        <div className="recap-total"><span>Total chantier</span><span className="tnum recap-total-val">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus + finDossier.honorairesPrevi.standard.totalTTC + (fraisInclus ? fraisTTC : 0)) : fmt(totalDevisTTCSignes + finDossier.honoraires.standard.totalTTC + (fraisInclus ? fraisTTC : 0))}</span></div>
+                        <div className="recap-total"><span>Total chantier</span><span className="tnum recap-total-val">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus + finDossier.honorairesPrevi.standard.totalTTC + (fraisDansTotal ? fraisTTC : 0)) : fmt(totalDevisTTCSignes + finDossier.honoraires.standard.totalTTC + (fraisDansTotal ? fraisTTC : 0))}</span></div>
                       </div>
                     )}
                     {/* Colonne 3 — + AMO remisé */}
@@ -3653,11 +3656,11 @@ export default function FicheChantier({ params }) {
                         <div className="recap-col-head"><span>+ AMO remisé</span><span className="recap-col-pct">{parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%</span></div>
                         <div className="recap-kv"><span>Travaux TTC</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus) : fmt(totalDevisTTCSignes)}</span></div>
                         <div className="recap-kv"><span>Honoraires ({parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(honorairesAMOPrev) : fmt(honorairesAMO)}</span></div>
-                        <div className="recap-total"><span>Total chantier</span><span className="tnum recap-total-val">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus + honorairesAMOPrev + (fraisInclus ? fraisTTC : 0)) : fmt(totalDevisTTCSignes + honorairesAMO + (fraisInclus ? fraisTTC : 0))}</span></div>
+                        <div className="recap-total"><span>Total chantier</span><span className="tnum recap-total-val">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus + honorairesAMOPrev + (fraisDansTotal ? fraisTTC : 0)) : fmt(totalDevisTTCSignes + honorairesAMO + (fraisDansTotal ? fraisTTC : 0))}</span></div>
                       </div>
                     )}
                   </div>
-                  {fraisInclus && (
+                  {fraisDansTotal && (
                     <div style={{marginTop:2, fontSize:11, color:'var(--ink-500)', textAlign:'right'}}>
                       dont frais consultation {fmt(fraisTTC)}
                     </div>
