@@ -500,8 +500,8 @@ export function calculateApporteurFinance(dossier) {
 
   // Réel = devis dont l'acompte est débloqué côté illiCO (statut_illico === 'recu').
   const suivi = Array.isArray(dossier?.suivi_financier) ? dossier.suivi_financier : []
-  const estDebloque = (artisanId) => suivi.some(s =>
-    s.type_echeance === 'acompte_artisan' && s.artisan_id === artisanId && s.statut_illico === 'recu'
+  const estDebloque = (devisId) => suivi.some(s =>
+    s.type_echeance === 'acompte_artisan' && s.devis_id === devisId && s.statut_illico === 'recu'
   )
 
   let lines = []
@@ -510,7 +510,7 @@ export function calculateApporteurFinance(dossier) {
     const totalHT     = round2(baseHT * tauxApporteur)
     const parts       = split(totalHT, partAgente)
     const baseHTReel  = round2(signed
-      .filter(dv => estDebloque(dv.artisan_id ?? dv.artisan?.id))
+      .filter(dv => estDebloque(dv.id))
       .reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
     const totalHTReel = round2(baseHTReel * tauxApporteur)
     const partsReel   = split(totalHTReel, partAgente)
@@ -521,11 +521,10 @@ export function calculateApporteurFinance(dossier) {
     }]
   } else {
     lines = signed.map(dv => {
-      const artisanId = dv.artisan_id ?? dv.artisan?.id
       const baseHT    = round2(toNumber(dv.montant_ht))
       const totalHT   = round2(baseHT * tauxApporteur)
       const parts     = split(totalHT, partAgente)
-      const debloque  = estDebloque(artisanId)
+      const debloque  = estDebloque(dv.id)
       return {
         type: 'par_devis',
         devisId: dv.id || null,
