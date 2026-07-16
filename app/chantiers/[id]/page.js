@@ -1818,7 +1818,8 @@ export default function FicheChantier({ params }) {
       date_visite: crForm.date_visite || null,
       notes_brutes: notesCombinees || null,
       contenu_final: contenuFinal,
-      photos_paths: [...crImages.map(im => im.path), ...crPhotosDossier],
+      photos_paths: [...crImages.map(im => im.path), ...crPhotosDossier], // TOUT ce qu'a analysé l'IA (traçabilité)
+      photos_jointes: crPhotosDossier, // affichées dans le PDF — photos du chantier UNIQUEMENT, jamais les photos ordi
       valide: publier,
     })
     // Échec de l'insert : on garde la modale ouverte (sections éditées conservées).
