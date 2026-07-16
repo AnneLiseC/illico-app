@@ -4000,7 +4000,8 @@ export default function FicheChantier({ params }) {
                       sub={`${tauxCourtagePct}% travaux HT · ${fmt(Number(l.montant_ttc || 0))}`}
                       statut={l.statut_client === 'regle' ? 'regle' : 'en_attente'}
                       date={(l.statut_client === 'regle' && l.date_paiement) || null}
-                      onToggle={() => setCourtageTSPaye(l, l.statut_client !== 'regle')}
+                      onSetPaid={d => setCourtageTSPaye(l, true, d)}
+                      onUnsetPaid={() => setCourtageTSPaye(l, false)}
                       fmtDateFn={fmtD}
                     />
                   ))}
@@ -4148,7 +4149,8 @@ export default function FicheChantier({ params }) {
                           sub={`${pctApp}% × ${fmt(l.baseHT)} HT · ${fmt(l.totalHT)}`}
                           statut={paye ? 'regle' : 'en_attente'}
                           date={sf?.date_paiement || null}
-                          onToggle={() => setApporteurPaye(artId, !paye)}
+                          onSetPaid={d => setApporteurPaye(artId, true, d)}
+                          onUnsetPaid={() => setApporteurPaye(artId, false)}
                           fmtDateFn={fmtD}
                         />
                       )
