@@ -149,11 +149,39 @@ function LieuPicker({ value, onChange }) {
   )
 }
 
-function EcheanceRow({ label, sub, statut, date, variant, onToggle, fmtDateFn, lock, lockMsg }) {
+// Mini-éditeur de date partagé : <input date> pré-rempli + ✓/✕. Réutilisé par
+// EcheanceRow (nouveau contrat onSetPaid) et par le bouton pill de la carte devis.
+function DateConfirm({ initial, onConfirm, onCancel }) {
+  const [d, setD] = useState(initial)
+  return (
+    <div style={{display:'flex', gap:4, alignItems:'center', justifyContent:'flex-end'}}>
+      <input type="date" value={d} onChange={e => setD(e.target.value)} autoFocus
+        style={{height:28, fontSize:11, padding:'0 6px', border:'1px solid var(--ink-300)', borderRadius:6}} />
+      <button type="button" onClick={() => { if (d) onConfirm(d) }} title="Valider la date"
+        style={{width:24, height:24, borderRadius:6, border:'none', cursor:'pointer', background:'#16a34a', color:'#fff', fontSize:12, display:'grid', placeItems:'center'}}>✓</button>
+      <button type="button" onClick={onCancel} title="Annuler"
+        style={{width:24, height:24, borderRadius:6, border:'1px solid var(--ink-300)', cursor:'pointer', background:'#fff', color:'var(--ink-500)', fontSize:11, display:'grid', placeItems:'center'}}>✕</button>
+    </div>
+  )
+}
+
+// Contrat DATÉ : onSetPaid(date) + onUnsetPaid(). Cocher ouvre un DateConfirm pré-rempli
+// à today ; cliquer une date déjà posée le rouvre pour la corriger ; décocher efface.
+// lock ne bloque QUE le décochage (l'état), JAMAIS l'édition de date.
+function EcheanceRow({ label, sub, statut, date, variant, onSetPaid, onUnsetPaid, fmtDateFn, lock, lockMsg }) {
+  const [editing, setEditing] = useState(false)
   const isRegle = statut === 'regle' || statut === 'recu'
   const isIllico = variant === 'illico'
-  // lock : case verrouillée (dé-cochage interdit). onToggle reste ignoré tant que lock=true.
-  const canClick = Boolean(onToggle) && !lock
+  const today = new Date().toISOString().slice(0, 10)
+  // Cochable si non réglé (→ éditeur), décochable seulement hors lock.
+  const canClick = !(isRegle && lock)
+
+  const onCheckbox = () => {
+    if (isRegle) { if (!lock) onUnsetPaid && onUnsetPaid() }
+    else setEditing(true)
+  }
+  const dateEditable = isRegle  // corriger une date déjà posée (lock non bloquant)
+
   return (
     <div style={{
       display:'grid', gridTemplateColumns:'auto 1fr auto auto', gap:14, alignItems:'center',
@@ -162,7 +190,7 @@ function EcheanceRow({ label, sub, statut, date, variant, onToggle, fmtDateFn, l
     }}>
       <label title={lock ? lockMsg : undefined}
         style={{display:'flex', alignItems:'center', gap:8, cursor: canClick ? 'pointer' : (lock ? 'not-allowed' : 'default')}}>
-        <input type="checkbox" checked={isRegle} onChange={() => { if (lock) return; onToggle && onToggle() }} readOnly={!canClick}
+        <input type="checkbox" checked={isRegle} onChange={onCheckbox} readOnly={!canClick}
           style={{accentColor: isIllico ? '#6366f1' : 'var(--brand-500)', width:18, height:18, cursor: canClick ? 'pointer' : (lock ? 'not-allowed' : 'default')}} />
       </label>
       <div style={{minWidth:0}}>
@@ -174,14 +202,71 @@ function EcheanceRow({ label, sub, statut, date, variant, onToggle, fmtDateFn, l
           </div>
         )}
       </div>
-      <div style={{textAlign:'right', minWidth:80}}>
-        {isRegle
-          ? <Badge tone="ok">Réglé</Badge>
-          : <Badge tone="warn">En attente</Badge>}
-      </div>
-      <div className="tnum" style={{fontSize:11.5, color:'var(--ink-400)', minWidth:60, textAlign:'right'}}>
-        {date ? (fmtDateFn ? fmtDateFn(date) : new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' })) : '—'}
-      </div>
+      {editing ? (
+        <div style={{gridColumn:'3 / 5'}}>
+          <DateConfirm
+            initial={isRegle && date ? String(date).slice(0, 10) : today}
+            onConfirm={d => { setEditing(false); onSetPaid(d) }}
+            onCancel={() => setEditing(false)}
+          />
+        </div>
+      ) : (
+        <>
+          <div style={{textAlign:'right', minWidth:80}}>
+            {isRegle
+              ? <Badge tone="ok">Réglé</Badge>
+              : <Badge tone="warn">En attente</Badge>}
+          </div>
+          <div className="tnum" onClick={dateEditable ? () => setEditing(true) : undefined}
+            title={dateEditable ? 'Modifier la date' : undefined}
+            style={{fontSize:11.5, color:'var(--ink-400)', minWidth:60, textAlign:'right',
+              cursor: dateEditable ? 'pointer' : 'default', textDecoration: dateEditable ? 'underline dotted' : 'none'}}>
+            {date ? (fmtDateFn ? fmtDateFn(date) : new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' })) : '—'}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Pill « Acompte client » de la carte devis (onglet Devis). Même mode saisie que
+// EcheanceRow via DateConfirm : cocher demande la date (pré-remplie today), la date
+// posée est corrigeable au clic. Composant à part (pas une IIFE) car il porte un état
+// `editing` — hooks interdits dans le .map des devis.
+function AcompteClientPill({ acomptePaye, dateAcompte, onSetPaid, onUnsetPaid, toneBg, toneFg }) {
+  const [editing, setEditing] = useState(false)
+  const today = new Date().toISOString().slice(0, 10)
+  return (
+    <div className="devis-kv" style={{alignItems:'center'}}>
+      {editing ? (
+        <>
+          <span>Acompte client</span>
+          <DateConfirm
+            initial={acomptePaye && dateAcompte ? String(dateAcompte).slice(0, 10) : today}
+            onConfirm={d => { setEditing(false); onSetPaid(d) }}
+            onCancel={() => setEditing(false)}
+          />
+        </>
+      ) : (
+        <>
+          <span>
+            Acompte client {acomptePaye && dateAcompte && (
+              <span onClick={() => setEditing(true)} title="Modifier la date"
+                style={{color:'#15803d', fontWeight:600, cursor:'pointer', textDecoration:'underline dotted'}}>
+                · {new Date(dateAcompte).toLocaleDateString('fr-FR')}
+              </span>
+            )}
+          </span>
+          <button onClick={() => { if (acomptePaye) onUnsetPaid(); else setEditing(true) }}
+            style={{
+              fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
+              background: acomptePaye ? toneBg.ok : toneBg.warn,
+              color: acomptePaye ? toneFg.ok : toneFg.warn,
+            }}>
+            {acomptePaye ? '✓ Payé' : '⏳ En attente'}
+          </button>
+        </>
+      )}
     </div>
   )
 }
@@ -2214,14 +2299,15 @@ export default function FicheChantier({ params }) {
   // un appel (sans passer par majSuiviAvecArtisan générique → factures non affectées).
   // PAS de DELETE : la ligne est partagée avec l'acompte client (statut_client/date_paiement),
   // qui reste intact. date_deblocage est de type `date` → AAAA-MM-JJ.
-  const setDeblocagePaye = async (artisanId, recu, devisId = null) => {
+  const setDeblocagePaye = async (artisanId, recu, devisId = null, date = null) => {
     let q = supabase.from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', 'acompte_artisan').eq('artisan_id', artisanId)
     q = devisId ? q.eq('devis_id', devisId) : q.is('devis_id', null)
     const { data: existing, error: selectErr } = await q.maybeSingle()
     if (selectErr) { setErreur('Erreur : ' + selectErr.message); return }
+    const dateEffective = date || new Date().toISOString().slice(0, 10)
     const payload = recu
-      ? { statut_illico: 'recu', date_deblocage: new Date().toISOString().slice(0, 10) }
+      ? { statut_illico: 'recu', date_deblocage: dateEffective }
       : { statut_illico: 'en_attente', date_deblocage: null }
     let error = null
     if (existing) {
@@ -2240,7 +2326,7 @@ export default function FicheChantier({ params }) {
   // cohérent avec le toggle honoraires). Les 2 modes (par_devis: artisan_id renseigné /
   // total: artisan_id NULL) passent par le même chemin. Montant non écrit (F2 le calcule
   // via finance.js). date_paiement est de type `date` → AAAA-MM-JJ.
-  const setApporteurPaye = async (artisanId, paye) => {
+  const setApporteurPaye = async (artisanId, paye, date = null) => {
     let q = supabase.from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', 'apporteur_agente')
     q = artisanId === null ? q.is('artisan_id', null) : q.eq('artisan_id', artisanId)
@@ -2249,11 +2335,11 @@ export default function FicheChantier({ params }) {
 
     let error = null
     if (paye) {
-      const today = new Date().toISOString().slice(0, 10)
+      const dateEffective = date || new Date().toISOString().slice(0, 10)
       if (existing) {
-        ({ error } = await supabase.from('suivi_financier').update({ statut_ctp: 'rembourse', date_paiement: today }).eq('id', existing.id))
+        ({ error } = await supabase.from('suivi_financier').update({ statut_ctp: 'rembourse', date_paiement: dateEffective }).eq('id', existing.id))
       } else {
-        ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'apporteur_agente', artisan_id: artisanId, statut_ctp: 'rembourse', date_paiement: today }))
+        ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'apporteur_agente', artisan_id: artisanId, statut_ctp: 'rembourse', date_paiement: dateEffective }))
       }
     } else if (existing) {
       ({ error } = await supabase.from('suivi_financier').delete().eq('id', existing.id))
@@ -2263,7 +2349,7 @@ export default function FicheChantier({ params }) {
     setSuiviFinancier(data || [])
   }
 
-  const majSuiviChantier = async (type, montant, valeur) => {
+  const majSuiviChantier = async (type, montant, valeur, date = null) => {
     // Toggle d'une échéance honoraire : coche = réglé + date du jour, décoche = suppression.
     // Sur AMO, honoraires_courtage et acompte_amo représentent le MÊME encaissement
     // (la part courtage, vue AMO) → togglés ensemble. La fonction Postgres
@@ -2274,13 +2360,13 @@ export default function FicheChantier({ params }) {
       if (type === 'honoraires_courtage') types.push('acompte_amo')
       else if (type === 'acompte_amo') types.push('honoraires_courtage')
     }
-    const today = new Date().toISOString().slice(0, 10)
+    const dateEffective = date || new Date().toISOString().slice(0, 10)
     const { error } = await supabase.rpc('suivi_toggle_honoraires', {
       p_dossier_id: id,
       p_types: types,
       p_montant: montant,
       p_regle: valeur === 'regle',
-      p_today: today,
+      p_today: dateEffective,
     })
     if (error) setErreur('Erreur : ' + error.message)
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
@@ -2290,10 +2376,10 @@ export default function FicheChantier({ params }) {
   // TS-2 : marquer une ligne courtage TS payée/non-payée PAR ID (jamais via
   // suivi_toggle_honoraires, qui fige le montant à l'INSERT). Une ligne réglée est
   // close ; la décocher la rouvre (redevient absorbable par le recompute au prochain TS).
-  const setCourtageTSPaye = async (ligne, paye) => {
-    const today = new Date().toISOString().slice(0, 10)
+  const setCourtageTSPaye = async (ligne, paye, date = null) => {
+    const dateEffective = date || new Date().toISOString().slice(0, 10)
     const payload = paye
-      ? { statut_client: 'regle', date_paiement: today }
+      ? { statut_client: 'regle', date_paiement: dateEffective }
       : { statut_client: 'en_attente', date_paiement: null }
     const { error } = await supabase.from('suivi_financier').update(payload).eq('id', ligne.id)
     if (error) { setErreur('Erreur : ' + error.message); return }
@@ -3347,23 +3433,16 @@ export default function FicheChantier({ params }) {
                           const suiviAcompte = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === d.id)
                           const acomptePaye = suiviAcompte?.statut_client === 'regle'
                           const dateAcompte = suiviAcompte?.date_paiement
+                          const artId = d.artisan_id || d.artisan?.id
                           return (
-                            <div className="devis-kv" style={{alignItems:'center'}}>
-                              <span>
-                                Acompte client {acomptePaye && dateAcompte && <span style={{color:'#15803d', fontWeight:600}}>· {new Date(dateAcompte).toLocaleDateString('fr-FR')}</span>}
-                              </span>
-                              <button onClick={async () => {
-                                const artId = d.artisan_id || d.artisan?.id
-                                await setAcompteArtisanPaye(artId, !acomptePaye, dateAcompte, d.id)
-                              }}
-                                style={{
-                                  fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
-                                  background: acomptePaye ? TONE_BG.ok : TONE_BG.warn,
-                                  color: acomptePaye ? TONE_FG.ok : TONE_FG.warn,
-                                }}>
-                                {acomptePaye ? '✓ Payé' : '⏳ En attente'}
-                              </button>
-                            </div>
+                            <AcompteClientPill
+                              acomptePaye={acomptePaye}
+                              dateAcompte={dateAcompte}
+                              onSetPaid={date => setAcompteArtisanPaye(artId, true, date, d.id)}
+                              onUnsetPaid={() => setAcompteArtisanPaye(artId, false, null, d.id)}
+                              toneBg={TONE_BG}
+                              toneFg={TONE_FG}
+                            />
                           )
                         })()}
                       </div>
@@ -3875,10 +3954,8 @@ export default function FicheChantier({ params }) {
                             sub={`${finDv.acompteMode === 'fixe' ? 'fixe' : finDv.acomptePct + '%'} acompte · ${fmt(acompteMontant)} TTC`}
                             statut={sf?.statut_client || 'en_attente'}
                             date={sf?.date_paiement || null}
-                            onToggle={() => {
-                              const paye = sf?.statut_client !== 'regle'
-                              setAcompteArtisanPaye(artId, paye, sf?.date_paiement, dv.id)
-                            }}
+                            onSetPaid={d => setAcompteArtisanPaye(artId, true, d, dv.id)}
+                            onUnsetPaid={() => setAcompteArtisanPaye(artId, false, null, dv.id)}
                             fmtDateFn={fmtD}
                           />
                         </div>
@@ -3888,7 +3965,8 @@ export default function FicheChantier({ params }) {
                             sub={`Commission ${fmt(comDevisHT)} HT`}
                             statut={sf?.statut_illico === 'recu' ? 'regle' : 'en_attente'}
                             date={sf?.date_deblocage || null}
-                            onToggle={() => setDeblocagePaye(artId, sf?.statut_illico !== 'recu', dv.id)}
+                            onSetPaid={d => setDeblocagePaye(artId, true, dv.id, d)}
+                            onUnsetPaid={() => setDeblocagePaye(artId, false, dv.id)}
                             variant="illico"
                             fmtDateFn={fmtD}
                           />
@@ -3922,10 +4000,8 @@ export default function FicheChantier({ params }) {
                   sub={`${tauxCourtagePct}% travaux HT · ${fmt(honorairesCourtagePrev)}`}
                   statut={suiviCourtage?.statut_client || 'en_attente'}
                   date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || null}
-                  onToggle={() => {
-                    const newStatut = suiviCourtage?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                    majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, newStatut)
-                  }}
+                  onSetPaid={d => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'regle', d)}
+                  onUnsetPaid={() => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'en_attente')}
                   fmtDateFn={fmtD}
                 />
               )}
@@ -3939,10 +4015,8 @@ export default function FicheChantier({ params }) {
                     sub={`${tauxCourtagePct}% travaux HT (hors TS) · ${fmt(courtageTS.courtageInitialTtc)}`}
                     statut={suiviCourtage?.statut_client || 'en_attente'}
                     date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || null}
-                    onToggle={() => {
-                      const newStatut = suiviCourtage?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                      majSuiviChantier('honoraires_courtage', courtageTS.courtageInitialTtc, newStatut)
-                    }}
+                    onSetPaid={d => majSuiviChantier('honoraires_courtage', courtageTS.courtageInitialTtc, 'regle', d)}
+                    onUnsetPaid={() => majSuiviChantier('honoraires_courtage', courtageTS.courtageInitialTtc, 'en_attente')}
                     fmtDateFn={fmtD}
                     lock={suiviCourtage?.statut_client === 'regle' && suiviCourtageTS.length > 0}
                     lockMsg="Le courtage initial ne peut pas être décoché tant qu'il existe des travaux supplémentaires (cela supprimerait la date de référence des TS). Supprimez d'abord les lignes TS."
@@ -3954,7 +4028,8 @@ export default function FicheChantier({ params }) {
                       sub={`${tauxCourtagePct}% travaux HT · ${fmt(Number(l.montant_ttc || 0))}`}
                       statut={l.statut_client === 'regle' ? 'regle' : 'en_attente'}
                       date={(l.statut_client === 'regle' && l.date_paiement) || null}
-                      onToggle={() => setCourtageTSPaye(l, l.statut_client !== 'regle')}
+                      onSetPaid={d => setCourtageTSPaye(l, true, d)}
+                      onUnsetPaid={() => setCourtageTSPaye(l, false)}
                       fmtDateFn={fmtD}
                     />
                   ))}
@@ -4005,10 +4080,8 @@ export default function FicheChantier({ params }) {
                           sub={`${tauxAmoPct}% travaux HT · ${fmt(honorairesAMOPrev - honorairesCourtagePrev)}`}
                           statut={suiviSoldeAMO?.statut_client || 'en_attente'}
                           date={(suiviSoldeAMO?.statut_client === 'regle' && suiviSoldeAMO.date_paiement) || null}
-                          onToggle={() => {
-                            const newStatut = suiviSoldeAMO?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                            majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, newStatut)
-                          }}
+                          onSetPaid={d => majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'regle', d)}
+                          onUnsetPaid={() => majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'en_attente')}
                           fmtDateFn={fmtD}
                         />
                         <button type="button" className="suivi-amo-add-link" onClick={() => setSoldeAmoDeplie(v => !v)}>
@@ -4104,7 +4177,8 @@ export default function FicheChantier({ params }) {
                           sub={`${pctApp}% × ${fmt(l.baseHT)} HT · ${fmt(l.totalHT)}`}
                           statut={paye ? 'regle' : 'en_attente'}
                           date={sf?.date_paiement || null}
-                          onToggle={() => setApporteurPaye(artId, !paye)}
+                          onSetPaid={d => setApporteurPaye(artId, true, d)}
+                          onUnsetPaid={() => setApporteurPaye(artId, false)}
                           fmtDateFn={fmtD}
                         />
                       )
