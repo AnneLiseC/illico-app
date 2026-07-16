@@ -1760,6 +1760,13 @@ export default function FicheChantier({ params }) {
     setCrManuelSaving(false)
     setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
   }
+  // Poids RÉELLEMENT transporté = longueur des data URLs base64 dans crImages (le body
+  // envoie ces chaînes telles quelles). Verrou anti-413 sur ce poids, PAS sur le nombre :
+  // 15 photos à 250 Ko = ~5 Mo base64 > 4,5 Mo. Marge à 4 Mo car les notes + les paths
+  // de documents voyagent aussi dans le même body.
+  const crImagesPoids = crImages.reduce((s, d) => s + (d?.length || 0), 0)
+  const crImagesTropLourd = crImagesPoids > 4 * 1024 * 1024
+
   // ── GÉNÉRER CR AVEC IA ──
   const genererCRAvecIA = async () => {
     if (!crForm.type_visite) return
@@ -5393,15 +5400,12 @@ export default function FicheChantier({ params }) {
                           }} />
                       </label>
                     </div>
-                    {crImages.length > 0 && (() => {
-                      const poids = crImages.reduce((s, d) => s + (d?.length || 0), 0)
-                      const txt = poids > 1048576 ? `${(poids / 1048576).toFixed(1)} Mo` : `${Math.round(poids / 1024)} Ko`
-                      return (
-                        <div style={{fontSize:11, color: poids > 4194304 ? '#b91c1c' : 'var(--ink-400)', marginTop:6}}>
-                          {crImages.length}/15 photo{crImages.length > 1 ? 's' : ''} · ~{txt} envoyés (limite ~4,5 Mo)
-                        </div>
-                      )
-                    })()}
+                    {crImages.length > 0 && (
+                      <div style={{fontSize:11, color: crImagesTropLourd ? '#b91c1c' : 'var(--ink-400)', marginTop:6}}>
+                        {crImages.length}/15 photo{crImages.length > 1 ? 's' : ''} · ~{crImagesPoids > 1048576 ? `${(crImagesPoids / 1048576).toFixed(1)} Mo` : `${Math.round(crImagesPoids / 1024)} Ko`} envoyés (limite ~4,5 Mo)
+                        {crImagesTropLourd && ' — trop volumineux, retirez des photos'}
+                      </div>
+                    )}
                   </ModalField>
 
                   {documents.length > 0 && (
@@ -5435,12 +5439,17 @@ export default function FicheChantier({ params }) {
                     </ModalField>
                   )}
 
+                  {crImagesTropLourd && (
+                    <div style={{fontSize:12, color:'#b91c1c', background:'rgba(185,28,28,0.08)', border:'1px solid rgba(185,28,28,0.25)', borderRadius:8, padding:'8px 12px'}}>
+                      Photos trop volumineuses — retirez-en (limite ~4 Mo pour laisser passer les notes et documents).
+                    </div>
+                  )}
                   <div style={{display:'flex', gap:10, paddingTop:6}}>
                     <button onClick={() => setCrEtape(1)} className="btn btn-ghost" style={{flex:1, justifyContent:'center', height:42}}>
                       ← Retour
                     </button>
                     <button onClick={genererCRAvecIA}
-                      disabled={crGenerating || (!crNotes.trim() && !crVocalTexte.trim() && crImages.length === 0)}
+                      disabled={crGenerating || crImagesTropLourd || (!crNotes.trim() && !crVocalTexte.trim() && crImages.length === 0)}
                       className="btn btn-primary" style={{flex:2, justifyContent:'center', height:42, fontSize:13}}>
                       {crGenerating ? (
                         <span style={{display:'inline-flex', alignItems:'center', gap:8}}>
