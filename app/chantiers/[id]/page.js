@@ -3926,10 +3926,8 @@ export default function FicheChantier({ params }) {
                             sub={`${finDv.acompteMode === 'fixe' ? 'fixe' : finDv.acomptePct + '%'} acompte · ${fmt(acompteMontant)} TTC`}
                             statut={sf?.statut_client || 'en_attente'}
                             date={sf?.date_paiement || null}
-                            onToggle={() => {
-                              const paye = sf?.statut_client !== 'regle'
-                              setAcompteArtisanPaye(artId, paye, sf?.date_paiement, dv.id)
-                            }}
+                            onSetPaid={d => setAcompteArtisanPaye(artId, true, d, dv.id)}
+                            onUnsetPaid={() => setAcompteArtisanPaye(artId, false, null, dv.id)}
                             fmtDateFn={fmtD}
                           />
                         </div>
@@ -3939,7 +3937,8 @@ export default function FicheChantier({ params }) {
                             sub={`Commission ${fmt(comDevisHT)} HT`}
                             statut={sf?.statut_illico === 'recu' ? 'regle' : 'en_attente'}
                             date={sf?.date_deblocage || null}
-                            onToggle={() => setDeblocagePaye(artId, sf?.statut_illico !== 'recu', dv.id)}
+                            onSetPaid={d => setDeblocagePaye(artId, true, dv.id, d)}
+                            onUnsetPaid={() => setDeblocagePaye(artId, false, dv.id)}
                             variant="illico"
                             fmtDateFn={fmtD}
                           />
