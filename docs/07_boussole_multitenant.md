@@ -3,8 +3,9 @@
 > **État vivant du projet.** Lue par Claude (binôme) et Claude Code en tête de chaque session.
 > Le détail historique (journal des commits, chantier finances) est dans `07_journal_multitenant.md`.
 
-> Dernière mise à jour : 09/07/2026.
-> Statut : Multi-agence COMPLET. Bloc A sécurité soldé. App multi-tenant fonctionnelle, cloisonnée, sécurisée. Acquis antérieurs : erreurs avalées soldé, famille AMO close, ménage infra (policies Storage versionnées + placeholder fermé). Sprint 16-18/06 : refonte finances COMPLÈTE, dossier de fin, comparateur de devis, statut staff CLOS, stepper corrigé, contrat auto-signé, PDF CR assaini.
+> Dernière mise à jour : 10/07/2026.
+> Statut : Multi-agence COMPLET. Bloc A sécurité soldé. App multi-tenant fonctionnelle, cloisonnée, sécurisée. Acquis antérieurs : erreurs avalées soldé, famille AMO close, ménage infra (policies Storage versionnées + placeholder fermé). Sprint 16-18/06 : refonte finances COMPLÈTE, dossier de fin, comparateur de devis, statut staff CLOS, stepper corrigé, contrat auto-signé, PDF CR assaini. AUDIT SÉCURITÉ COMPLET (10/07) : série d'inventaires 01→07 + confrontation croisée (branche audit/inventaires, code figé 91e0db1). Cloisonnement prouvé sur les 2 couches (corps DEFINER + policies RLS lues verbatim). REVOKE 5 fonctions + DROP 2 backups appliqués. Sécurité soldée sans astérisque.
+
 > **Depuis le 18/06 (à jour au 09/07)** :
 > - **C7 espace client + RLS client — COMPLET (20-23/06)** : vues definer scopées, étanchéité inter-client prouvée, devis/PDF/CR/messages durcis.
 > - **Messagerie réactivée + polish (23/06)** : messagerie centralisée remise en service (multi-tenant), fix timezone messages, feature édition de message 10 min.
@@ -88,6 +89,13 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
   - `clients` : agence de la référente. Agente → sa propre agence. Admin → agence de la référente choisie (si admin référente → règle admin).
   - `dossiers` : hérite de l'agence du client (`agence_id = client.agence_id`).
   - Règle admin : agence = vue active (onglet agence) ou sélecteur obligatoire (vue consolidée). Le sélecteur multi-agences = **L15 (post-test)** ; en mono-agence, déduction auto de l'unique agence.
+- **D19**. rls_auto_enable (event trigger) active la RLS sur toute nouvelle table public → garantit « RLS partout » (nouvelle table = RLS on + 0 policy = deny-all). Ne pas le supprimer.
+- **D20**. Sécurité d'onboarding_create_societe : elle vit dans la ROUTE, pas dans le corps (la fonction fait confiance à l'argument p_user_id). Invariant si refactor : p_user_id dérivé du JWT vérifié, jamais du body. Grant service_role-only à conserver.
+- **D21**. artisans + filles (fiches_techniques, artisans_specialites) société-wide = visibles inter-agences (conforme D5). À ressortir au 1er franchisé multi-agences (question commerciale : agences voient leurs carnets mutuels).
+
+**Assumé (audit 10/07, pas des bugs)** :
+acompte 0 ⟹ commission 0 non codée dans finance.js (calcul = HT×taux inconditionnel ; garde-fou = confirm non bloquant à la saisie). Discipline de saisie, pas invariant. → remonte en P1 si un franchisé externe à saisie non contrôlée entre dans la boucle.
+Conversion AMO↔courtage + suppression chantier = tout-staff (pas admin-only), volontaire.
 
 ### Décisions onboarding (07/06)
 - **Admin plateforme = Option B** : pas de super-admin applicatif. Invitation via route protégée par secret + administration hors app cliente. Préserve le cloisonnement.
@@ -145,8 +153,9 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
   - [x] **pdf branche staff corrigée + PROUVÉE E2E** (10/06, mergé `c844e60`). Contrôle d'appartenance staff (admin→societe_id, agente→agence_id, 404 uniforme) avant tout fetch/download lié + rattachement crId→dossierId (404 si CR d'un autre dossier). Branche client intacte. Paths Storage issus de la base scopée au dossier → contrôle dossier suffit. Tests E2E : (a) staff TEST1→dossier CTP 404 ; (b) dossier TEST1 + crId CTP 404 « CR non trouvé » ; (c) dossier TEST1 propre 200 PDF. c' (crId légitime TEST1) couvert par lecture de code (pas de CR sur dossiers TEST1).
 - [x] **Audit des index UNIQUE reliques mono-tenant** (09/06). 38 index examinés : tous sains (PK sur id, ou portent societe_id/agence_id, ou uniques par nature : siret/user_id/email/specialites). Seul `objectifs_ca` était cassé → corrigé au 4c-1. ⚠️ `specialites_nom_key` global VOLONTAIREMENT (référentiel commun) — à repasser en `(societe_id, nom)` SI un jour les franchisés créent leurs propres spécialités.
 - [x] **Validation finances multi-agence sur vraies données** (09/06). Agentes Marie (Marseille) + Manon (Montpellier) sur TEST 1 + redevances réparties (4500€/1300€). Scoping prouvé à l'écran : Consolidé 5800 / Marseille 4500 / Montpellier 1300, objectif par agence OK, badge « Filtré sur » OK. → Finances multi-agence validé.
-- [x] **EXECUTE anon/PUBLIC sur fonctions : CLEAN** (10/06). 12 fonctions public, toutes ACL explicite (aucune proacl NULL = pas de défaut PUBLIC implicite), grantees = postgres/authenticated/service_role uniquement. Déjà durci au Lot 5 (revoke_execute_triggers.sql). Seul RPC appelé = onboarding_create_societe (service_role only). RIEN à révoquer.
-- [x] **Surface ANON sur les TABLES soldée** (10/06). RLS active sur 25/25 tables, GRANT anon (défaut Supabase) neutralisé par la RLS. 24 tables sûres (policies TO authenticated → anon deny). 1 faille corrigée : policy INSERT notifications « Service role inserts notifications » était TO public WITH CHECK true (anon pouvait forger des notifs pour tout user_id) → re-scopée TO authenticated WITH CHECK (auth.uid()=user_id) via docs/sql/fix_notifications_insert_policy.sql. Prouvé : INSERT anon → 42501 RLS violation. service_role (cron) non affecté (bypass RLS). admin_invitations : 0 policy = deny total, voulu.
+- [x] **EXECUTE anon/PUBLIC sur fonctions : CLEAN** (10/06). 12 fonctions public, toutes ACL explicite (aucune proacl NULL = pas de défaut PUBLIC implicite), grantees = postgres/authenticated/service_role uniquement. Déjà durci au Lot 5 (revoke_execute_triggers.sql). Seul RPC appelé = onboarding_create_societe (service_role only). RIEN à révoquer. ⚠️ MAJ 10/07 : 5 fonctions ajoutées APRÈS (agenda_derive_tenant, cible_derive_societe, profile_client_derive_agence, messages_lock_columns, suivi_courtage_ts_upsert) avaient gardé le défaut PUBLIC/anon → REVOKE appliqué (docs/sql/revoke_execute_public_5fn.sql), vérifié anon/PUBLIC=false sur les 5. authenticated conservé sur la RPC.
+
+- [x] **Surface ANON sur les TABLES soldée** (10/06). RLS active sur 29/29 tables (auto-garantie par l'event trigger rls_auto_enable, cf. §4), GRANT anon (défaut Supabase) neutralisé par la RLS. 24 tables sûres (policies TO authenticated → anon deny). 1 faille corrigée : policy INSERT notifications « Service role inserts notifications » était TO public WITH CHECK true (anon pouvait forger des notifs pour tout user_id) → re-scopée TO authenticated WITH CHECK (auth.uid()=user_id) via docs/sql/fix_notifications_insert_policy.sql. Prouvé : INSERT anon → 42501 RLS violation. service_role (cron) non affecté (bypass RLS). admin_invitations : 0 policy = deny total, voulu.
 - [x] **Policies Storage versionnées (#5)** ✅ (15/06, f06bb0, complété par #7). docs/sql/storage_policies.sql = source de vérité. NB : l'export #5 initial avait omis les 2 policies DELETE (réparé en #7 → fichier complet à 8). 5 anciens fichiers obsolètes supprimés. Cloisonnement tenant confirmé solide (pas de sécurité par obscurité).
 - [x] **Placeholder cross-société (#7)** ✅ (15/06, 0ee864c). Exemption .emptyFolderPlaceholder retirée des 6 policies Storage (scoping tenant désormais appliqué à tout chemin) — vérifié 8 policies a_exemption=false en base, T1 non-régression OK (lecture/upload/suppression docs intacts). Au passage : réparé l'omission #5 (storage_policies.sql avait 6/8 policies, les 2 DELETE manquaient → désormais complet à 8 sans exemption). Reste geste manuel cosmétique : supprimer le placeholder 0 octet via UI Storage (DELETE SQL bloqué par Supabase ; inerte car soumis au scoping normal).
 - [x] **🔴 Suppression agente impossible si google_tokens/comptes_oauth existe → RÉSOLU par SOFT DELETE** (30/06-01/07, mergé 69b2e39). Bug : 7 FK vers profiles en NO ACTION bloquaient auth.admin.deleteUser (« Database error deleting user »). Choix produit = SOFT DELETE (désactiver au lieu de supprimer) pour préserver l'attribution des dossiers + l'historique comptable. Colonne profiles.actif (NOT NULL DEFAULT true). Route /api/agente-statut (ban/unban Supabase Auth ban_duration '876000h'|'none' + update actif). auth-context fetchProfile déconnecte (signOut) une session dont actif=false (double blocage : ban = nouvelles connexions, signOut = session en cours). UI parametres>Équipe Désactiver/Réactiver + badge. Filtres : chantiers/clients → actif=true (assignation) ; parametres+finances → toutes (historique). Testé E2E. NB : fix FK hard-delete (6 FK→SET NULL, factures→CASCADE) appliqué prod AVANT comme filet de sécurité. Comptes test TEST AI + TEST 2 AGENTE ensuite supprimés (reste 3 vraies agentes : Anne-Lise, Manon, Marie). ⚠️ PIÈGE : le dashboard Supabase ne propage PAS bien les cascades SET NULL → pour un vrai hard delete futur (RGPD), script admin.deleteUser + vérif cascades, PAS le dashboard.
@@ -245,8 +254,6 @@ Anne-Lise invite (route protégée par secret) → lien email → set-password �
 
 ##### A FAIRE
 - [ ] **#8 dashboard admin scope** (à arbitrer selon scénario testeur).
-- [ ] **L18 bug ajout intervention** : ⚠️ audit d'abord, STOP si lié à la sync Google Calendar.
-- [ ] **Messagerie AMO : aucun dossier affiché** : la page lit `clients.raison_sociale` (colonne cible jamais créée — cf. doc 02). Créer la colonne OU rebrancher la lecture. ⚠️ lié à la réactivation Messagerie (bloc F).
 
 #### Bloc E — Refonte UX vues finances SOLDÉ
 > ✅ BLOC FINANCES SOLDÉ (18/06). Tout le codable est fait : compte de résultat CA généré (3 modes), RLS objectif agente durcie+testée, objectif vue Par année, barre objectif alignée CA généré, L16 facturation scopée, libellés (colonne Net, légende redevances, honoraires), colonne Honoraires, CR IA (3 lots). Items fermés sans objet (résolus par la refonte CA généré) : vue agente, décalage M−1, timing apporteur F2. SEUL RESTE : 3a-bis figé/live = en attente décision Marine (pas du code). → Finances ne contient plus aucun item codable ouvert.
@@ -391,11 +398,60 @@ Reste hors staff : C7 espace-client + RLS client → BLOC ESPACE CLIENT dédié 
 - Lot 6a comptes_oauth (ex-google_tokens renommé, multi-fournisseur google/outlook/icloud, UNIQUE (user_id, fournisseur), d5da4a8). Lot 6b iCloud CalDAV RÉEL (crypto.js AES-256-GCM + icloud.js tsdav/ICS, testé create/update/delete, 7ec328a). 7-mapping (mapping.js partagé Google+iCloud).
 - **Lot 8 « Mes calendriers » COMPLET (mergé f368318)** : écran self-service (composant partagé MesCalendriers.jsx) pour connecter comptes OAuth/iCloud + gérer cibles sans toucher la base. Placement role-aware (agente → /profil ; admin → /parametres>Intégrations). Badge multi-fournisseur, connexion/déconnexion iCloud, création/suppression cibles, cible par défaut (profiles.cible_calendrier_defaut_id), libellé éditable (cibles.agenda_nom). 🔴 FIX RLS CONFIDENTIALITÉ appliqué (admin voyait les cibles PERSO des agents → gaté sur agence_id IS NOT NULL).
 - **OUTLOOK ABANDONNÉ (29/06)** : blocage organisationnel (compte @illico-travaux.com = tenant HEXARESO non contrôlé bloque le consentement app externe ; perso outlook.com sans tenant Azure refuse la création d'app). Mapping + dispatch prêts si tenant Azure dispo.
-**🟡 ÉTAGE 3 (retour bidirectionnel) — SEUL RESTE (gros chantier, pas commencé)** :
-- Pull/import calendriers externes → BATILIS refait en UTC propre.
-- Nettoyage des 214 orphelins (impossible avant : la sync les réimporterait).
-- sync/route.js refait (unifier les copies divergentes sur mapping.js).
-- Dette : tokens OAuth Google en CLAIR en base (iCloud chiffré AES-256-GCM, Google non → à chiffrer, lot dédié). Backup _backup_rdv_autres_titre_20260526 à DROP quand sûr. date_heure_old à DROP.
+- **🟡 ÉTAGE 3 (bidirectionnel Google → BATILIS) COMPLET & ACTIF EN PROD (13/07)** :
+  Sens Google → BATILIS opérationnel et automatique. Mergé sur main (dd56667).
+  Décision de fond : LAST-WRITE-WINS SÉLECTIF (§2.2 spec) — une modif Google redescend, mais
+  sélective : date/heure/durée écrasées ; type re-parsé ; artisan re-parsé (1 match sinon vide) ;
+  DOSSIER mis à jour SEULEMENT si rattachement certain, sinon on GARDE l'existant (jamais casser un
+  rattachement). Anti-écho par rendez_vous.google_etag (§2.4) : etag identique = notre reflet → no-op,
+  pas de boucle. Doc de réf : SPEC_bidirectionnel_calendrier.md.
+
+  Briques (toutes faites, testées en réel, mergées) :
+  - B4 Parsing des events Google inconnus (parse-event.js) : type + dossier + artisan auto,
+    ambiguïté → sans lien. RDV typé sans dossier RESTE typé (décision : on ne repasse pas en 'autres').
+  - B5 Réécriture de trame dans Google (events.patch) pour un event typé+rattaché + anti-écho etag.
+    Trame NON imposée si pas de dossier (garde le titre Google, ne perd pas le nom). Garde-fou :
+    evt.etag absent → no-op (reconnus_sans_etag).
+  - B6 Last-write-wins sélectif (ci-dessus). Garde etag NULL : les 85 RDV natifs (etag NULL) ne sont
+    JAMAIS re-parsés → backfill etag seul (reconnus_etag_init). Prouvé par le code.
+  - PLANCHER (cible_sync_state.sync_floor) : le pull ne démarre qu'au jour de la 1ʳᵉ sync, jamais
+    d'historique. Posé auto à now() au 1er pull. Rend caduc le « nettoyage 214 orphelins ».
+  - B7 Récurrents : canal séparé, events.list fenêtré [now ; now+180j], singleEvents:true,
+    matérialise UNIQUEMENT les occurrences de séries (recurringEventId présent) — les ponctuels
+    restent au canal incrémental. Pas de trame (n'éclate pas la série), pas de delete, pas de curseur.
+    Testé : BNI ancien remonte seul (27 occ.), re-run 0 doublon.
+  - B8 Cron « tous-tenants » (service_role, toutes cibles google actives de toutes sociétés,
+    isolation d'erreur par cible). Auth Bearer CRON_SECRET.
+    → 2 rythmes : incrémental 15 min via GITHUB ACTIONS (.github/workflows/pull-calendar.yml,
+      Vercel Hobby ne fait pas le 15 min) ; récurrents 1×/jour 03:00 via VERCEL CRON (vercel.json).
+    Secrets : CRON_SECRET (Vercel prod + GitHub repo, même valeur) + APP_BASE_URL (GitHub, url prod
+    sans / final). Vercel Hobby = 2 crons quotidiens max → on est PILE à la limite (relances 08:00 +
+    récurrents 03:00).
+
+  SQL appliqués (prod) : etage3_lotA (cible_sync_state), etage3_lotC_check_status, etage3_sync_floor,
+  etage3_B5_google_etag. Nettoyages : cleanup_rdv_test_B5, drop_backups (10/07).
+
+  🔲 RESTE À FAIRE (étage 3) :
+  - **B9 — Parité iCloud** (PROCHAIN). Même bidirectionnel côté CalDAV : pull via tsdav.syncCollection,
+    404→delete, réappariement par URL CalDAV. iCloud n'aura jamais de webhook (polling cron only).
+  - **Lot F — Nettoyage** : supprimer le vieux sync/route.js mort + le résidu GOOGLE_CALENDAR_ID
+    (variable Vercel morte). Le « nettoyage 214 orphelins » est CLOS (plancher).
+  - **Observabilité crons** : aucune alerte si un cron échoue aujourd'hui (relances tournait à vide
+    sans que ce soit vu — car pas encore utilisé). À ajouter avant de dépendre du cron en prod.
+  - **Dette** : tokens OAuth Google en CLAIR en base (iCloud chiffré AES-256-GCM, crypto.js existe →
+    chiffrer Google aussi, lot dédié). date_heure_old à DROP.
+
+  🔵 B10 — WEBHOOK GOOGLE (temps réel) — NOTÉ, PAS COMMENCÉ (après B9) :
+  - Sync Google→BATILIS ~4s au lieu de 15 min. events.watch = ping « qqch a changé » → déclenche le
+    pull incrémental existant. Ne REMPLACE PAS le cron (Google ne garantit pas 100% des notifs → cron
+    15 min = filet de sécurité, modèle hybride).
+  - Prérequis lourds : domaine vérifié Google Cloud, endpoint HTTPS, stockage channel_id + sync_token,
+    et JOB DE RENOUVELLEMENT (canaux expirent ~1 semaine, sinon sync muette sans erreur). iCloud n'a
+    pas de webhook.
+
+  🔵 COUCHE 2 PARSING SUR HISTORIQUE — ABANDONNÉ. Le plancher supprime le besoin (on ne réimporte plus
+  l'historique). Le parser (parse-event.js) est réutilisé par B4 pour les NOUVEAUX events. La branche
+  feat/etage3-couche2-parseevent dort (code réutilisable).
 
 ### ✅ SOFT DELETE AGENTE + nettoyage comptes test (30/06-01/07)
 Voir bloc A ci-dessus (item détaillé). Désactiver au lieu de supprimer, réversible, résout le blocage FK. 3 vraies agentes restantes.
