@@ -103,7 +103,7 @@ export async function POST(request) {
   const auth = await requireRole(request, ['admin', 'agente'])
   if (auth.error) return auth.error
   try {
-    const { dossierId, typeVisite, dateVisite, intervenants, notesBrutes, imagesBase64, docsPaths } = await request.json()
+    const { dossierId, typeVisite, dateVisite, intervenants, notesBrutes, imagesBase64, docsPaths, photosPaths } = await request.json()
 
     if (!dossierId || !typeVisite || (!notesBrutes?.trim() && !imagesBase64?.length)) {
       return NextResponse.json({ error: 'Paramètres manquants (type de visite + notes ou images requises)' }, { status: 400 })
@@ -141,6 +141,23 @@ export async function POST(request) {
       const pathInvalide = docsPaths.some(doc => !pathsAutorises.has(doc.path) || !doc.path.startsWith(prefixe))
       if (pathInvalide) {
         return NextResponse.json({ error: 'Document non rattaché au dossier' }, { status: 400 })
+      }
+    }
+
+    // photosPaths du body : même principe que docsPaths. Un path est valide s'il
+    // (a) existe en table `photos` pour CE dossier (colonne url), OU (b) suit la
+    // convention Storage dédiée aux photos de CR : chantiers/{dossier_id}/cr/…
+    // Un seul path invalide → 400 (fail loud). Le contrôle tenant amont reste le garde-fou.
+    if (photosPaths?.length) {
+      const { data: photosDossier } = await supabaseAdmin
+        .from('photos')
+        .select('url')
+        .eq('dossier_id', dossierId)
+      const pathsAutorises = new Set((photosDossier || []).map(p => p.url))
+      const prefixeCr = `chantiers/${dossierId}/cr/`
+      const pathInvalide = photosPaths.some(path => !pathsAutorises.has(path) && !path.startsWith(prefixeCr))
+      if (pathInvalide) {
+        return NextResponse.json({ error: 'Photo non rattachée au dossier' }, { status: 400 })
       }
     }
 
@@ -183,8 +200,22 @@ export async function POST(request) {
       } catch {}
     }
 
+    // Photos du chantier sélectionnées (paths Storage, bucket `photos`).
+    // S'AJOUTENT aux images d'imagesBase64 (pas de remplacement). media_type
+    // déduit de l'extension.
+    for (const path of (photosPaths || [])) {
+      try {
+        const { data: fileData } = await supabaseAdmin.storage.from('photos').download(path)
+        if (!fileData) continue
+        const buf = Buffer.from(await fileData.arrayBuffer())
+        const b64 = buf.toString('base64')
+        const mime = /\.png$/i.test(path) ? 'image/png' : 'image/jpeg'
+        userContent.push({ type: 'image', source: { type: 'base64', media_type: mime, data: b64 } })
+      } catch {}
+    }
+
     // Texte
-    const hasMedia = imagesBase64?.length || (docsPaths || []).length > 0
+    const hasMedia = imagesBase64?.length || (docsPaths || []).length > 0 || (photosPaths || []).length > 0
     userContent.push({
       type: 'text',
       text: hasMedia
