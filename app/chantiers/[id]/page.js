@@ -762,6 +762,7 @@ export default function FicheChantier({ params }) {
   const [crNotes, setCrNotes] = useState('')
   const [crImages, setCrImages] = useState([]) // [{ path, url_signee }] — photos uploadées dans Storage (chantiers/{id}/cr/)
   const [crPhotosUp, setCrPhotosUp] = useState(false) // upload de photos CR en cours
+  const [crPhotosDossier, setCrPhotosDossier] = useState([]) // paths (photos.url) de photos EXISTANTES du dossier — jamais supprimées de Storage
   const [crVocal, setCrVocal] = useState(false)
   const [crVocalTexte, setCrVocalTexte] = useState('')
   const [crGenerating, setCrGenerating] = useState(false)
@@ -1769,7 +1770,7 @@ export default function FicheChantier({ params }) {
   const genererCRAvecIA = async () => {
     if (!crForm.type_visite) return
     const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('\n\n')
-    if (!notesCombinees.trim() && crImages.length === 0) return
+    if (!notesCombinees.trim() && crImages.length === 0 && crPhotosDossier.length === 0) return
     setCrGenerating(true)
     setErreur('')
     try {
@@ -1782,7 +1783,8 @@ export default function FicheChantier({ params }) {
           dateVisite: crForm.date_visite,
           intervenants: crForm.intervenants ? crForm.intervenants.split(',').map(s => s.trim()).filter(Boolean) : [],
           notesBrutes: notesCombinees,
-          photosPaths: crImages.map(im => im.path),
+          // Photos ordi (uploadées) + photos existantes du dossier sélectionnées.
+          photosPaths: [...crImages.map(im => im.path), ...crPhotosDossier],
           docsPaths: crDocsSelectionnes.map(d => ({ path: d.path, type_mime: d.type_mime, nom: d.nom })),
         }),
       })
@@ -1816,7 +1818,7 @@ export default function FicheChantier({ params }) {
       date_visite: crForm.date_visite || null,
       notes_brutes: notesCombinees || null,
       contenu_final: contenuFinal,
-      photos_paths: crImages.map(im => im.path),
+      photos_paths: [...crImages.map(im => im.path), ...crPhotosDossier],
       valide: publier,
     })
     // Échec de l'insert : on garde la modale ouverte (sections éditées conservées).
@@ -1828,6 +1830,7 @@ export default function FicheChantier({ params }) {
     setCrForm({ type_visite: '', date_visite: '', intervenants: '' })
     setCrNotes('')
     setCrImages([])
+    setCrPhotosDossier([]) // vidage simple : ce sont des photos du dossier, jamais de remove Storage
     setCrVocalTexte('')
     setCrGenere(null)
     setCrSectionsEditees([])
@@ -5236,6 +5239,7 @@ export default function FicheChantier({ params }) {
               const aPurger = crImages.map(im => im.path)
               if (aPurger.length) { try { await supabase.storage.from('photos').remove(aPurger) } catch {} }
               setCrImages([])
+              setCrPhotosDossier([]) // photos du dossier : simple désélection, JAMAIS de remove Storage
               setCrPhotosUp(false)
               setCrModal(false)
             }}
@@ -5419,6 +5423,52 @@ export default function FicheChantier({ params }) {
                     </div>
                   </ModalField>
 
+                  {photos.length > 0 && (
+                    <ModalField label="🖼️ Photos du chantier (jointes au CR)">
+                      <div style={{
+                        display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(80px, 1fr))', gap:8,
+                        border:'1px solid var(--ink-200)', borderRadius:10, padding:8, maxHeight:200, overflowY:'auto',
+                      }}>
+                        {photos.map(p => {
+                          const selected = crPhotosDossier.includes(p.url)
+                          return (
+                            // Clic = (dé)sélection. Aucun fichier n'est touché : ce sont des photos
+                            // du dossier, on n'envoie que leur path. Jamais de remove Storage ici.
+                            <button key={p.url} type="button"
+                              onClick={() => setCrPhotosDossier(prev =>
+                                selected ? prev.filter(u => u !== p.url) : [...prev, p.url]
+                              )}
+                              style={{
+                                position:'relative', padding:0, border:'none', background:'none',
+                                cursor:'pointer', aspectRatio:'1', borderRadius:8, overflow:'hidden',
+                              }}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={p.url_signee} alt="" style={{
+                                width:'100%', height:'100%', objectFit:'cover', display:'block',
+                                borderRadius:8,
+                                border: selected ? '2px solid var(--brand-600)' : '1px solid var(--ink-200)',
+                                opacity: selected ? 1 : 0.85,
+                              }} />
+                              {selected && (
+                                <span style={{
+                                  position:'absolute', top:4, right:4,
+                                  width:18, height:18, borderRadius:'50%',
+                                  background:'var(--brand-600)', color:'#fff',
+                                  fontSize:11, display:'grid', placeItems:'center',
+                                }}>✓</span>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {crPhotosDossier.length > 0 && (
+                        <div style={{fontSize:11, color:'var(--ink-400)', marginTop:6}}>
+                          {crPhotosDossier.length} photo{crPhotosDossier.length > 1 ? 's' : ''} du chantier jointe{crPhotosDossier.length > 1 ? 's' : ''}
+                        </div>
+                      )}
+                    </ModalField>
+                  )}
+
                   {documents.length > 0 && (
                     <ModalField label="📎 Documents du chantier (contexte IA)">
                       <div style={{border:'1px solid var(--ink-200)', borderRadius:10, padding:6, display:'flex', flexDirection:'column', gap:2, maxHeight:144, overflowY:'auto'}}>
@@ -5455,7 +5505,7 @@ export default function FicheChantier({ params }) {
                       ← Retour
                     </button>
                     <button onClick={genererCRAvecIA}
-                      disabled={crGenerating || crPhotosUp || (!crNotes.trim() && !crVocalTexte.trim() && crImages.length === 0)}
+                      disabled={crGenerating || crPhotosUp || (!crNotes.trim() && !crVocalTexte.trim() && crImages.length === 0 && crPhotosDossier.length === 0)}
                       className="btn btn-primary" style={{flex:2, justifyContent:'center', height:42, fontSize:13}}>
                       {crGenerating ? (
                         <span style={{display:'inline-flex', alignItems:'center', gap:8}}>
