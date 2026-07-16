@@ -5227,7 +5227,18 @@ export default function FicheChantier({ params }) {
                 ))}
               </div>
             )}
-            onClose={() => setCrModal(false)}
+            onClose={async () => {
+              // Fermeture sans CR sauvegardé : les photos uploadées ne sont rattachées
+              // à aucun CR → orphelines. Purge best-effort de Storage. Si ça rate (crash,
+              // onglet fermé), le filet reste la colonne photos_paths : tout fichier sous
+              // chantiers/{id}/cr/ référencé par aucun CR est un déchet purgeable plus tard.
+              // (La sauvegarde d'un CR passe par setCrModal(false) direct, jamais par ici.)
+              const aPurger = crImages.map(im => im.path)
+              if (aPurger.length) { try { await supabase.storage.from('photos').remove(aPurger) } catch {} }
+              setCrImages([])
+              setCrPhotosUp(false)
+              setCrModal(false)
+            }}
             width={720}
           >
             <div style={{padding:24, display:'flex', flexDirection:'column', gap:16}}>
@@ -5359,7 +5370,11 @@ export default function FicheChantier({ params }) {
                         <div key={img.path} style={{position:'relative'}}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={img.url_signee} alt="" style={{width:80, height:80, objectFit:'cover', borderRadius:8, border:'1px solid var(--ink-200)'}} />
-                          <button onClick={() => setCrImages(imgs => imgs.filter((_, j) => j !== i))}
+                          <button onClick={async () => {
+                              // Fichier créé pour ce CR et pour lui seul → on le supprime de Storage.
+                              try { await supabase.storage.from('photos').remove([img.path]) } catch {}
+                              setCrImages(imgs => imgs.filter((_, j) => j !== i))
+                            }}
                             style={{
                               position:'absolute', top:-6, right:-6,
                               width:18, height:18, borderRadius:'50%',
