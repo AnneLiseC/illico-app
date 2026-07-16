@@ -237,6 +237,48 @@ function EcheanceRow({ label, sub, statut, date, variant, onToggle, onSetPaid, o
   )
 }
 
+// Pill « Acompte client » de la carte devis (onglet Devis). Même mode saisie que
+// EcheanceRow via DateConfirm : cocher demande la date (pré-remplie today), la date
+// posée est corrigeable au clic. Composant à part (pas une IIFE) car il porte un état
+// `editing` — hooks interdits dans le .map des devis.
+function AcompteClientPill({ acomptePaye, dateAcompte, onSetPaid, onUnsetPaid, toneBg, toneFg }) {
+  const [editing, setEditing] = useState(false)
+  const today = new Date().toISOString().slice(0, 10)
+  return (
+    <div className="devis-kv" style={{alignItems:'center'}}>
+      {editing ? (
+        <>
+          <span>Acompte client</span>
+          <DateConfirm
+            initial={acomptePaye && dateAcompte ? String(dateAcompte).slice(0, 10) : today}
+            onConfirm={d => { setEditing(false); onSetPaid(d) }}
+            onCancel={() => setEditing(false)}
+          />
+        </>
+      ) : (
+        <>
+          <span>
+            Acompte client {acomptePaye && dateAcompte && (
+              <span onClick={() => setEditing(true)} title="Modifier la date"
+                style={{color:'#15803d', fontWeight:600, cursor:'pointer', textDecoration:'underline dotted'}}>
+                · {new Date(dateAcompte).toLocaleDateString('fr-FR')}
+              </span>
+            )}
+          </span>
+          <button onClick={() => { if (acomptePaye) onUnsetPaid(); else setEditing(true) }}
+            style={{
+              fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
+              background: acomptePaye ? toneBg.ok : toneBg.warn,
+              color: acomptePaye ? toneFg.ok : toneFg.warn,
+            }}>
+            {acomptePaye ? '✓ Payé' : '⏳ En attente'}
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 function RecapRow({ label, value, strong, large, tone }) {
   const color = tone === 'brand' ? 'var(--brand-700)' : 'var(--ink-700)'
   return (
@@ -3398,23 +3440,16 @@ export default function FicheChantier({ params }) {
                           const suiviAcompte = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === d.id)
                           const acomptePaye = suiviAcompte?.statut_client === 'regle'
                           const dateAcompte = suiviAcompte?.date_paiement
+                          const artId = d.artisan_id || d.artisan?.id
                           return (
-                            <div className="devis-kv" style={{alignItems:'center'}}>
-                              <span>
-                                Acompte client {acomptePaye && dateAcompte && <span style={{color:'#15803d', fontWeight:600}}>· {new Date(dateAcompte).toLocaleDateString('fr-FR')}</span>}
-                              </span>
-                              <button onClick={async () => {
-                                const artId = d.artisan_id || d.artisan?.id
-                                await setAcompteArtisanPaye(artId, !acomptePaye, dateAcompte, d.id)
-                              }}
-                                style={{
-                                  fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
-                                  background: acomptePaye ? TONE_BG.ok : TONE_BG.warn,
-                                  color: acomptePaye ? TONE_FG.ok : TONE_FG.warn,
-                                }}>
-                                {acomptePaye ? '✓ Payé' : '⏳ En attente'}
-                              </button>
-                            </div>
+                            <AcompteClientPill
+                              acomptePaye={acomptePaye}
+                              dateAcompte={dateAcompte}
+                              onSetPaid={date => setAcompteArtisanPaye(artId, true, date, d.id)}
+                              onUnsetPaid={() => setAcompteArtisanPaye(artId, false, null, d.id)}
+                              toneBg={TONE_BG}
+                              toneFg={TONE_FG}
+                            />
                           )
                         })()}
                       </div>
