@@ -1399,9 +1399,11 @@ export default function FicheChantier({ params }) {
       if (nouvelleFacture.statut === 'paye') {
         const libelleNorm = (nouvelleFacture.libelle === 'Autre' ? nouvelleFacture.libelle_autre : nouvelleFacture.libelle || '').toLowerCase()
         const typeEch = libelleNorm.includes('acompte') ? 'acompte_artisan' : 'facture_finale'
-        await majSuiviAvecArtisan(typeEch, artisanId, 'statut_client', 'regle')
+        // acompte_artisan = clé par devis ; facture_finale = cas b (sans devis).
+        const devisIdSuivi = typeEch === 'acompte_artisan' ? devisId : null
+        await majSuiviAvecArtisan(typeEch, artisanId, 'statut_client', 'regle', devisIdSuivi)
         if (nouvelleFacture.date_paiement) {
-          await majSuiviAvecArtisan(typeEch, artisanId, 'date_paiement', nouvelleFacture.date_paiement)
+          await majSuiviAvecArtisan(typeEch, artisanId, 'date_paiement', nouvelleFacture.date_paiement, devisIdSuivi)
         }
       }
     }
@@ -1448,9 +1450,11 @@ export default function FicheChantier({ params }) {
       const libelle = (facture.libelle || '').toLowerCase()
       const typeEch = libelle.includes('acompte') ? 'acompte_artisan' : 'facture_finale'
       const statutSuivi = newStatut === 'paye' ? 'regle' : 'en_attente'
-      await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'statut_client', statutSuivi)
+      // acompte_artisan = clé par devis (facture.devis_id) ; facture_finale = cas b.
+      const devisIdSuivi = typeEch === 'acompte_artisan' ? facture.devis_id : null
+      await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'statut_client', statutSuivi, devisIdSuivi)
       if (newStatut === 'paye' && datePaye) {
-        await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'date_paiement', datePaye)
+        await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'date_paiement', datePaye, devisIdSuivi)
       }
     }
   }
@@ -2154,15 +2158,19 @@ export default function FicheChantier({ params }) {
   const facturesPayees = devisSignes.filter(dv => suiviFinancier.find(x =>
     x.type_echeance === 'facture_finale' && x.artisan_id === dv.artisan_id && x.statut_illico === 'recu')).length
 
-  const majSuiviAvecArtisan = async (type, artisanId, champ, valeur) => {
-    const { data: existing, error: selectErr } = await supabase
-      .from('suivi_financier').select('id')
+  // Clé d'unicité : acompte_artisan est désormais PAR DEVIS (devisId fourni) ; les
+  // échéances sans devis (facture_finale, apporteur_agente) restent PAR ARTISAN
+  // (devisId null → devis_id IS NULL, cas b). Sans ce distinguo, maybeSingle crashe
+  // « multiple rows » sur un artisan à plusieurs devis débloqués.
+  const majSuiviAvecArtisan = async (type, artisanId, champ, valeur, devisId = null) => {
+    let q = supabase.from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', type).eq('artisan_id', artisanId)
-      .maybeSingle()
+    q = devisId ? q.eq('devis_id', devisId) : q.is('devis_id', null)
+    const { data: existing, error: selectErr } = await q.maybeSingle()
     if (selectErr) { setErreur('Erreur : ' + selectErr.message); return false }
     const { error } = existing
       ? await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
-      : await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: type, artisan_id: artisanId, [champ]: valeur })
+      : await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: type, artisan_id: artisanId, devis_id: devisId, [champ]: valeur })
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
     if (error) { setErreur('Erreur : ' + error.message); return false }
@@ -2170,17 +2178,19 @@ export default function FicheChantier({ params }) {
   }
 
   // Quand acompte_artisan est togglé côté suivi, propager aux factures_artisans acompte de cet artisan
-  const setAcompteArtisanPaye = async (artisanId, paye, date) => {
+  const setAcompteArtisanPaye = async (artisanId, paye, date, devisId = null) => {
     const datePaye = paye ? (date || new Date().toISOString().slice(0, 10)) : null
     const statutSuivi = paye ? 'regle' : 'en_attente'
-    await majSuiviAvecArtisan('acompte_artisan', artisanId, 'statut_client', statutSuivi)
+    await majSuiviAvecArtisan('acompte_artisan', artisanId, 'statut_client', statutSuivi, devisId)
     // Date du règlement client : posée au coche, effacée au décoche (datePaye=null).
     // N'affecte que date_paiement (l'événement déblocage statut_illico/date_deblocage
     // sur la même ligne reste intact).
-    await majSuiviAvecArtisan('acompte_artisan', artisanId, 'date_paiement', datePaye)
-    // Synchroniser les factures_artisans dont le libellé contient "acompte" pour ce devis
+    await majSuiviAvecArtisan('acompte_artisan', artisanId, 'date_paiement', datePaye, devisId)
+    // Synchroniser les factures_artisans dont le libellé contient "acompte". Scopé AU
+    // DEVIS si fourni → ne marque pas l'acompte d'un autre lot du même artisan.
     const facturesAcompte = factures.filter(f =>
       f.artisan_id === artisanId &&
+      (devisId ? f.devis_id === devisId : true) &&
       (f.libelle || '').toLowerCase().includes('acompte')
     )
     for (const f of facturesAcompte) {
@@ -2204,11 +2214,11 @@ export default function FicheChantier({ params }) {
   // un appel (sans passer par majSuiviAvecArtisan générique → factures non affectées).
   // PAS de DELETE : la ligne est partagée avec l'acompte client (statut_client/date_paiement),
   // qui reste intact. date_deblocage est de type `date` → AAAA-MM-JJ.
-  const setDeblocagePaye = async (artisanId, recu) => {
-    const { data: existing, error: selectErr } = await supabase
-      .from('suivi_financier').select('id')
+  const setDeblocagePaye = async (artisanId, recu, devisId = null) => {
+    let q = supabase.from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', 'acompte_artisan').eq('artisan_id', artisanId)
-      .maybeSingle()
+    q = devisId ? q.eq('devis_id', devisId) : q.is('devis_id', null)
+    const { data: existing, error: selectErr } = await q.maybeSingle()
     if (selectErr) { setErreur('Erreur : ' + selectErr.message); return }
     const payload = recu
       ? { statut_illico: 'recu', date_deblocage: new Date().toISOString().slice(0, 10) }
@@ -2217,7 +2227,7 @@ export default function FicheChantier({ params }) {
     if (existing) {
       ({ error } = await supabase.from('suivi_financier').update(payload).eq('id', existing.id))
     } else if (recu) {
-      ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'acompte_artisan', artisan_id: artisanId, ...payload }))
+      ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'acompte_artisan', artisan_id: artisanId, devis_id: devisId, ...payload }))
     }
     if (error) { setErreur('Erreur : ' + error.message); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
@@ -3344,7 +3354,7 @@ export default function FicheChantier({ params }) {
                               </span>
                               <button onClick={async () => {
                                 const artId = d.artisan_id || d.artisan?.id
-                                await setAcompteArtisanPaye(artId, !acomptePaye, dateAcompte)
+                                await setAcompteArtisanPaye(artId, !acomptePaye, dateAcompte, d.id)
                               }}
                                 style={{
                                   fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
@@ -3867,7 +3877,7 @@ export default function FicheChantier({ params }) {
                             date={sf?.date_paiement || null}
                             onToggle={() => {
                               const paye = sf?.statut_client !== 'regle'
-                              setAcompteArtisanPaye(artId, paye, sf?.date_paiement)
+                              setAcompteArtisanPaye(artId, paye, sf?.date_paiement, dv.id)
                             }}
                             fmtDateFn={fmtD}
                           />
@@ -3878,7 +3888,7 @@ export default function FicheChantier({ params }) {
                             sub={`Commission ${fmt(comDevisHT)} HT`}
                             statut={sf?.statut_illico === 'recu' ? 'regle' : 'en_attente'}
                             date={sf?.date_deblocage || null}
-                            onToggle={() => setDeblocagePaye(artId, sf?.statut_illico !== 'recu')}
+                            onToggle={() => setDeblocagePaye(artId, sf?.statut_illico !== 'recu', dv.id)}
                             variant="illico"
                             fmtDateFn={fmtD}
                           />
