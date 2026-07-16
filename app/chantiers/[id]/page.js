@@ -2214,14 +2214,14 @@ export default function FicheChantier({ params }) {
   // un appel (sans passer par majSuiviAvecArtisan générique → factures non affectées).
   // PAS de DELETE : la ligne est partagée avec l'acompte client (statut_client/date_paiement),
   // qui reste intact. date_deblocage est de type `date` → AAAA-MM-JJ.
-  const setDeblocagePaye = async (artisanId, recu, devisId = null) => {
+  const setDeblocagePaye = async (artisanId, recu, devisId = null, date = null) => {
     let q = supabase.from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', 'acompte_artisan').eq('artisan_id', artisanId)
     q = devisId ? q.eq('devis_id', devisId) : q.is('devis_id', null)
     const { data: existing, error: selectErr } = await q.maybeSingle()
     if (selectErr) { setErreur('Erreur : ' + selectErr.message); return }
     const payload = recu
-      ? { statut_illico: 'recu', date_deblocage: new Date().toISOString().slice(0, 10) }
+      ? { statut_illico: 'recu', date_deblocage: date || new Date().toISOString().slice(0, 10) }
       : { statut_illico: 'en_attente', date_deblocage: null }
     let error = null
     if (existing) {
@@ -2240,7 +2240,7 @@ export default function FicheChantier({ params }) {
   // cohérent avec le toggle honoraires). Les 2 modes (par_devis: artisan_id renseigné /
   // total: artisan_id NULL) passent par le même chemin. Montant non écrit (F2 le calcule
   // via finance.js). date_paiement est de type `date` → AAAA-MM-JJ.
-  const setApporteurPaye = async (artisanId, paye) => {
+  const setApporteurPaye = async (artisanId, paye, date = null) => {
     let q = supabase.from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', 'apporteur_agente')
     q = artisanId === null ? q.is('artisan_id', null) : q.eq('artisan_id', artisanId)
@@ -2249,7 +2249,7 @@ export default function FicheChantier({ params }) {
 
     let error = null
     if (paye) {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = date || new Date().toISOString().slice(0, 10)
       if (existing) {
         ({ error } = await supabase.from('suivi_financier').update({ statut_ctp: 'rembourse', date_paiement: today }).eq('id', existing.id))
       } else {
@@ -2263,7 +2263,7 @@ export default function FicheChantier({ params }) {
     setSuiviFinancier(data || [])
   }
 
-  const majSuiviChantier = async (type, montant, valeur) => {
+  const majSuiviChantier = async (type, montant, valeur, date = null) => {
     // Toggle d'une échéance honoraire : coche = réglé + date du jour, décoche = suppression.
     // Sur AMO, honoraires_courtage et acompte_amo représentent le MÊME encaissement
     // (la part courtage, vue AMO) → togglés ensemble. La fonction Postgres
@@ -2274,7 +2274,7 @@ export default function FicheChantier({ params }) {
       if (type === 'honoraires_courtage') types.push('acompte_amo')
       else if (type === 'acompte_amo') types.push('honoraires_courtage')
     }
-    const today = new Date().toISOString().slice(0, 10)
+    const today = date || new Date().toISOString().slice(0, 10)
     const { error } = await supabase.rpc('suivi_toggle_honoraires', {
       p_dossier_id: id,
       p_types: types,
@@ -2290,8 +2290,8 @@ export default function FicheChantier({ params }) {
   // TS-2 : marquer une ligne courtage TS payée/non-payée PAR ID (jamais via
   // suivi_toggle_honoraires, qui fige le montant à l'INSERT). Une ligne réglée est
   // close ; la décocher la rouvre (redevient absorbable par le recompute au prochain TS).
-  const setCourtageTSPaye = async (ligne, paye) => {
-    const today = new Date().toISOString().slice(0, 10)
+  const setCourtageTSPaye = async (ligne, paye, date = null) => {
+    const today = date || new Date().toISOString().slice(0, 10)
     const payload = paye
       ? { statut_client: 'regle', date_paiement: today }
       : { statut_client: 'en_attente', date_paiement: null }
