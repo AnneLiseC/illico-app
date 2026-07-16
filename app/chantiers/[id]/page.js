@@ -5402,7 +5402,7 @@ export default function FicheChantier({ params }) {
                     </div>
                     {crImages.length > 0 && (
                       <div style={{fontSize:11, color: crImagesTropLourd ? '#b91c1c' : 'var(--ink-400)', marginTop:6}}>
-                        {crImages.length}/15 photo{crImages.length > 1 ? 's' : ''} · ~{crImagesPoids > 1048576 ? `${(crImagesPoids / 1048576).toFixed(1)} Mo` : `${Math.round(crImagesPoids / 1024)} Ko`} envoyés (limite ~4,5 Mo)
+                        {crImages.length}/15 photo{crImages.length > 1 ? 's' : ''} · ~{crImagesPoids > 1048576 ? `${(crImagesPoids / 1048576).toFixed(1)} Mo` : `${Math.round(crImagesPoids / 1024)} Ko`} envoyés (limite ~4 Mo)
                         {crImagesTropLourd && ' — trop volumineux, retirez des photos'}
                       </div>
                     )}
