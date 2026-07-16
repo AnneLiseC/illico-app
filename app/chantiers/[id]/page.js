@@ -675,10 +675,10 @@ async function signerPhotos(rows) {
 }
 
 // Redimensionne une image (max `maxSide` px sur le plus grand côté) et la ré-encode en
-// JPEG base64. L'API Claude retaille de toute façon à ~1568 px → aucune perte utile pour
-// l'IA, mais divise le poids du body par ~10 (évite le 413 Vercel, body plafonné à 4,5 Mo).
-// base64 conservé (l'architecture ne change pas dans ce lot).
-function compressImageToBase64(file, maxSide = 1600, quality = 0.8) {
+// JPEG. Retourne un Blob (uploadé dans Storage, plus de base64 dans le body /api/cr).
+// L'API Claude retaille de toute façon à ~1568 px → aucune perte utile pour l'IA ; la
+// compression sert désormais à réduire le stockage et accélérer l'upload.
+function compressImageToBlob(file, maxSide = 1600, quality = 0.8) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => {
@@ -691,7 +691,11 @@ function compressImageToBase64(file, maxSide = 1600, quality = 0.8) {
         canvas.width = w
         canvas.height = h
         canvas.getContext('2d').drawImage(img, 0, 0, w, h)
-        resolve(canvas.toDataURL('image/jpeg', quality))
+        canvas.toBlob(
+          blob => (blob ? resolve(blob) : reject(new Error('compression échouée'))),
+          'image/jpeg',
+          quality
+        )
       }
       img.onerror = reject
       img.src = reader.result
@@ -757,7 +761,9 @@ export default function FicheChantier({ params }) {
   const [crEtape, setCrEtape] = useState(1) // 1=config, 2=notes, 3=relecture
   const [crForm, setCrForm] = useState({ type_visite: '', date_visite: '', intervenants: '' })
   const [crNotes, setCrNotes] = useState('')
-  const [crImages, setCrImages] = useState([]) // base64
+  const [crImages, setCrImages] = useState([]) // [{ path, url_signee }] — photos uploadées dans Storage (chantiers/{id}/cr/)
+  const [crPhotosUp, setCrPhotosUp] = useState(false) // upload de photos CR en cours
+  const [crPhotosDossier, setCrPhotosDossier] = useState([]) // paths (photos.url) de photos EXISTANTES du dossier — jamais supprimées de Storage
   const [crVocal, setCrVocal] = useState(false)
   const [crVocalTexte, setCrVocalTexte] = useState('')
   const [crGenerating, setCrGenerating] = useState(false)
@@ -1789,18 +1795,11 @@ export default function FicheChantier({ params }) {
     setCrManuelSaving(false)
     setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
   }
-  // Poids RÉELLEMENT transporté = longueur des data URLs base64 dans crImages (le body
-  // envoie ces chaînes telles quelles). Verrou anti-413 sur ce poids, PAS sur le nombre :
-  // 15 photos à 250 Ko = ~5 Mo base64 > 4,5 Mo. Marge à 4 Mo car les notes + les paths
-  // de documents voyagent aussi dans le même body.
-  const crImagesPoids = crImages.reduce((s, d) => s + (d?.length || 0), 0)
-  const crImagesTropLourd = crImagesPoids > 4 * 1024 * 1024
-
   // ── GÉNÉRER CR AVEC IA ──
   const genererCRAvecIA = async () => {
     if (!crForm.type_visite) return
     const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('\n\n')
-    if (!notesCombinees.trim() && crImages.length === 0) return
+    if (!notesCombinees.trim() && crImages.length === 0 && crPhotosDossier.length === 0) return
     setCrGenerating(true)
     setErreur('')
     try {
@@ -1813,19 +1812,16 @@ export default function FicheChantier({ params }) {
           dateVisite: crForm.date_visite,
           intervenants: crForm.intervenants ? crForm.intervenants.split(',').map(s => s.trim()).filter(Boolean) : [],
           notesBrutes: notesCombinees,
-          imagesBase64: crImages,
+          // Photos ordi (uploadées) + photos existantes du dossier sélectionnées.
+          photosPaths: [...crImages.map(im => im.path), ...crPhotosDossier],
           docsPaths: crDocsSelectionnes.map(d => ({ path: d.path, type_mime: d.type_mime, nom: d.nom })),
         }),
       })
-      // Vérifier res.ok AVANT res.json() : un 413 (body > 4,5 Mo) renvoie du texte/HTML,
+      // Vérifier res.ok AVANT res.json() : une erreur serveur peut renvoyer du texte/HTML,
       // pas du JSON → res.json() lèverait un SyntaxError qui masque la vraie erreur.
       if (!res.ok) {
         const brut = await res.text().catch(() => '')
-        if (res.status === 413) {
-          setErreur('Photos trop volumineuses : réduisez le nombre ou la taille des photos.')
-        } else {
-          setErreur(`Erreur génération CR (${res.status}) : ${(brut.slice(0, 200) || 'réessayez plus tard')}`)
-        }
+        setErreur(`Erreur génération CR (${res.status}) : ${(brut.slice(0, 200) || 'réessayez plus tard')}`)
         return
       }
       const data = await res.json()
@@ -1851,6 +1847,8 @@ export default function FicheChantier({ params }) {
       date_visite: crForm.date_visite || null,
       notes_brutes: notesCombinees || null,
       contenu_final: contenuFinal,
+      photos_paths: [...crImages.map(im => im.path), ...crPhotosDossier], // TOUT ce qu'a analysé l'IA (traçabilité)
+      photos_jointes: crPhotosDossier, // affichées dans le PDF — photos du chantier UNIQUEMENT, jamais les photos ordi
       valide: publier,
     })
     // Échec de l'insert : on garde la modale ouverte (sections éditées conservées).
@@ -1862,6 +1860,7 @@ export default function FicheChantier({ params }) {
     setCrForm({ type_visite: '', date_visite: '', intervenants: '' })
     setCrNotes('')
     setCrImages([])
+    setCrPhotosDossier([]) // vidage simple : ce sont des photos du dossier, jamais de remove Storage
     setCrVocalTexte('')
     setCrGenere(null)
     setCrSectionsEditees([])
@@ -5264,7 +5263,19 @@ export default function FicheChantier({ params }) {
                 ))}
               </div>
             )}
-            onClose={() => setCrModal(false)}
+            onClose={async () => {
+              // Fermeture sans CR sauvegardé : les photos uploadées ne sont rattachées
+              // à aucun CR → orphelines. Purge best-effort de Storage. Si ça rate (crash,
+              // onglet fermé), le filet reste la colonne photos_paths : tout fichier sous
+              // chantiers/{id}/cr/ référencé par aucun CR est un déchet purgeable plus tard.
+              // (La sauvegarde d'un CR passe par setCrModal(false) direct, jamais par ici.)
+              const aPurger = crImages.map(im => im.path)
+              if (aPurger.length) { try { await supabase.storage.from('photos').remove(aPurger) } catch {} }
+              setCrImages([])
+              setCrPhotosDossier([]) // photos du dossier : simple désélection, JAMAIS de remove Storage
+              setCrPhotosUp(false)
+              setCrModal(false)
+            }}
             width={720}
           >
             <div style={{padding:24, display:'flex', flexDirection:'column', gap:16}}>
@@ -5393,10 +5404,14 @@ export default function FicheChantier({ params }) {
                   <ModalField label="📷 Photos (cahier, capture d'écran, document)">
                     <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
                       {crImages.map((img, i) => (
-                        <div key={i} style={{position:'relative'}}>
+                        <div key={img.path} style={{position:'relative'}}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={img} alt="" style={{width:80, height:80, objectFit:'cover', borderRadius:8, border:'1px solid var(--ink-200)'}} />
-                          <button onClick={() => setCrImages(imgs => imgs.filter((_, j) => j !== i))}
+                          <img src={img.url_signee} alt="" style={{width:80, height:80, objectFit:'cover', borderRadius:8, border:'1px solid var(--ink-200)'}} />
+                          <button onClick={async () => {
+                              // Fichier créé pour ce CR et pour lui seul → on le supprime de Storage.
+                              try { await supabase.storage.from('photos').remove([img.path]) } catch {}
+                              setCrImages(imgs => imgs.filter((_, j) => j !== i))
+                            }}
                             style={{
                               position:'absolute', top:-6, right:-6,
                               width:18, height:18, borderRadius:'50%',
@@ -5408,37 +5423,84 @@ export default function FicheChantier({ params }) {
                       <label style={{
                         width:80, height:80, borderRadius:8,
                         border:'2px dashed var(--ink-300)', display:'grid', placeItems:'center',
-                        cursor:'pointer', transition:'border-color 150ms',
+                        cursor: crPhotosUp ? 'wait' : 'pointer', transition:'border-color 150ms',
                       }}
                         onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--brand-500)' }}
                         onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--ink-300)' }}>
-                        <span style={{fontSize:24, color:'var(--ink-300)', lineHeight:1}}>+</span>
-                        <input type="file" accept="image/*" multiple style={{display:'none'}}
+                        <span style={{fontSize:24, color:'var(--ink-300)', lineHeight:1}}>{crPhotosUp ? '…' : '+'}</span>
+                        <input type="file" accept="image/*" multiple disabled={crPhotosUp} style={{display:'none'}}
                           onChange={async e => {
                             const files = Array.from(e.target.files || [])
                             e.target.value = '' // autorise la re-sélection des mêmes fichiers
-                            const restant = 15 - crImages.length
-                            if (files.length > Math.max(0, restant)) {
-                              setErreur(`Maximum 15 photos par CR — ${files.length - Math.max(0, restant)} photo(s) ignorée(s).`)
-                            }
-                            for (const file of files.slice(0, Math.max(0, restant))) {
+                            if (!files.length) return
+                            setCrPhotosUp(true)
+                            for (const file of files) {
                               try {
-                                const b64 = await compressImageToBase64(file)
-                                setCrImages(imgs => imgs.length < 15 ? [...imgs, b64] : imgs)
+                                // Compression puis upload direct dans Storage (bucket photos),
+                                // sous chantiers/{id}/cr/ — emplacement dédié aux photos de CR,
+                                // SANS insert dans la table `photos` (invisibles onglet Photos).
+                                const blob = await compressImageToBlob(file)
+                                const path = `chantiers/${id}/cr/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
+                                const { error: upErr } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' })
+                                if (upErr) { setErreur('Échec de l’envoi d’une photo : ' + upErr.message); continue }
+                                // Vignette : signed URL comme signerPhotos (bucket privé).
+                                const { data: signed } = await supabase.storage.from('photos').createSignedUrl(path, 3600)
+                                setCrImages(imgs => [...imgs, { path, url_signee: signed?.signedUrl || '' }])
                               } catch {
                                 setErreur('Impossible de traiter une photo (format non supporté ?).')
                               }
                             }
+                            setCrPhotosUp(false)
                           }} />
                       </label>
                     </div>
-                    {crImages.length > 0 && (
-                      <div style={{fontSize:11, color: crImagesTropLourd ? '#b91c1c' : 'var(--ink-400)', marginTop:6}}>
-                        {crImages.length}/15 photo{crImages.length > 1 ? 's' : ''} · ~{crImagesPoids > 1048576 ? `${(crImagesPoids / 1048576).toFixed(1)} Mo` : `${Math.round(crImagesPoids / 1024)} Ko`} envoyés (limite ~4 Mo)
-                        {crImagesTropLourd && ' — trop volumineux, retirez des photos'}
-                      </div>
-                    )}
                   </ModalField>
+
+                  {photos.length > 0 && (
+                    <ModalField label="🖼️ Photos du chantier (jointes au CR)">
+                      <div style={{
+                        display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(80px, 1fr))', gap:8,
+                        border:'1px solid var(--ink-200)', borderRadius:10, padding:8, maxHeight:200, overflowY:'auto',
+                      }}>
+                        {photos.map(p => {
+                          const selected = crPhotosDossier.includes(p.url)
+                          return (
+                            // Clic = (dé)sélection. Aucun fichier n'est touché : ce sont des photos
+                            // du dossier, on n'envoie que leur path. Jamais de remove Storage ici.
+                            <button key={p.url} type="button"
+                              onClick={() => setCrPhotosDossier(prev =>
+                                selected ? prev.filter(u => u !== p.url) : [...prev, p.url]
+                              )}
+                              style={{
+                                position:'relative', padding:0, border:'none', background:'none',
+                                cursor:'pointer', aspectRatio:'1', borderRadius:8, overflow:'hidden',
+                              }}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={p.url_signee} alt="" style={{
+                                width:'100%', height:'100%', objectFit:'cover', display:'block',
+                                borderRadius:8,
+                                border: selected ? '2px solid var(--brand-600)' : '1px solid var(--ink-200)',
+                                opacity: selected ? 1 : 0.85,
+                              }} />
+                              {selected && (
+                                <span style={{
+                                  position:'absolute', top:4, right:4,
+                                  width:18, height:18, borderRadius:'50%',
+                                  background:'var(--brand-600)', color:'#fff',
+                                  fontSize:11, display:'grid', placeItems:'center',
+                                }}>✓</span>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {crPhotosDossier.length > 0 && (
+                        <div style={{fontSize:11, color:'var(--ink-400)', marginTop:6}}>
+                          {crPhotosDossier.length} photo{crPhotosDossier.length > 1 ? 's' : ''} du chantier jointe{crPhotosDossier.length > 1 ? 's' : ''}
+                        </div>
+                      )}
+                    </ModalField>
+                  )}
 
                   {documents.length > 0 && (
                     <ModalField label="📎 Documents du chantier (contexte IA)">
@@ -5471,17 +5533,12 @@ export default function FicheChantier({ params }) {
                     </ModalField>
                   )}
 
-                  {crImagesTropLourd && (
-                    <div style={{fontSize:12, color:'#b91c1c', background:'rgba(185,28,28,0.08)', border:'1px solid rgba(185,28,28,0.25)', borderRadius:8, padding:'8px 12px'}}>
-                      Photos trop volumineuses — retirez-en (limite ~4 Mo pour laisser passer les notes et documents).
-                    </div>
-                  )}
                   <div style={{display:'flex', gap:10, paddingTop:6}}>
                     <button onClick={() => setCrEtape(1)} className="btn btn-ghost" style={{flex:1, justifyContent:'center', height:42}}>
                       ← Retour
                     </button>
                     <button onClick={genererCRAvecIA}
-                      disabled={crGenerating || crImagesTropLourd || (!crNotes.trim() && !crVocalTexte.trim() && crImages.length === 0)}
+                      disabled={crGenerating || crPhotosUp || (!crNotes.trim() && !crVocalTexte.trim() && crImages.length === 0 && crPhotosDossier.length === 0)}
                       className="btn btn-primary" style={{flex:2, justifyContent:'center', height:42, fontSize:13}}>
                       {crGenerating ? (
                         <span style={{display:'inline-flex', alignItems:'center', gap:8}}>

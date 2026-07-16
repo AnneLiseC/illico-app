@@ -103,10 +103,14 @@ export async function POST(request) {
   const auth = await requireRole(request, ['admin', 'agente'])
   if (auth.error) return auth.error
   try {
-    const { dossierId, typeVisite, dateVisite, intervenants, notesBrutes, imagesBase64, docsPaths } = await request.json()
+    const { dossierId, typeVisite, dateVisite, intervenants, notesBrutes, docsPaths, photosPaths } = await request.json()
 
-    if (!dossierId || !typeVisite || (!notesBrutes?.trim() && !imagesBase64?.length)) {
-      return NextResponse.json({ error: 'Paramètres manquants (type de visite + notes ou images requises)' }, { status: 400 })
+    // Au moins une source de contenu : notes OU photos Storage OU documents. Cas réel :
+    // photographier ses notes manuscrites et laisser Claude les lire, sans rien saisir
+    // (via photosPaths — photos du chantier ou uploadées côté client).
+    const aDuContenu = notesBrutes?.trim() || photosPaths?.length || docsPaths?.length
+    if (!dossierId || !typeVisite || !aDuContenu) {
+      return NextResponse.json({ error: 'Paramètres manquants (type de visite + notes, images ou documents requis)' }, { status: 400 })
     }
 
     // Charger dossier + devis
@@ -144,6 +148,28 @@ export async function POST(request) {
       }
     }
 
+    // photosPaths du body : jamais de confiance (téléchargés en service_role).
+    // Un path est valide SI ET SEULEMENT SI il commence par le préfixe tenant
+    // chantiers/{dossierId}/ (defense in depth, non négociable comme docsPaths) ET
+    // (a) il existe en table `photos` pour CE dossier (photos de l'appli), OU
+    // (b) il suit la convention dédiée chantiers/{dossierId}/cr/ (photos ordi, hors table).
+    // Un seul path invalide → 400 (fail loud). Le contrôle tenant amont reste le garde-fou.
+    if (photosPaths?.length) {
+      const { data: photosDossier } = await supabaseAdmin
+        .from('photos')
+        .select('url')
+        .eq('dossier_id', dossierId)
+      const pathsAutorises = new Set((photosDossier || []).map(p => p.url))
+      const prefixe = `chantiers/${dossierId}/`
+      const prefixeCr = `chantiers/${dossierId}/cr/`
+      const pathInvalide = photosPaths.some(path =>
+        !path.startsWith(prefixe) || (!pathsAutorises.has(path) && !path.startsWith(prefixeCr))
+      )
+      if (pathInvalide) {
+        return NextResponse.json({ error: 'Photo non rattachée au dossier' }, { status: 400 })
+      }
+    }
+
     const { data: devis } = await supabaseAdmin
       .from('devis_artisans')
       .select('*, artisan:artisans(id, entreprise)')
@@ -155,17 +181,6 @@ export async function POST(request) {
     const userText = buildUserPrompt({ dossier, devis: devis || [], typeVisite, dateVisite, intervenants, notesBrutes: notesBrutes || '' })
 
     const userContent = []
-
-    // Images en premier si présentes
-    if (imagesBase64?.length) {
-      for (const img of imagesBase64) {
-        const commaIdx = img.indexOf(',')
-        const header = commaIdx > 0 ? img.slice(0, commaIdx) : ''
-        const data = commaIdx > 0 ? img.slice(commaIdx + 1) : img
-        const mediaType = header.includes('png') ? 'image/png' : 'image/jpeg'
-        userContent.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data } })
-      }
-    }
 
     // Documents du chantier sélectionnés
     for (const doc of (docsPaths || [])) {
@@ -183,8 +198,21 @@ export async function POST(request) {
       } catch {}
     }
 
+    // Photos du chantier sélectionnées (paths Storage, bucket `photos`).
+    // media_type déduit de l'extension.
+    for (const path of (photosPaths || [])) {
+      try {
+        const { data: fileData } = await supabaseAdmin.storage.from('photos').download(path)
+        if (!fileData) continue
+        const buf = Buffer.from(await fileData.arrayBuffer())
+        const b64 = buf.toString('base64')
+        const mime = /\.png$/i.test(path) ? 'image/png' : 'image/jpeg'
+        userContent.push({ type: 'image', source: { type: 'base64', media_type: mime, data: b64 } })
+      } catch {}
+    }
+
     // Texte
-    const hasMedia = imagesBase64?.length || (docsPaths || []).length > 0
+    const hasMedia = (docsPaths || []).length > 0 || (photosPaths || []).length > 0
     userContent.push({
       type: 'text',
       text: hasMedia

@@ -262,7 +262,7 @@ function buildRecapitulatifDocument({ dossier, devis, suiviFinancier, factures, 
 }
 
 // ── COMPTE-RENDU PDF ──
-function buildCRDocument({ dossier, cr, sections, logo }) {
+function buildCRDocument({ dossier, cr, sections, logo, photos }) {
   const client = dossier.client
   const nomClient = formatNomClient(client, { civilite: true, withRepresentant: true })
   const ref = dossier.referente
@@ -370,8 +370,13 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
     return { blocks, firstGroupable: true }
   }
 
-  return React.createElement(Document, null,
-    React.createElement(Page, { size: 'A4', style: CRS.page },
+  const mkFooter = () => React.createElement(View, { style: CRS.footer, fixed: true },
+    React.createElement(Text, { style: CRS.footerTxt }, 'Document établi le ' + dateEmis + ' – Chantier ' + nomClient),
+    React.createElement(Text, { style: CRS.footerTxt }, nomRef + (dossier.agence?.nom ? ' – ' + dossier.agence.nom : '')),
+    React.createElement(Text, { style: CRS.footerTxt, render: ({ pageNumber, totalPages }) => pageNumber + ' / ' + totalPages }),
+  )
+
+  const contentPage = React.createElement(Page, { size: 'A4', style: CRS.page },
       logo && React.createElement(PdfImage, { src: logo, style: CRS.logoImg }),
       React.createElement(View, { style: CRS.titleBlock },
         React.createElement(Text, { style: CRS.mainTitle }, titre),
@@ -406,13 +411,35 @@ function buildCRDocument({ dossier, cr, sections, logo }) {
           ...blocks,
         )
       }),
-      React.createElement(View, { style: CRS.footer, fixed: true },
-        React.createElement(Text, { style: CRS.footerTxt }, 'Document établi le ' + dateEmis + ' – Chantier ' + nomClient),
-        React.createElement(Text, { style: CRS.footerTxt }, nomRef + (dossier.agence?.nom ? ' – ' + dossier.agence.nom : '')),
-        React.createElement(Text, { style: CRS.footerTxt, render: ({ pageNumber, totalPages }) => pageNumber + ' / ' + totalPages }),
-      ),
+      mkFooter(),
     )
-  )
+
+  // Galerie photos du chantier — bloc APRÈS le texte, 2 photos/page (patron restitution
+  // :455-464). Seules les photos réellement téléchargées (base64) sont rendues ; si aucune,
+  // pas de page, pas de titre.
+  const photosOk = (photos || []).filter(p => p.base64)
+  const photoPages = []
+  for (let i = 0; i < photosOk.length; i += 2) {
+    const chunk = photosOk.slice(i, i + 2)
+    photoPages.push(
+      React.createElement(Page, { key: `crphoto-${i}`, size: 'A4', style: CRS.page },
+        logo && React.createElement(PdfImage, { src: logo, style: CRS.logoImg }),
+        React.createElement(View, { style: CRS.titleBlock },
+          React.createElement(Text, { style: CRS.mainTitle }, 'Photos'),
+        ),
+        React.createElement(View, { style: { flexDirection: 'column', flex: 1, justifyContent: 'space-between', paddingBottom: 40 } },
+          ...chunk.map(ph =>
+            React.createElement(View, { key: ph.path, style: { flex: 1, marginVertical: 4 } },
+              React.createElement(PdfImage, { src: ph.base64, style: { width: '100%', height: '100%', objectFit: 'contain' } }),
+            )
+          ),
+        ),
+        mkFooter(),
+      )
+    )
+  }
+
+  return React.createElement(Document, null, contentPage, ...photoPages)
 }
 
 // ── ROUTE API ──
@@ -576,7 +603,23 @@ export async function POST(request) {
         return { numero: '', titre: '', contenu: trimmed }
       }).filter(Boolean).filter(s => s.contenu)
 
-      const doc = buildCRDocument({ dossier, cr, sections, logo: getLogoBase64() })
+      // Photos jointes au CR (photos du chantier UNIQUEMENT — jamais les photos ordi,
+      // qui restent dans photos_paths comme contexte IA). Même patron que
+      // photosWithBase64 (:526), mais source = cr.photos_jointes, sans toucher la maquette.
+      const photosJointes = await Promise.all((crData.photos_jointes || []).map(async (path) => {
+        try {
+          const { data: fileData } = await supabaseAdmin.storage.from('photos').download(path)
+          if (fileData) {
+            const buf = Buffer.from(await fileData.arrayBuffer())
+            const ext = (path || '').split('.').pop().toLowerCase()
+            const mime = ext === 'png' ? 'image/png' : 'image/jpeg'
+            return { path, base64: `data:${mime};base64,${buf.toString('base64')}` }
+          }
+        } catch {}
+        return { path }
+      }))
+
+      const doc = buildCRDocument({ dossier, cr, sections, logo: getLogoBase64(), photos: photosJointes })
       pdfBuffer = await renderToBuffer(doc)
 
     } else if (type === 'devis') {
