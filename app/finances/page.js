@@ -936,7 +936,7 @@ export default function Finances() {
         const artId = dv.artisan_id || dv.artisan?.id
         const dvF = c.devisFinanceMap.get(dv.id)
         if (!dvF) continue
-        const suivi = getSuivi(d, 'acompte_artisan', artId)
+        const suivi = getSuivi(d, 'acompte_artisan', artId, dv.id)
         if (suivi?.statut_illico === 'recu') {
           comReelNet        = round2(comReelNet        + dvF.netCom)
           comBruteEncaissee = round2(comBruteEncaissee + dvF.comHT)
@@ -1003,7 +1003,7 @@ export default function Finances() {
       const artId      = dv.artisan_id || dv.artisan?.id
       const dvF        = c.devisFinanceMap.get(dv.id)
       if (!dvF) continue
-      const suivi      = getSuivi(d, 'acompte_artisan', artId)
+      const suivi      = getSuivi(d, 'acompte_artisan', artId, dv.id)
       const debloque   = suivi?.statut_illico === 'recu'
       if (debloque) {
         comReelNet        = round2(comReelNet        + dvF.netCom)
@@ -1065,9 +1065,14 @@ export default function Finances() {
 
   // ── SUIVI FINANCIER ────────────────────────────────────────────────────────
 
-  const getSuivi = (d, type, artisanId = null) =>
+  // acompte_artisan est PAR DEVIS depuis LOT 3 : quand devisId est fourni, la ligne
+  // se trouve par devis_id (un artisan peut avoir plusieurs lots). Les échéances sans
+  // devis (facture_finale, apporteur_agente, courtage, AMO) restent trouvées par artisan.
+  const getSuivi = (d, type, artisanId = null, devisId = null) =>
     (d.suivi_financier || []).find(
-      s => s.type_echeance === type && (!artisanId || s.artisan_id === artisanId)
+      s => s.type_echeance === type
+        && (!artisanId || s.artisan_id === artisanId)
+        && (!devisId || s.devis_id === devisId)
     )
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -1285,8 +1290,7 @@ export default function Finances() {
       const devisActifs = getSignedDevis(d)
       for (const dv of devisActifs) {
         if (dv.artisan?.paiement_direct) continue
-        const artId = dv.artisan_id || dv.artisan?.id
-        const suiviAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId && s.statut_illico === 'recu')
+        const suiviAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id && s.statut_illico === 'recu')
         if (!suiviAcompte) continue
         const dvF = c.devisFinanceMap.get(dv.id)
         if (!dvF) continue
@@ -1484,7 +1488,7 @@ export default function Finances() {
                       const dvF   = c.devisFinanceMap.get(dv.id)
                       const pct   = dvF?.commissionPct ? parseFloat((dvF.commissionPct * 100).toFixed(1)) : 0
                       const comHT = dvF?.comHT || 0
-                      const sf    = getSuivi(d, 'acompte_artisan', artId)
+                      const sf    = getSuivi(d, 'acompte_artisan', artId, dv.id)
                       const estPaiementDirect = dv.artisan?.paiement_direct
                       const estPartenaire     = dv.artisan?.partenaire
                       let badge
@@ -1615,7 +1619,7 @@ export default function Finances() {
                 d.contrat_signe && d.frais_statut !== 'regle' && alerte48h(d.date_signature_contrat),
                 ...c.devisAcceptes.map(dv => {
                   const artId = dv.artisan_id || dv.artisan?.id
-                  return dv.date_signature && alerte7j(dv.date_signature) && getSuivi(d, 'acompte_artisan', artId)?.statut_client !== 'regle'
+                  return dv.date_signature && alerte7j(dv.date_signature) && getSuivi(d, 'acompte_artisan', artId, dv.id)?.statut_client !== 'regle'
                 }),
                 d.date_fin_chantier && d.typologie === 'amo' && alerte48h(d.date_fin_chantier) && getSuivi(d, 'solde_amo')?.statut_client !== 'regle',
               ].filter(Boolean).length

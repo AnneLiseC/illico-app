@@ -2153,7 +2153,7 @@ export default function FicheChantier({ params }) {
   // Compteurs acomptes / factures (basés sur statut_illico='recu')
   const acomptesTotal  = devisSignes.length
   const acomptesRecus  = devisSignes.filter(dv => suiviFinancier.find(x =>
-    x.type_echeance === 'acompte_artisan' && x.artisan_id === dv.artisan_id && x.statut_illico === 'recu')).length
+    x.type_echeance === 'acompte_artisan' && x.devis_id === dv.id && x.statut_illico === 'recu')).length
   const facturesTotal  = devisSignes.length
   const facturesPayees = devisSignes.filter(dv => suiviFinancier.find(x =>
     x.type_echeance === 'facture_finale' && x.artisan_id === dv.artisan_id && x.statut_illico === 'recu')).length
@@ -3344,7 +3344,7 @@ export default function FicheChantier({ params }) {
                           <div className="devis-kv"><span style={{color:'#15803d'}}>Signé le</span><span style={{fontWeight:600, color:'#15803d'}}>{new Date(d.date_signature).toLocaleDateString('fr-FR')}</span></div>
                         )}
                         {d.statut === 'accepte' && (() => {
-                          const suiviAcompte = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && (s.artisan_id === d.artisan_id || s.artisan_id === d.artisan?.id))
+                          const suiviAcompte = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === d.id)
                           const acomptePaye = suiviAcompte?.statut_client === 'regle'
                           const dateAcompte = suiviAcompte?.date_paiement
                           return (
@@ -3779,7 +3779,7 @@ export default function FicheChantier({ params }) {
         const comDebloque = (fin.commissions?.devis || []).filter(dv => {
           if (dv.refused) return false
           if (dv.isApporteur) return dv.signed
-          const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === (devis.find(x => x.id === dv.id)?.artisan_id))
+          const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id)
           return sf?.statut_illico === 'recu'
         })
         const comHTReal        = comDebloque.reduce((s, d) => s + d.comHT, 0)
@@ -3862,7 +3862,7 @@ export default function FicheChantier({ params }) {
                   {/* Acompte client + illiCO débloqué (par devis signé) */}
                   {devisSignes.map(dv => {
                     const artId = dv.artisan_id || dv.artisan?.id
-                    const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId)
+                    const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id)
                     const finDv = calculateDevisFinance(dv, dossier)
                     const acompteMontant = finDv.acompte
                     const comDevisHT = finDv.comHT

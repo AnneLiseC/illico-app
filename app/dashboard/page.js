@@ -139,7 +139,7 @@ function computeCAMensuel(dossiers, annee) {
     }
     for (const dv of getActiveDevis(d)) {
       const artId     = dv.artisan?.id
-      const sfAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId && s.statut_illico === 'recu')
+      const sfAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id && s.statut_illico === 'recu')
       const sfFacture = suivi.find(s => s.type_echeance === 'facture_finale'  && s.artisan_id === artId && s.statut_illico === 'recu')
       const dvFin = calculateDevisFinance(dv, nd)
       if (sfAcompte)      add(sfAcompte.date_deblocage || sfAcompte.date_paiement, dvFin.netCom)
