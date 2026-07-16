@@ -149,11 +149,47 @@ function LieuPicker({ value, onChange }) {
   )
 }
 
-function EcheanceRow({ label, sub, statut, date, variant, onToggle, fmtDateFn, lock, lockMsg }) {
+// Mini-éditeur de date partagé : <input date> pré-rempli + ✓/✕. Réutilisé par
+// EcheanceRow (nouveau contrat onSetPaid) et par le bouton pill de la carte devis.
+function DateConfirm({ initial, onConfirm, onCancel }) {
+  const [d, setD] = useState(initial)
+  return (
+    <div style={{display:'flex', gap:4, alignItems:'center', justifyContent:'flex-end'}}>
+      <input type="date" value={d} onChange={e => setD(e.target.value)} autoFocus
+        style={{height:28, fontSize:11, padding:'0 6px', border:'1px solid var(--ink-300)', borderRadius:6}} />
+      <button type="button" onClick={() => { if (d) onConfirm(d) }} title="Valider la date"
+        style={{width:24, height:24, borderRadius:6, border:'none', cursor:'pointer', background:'#16a34a', color:'#fff', fontSize:12, display:'grid', placeItems:'center'}}>✓</button>
+      <button type="button" onClick={onCancel} title="Annuler"
+        style={{width:24, height:24, borderRadius:6, border:'1px solid var(--ink-300)', cursor:'pointer', background:'#fff', color:'var(--ink-500)', fontSize:11, display:'grid', placeItems:'center'}}>✕</button>
+    </div>
+  )
+}
+
+// Deux contrats coexistent le temps de la migration (Phase 2→4) :
+//  - LEGACY : onToggle (flip immédiat, sans date).
+//  - DATÉ   : onSetPaid(date) + onUnsetPaid() → cocher ouvre un DateConfirm pré-rempli
+//    à today ; cliquer une date déjà posée le rouvre pour la corriger.
+// lock ne bloque QUE le décochage (l'état), JAMAIS l'édition de date.
+function EcheanceRow({ label, sub, statut, date, variant, onToggle, onSetPaid, onUnsetPaid, fmtDateFn, lock, lockMsg }) {
+  const [editing, setEditing] = useState(false)
   const isRegle = statut === 'regle' || statut === 'recu'
   const isIllico = variant === 'illico'
-  // lock : case verrouillée (dé-cochage interdit). onToggle reste ignoré tant que lock=true.
-  const canClick = Boolean(onToggle) && !lock
+  const dateMode = Boolean(onSetPaid)
+  const today = new Date().toISOString().slice(0, 10)
+  // Cochable si non réglé (→ éditeur), décochable seulement hors lock.
+  const canClick = dateMode ? !(isRegle && lock) : (Boolean(onToggle) && !lock)
+
+  const onCheckbox = () => {
+    if (dateMode) {
+      if (isRegle) { if (!lock) onUnsetPaid && onUnsetPaid() }
+      else setEditing(true)
+    } else {
+      if (lock) return
+      onToggle && onToggle()
+    }
+  }
+  const dateEditable = dateMode && isRegle  // corriger une date déjà posée (lock non bloquant)
+
   return (
     <div style={{
       display:'grid', gridTemplateColumns:'auto 1fr auto auto', gap:14, alignItems:'center',
@@ -162,7 +198,7 @@ function EcheanceRow({ label, sub, statut, date, variant, onToggle, fmtDateFn, l
     }}>
       <label title={lock ? lockMsg : undefined}
         style={{display:'flex', alignItems:'center', gap:8, cursor: canClick ? 'pointer' : (lock ? 'not-allowed' : 'default')}}>
-        <input type="checkbox" checked={isRegle} onChange={() => { if (lock) return; onToggle && onToggle() }} readOnly={!canClick}
+        <input type="checkbox" checked={isRegle} onChange={onCheckbox} readOnly={!canClick}
           style={{accentColor: isIllico ? '#6366f1' : 'var(--brand-500)', width:18, height:18, cursor: canClick ? 'pointer' : (lock ? 'not-allowed' : 'default')}} />
       </label>
       <div style={{minWidth:0}}>
@@ -174,14 +210,29 @@ function EcheanceRow({ label, sub, statut, date, variant, onToggle, fmtDateFn, l
           </div>
         )}
       </div>
-      <div style={{textAlign:'right', minWidth:80}}>
-        {isRegle
-          ? <Badge tone="ok">Réglé</Badge>
-          : <Badge tone="warn">En attente</Badge>}
-      </div>
-      <div className="tnum" style={{fontSize:11.5, color:'var(--ink-400)', minWidth:60, textAlign:'right'}}>
-        {date ? (fmtDateFn ? fmtDateFn(date) : new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' })) : '—'}
-      </div>
+      {editing && dateMode ? (
+        <div style={{gridColumn:'3 / 5'}}>
+          <DateConfirm
+            initial={isRegle && date ? String(date).slice(0, 10) : today}
+            onConfirm={d => { setEditing(false); onSetPaid(d) }}
+            onCancel={() => setEditing(false)}
+          />
+        </div>
+      ) : (
+        <>
+          <div style={{textAlign:'right', minWidth:80}}>
+            {isRegle
+              ? <Badge tone="ok">Réglé</Badge>
+              : <Badge tone="warn">En attente</Badge>}
+          </div>
+          <div className="tnum" onClick={dateEditable ? () => setEditing(true) : undefined}
+            title={dateEditable ? 'Modifier la date' : undefined}
+            style={{fontSize:11.5, color:'var(--ink-400)', minWidth:60, textAlign:'right',
+              cursor: dateEditable ? 'pointer' : 'default', textDecoration: dateEditable ? 'underline dotted' : 'none'}}>
+            {date ? (fmtDateFn ? fmtDateFn(date) : new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' })) : '—'}
+          </div>
+        </>
+      )}
     </div>
   )
 }
