@@ -1205,3 +1205,250 @@ img, svg, video, canvas { max-width: 100%; }
   .fc .fc-col-header-cell-cushion,
   .fc .fc-daygrid-day-number { font-size: 11px !important; }
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   Onglet « Devis & artisans » — carte de devis (refonte visuelle).
+   Classes préfixées `devis-` : uniques à ce bloc, zéro collision ailleurs.
+   ───────────────────────────────────────────────────────────────── */
+
+/* En-tête replié : nom | montant HT + com. | statut | chevron */
+.devis-head {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 14px;
+  align-items: center;
+  cursor: pointer;
+}
+.devis-head-main { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.devis-ico {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: var(--brand-50); color: var(--brand-800);
+  display: grid; place-items: center; flex: 0 0 40px;
+}
+.devis-name { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; min-width: 0; }
+.devis-sub { display: flex; gap: 12px; margin-top: 4px; font-size: 12px; color: var(--ink-500); flex-wrap: wrap; min-width: 0; }
+.devis-amount { text-align: right; white-space: nowrap; }
+.devis-amount-ht { font-size: 17px; font-weight: 800; color: var(--ink-900); letter-spacing: -0.01em; }
+.devis-amount-unit { font-size: 11px; font-weight: 600; color: var(--ink-400); }
+.devis-amount-com { font-size: 11.5px; color: var(--ink-500); margin-top: 2px; }
+.devis-badge { display: flex; align-items: center; }
+.devis-chevron { padding: 4px 8px; }
+
+/* Mobile : le montant passe sous le nom, le badge à droite. */
+@media (max-width: 560px) {
+  .devis-head {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "main chevron" "amount badge";
+    row-gap: 8px;
+  }
+  .devis-head-main { grid-area: main; }
+  .devis-chevron   { grid-area: chevron; align-self: start; }
+  .devis-amount    { grid-area: amount; text-align: left; }
+  .devis-badge     { grid-area: badge; justify-content: flex-end; }
+}
+
+/* Détail déplié */
+.devis-detail {
+  margin-top: 14px; padding: 14px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--ink-200);
+  display: flex; flex-direction: column; gap: 14px;
+}
+.devis-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.devis-actions-left { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.devis-statuts { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Infos côte à côte : Montants | Commission | Parts */
+.devis-info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.devis-info-block {
+  background: #fff; border: 1px solid var(--ink-200); border-radius: 10px;
+  padding: 12px; display: flex; flex-direction: column; gap: 6px;
+}
+.devis-info-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-400); margin-bottom: 2px; }
+.devis-kv { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.devis-kv > span:first-child { font-size: 11px; color: var(--ink-400); }
+
+/* Acompte + Solde côte à côte */
+.devis-facture-lines { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 560px) { .devis-facture-lines { grid-template-columns: 1fr; } }
+
+/* Documents en grille */
+.devis-docs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.devis-doc {
+  background: #fff; border: 1px solid var(--ink-200); border-radius: 10px;
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0;
+}
+.devis-doc-label { font-size: 11px; color: var(--ink-500); font-weight: 600; }
+.devis-doc-act { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.devis-doc-upload {
+  font-size: 11px; padding: 3px 10px; border-radius: 6px;
+  border: 1px dashed var(--brand-200); transition: all 150ms; cursor: pointer;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Onglet « Devis & artisans » — Honoraires client (ligne de réglages)
+   + Récapitulatif (bascule + 3 formules). Classes `hono-` / `recap-`.
+   ───────────────────────────────────────────────────────────────── */
+
+/* Honoraires client : réduit à une ligne de réglages (taux courtage + AMO) */
+.hono-settings { padding: 16px; display: flex; gap: 24px; flex-wrap: wrap; align-items: center; }
+.hono-taux { display: flex; align-items: center; gap: 6px; }
+
+/* Récapitulatif : bascule prévisionnel / signé */
+.recap-toggle {
+  display: inline-flex; gap: 4px; align-self: flex-start;
+  background: var(--ink-100); padding: 3px; border-radius: 9px;
+}
+.recap-tab {
+  border: none; background: none; padding: 6px 14px; border-radius: 7px;
+  font-size: 12.5px; font-weight: 600; color: var(--ink-500); cursor: pointer; white-space: nowrap;
+}
+.recap-tab.active { background: #fff; color: var(--brand-800); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+/* Récapitulatif : 3 formules côte à côte */
+.recap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 12px; }
+.recap-col {
+  border: 1px solid var(--brand-200); border-radius: 10px; padding: 14px;
+  background: rgba(0,148,212,0.05); display: flex; flex-direction: column; gap: 8px;
+}
+.recap-col-remise { background: rgba(0,148,212,0.09); }
+.recap-col-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--brand-800);
+}
+.recap-col-pct { font-size: 13px; font-weight: 700; color: var(--brand-700); }
+.recap-kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--ink-600); }
+.recap-total {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  border-top: 2px solid var(--brand-500); margin-top: 4px; padding-top: 8px;
+  font-weight: 700; color: var(--ink-900);
+}
+.recap-total-val { font-size: 18px; font-weight: 800; color: var(--brand-800); letter-spacing: -0.01em; }
+@media (max-width: 560px) { .recap-grid { grid-template-columns: 1fr; } }
+
+/* ─────────────────────────────────────────────────────────────────
+   Onglet « Suivi financier » — carte Échéances : 2 blocs côte à côte
+   (A = par devis · B = autres échéances). Classes `suivi-`.
+   ───────────────────────────────────────────────────────────────── */
+
+/* Split PAR DEVIS / AUTRES ÉCHÉANCES + grille interne : auto-fit, SANS seuil deviné.
+   Le navigateur bascule de 2 → 1 colonne dès que 2×380 + gap ne tient plus, à toute
+   largeur (fini le trou 901-1080 du media query 900px).
+   380px = largeur minimale RÉELLE d'un EcheanceRow lisible : colonnes fixes
+   (checkbox + badge + date + gaps + padding) ≈ 215px, + ~170px réservés au sous-titre
+   pour tenir « 40% acompte · 2 070,00 € TTC » sur UNE ligne.
+   ⚠️ Si un libellé enroule encore en preview, ÉLARGIR cette part de label (→ 400),
+   JAMAIS rétrécir les colonnes fixes. Sous ~380px de bloc : repli gracieux sur 2 lignes. */
+.suivi-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 22px;
+  padding: 14px 22px;
+}
+.suivi-bloc { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.suivi-bloc-title {
+  font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--brand-800); padding-bottom: 6px; border-bottom: 1px solid var(--ink-200);
+}
+
+/* BLOC A — une CARTE par devis (cadre à toute largeur : avec le devis sur 3 lignes,
+   le cadre rattache visuellement l'acompte à son devis). Nom en en-tête pleine largeur ;
+   ACOMPTE / COMMISSION côte à côte quand 2×380+gap tient, empilés sinon (auto-fit). */
+.suivi-table { display: flex; flex-direction: column; gap: 8px; overflow-x: visible; }
+.suivi-devis-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 10px; min-width: 0;
+  border: 1px solid var(--ink-200); border-radius: 12px; padding: 12px; background: var(--surface);
+}
+.suivi-devis-name {
+  grid-column: 1 / -1;
+  font-size: 12.5px; font-weight: 700; color: var(--ink-900);
+  overflow-wrap: break-word; min-width: 0;
+  padding-bottom: 6px; border-bottom: 1px solid var(--ink-100);
+}
+.suivi-devis-cell { min-width: 0; }
+
+/* BLOC B — autres échéances empilées */
+.suivi-autres { display: flex; flex-direction: column; gap: 12px; }
+
+/* ─────────────────────────────────────────────────────────────────
+   Page Finances — tableaux responsive. Classes `fin-`, scopées à
+   `.fin-page` (zéro impact autres pages).
+   L'infra globale ne rend les tables scrollables qu'à ≤767px ; entre
+   768 et 1024px (tablette) les colonnes étaient coupées (body en
+   overflow-x:clip). On étend le scroll horizontal jusqu'à ≤1024px.
+   ───────────────────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .fin-page .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+  /* Largeur naturelle : les colonnes ne se compriment plus, elles
+     deviennent accessibles au scroll (comme le fait déjà l'infra ≤767). */
+  .fin-page .table-scroll > table { min-width: max-content; }
+}
+
+/* 1ʳᵉ colonne figée pendant le scroll horizontal (tableaux A « Détail par
+   chantier » et C « Facturation mensuelle »). Fonds opaques pour que les
+   cellules qui défilent dessous ne transparaissent pas. En l'absence de
+   scroll (desktop > 1024px), sticky est un no-op → rendu inchangé. */
+.fin-sticky-col thead th:first-child {
+  position: sticky; left: 0; z-index: 3; background: var(--surface-2);
+}
+.fin-sticky-col tbody td:first-child {
+  position: sticky; left: 0; z-index: 1; background: var(--surface);
+}
+.fin-sticky-col tfoot td:first-child {
+  position: sticky; left: 0; z-index: 1; background: var(--surface-2);
+}
+.fin-sticky-col tbody tr.row-hover:hover td:first-child { background: var(--brand-50); }
+
+/* ─────────────────────────────────────────────────────────────────
+   Onglet « Suivi financier » — Solde AMO échelonné (tranches encaissées).
+   Classes `suivi-amo-`.
+   ───────────────────────────────────────────────────────────────── */
+/* Ligne de synthèse = MÊME cadre qu'un EcheanceRow (bordure/fond/padding/radius),
+   pour rester alignée avec les autres lignes du bloc « Autres échéances ». */
+.suivi-amo-synth {
+  display: flex; justify-content: space-between; align-items: center; gap: 14px;
+  padding: 10px 14px; border-radius: 10px; border: 1px solid var(--ink-200); background: #fff;
+}
+.suivi-amo-chevron {
+  border: 1px solid var(--ink-200); background: var(--surface); color: var(--ink-500);
+  border-radius: 8px; width: 30px; height: 28px; cursor: pointer; font-size: 11px; flex-shrink: 0;
+}
+.suivi-amo-chevron:hover { background: var(--surface-2); }
+/* Rattaché à la ligne « Honoraires AMO — solde » : indenté sous son libellé
+   (padding 14 + case à cocher 18 + gap 14 = 46px), et remonté contre la ligne,
+   pour montrer qu'il agit sur CETTE échéance et non sur le bloc entier. */
+.suivi-amo-add-link {
+  align-self: flex-start; border: none; background: none; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--brand-700);
+  padding: 2px 4px; margin-left: 46px; margin-top: -2px;
+}
+.suivi-amo-add-link:hover { text-decoration: underline; }
+/* Panneau = DÉTAIL de la ligne AMO ci-dessus, pas une échéance séparée :
+   indenté (pas pleine largeur) + accent gauche + fond distinct pour le rattacher
+   visuellement à la ligne de synthèse. */
+.suivi-amo-panel {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-left: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--ink-200);
+  border-left: 3px solid var(--brand-200);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.suivi-amo-tranche {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center;
+  padding: 6px 10px; border-radius: 8px; border: 1px solid var(--ink-200); background: #fff;
+}
+.suivi-amo-del {
+  border: none; background: none; cursor: pointer; color: #b91c1c; font-size: 13px;
+  padding: 2px 6px; border-radius: 6px; line-height: 1;
+}
+.suivi-amo-del:hover { background: rgba(185, 28, 28, 0.08); }
+.suivi-amo-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.suivi-amo-form .input { height: 36px; max-width: 160px; }
+@media (max-width: 560px) {
+  .suivi-amo-form { flex-direction: column; align-items: stretch; }
+  .suivi-amo-form .input { max-width: none; }
+}

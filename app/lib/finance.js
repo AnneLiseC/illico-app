@@ -353,6 +353,50 @@ export function calculateHonorairesFinance(dossier) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SOLDE AMO RÉEL ÉCHELONNÉ — reconnaissance à l'encaissement, tranche par tranche.
+// Cohabitation (lot « solde AMO en plusieurs paiements ») :
+//   • dossier SANS ligne 'solde_amo_paiement' → renvoie { hasTranches: false } ;
+//     les consommateurs gardent alors leur gate tout-ou-rien actuel (INCHANGÉ).
+//   • dossier AVEC ≥1 ligne 'solde_amo_paiement' → le réel du solde AMO = Σ des
+//     tranches encaissées, chacune reconnue à SA date_paiement (buckets mensuels).
+// Dérivation TTC→HT au ratio du composant solde AMO calculé aujourd'hui
+// (soldeAmo.ht / soldeAmo.ttc), donc parfaitement cohérent avec l'existant.
+// Le PRÉVISIONNEL n'appelle JAMAIS cette fonction (calculateHonorairesPrevi inchangé).
+// ─────────────────────────────────────────────────────────────────────────────
+export function calculateSoldeAmoReel(dossier) {
+  const suivi  = Array.isArray(dossier?.suivi_financier) ? dossier.suivi_financier : []
+  const lignes = suivi.filter(s => s?.type_echeance === 'solde_amo_paiement')
+  if (lignes.length === 0) return { hasTranches: false }
+
+  // Ratio HT/TTC du composant solde AMO (base × taux). ttc=0 (pas d'AMO) → ratio 0.
+  const { soldeAmo } = calculateHonorairesFinance(dossier)
+  const ratio      = soldeAmo.ttc > 0 ? soldeAmo.ht / soldeAmo.ttc : 0
+  const partAgente = getPartAgente(dossier)
+
+  const tranches = lignes.map(l => {
+    const ht        = round2(toNumber(l.montant_ttc) * ratio)
+    const royalties = round2(ht * ROYALTIES_RATE)
+    const net       = round2(ht - royalties)
+    const parts     = split(net, partAgente)
+    return {
+      date_paiement: l.date_paiement || null,
+      ht, net, royalties,
+      parts: { agente: parts.agente, admin: parts.admin },
+    }
+  })
+
+  const recognizedHt        = round2(tranches.reduce((s, t) => s + t.ht, 0))
+  const recognizedRoyalties = round2(tranches.reduce((s, t) => s + t.royalties, 0))
+  const recognizedNet       = round2(tranches.reduce((s, t) => s + t.net, 0))
+  const parts = {
+    agente: round2(tranches.reduce((s, t) => s + t.parts.agente, 0)),
+    admin:  round2(tranches.reduce((s, t) => s + t.parts.admin, 0)),
+  }
+
+  return { hasTranches: true, recognizedHt, recognizedNet, recognizedRoyalties, parts, tranches }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HONORAIRES PRÉVISIONNELS
 // Même logique que calculateHonorairesFinance mais sur TOUS les devis actifs
 // (non refusés), conformément aux règles prévisionnel du CDC.
@@ -456,8 +500,8 @@ export function calculateApporteurFinance(dossier) {
 
   // Réel = devis dont l'acompte est débloqué côté illiCO (statut_illico === 'recu').
   const suivi = Array.isArray(dossier?.suivi_financier) ? dossier.suivi_financier : []
-  const estDebloque = (artisanId) => suivi.some(s =>
-    s.type_echeance === 'acompte_artisan' && s.artisan_id === artisanId && s.statut_illico === 'recu'
+  const estDebloque = (devisId) => suivi.some(s =>
+    s.type_echeance === 'acompte_artisan' && s.devis_id === devisId && s.statut_illico === 'recu'
   )
 
   let lines = []
@@ -466,7 +510,7 @@ export function calculateApporteurFinance(dossier) {
     const totalHT     = round2(baseHT * tauxApporteur)
     const parts       = split(totalHT, partAgente)
     const baseHTReel  = round2(signed
-      .filter(dv => estDebloque(dv.artisan_id ?? dv.artisan?.id))
+      .filter(dv => estDebloque(dv.id))
       .reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
     const totalHTReel = round2(baseHTReel * tauxApporteur)
     const partsReel   = split(totalHTReel, partAgente)
@@ -477,11 +521,10 @@ export function calculateApporteurFinance(dossier) {
     }]
   } else {
     lines = signed.map(dv => {
-      const artisanId = dv.artisan_id ?? dv.artisan?.id
       const baseHT    = round2(toNumber(dv.montant_ht))
       const totalHT   = round2(baseHT * tauxApporteur)
       const parts     = split(totalHT, partAgente)
-      const debloque  = estDebloque(artisanId)
+      const debloque  = estDebloque(dv.id)
       return {
         type: 'par_devis',
         devisId: dv.id || null,

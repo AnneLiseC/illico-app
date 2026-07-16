@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import { formatNomClient } from '../lib/clients'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { calculateDossierFinance, getActiveDevis, getSignedDevis, DEFAULT_PART_AGENTE } from '../lib/finance'
+import { calculateDossierFinance, getActiveDevis, getSignedDevis, calculateSoldeAmoReel, DEFAULT_PART_AGENTE } from '../lib/finance'
 import { calcStatut } from '../lib/dossiers'
 import { Avatar } from '../components/shared'
 
@@ -483,7 +483,8 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
             <div className="eyebrow" style={{marginTop:4}}>F1 = facture émise par l&apos;agente · F2 = facture émise par la franchisée</div>
           </div>
         </div>
-        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+        <div className="table-scroll">
+        <table className="fin-sticky-col" style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
           <thead style={{background:'var(--surface-2)'}}>
             <tr>
               {thL('Mois')}
@@ -595,6 +596,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
             </tfoot>
           )}
         </table>
+        </div>
       </div>
 
       {/* Détail factures F1 + F2 côte à côte */}
@@ -919,9 +921,12 @@ export default function Finances() {
       const fraisReel = d.frais_statut === 'regle' ? c.fraisNet : 0
       const courtageRegle = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
       const amoRegle = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
+      // Cohabitation solde AMO échelonné : Σ tranches encaissées si le dossier en a,
+      // sinon le gate tout-ou-rien actuel (branche else laissée verbatim).
+      const soldeAmoR = calculateSoldeAmoReel(d)
       // AMO : l'acompte AMO = la part courtage (même encaissement, compté via le courtage).
       // Le solde AMO ajoute la part AMO pleine (finance.js) quand il est réglé. Jamais les deux.
-      const soldeAmoNetM = amoRegle ? c.amoNet : 0
+      const soldeAmoNetM = soldeAmoR.hasTranches ? soldeAmoR.recognizedNet : (amoRegle ? c.amoNet : 0)
       const honReel = round2((courtageRegle ? c.courtNet : 0) + soldeAmoNetM)
       let comReelNet = 0
       let comBruteEncaissee = 0       // AJOUT affichage : Σ comHT brut des devis encaissés
@@ -931,7 +936,7 @@ export default function Finances() {
         const artId = dv.artisan_id || dv.artisan?.id
         const dvF = c.devisFinanceMap.get(dv.id)
         if (!dvF) continue
-        const suivi = getSuivi(d, 'acompte_artisan', artId)
+        const suivi = getSuivi(d, 'acompte_artisan', artId, dv.id)
         if (suivi?.statut_illico === 'recu') {
           comReelNet        = round2(comReelNet        + dvF.netCom)
           comBruteEncaissee = round2(comBruteEncaissee + dvF.comHT)
@@ -948,11 +953,11 @@ export default function Finances() {
 
       // AJOUTS affichage (brut/royalty réels) — n'entrent PAS dans le calcul du net.
       const fraisBrutReel = d.frais_statut === 'regle' ? c.fraisHT : 0
-      const honReelBrut = round2((courtageRegle ? c.finance.honoraires.courtage.ht : 0) + (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0))
+      const honReelBrut = round2((courtageRegle ? c.finance.honoraires.courtage.ht : 0) + (soldeAmoR.hasTranches ? soldeAmoR.recognizedHt : (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0)))
       const royaltyReelle = round2(
         (d.frais_statut === 'regle' ? c.fraisRoyalties : 0) +
         royaltiesComReel + royaltiesComApporteursReel +
-        (courtageRegle ? c.courtRoyalties : 0) + (amoRegle ? c.amoRoyalties : 0)
+        (courtageRegle ? c.courtRoyalties : 0) + (soldeAmoR.hasTranches ? soldeAmoR.recognizedRoyalties : (amoRegle ? c.amoRoyalties : 0))
       )
 
       const gainAdminReel = round2(fraisReel + honReel + comReelNet + comApporteursReel - apporteurRetire)
@@ -968,16 +973,19 @@ export default function Finances() {
     // Honoraires — HT net si réglé
     const courtageRegle  = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
     const amoRegle       = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
+    // Cohabitation solde AMO échelonné : Σ tranches encaissées si le dossier en a,
+    // sinon le gate tout-ou-rien actuel (branches else laissées verbatim).
+    const soldeAmoR = calculateSoldeAmoReel(d)
     // AMO : l'acompte AMO = la part courtage (même encaissement, compté via le courtage).
     // Le solde AMO ajoute la part AMO pleine (finance.js) quand il est réglé. Jamais les deux.
     const honCourtageReel = courtageRegle ? c.courtNet : 0
-    const soldeAmoNet    = amoRegle ? c.amoNet : 0
-    const soldeAmoAgente = amoRegle ? c.amoAgente : 0
+    const soldeAmoNet    = soldeAmoR.hasTranches ? soldeAmoR.recognizedNet : (amoRegle ? c.amoNet : 0)
+    const soldeAmoAgente = soldeAmoR.hasTranches ? soldeAmoR.parts.agente : (amoRegle ? c.amoAgente : 0)
     const honAMOReel     = soldeAmoNet
     const honReel        = round2(honCourtageReel + honAMOReel)
     const royaltiesHonReel = round2(
       (courtageRegle ? c.courtRoyalties : 0) +
-      (amoRegle ? c.amoRoyalties : 0)
+      (soldeAmoR.hasTranches ? soldeAmoR.recognizedRoyalties : (amoRegle ? c.amoRoyalties : 0))
     )
     const honAgenteReel  = round2(
       (courtageRegle ? c.courtAgente : 0) +
@@ -995,7 +1003,7 @@ export default function Finances() {
       const artId      = dv.artisan_id || dv.artisan?.id
       const dvF        = c.devisFinanceMap.get(dv.id)
       if (!dvF) continue
-      const suivi      = getSuivi(d, 'acompte_artisan', artId)
+      const suivi      = getSuivi(d, 'acompte_artisan', artId, dv.id)
       const debloque   = suivi?.statut_illico === 'recu'
       if (debloque) {
         comReelNet        = round2(comReelNet        + dvF.netCom)
@@ -1023,7 +1031,7 @@ export default function Finances() {
     const fraisBrutReel = fraisRegle ? c.fraisHT : 0
     const honReelBrut = round2(
       (courtageRegle ? c.finance.honoraires.courtage.ht : 0) +
-      (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0)
+      (soldeAmoR.hasTranches ? soldeAmoR.recognizedHt : (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0))
     )
     const royaltyReelle = round2(
       fraisRoyaltiesReel + royaltiesComReel + royaltiesComApporteursReel + royaltiesHonReel
@@ -1057,9 +1065,14 @@ export default function Finances() {
 
   // ── SUIVI FINANCIER ────────────────────────────────────────────────────────
 
-  const getSuivi = (d, type, artisanId = null) =>
+  // acompte_artisan est PAR DEVIS depuis LOT 3 : quand devisId est fourni, la ligne
+  // se trouve par devis_id (un artisan peut avoir plusieurs lots). Les échéances sans
+  // devis (facture_finale, apporteur_agente, courtage, AMO) restent trouvées par artisan.
+  const getSuivi = (d, type, artisanId = null, devisId = null) =>
     (d.suivi_financier || []).find(
-      s => s.type_echeance === type && (!artisanId || s.artisan_id === artisanId)
+      s => s.type_echeance === type
+        && (!artisanId || s.artisan_id === artisanId)
+        && (!devisId || s.devis_id === devisId)
     )
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -1249,22 +1262,35 @@ export default function Finances() {
       // Solde AMO — part AMO pleine (finance.js), gated par solde_amo réglé.
       // L'acompte AMO n'ajoute PLUS son montant : c'est la part courtage, déjà
       // comptée par le bloc « Honoraires courtage » ci-dessus (même encaissement).
-      const suiviAmo = suivi.find(s => s.type_echeance === 'solde_amo' && s.statut_client === 'regle')
-      if (c.soldeAmoNet > 0 && suiviAmo) {
-        const dateAmo = suiviAmo?.date_paiement || d.date_fin_chantier
-        const key = getKeyFromDate(dateAmo, isAnnee)
-        addToKey(key, 'amoNet', c.soldeAmoNet, d.id)
-        addToKey(key, 'honAgenteNet', c.soldeAmoAgente, d.id)
-        addToKey(key, 'honBrut', c.finance.honoraires.soldeAmo.ht, d.id)
-        addToKey(key, 'royaltyBucket', c.amoRoyalties, d.id)
+      // Cohabitation échelonné : si tranches, chacune sur SA date_paiement ; sinon
+      // le bloc tout-ou-rien actuel (branche else laissée verbatim).
+      const soldeAmoR = calculateSoldeAmoReel(d)
+      if (soldeAmoR.hasTranches) {
+        for (const t of soldeAmoR.tranches) {
+          if (t.net <= 0 && t.ht <= 0) continue
+          const key = getKeyFromDate(t.date_paiement || d.date_fin_chantier, isAnnee)
+          addToKey(key, 'amoNet', t.net, d.id)
+          addToKey(key, 'honAgenteNet', t.parts.agente, d.id)
+          addToKey(key, 'honBrut', t.ht, d.id)
+          addToKey(key, 'royaltyBucket', t.royalties, d.id)
+        }
+      } else {
+        const suiviAmo = suivi.find(s => s.type_echeance === 'solde_amo' && s.statut_client === 'regle')
+        if (c.soldeAmoNet > 0 && suiviAmo) {
+          const dateAmo = suiviAmo?.date_paiement || d.date_fin_chantier
+          const key = getKeyFromDate(dateAmo, isAnnee)
+          addToKey(key, 'amoNet', c.soldeAmoNet, d.id)
+          addToKey(key, 'honAgenteNet', c.soldeAmoAgente, d.id)
+          addToKey(key, 'honBrut', c.finance.honoraires.soldeAmo.ht, d.id)
+          addToKey(key, 'royaltyBucket', c.amoRoyalties, d.id)
+        }
       }
 
       // Commissions artisans normaux
       const devisActifs = getSignedDevis(d)
       for (const dv of devisActifs) {
         if (dv.artisan?.paiement_direct) continue
-        const artId = dv.artisan_id || dv.artisan?.id
-        const suiviAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId && s.statut_illico === 'recu')
+        const suiviAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id && s.statut_illico === 'recu')
         if (!suiviAcompte) continue
         const dvF = c.devisFinanceMap.get(dv.id)
         if (!dvF) continue
@@ -1462,7 +1488,7 @@ export default function Finances() {
                       const dvF   = c.devisFinanceMap.get(dv.id)
                       const pct   = dvF?.commissionPct ? parseFloat((dvF.commissionPct * 100).toFixed(1)) : 0
                       const comHT = dvF?.comHT || 0
-                      const sf    = getSuivi(d, 'acompte_artisan', artId)
+                      const sf    = getSuivi(d, 'acompte_artisan', artId, dv.id)
                       const estPaiementDirect = dv.artisan?.paiement_direct
                       const estPartenaire     = dv.artisan?.partenaire
                       let badge
@@ -1564,7 +1590,7 @@ export default function Finances() {
           </div>
         </div>
         <div className="table-scroll">
-        <table style={{width:'100%',borderCollapse:'collapse'}}>
+        <table className="fin-sticky-col" style={{width:'100%',borderCollapse:'collapse'}}>
           <thead style={{position:'sticky',top:0,zIndex:1}}>
             <tr style={{borderBottom:'1px solid var(--ink-200)'}}>
               <Th>Dossier</Th>
@@ -1593,7 +1619,7 @@ export default function Finances() {
                 d.contrat_signe && d.frais_statut !== 'regle' && alerte48h(d.date_signature_contrat),
                 ...c.devisAcceptes.map(dv => {
                   const artId = dv.artisan_id || dv.artisan?.id
-                  return dv.date_signature && alerte7j(dv.date_signature) && getSuivi(d, 'acompte_artisan', artId)?.statut_client !== 'regle'
+                  return dv.date_signature && alerte7j(dv.date_signature) && getSuivi(d, 'acompte_artisan', artId, dv.id)?.statut_client !== 'regle'
                 }),
                 d.date_fin_chantier && d.typologie === 'amo' && alerte48h(d.date_fin_chantier) && getSuivi(d, 'solde_amo')?.statut_client !== 'regle',
               ].filter(Boolean).length
@@ -1687,6 +1713,7 @@ export default function Finances() {
 
   const renderTableauPeriode = (listeDossiers, rows, colLabel, colonnes, getMontant, getDossierMontant) => (
     <div className="card" style={{overflow:'hidden'}}>
+      <div className="table-scroll">
       <table style={{width:'100%',fontSize:13}}>
         <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
           <tr>
@@ -1754,6 +1781,7 @@ export default function Finances() {
           </tr>
         </tfoot>
       </table>
+      </div>
     </div>
   )
 
@@ -1773,6 +1801,7 @@ export default function Finances() {
       const thR = { textAlign:'right', padding:'12px 16px', fontSize:11, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', whiteSpace:'nowrap' }
       return (
         <div className="card" style={{overflow:'hidden'}}>
+          <div className="table-scroll">
           <table style={{width:'100%',fontSize:13}}>
             <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
               <tr>
@@ -1831,6 +1860,7 @@ export default function Finances() {
               {rows.length === 0 && <tr><td colSpan={cols.length + 1} style={{padding:'32px 12px',textAlign:'center',color:'var(--ink-400)'}}>Aucune donnée</td></tr>}
             </tbody>
           </table>
+          </div>
         </div>
       )
     }
@@ -2048,6 +2078,7 @@ export default function Finances() {
             reel={totalCAGenere}
             objectifMontant={objectifAnnuelCible} cible="agence" canEdit={false} />
           <div className="card" style={{overflow:'hidden'}}>
+          <div className="table-scroll">
           <table style={{width:'100%',fontSize:13}}>
             <thead style={{background:'var(--surface-2)',borderBottom:'1px solid var(--ink-200)'}}>
               <tr>
@@ -2088,6 +2119,7 @@ export default function Finances() {
             </tbody>
           </table>
           </div>
+          </div>
           <SuiviCTPChart labels={chartLabelsAnnee} produitsData={chartProduitsAnnee} chargesData={chartChargesAnnee} netData={chartNetAnnee} chartId={`chart_${mode}_annee`} />
         </div>
       )
@@ -2111,6 +2143,7 @@ export default function Finances() {
               reel={caGenerePourCle(moisCourantCle)}
               objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
             <div className="card" style={{overflow:'hidden'}}>
+              <div className="table-scroll">
               <table style={{width:'100%',fontSize:11}}>
                 {moisTableHead}
                 <tbody>
@@ -2123,6 +2156,7 @@ export default function Finances() {
                   </tr>
                 </tbody>
               </table>
+              </div>
             </div>
             <SuiviCTPChart labels={chartLabels} produitsData={chartProduits} chargesData={chartCharges} netData={chartNet} chartId={`chart_${mode}_mois`} />
           </div>
@@ -2159,7 +2193,7 @@ export default function Finances() {
   )
 
   return (
-    <div className="page-enter page-pad" style={{display:'flex',flexDirection:'column',gap:20,maxWidth:1400,margin:'0 auto'}}>
+    <div className="page-enter page-pad fin-page" style={{display:'flex',flexDirection:'column',gap:20,maxWidth:1400,margin:'0 auto'}}>
 
       {/* En-tête page */}
       <div className="header-row" style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:16,flexWrap:'wrap'}}>

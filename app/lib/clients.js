@@ -44,9 +44,23 @@ export async function supprimerClient(supabase, clientId) {
 //   - 2 personnes, même nom (nom2 vide) → "Prénom1 & Prénom2 Nom1" (Option A, mutualisé)
 //   - client absent       → "—"
 // Options : civilite (préfixe la civilité si présente), upper (NOM en majuscules pour les listes).
-export function formatNomClient(client, { civilite = false, upper = false } = {}) {
+export function formatNomClient(client, { civilite = false, upper = false, withRepresentant = false } = {}) {
   if (!client) return '—'
   const cap = s => (upper ? (s || '').toUpperCase() : (s || ''))
+
+  // Mode PRO : ne s'active QUE si type_client==='professionnel' ET raison_sociale
+  // présente. Sinon (particulier, ou pro sans raison sociale = les 2 pros existants)
+  // → on tombe dans la logique historique, STRICTEMENT inchangée (rétrocompat).
+  if (client.type_client === 'professionnel' && client.raison_sociale) {
+    const base = `${client.forme_juridique ? client.forme_juridique + ' ' : ''}${cap(client.raison_sociale)}`.trim()
+    if (withRepresentant && client.representant_nom) {
+      const civ = civilite && client.civilite ? `${client.civilite} ` : ''
+      const rep = `${civ}${client.representant_prenom ? client.representant_prenom + ' ' : ''}${client.representant_nom}`.trim()
+      return `${base} représentée par ${rep}`.trim()
+    }
+    return base
+  }
+
   const p1 = `${client.prenom || ''} ${cap(client.nom)}`.trim()
   const pre = civilite && client.civilite ? `${client.civilite} ` : ''
   if (!client.prenom2) return `${pre}${p1}`.trim()

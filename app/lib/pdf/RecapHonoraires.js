@@ -99,7 +99,11 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
   const fraisInTable   = fraisTTC > 0 && fraisStatut !== 'offerts' && fraisStatut !== 'rembourse'
   const fraisRembourse = fraisStatut === 'rembourse' && fraisTTC > 0
   const totalFraisTable = fraisInTable ? fraisTTC : 0
-  const fraisComp      = totalFraisTable - (fraisRembourse ? fraisTTC : 0) // composante frais du total chantier
+  // Remise commerciale sur frais de consultation (frais remboursés) — SOURCE UNIQUE,
+  // partagée par le TOTAL CHANTIER (via fraisComp, inchangé) ET le Total honoraire
+  // (déduction). Corrige la divergence : le total chantier déduisait, pas le total honoraire.
+  const remiseFraisConso = fraisRembourse ? fraisTTC : 0
+  const fraisComp      = totalFraisTable - remiseFraisConso // composante frais du total chantier
 
   const isAMO   = typologie === 'amo'
   const hasNego = (devis || []).some(d => ['recu', 'a_modifier', 'en_attente'].includes(d?.statut))
@@ -143,7 +147,9 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
   }
 
   // ── Scénario COURTAGE ──
-  const totalChCourtageStd  = baseTTC + courtageStd + fraisComp
+  // « Tarif standard » = prix catalogue BRUT (aucune remise) → totalFraisTable (frais
+  // NON déduits). « Votre tarif » = net → fraisComp (remise frais déduite).
+  const totalChCourtageStd  = baseTTC + courtageStd + totalFraisTable
   const totalChCourtageReel = baseTTC + courtageReel + fraisComp
   const courtageChildren = [
     h(Text, { key: 't', style: S.blocTitleC }, `Honoraires illiCO travaux COURTAGE (${pct(COURTAGE_STANDARD)})`),
@@ -157,13 +163,15 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
       ligneRemise(`Remise commerciale sur honoraire courtage (${pct(COURTAGE_STANDARD - tauxCourtage)})`, courtageStd - courtageReel, BLEU, 'rem'),
       h(Text, { key: 'nr', style: S.niveau }, 'Votre tarif'),
       ...courtageReelLignes('cr'),
-      totalHon(pct(tauxCourtage), courtageReel, 'thr'),
+      ...(remiseFraisConso > 0 ? [ligneRemise('Remise commerciale sur frais de consultation', remiseFraisConso, VIOLET, 'crf')] : []),
+      totalHon(pct(tauxCourtage), round2(courtageReel - remiseFraisConso), 'thr'),
       totalChantier('TOTAL CHANTIER si COURTAGE', totalChCourtageReel, { bg: BLEU }, 'tcr'),
     )
   } else {
     courtageChildren.push(
       ...courtageReelLignes('cn'),
-      totalHon(pct(tauxCourtage), courtageReel, 'thr'),
+      ...(remiseFraisConso > 0 ? [ligneRemise('Remise commerciale sur frais de consultation', remiseFraisConso, VIOLET, 'cnf')] : []),
+      totalHon(pct(tauxCourtage), round2(courtageReel - remiseFraisConso), 'thr'),
       totalChantier('TOTAL CHANTIER si COURTAGE', totalChCourtageReel, { bg: BLEU }, 'tcr'),
     )
   }
@@ -179,8 +187,8 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
     const remise        = courtageRemise || amoRemise
     const honStd        = courtageStd + amoStd
     const honReel       = courtageReel + soldeReel
-    const totalChAmoStd  = baseTTC + honStd + fraisComp
-    const totalChAmoReel = baseTTC + honReel + fraisComp
+    const totalChAmoStd  = baseTTC + honStd + totalFraisTable   // standard = brut (frais non déduits)
+    const totalChAmoReel = baseTTC + honReel + fraisComp        // votre tarif = net
     const tauxCombineStd  = COURTAGE_STANDARD + AMO_STANDARD
     const tauxCombineReel = tauxCourtage + tauxAmoReel
     const amoChildren = [
@@ -194,35 +202,32 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
         totalHon(pct(tauxCombineStd), honStd, 'ths'),
         totalChantier('TOTAL CHANTIER si AMO (tarif standard)', totalChAmoStd, { std: true }, 'tcs'),
       )
+      // Remises expliquant le passage standard → votre tarif (frais d'abord, puis honoraires).
+      if (remiseFraisConso > 0) amoChildren.push(ligneRemise('Remise commerciale sur frais de consultation', remiseFraisConso, VIOLET, 'remf'))
       if (courtageRemise) amoChildren.push(ligneRemise(`Remise commerciale sur honoraire courtage (${pct(COURTAGE_STANDARD - tauxCourtage)})`, courtageStd - courtageReel, BLEU, 'remc'))
       if (amoRemise)      amoChildren.push(ligneRemise(`Remise commerciale sur honoraire AMO (${pct(AMO_STANDARD - tauxAmo)})`, amoStd - soldeAmoReel, ORANGE, 'rema'))
       amoChildren.push(
         h(Text, { key: 'nr', style: S.niveau }, 'Votre tarif'),
-        ligneHon(`Acompte AMO (${pct(tauxCourtage)}) — à la signature des devis`, courtageReel, 'ar'),
+        // Acompte AMO NET (remise frais déjà annoncée en transition) → Total = somme des lignes.
+        ligneHon(`Acompte AMO (${pct(tauxCourtage)}) — à la signature des devis`, round2(courtageReel - remiseFraisConso), 'ar'),
         ligneHon(`Solde AMO (${pct(tauxAmoReel)}) — à l'avancement du chantier`, soldeReel, 'sr'),
-        totalHon(pct(tauxCombineReel), honReel, 'thr'),
+        totalHon(pct(tauxCombineReel), round2(honReel - remiseFraisConso), 'thr'),
         totalChantier('TOTAL CHANTIER si AMO', totalChAmoReel, { bg: ORANGE_FONCE }, 'tcr'),
       )
     } else {
       amoChildren.push(
         ligneHon(`Acompte AMO (${pct(tauxCourtage)}) — à la signature des devis`, courtageReel, 'ar'),
         ligneHon(`Solde AMO (${pct(tauxAmoReel)}) — à l'avancement du chantier`, soldeReel, 'sr'),
-        totalHon(pct(tauxCombineReel), honReel, 'thr'),
+        ...(remiseFraisConso > 0 ? [ligneRemise('Remise commerciale sur frais de consultation', remiseFraisConso, VIOLET, 'anf')] : []),
+        totalHon(pct(tauxCombineReel), round2(honReel - remiseFraisConso), 'thr'),
         totalChantier('TOTAL CHANTIER si AMO', totalChAmoReel, { bg: ORANGE_FONCE }, 'tcr'),
       )
     }
     blocAMO = h(View, { key: 'amo', style: S.blocA }, ...amoChildren)
   }
 
-  const fraisRemiseLine = fraisRembourse
-    ? h(View, { key: 'fr', style: [S.remiseRow, { marginBottom: 6 }] },
-        h(Text, { style: [S.remiseLabel, { color: VIOLET }] }, 'Remise commerciale sur frais de consultation'),
-        h(Text, { style: [S.remiseValue, { color: VIOLET }] }, '— ' + fmt(fraisTTC)))
-    : null
-
   return h(View, { style: S.section },
     h(Text, { key: 'title', style: S.sectionTitle }, 'Honoraires illiCO travaux'),
-    fraisRemiseLine,
     blocCourtage,
     blocAMO,
   )

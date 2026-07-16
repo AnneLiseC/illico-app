@@ -3,7 +3,7 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { calculateDossierFinance, calculateDevisFinance, getActiveDevis } from '../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance, getActiveDevis, calculateSoldeAmoReel } from '../lib/finance'
 import { KpiCard, Progress } from '../components/shared'
 import { calcStatut } from '../lib/dossiers'
 import ModaleChoixClient from '../components/ModaleChoixClient'
@@ -129,10 +129,17 @@ function computeCAMensuel(dossiers, annee) {
     const sfAmo      = suivi.find(s => s.type_echeance === 'solde_amo'           && s.statut_illico === 'recu')
     if (sfFrais    && nd.frais_statut !== 'offerts') add(sfFrais.date_paiement    || nd.date_signature_contrat, fin.frais.net)
     if (sfCourtage) add(sfCourtage.date_paiement || nd.date_signature_contrat, fin.honoraires.courtage.net)
-    if (sfAmo)      add(sfAmo.date_paiement, fin.honoraires.soldeAmo.net)
+    // Cohabitation solde AMO échelonné : Σ tranches (chacune à sa date) si présentes,
+    // sinon le gate statut_illico==='recu' actuel (branche else laissée verbatim).
+    const soldeAmoR = calculateSoldeAmoReel({ ...nd, suivi_financier: suivi })
+    if (soldeAmoR.hasTranches) {
+      for (const t of soldeAmoR.tranches) add(t.date_paiement, t.net)
+    } else if (sfAmo) {
+      add(sfAmo.date_paiement, fin.honoraires.soldeAmo.net)
+    }
     for (const dv of getActiveDevis(d)) {
       const artId     = dv.artisan?.id
-      const sfAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId && s.statut_illico === 'recu')
+      const sfAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id && s.statut_illico === 'recu')
       const sfFacture = suivi.find(s => s.type_echeance === 'facture_finale'  && s.artisan_id === artId && s.statut_illico === 'recu')
       const dvFin = calculateDevisFinance(dv, nd)
       if (sfAcompte)      add(sfAcompte.date_deblocage || sfAcompte.date_paiement, dvFin.netCom)

@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { archiverClient, desarchiverClient, supprimerClient } from '../lib/clients'
+import { archiverClient, desarchiverClient, supprimerClient, formatNomClient } from '../lib/clients'
 
 /* ── Inline SVG icons ── */
 function Svg({ size = 16, children }) {
@@ -113,7 +113,7 @@ export default function Clients() {
   })
 
   const clientsFiltres = clientsFiltresOnglet.filter(c =>
-    `${c.nom} ${c.prenom} ${c.email} ${c.adresse}`.toLowerCase()
+    `${c.nom} ${c.prenom} ${c.email} ${c.adresse} ${c.raison_sociale || ''}`.toLowerCase()
       .includes(recherche.toLowerCase())
   )
 
@@ -201,12 +201,7 @@ export default function Clients() {
                   <div style={{flex:1, minWidth:0}}>
                     {/* Nom */}
                     <div style={{fontSize:15, fontWeight:700, color:'var(--ink-900)'}} className="clip-1">
-                      {(client.nom || '').toUpperCase()} {client.prenom}
-                      {client.prenom2 && (
-                        client.nom2 && client.nom2.toLowerCase() !== (client.nom || '').toLowerCase()
-                          ? ` & ${client.nom2.toUpperCase()} ${client.prenom2}`
-                          : ` & ${client.prenom2}`
-                      )}
+                      {formatNomClient(client, { upper: true })}
                     </div>
                     {/* Badges */}
                     <div style={{display:'flex', gap:6, marginTop:6, flexWrap:'wrap', alignItems:'center'}}>

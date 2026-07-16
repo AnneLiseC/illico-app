@@ -160,6 +160,32 @@ export default function Planning() {
     init()
   }, [initialized, user?.id, profile?.id, router])
 
+  // Realtime : rafraîchit le planning quand rendez_vous / interventions_artisans
+  // changent en base (utilisateur, autre agente, ou sync cron Google/iCloud entrante),
+  // sans recharger la page. La RLS filtre déjà les lignes poussées (visibilité). On
+  // réutilise chargerTout() via une ref (pour ne pas recréer le canal à chaque render),
+  // débouncé à 500 ms : une rafale d'événements (ex. sync cron multi-lignes) ne déclenche
+  // qu'UN seul re-fetch. Même pattern que la messagerie (removeChannel au cleanup).
+  const chargerToutRef = useRef(chargerTout)
+  chargerToutRef.current = chargerTout
+  const realtimeDebounceRef = useRef(null)
+  useEffect(() => {
+    if (!profile?.id) return
+    const scheduleRefetch = () => {
+      if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current)
+      realtimeDebounceRef.current = setTimeout(() => { chargerToutRef.current() }, 500)
+    }
+    const channel = supabase
+      .channel('planning')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rendez_vous' }, scheduleRefetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interventions_artisans' }, scheduleRefetch)
+      .subscribe()
+    return () => {
+      if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current)
+      supabase.removeChannel(channel)
+    }
+  }, [profile?.id])
+
   const couleurArtisan = useCallback((artisanId) => {
     const idx = artisans.findIndex(a => a.id === artisanId)
     return ARTISAN_COLORS[idx % ARTISAN_COLORS.length] || COLORS.slate

@@ -7,7 +7,7 @@ import { formatNomClient } from '../../lib/clients'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement, detecterCategorie } from '../../lib/dossiers'
-import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
 import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
@@ -149,11 +149,39 @@ function LieuPicker({ value, onChange }) {
   )
 }
 
-function EcheanceRow({ label, sub, statut, date, variant, onToggle, fmtDateFn, lock, lockMsg }) {
+// Mini-éditeur de date partagé : <input date> pré-rempli + ✓/✕. Réutilisé par
+// EcheanceRow (nouveau contrat onSetPaid) et par le bouton pill de la carte devis.
+function DateConfirm({ initial, onConfirm, onCancel }) {
+  const [d, setD] = useState(initial)
+  return (
+    <div style={{display:'flex', gap:4, alignItems:'center', justifyContent:'flex-end'}}>
+      <input type="date" value={d} onChange={e => setD(e.target.value)} autoFocus
+        style={{height:28, fontSize:11, padding:'0 6px', border:'1px solid var(--ink-300)', borderRadius:6}} />
+      <button type="button" onClick={() => { if (d) onConfirm(d) }} title="Valider la date"
+        style={{width:24, height:24, borderRadius:6, border:'none', cursor:'pointer', background:'#16a34a', color:'#fff', fontSize:12, display:'grid', placeItems:'center'}}>✓</button>
+      <button type="button" onClick={onCancel} title="Annuler"
+        style={{width:24, height:24, borderRadius:6, border:'1px solid var(--ink-300)', cursor:'pointer', background:'#fff', color:'var(--ink-500)', fontSize:11, display:'grid', placeItems:'center'}}>✕</button>
+    </div>
+  )
+}
+
+// Contrat DATÉ : onSetPaid(date) + onUnsetPaid(). Cocher ouvre un DateConfirm pré-rempli
+// à today ; cliquer une date déjà posée le rouvre pour la corriger ; décocher efface.
+// lock ne bloque QUE le décochage (l'état), JAMAIS l'édition de date.
+function EcheanceRow({ label, sub, statut, date, variant, onSetPaid, onUnsetPaid, fmtDateFn, lock, lockMsg }) {
+  const [editing, setEditing] = useState(false)
   const isRegle = statut === 'regle' || statut === 'recu'
   const isIllico = variant === 'illico'
-  // lock : case verrouillée (dé-cochage interdit). onToggle reste ignoré tant que lock=true.
-  const canClick = Boolean(onToggle) && !lock
+  const today = new Date().toISOString().slice(0, 10)
+  // Cochable si non réglé (→ éditeur), décochable seulement hors lock.
+  const canClick = !(isRegle && lock)
+
+  const onCheckbox = () => {
+    if (isRegle) { if (!lock) onUnsetPaid && onUnsetPaid() }
+    else setEditing(true)
+  }
+  const dateEditable = isRegle  // corriger une date déjà posée (lock non bloquant)
+
   return (
     <div style={{
       display:'grid', gridTemplateColumns:'auto 1fr auto auto', gap:14, alignItems:'center',
@@ -162,7 +190,7 @@ function EcheanceRow({ label, sub, statut, date, variant, onToggle, fmtDateFn, l
     }}>
       <label title={lock ? lockMsg : undefined}
         style={{display:'flex', alignItems:'center', gap:8, cursor: canClick ? 'pointer' : (lock ? 'not-allowed' : 'default')}}>
-        <input type="checkbox" checked={isRegle} onChange={() => { if (lock) return; onToggle && onToggle() }} readOnly={!canClick}
+        <input type="checkbox" checked={isRegle} onChange={onCheckbox} readOnly={!canClick}
           style={{accentColor: isIllico ? '#6366f1' : 'var(--brand-500)', width:18, height:18, cursor: canClick ? 'pointer' : (lock ? 'not-allowed' : 'default')}} />
       </label>
       <div style={{minWidth:0}}>
@@ -174,14 +202,71 @@ function EcheanceRow({ label, sub, statut, date, variant, onToggle, fmtDateFn, l
           </div>
         )}
       </div>
-      <div style={{textAlign:'right', minWidth:80}}>
-        {isRegle
-          ? <Badge tone="ok">Réglé</Badge>
-          : <Badge tone="warn">En attente</Badge>}
-      </div>
-      <div className="tnum" style={{fontSize:11.5, color:'var(--ink-400)', minWidth:60, textAlign:'right'}}>
-        {date ? (fmtDateFn ? fmtDateFn(date) : new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' })) : '—'}
-      </div>
+      {editing ? (
+        <div style={{gridColumn:'3 / 5'}}>
+          <DateConfirm
+            initial={isRegle && date ? String(date).slice(0, 10) : today}
+            onConfirm={d => { setEditing(false); onSetPaid(d) }}
+            onCancel={() => setEditing(false)}
+          />
+        </div>
+      ) : (
+        <>
+          <div style={{textAlign:'right', minWidth:80}}>
+            {isRegle
+              ? <Badge tone="ok">Réglé</Badge>
+              : <Badge tone="warn">En attente</Badge>}
+          </div>
+          <div className="tnum" onClick={dateEditable ? () => setEditing(true) : undefined}
+            title={dateEditable ? 'Modifier la date' : undefined}
+            style={{fontSize:11.5, color:'var(--ink-400)', minWidth:60, textAlign:'right',
+              cursor: dateEditable ? 'pointer' : 'default', textDecoration: dateEditable ? 'underline dotted' : 'none'}}>
+            {date ? (fmtDateFn ? fmtDateFn(date) : new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' })) : '—'}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Pill « Acompte client » de la carte devis (onglet Devis). Même mode saisie que
+// EcheanceRow via DateConfirm : cocher demande la date (pré-remplie today), la date
+// posée est corrigeable au clic. Composant à part (pas une IIFE) car il porte un état
+// `editing` — hooks interdits dans le .map des devis.
+function AcompteClientPill({ acomptePaye, dateAcompte, onSetPaid, onUnsetPaid, toneBg, toneFg }) {
+  const [editing, setEditing] = useState(false)
+  const today = new Date().toISOString().slice(0, 10)
+  return (
+    <div className="devis-kv" style={{alignItems:'center'}}>
+      {editing ? (
+        <>
+          <span>Acompte client</span>
+          <DateConfirm
+            initial={acomptePaye && dateAcompte ? String(dateAcompte).slice(0, 10) : today}
+            onConfirm={d => { setEditing(false); onSetPaid(d) }}
+            onCancel={() => setEditing(false)}
+          />
+        </>
+      ) : (
+        <>
+          <span>
+            Acompte client {acomptePaye && dateAcompte && (
+              <span onClick={() => setEditing(true)} title="Modifier la date"
+                style={{color:'#15803d', fontWeight:600, cursor:'pointer', textDecoration:'underline dotted'}}>
+                · {new Date(dateAcompte).toLocaleDateString('fr-FR')}
+              </span>
+            )}
+          </span>
+          <button onClick={() => { if (acomptePaye) onUnsetPaid(); else setEditing(true) }}
+            style={{
+              fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
+              background: acomptePaye ? toneBg.ok : toneBg.warn,
+              color: acomptePaye ? toneFg.ok : toneFg.warn,
+            }}>
+            {acomptePaye ? '✓ Payé' : '⏳ En attente'}
+          </button>
+        </>
+      )}
     </div>
   )
 }
@@ -674,6 +759,37 @@ async function signerPhotos(rows) {
   return list.map(p => ({ ...p, url_signee: parChemin.get(p.url) || '' }))
 }
 
+// Redimensionne une image (max `maxSide` px sur le plus grand côté) et la ré-encode en
+// JPEG. Retourne un Blob (uploadé dans Storage, plus de base64 dans le body /api/cr).
+// L'API Claude retaille de toute façon à ~1568 px → aucune perte utile pour l'IA ; la
+// compression sert désormais à réduire le stockage et accélérer l'upload.
+function compressImageToBlob(file, maxSide = 1600, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height))
+        const w = Math.max(1, Math.round(img.width * scale))
+        const h = Math.max(1, Math.round(img.height * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+        canvas.toBlob(
+          blob => (blob ? resolve(blob) : reject(new Error('compression échouée'))),
+          'image/jpeg',
+          quality
+        )
+      }
+      img.onerror = reject
+      img.src = reader.result
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function FicheChantier({ params }) {
   const { id } = use(params)
   const [dossier, setDossier] = useState(null)
@@ -726,10 +842,13 @@ export default function FicheChantier({ params }) {
   const [crManuelModal, setCrManuelModal] = useState(false)
   const [crManuelForm, setCrManuelForm] = useState({ type_visite: '', date_visite: '', contenu: '' })
   const [crManuelSaving, setCrManuelSaving] = useState(false)
+  const [crEditId, setCrEditId] = useState(null) // null = création ; sinon id du CR édité
   const [crEtape, setCrEtape] = useState(1) // 1=config, 2=notes, 3=relecture
   const [crForm, setCrForm] = useState({ type_visite: '', date_visite: '', intervenants: '' })
   const [crNotes, setCrNotes] = useState('')
-  const [crImages, setCrImages] = useState([]) // base64
+  const [crImages, setCrImages] = useState([]) // [{ path, url_signee }] — photos uploadées dans Storage (chantiers/{id}/cr/)
+  const [crPhotosUp, setCrPhotosUp] = useState(false) // upload de photos CR en cours
+  const [crPhotosDossier, setCrPhotosDossier] = useState([]) // paths (photos.url) de photos EXISTANTES du dossier — jamais supprimées de Storage
   const [crVocal, setCrVocal] = useState(false)
   const [crVocalTexte, setCrVocalTexte] = useState('')
   const [crGenerating, setCrGenerating] = useState(false)
@@ -758,6 +877,9 @@ export default function FicheChantier({ params }) {
   const [uploadingContrat, setUploadingContrat] = useState(false)
   const [docViewer, setDocViewer] = useState(null) // { url, nom }
   const [suiviFinancier, setSuiviFinancier] = useState([])
+  // Solde AMO échelonné (UI) : panneau déplié + mini-formulaire d'ajout de tranche.
+  const [soldeAmoDeplie, setSoldeAmoDeplie] = useState(false)
+  const [soldeAmoForm, setSoldeAmoForm] = useState({ montant: '', date: '' })
   const router = useRouter()
 
   useEffect(() => {
@@ -1362,9 +1484,11 @@ export default function FicheChantier({ params }) {
       if (nouvelleFacture.statut === 'paye') {
         const libelleNorm = (nouvelleFacture.libelle === 'Autre' ? nouvelleFacture.libelle_autre : nouvelleFacture.libelle || '').toLowerCase()
         const typeEch = libelleNorm.includes('acompte') ? 'acompte_artisan' : 'facture_finale'
-        await majSuiviAvecArtisan(typeEch, artisanId, 'statut_client', 'regle')
+        // acompte_artisan = clé par devis ; facture_finale = cas b (sans devis).
+        const devisIdSuivi = typeEch === 'acompte_artisan' ? devisId : null
+        await majSuiviAvecArtisan(typeEch, artisanId, 'statut_client', 'regle', devisIdSuivi)
         if (nouvelleFacture.date_paiement) {
-          await majSuiviAvecArtisan(typeEch, artisanId, 'date_paiement', nouvelleFacture.date_paiement)
+          await majSuiviAvecArtisan(typeEch, artisanId, 'date_paiement', nouvelleFacture.date_paiement, devisIdSuivi)
         }
       }
     }
@@ -1411,9 +1535,11 @@ export default function FicheChantier({ params }) {
       const libelle = (facture.libelle || '').toLowerCase()
       const typeEch = libelle.includes('acompte') ? 'acompte_artisan' : 'facture_finale'
       const statutSuivi = newStatut === 'paye' ? 'regle' : 'en_attente'
-      await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'statut_client', statutSuivi)
+      // acompte_artisan = clé par devis (facture.devis_id) ; facture_finale = cas b.
+      const devisIdSuivi = typeEch === 'acompte_artisan' ? facture.devis_id : null
+      await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'statut_client', statutSuivi, devisIdSuivi)
       if (newStatut === 'paye' && datePaye) {
-        await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'date_paiement', datePaye)
+        await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'date_paiement', datePaye, devisIdSuivi)
       }
     }
   }
@@ -1710,22 +1836,50 @@ export default function FicheChantier({ params }) {
     else setErreur('Impossible d\'ouvrir le document')
   }
 
+  // Ouvre la modale manuelle pré-remplie sur un CR existant (édition du brouillon
+  // ou d'un CR publié). Fonctionne pour un CR manuel comme pour un CR généré par IA :
+  // les deux sont stockés dans comptes_rendus avec contenu_final (markdown).
+  const editerCR = (cr) => {
+    setCrEditId(cr.id)
+    setCrManuelForm({
+      type_visite: cr.type_visite || '',
+      date_visite: cr.date_visite || '',
+      contenu: cr.contenu_final || '',
+    })
+    setCrManuelModal(true)
+  }
+
+  const fermerCRManuel = () => {
+    setCrManuelModal(false)
+    setCrEditId(null)
+    setCrManuelForm({ type_visite: '', date_visite: '', contenu: '' })
+  }
+
   const sauvegarderCRManuel = async (publier = false) => {
     if (!crManuelForm.contenu.trim()) return
     setCrManuelSaving(true)
-    const { error: insertErr } = await supabase.from('comptes_rendus').insert({
-      dossier_id: id,
-      type_visite: crManuelForm.type_visite || null,
-      date_visite: crManuelForm.date_visite || null,
-      contenu_final: crManuelForm.contenu,
-      valide: publier,
-    })
-    // Échec de l'insert : on garde la saisie (modale ouverte) pour réessayer.
-    if (insertErr) { setErreur('Erreur : ' + insertErr.message); setCrManuelSaving(false); return }
+    // Édition : on met à jour le CR existant. Création : on insère.
+    const { error: saveErr } = crEditId
+      ? await supabase.from('comptes_rendus').update({
+          type_visite: crManuelForm.type_visite || null,
+          date_visite: crManuelForm.date_visite || null,
+          contenu_final: crManuelForm.contenu,
+          valide: publier,
+        }).eq('id', crEditId)
+      : await supabase.from('comptes_rendus').insert({
+          dossier_id: id,
+          type_visite: crManuelForm.type_visite || null,
+          date_visite: crManuelForm.date_visite || null,
+          contenu_final: crManuelForm.contenu,
+          valide: publier,
+        })
+    // Échec : on garde la saisie (modale ouverte) pour réessayer.
+    if (saveErr) { setErreur('Erreur : ' + saveErr.message); setCrManuelSaving(false); return }
 
     const { data } = await supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
     setComptesRendus(data || [])
     setCrManuelModal(false)
+    setCrEditId(null)
     setCrManuelForm({ type_visite: '', date_visite: '', contenu: '' })
     setCrManuelSaving(false)
     setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
@@ -1734,8 +1888,9 @@ export default function FicheChantier({ params }) {
   const genererCRAvecIA = async () => {
     if (!crForm.type_visite) return
     const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('\n\n')
-    if (!notesCombinees.trim() && crImages.length === 0) return
+    if (!notesCombinees.trim() && crImages.length === 0 && crPhotosDossier.length === 0) return
     setCrGenerating(true)
+    setErreur('')
     try {
       const res = await fetch('/api/cr', {
         method: 'POST',
@@ -1746,15 +1901,25 @@ export default function FicheChantier({ params }) {
           dateVisite: crForm.date_visite,
           intervenants: crForm.intervenants ? crForm.intervenants.split(',').map(s => s.trim()).filter(Boolean) : [],
           notesBrutes: notesCombinees,
-          imagesBase64: crImages,
+          // Photos ordi (uploadées) + photos existantes du dossier sélectionnées.
+          photosPaths: [...crImages.map(im => im.path), ...crPhotosDossier],
           docsPaths: crDocsSelectionnes.map(d => ({ path: d.path, type_mime: d.type_mime, nom: d.nom })),
         }),
       })
+      // Vérifier res.ok AVANT res.json() : une erreur serveur peut renvoyer du texte/HTML,
+      // pas du JSON → res.json() lèverait un SyntaxError qui masque la vraie erreur.
+      if (!res.ok) {
+        const brut = await res.text().catch(() => '')
+        setErreur(`Erreur génération CR (${res.status}) : ${(brut.slice(0, 200) || 'réessayez plus tard')}`)
+        return
+      }
       const data = await res.json()
       if (data.error) { setErreur('Erreur IA : ' + data.error); return }
       setCrGenere(data.cr)
       setCrSectionsEditees(data.cr.sections.map(s => ({ ...s })))
       setCrEtape(3)
+    } catch (e) {
+      setErreur('Erreur réseau lors de la génération du CR : ' + (e?.message || 'réessayez'))
     } finally {
       setCrGenerating(false)
     }
@@ -1771,6 +1936,8 @@ export default function FicheChantier({ params }) {
       date_visite: crForm.date_visite || null,
       notes_brutes: notesCombinees || null,
       contenu_final: contenuFinal,
+      photos_paths: [...crImages.map(im => im.path), ...crPhotosDossier], // TOUT ce qu'a analysé l'IA (traçabilité)
+      photos_jointes: crPhotosDossier, // affichées dans le PDF — photos du chantier UNIQUEMENT, jamais les photos ordi
       valide: publier,
     })
     // Échec de l'insert : on garde la modale ouverte (sections éditées conservées).
@@ -1782,6 +1949,7 @@ export default function FicheChantier({ params }) {
     setCrForm({ type_visite: '', date_visite: '', intervenants: '' })
     setCrNotes('')
     setCrImages([])
+    setCrPhotosDossier([]) // vidage simple : ce sont des photos du dossier, jamais de remove Storage
     setCrVocalTexte('')
     setCrGenere(null)
     setCrSectionsEditees([])
@@ -1866,6 +2034,7 @@ export default function FicheChantier({ params }) {
 
   // ── MESSAGES AGENTE → CLIENT (schéma : messages avec auteur_role + lu_agence) ──
   const [onglet, setOnglet] = useState('apercu')
+  const [recapMode, setRecapMode] = useState('previsionnel') // Récapitulatif : bascule visuelle prévisionnel/signé
   const [reponseMsg, setReponseMsg] = useState('')
   const [sendingMsg, setSendingMsg] = useState(false)
   const [editingMsgId, setEditingMsgId] = useState(null)
@@ -2036,7 +2205,10 @@ export default function FicheChantier({ params }) {
   const totalDevisTTCRecus = devisRecus.reduce((s, d) => s + (d.montant_ttc || 0), 0)
   const totalDevisHTRecus  = devisRecus.reduce((s, d) => s + (d.montant_ht  || 0), 0)
   const fraisTTC = dossier?.frais_consultation || 0
-  const fraisInclus = fraisTTC > 0 && dossier?.frais_statut !== 'offerts'
+  // Frais RÉELLEMENT dans le total chantier (= reste à payer) : exclut 'offerts' ET
+  // 'rembourse' (remboursé = déjà déduit du courtage par finance.js). Aligne l'écran
+  // sur le PDF (RecapHonoraires.js, fraisInTable).
+  const fraisDansTotal = fraisTTC > 0 && dossier?.frais_statut !== 'offerts' && dossier?.frais_statut !== 'rembourse'
   const tauxCourtage = (dossier?.taux_courtage ?? COURTAGE_STANDARD)
   const tauxCourtagePct = parseFloat((tauxCourtage * 100).toFixed(1))
   const tauxAmo = ((dossier?.honoraires_amo_taux ?? AMO_STANDARD * 100) / 100)
@@ -2066,20 +2238,24 @@ export default function FicheChantier({ params }) {
   // Compteurs acomptes / factures (basés sur statut_illico='recu')
   const acomptesTotal  = devisSignes.length
   const acomptesRecus  = devisSignes.filter(dv => suiviFinancier.find(x =>
-    x.type_echeance === 'acompte_artisan' && x.artisan_id === dv.artisan_id && x.statut_illico === 'recu')).length
+    x.type_echeance === 'acompte_artisan' && x.devis_id === dv.id && x.statut_illico === 'recu')).length
   const facturesTotal  = devisSignes.length
   const facturesPayees = devisSignes.filter(dv => suiviFinancier.find(x =>
     x.type_echeance === 'facture_finale' && x.artisan_id === dv.artisan_id && x.statut_illico === 'recu')).length
 
-  const majSuiviAvecArtisan = async (type, artisanId, champ, valeur) => {
-    const { data: existing, error: selectErr } = await supabase
-      .from('suivi_financier').select('id')
+  // Clé d'unicité : acompte_artisan est désormais PAR DEVIS (devisId fourni) ; les
+  // échéances sans devis (facture_finale, apporteur_agente) restent PAR ARTISAN
+  // (devisId null → devis_id IS NULL, cas b). Sans ce distinguo, maybeSingle crashe
+  // « multiple rows » sur un artisan à plusieurs devis débloqués.
+  const majSuiviAvecArtisan = async (type, artisanId, champ, valeur, devisId = null) => {
+    let q = supabase.from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', type).eq('artisan_id', artisanId)
-      .maybeSingle()
+    q = devisId ? q.eq('devis_id', devisId) : q.is('devis_id', null)
+    const { data: existing, error: selectErr } = await q.maybeSingle()
     if (selectErr) { setErreur('Erreur : ' + selectErr.message); return false }
     const { error } = existing
       ? await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
-      : await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: type, artisan_id: artisanId, [champ]: valeur })
+      : await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: type, artisan_id: artisanId, devis_id: devisId, [champ]: valeur })
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
     if (error) { setErreur('Erreur : ' + error.message); return false }
@@ -2087,17 +2263,19 @@ export default function FicheChantier({ params }) {
   }
 
   // Quand acompte_artisan est togglé côté suivi, propager aux factures_artisans acompte de cet artisan
-  const setAcompteArtisanPaye = async (artisanId, paye, date) => {
+  const setAcompteArtisanPaye = async (artisanId, paye, date, devisId = null) => {
     const datePaye = paye ? (date || new Date().toISOString().slice(0, 10)) : null
     const statutSuivi = paye ? 'regle' : 'en_attente'
-    await majSuiviAvecArtisan('acompte_artisan', artisanId, 'statut_client', statutSuivi)
+    await majSuiviAvecArtisan('acompte_artisan', artisanId, 'statut_client', statutSuivi, devisId)
     // Date du règlement client : posée au coche, effacée au décoche (datePaye=null).
     // N'affecte que date_paiement (l'événement déblocage statut_illico/date_deblocage
     // sur la même ligne reste intact).
-    await majSuiviAvecArtisan('acompte_artisan', artisanId, 'date_paiement', datePaye)
-    // Synchroniser les factures_artisans dont le libellé contient "acompte" pour ce devis
+    await majSuiviAvecArtisan('acompte_artisan', artisanId, 'date_paiement', datePaye, devisId)
+    // Synchroniser les factures_artisans dont le libellé contient "acompte". Scopé AU
+    // DEVIS si fourni → ne marque pas l'acompte d'un autre lot du même artisan.
     const facturesAcompte = factures.filter(f =>
       f.artisan_id === artisanId &&
+      (devisId ? f.devis_id === devisId : true) &&
       (f.libelle || '').toLowerCase().includes('acompte')
     )
     for (const f of facturesAcompte) {
@@ -2121,20 +2299,21 @@ export default function FicheChantier({ params }) {
   // un appel (sans passer par majSuiviAvecArtisan générique → factures non affectées).
   // PAS de DELETE : la ligne est partagée avec l'acompte client (statut_client/date_paiement),
   // qui reste intact. date_deblocage est de type `date` → AAAA-MM-JJ.
-  const setDeblocagePaye = async (artisanId, recu) => {
-    const { data: existing, error: selectErr } = await supabase
-      .from('suivi_financier').select('id')
+  const setDeblocagePaye = async (artisanId, recu, devisId = null, date = null) => {
+    let q = supabase.from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', 'acompte_artisan').eq('artisan_id', artisanId)
-      .maybeSingle()
+    q = devisId ? q.eq('devis_id', devisId) : q.is('devis_id', null)
+    const { data: existing, error: selectErr } = await q.maybeSingle()
     if (selectErr) { setErreur('Erreur : ' + selectErr.message); return }
+    const dateEffective = date || new Date().toISOString().slice(0, 10)
     const payload = recu
-      ? { statut_illico: 'recu', date_deblocage: new Date().toISOString().slice(0, 10) }
+      ? { statut_illico: 'recu', date_deblocage: dateEffective }
       : { statut_illico: 'en_attente', date_deblocage: null }
     let error = null
     if (existing) {
       ({ error } = await supabase.from('suivi_financier').update(payload).eq('id', existing.id))
     } else if (recu) {
-      ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'acompte_artisan', artisan_id: artisanId, ...payload }))
+      ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'acompte_artisan', artisan_id: artisanId, devis_id: devisId, ...payload }))
     }
     if (error) { setErreur('Erreur : ' + error.message); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
@@ -2147,7 +2326,7 @@ export default function FicheChantier({ params }) {
   // cohérent avec le toggle honoraires). Les 2 modes (par_devis: artisan_id renseigné /
   // total: artisan_id NULL) passent par le même chemin. Montant non écrit (F2 le calcule
   // via finance.js). date_paiement est de type `date` → AAAA-MM-JJ.
-  const setApporteurPaye = async (artisanId, paye) => {
+  const setApporteurPaye = async (artisanId, paye, date = null) => {
     let q = supabase.from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', 'apporteur_agente')
     q = artisanId === null ? q.is('artisan_id', null) : q.eq('artisan_id', artisanId)
@@ -2156,11 +2335,11 @@ export default function FicheChantier({ params }) {
 
     let error = null
     if (paye) {
-      const today = new Date().toISOString().slice(0, 10)
+      const dateEffective = date || new Date().toISOString().slice(0, 10)
       if (existing) {
-        ({ error } = await supabase.from('suivi_financier').update({ statut_ctp: 'rembourse', date_paiement: today }).eq('id', existing.id))
+        ({ error } = await supabase.from('suivi_financier').update({ statut_ctp: 'rembourse', date_paiement: dateEffective }).eq('id', existing.id))
       } else {
-        ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'apporteur_agente', artisan_id: artisanId, statut_ctp: 'rembourse', date_paiement: today }))
+        ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'apporteur_agente', artisan_id: artisanId, statut_ctp: 'rembourse', date_paiement: dateEffective }))
       }
     } else if (existing) {
       ({ error } = await supabase.from('suivi_financier').delete().eq('id', existing.id))
@@ -2170,7 +2349,7 @@ export default function FicheChantier({ params }) {
     setSuiviFinancier(data || [])
   }
 
-  const majSuiviChantier = async (type, montant, valeur) => {
+  const majSuiviChantier = async (type, montant, valeur, date = null) => {
     // Toggle d'une échéance honoraire : coche = réglé + date du jour, décoche = suppression.
     // Sur AMO, honoraires_courtage et acompte_amo représentent le MÊME encaissement
     // (la part courtage, vue AMO) → togglés ensemble. La fonction Postgres
@@ -2181,13 +2360,13 @@ export default function FicheChantier({ params }) {
       if (type === 'honoraires_courtage') types.push('acompte_amo')
       else if (type === 'acompte_amo') types.push('honoraires_courtage')
     }
-    const today = new Date().toISOString().slice(0, 10)
+    const dateEffective = date || new Date().toISOString().slice(0, 10)
     const { error } = await supabase.rpc('suivi_toggle_honoraires', {
       p_dossier_id: id,
       p_types: types,
       p_montant: montant,
       p_regle: valeur === 'regle',
-      p_today: today,
+      p_today: dateEffective,
     })
     if (error) setErreur('Erreur : ' + error.message)
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
@@ -2197,12 +2376,40 @@ export default function FicheChantier({ params }) {
   // TS-2 : marquer une ligne courtage TS payée/non-payée PAR ID (jamais via
   // suivi_toggle_honoraires, qui fige le montant à l'INSERT). Une ligne réglée est
   // close ; la décocher la rouvre (redevient absorbable par le recompute au prochain TS).
-  const setCourtageTSPaye = async (ligne, paye) => {
-    const today = new Date().toISOString().slice(0, 10)
+  const setCourtageTSPaye = async (ligne, paye, date = null) => {
+    const dateEffective = date || new Date().toISOString().slice(0, 10)
     const payload = paye
-      ? { statut_client: 'regle', date_paiement: today }
+      ? { statut_client: 'regle', date_paiement: dateEffective }
       : { statut_client: 'en_attente', date_paiement: null }
     const { error } = await supabase.from('suivi_financier').update(payload).eq('id', ligne.id)
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(data || [])
+  }
+
+  // Solde AMO échelonné — ajoute une tranche encaissée (montant TTC libre + date).
+  // À la 1ʳᵉ tranche (c2), neutralise le conteneur solde_amo resté éventuellement
+  // 'regle' → une suppression ultérieure de toutes les tranches ne repasserait pas
+  // le solde à « payé d'un coup ». RPC lot 1 ; rafraîchissement = pattern existant.
+  const addSoldeAmoPaiement = async (montant, date) => {
+    const m = parseFloat(String(montant).replace(',', '.'))
+    if (!Number.isFinite(m) || m <= 0) { setErreur('Montant invalide'); return }
+    const dejaDesTranches = suiviFinancier.some(s => s.type_echeance === 'solde_amo_paiement')
+    const { error } = await supabase.rpc('solde_amo_paiement_add', {
+      p_dossier_id: id, p_montant: m, p_date: date || new Date().toISOString().slice(0, 10),
+    })
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (!dejaDesTranches) {
+      await majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'en_attente')
+    }
+    const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(data || [])
+    setSoldeAmoForm({ montant: '', date: '' })
+  }
+
+  // Solde AMO échelonné — supprime une tranche par id (RPC lot 1).
+  const deleteSoldeAmoPaiement = async (rowId) => {
+    const { error } = await supabase.rpc('solde_amo_paiement_delete', { p_id: rowId })
     if (error) { setErreur('Erreur : ' + error.message); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
@@ -3047,109 +3254,6 @@ export default function FicheChantier({ params }) {
       {onglet === 'devis' && (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
-        {/* Honoraires client (restylé tokens) */}
-        {['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCRecus > 0 && (
-          <div className="card" style={{padding:0, overflow:'hidden'}}>
-            <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
-              <h2 className="page" style={{fontSize:16}}>Honoraires client</h2>
-              <div className="eyebrow" style={{marginTop:4}}>
-                Calculés sur <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(finDossier.honorairesPrevi.totalDevisTTCRecus)}</span> TTC (devis reçus + signés)
-              </div>
-            </div>
-            <div style={{padding:16, display:'flex', flexDirection:'column', gap:12}}>
-
-              {/* Bloc Honoraires courtage */}
-              <div style={{border:'1px solid var(--ink-200)', borderRadius:10, padding:14}}>
-                <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:10, flexWrap:'wrap'}}>
-                  <div style={{minWidth:0}}>
-                    <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>
-                      Honoraires courtage <span style={{color:'var(--brand-800)'}}>({tauxCourtagePct}%)</span>
-                    </div>
-                    <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:3}}>
-                      {tauxCourtagePct}% × <span className="tnum">{fmt(finDossier.honorairesPrevi.totalDevisTTCRecus)}</span> TTC · Échéance 48h après signature devis
-                    </div>
-                    {dossier.frais_statut === 'rembourse' && fraisTTC > 0 && (
-                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:3}}>
-                        dont frais consultation déduits : −{fmt(fraisTTC)}
-                      </div>
-                    )}
-                  </div>
-                  <span className="tnum" style={{fontSize:17, fontWeight:800, color:'var(--ink-900)', letterSpacing:-0.01}}>{fmt(honorairesCourtagePrev)}</span>
-                </div>
-                <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
-                  <div style={{display:'flex', alignItems:'center', gap:6}}>
-                    <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux courtage</label>
-                    <input
-                      type="number" step="0.1" min="0" max="20"
-                      value={(dossier.taux_courtage ?? COURTAGE_STANDARD) * 100}
-                      onFocus={() => { tauxAvantEditRef.current.taux_courtage = dossier.taux_courtage }}
-                      onChange={e => set('taux_courtage', parseFloat(e.target.value || 0) / 100)}
-                      onBlur={e => persistTaux('taux_courtage', parseFloat(e.target.value || 0) / 100)}
-                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                      className="input"
-                      style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
-                    />
-                    <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bloc Honoraires AMO (typologie AMO uniquement) */}
-              {dossier.typologie === 'amo' && (
-                <div style={{border:'1px solid var(--brand-200)', borderRadius:10, padding:14, background:'rgba(0,148,212,0.04)'}}>
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:10, flexWrap:'wrap'}}>
-                    <div style={{minWidth:0}}>
-                      <div style={{fontSize:13.5, fontWeight:700, color:'var(--brand-900)'}}>
-                        Honoraires AMO <span style={{color:'var(--brand-700)'}}>({parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)</span>
-                      </div>
-                      <div style={{fontSize:11.5, color:'var(--brand-700)', marginTop:3}}>
-                        {tauxCourtagePct}% courtage + {tauxAmoPct}% AMO × <span className="tnum">{fmt(finDossier.honorairesPrevi.totalDevisTTCRecus)}</span> TTC
-                      </div>
-                      {dossier.frais_statut === 'rembourse' && fraisTTC > 0 && (
-                        <div style={{fontSize:11.5, color:'var(--brand-700)', marginTop:3}}>
-                          dont frais consultation déduits : −{fmt(fraisTTC)}
-                        </div>
-                      )}
-                    </div>
-                    <span className="tnum" style={{fontSize:17, fontWeight:800, color:'var(--brand-900)', letterSpacing:-0.01}}>{fmt(honorairesAMOPrev)}</span>
-                  </div>
-
-                  <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap', marginBottom:12}}>
-                    <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux AMO</label>
-                    <input
-                      type="number" step="0.1" min="0" max="20"
-                      value={dossier.honoraires_amo_taux ?? AMO_STANDARD * 100}
-                      onFocus={() => { tauxAvantEditRef.current.honoraires_amo_taux = dossier.honoraires_amo_taux }}
-                      onChange={e => set('honoraires_amo_taux', parseFloat(e.target.value || 0))}
-                      onBlur={e => persistTaux('honoraires_amo_taux', parseFloat(e.target.value || 0))}
-                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                      className="input"
-                      style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
-                    />
-                    <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
-                  </div>
-
-                  <div style={{display:'flex', flexDirection:'column', gap:8}}>
-                    <div style={{background:'#fff', borderRadius:8, padding:'10px 12px', border:'1px solid var(--brand-100)'}}>
-                      <div style={{fontSize:12, fontWeight:700, color:'var(--brand-800)'}}>
-                        Acompte AMO <span style={{color:'var(--brand-700)'}}>({tauxCourtagePct}%)</span> · <span className="tnum" style={{color:'var(--ink-900)'}}>{fmt(honorairesCourtagePrev)}</span>
-                      </div>
-                      <div style={{fontSize:10.5, color:'var(--brand-700)', marginTop:2}}>Signature devis</div>
-                    </div>
-
-                    <div style={{background:'#fff', borderRadius:8, padding:'10px 12px', border:'1px solid var(--brand-100)'}}>
-                      <div style={{fontSize:12, fontWeight:700, color:'var(--brand-800)'}}>
-                        Solde AMO <span style={{color:'var(--brand-700)'}}>({tauxAmoPct}%)</span> · <span className="tnum" style={{color:'var(--ink-900)'}}>{fmt(honorairesAMOPrev - honorairesCourtagePrev)}</span>
-                      </div>
-                      <div style={{fontSize:10.5, color:'var(--brand-700)', marginTop:2}}>Fin de chantier</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Devis artisans */}
         <div className="card" style={{padding:0, overflow:'hidden'}}>
           <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)', display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -3181,69 +3285,192 @@ export default function FicheChantier({ params }) {
                 return (
                   <div key={d.id} style={{padding:'18px 22px', borderTop: idx === 0 ? 'none' : '1px solid var(--ink-100)'}}>
 
-                    {/* Header maquette : avatar | info+stats | badge | actions */}
-                    <div style={{display:'grid', gridTemplateColumns:'auto 1fr auto auto', gap:14, alignItems:'flex-start'}}>
-                      <div style={{width:40, height:40, borderRadius:10, background:'var(--brand-50)', color:'var(--brand-800)', display:'grid', placeItems:'center', flex:'0 0 40px'}}>
-                        <HammerIcon/>
-                      </div>
-                      <div style={{minWidth:0}}>
-                        <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
-                          <span style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>{d.artisan?.entreprise || '—'}</span>
-                          {d.artisan?.metier && <span style={{fontSize:11.5, color:'var(--ink-500)'}}>· {d.artisan.metier}</span>}
-                          {d.notes && <span className="clip-1" style={{fontSize:12, color:'var(--ink-500)', fontStyle:'italic', minWidth:0, flex:'1 1 auto'}}>— {d.notes}</span>}
-                        </div>
-                        <div style={{display:'flex', gap:14, marginTop:6, fontSize:12, color:'var(--ink-500)', flexWrap:'wrap'}}>
-                          {d.montant_ht > 0 && <span><span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(d.montant_ht)}</span> HT</span>}
-                          {d.montant_ttc > 0 && <span><span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(d.montant_ttc)}</span> TTC</span>}
-                          {d.commission_pourcentage > 0 && (
-                            <span>
-                              <strong style={{color:'var(--brand-800)'}}>Com. {(d.commission_pourcentage * 100).toFixed(1)}%</strong>
-                              {' → '}
-                              <span className="tnum">{fmt(finAc.comHT)}</span> HT
-                            </span>
-                          )}
-                          {d.date_signature && d.statut === 'accepte' && (
-                            <span>Signé le {new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
-                          )}
-                        </div>
-                        {!referentEstAdmin && d.commission_pourcentage > 0 && (() => {
-                          const finDevis = calculateDevisFinance(d, dossier)
-                          return (
-                            <div style={{marginTop:4, display:'flex', gap:14, flexWrap:'wrap', fontSize:12, color:'var(--ink-500)'}}>
-                              <span>Part {dossier.referente?.prenom || 'agente'} → <span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.parts.agente)}</span></span>
-                              <span>Part {prenomAdmin} → <span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.parts.admin)}</span></span>
+                    {/* En-tête replié — nom+métier | montant HT + com. | statut | chevron */}
+                    <div className="devis-head" onClick={() => toggleDevisExpand(d.id)}>
+                      <div className="devis-head-main">
+                        <div className="devis-ico"><HammerIcon/></div>
+                        <div style={{minWidth:0}}>
+                          <div className="devis-name">
+                            <span style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>{d.artisan?.entreprise || '—'}</span>
+                            {d.artisan?.metier && <span style={{fontSize:11.5, color:'var(--ink-500)'}}>· {d.artisan.metier}</span>}
+                          </div>
+                          {(d.notes || (d.date_signature && d.statut === 'accepte')) && (
+                            <div className="devis-sub">
+                              {d.notes && <span className="clip-1" style={{fontStyle:'italic', minWidth:0}}>{d.notes}</span>}
+                              {d.date_signature && d.statut === 'accepte' && (
+                                <span>Signé le {new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
+                              )}
                             </div>
-                          )
-                        })()}
+                          )}
+                        </div>
                       </div>
-                      <div style={{textAlign:'right'}}>
+                      <div className="devis-amount">
+                        {d.montant_ht > 0 && <div className="devis-amount-ht tnum">{fmt(d.montant_ht)} <span className="devis-amount-unit">HT</span></div>}
+                        {d.commission_pourcentage > 0 && (
+                          <div className="devis-amount-com">
+                            <strong style={{color:'var(--brand-800)'}}>Com. {(d.commission_pourcentage * 100).toFixed(1)}%</strong>{' → '}<span className="tnum">{fmt(finAc.comHT)}</span> HT
+                          </div>
+                        )}
+                      </div>
+                      <div className="devis-badge">
                         {d.statut === 'accepte'    && <Badge tone="ok">Signé</Badge>}
                         {d.statut === 'recu'       && <Badge tone="info">Reçu</Badge>}
                         {d.statut === 'a_modifier' && <Badge tone="warn">À modifier</Badge>}
                         {d.statut === 'refuse'     && <Badge tone="bad">Refusé</Badge>}
                         {d.statut === 'en_attente' && <Badge tone="mute">En attente</Badge>}
                       </div>
-                      <div style={{display:'flex', gap:4, alignItems:'center'}}>
-                        {d.devis_pdf_path && (
-                          <button onClick={() => ouvrirDocument(d.devis_pdf_path, `Devis ${d.artisan?.entreprise || ''}.pdf`)}
-                            className="btn btn-ghost" style={{padding:'4px 8px'}} title="Voir le PDF du devis">
-                            <DocIcon/>
-                          </button>
-                        )}
-                        <button onClick={() => setDevisModal({ open: true, devis: d })}
-                          className="btn btn-ghost" style={{padding:'4px 8px'}} title="Modifier le devis">
-                          <EditIcon/>
-                        </button>
-                        <button onClick={() => toggleDevisExpand(d.id)}
-                          className="btn btn-ghost" style={{padding:'4px 8px'}} title={expanded ? 'Masquer les détails' : 'Voir les détails'}>
-                          <span style={{display:'inline-block', fontSize:10, lineHeight:1, transition:'transform 200ms', transform: expanded ? 'rotate(180deg)' : 'none'}}>▼</span>
-                        </button>
-                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); toggleDevisExpand(d.id) }}
+                        className="btn btn-ghost devis-chevron" title={expanded ? 'Masquer les détails' : 'Voir les détails'}>
+                        <span style={{display:'inline-block', fontSize:10, lineHeight:1, transition:'transform 200ms', transform: expanded ? 'rotate(180deg)' : 'none'}}>▼</span>
+                      </button>
                     </div>
 
-                    {/* FactureLines : Acompte + Solde (signés uniquement) */}
+                    {/* Détails dépliable */}
+                    {expanded && (
+                    <div className="devis-detail">
+
+                    {/* 1 — Barre d'actions */}
+                    <div className="devis-actions">
+                      <div className="devis-actions-left">
+                        <span style={{fontSize:11.5, color:'var(--ink-500)'}}>Ordre</span>
+                        <button onClick={() => deplacerDevis(d.id, 'up')} disabled={idx === 0}
+                          className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>▲</button>
+                        <button onClick={() => deplacerDevis(d.id, 'down')} disabled={idx === devis.length - 1}
+                          className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>▼</button>
+                        <button onClick={() => setDevisModal({ open: true, devis: d })}
+                          className="btn btn-ghost" style={{fontSize:11.5}}>✎ Modifier</button>
+                        {d.statut === 'accepte' && (
+                          <button onClick={() => { setNouvIntervArtisanId(d.artisan_id); setModalCreerIntervOuvert(true) }}
+                            className="btn btn-ghost" style={{fontSize:11.5, color:'#15803d'}}>📅 Planifier une intervention</button>
+                        )}
+                      </div>
+                      <button onClick={() => supprimerDevis(d.id)} className="btn btn-ghost" style={{padding:'4px 10px', fontSize:11, color:'#b91c1c'}}>🗑 Supprimer</button>
+                    </div>
+                    {d.statut === 'accepte' && interventionsDossier.filter(i => i.artisan_id === d.artisan_id).length > 0 && (
+                      <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                        {interventionsDossier.filter(i => i.artisan_id === d.artisan_id).map(i => (
+                          <div key={i.id} style={{fontSize:11, color:'var(--ink-500)', display:'flex', alignItems:'center', gap:8}}>
+                            <span>🔨</span>
+                            {i.type_intervention === 'periode'
+                              ? `${new Date(i.date_debut).toLocaleDateString('fr-FR')} → ${new Date(i.date_fin).toLocaleDateString('fr-FR')}`
+                              : `${i.jours_specifiques?.length} jour(s)`}
+                            {i.notes && <span style={{color:'var(--ink-400)'}}>— {i.notes}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 2 — Statut cliquable */}
+                    <div className="devis-statuts">
+                      {['en_attente', 'recu', 'accepte', 'refuse', 'a_modifier'].map(st => {
+                        const cfg = statutDevisConfig[st]
+                        const active = d.statut === st
+                        return (
+                          <button key={st} onClick={() => changerStatutDevis(d.id, st)}
+                            style={{
+                              fontSize:11, fontWeight: active ? 700 : 600, padding:'4px 10px', borderRadius:99,
+                              border:'1px solid', cursor:'pointer', transition:'all 150ms',
+                              borderColor: active ? 'transparent' : 'var(--ink-200)',
+                              background: active ? TONE_BG[cfg.tone] : 'transparent',
+                              color: active ? TONE_FG[cfg.tone] : 'var(--ink-400)',
+                            }}
+                            onMouseEnter={e => { if (!active) e.currentTarget.style.borderColor = 'var(--ink-300)' }}
+                            onMouseLeave={e => { if (!active) e.currentTarget.style.borderColor = 'var(--ink-200)' }}>
+                            {cfg.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {/* 3 — Infos côte à côte : Montants | Commission | Parts */}
+                    <div className="devis-info-grid">
+                      {/* Montants */}
+                      <div className="devis-info-block">
+                        <div className="devis-info-title">Montants</div>
+                        <div className="devis-kv"><span>Montant HT</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.montant_ht ? fmt(d.montant_ht) : '—'}</span></div>
+                        <div className="devis-kv"><span>Montant TTC</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.montant_ttc ? fmt(d.montant_ttc) : '—'}</span></div>
+                        <div className="devis-kv" style={{alignItems:'center'}}>
+                          <span>Acompte</span>
+                          <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', justifyContent:'flex-end'}}>
+                            <select value={d.acompte_pourcentage ?? 30}
+                              onChange={async e => {
+                                const newVal = parseFloat(e.target.value)
+                                if (newVal === 0 && (d.commission_pourcentage || 0) > 0 && d.artisan?.partenaire !== true) {
+                                  if (!window.confirm('Attention, acompte 0 : la commission ne sera pas prélevée. Confirmer ?')) {
+                                    await chargerDevis()
+                                    return
+                                  }
+                                }
+                                const { error } = await supabase.from('devis_artisans').update({ acompte_pourcentage: newVal }).eq('id', d.id)
+                                if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
+                                await chargerDevis()
+                              }}
+                              className="input" style={{height:26, fontSize:11, padding:'0 6px', minWidth:80}}>
+                              <option value={30}>30%</option>
+                              <option value={40}>40%</option>
+                              <option value={-1}>Montant</option>
+                              <option value={0}>Sans acompte</option>
+                            </select>
+                            {finAc.acompteMode === 'fixe' && (
+                              <input type="number" step="0.01" placeholder="Montant TTC" defaultValue={d.acompte_montant_fixe || ''}
+                                onBlur={async e => {
+                                  const v = e.target.value !== '' && Number.isFinite(parseFloat(e.target.value)) ? parseFloat(e.target.value) : null
+                                  const { error } = await supabase.from('devis_artisans').update({ acompte_montant_fixe: v }).eq('id', d.id)
+                                  if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
+                                  await chargerDevis()
+                                }}
+                                className="input" style={{width:96, height:26, fontSize:11, padding:'0 6px'}} />
+                            )}
+                            <span className="tnum" style={{fontSize:11, fontWeight:600, color:'var(--ink-900)'}}>
+                              {fmt(finAc.acompte)} TTC
+                            </span>
+                          </div>
+                        </div>
+                        {d.date_signature && d.statut === 'accepte' && (
+                          <div className="devis-kv"><span style={{color:'#15803d'}}>Signé le</span><span style={{fontWeight:600, color:'#15803d'}}>{new Date(d.date_signature).toLocaleDateString('fr-FR')}</span></div>
+                        )}
+                        {d.statut === 'accepte' && (() => {
+                          const suiviAcompte = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === d.id)
+                          const acomptePaye = suiviAcompte?.statut_client === 'regle'
+                          const dateAcompte = suiviAcompte?.date_paiement
+                          const artId = d.artisan_id || d.artisan?.id
+                          return (
+                            <AcompteClientPill
+                              acomptePaye={acomptePaye}
+                              dateAcompte={dateAcompte}
+                              onSetPaid={date => setAcompteArtisanPaye(artId, true, date, d.id)}
+                              onUnsetPaid={() => setAcompteArtisanPaye(artId, false, null, d.id)}
+                              toneBg={TONE_BG}
+                              toneFg={TONE_FG}
+                            />
+                          )
+                        })()}
+                      </div>
+                      {/* Commission */}
+                      <div className="devis-info-block">
+                        <div className="devis-info-title">Commission</div>
+                        <div className="devis-kv"><span>Taux</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.commission_pourcentage ? `${(d.commission_pourcentage * 100).toFixed(1)} %` : '—'}</span></div>
+                        <div className="devis-kv"><span>Montant HT</span><span className="tnum" style={{fontWeight:600, color:'var(--brand-800)'}}>{fmt(finAc.comHT)}</span></div>
+                        {!referentEstAdmin && (
+                          <div className="devis-kv"><span>Répartition</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{`${Math.round((dossier.part_agente ?? 0.5) * 100)} / ${Math.round((1 - (dossier.part_agente ?? 0.5)) * 100)}`}</span></div>
+                        )}
+                      </div>
+                      {/* Parts */}
+                      {!referentEstAdmin && d.commission_pourcentage > 0 && (() => {
+                        const finDevis = calculateDevisFinance(d, dossier)
+                        return (
+                          <div className="devis-info-block">
+                            <div className="devis-info-title">Parts</div>
+                            <div className="devis-kv"><span>{dossier.referente?.prenom || 'agente'}</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.parts.agente)}</span></div>
+                            <div className="devis-kv"><span>{prenomAdmin}</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.parts.admin)}</span></div>
+                          </div>
+                        )
+                      })()}
+                    </div>
+
+                    {/* 4 — Acompte + Solde côte à côte (facturation) */}
                     {d.statut === 'accepte' && (
-                      <div style={{marginTop:14, marginLeft:54, display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
+                      <div className="devis-facture-lines">
                         <FactureMiniLine
                           title={`Acompte ${finAc.acompteMode === 'fixe' ? '(fixe)' : finAc.acomptePct + '%'}`}
                           fact={factAcompte} expected={acompteExpected}
@@ -3269,145 +3496,12 @@ export default function FicheChantier({ params }) {
                       </div>
                     )}
 
-                    {/* Détails dépliable */}
-                    {expanded && (
-                    <div style={{marginTop:14, padding:14, borderRadius:12, background:'var(--surface-2)', border:'1px solid var(--ink-200)', display:'flex', flexDirection:'column', gap:14}}>
-
-                    {/* Réorganiser + supprimer */}
-                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                      <div style={{display:'flex', alignItems:'center', gap:6, fontSize:11.5, color:'var(--ink-500)'}}>
-                        Ordre :
-                        <button onClick={() => deplacerDevis(d.id, 'up')} disabled={idx === 0}
-                          className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>▲</button>
-                        <button onClick={() => deplacerDevis(d.id, 'down')} disabled={idx === devis.length - 1}
-                          className="btn btn-ghost" style={{padding:'2px 8px', fontSize:11}}>▼</button>
-                      </div>
-                      <button onClick={() => supprimerDevis(d.id)} className="btn btn-ghost" style={{padding:'4px 10px', fontSize:11, color:'#b91c1c'}}>
-                        Supprimer ce devis
-                      </button>
-                    </div>
-
-                    {/* Infos détaillées + acompte custom */}
-                    <div style={{
-                      background:'var(--surface-2)', borderRadius:10, padding:12,
-                      display:'flex', flexDirection:'column', gap:6, fontSize:13,
-                    }}>
-                      <div style={{display:'flex', justifyContent:'space-between'}}>
-                        <span style={{fontSize:11, color:'var(--ink-400)'}}>Montant HT</span>
-                        <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.montant_ht ? fmt(d.montant_ht) : '—'}</span>
-                      </div>
-                      <div style={{display:'flex', justifyContent:'space-between'}}>
-                        <span style={{fontSize:11, color:'var(--ink-400)'}}>Montant TTC</span>
-                        <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.montant_ttc ? fmt(d.montant_ttc) : '—'}</span>
-                      </div>
-                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                        <span style={{fontSize:11, color:'var(--ink-400)'}}>Acompte</span>
-                        <div style={{display:'flex', alignItems:'center', gap:8}}>
-                          <select value={d.acompte_pourcentage ?? 30}
-                            onChange={async e => {
-                              const newVal = parseFloat(e.target.value)
-                              if (newVal === 0 && (d.commission_pourcentage || 0) > 0 && d.artisan?.partenaire !== true) {
-                                if (!window.confirm('Attention, acompte 0 : la commission ne sera pas prélevée. Confirmer ?')) {
-                                  await chargerDevis()
-                                  return
-                                }
-                              }
-                              const { error } = await supabase.from('devis_artisans').update({ acompte_pourcentage: newVal }).eq('id', d.id)
-                              if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
-                              await chargerDevis()
-                            }}
-                            className="input" style={{height:26, fontSize:11, padding:'0 6px', minWidth:80}}>
-                            <option value={30}>30%</option>
-                            <option value={40}>40%</option>
-                            <option value={-1}>Montant</option>
-                            <option value={0}>Sans acompte</option>
-                          </select>
-                          {finAc.acompteMode === 'fixe' && (
-                            <input type="number" step="0.01" placeholder="Montant TTC" defaultValue={d.acompte_montant_fixe || ''}
-                              onBlur={async e => {
-                                const v = e.target.value !== '' && Number.isFinite(parseFloat(e.target.value)) ? parseFloat(e.target.value) : null
-                                const { error } = await supabase.from('devis_artisans').update({ acompte_montant_fixe: v }).eq('id', d.id)
-                                if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
-                                await chargerDevis()
-                              }}
-                              className="input" style={{width:96, height:26, fontSize:11, padding:'0 6px'}} />
-                          )}
-                          <span className="tnum" style={{fontSize:11, fontWeight:600, color:'var(--ink-900)'}}>
-                            {fmt(finAc.acompte)} TTC
-                          </span>
-                        </div>
-                      </div>
-                      <div style={{display:'flex', justifyContent:'space-between'}}>
-                        <span style={{fontSize:11, color:'var(--ink-400)'}}>Commission</span>
-                        <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.commission_pourcentage ? `${(d.commission_pourcentage * 100).toFixed(1)} %` : '—'}</span>
-                      </div>
-                      {!referentEstAdmin && (
-                        <div style={{display:'flex', justifyContent:'space-between'}}>
-                          <span style={{fontSize:11, color:'var(--ink-400)'}}>Répartition</span>
-                          <span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{`${Math.round((dossier.part_agente ?? 0.5) * 100)} / ${Math.round((1 - (dossier.part_agente ?? 0.5)) * 100)}`}</span>
-                        </div>
-                      )}
-                      {d.date_signature && d.statut === 'accepte' && (
-                        <div style={{display:'flex', justifyContent:'space-between'}}>
-                          <span style={{fontSize:11, color:'#15803d'}}>Signé le</span>
-                          <span style={{fontWeight:600, color:'#15803d'}}>{new Date(d.date_signature).toLocaleDateString('fr-FR')}</span>
-                        </div>
-                      )}
-                      {d.statut === 'accepte' && (() => {
-                        const suiviAcompte = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && (s.artisan_id === d.artisan_id || s.artisan_id === d.artisan?.id))
-                        const acomptePaye = suiviAcompte?.statut_client === 'regle'
-                        const dateAcompte = suiviAcompte?.date_paiement
-                        return (
-                          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                            <span style={{fontSize:11, color:'var(--ink-400)'}}>
-                              Acompte client {acomptePaye && dateAcompte && <span style={{color:'#15803d', fontWeight:600}}>· {new Date(dateAcompte).toLocaleDateString('fr-FR')}</span>}
-                            </span>
-                            <button onClick={async () => {
-                              const artId = d.artisan_id || d.artisan?.id
-                              await setAcompteArtisanPaye(artId, !acomptePaye, dateAcompte)
-                            }}
-                              style={{
-                                fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
-                                background: acomptePaye ? TONE_BG.ok : TONE_BG.warn,
-                                color: acomptePaye ? TONE_FG.ok : TONE_FG.warn,
-                              }}>
-                              {acomptePaye ? '✓ Payé' : '⏳ En attente'}
-                            </button>
-                          </div>
-                        )
-                      })()}
-                    </div>
-                    {d.notes && (
-                      <p style={{fontSize:11.5, color:'var(--ink-500)', fontStyle:'italic', margin:0}}>{d.notes}</p>
-                    )}
-
-                    <div style={{display:'flex', gap:6, flexWrap:'wrap', paddingTop:8, borderTop:'1px solid var(--ink-100)'}}>
-                      {['en_attente', 'recu', 'accepte', 'refuse', 'a_modifier'].map(st => {
-                        const cfg = statutDevisConfig[st]
-                        const active = d.statut === st
-                        return (
-                          <button key={st} onClick={() => changerStatutDevis(d.id, st)}
-                            style={{
-                              fontSize:11, fontWeight: active ? 700 : 600, padding:'4px 10px', borderRadius:99,
-                              border:'1px solid', cursor:'pointer', transition:'all 150ms',
-                              borderColor: active ? 'transparent' : 'var(--ink-200)',
-                              background: active ? TONE_BG[cfg.tone] : 'transparent',
-                              color: active ? TONE_FG[cfg.tone] : 'var(--ink-400)',
-                            }}
-                            onMouseEnter={e => { if (!active) e.currentTarget.style.borderColor = 'var(--ink-300)' }}
-                            onMouseLeave={e => { if (!active) e.currentTarget.style.borderColor = 'var(--ink-200)' }}>
-                            {cfg.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-
-                    {/* ── DOCUMENTS : Devis signé + Facture ── */}
-                    <div style={{paddingTop:8, borderTop:'1px solid var(--ink-100)', display:'flex', flexDirection:'column', gap:10}}>
+                    {/* 5 — Documents en grille */}
+                    <div className="devis-docs">
                       {/* Devis artisan */}
-                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-                        <span style={{fontSize:11, color:'var(--ink-500)', fontWeight:600}}>📄 Devis artisan</span>
-                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                      <div className="devis-doc">
+                        <span className="devis-doc-label">📄 Devis artisan</span>
+                        <div className="devis-doc-act">
                           {d.devis_pdf_path ? (
                             <>
                               <button onClick={() => ouvrirDocument(d.devis_pdf_path, `Devis ${d.artisan?.entreprise || ''}.pdf`)}
@@ -3422,13 +3516,7 @@ export default function FicheChantier({ params }) {
                               }} style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
                             </>
                           ) : (
-                            <label style={{
-                              fontSize:11, cursor: uploadingDoc === d.id + '_devis' ? 'wait' : 'pointer',
-                              padding:'3px 10px', borderRadius:6, border:'1px solid',
-                              color: uploadingDoc === d.id + '_devis' ? 'var(--ink-400)' : 'var(--brand-700)',
-                              borderColor: uploadingDoc === d.id + '_devis' ? 'var(--ink-200)' : 'var(--brand-200)',
-                              transition:'all 150ms',
-                            }}>
+                            <label className="devis-doc-upload" style={{cursor: uploadingDoc === d.id + '_devis' ? 'wait' : 'pointer', color: uploadingDoc === d.id + '_devis' ? 'var(--ink-400)' : 'var(--brand-700)'}}>
                               {uploadingDoc === d.id + '_devis' ? 'Upload…' : '+ Uploader'}
                               <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id + '_devis'}
                                 onChange={async e => {
@@ -3451,9 +3539,9 @@ export default function FicheChantier({ params }) {
                         </div>
                       </div>
                       {/* Devis signé client */}
-                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-                        <span style={{fontSize:11, color:'var(--ink-500)', fontWeight:600}}>📄 Devis signé client</span>
-                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                      <div className="devis-doc">
+                        <span className="devis-doc-label">📄 Devis signé client</span>
+                        <div className="devis-doc-act">
                           {d.devis_signe_path ? (
                             <>
                               <button onClick={() => ouvrirDocument(d.devis_signe_path, `Devis signé ${d.artisan?.entreprise || ''}.pdf`)}
@@ -3462,12 +3550,7 @@ export default function FicheChantier({ params }) {
                                 style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
                             </>
                           ) : (
-                            <label style={{
-                              fontSize:11, cursor: uploadingDoc === d.id ? 'wait' : 'pointer',
-                              padding:'3px 10px', borderRadius:6, border:'1px solid',
-                              color: uploadingDoc === d.id ? 'var(--ink-400)' : 'var(--brand-700)',
-                              borderColor: uploadingDoc === d.id ? 'var(--ink-200)' : 'var(--brand-200)',
-                            }}>
+                            <label className="devis-doc-upload" style={{cursor: uploadingDoc === d.id ? 'wait' : 'pointer', color: uploadingDoc === d.id ? 'var(--ink-400)' : 'var(--brand-700)'}}>
                               {uploadingDoc === d.id ? 'Upload…' : '+ Uploader'}
                               <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id}
                                 onChange={e => e.target.files[0] && uploadDevisSigne(d.id, e.target.files[0])} />
@@ -3476,9 +3559,9 @@ export default function FicheChantier({ params }) {
                         </div>
                       </div>
                       {/* PV de réception */}
-                      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-                        <span style={{fontSize:11, color:'var(--ink-500)', fontWeight:600}}>📋 PV de réception</span>
-                        <div style={{display:'flex', alignItems:'center', gap:8}}>
+                      <div className="devis-doc">
+                        <span className="devis-doc-label">📋 PV de réception</span>
+                        <div className="devis-doc-act">
                           {d.pv_path ? (
                             <>
                               <button onClick={() => ouvrirDocument(d.pv_path, `PV réception ${d.artisan?.entreprise || ''}.pdf`)}
@@ -3487,12 +3570,7 @@ export default function FicheChantier({ params }) {
                                 style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
                             </>
                           ) : (
-                            <label style={{
-                              fontSize:11, cursor: uploadingDoc === d.id ? 'wait' : 'pointer',
-                              padding:'3px 10px', borderRadius:6, border:'1px solid',
-                              color: uploadingDoc === d.id ? 'var(--ink-400)' : 'var(--brand-700)',
-                              borderColor: uploadingDoc === d.id ? 'var(--ink-200)' : 'var(--brand-200)',
-                            }}>
+                            <label className="devis-doc-upload" style={{cursor: uploadingDoc === d.id ? 'wait' : 'pointer', color: uploadingDoc === d.id ? 'var(--ink-400)' : 'var(--brand-700)'}}>
                               {uploadingDoc === d.id ? 'Upload…' : '+ Uploader'}
                               <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id}
                                 onChange={e => e.target.files[0] && uploadPV(d.id, e.target.files[0])} />
@@ -3500,10 +3578,10 @@ export default function FicheChantier({ params }) {
                           )}
                         </div>
                       </div>
-                      {/* Factures artisan */}
-                      <div style={{paddingTop:8, borderTop:'1px solid var(--ink-100)', display:'flex', flexDirection:'column', gap:6}}>
-                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                          <span style={{fontSize:11, color:'var(--ink-500)', fontWeight:600}}>🧾 Factures artisan</span>
+                      {/* Factures artisan (tuile) */}
+                      <div className="devis-doc">
+                        <span className="devis-doc-label">🧾 Factures artisan · {factures.filter(f => f.devis_id === d.id).length}</span>
+                        <div className="devis-doc-act">
                           <button onClick={() => {
                             const acompteMontant = finAc.acompte
                             setAjouterFacture(d.id)
@@ -3513,6 +3591,22 @@ export default function FicheChantier({ params }) {
                             + Ajouter
                           </button>
                         </div>
+                      </div>
+                      {/* Fiches techniques (tuile) */}
+                      <div className="devis-doc">
+                        <span className="devis-doc-label">🗂 Fiches techniques · {fichesTechChantier[d.artisan_id]?.length || 0}</span>
+                        <div className="devis-doc-act">
+                          <button onClick={() => setFichesPanelOuvert(fichesPanelOuvert === d.id ? null : d.id)}
+                            style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>
+                            {fichesPanelOuvert === d.id ? 'Masquer' : 'Gérer'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Factures — liste + formulaire (pleine largeur) */}
+                    {factures.filter(f => f.devis_id === d.id).length > 0 && (
+                      <div style={{display:'flex', flexDirection:'column', gap:6}}>
                         {factures.filter(f => f.devis_id === d.id).map(f => (
                           <div key={f.id} style={{background:'var(--surface-2)', borderRadius:8, padding:8, display:'flex', flexDirection:'column', gap:6}}>
                             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
@@ -3554,7 +3648,9 @@ export default function FicheChantier({ params }) {
                             </div>
                           </div>
                         ))}
-                        {ajouterFacture === d.id && (
+                      </div>
+                    )}
+                    {ajouterFacture === d.id && (
                           <div style={{border:'1px solid rgba(22,163,74,0.2)', background:'rgba(22,163,74,0.05)', borderRadius:10, padding:12, display:'flex', flexDirection:'column', gap:8}}>
                             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
                               <ModalField label="Montant TTC (€)" required>
@@ -3616,39 +3712,11 @@ export default function FicheChantier({ params }) {
                                 className="btn btn-primary" style={{flex:1, fontSize:12, justifyContent:'center', background:'#15803d', borderColor:'#15803d'}}>Enregistrer</button>
                             </div>
                           </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div style={{paddingTop:8, borderTop:'1px solid var(--ink-100)'}}>
-                      <button onClick={() => setFichesPanelOuvert(fichesPanelOuvert === d.id ? null : d.id)}
-                        style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>
-                        🗂 Fiches techniques ({fichesTechChantier[d.artisan_id]?.length || 0})
-                      </button>
-                      {fichesPanelOuvert === d.id && (
-                        <FichesTechPanel artisanId={d.artisan_id} dossierId={id} fichesCochees={fichesTechChantier[d.artisan_id] || []} onToggle={toggleFicheTech} onCreated={chargerFichesTechChantier} />
-                      )}
-                    </div>
-                    {/* Bouton intervention rapide sur devis accepté */}
-                    {d.statut === 'accepte' && (
-                      <div style={{paddingTop:8, borderTop:'1px solid var(--ink-100)'}}>
-                        <button
-                          onClick={() => { setNouvIntervArtisanId(d.artisan_id); setModalCreerIntervOuvert(true) }}
-                          style={{fontSize:11, color:'#15803d', border:'1px solid rgba(22,163,74,0.3)', padding:'4px 10px', borderRadius:6, background:'transparent', cursor:'pointer'}}>
-                          📅 Planifier une intervention
-                        </button>
-                        {/* Interventions existantes pour cet artisan */}
-                        {interventionsDossier.filter(i => i.artisan_id === d.artisan_id).map(i => (
-                          <div key={i.id} style={{marginTop:4, fontSize:11, color:'var(--ink-500)', display:'flex', alignItems:'center', gap:8}}>
-                            <span>🔨</span>
-                            {i.type_intervention === 'periode'
-                              ? `${new Date(i.date_debut).toLocaleDateString('fr-FR')} → ${new Date(i.date_fin).toLocaleDateString('fr-FR')}`
-                              : `${i.jours_specifiques?.length} jour(s)`}
-                            {i.notes && <span style={{color:'var(--ink-400)'}}>— {i.notes}</span>}
-                          </div>
-                        ))}
-                      </div>
                     )}
+                    {fichesPanelOuvert === d.id && (
+                      <FichesTechPanel artisanId={d.artisan_id} dossierId={id} fichesCochees={fichesTechChantier[d.artisan_id] || []} onToggle={toggleFicheTech} onCreated={chargerFichesTechChantier} />
+                    )}
+
                     </div>
                     )}
                   </div>
@@ -3659,6 +3727,50 @@ export default function FicheChantier({ params }) {
 
         </div>
 
+        {/* Honoraires client (restylé tokens) */}
+        {['courtage', 'amo'].includes(dossier.typologie) && totalDevisTTCRecus > 0 && (
+          <div className="card" style={{padding:0, overflow:'hidden'}}>
+            <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
+              <h2 className="page" style={{fontSize:16}}>Honoraires client</h2>
+              <div className="eyebrow" style={{marginTop:4}}>
+                Calculés sur <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(finDossier.honorairesPrevi.totalDevisTTCRecus)}</span> TTC (devis reçus + signés)
+              </div>
+            </div>
+            <div className="hono-settings">
+              <div className="hono-taux">
+                <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux courtage</label>
+                <input
+                  type="number" step="0.1" min="0" max="20"
+                  value={(dossier.taux_courtage ?? COURTAGE_STANDARD) * 100}
+                  onFocus={() => { tauxAvantEditRef.current.taux_courtage = dossier.taux_courtage }}
+                  onChange={e => set('taux_courtage', parseFloat(e.target.value || 0) / 100)}
+                  onBlur={e => persistTaux('taux_courtage', parseFloat(e.target.value || 0) / 100)}
+                  onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                  className="input"
+                  style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
+                />
+                <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
+              </div>
+              {dossier.typologie === 'amo' && (
+                <div className="hono-taux">
+                  <label style={{fontSize:11, fontWeight:600, color:'var(--brand-800)'}}>Taux AMO</label>
+                  <input
+                    type="number" step="0.1" min="0" max="20"
+                    value={dossier.honoraires_amo_taux ?? AMO_STANDARD * 100}
+                    onFocus={() => { tauxAvantEditRef.current.honoraires_amo_taux = dossier.honoraires_amo_taux }}
+                    onChange={e => set('honoraires_amo_taux', parseFloat(e.target.value || 0))}
+                    onBlur={e => persistTaux('honoraires_amo_taux', parseFloat(e.target.value || 0))}
+                    onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                    className="input"
+                    style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
+                  />
+                  <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Récapitulatif chantier (restylé tokens, déplacé depuis Finance) */}
         {devis.length > 0 && (
           <div className="card" style={{padding:0, overflow:'hidden'}}>
@@ -3668,77 +3780,59 @@ export default function FicheChantier({ params }) {
             </div>
             <div style={{padding:16, display:'flex', flexDirection:'column', gap:12}}>
 
-              {/* Bloc prévisionnel */}
-              {devisRecus.length > 0 && (
-                <div style={{borderRadius:10, padding:14, background:'rgba(0,148,212,0.06)', border:'1px solid var(--brand-200)'}}>
-                  <div className="eyebrow" style={{color:'var(--brand-800)', marginBottom:8}}>
-                    Prévisionnel · {devisRecus.length} devis
+              {(() => {
+                // Bascule visuelle : le mode affiché retombe sur l'autre si le sien est vide.
+                const recapAff = (recapMode === 'previsionnel' && devisRecus.length === 0) ? 'signe'
+                  : (recapMode === 'signe' && devisSignes.length === 0) ? 'previsionnel'
+                  : recapMode
+                return (
+                <>
+                  {/* Bascule Prévisionnel / Signé */}
+                  <div className="recap-toggle">
+                    <button className={`recap-tab ${recapAff === 'previsionnel' ? 'active' : ''}`}
+                      onClick={() => setRecapMode('previsionnel')}>Prévisionnel · {devisRecus.length} devis</button>
+                    <button className={`recap-tab ${recapAff === 'signe' ? 'active' : ''}`}
+                      onClick={() => setRecapMode('signe')}>Signé · {devisSignes.length} devis</button>
                   </div>
-                  <RecapRow label="Total HT" value={fmt(totalDevisHTRecus)} tone="brand" />
-                  <RecapRow label="Total TTC" value={fmt(totalDevisTTCRecus)} tone="brand" />
-                  {['courtage', 'amo'].includes(dossier?.typologie) && (
-                    <div style={{borderTop:'1px solid var(--brand-200)', marginTop:6, paddingTop:6}}>
-                      <RecapRow label={`Honoraires courtage (${tauxCourtagePct}%)`} value={fmt(honorairesCourtagePrev)} tone="brand" />
-                      <div style={{borderTop:'2px solid var(--brand-500)', marginTop:8, paddingTop:8}}>
-                        <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + honorairesCourtagePrev + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
-                      </div>
-                      {dossier.typologie === 'amo' && (
-                        <div style={{marginTop:10, paddingTop:10, borderTop:'1px dashed var(--brand-200)'}}>
-                          <RecapRow label="Total honoraires (15%)" value={fmt(finDossier.honorairesPrevi.standard.totalTTC)} tone="brand" />
-                          <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + finDossier.honorairesPrevi.standard.totalTTC + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
-                          {tauxAmoPct !== AMO_STANDARD * 100 && (
-                            <div style={{marginTop:8, paddingTop:8, borderTop:'1px dashed var(--brand-200)'}}>
-                              <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMOPrev)} tone="brand" />
-                              <RecapRow label="Total chantier" value={fmt(totalDevisTTCRecus + honorairesAMOPrev + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      {fraisInclus && (
-                        <div style={{marginTop:6, fontSize:11, color:'var(--ink-500)', textAlign:'right'}}>
-                          dont frais consultation {fmt(fraisTTC)}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {/* Bloc signé */}
-              {devisSignes.length > 0 && (
-                <div style={{borderRadius:10, padding:14, background:'var(--surface-2)', border:'1px solid var(--ink-200)'}}>
-                  <div className="eyebrow" style={{marginBottom:8}}>
-                    Signé · {devisSignes.length} devis
-                  </div>
-                  <RecapRow label="Total HT" value={fmt(totalDevisHTSignes)} />
-                  <RecapRow label="Total TTC" value={fmt(totalDevisTTCSignes)} />
-                  {['courtage', 'amo'].includes(dossier?.typologie) && (
-                    <div style={{borderTop:'1px solid var(--ink-200)', marginTop:6, paddingTop:6}}>
-                      <RecapRow label={`Honoraires courtage (${tauxCourtagePct}%)`} value={fmt(honorairesCourtage)} />
-                      <div style={{borderTop:'2px solid var(--brand-500)', marginTop:8, paddingTop:8}}>
-                        <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + honorairesCourtage + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
+                  {/* 3 formules côte à côte */}
+                  <div className="recap-grid">
+                    {/* Colonne 1 — Courtage seul */}
+                    {['courtage', 'amo'].includes(dossier?.typologie) && (
+                      <div className="recap-col">
+                        <div className="recap-col-head"><span>Courtage seul</span><span className="recap-col-pct">{tauxCourtagePct}%</span></div>
+                        <div className="recap-kv"><span>Travaux TTC</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus) : fmt(totalDevisTTCSignes)}</span></div>
+                        <div className="recap-kv"><span>Honoraires ({tauxCourtagePct}%)</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(honorairesCourtagePrev) : fmt(honorairesCourtage)}</span></div>
+                        <div className="recap-total"><span>Total chantier</span><span className="tnum recap-total-val">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus + honorairesCourtagePrev + (fraisDansTotal ? fraisTTC : 0)) : fmt(totalDevisTTCSignes + honorairesCourtage + (fraisDansTotal ? fraisTTC : 0))}</span></div>
                       </div>
-                      {dossier.typologie === 'amo' && (
-                        <div style={{marginTop:10, paddingTop:10, borderTop:'1px dashed var(--ink-200)'}}>
-                          <RecapRow label="Total honoraires (15%)" value={fmt(finDossier.honoraires.standard.totalTTC)} />
-                          <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + finDossier.honoraires.standard.totalTTC + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
-                          {tauxAmoPct !== AMO_STANDARD * 100 && (
-                            <div style={{marginTop:8, paddingTop:8, borderTop:'1px dashed var(--ink-200)'}}>
-                              <RecapRow label={`Total honoraires (${parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)`} value={fmt(honorairesAMO)} />
-                              <RecapRow label="Total chantier" value={fmt(totalDevisTTCSignes + honorairesAMO + (fraisInclus ? fraisTTC : 0))} tone="brand" strong large />
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      {fraisInclus && (
-                        <div style={{marginTop:6, fontSize:11, color:'var(--ink-500)', textAlign:'right'}}>
-                          dont frais consultation {fmt(fraisTTC)}
-                        </div>
-                      )}
+                    )}
+                    {/* Colonne 2 — + AMO plein tarif (15%) */}
+                    {dossier.typologie === 'amo' && (
+                      <div className="recap-col">
+                        <div className="recap-col-head"><span>+ AMO plein tarif</span><span className="recap-col-pct">15%</span></div>
+                        <div className="recap-kv"><span>Travaux TTC</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus) : fmt(totalDevisTTCSignes)}</span></div>
+                        <div className="recap-kv"><span>Honoraires (15%)</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(finDossier.honorairesPrevi.standard.totalTTC) : fmt(finDossier.honoraires.standard.totalTTC)}</span></div>
+                        <div className="recap-total"><span>Total chantier</span><span className="tnum recap-total-val">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus + finDossier.honorairesPrevi.standard.totalTTC + (fraisDansTotal ? fraisTTC : 0)) : fmt(totalDevisTTCSignes + finDossier.honoraires.standard.totalTTC + (fraisDansTotal ? fraisTTC : 0))}</span></div>
+                      </div>
+                    )}
+                    {/* Colonne 3 — + AMO remisé */}
+                    {dossier.typologie === 'amo' && tauxAmoPct !== AMO_STANDARD * 100 && (
+                      <div className="recap-col recap-col-remise">
+                        <div className="recap-col-head"><span>+ AMO remisé</span><span className="recap-col-pct">{parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%</span></div>
+                        <div className="recap-kv"><span>Travaux TTC</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus) : fmt(totalDevisTTCSignes)}</span></div>
+                        <div className="recap-kv"><span>Honoraires ({parseFloat((tauxCourtagePct + tauxAmoPct).toFixed(1))}%)</span><span className="tnum">{recapAff === 'previsionnel' ? fmt(honorairesAMOPrev) : fmt(honorairesAMO)}</span></div>
+                        <div className="recap-total"><span>Total chantier</span><span className="tnum recap-total-val">{recapAff === 'previsionnel' ? fmt(totalDevisTTCRecus + honorairesAMOPrev + (fraisDansTotal ? fraisTTC : 0)) : fmt(totalDevisTTCSignes + honorairesAMO + (fraisDansTotal ? fraisTTC : 0))}</span></div>
+                      </div>
+                    )}
+                  </div>
+                  {fraisDansTotal && (
+                    <div style={{marginTop:2, fontSize:11, color:'var(--ink-500)', textAlign:'right'}}>
+                      dont frais consultation {fmt(fraisTTC)}
                     </div>
                   )}
-                </div>
-              )}
+                </>
+                )
+              })()}
             </div>
           </div>
         )}
@@ -3764,7 +3858,7 @@ export default function FicheChantier({ params }) {
         const comDebloque = (fin.commissions?.devis || []).filter(dv => {
           if (dv.refused) return false
           if (dv.isApporteur) return dv.signed
-          const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === (devis.find(x => x.id === dv.id)?.artisan_id))
+          const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id)
           return sf?.statut_illico === 'recu'
         })
         const comHTReal        = comDebloque.reduce((s, d) => s + d.comHT, 0)
@@ -3776,9 +3870,12 @@ export default function FicheChantier({ params }) {
         // Honoraires — comptés par composant seulement si réglé (courtage / AMO solde)
         const courtageRegle    = suiviCourtage?.statut_client === 'regle'
         const amoSoldeRegle    = suiviSoldeAMO?.statut_client === 'regle'
-        const honRoyalties     = (courtageRegle ? fin.honoraires.courtage.royalties : 0) + (amoSoldeRegle ? fin.honoraires.soldeAmo.royalties : 0)
-        const honAgente        = (courtageRegle ? fin.honoraires.courtage.parts.agente : 0) + (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.agente : 0)
-        const honAdmin         = (courtageRegle ? fin.honoraires.courtage.parts.admin : 0) + (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.admin : 0)
+        // Cohabitation solde AMO échelonné : Σ tranches si présentes, sinon gate
+        // tout-ou-rien actuel (branches else laissées verbatim).
+        const soldeAmoR        = calculateSoldeAmoReel({ ...dossier, devis_artisans: devis, suivi_financier: suiviFinancier })
+        const honRoyalties     = (courtageRegle ? fin.honoraires.courtage.royalties : 0) + (soldeAmoR.hasTranches ? soldeAmoR.recognizedRoyalties : (amoSoldeRegle ? fin.honoraires.soldeAmo.royalties : 0))
+        const honAgente        = (courtageRegle ? fin.honoraires.courtage.parts.agente : 0) + (soldeAmoR.hasTranches ? soldeAmoR.parts.agente : (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.agente : 0))
+        const honAdmin         = (courtageRegle ? fin.honoraires.courtage.parts.admin : 0) + (soldeAmoR.hasTranches ? soldeAmoR.parts.admin : (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.admin : 0))
 
         // Réel = somme des flux réellement comptés ; net déduit du coût apporteur RÉEL (acomptes débloqués)
         const royaltiesTotal   = fraisRoyalties + honRoyalties + comRoyalties
@@ -3829,7 +3926,58 @@ export default function FicheChantier({ params }) {
                 Coche au fur et à mesure des règlements et déclenchements illiCO
               </div>
             </div>
-            <div style={{padding:'14px 22px', display:'flex', flexDirection:'column', gap:12}}>
+            {/* Deux blocs côte à côte : (A) par devis · (B) autres échéances */}
+            <div className="suivi-grid">
+
+              {/* ── BLOC A — PAR DEVIS ── */}
+              <div className="suivi-bloc">
+                <div className="suivi-bloc-title">Par devis</div>
+                <div className="suivi-table">
+                  {/* Pas de thead : chaque EcheanceRow porte son propre label
+                      (« Acompte client » / « Acompte débloqué ») → en-tête de colonnes redondant. */}
+                  {/* Acompte client + illiCO débloqué (par devis signé) */}
+                  {devisSignes.map(dv => {
+                    const artId = dv.artisan_id || dv.artisan?.id
+                    const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id)
+                    const finDv = calculateDevisFinance(dv, dossier)
+                    const acompteMontant = finDv.acompte
+                    const comDevisHT = finDv.comHT
+                    return (
+                      <div key={`ech-${dv.id}`} className="suivi-devis-row">
+                        <div className="suivi-devis-name">{dv.artisan?.entreprise || '—'}</div>
+                        <div className="suivi-devis-cell">
+                          <EcheanceRow
+                            label="Acompte client"
+                            sub={`${finDv.acompteMode === 'fixe' ? 'fixe' : finDv.acomptePct + '%'} acompte · ${fmt(acompteMontant)} TTC`}
+                            statut={sf?.statut_client || 'en_attente'}
+                            date={sf?.date_paiement || null}
+                            onSetPaid={d => setAcompteArtisanPaye(artId, true, d, dv.id)}
+                            onUnsetPaid={() => setAcompteArtisanPaye(artId, false, null, dv.id)}
+                            fmtDateFn={fmtD}
+                          />
+                        </div>
+                        <div className="suivi-devis-cell">
+                          <EcheanceRow
+                            label={dv.artisan?.paiement_direct ? 'Paiement direct' : 'Acompte débloqué'}
+                            sub={`Commission ${fmt(comDevisHT)} HT`}
+                            statut={sf?.statut_illico === 'recu' ? 'regle' : 'en_attente'}
+                            date={sf?.date_deblocage || null}
+                            onSetPaid={d => setDeblocagePaye(artId, true, dv.id, d)}
+                            onUnsetPaid={() => setDeblocagePaye(artId, false, dv.id)}
+                            variant="illico"
+                            fmtDateFn={fmtD}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* ── BLOC B — AUTRES ÉCHÉANCES ── */}
+              <div className="suivi-bloc">
+                <div className="suivi-bloc-title">Autres échéances</div>
+                <div className="suivi-autres">
 
               {/* Frais de consultation */}
               {(dossier.frais_consultation || 0) > 0 && (
@@ -3842,39 +3990,6 @@ export default function FicheChantier({ params }) {
                 />
               )}
 
-              {/* Acompte client + illiCO débloqué (par devis signé) */}
-              {devisSignes.map(dv => {
-                const artId = dv.artisan_id || dv.artisan?.id
-                const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.artisan_id === artId)
-                const finDv = calculateDevisFinance(dv, dossier)
-                const acompteMontant = finDv.acompte
-                const comDevisHT = finDv.comHT
-                return (
-                  <div key={`ech-${dv.id}`} style={{display:'flex', flexDirection:'column', gap:8}}>
-                    <EcheanceRow
-                      label={`Acompte client — ${dv.artisan?.entreprise || '—'}`}
-                      sub={`${finDv.acompteMode === 'fixe' ? 'fixe' : finDv.acomptePct + '%'} acompte · ${fmt(acompteMontant)} TTC`}
-                      statut={sf?.statut_client || 'en_attente'}
-                      date={sf?.date_paiement || null}
-                      onToggle={() => {
-                        const paye = sf?.statut_client !== 'regle'
-                        setAcompteArtisanPaye(artId, paye, sf?.date_paiement)
-                      }}
-                      fmtDateFn={fmtD}
-                    />
-                    <EcheanceRow
-                      label={dv.artisan?.paiement_direct ? 'Paiement direct à l’entreprise' : 'illiCO France — acompte débloqué'}
-                      sub={`Commission ${fmt(comDevisHT)} HT · ${dv.artisan?.entreprise || ''}`}
-                      statut={sf?.statut_illico === 'recu' ? 'regle' : 'en_attente'}
-                      date={sf?.date_deblocage || null}
-                      onToggle={() => setDeblocagePaye(artId, sf?.statut_illico !== 'recu')}
-                      variant="illico"
-                      fmtDateFn={fmtD}
-                    />
-                  </div>
-                )
-              })}
-
               {/* Honoraires courtage — AMO, ou courtage SANS travaux supplémentaires (inchangé) */}
               {(dossier.typologie === 'amo' || (dossier.typologie === 'courtage' && suiviCourtageTS.length === 0)) && (
                 <EcheanceRow
@@ -3882,10 +3997,8 @@ export default function FicheChantier({ params }) {
                   sub={`${tauxCourtagePct}% travaux HT · ${fmt(honorairesCourtagePrev)}`}
                   statut={suiviCourtage?.statut_client || 'en_attente'}
                   date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || null}
-                  onToggle={() => {
-                    const newStatut = suiviCourtage?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                    majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, newStatut)
-                  }}
+                  onSetPaid={d => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'regle', d)}
+                  onUnsetPaid={() => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'en_attente')}
                   fmtDateFn={fmtD}
                 />
               )}
@@ -3899,10 +4012,8 @@ export default function FicheChantier({ params }) {
                     sub={`${tauxCourtagePct}% travaux HT (hors TS) · ${fmt(courtageTS.courtageInitialTtc)}`}
                     statut={suiviCourtage?.statut_client || 'en_attente'}
                     date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || null}
-                    onToggle={() => {
-                      const newStatut = suiviCourtage?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                      majSuiviChantier('honoraires_courtage', courtageTS.courtageInitialTtc, newStatut)
-                    }}
+                    onSetPaid={d => majSuiviChantier('honoraires_courtage', courtageTS.courtageInitialTtc, 'regle', d)}
+                    onUnsetPaid={() => majSuiviChantier('honoraires_courtage', courtageTS.courtageInitialTtc, 'en_attente')}
                     fmtDateFn={fmtD}
                     lock={suiviCourtage?.statut_client === 'regle' && suiviCourtageTS.length > 0}
                     lockMsg="Le courtage initial ne peut pas être décoché tant qu'il existe des travaux supplémentaires (cela supprimerait la date de référence des TS). Supprimez d'abord les lignes TS."
@@ -3914,7 +4025,8 @@ export default function FicheChantier({ params }) {
                       sub={`${tauxCourtagePct}% travaux HT · ${fmt(Number(l.montant_ttc || 0))}`}
                       statut={l.statut_client === 'regle' ? 'regle' : 'en_attente'}
                       date={(l.statut_client === 'regle' && l.date_paiement) || null}
-                      onToggle={() => setCourtageTSPaye(l, l.statut_client !== 'regle')}
+                      onSetPaid={d => setCourtageTSPaye(l, true, d)}
+                      onUnsetPaid={() => setCourtageTSPaye(l, false)}
                       fmtDateFn={fmtD}
                     />
                   ))}
@@ -3925,20 +4037,87 @@ export default function FicheChantier({ params }) {
                 </>
               )}
 
-              {/* Honoraires AMO solde (typologie AMO uniquement) */}
-              {dossier.typologie === 'amo' && (
-                <EcheanceRow
-                  label="Honoraires AMO — solde"
-                  sub={`${tauxAmoPct}% travaux HT · ${fmt(honorairesAMOPrev - honorairesCourtagePrev)}`}
-                  statut={suiviSoldeAMO?.statut_client || 'en_attente'}
-                  date={(suiviSoldeAMO?.statut_client === 'regle' && suiviSoldeAMO.date_paiement) || null}
-                  onToggle={() => {
-                    const newStatut = suiviSoldeAMO?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                    majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, newStatut)
-                  }}
-                  fmtDateFn={fmtD}
-                />
-              )}
+              {/* Honoraires AMO solde (typologie AMO) — échelonnable en tranches encaissées.
+                  Cohabitation : 0 tranche → EcheanceRow tout-ou-rien actuel (inchangé) ;
+                  ≥1 tranche → synthèse « encaissé / reste » + panneau liste + ajout. */}
+              {dossier.typologie === 'amo' && (() => {
+                const tranchesAmo = suiviFinancier
+                  .filter(s => s.type_echeance === 'solde_amo_paiement')
+                  .sort((a, b) => new Date(a.date_paiement || 0) - new Date(b.date_paiement || 0))
+                const hasTranches   = tranchesAmo.length > 0
+                const soldeTotalTtc = fin.honoraires.soldeAmo.ttc   // réel/signés (décision a)
+                const encaisse      = tranchesAmo.reduce((s, t) => s + Number(t.montant_ttc || 0), 0)
+                const reste         = soldeTotalTtc - encaisse
+                const soldeState    = Math.abs(reste) < 0.01 ? 'solde' : reste > 0 ? 'reste' : 'trop'
+                const soldeColor    = soldeState === 'solde' ? '#15803d' : soldeState === 'trop' ? '#b91c1c' : '#c2410c'
+                const today         = new Date().toISOString().slice(0, 10)
+                return (
+                  <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                    {hasTranches ? (
+                      <div className="suivi-amo-synth">
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)'}}>Honoraires AMO — solde</div>
+                          <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>
+                            {tauxAmoPct}% travaux HT · {fmt(soldeTotalTtc)} attendu
+                          </div>
+                        </div>
+                        <div style={{display:'flex', alignItems:'center', gap:10}}>
+                          <span className="tnum" style={{fontSize:12, fontWeight:700, color: soldeColor}}>
+                            {fmt(encaisse)} encaissés · {soldeState === 'trop' ? `trop-perçu ${fmt(-reste)}` : soldeState === 'solde' ? 'soldé' : `reste ${fmt(reste)}`}
+                          </span>
+                          <button type="button" className="suivi-amo-chevron" onClick={() => setSoldeAmoDeplie(v => !v)}>
+                            {soldeAmoDeplie ? '▲' : '▼'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <EcheanceRow
+                          label="Honoraires AMO — solde"
+                          sub={`${tauxAmoPct}% travaux HT · ${fmt(honorairesAMOPrev - honorairesCourtagePrev)}`}
+                          statut={suiviSoldeAMO?.statut_client || 'en_attente'}
+                          date={(suiviSoldeAMO?.statut_client === 'regle' && suiviSoldeAMO.date_paiement) || null}
+                          onSetPaid={d => majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'regle', d)}
+                          onUnsetPaid={() => majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'en_attente')}
+                          fmtDateFn={fmtD}
+                        />
+                        <button type="button" className="suivi-amo-add-link" onClick={() => setSoldeAmoDeplie(v => !v)}>
+                          + paiement échelonné
+                        </button>
+                      </>
+                    )}
+
+                    {soldeAmoDeplie && (
+                      <div className="suivi-amo-panel">
+                        {tranchesAmo.map(t => (
+                          <div key={t.id} className="suivi-amo-tranche">
+                            <span className="tnum" style={{fontWeight:600}}>{fmt(Number(t.montant_ttc || 0))} TTC</span>
+                            <span style={{fontSize:12, color:'var(--ink-500)'}}>{t.date_paiement ? fmtD(t.date_paiement) : '—'}</span>
+                            <button type="button" className="suivi-amo-del" title="Supprimer cette tranche"
+                              onClick={() => deleteSoldeAmoPaiement(t.id)}>✕</button>
+                          </div>
+                        ))}
+                        {!hasTranches && (
+                          <div style={{fontSize:12, color:'var(--ink-400)'}}>Aucun paiement enregistré pour l’instant.</div>
+                        )}
+                        <div className="suivi-amo-form">
+                          <input className="input" type="number" step="0.01" min="0" inputMode="decimal"
+                            placeholder="Montant TTC"
+                            value={soldeAmoForm.montant}
+                            onChange={e => setSoldeAmoForm(f => ({ ...f, montant: e.target.value }))} />
+                          <input className="input" type="date"
+                            value={soldeAmoForm.date || today}
+                            onChange={e => setSoldeAmoForm(f => ({ ...f, date: e.target.value }))} />
+                          <button type="button" className="btn btn-primary"
+                            onClick={() => addSoldeAmoPaiement(soldeAmoForm.montant, soldeAmoForm.date || today)}>
+                            Ajouter
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* ── Apporteur d'affaires — règlements dus ── */}
               {fin.apporteur?.enabled && fin.apporteur.totalHT > 0 && (() => {
@@ -3995,7 +4174,8 @@ export default function FicheChantier({ params }) {
                           sub={`${pctApp}% × ${fmt(l.baseHT)} HT · ${fmt(l.totalHT)}`}
                           statut={paye ? 'regle' : 'en_attente'}
                           date={sf?.date_paiement || null}
-                          onToggle={() => setApporteurPaye(artId, !paye)}
+                          onSetPaid={d => setApporteurPaye(artId, true, d)}
+                          onUnsetPaid={() => setApporteurPaye(artId, false)}
                           fmtDateFn={fmtD}
                         />
                       )
@@ -4004,12 +4184,16 @@ export default function FicheChantier({ params }) {
                 )
               })()}
 
-              {devisSignes.length === 0 && (dossier.frais_consultation || 0) === 0 && (
-                <div style={{padding:'24px 0', textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
-                  Aucune échéance pour le moment
                 </div>
-              )}
+              </div>
+
             </div>
+
+            {devisSignes.length === 0 && (dossier.frais_consultation || 0) === 0 && (
+              <div style={{padding:'24px 0', textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+                Aucune échéance pour le moment
+              </div>
+            )}
           </div>
 
         </div>
@@ -4902,7 +5086,7 @@ export default function FicheChantier({ params }) {
                 </div>
               </div>
               <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-                <button onClick={() => setCrManuelModal(true)} className="btn btn-ghost" style={{fontSize:12.5}}>
+                <button onClick={() => { setCrEditId(null); setCrManuelForm({ type_visite: '', date_visite: '', contenu: '' }); setCrManuelModal(true) }} className="btn btn-ghost" style={{fontSize:12.5}}>
                   <PlusIcon /> CR manuel
                 </button>
                 <button onClick={() => { setCrModal(true); setCrEtape(1) }} className="btn btn-primary" style={{fontSize:12.5}}>
@@ -4964,6 +5148,9 @@ export default function FicheChantier({ params }) {
                       alignItems:'center', flexWrap:'wrap',
                     }}>
                       <div style={{flex:1}} />
+                      <button onClick={() => editerCR(cr)} className="btn btn-ghost" style={{padding:'3px 10px', fontSize:11}}>
+                        ✎ Modifier
+                      </button>
                       {cr.contenu_final && (
                         <button onClick={() => generatePDF('cr', cr.id)} disabled={generatingPDF === `cr-${cr.id}`}
                           className="btn btn-ghost" style={{padding:'3px 10px', fontSize:11}}>
@@ -5085,12 +5272,12 @@ export default function FicheChantier({ params }) {
       {/* ── MODAL CR SANS IA ── */}
       {crManuelModal && (
         <ModalShell
-          title="📝 Nouveau CR sans IA"
-          subtitle={`${dossier.reference} · saisie manuelle`}
-          onClose={() => setCrManuelModal(false)}
+          title={crEditId ? '✎ Modifier le CR' : '📝 Nouveau CR sans IA'}
+          subtitle={`${dossier.reference} · ${crEditId ? 'édition' : 'saisie manuelle'}`}
+          onClose={fermerCRManuel}
           width={640}
           footer={(<>
-            <button onClick={() => setCrManuelModal(false)} className="btn btn-ghost">Annuler</button>
+            <button onClick={fermerCRManuel} className="btn btn-ghost">Annuler</button>
             <button onClick={() => sauvegarderCRManuel(false)} disabled={crManuelSaving || !crManuelForm.contenu.trim()}
               className="btn btn-ghost" style={{borderColor:'var(--brand-200)', color:'var(--brand-700)'}}>
               {crManuelSaving ? 'Enregistrement…' : 'Sauvegarder brouillon'}
@@ -5157,7 +5344,19 @@ export default function FicheChantier({ params }) {
                 ))}
               </div>
             )}
-            onClose={() => setCrModal(false)}
+            onClose={async () => {
+              // Fermeture sans CR sauvegardé : les photos uploadées ne sont rattachées
+              // à aucun CR → orphelines. Purge best-effort de Storage. Si ça rate (crash,
+              // onglet fermé), le filet reste la colonne photos_paths : tout fichier sous
+              // chantiers/{id}/cr/ référencé par aucun CR est un déchet purgeable plus tard.
+              // (La sauvegarde d'un CR passe par setCrModal(false) direct, jamais par ici.)
+              const aPurger = crImages.map(im => im.path)
+              if (aPurger.length) { try { await supabase.storage.from('photos').remove(aPurger) } catch {} }
+              setCrImages([])
+              setCrPhotosDossier([]) // photos du dossier : simple désélection, JAMAIS de remove Storage
+              setCrPhotosUp(false)
+              setCrModal(false)
+            }}
             width={720}
           >
             <div style={{padding:24, display:'flex', flexDirection:'column', gap:16}}>
@@ -5286,10 +5485,14 @@ export default function FicheChantier({ params }) {
                   <ModalField label="📷 Photos (cahier, capture d'écran, document)">
                     <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
                       {crImages.map((img, i) => (
-                        <div key={i} style={{position:'relative'}}>
+                        <div key={img.path} style={{position:'relative'}}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={img} alt="" style={{width:80, height:80, objectFit:'cover', borderRadius:8, border:'1px solid var(--ink-200)'}} />
-                          <button onClick={() => setCrImages(imgs => imgs.filter((_, j) => j !== i))}
+                          <img src={img.url_signee} alt="" style={{width:80, height:80, objectFit:'cover', borderRadius:8, border:'1px solid var(--ink-200)'}} />
+                          <button onClick={async () => {
+                              // Fichier créé pour ce CR et pour lui seul → on le supprime de Storage.
+                              try { await supabase.storage.from('photos').remove([img.path]) } catch {}
+                              setCrImages(imgs => imgs.filter((_, j) => j !== i))
+                            }}
                             style={{
                               position:'absolute', top:-6, right:-6,
                               width:18, height:18, borderRadius:'50%',
@@ -5301,22 +5504,84 @@ export default function FicheChantier({ params }) {
                       <label style={{
                         width:80, height:80, borderRadius:8,
                         border:'2px dashed var(--ink-300)', display:'grid', placeItems:'center',
-                        cursor:'pointer', transition:'border-color 150ms',
+                        cursor: crPhotosUp ? 'wait' : 'pointer', transition:'border-color 150ms',
                       }}
                         onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--brand-500)' }}
                         onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--ink-300)' }}>
-                        <span style={{fontSize:24, color:'var(--ink-300)', lineHeight:1}}>+</span>
-                        <input type="file" accept="image/*" multiple style={{display:'none'}}
-                          onChange={e => {
-                            Array.from(e.target.files || []).forEach(file => {
-                              const reader = new FileReader()
-                              reader.onload = ev => setCrImages(imgs => [...imgs, ev.target.result])
-                              reader.readAsDataURL(file)
-                            })
+                        <span style={{fontSize:24, color:'var(--ink-300)', lineHeight:1}}>{crPhotosUp ? '…' : '+'}</span>
+                        <input type="file" accept="image/*" multiple disabled={crPhotosUp} style={{display:'none'}}
+                          onChange={async e => {
+                            const files = Array.from(e.target.files || [])
+                            e.target.value = '' // autorise la re-sélection des mêmes fichiers
+                            if (!files.length) return
+                            setCrPhotosUp(true)
+                            for (const file of files) {
+                              try {
+                                // Compression puis upload direct dans Storage (bucket photos),
+                                // sous chantiers/{id}/cr/ — emplacement dédié aux photos de CR,
+                                // SANS insert dans la table `photos` (invisibles onglet Photos).
+                                const blob = await compressImageToBlob(file)
+                                const path = `chantiers/${id}/cr/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
+                                const { error: upErr } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' })
+                                if (upErr) { setErreur('Échec de l’envoi d’une photo : ' + upErr.message); continue }
+                                // Vignette : signed URL comme signerPhotos (bucket privé).
+                                const { data: signed } = await supabase.storage.from('photos').createSignedUrl(path, 3600)
+                                setCrImages(imgs => [...imgs, { path, url_signee: signed?.signedUrl || '' }])
+                              } catch {
+                                setErreur('Impossible de traiter une photo (format non supporté ?).')
+                              }
+                            }
+                            setCrPhotosUp(false)
                           }} />
                       </label>
                     </div>
                   </ModalField>
+
+                  {photos.length > 0 && (
+                    <ModalField label="🖼️ Photos du chantier (jointes au CR)">
+                      <div style={{
+                        display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(80px, 1fr))', gap:8,
+                        border:'1px solid var(--ink-200)', borderRadius:10, padding:8, maxHeight:200, overflowY:'auto',
+                      }}>
+                        {photos.map(p => {
+                          const selected = crPhotosDossier.includes(p.url)
+                          return (
+                            // Clic = (dé)sélection. Aucun fichier n'est touché : ce sont des photos
+                            // du dossier, on n'envoie que leur path. Jamais de remove Storage ici.
+                            <button key={p.url} type="button"
+                              onClick={() => setCrPhotosDossier(prev =>
+                                selected ? prev.filter(u => u !== p.url) : [...prev, p.url]
+                              )}
+                              style={{
+                                position:'relative', padding:0, border:'none', background:'none',
+                                cursor:'pointer', aspectRatio:'1', borderRadius:8, overflow:'hidden',
+                              }}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={p.url_signee} alt="" style={{
+                                width:'100%', height:'100%', objectFit:'cover', display:'block',
+                                borderRadius:8,
+                                border: selected ? '2px solid var(--brand-600)' : '1px solid var(--ink-200)',
+                                opacity: selected ? 1 : 0.85,
+                              }} />
+                              {selected && (
+                                <span style={{
+                                  position:'absolute', top:4, right:4,
+                                  width:18, height:18, borderRadius:'50%',
+                                  background:'var(--brand-600)', color:'#fff',
+                                  fontSize:11, display:'grid', placeItems:'center',
+                                }}>✓</span>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {crPhotosDossier.length > 0 && (
+                        <div style={{fontSize:11, color:'var(--ink-400)', marginTop:6}}>
+                          {crPhotosDossier.length} photo{crPhotosDossier.length > 1 ? 's' : ''} du chantier jointe{crPhotosDossier.length > 1 ? 's' : ''}
+                        </div>
+                      )}
+                    </ModalField>
+                  )}
 
                   {documents.length > 0 && (
                     <ModalField label="📎 Documents du chantier (contexte IA)">
@@ -5354,7 +5619,7 @@ export default function FicheChantier({ params }) {
                       ← Retour
                     </button>
                     <button onClick={genererCRAvecIA}
-                      disabled={crGenerating || (!crNotes.trim() && !crVocalTexte.trim() && crImages.length === 0)}
+                      disabled={crGenerating || crPhotosUp || (!crNotes.trim() && !crVocalTexte.trim() && crImages.length === 0 && crPhotosDossier.length === 0)}
                       className="btn btn-primary" style={{flex:2, justifyContent:'center', height:42, fontSize:13}}>
                       {crGenerating ? (
                         <span style={{display:'inline-flex', alignItems:'center', gap:8}}>

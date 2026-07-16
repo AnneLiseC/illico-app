@@ -11,6 +11,7 @@
 
 import { google } from 'googleapis'
 import { createClient } from '@supabase/supabase-js'
+import { encrypt, decrypt } from './crypto'
 import {
   rdvSummary, rdvDescription, rdvBounds,
   interventionSummary, interventionDescription, interventionOccurrences,
@@ -43,14 +44,28 @@ export function buildOAuthClientForCompte(compteOauthId, tokens) {
   client.setCredentials(tokens)
   client.on('tokens', async (newTokens) => {
     if (newTokens.access_token) {
+      // W2 — le refresh renvoie un nouvel access_token : on le stocke CHIFFRÉ (AES-256-GCM).
+      // Google ne renvoie pas de nouveau refresh_token ici → rien à réécrire pour lui.
+      // expiry_date reste EN CLAIR (timestamp, pas un secret).
       await supabaseAdmin.from('comptes_oauth').update({
-        access_token: newTokens.access_token,
+        access_token: encrypt(newTokens.access_token),
         expiry_date: newTokens.expiry_date,
         updated_at: new Date().toISOString(),
       }).eq('id', compteOauthId)
     }
   })
   return client
+}
+
+// Renvoie une COPIE du compte avec access_token / refresh_token DÉCHIFFRÉS (lecture R1/R2).
+// Les tokens sont stockés chiffrés (AES-256-GCM) ; on ne déchiffre qu'ici, côté serveur,
+// juste avant setCredentials. Guard null : un refresh_token absent reste null.
+export function decryptCompteTokens(compte) {
+  return {
+    ...compte,
+    access_token: compte.access_token ? decrypt(compte.access_token) : compte.access_token,
+    refresh_token: compte.refresh_token ? decrypt(compte.refresh_token) : compte.refresh_token,
+  }
 }
 
 // true si l'erreur googleapis ressemble à un échec d'auth (token révoqué / invalid_grant).
@@ -65,9 +80,10 @@ export function isGoogleAuthError(err) {
 // primary, accessRole }]. LECTURE SEULE (calendarList.list). Le primaire (primary:true)
 // a son id = l'adresse e-mail du compte (utile pour backfiller compte_email plus tard).
 export async function listGoogleCalendars(compte) {
+  const c = decryptCompteTokens(compte)   // R1 — tokens déchiffrés avant usage
   const oauthClient = buildOAuthClientForCompte(compte.id, {
-    access_token: compte.access_token,
-    refresh_token: compte.refresh_token,
+    access_token: c.access_token,
+    refresh_token: c.refresh_token,
     expiry_date: compte.expiry_date,
   })
   const calendar = google.calendar({ version: 'v3', auth: oauthClient })
@@ -104,10 +120,11 @@ export async function resolveCible(cibleId) {
 // résolue. null si le compte n'a pas de refresh_token (cible inerte). EXTRAIT À
 // L'IDENTIQUE de l'ancien getCalendarForCible : mêmes tokens, même client googleapis.
 export function buildGoogleCalendar({ cible, compte }) {
-  if (!compte.refresh_token) return null
+  if (!compte.refresh_token) return null   // test de PRÉSENCE (blob chiffré non-null = truthy) — inchangé
+  const c = decryptCompteTokens(compte)    // R2 — tokens déchiffrés avant usage
   const oauthClient = buildOAuthClientForCompte(compte.id, {
-    access_token: compte.access_token,
-    refresh_token: compte.refresh_token,
+    access_token: c.access_token,
+    refresh_token: c.refresh_token,
     expiry_date: compte.expiry_date,
   })
   return {
