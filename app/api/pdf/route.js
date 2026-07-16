@@ -121,7 +121,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
     const montantFixe = toNumber(d.acompte_montant_fixe)
     const acompte = pct === -1 ? montantFixe : ttc * (pct / 100)
     const pctLabel = pct === -1 ? '' : ` (${pct}%)`
-    const suiviArt = (suiviFinancier || []).find(s => s.type_echeance === 'acompte_artisan' && (s.artisan_id === d.artisan_id || s.artisan_id === d.artisan?.id))
+    const suiviArt = (suiviFinancier || []).find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === d.id)
     const statut = suiviArt?.statut_client === 'regle' ? 'Payé' : 'À régler'
     const couleurStatut = suiviArt?.statut_client === 'regle' ? '#16a34a' : '#d97706'
     return { entreprise: d.artisan?.entreprise || '—', acompte, pctLabel, statut, couleurStatut }
