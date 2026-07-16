@@ -165,30 +165,22 @@ function DateConfirm({ initial, onConfirm, onCancel }) {
   )
 }
 
-// Deux contrats coexistent le temps de la migration (Phase 2→4) :
-//  - LEGACY : onToggle (flip immédiat, sans date).
-//  - DATÉ   : onSetPaid(date) + onUnsetPaid() → cocher ouvre un DateConfirm pré-rempli
-//    à today ; cliquer une date déjà posée le rouvre pour la corriger.
+// Contrat DATÉ : onSetPaid(date) + onUnsetPaid(). Cocher ouvre un DateConfirm pré-rempli
+// à today ; cliquer une date déjà posée le rouvre pour la corriger ; décocher efface.
 // lock ne bloque QUE le décochage (l'état), JAMAIS l'édition de date.
-function EcheanceRow({ label, sub, statut, date, variant, onToggle, onSetPaid, onUnsetPaid, fmtDateFn, lock, lockMsg }) {
+function EcheanceRow({ label, sub, statut, date, variant, onSetPaid, onUnsetPaid, fmtDateFn, lock, lockMsg }) {
   const [editing, setEditing] = useState(false)
   const isRegle = statut === 'regle' || statut === 'recu'
   const isIllico = variant === 'illico'
-  const dateMode = Boolean(onSetPaid)
   const today = new Date().toISOString().slice(0, 10)
   // Cochable si non réglé (→ éditeur), décochable seulement hors lock.
-  const canClick = dateMode ? !(isRegle && lock) : (Boolean(onToggle) && !lock)
+  const canClick = !(isRegle && lock)
 
   const onCheckbox = () => {
-    if (dateMode) {
-      if (isRegle) { if (!lock) onUnsetPaid && onUnsetPaid() }
-      else setEditing(true)
-    } else {
-      if (lock) return
-      onToggle && onToggle()
-    }
+    if (isRegle) { if (!lock) onUnsetPaid && onUnsetPaid() }
+    else setEditing(true)
   }
-  const dateEditable = dateMode && isRegle  // corriger une date déjà posée (lock non bloquant)
+  const dateEditable = isRegle  // corriger une date déjà posée (lock non bloquant)
 
   return (
     <div style={{
@@ -210,7 +202,7 @@ function EcheanceRow({ label, sub, statut, date, variant, onToggle, onSetPaid, o
           </div>
         )}
       </div>
-      {editing && dateMode ? (
+      {editing ? (
         <div style={{gridColumn:'3 / 5'}}>
           <DateConfirm
             initial={isRegle && date ? String(date).slice(0, 10) : today}
@@ -2313,8 +2305,9 @@ export default function FicheChantier({ params }) {
     q = devisId ? q.eq('devis_id', devisId) : q.is('devis_id', null)
     const { data: existing, error: selectErr } = await q.maybeSingle()
     if (selectErr) { setErreur('Erreur : ' + selectErr.message); return }
+    const dateEffective = date || new Date().toISOString().slice(0, 10)
     const payload = recu
-      ? { statut_illico: 'recu', date_deblocage: date || new Date().toISOString().slice(0, 10) }
+      ? { statut_illico: 'recu', date_deblocage: dateEffective }
       : { statut_illico: 'en_attente', date_deblocage: null }
     let error = null
     if (existing) {
@@ -2342,11 +2335,11 @@ export default function FicheChantier({ params }) {
 
     let error = null
     if (paye) {
-      const today = date || new Date().toISOString().slice(0, 10)
+      const dateEffective = date || new Date().toISOString().slice(0, 10)
       if (existing) {
-        ({ error } = await supabase.from('suivi_financier').update({ statut_ctp: 'rembourse', date_paiement: today }).eq('id', existing.id))
+        ({ error } = await supabase.from('suivi_financier').update({ statut_ctp: 'rembourse', date_paiement: dateEffective }).eq('id', existing.id))
       } else {
-        ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'apporteur_agente', artisan_id: artisanId, statut_ctp: 'rembourse', date_paiement: today }))
+        ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'apporteur_agente', artisan_id: artisanId, statut_ctp: 'rembourse', date_paiement: dateEffective }))
       }
     } else if (existing) {
       ({ error } = await supabase.from('suivi_financier').delete().eq('id', existing.id))
@@ -2367,13 +2360,13 @@ export default function FicheChantier({ params }) {
       if (type === 'honoraires_courtage') types.push('acompte_amo')
       else if (type === 'acompte_amo') types.push('honoraires_courtage')
     }
-    const today = date || new Date().toISOString().slice(0, 10)
+    const dateEffective = date || new Date().toISOString().slice(0, 10)
     const { error } = await supabase.rpc('suivi_toggle_honoraires', {
       p_dossier_id: id,
       p_types: types,
       p_montant: montant,
       p_regle: valeur === 'regle',
-      p_today: today,
+      p_today: dateEffective,
     })
     if (error) setErreur('Erreur : ' + error.message)
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
@@ -2384,9 +2377,9 @@ export default function FicheChantier({ params }) {
   // suivi_toggle_honoraires, qui fige le montant à l'INSERT). Une ligne réglée est
   // close ; la décocher la rouvre (redevient absorbable par le recompute au prochain TS).
   const setCourtageTSPaye = async (ligne, paye, date = null) => {
-    const today = date || new Date().toISOString().slice(0, 10)
+    const dateEffective = date || new Date().toISOString().slice(0, 10)
     const payload = paye
-      ? { statut_client: 'regle', date_paiement: today }
+      ? { statut_client: 'regle', date_paiement: dateEffective }
       : { statut_client: 'en_attente', date_paiement: null }
     const { error } = await supabase.from('suivi_financier').update(payload).eq('id', ligne.id)
     if (error) { setErreur('Erreur : ' + error.message); return }
