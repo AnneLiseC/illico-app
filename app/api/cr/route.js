@@ -105,8 +105,12 @@ export async function POST(request) {
   try {
     const { dossierId, typeVisite, dateVisite, intervenants, notesBrutes, imagesBase64, docsPaths, photosPaths } = await request.json()
 
-    if (!dossierId || !typeVisite || (!notesBrutes?.trim() && !imagesBase64?.length)) {
-      return NextResponse.json({ error: 'Paramètres manquants (type de visite + notes ou images requises)' }, { status: 400 })
+    // Au moins une source de contenu : notes OU images inline OU photos Storage OU
+    // documents. Cas réel : photographier ses notes manuscrites et laisser Claude les
+    // lire, sans rien saisir (via imagesBase64 aujourd'hui, photosPaths après migration).
+    const aDuContenu = notesBrutes?.trim() || imagesBase64?.length || photosPaths?.length || docsPaths?.length
+    if (!dossierId || !typeVisite || !aDuContenu) {
+      return NextResponse.json({ error: 'Paramètres manquants (type de visite + notes, images ou documents requis)' }, { status: 400 })
     }
 
     // Charger dossier + devis
