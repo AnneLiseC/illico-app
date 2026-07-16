@@ -3972,10 +3972,8 @@ export default function FicheChantier({ params }) {
                   sub={`${tauxCourtagePct}% travaux HT · ${fmt(honorairesCourtagePrev)}`}
                   statut={suiviCourtage?.statut_client || 'en_attente'}
                   date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || null}
-                  onToggle={() => {
-                    const newStatut = suiviCourtage?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                    majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, newStatut)
-                  }}
+                  onSetPaid={d => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'regle', d)}
+                  onUnsetPaid={() => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'en_attente')}
                   fmtDateFn={fmtD}
                 />
               )}
@@ -3989,10 +3987,8 @@ export default function FicheChantier({ params }) {
                     sub={`${tauxCourtagePct}% travaux HT (hors TS) · ${fmt(courtageTS.courtageInitialTtc)}`}
                     statut={suiviCourtage?.statut_client || 'en_attente'}
                     date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || null}
-                    onToggle={() => {
-                      const newStatut = suiviCourtage?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                      majSuiviChantier('honoraires_courtage', courtageTS.courtageInitialTtc, newStatut)
-                    }}
+                    onSetPaid={d => majSuiviChantier('honoraires_courtage', courtageTS.courtageInitialTtc, 'regle', d)}
+                    onUnsetPaid={() => majSuiviChantier('honoraires_courtage', courtageTS.courtageInitialTtc, 'en_attente')}
                     fmtDateFn={fmtD}
                     lock={suiviCourtage?.statut_client === 'regle' && suiviCourtageTS.length > 0}
                     lockMsg="Le courtage initial ne peut pas être décoché tant qu'il existe des travaux supplémentaires (cela supprimerait la date de référence des TS). Supprimez d'abord les lignes TS."
@@ -4055,10 +4051,8 @@ export default function FicheChantier({ params }) {
                           sub={`${tauxAmoPct}% travaux HT · ${fmt(honorairesAMOPrev - honorairesCourtagePrev)}`}
                           statut={suiviSoldeAMO?.statut_client || 'en_attente'}
                           date={(suiviSoldeAMO?.statut_client === 'regle' && suiviSoldeAMO.date_paiement) || null}
-                          onToggle={() => {
-                            const newStatut = suiviSoldeAMO?.statut_client === 'regle' ? 'en_attente' : 'regle'
-                            majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, newStatut)
-                          }}
+                          onSetPaid={d => majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'regle', d)}
+                          onUnsetPaid={() => majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'en_attente')}
                           fmtDateFn={fmtD}
                         />
                         <button type="button" className="suivi-amo-add-link" onClick={() => setSoldeAmoDeplie(v => !v)}>
