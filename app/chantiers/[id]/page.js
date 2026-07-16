@@ -753,6 +753,7 @@ export default function FicheChantier({ params }) {
   const [crManuelModal, setCrManuelModal] = useState(false)
   const [crManuelForm, setCrManuelForm] = useState({ type_visite: '', date_visite: '', contenu: '' })
   const [crManuelSaving, setCrManuelSaving] = useState(false)
+  const [crEditId, setCrEditId] = useState(null) // null = création ; sinon id du CR édité
   const [crEtape, setCrEtape] = useState(1) // 1=config, 2=notes, 3=relecture
   const [crForm, setCrForm] = useState({ type_visite: '', date_visite: '', intervenants: '' })
   const [crNotes, setCrNotes] = useState('')
@@ -1740,22 +1741,50 @@ export default function FicheChantier({ params }) {
     else setErreur('Impossible d\'ouvrir le document')
   }
 
+  // Ouvre la modale manuelle pré-remplie sur un CR existant (édition du brouillon
+  // ou d'un CR publié). Fonctionne pour un CR manuel comme pour un CR généré par IA :
+  // les deux sont stockés dans comptes_rendus avec contenu_final (markdown).
+  const editerCR = (cr) => {
+    setCrEditId(cr.id)
+    setCrManuelForm({
+      type_visite: cr.type_visite || '',
+      date_visite: cr.date_visite || '',
+      contenu: cr.contenu_final || '',
+    })
+    setCrManuelModal(true)
+  }
+
+  const fermerCRManuel = () => {
+    setCrManuelModal(false)
+    setCrEditId(null)
+    setCrManuelForm({ type_visite: '', date_visite: '', contenu: '' })
+  }
+
   const sauvegarderCRManuel = async (publier = false) => {
     if (!crManuelForm.contenu.trim()) return
     setCrManuelSaving(true)
-    const { error: insertErr } = await supabase.from('comptes_rendus').insert({
-      dossier_id: id,
-      type_visite: crManuelForm.type_visite || null,
-      date_visite: crManuelForm.date_visite || null,
-      contenu_final: crManuelForm.contenu,
-      valide: publier,
-    })
-    // Échec de l'insert : on garde la saisie (modale ouverte) pour réessayer.
-    if (insertErr) { setErreur('Erreur : ' + insertErr.message); setCrManuelSaving(false); return }
+    // Édition : on met à jour le CR existant. Création : on insère.
+    const { error: saveErr } = crEditId
+      ? await supabase.from('comptes_rendus').update({
+          type_visite: crManuelForm.type_visite || null,
+          date_visite: crManuelForm.date_visite || null,
+          contenu_final: crManuelForm.contenu,
+          valide: publier,
+        }).eq('id', crEditId)
+      : await supabase.from('comptes_rendus').insert({
+          dossier_id: id,
+          type_visite: crManuelForm.type_visite || null,
+          date_visite: crManuelForm.date_visite || null,
+          contenu_final: crManuelForm.contenu,
+          valide: publier,
+        })
+    // Échec : on garde la saisie (modale ouverte) pour réessayer.
+    if (saveErr) { setErreur('Erreur : ' + saveErr.message); setCrManuelSaving(false); return }
 
     const { data } = await supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
     setComptesRendus(data || [])
     setCrManuelModal(false)
+    setCrEditId(null)
     setCrManuelForm({ type_visite: '', date_visite: '', contenu: '' })
     setCrManuelSaving(false)
     setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
@@ -4977,7 +5006,7 @@ export default function FicheChantier({ params }) {
                 </div>
               </div>
               <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-                <button onClick={() => setCrManuelModal(true)} className="btn btn-ghost" style={{fontSize:12.5}}>
+                <button onClick={() => { setCrEditId(null); setCrManuelForm({ type_visite: '', date_visite: '', contenu: '' }); setCrManuelModal(true) }} className="btn btn-ghost" style={{fontSize:12.5}}>
                   <PlusIcon /> CR manuel
                 </button>
                 <button onClick={() => { setCrModal(true); setCrEtape(1) }} className="btn btn-primary" style={{fontSize:12.5}}>
@@ -5039,6 +5068,9 @@ export default function FicheChantier({ params }) {
                       alignItems:'center', flexWrap:'wrap',
                     }}>
                       <div style={{flex:1}} />
+                      <button onClick={() => editerCR(cr)} className="btn btn-ghost" style={{padding:'3px 10px', fontSize:11}}>
+                        ✎ Modifier
+                      </button>
                       {cr.contenu_final && (
                         <button onClick={() => generatePDF('cr', cr.id)} disabled={generatingPDF === `cr-${cr.id}`}
                           className="btn btn-ghost" style={{padding:'3px 10px', fontSize:11}}>
@@ -5160,12 +5192,12 @@ export default function FicheChantier({ params }) {
       {/* ── MODAL CR SANS IA ── */}
       {crManuelModal && (
         <ModalShell
-          title="📝 Nouveau CR sans IA"
-          subtitle={`${dossier.reference} · saisie manuelle`}
-          onClose={() => setCrManuelModal(false)}
+          title={crEditId ? '✎ Modifier le CR' : '📝 Nouveau CR sans IA'}
+          subtitle={`${dossier.reference} · ${crEditId ? 'édition' : 'saisie manuelle'}`}
+          onClose={fermerCRManuel}
           width={640}
           footer={(<>
-            <button onClick={() => setCrManuelModal(false)} className="btn btn-ghost">Annuler</button>
+            <button onClick={fermerCRManuel} className="btn btn-ghost">Annuler</button>
             <button onClick={() => sauvegarderCRManuel(false)} disabled={crManuelSaving || !crManuelForm.contenu.trim()}
               className="btn btn-ghost" style={{borderColor:'var(--brand-200)', color:'var(--brand-700)'}}>
               {crManuelSaving ? 'Enregistrement…' : 'Sauvegarder brouillon'}
