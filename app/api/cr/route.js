@@ -103,12 +103,12 @@ export async function POST(request) {
   const auth = await requireRole(request, ['admin', 'agente'])
   if (auth.error) return auth.error
   try {
-    const { dossierId, typeVisite, dateVisite, intervenants, notesBrutes, imagesBase64, docsPaths, photosPaths } = await request.json()
+    const { dossierId, typeVisite, dateVisite, intervenants, notesBrutes, docsPaths, photosPaths } = await request.json()
 
-    // Au moins une source de contenu : notes OU images inline OU photos Storage OU
-    // documents. Cas réel : photographier ses notes manuscrites et laisser Claude les
-    // lire, sans rien saisir (via imagesBase64 aujourd'hui, photosPaths après migration).
-    const aDuContenu = notesBrutes?.trim() || imagesBase64?.length || photosPaths?.length || docsPaths?.length
+    // Au moins une source de contenu : notes OU photos Storage OU documents. Cas réel :
+    // photographier ses notes manuscrites et laisser Claude les lire, sans rien saisir
+    // (via photosPaths — photos du chantier ou uploadées côté client).
+    const aDuContenu = notesBrutes?.trim() || photosPaths?.length || docsPaths?.length
     if (!dossierId || !typeVisite || !aDuContenu) {
       return NextResponse.json({ error: 'Paramètres manquants (type de visite + notes, images ou documents requis)' }, { status: 400 })
     }
@@ -182,17 +182,6 @@ export async function POST(request) {
 
     const userContent = []
 
-    // Images en premier si présentes
-    if (imagesBase64?.length) {
-      for (const img of imagesBase64) {
-        const commaIdx = img.indexOf(',')
-        const header = commaIdx > 0 ? img.slice(0, commaIdx) : ''
-        const data = commaIdx > 0 ? img.slice(commaIdx + 1) : img
-        const mediaType = header.includes('png') ? 'image/png' : 'image/jpeg'
-        userContent.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data } })
-      }
-    }
-
     // Documents du chantier sélectionnés
     for (const doc of (docsPaths || [])) {
       try {
@@ -210,8 +199,7 @@ export async function POST(request) {
     }
 
     // Photos du chantier sélectionnées (paths Storage, bucket `photos`).
-    // S'AJOUTENT aux images d'imagesBase64 (pas de remplacement). media_type
-    // déduit de l'extension.
+    // media_type déduit de l'extension.
     for (const path of (photosPaths || [])) {
       try {
         const { data: fileData } = await supabaseAdmin.storage.from('photos').download(path)
@@ -224,7 +212,7 @@ export async function POST(request) {
     }
 
     // Texte
-    const hasMedia = imagesBase64?.length || (docsPaths || []).length > 0 || (photosPaths || []).length > 0
+    const hasMedia = (docsPaths || []).length > 0 || (photosPaths || []).length > 0
     userContent.push({
       type: 'text',
       text: hasMedia
