@@ -148,9 +148,11 @@ export async function POST(request) {
       }
     }
 
-    // photosPaths du body : même principe que docsPaths. Un path est valide s'il
-    // (a) existe en table `photos` pour CE dossier (colonne url), OU (b) suit la
-    // convention Storage dédiée aux photos de CR : chantiers/{dossier_id}/cr/…
+    // photosPaths du body : jamais de confiance (téléchargés en service_role).
+    // Un path est valide SI ET SEULEMENT SI il commence par le préfixe tenant
+    // chantiers/{dossierId}/ (defense in depth, non négociable comme docsPaths) ET
+    // (a) il existe en table `photos` pour CE dossier (photos de l'appli), OU
+    // (b) il suit la convention dédiée chantiers/{dossierId}/cr/ (photos ordi, hors table).
     // Un seul path invalide → 400 (fail loud). Le contrôle tenant amont reste le garde-fou.
     if (photosPaths?.length) {
       const { data: photosDossier } = await supabaseAdmin
@@ -158,8 +160,11 @@ export async function POST(request) {
         .select('url')
         .eq('dossier_id', dossierId)
       const pathsAutorises = new Set((photosDossier || []).map(p => p.url))
+      const prefixe = `chantiers/${dossierId}/`
       const prefixeCr = `chantiers/${dossierId}/cr/`
-      const pathInvalide = photosPaths.some(path => !pathsAutorises.has(path) && !path.startsWith(prefixeCr))
+      const pathInvalide = photosPaths.some(path =>
+        !path.startsWith(prefixe) || (!pathsAutorises.has(path) && !path.startsWith(prefixeCr))
+      )
       if (pathInvalide) {
         return NextResponse.json({ error: 'Photo non rattachée au dossier' }, { status: 400 })
       }
