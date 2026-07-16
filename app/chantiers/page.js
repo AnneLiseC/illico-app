@@ -181,7 +181,7 @@ function ChantierPreview({ d, onOpen, onBack, isMobile }) {
   const acomptesTotal      = devisAcceptes.length
   const acomptesRecus      = devisAcceptes.filter(dv => sf.find(x =>
     x.type_echeance === 'acompte_artisan' &&
-    x.artisan_id === (dv.artisan_id || dv.artisan?.id) &&
+    x.devis_id === dv.id &&
     x.statut_illico === 'recu')).length
   const facturesTotal      = devisAcceptes.length
   const facturesPayees     = devisAcceptes.filter(dv => sf.find(x =>
