@@ -3933,11 +3933,8 @@ export default function FicheChantier({ params }) {
               <div className="suivi-bloc">
                 <div className="suivi-bloc-title">Par devis</div>
                 <div className="suivi-table">
-                  <div className="suivi-thead">
-                    <span>Devis</span>
-                    <span>Acompte client</span>
-                    <span>Commission illiCO</span>
-                  </div>
+                  {/* Pas de thead : chaque EcheanceRow porte son propre label
+                      (« Acompte client » / « Acompte débloqué ») → en-tête de colonnes redondant. */}
                   {/* Acompte client + illiCO débloqué (par devis signé) */}
                   {devisSignes.map(dv => {
                     const artId = dv.artisan_id || dv.artisan?.id

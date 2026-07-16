@@ -1330,9 +1330,16 @@ img, svg, video, canvas { max-width: 100%; }
    (A = par devis · B = autres échéances). Classes `suivi-`.
    ───────────────────────────────────────────────────────────────── */
 
-/* Les 2 blocs côte à côte (> 900px), empilés en dessous */
+/* Split PAR DEVIS / AUTRES ÉCHÉANCES + grille interne : auto-fit, SANS seuil deviné.
+   Le navigateur bascule de 2 → 1 colonne dès que 2×380 + gap ne tient plus, à toute
+   largeur (fini le trou 901-1080 du media query 900px).
+   380px = largeur minimale RÉELLE d'un EcheanceRow lisible : colonnes fixes
+   (checkbox + badge + date + gaps + padding) ≈ 215px, + ~170px réservés au sous-titre
+   pour tenir « 40% acompte · 2 070,00 € TTC » sur UNE ligne.
+   ⚠️ Si un libellé enroule encore en preview, ÉLARGIR cette part de label (→ 400),
+   JAMAIS rétrécir les colonnes fixes. Sous ~380px de bloc : repli gracieux sur 2 lignes. */
 .suivi-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 22px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 22px;
   padding: 14px 22px;
 }
 .suivi-bloc { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
@@ -1341,36 +1348,25 @@ img, svg, video, canvas { max-width: 100%; }
   color: var(--brand-800); padding-bottom: 6px; border-bottom: 1px solid var(--ink-200);
 }
 
-/* BLOC A — tableau à double entrée (devis | acompte | commission) */
-.suivi-table { display: flex; flex-direction: column; gap: 8px; overflow-x: auto; }
-.suivi-thead, .suivi-devis-row {
-  display: grid; grid-template-columns: minmax(80px, 0.55fr) minmax(210px, 1fr) minmax(210px, 1fr);
-  gap: 10px; align-items: center; min-width: 0;
-}
-.suivi-thead {
-  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
-  color: var(--ink-400); padding: 0 4px 2px;
+/* BLOC A — une CARTE par devis (cadre à toute largeur : avec le devis sur 3 lignes,
+   le cadre rattache visuellement l'acompte à son devis). Nom en en-tête pleine largeur ;
+   ACOMPTE / COMMISSION côte à côte quand 2×380+gap tient, empilés sinon (auto-fit). */
+.suivi-table { display: flex; flex-direction: column; gap: 8px; overflow-x: visible; }
+.suivi-devis-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 10px; min-width: 0;
+  border: 1px solid var(--ink-200); border-radius: 12px; padding: 12px; background: var(--surface);
 }
 .suivi-devis-name {
+  grid-column: 1 / -1;
   font-size: 12.5px; font-weight: 700; color: var(--ink-900);
-  overflow-wrap: anywhere; min-width: 0;
+  overflow-wrap: break-word; min-width: 0;
+  padding-bottom: 6px; border-bottom: 1px solid var(--ink-100);
 }
 .suivi-devis-cell { min-width: 0; }
 
 /* BLOC B — autres échéances empilées */
 .suivi-autres { display: flex; flex-direction: column; gap: 12px; }
-
-/* Mobile : blocs empilés ; le tableau A devient des cartes par devis */
-@media (max-width: 900px) {
-  .suivi-grid { grid-template-columns: 1fr; }
-  .suivi-table { overflow-x: visible; }
-  .suivi-thead { display: none; }
-  .suivi-devis-row {
-    grid-template-columns: 1fr; gap: 8px;
-    border: 1px solid var(--ink-200); border-radius: 12px; padding: 12px; background: var(--surface);
-  }
-  .suivi-devis-name { padding-bottom: 6px; border-bottom: 1px solid var(--ink-100); }
-}
 
 /* ─────────────────────────────────────────────────────────────────
    Page Finances — tableaux responsive. Classes `fin-`, scopées à
