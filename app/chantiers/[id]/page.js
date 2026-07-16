@@ -674,6 +674,33 @@ async function signerPhotos(rows) {
   return list.map(p => ({ ...p, url_signee: parChemin.get(p.url) || '' }))
 }
 
+// Redimensionne une image (max `maxSide` px sur le plus grand côté) et la ré-encode en
+// JPEG base64. L'API Claude retaille de toute façon à ~1568 px → aucune perte utile pour
+// l'IA, mais divise le poids du body par ~10 (évite le 413 Vercel, body plafonné à 4,5 Mo).
+// base64 conservé (l'architecture ne change pas dans ce lot).
+function compressImageToBase64(file, maxSide = 1600, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height))
+        const w = Math.max(1, Math.round(img.width * scale))
+        const h = Math.max(1, Math.round(img.height * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      }
+      img.onerror = reject
+      img.src = reader.result
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function FicheChantier({ params }) {
   const { id } = use(params)
   const [dossier, setDossier] = useState(null)
@@ -1739,6 +1766,7 @@ export default function FicheChantier({ params }) {
     const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('\n\n')
     if (!notesCombinees.trim() && crImages.length === 0) return
     setCrGenerating(true)
+    setErreur('')
     try {
       const res = await fetch('/api/cr', {
         method: 'POST',
@@ -1753,11 +1781,24 @@ export default function FicheChantier({ params }) {
           docsPaths: crDocsSelectionnes.map(d => ({ path: d.path, type_mime: d.type_mime, nom: d.nom })),
         }),
       })
+      // Vérifier res.ok AVANT res.json() : un 413 (body > 4,5 Mo) renvoie du texte/HTML,
+      // pas du JSON → res.json() lèverait un SyntaxError qui masque la vraie erreur.
+      if (!res.ok) {
+        const brut = await res.text().catch(() => '')
+        if (res.status === 413) {
+          setErreur('Photos trop volumineuses : réduisez le nombre ou la taille des photos.')
+        } else {
+          setErreur(`Erreur génération CR (${res.status}) : ${(brut.slice(0, 200) || 'réessayez plus tard')}`)
+        }
+        return
+      }
       const data = await res.json()
       if (data.error) { setErreur('Erreur IA : ' + data.error); return }
       setCrGenere(data.cr)
       setCrSectionsEditees(data.cr.sections.map(s => ({ ...s })))
       setCrEtape(3)
+    } catch (e) {
+      setErreur('Erreur réseau lors de la génération du CR : ' + (e?.message || 'réessayez'))
     } finally {
       setCrGenerating(false)
     }
@@ -5334,15 +5375,33 @@ export default function FicheChantier({ params }) {
                         onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--ink-300)' }}>
                         <span style={{fontSize:24, color:'var(--ink-300)', lineHeight:1}}>+</span>
                         <input type="file" accept="image/*" multiple style={{display:'none'}}
-                          onChange={e => {
-                            Array.from(e.target.files || []).forEach(file => {
-                              const reader = new FileReader()
-                              reader.onload = ev => setCrImages(imgs => [...imgs, ev.target.result])
-                              reader.readAsDataURL(file)
-                            })
+                          onChange={async e => {
+                            const files = Array.from(e.target.files || [])
+                            e.target.value = '' // autorise la re-sélection des mêmes fichiers
+                            const restant = 15 - crImages.length
+                            if (files.length > Math.max(0, restant)) {
+                              setErreur(`Maximum 15 photos par CR — ${files.length - Math.max(0, restant)} photo(s) ignorée(s).`)
+                            }
+                            for (const file of files.slice(0, Math.max(0, restant))) {
+                              try {
+                                const b64 = await compressImageToBase64(file)
+                                setCrImages(imgs => imgs.length < 15 ? [...imgs, b64] : imgs)
+                              } catch {
+                                setErreur('Impossible de traiter une photo (format non supporté ?).')
+                              }
+                            }
                           }} />
                       </label>
                     </div>
+                    {crImages.length > 0 && (() => {
+                      const poids = crImages.reduce((s, d) => s + (d?.length || 0), 0)
+                      const txt = poids > 1048576 ? `${(poids / 1048576).toFixed(1)} Mo` : `${Math.round(poids / 1024)} Ko`
+                      return (
+                        <div style={{fontSize:11, color: poids > 4194304 ? '#b91c1c' : 'var(--ink-400)', marginTop:6}}>
+                          {crImages.length}/15 photo{crImages.length > 1 ? 's' : ''} · ~{txt} envoyés (limite ~4,5 Mo)
+                        </div>
+                      )
+                    })()}
                   </ModalField>
 
                   {documents.length > 0 && (
