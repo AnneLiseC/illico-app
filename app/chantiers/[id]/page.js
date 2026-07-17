@@ -1625,6 +1625,37 @@ export default function FicheChantier({ params }) {
   }
 
   // Handler unique du DevisModal (create + edit, inclut acompte custom)
+  // ── Versionnage des devis (Phase 2) ────────────────────────────────────────
+  // devis_artisans reste la ligne COURANTE (finance.js inchangé). À chaque édition
+  // de contenu, on fige un snapshot dans devis_versions. Garde anti-doublon : rien
+  // n'est créé si l'état courant est identique à la dernière version courante.
+  const CHAMPS_VERSION = [
+    'montant_ht','montant_ttc','ttc_manuel','commission_pourcentage',
+    'acompte_pourcentage','acompte_montant_fixe','statut','notes',
+    'date_reception','date_limite','devis_pdf_path',
+  ]
+  const archiverVersionDevis = async (devisId) => {
+    const { data: da } = await supabase.from('devis_artisans').select('*').eq('id', devisId).single()
+    if (!da) return
+    const { data: versions } = await supabase
+      .from('devis_versions').select('*')
+      .eq('devis_artisan_id', devisId)
+      .order('version_num', { ascending: false })
+    const courante = versions?.find(v => v.est_courante) || versions?.[0]
+    // No-op : contenu identique à la version courante → pas de doublon.
+    if (courante && CHAMPS_VERSION.every(c => (da[c] ?? null) === (courante[c] ?? null))) return
+    const nextNum = versions?.length ? Math.max(...versions.map(v => v.version_num)) + 1 : 1
+    // Bascule l'ancienne courante puis insère la nouvelle (index partiel unique respecté).
+    if (versions?.some(v => v.est_courante)) {
+      await supabase.from('devis_versions').update({ est_courante: false })
+        .eq('devis_artisan_id', devisId).eq('est_courante', true)
+    }
+    const snap = { devis_artisan_id: devisId, version_num: nextNum, est_courante: true }
+    for (const c of CHAMPS_VERSION) snap[c] = da[c] ?? null
+    const { error } = await supabase.from('devis_versions').insert(snap)
+    if (error) console.error('archiverVersionDevis :', error.message)
+  }
+
   const saveDevisFromModal = async (form) => {
     // Avertissement doux (non bloquant) : acompte 0 + commission > 0 sur un
     // artisan non partenaire → la commission ne pourra pas être prélevée.
@@ -1654,6 +1685,7 @@ export default function FicheChantier({ params }) {
       // Edit — sur erreur, la modale reste ouverte avec la saisie (return avant fermeture).
       const { error } = await supabase.from('devis_artisans').update(payload).eq('id', devisModal.devis.id)
       if (error) { setErreur('Erreur : ' + error.message); return }
+      await archiverVersionDevis(devisModal.devis.id)   // snapshot version (no-op si inchangé)
       await chargerDevis()
       setSucces('Devis modifié ✓')
     } else {
@@ -1671,7 +1703,8 @@ export default function FicheChantier({ params }) {
       let uploadDevisOk = true
       if (form.fichier && devisInsere?.[0]) {
         const ext = form.fichier.name.split('.').pop()
-        const cheminDevis = `chantiers/${id}/devis/${devisInsere[0].id}.${ext}`
+        // Chemin versionné (jamais écrasé) : chaque PDF vit à sa propre URL.
+        const cheminDevis = `chantiers/${id}/devis/${devisInsere[0].id}/${Date.now()}.${ext}`
         // Gate : on n'écrit le chemin que si l'upload réussit (sinon référence pendante).
         const { error: uploadError } = await supabase.storage.from('documents').upload(cheminDevis, form.fichier)
         if (uploadError) uploadDevisOk = false
@@ -1685,6 +1718,7 @@ export default function FicheChantier({ params }) {
         const { error: contratErr } = await supabase.from('dossiers').update({ contrat_signe: true, date_signature_contrat: today }).eq('id', id)
         if (!contratErr) setDossier(d => ({ ...d, contrat_signe: true, date_signature_contrat: today }))
       }
+      await archiverVersionDevis(devisInsere[0].id)   // crée la v1 (capture l'état final + PDF)
       await chargerDevis()
       if (uploadDevisOk) setSucces('Devis ajouté ✓')
       else setErreur('Devis ajouté, mais échec de l\'upload du PDF — réessayez via la fiche devis.')
@@ -3550,11 +3584,13 @@ export default function FicheChantier({ params }) {
                                   if (!fichier) return
                                   setUploadingDoc(d.id + '_devis')
                                   const ext = fichier.name.split('.').pop()
-                                  const chemin = `chantiers/${id}/devis/${d.id}.${ext}`
-                                  const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+                                  // Chemin versionné (jamais écrasé) → l'ancien PDF reste consultable.
+                                  const chemin = `chantiers/${id}/devis/${d.id}/${Date.now()}.${ext}`
+                                  const { error } = await supabase.storage.from('documents').upload(chemin, fichier)
                                   if (!error) {
                                     const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_pdf_path: chemin }).eq('id', d.id)
                                     if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
+                                    await archiverVersionDevis(d.id)   // nouveau PDF = nouvelle version
                                     await chargerDevis()
                                     setSucces('Devis artisan uploadé ✓')
                                   } else { setErreur('Erreur upload : ' + error.message) }
