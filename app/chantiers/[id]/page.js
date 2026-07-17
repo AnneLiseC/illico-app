@@ -2839,6 +2839,56 @@ export default function FicheChantier({ params }) {
             )}
           </div>
 
+          {/* Contrat de prestation (déplacé de la modale "Modifier" → visible ici, sauvegarde immédiate) */}
+          <div className="card" style={{padding:22}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+              <h2 className="page" style={{fontSize:15}}>Contrat de prestation</h2>
+              <label style={{display:'flex',alignItems:'center',gap:8, cursor:'pointer'}}>
+                <input type="checkbox" checked={dossier.contrat_signe || false}
+                  onChange={async e => {
+                    const v = e.target.checked
+                    const payload = v
+                      ? { contrat_signe: true, date_signature_contrat: dossier.date_signature_contrat || new Date().toISOString().slice(0, 10) }
+                      : { contrat_signe: false, date_signature_contrat: null }
+                    setDossier(d => ({ ...d, ...payload }))
+                    const { error } = await supabase.from('dossiers').update(payload).eq('id', id)
+                    if (error) { setErreur('Erreur : ' + error.message); setDossier(d => ({ ...d, contrat_signe: !v })) }
+                  }}
+                  style={{width:14, height:14, accentColor:'var(--brand-700)'}}/>
+                <span style={{fontSize:13, fontWeight:600, color: dossier.contrat_signe ? '#15803d' : 'var(--ink-500)'}}>
+                  {dossier.contrat_signe ? 'Signé' : 'Non signé'}
+                </span>
+              </label>
+            </div>
+            {dossier.contrat_signe && (
+              <div style={{marginBottom:12}}>
+                <label className="eyebrow" style={{display:'block', marginBottom:6}}>Date de signature</label>
+                <input type="date" className="input" value={dossier.date_signature_contrat || ''}
+                  onChange={async e => {
+                    const v = e.target.value
+                    setDossier(d => ({ ...d, date_signature_contrat: v }))
+                    const { error } = await supabase.from('dossiers').update({ date_signature_contrat: v || null }).eq('id', id)
+                    if (error) setErreur('Erreur : ' + error.message)
+                  }}
+                  style={{height:40, width:'100%'}}/>
+              </div>
+            )}
+            {dossier.contrat_url ? (
+              <div style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, border:'1px solid var(--ink-200)', background:'var(--surface-2)'}}>
+                <DocIcon/>
+                <span className="clip-1" style={{fontSize:12, color:'var(--ink-700)', flex:1}}>{dossier.contrat_url.split('/').pop()}</span>
+                <button onClick={ouvrirContrat} className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}}>Voir</button>
+                <button onClick={supprimerContrat} className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px', color:'#b91c1c'}}>Supprimer</button>
+              </div>
+            ) : (
+              <label className="btn btn-ghost" style={{cursor:'pointer', borderStyle:'dashed', justifyContent:'center', padding:'10px 14px'}}>
+                {uploadingContrat ? 'Envoi en cours…' : '📎 Ajouter le contrat (PDF)'}
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png,.heic" style={{display:'none'}}
+                  onChange={e => e.target.files[0] && uploadContrat(e.target.files[0])}/>
+              </label>
+            )}
+          </div>
+
           {/* Card 2 — Avancement + 5 étapes */}
           <div className="card" style={{padding:22}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
@@ -3189,40 +3239,6 @@ export default function FicheChantier({ params }) {
             </div>
           </div>
         )}
-
-        {/* Contrat de prestation */}
-        <div className="card" style={{padding:24}}>
-          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
-            <h2 className="page" style={{fontSize:15}}>Contrat de prestation</h2>
-            <label style={{display:'flex',alignItems:'center',gap:8, cursor:'pointer'}}>
-              <input type="checkbox" checked={dossier.contrat_signe || false} onChange={e => set('contrat_signe', e.target.checked)}
-                style={{width:14, height:14, accentColor:'var(--brand-700)'}}/>
-              <span style={{fontSize:13, fontWeight:600, color: dossier.contrat_signe ? '#15803d' : 'var(--ink-500)'}}>
-                {dossier.contrat_signe ? 'Signé' : 'Non signé'}
-              </span>
-            </label>
-          </div>
-          {dossier.contrat_signe && (
-            <div style={{marginBottom:12}}>
-              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Date de signature</label>
-              <input type="date" className="input" value={dossier.date_signature_contrat || ''} onChange={e => set('date_signature_contrat', e.target.value)} style={{height:40, width:'100%'}}/>
-            </div>
-          )}
-          {dossier.contrat_url ? (
-            <div style={{display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, border:'1px solid var(--ink-200)', background:'var(--surface-2)'}}>
-              <DocIcon/>
-              <span className="clip-1" style={{fontSize:12, color:'var(--ink-700)', flex:1}}>{dossier.contrat_url.split('/').pop()}</span>
-              <button onClick={ouvrirContrat} className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px'}}>Voir</button>
-              <button onClick={supprimerContrat} className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px', color:'#b91c1c'}}>Supprimer</button>
-            </div>
-          ) : (
-            <label className="btn btn-ghost" style={{cursor:'pointer', borderStyle:'dashed', justifyContent:'center', padding:'10px 14px'}}>
-              {uploadingContrat ? 'Envoi en cours…' : '📎 Ajouter le contrat (PDF)'}
-              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.heic" style={{display:'none'}}
-                onChange={e => e.target.files[0] && uploadContrat(e.target.files[0])}/>
-            </label>
-          )}
-        </div>
 
         {/* Convertir typologie */}
         {(dossier.typologie === 'courtage' || dossier.typologie === 'amo') && (
