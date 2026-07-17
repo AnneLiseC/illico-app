@@ -803,11 +803,13 @@ export default function FicheChantier({ params }) {
   const [succes, setSucces] = useState('')
   const [modalModif, setModalModif] = useState(false)
   const [devis, setDevis] = useState([])
+  const [versionsDevis, setVersionsDevis] = useState({})   // { devis_id: [versions triées desc] }
   // Comparateur de devis (onglet dédié, lazy)
   const [simulations, setSimulations] = useState([])          // [{ id, nom, taux_courtage, taux_amo, lignes:[...] }]
   const [loadingComparateur, setLoadingComparateur] = useState(false)
   const [editingTaux, setEditingTaux] = useState(null)        // simulation_id en cours d'édition
   const [editingMontant, setEditingMontant] = useState(null)  // ligne_id en cours d'édition
+  const [historiqueBasesOuvert, setHistoriqueBasesOuvert] = useState(false)  // comparateur : replier/déplier les bases historiques
   const [artisans, setArtisans] = useState([])
   const [devisModal, setDevisModal] = useState({ open: false, devis: null })
   const [devisExpanded, setDevisExpanded] = useState(() => new Set())
@@ -1213,6 +1215,14 @@ export default function FicheChantier({ params }) {
   const chargerDevis = async () => {
     const { data } = await supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier, partenaire, paiement_direct)').eq('dossier_id', id).order('ordre').order('created_at')
     setDevis(data || [])
+    // Historique des versions (Phase 3) — groupé par devis, plus récent d'abord.
+    const ids = (data || []).map(d => d.id)
+    if (ids.length) {
+      const { data: vs } = await supabase.from('devis_versions').select('*').in('devis_artisan_id', ids).order('version_num', { ascending: false })
+      const map = {}
+      for (const v of (vs || [])) (map[v.devis_artisan_id] ||= []).push(v)
+      setVersionsDevis(map)
+    } else setVersionsDevis({})
   }
 
   // ── Comparateur de devis : chargement + CRUD (sauvegarde auto, erreurs silencieuses) ──
@@ -1224,6 +1234,14 @@ export default function FicheChantier({ params }) {
       .eq('dossier_id', id)
       .order('created_at')
     if (error) { console.error('chargerComparateur :', error.message); setLoadingComparateur(false); return }
+
+    // Base initiale : à l'ouverture, si aucune base n'existe encore, on fige l'état
+    // courant comme « Base 1 ». skipSync évite la récursion.
+    if (!skipSync && devis.length > 0 && !(data || []).some(s => s.type === 'base')) {
+      await creerBaseComparateur()
+      await chargerComparateur(true)
+      return
+    }
 
     // Synchro : crée les lignes manquantes pour les devis ajoutés après la création
     // d'une simulation. skipSync évite la récursion infinie (1 seul re-chargement).
@@ -1244,6 +1262,42 @@ export default function FicheChantier({ params }) {
 
     setSimulations(data || [])
     setLoadingComparateur(false)
+  }
+
+  // Comparateur — crée une BASE figée : une colonne épinglée sur la version COURANTE
+  // de chaque devis (frise A-B-C-D). Appelée (a) à l'ouverture si aucune base,
+  // (b) à chaque changement de MONTANT d'un devis. Non bloquant.
+  const creerBaseComparateur = async () => {
+    try {
+      const { data: das } = await supabase.from('devis_artisans').select('id').eq('dossier_id', id)
+      const devisIds = (das || []).map(d => d.id)
+      if (!devisIds.length) return
+      const { data: vs } = await supabase.from('devis_versions')
+        .select('id, devis_artisan_id').in('devis_artisan_id', devisIds).eq('est_courante', true)
+      const { data: bases } = await supabase.from('comparateur_simulations')
+        .select('id').eq('dossier_id', id).eq('type', 'base')
+      const num = (bases?.length || 0) + 1
+      await supabase.from('comparateur_simulations').update({ est_base_courante: false })
+        .eq('dossier_id', id).eq('est_base_courante', true)
+      const { data: base } = await supabase.from('comparateur_simulations')
+        .insert({ dossier_id: id, nom: `Base ${num}`, type: 'base', est_base_courante: true, taux_courtage: 6, taux_amo: 9 })
+        .select().single()
+      if (!base) return
+      const lignes = (vs || []).map(v => ({
+        simulation_id: base.id, devis_artisan_id: v.devis_artisan_id,
+        devis_version_id: v.id, inclus: true, montant_ttc_override: null,
+      }))
+      if (lignes.length) await supabase.from('comparateur_lignes').insert(lignes)
+    } catch (e) { console.error('creerBaseComparateur :', e?.message) }
+  }
+
+  // Nouvelle base seulement si le comparateur est déjà utilisé pour ce dossier
+  // (≥1 simulation) — évite de générer des bases pour des dossiers jamais comparés.
+  const majBaseSurChangementMontant = async () => {
+    const { count } = await supabase.from('comparateur_simulations')
+      .select('id', { count: 'exact', head: true }).eq('dossier_id', id)
+    if ((count || 0) === 0) return
+    await creerBaseComparateur()
   }
 
   const ajouterSimulation = async () => {
@@ -1285,6 +1339,19 @@ export default function FicheChantier({ params }) {
     setEditingMontant(null)
     const { error } = await supabase.from('comparateur_lignes').update({ montant_ttc_override: override }).eq('id', ligneId)
     if (error) console.error('saveMontant :', error.message)
+  }
+
+  // Sélecteur de version d'une ligne (simulations manuelles) : '' = version courante
+  // (live). Choisir une version épingle la ligne dessus et efface l'override manuel
+  // (le montant affiché devient celui de la version).
+  const saveVersionLigne = async (simId, ligneId, versionId) => {
+    const vid = versionId || null
+    setSimulations(prev => prev.map(s => s.id === simId
+      ? { ...s, lignes: (s.lignes || []).map(l => l.id === ligneId
+          ? { ...l, devis_version_id: vid, montant_ttc_override: vid ? null : l.montant_ttc_override } : l) } : s))
+    const payload = vid ? { devis_version_id: vid, montant_ttc_override: null } : { devis_version_id: null }
+    const { error } = await supabase.from('comparateur_lignes').update(payload).eq('id', ligneId)
+    if (error) console.error('saveVersionLigne :', error.message)
   }
 
   const supprimerSimulation = async (simId) => {
@@ -1625,6 +1692,98 @@ export default function FicheChantier({ params }) {
   }
 
   // Handler unique du DevisModal (create + edit, inclut acompte custom)
+  // ── Versionnage des devis (Phase 2) ────────────────────────────────────────
+  // devis_artisans reste la ligne COURANTE (finance.js inchangé). À chaque édition
+  // de contenu, on fige un snapshot dans devis_versions. Garde anti-doublon : rien
+  // n'est créé si l'état courant est identique à la dernière version courante.
+  const CHAMPS_VERSION = [
+    'montant_ht','montant_ttc','ttc_manuel','commission_pourcentage',
+    'acompte_pourcentage','acompte_montant_fixe','statut','notes',
+    'date_reception','date_limite','devis_pdf_path',
+  ]
+  const archiverVersionDevis = async (devisId) => {
+    const { data: da } = await supabase.from('devis_artisans').select('*').eq('id', devisId).single()
+    if (!da) return
+    const { data: versions } = await supabase
+      .from('devis_versions').select('*')
+      .eq('devis_artisan_id', devisId)
+      .order('version_num', { ascending: false })
+    const courante = versions?.find(v => v.est_courante) || versions?.[0]
+    // No-op : contenu identique à la version courante → pas de doublon.
+    if (courante && CHAMPS_VERSION.every(c => (da[c] ?? null) === (courante[c] ?? null))) return
+    const montantChange = !courante || (da.montant_ttc ?? null) !== (courante.montant_ttc ?? null)
+    const nextNum = versions?.length ? Math.max(...versions.map(v => v.version_num)) + 1 : 1
+    // Bascule l'ancienne courante puis insère la nouvelle (index partiel unique respecté).
+    if (versions?.some(v => v.est_courante)) {
+      await supabase.from('devis_versions').update({ est_courante: false })
+        .eq('devis_artisan_id', devisId).eq('est_courante', true)
+    }
+    const snap = { devis_artisan_id: devisId, version_num: nextNum, est_courante: true }
+    for (const c of CHAMPS_VERSION) snap[c] = da[c] ?? null
+    const { error } = await supabase.from('devis_versions').insert(snap)
+    if (error) { console.error('archiverVersionDevis :', error.message); return }
+    // Changement de MONTANT → nouvelle base figée du comparateur (si déjà utilisé).
+    if (montantChange) await majBaseSurChangementMontant()
+  }
+
+  // Upload/remplacement du PDF d'un devis → chemin versionné + nouvelle version.
+  // Partagé par « + Uploader » (pas de PDF) et « Remplacer » (PDF existant).
+  const uploadDevisPdf = async (devisId, fichier) => {
+    if (!fichier) return
+    setUploadingDoc(devisId + '_devis')
+    const ext = fichier.name.split('.').pop()
+    const chemin = `chantiers/${id}/devis/${devisId}/${Date.now()}.${ext}`   // versionné, jamais écrasé
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier)
+    if (!error) {
+      const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_pdf_path: chemin }).eq('id', devisId)
+      if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
+      await archiverVersionDevis(devisId)   // nouveau PDF = nouvelle version
+      await chargerDevis()
+      setSucces('Devis artisan uploadé ✓')
+    } else { setErreur('Erreur upload : ' + error.message) }
+    setUploadingDoc(null)
+  }
+
+  // Restaurer une ancienne version : recopie son contenu dans la ligne courante et
+  // re-pointe est_courante. Exclut le STATUT (on ne régresse pas le cycle de vie /
+  // le financier — un devis accepté reste accepté). La version restaurée redevient
+  // ce que voient finance.js et le comparateur.
+  const restaurerVersion = async (devisId, version) => {
+    if (!confirm(`Restaurer la version v${version.version_num} de ce devis ?`)) return
+    const payload = {}
+    for (const c of CHAMPS_VERSION) if (c !== 'statut') payload[c] = version[c] ?? null
+    const { error } = await supabase.from('devis_artisans').update(payload).eq('id', devisId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    await supabase.from('devis_versions').update({ est_courante: false }).eq('devis_artisan_id', devisId).eq('est_courante', true)
+    await supabase.from('devis_versions').update({ est_courante: true }).eq('id', version.id)
+    await chargerDevis()
+    setSucces(`Version v${version.version_num} restaurée ✓`)
+  }
+
+  // Supprimer une version de l'historique (jamais la courante). Le PDF du storage
+  // n'est retiré que s'il n'est partagé par aucune autre version ni par le devis
+  // courant (une modif de montant sans nouveau PDF réutilise le même fichier).
+  // NB : une base du comparateur épinglée sur cette version repasse en montant live
+  // (FK ON DELETE SET NULL).
+  const supprimerVersion = async (devisId, version) => {
+    if (version.est_courante) { setErreur('Impossible de supprimer la version courante.'); return }
+    if (!confirm(`Supprimer définitivement la version v${version.version_num} ?`)) return
+    if (version.devis_pdf_path) {
+      const autres = (versionsDevis[devisId] || []).filter(v => v.id !== version.id)
+      const devisCourant = devis.find(d => d.id === devisId)
+      const partage = autres.some(v => v.devis_pdf_path === version.devis_pdf_path)
+        || devisCourant?.devis_pdf_path === version.devis_pdf_path
+      if (!partage) {
+        const { error: rmErr } = await supabase.storage.from('documents').remove([version.devis_pdf_path])
+        if (rmErr) console.error('Suppression PDF version (non bloquant) :', rmErr.message)
+      }
+    }
+    const { error } = await supabase.from('devis_versions').delete().eq('id', version.id)
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    await chargerDevis()
+    setSucces(`Version v${version.version_num} supprimée ✓`)
+  }
+
   const saveDevisFromModal = async (form) => {
     // Avertissement doux (non bloquant) : acompte 0 + commission > 0 sur un
     // artisan non partenaire → la commission ne pourra pas être prélevée.
@@ -1654,6 +1813,7 @@ export default function FicheChantier({ params }) {
       // Edit — sur erreur, la modale reste ouverte avec la saisie (return avant fermeture).
       const { error } = await supabase.from('devis_artisans').update(payload).eq('id', devisModal.devis.id)
       if (error) { setErreur('Erreur : ' + error.message); return }
+      await archiverVersionDevis(devisModal.devis.id)   // snapshot version (no-op si inchangé)
       await chargerDevis()
       setSucces('Devis modifié ✓')
     } else {
@@ -1671,7 +1831,8 @@ export default function FicheChantier({ params }) {
       let uploadDevisOk = true
       if (form.fichier && devisInsere?.[0]) {
         const ext = form.fichier.name.split('.').pop()
-        const cheminDevis = `chantiers/${id}/devis/${devisInsere[0].id}.${ext}`
+        // Chemin versionné (jamais écrasé) : chaque PDF vit à sa propre URL.
+        const cheminDevis = `chantiers/${id}/devis/${devisInsere[0].id}/${Date.now()}.${ext}`
         // Gate : on n'écrit le chemin que si l'upload réussit (sinon référence pendante).
         const { error: uploadError } = await supabase.storage.from('documents').upload(cheminDevis, form.fichier)
         if (uploadError) uploadDevisOk = false
@@ -1685,6 +1846,7 @@ export default function FicheChantier({ params }) {
         const { error: contratErr } = await supabase.from('dossiers').update({ contrat_signe: true, date_signature_contrat: today }).eq('id', id)
         if (!contratErr) setDossier(d => ({ ...d, contrat_signe: true, date_signature_contrat: today }))
       }
+      await archiverVersionDevis(devisInsere[0].id)   // crée la v1 (capture l'état final + PDF)
       await chargerDevis()
       if (uploadDevisOk) setSucces('Devis ajouté ✓')
       else setErreur('Devis ajouté, mais échec de l\'upload du PDF — réessayez via la fiche devis.')
@@ -3532,6 +3694,11 @@ export default function FicheChantier({ params }) {
                             <>
                               <button onClick={() => ouvrirDocument(d.devis_pdf_path, `Devis ${d.artisan?.entreprise || ''}.pdf`)}
                                 style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>Voir PDF</button>
+                              <label style={{fontSize:11, cursor: uploadingDoc === d.id + '_devis' ? 'wait' : 'pointer', color: uploadingDoc === d.id + '_devis' ? 'var(--ink-400)' : 'var(--brand-700)'}}>
+                                {uploadingDoc === d.id + '_devis' ? 'Upload…' : 'Remplacer'}
+                                <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id + '_devis'}
+                                  onChange={e => uploadDevisPdf(d.id, e.target.files[0])} />
+                              </label>
                               <button onClick={async () => {
                                 if (!confirm('Supprimer le PDF du devis ?')) return
                                 const { error: rmErr } = await supabase.storage.from('documents').remove([d.devis_pdf_path])
@@ -3545,21 +3712,7 @@ export default function FicheChantier({ params }) {
                             <label className="devis-doc-upload" style={{cursor: uploadingDoc === d.id + '_devis' ? 'wait' : 'pointer', color: uploadingDoc === d.id + '_devis' ? 'var(--ink-400)' : 'var(--brand-700)'}}>
                               {uploadingDoc === d.id + '_devis' ? 'Upload…' : '+ Uploader'}
                               <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id + '_devis'}
-                                onChange={async e => {
-                                  const fichier = e.target.files[0]
-                                  if (!fichier) return
-                                  setUploadingDoc(d.id + '_devis')
-                                  const ext = fichier.name.split('.').pop()
-                                  const chemin = `chantiers/${id}/devis/${d.id}.${ext}`
-                                  const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
-                                  if (!error) {
-                                    const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_pdf_path: chemin }).eq('id', d.id)
-                                    if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
-                                    await chargerDevis()
-                                    setSucces('Devis artisan uploadé ✓')
-                                  } else { setErreur('Erreur upload : ' + error.message) }
-                                  setUploadingDoc(null)
-                                }} />
+                                onChange={e => uploadDevisPdf(d.id, e.target.files[0])} />
                             </label>
                           )}
                         </div>
@@ -3629,6 +3782,41 @@ export default function FicheChantier({ params }) {
                         </div>
                       </div>
                     </div>
+
+                    {/* Historique des versions (Phase 3) — v1/v2… + PDF + Restaurer */}
+                    {versionsDevis[d.id]?.length > 0 && (
+                      <div style={{marginTop:4, border:'1px solid var(--ink-100)', borderRadius:8, padding:'10px 12px', background:'var(--surface-2)'}}>
+                        <div style={{fontSize:11, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8}}>
+                          🕓 Historique · {versionsDevis[d.id].length} version{versionsDevis[d.id].length > 1 ? 's' : ''}
+                        </div>
+                        <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                          {versionsDevis[d.id].map(v => (
+                            <div key={v.id} style={{display:'flex', alignItems:'center', gap:10, fontSize:12, padding:'6px 8px', borderRadius:6,
+                              background: v.est_courante ? 'rgba(0,148,212,0.08)' : 'transparent',
+                              border: v.est_courante ? '1px solid rgba(0,148,212,0.25)' : '1px solid transparent'}}>
+                              <span style={{fontWeight:700, color:'var(--ink-700)', minWidth:26}}>v{v.version_num}</span>
+                              <span className="tnum" style={{fontWeight:600, color:'var(--ink-800)', minWidth:92}}>{fmt(v.montant_ttc || 0)} TTC</span>
+                              <span style={{color:'var(--ink-400)', fontSize:11}}>{v.created_at ? new Date(v.created_at).toLocaleDateString('fr-FR', {day:'2-digit', month:'short', year:'2-digit'}) : ''}</span>
+                              {v.est_courante && <span style={{fontSize:10, fontWeight:600, color:'var(--brand-700)', background:'rgba(0,148,212,0.12)', padding:'1px 7px', borderRadius:99}}>Courante</span>}
+                              <div style={{marginLeft:'auto', display:'flex', gap:8, alignItems:'center'}}>
+                                {v.devis_pdf_path && (
+                                  <button onClick={() => ouvrirDocument(v.devis_pdf_path, `Devis v${v.version_num} ${d.artisan?.entreprise || ''}.pdf`)}
+                                    style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>PDF</button>
+                                )}
+                                {!v.est_courante && (
+                                  <button onClick={() => restaurerVersion(d.id, v)}
+                                    style={{fontSize:11, color:'#15803d', background:'none', border:'1px solid rgba(22,163,74,0.35)', borderRadius:6, padding:'2px 8px', cursor:'pointer'}}>Restaurer</button>
+                                )}
+                                {!v.est_courante && (
+                                  <button onClick={() => supprimerVersion(d.id, v)} title="Supprimer cette version"
+                                    style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Suppr.</button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Factures — liste + formulaire (pleine largeur) */}
                     {factures.filter(f => f.devis_id === d.id).length > 0 && (
@@ -4508,9 +4696,12 @@ export default function FicheChantier({ params }) {
         const linkBtn = { border:'none', background:'none', cursor:'pointer', fontSize:11, color:'var(--brand-700)', textDecoration:'underline' }
 
         const devisById   = Object.fromEntries(devis.map(d => [d.id, d]))
+        const versionById = Object.fromEntries(Object.values(versionsDevis).flat().map(v => [v.id, v]))
         const montantLigne = (l) => {
           if (l.montant_ttc_override != null) return Number(l.montant_ttc_override) || 0
-          return Number(devisById[l.devis_artisan_id]?.montant_ttc) || 0
+          // Ligne épinglée sur une version → montant de CETTE version (base figée).
+          if (l.devis_version_id) return Number(versionById[l.devis_version_id]?.montant_ttc) || 0
+          return Number(devisById[l.devis_artisan_id]?.montant_ttc) || 0   // sinon montant courant (live)
         }
         const ligneFor = (sim, devisId) => (sim.lignes || []).find(l => l.devis_artisan_id === devisId)
         const totauxSim = (sim) => {
@@ -4521,6 +4712,20 @@ export default function FicheChantier({ params }) {
         }
         const totalBaseTTC = devis.reduce((s, d) => s + (Number(d.montant_ttc) || 0), 0)
 
+        // Frise : bases figées (chronologiques) + simulations manuelles. La dernière
+        // base = base courante (mise en avant) ; les précédentes = historique repliable.
+        const basesTri = simulations.filter(s => s.type === 'base').sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+        const baseCourante = basesTri.find(b => b.est_base_courante) || basesTri[basesTri.length - 1] || null
+        const basesHistorique = basesTri.filter(b => b.id !== baseCourante?.id)
+        const manuelles = simulations.filter(s => s.type !== 'base')
+        const colonnes = [
+          ...(historiqueBasesOuvert ? basesHistorique : []),
+          ...(baseCourante ? [baseCourante] : []),
+          ...manuelles,
+        ]
+        const estBaseHisto = (sim) => sim.type === 'base' && sim.id !== baseCourante?.id
+        const estBaseCourante = (sim) => sim.type === 'base' && sim.id === baseCourante?.id
+
         return (
         <div style={{display:'flex', flexDirection:'column', gap:14}}>
           <div className="card" style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap'}}>
@@ -4528,9 +4733,16 @@ export default function FicheChantier({ params }) {
               <h2 className="page" style={{fontSize:15}}>Comparateur de devis</h2>
               <div className="eyebrow" style={{marginTop:4}}>Simule des scénarios : inclusion des devis, montants ajustés, taux d'honoraires.</div>
             </div>
-            <button onClick={ajouterSimulation} className="btn btn-primary" style={{fontSize:12.5}}>
-              <PlusIcon /> Nouvelle simulation
-            </button>
+            <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
+              {basesHistorique.length > 0 && (
+                <button onClick={() => setHistoriqueBasesOuvert(o => !o)} className="btn btn-ghost" style={{fontSize:12}}>
+                  {historiqueBasesOuvert ? '▾' : '▸'} Historique bases ({basesHistorique.length})
+                </button>
+              )}
+              <button onClick={ajouterSimulation} className="btn btn-primary" style={{fontSize:12.5}}>
+                <PlusIcon /> Nouvelle simulation
+              </button>
+            </div>
           </div>
 
           {loadingComparateur ? (
@@ -4541,15 +4753,22 @@ export default function FicheChantier({ params }) {
             <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucune simulation — clique « Nouvelle simulation ».</div>
           ) : (
             <div className="card" style={{padding:0, overflowX:'auto'}}>
-              <table style={{width:'100%', borderCollapse:'collapse', fontSize:12.5, minWidth: 320 + simulations.length * 180}}>
+              <table style={{width:'100%', borderCollapse:'collapse', fontSize:12.5, minWidth: 320 + colonnes.length * 180}}>
                 <thead>
                   <tr>
                     <th style={{...thStyle, textAlign:'left', minWidth:190}}>Devis / artisan</th>
-                    <th style={{...thStyle, minWidth:110}}>Base</th>
-                    {simulations.map(sim => (
-                      <th key={sim.id} style={{...thStyle, minWidth:170}}>
+                    <th style={{...thStyle, minWidth:110}}>Actuel</th>
+                    {colonnes.map(sim => {
+                      const histo = estBaseHisto(sim), courante = estBaseCourante(sim)
+                      return (
+                      <th key={sim.id} style={{...thStyle, minWidth:170, background: courante ? 'rgba(0,148,212,0.06)' : histo ? 'var(--surface-2)' : undefined}}>
                         <div style={{display:'flex', flexDirection:'column', gap:4, alignItems:'center'}}>
-                          <span style={{fontWeight:700, color:'var(--ink-900)', fontSize:12.5}}>{sim.nom}</span>
+                          <span style={{fontWeight: histo ? 500 : 700, color: histo ? 'var(--ink-500)' : 'var(--ink-900)', fontSize: histo ? 11.5 : 12.5}}>{sim.nom}</span>
+                          {(courante || histo) && (
+                            <span style={{fontSize:9.5, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.04em', color: courante ? 'var(--brand-700)' : 'var(--ink-400)'}}>
+                              {courante ? '● Base courante' : 'Base · historique'}
+                            </span>
+                          )}
                           {editingTaux === sim.id ? (
                             <TauxEditor sim={sim} onSave={saveTaux} onCancel={() => setEditingTaux(null)} />
                           ) : (
@@ -4559,7 +4778,7 @@ export default function FicheChantier({ params }) {
                           )}
                         </div>
                       </th>
-                    ))}
+                    )})}
                   </tr>
                 </thead>
                 <tbody>
@@ -4570,7 +4789,7 @@ export default function FicheChantier({ params }) {
                         {d.artisan?.metier && <div style={{fontSize:11, color:'var(--ink-500)'}}>{d.artisan.metier}</div>}
                       </td>
                       <td style={{...tdStyle, fontWeight:600}} className="tnum">{fmt(d.montant_ttc || 0)}</td>
-                      {simulations.map(sim => {
+                      {colonnes.map(sim => {
                         const l = ligneFor(sim, d.id)
                         if (!l) return <td key={sim.id} style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
                         return (
@@ -4595,6 +4814,24 @@ export default function FicheChantier({ params }) {
                                 </button>
                               )}
                             </div>
+                            {/* Sélecteur de version (4b) — si le devis a plusieurs versions. */}
+                            {versionsDevis[d.id]?.length > 1 && (
+                              sim.type === 'base' ? (
+                                <div style={{fontSize:9.5, color:'var(--ink-400)', marginTop:3}}>
+                                  {l.devis_version_id ? `v${versionById[l.devis_version_id]?.version_num ?? '?'}` : 'actuelle'}
+                                </div>
+                              ) : (
+                                <select value={l.devis_version_id || ''}
+                                  onChange={e => saveVersionLigne(sim.id, l.id, e.target.value)}
+                                  title="Version du devis utilisée pour cette simulation"
+                                  style={{marginTop:3, fontSize:10, padding:'1px 3px', border:'1px solid var(--ink-200)', borderRadius:4, color:'var(--ink-600)', maxWidth:130}}>
+                                  <option value="">Actuelle</option>
+                                  {versionsDevis[d.id].map(v => (
+                                    <option key={v.id} value={v.id}>v{v.version_num} · {fmt(v.montant_ttc || 0)}</option>
+                                  ))}
+                                </select>
+                              )
+                            )}
                           </td>
                         )
                       })}
@@ -4604,34 +4841,36 @@ export default function FicheChantier({ params }) {
                   <tr style={{borderTop:'2px solid var(--ink-300)', background:'var(--surface-2)'}}>
                     <td style={{...tdStyle, textAlign:'left', fontWeight:700}}>Total TTC</td>
                     <td style={{...tdStyle, fontWeight:700}} className="tnum">{fmt(totalBaseTTC)}</td>
-                    {simulations.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700}} className="tnum">{fmt(totauxSim(sim).totalTTC)}</td>)}
+                    {colonnes.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700}} className="tnum">{fmt(totauxSim(sim).totalTTC)}</td>)}
                   </tr>
                   <tr style={{borderTop:'1px solid var(--ink-100)'}}>
                     <td style={{...tdStyle, textAlign:'left'}}>Honoraires courtage</td>
                     <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
-                    {simulations.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honCourtage)}</td>)}
+                    {colonnes.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honCourtage)}</td>)}
                   </tr>
                   <tr>
                     <td style={{...tdStyle, textAlign:'left'}}>Honoraires AMO</td>
                     <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
-                    {simulations.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honAMO)}</td>)}
+                    {colonnes.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honAMO)}</td>)}
                   </tr>
                   <tr style={{borderTop:'1px solid var(--ink-200)'}}>
                     <td style={{...tdStyle, textAlign:'left', fontWeight:700, color:'var(--brand-800)'}}>Total chantier courtage</td>
                     <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
-                    {simulations.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--brand-800)'}} className="tnum">{fmt(totauxSim(sim).totalCourtage)}</td>)}
+                    {colonnes.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--brand-800)'}} className="tnum">{fmt(totauxSim(sim).totalCourtage)}</td>)}
                   </tr>
                   <tr>
                     <td style={{...tdStyle, textAlign:'left', fontWeight:700, color:'var(--brand-800)'}}>Total chantier AMO</td>
                     <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
-                    {simulations.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--brand-800)'}} className="tnum">{fmt(totauxSim(sim).totalAMO)}</td>)}
+                    {colonnes.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--brand-800)'}} className="tnum">{fmt(totauxSim(sim).totalAMO)}</td>)}
                   </tr>
                   <tr style={{borderTop:'1px solid var(--ink-100)'}}>
                     <td style={tdStyle}></td>
                     <td style={tdStyle}></td>
-                    {simulations.map(sim => (
+                    {colonnes.map(sim => (
                       <td key={sim.id} style={tdStyle}>
-                        <button onClick={() => supprimerSimulation(sim.id)} className="btn btn-ghost" style={{fontSize:11, color:'#b91c1c'}}>Supprimer</button>
+                        {sim.type !== 'base' && (
+                          <button onClick={() => supprimerSimulation(sim.id)} className="btn btn-ghost" style={{fontSize:11, color:'#b91c1c'}}>Supprimer</button>
+                        )}
                       </td>
                     ))}
                   </tr>
