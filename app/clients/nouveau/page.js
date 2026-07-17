@@ -110,7 +110,7 @@ export default function NouveauClient() {
       }
     }
     if (!agenceId) {
-      setErreur('Agence introuvable pour la référente sélectionnée.')
+      setErreur('Agence introuvable pour le référent sélectionné.')
       setLoading(false)
       return
     }
@@ -441,7 +441,7 @@ export default function NouveauClient() {
                     <option value="">— Choisir —</option>
                     {profiles.map(p => (
                       <option key={p.id} value={p.id}>
-                        {p.prenom} {p.nom} ({p.role === 'admin' ? 'Franchisée' : 'Agente'})
+                        {p.prenom} {p.nom} ({p.role === 'admin' ? 'Franchisé' : 'Agent'})
                       </option>
                     ))}
                   </select>

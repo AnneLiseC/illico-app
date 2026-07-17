@@ -465,8 +465,8 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
 
       {/* KPI strip */}
       <div className="kpi-grid">
-        <FinKpiCard label="Gains à facturer par l'agente · F1" value={fmt(round2(totalF1-totalF1Paye))} sub={`Reçu ${fmt(totalF1Paye)} · Total ${fmt(totalF1)}`} tone="ok"/>
-        <FinKpiCard label="À régler par l'agente · F2"         value={fmt(round2(totalF2-totalF2Paye))} sub={`Reçu ${fmt(totalF2Paye)} · Total ${fmt(totalF2)}`} tone="warn"/>
+        <FinKpiCard label="Gains à facturer par l'agent · F1" value={fmt(round2(totalF1-totalF1Paye))} sub={`Reçu ${fmt(totalF1Paye)} · Total ${fmt(totalF1)}`} tone="ok"/>
+        <FinKpiCard label="À régler par l'agent · F2"         value={fmt(round2(totalF2-totalF2Paye))} sub={`Reçu ${fmt(totalF2Paye)} · Total ${fmt(totalF2)}`} tone="warn"/>
         <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
       </div>
 
@@ -477,7 +477,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
             <div style={{fontSize:15,fontWeight:700,color:'var(--ink-900)'}}>
               Facturation mensuelle · {agenteActuelle ? `${agenteActuelle.prenom} ${agenteActuelle.nom}` : '—'}
             </div>
-            <div className="eyebrow" style={{marginTop:4}}>F1 = facture émise par l&apos;agente · F2 = facture émise par la franchisée</div>
+            <div className="eyebrow" style={{marginTop:4}}>F1 = facture émise par l&apos;agent · F2 = facture émise par le franchisé</div>
           </div>
         </div>
         <div className="table-scroll">
@@ -538,7 +538,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                           {renderPdfControl(f1, annee, mois, 'agente_vers_ctp')}
                         </div>
                         <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                          <div className="eyebrow" style={{color:'#b91c1c'}}>F2 — La Société facture l&apos;agente</div>
+                          <div className="eyebrow" style={{color:'#b91c1c'}}>F2 — La Société facture l&apos;agent</div>
                           {d.redev     > 0 && <Row label="Redevance mensuelle (HT)" value={fmt(d.redev)} />}
                           {d.apporteur > 0 && <Row label="Apporteur remboursé"      value={fmt(d.apporteur)} />}
                           {f2m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucune charge ce mois</span>}
@@ -738,7 +738,7 @@ export default function Finances() {
   // ── HELPERS PROFIL ─────────────────────────────────────────────────────────
 
   const isAdmin     = profile?.role === 'admin'
-  const nomReferente = (d) => d.referente ? `${d.referente.prenom} ${d.referente.nom}` : 'Agente'
+  const nomReferente = (d) => d.referente ? `${d.referente.prenom} ${d.referente.nom}` : 'Agent'
 
   // Objectif d'agence sensible à la vue active (4c-1) :
   //  - agenceActive = uuid  → objectif de CETTE agence (discriminé par agence_id) ;
@@ -1368,7 +1368,7 @@ export default function Finances() {
   }, [isAdmin, agenceActive, scope, redevances, mesRedevances, profile?.id])
 
   // CA généré (société-level) = Σ produits nets − apporteur TOTAL. Redevance EXCLUE,
-  // royalty embarquée 1× (déjà dans les nets). totalNetCTP = ce CA − parts agentes
+  // royalty embarquée 1× (déjà dans les nets). totalNetCTP = ce CA − parts agents
   // (= résultat net société) ; aligné sur la somme annuelle du compte de résultat société.
   const { totalCAGenere, totalNetCTP } = (() => {
     const keysAnnee = rowsReelScoped.filter(([k]) => k.startsWith(String(anneeEnCours)))
@@ -1867,7 +1867,7 @@ export default function Finances() {
       M.apporteurTotal = round2(M.apporteurTotal + c.apporteurTotalHT)
     })
     // Compte de résultat (prévi + réel) d'un mois, selon le mode.
-    // CA = produits (nets, royalty embarquée 1×) − apporteur TOTAL [− parts agentes en société].
+    // CA = produits (nets, royalty embarquée 1×) − apporteur TOTAL [− parts agents en société].
     // Redevance EXCLUE (→ Facturation). Royalty jamais re-déduite (déjà dans les nets).
     const comptePourCle = (cle) => {
       const p = mapPreviMois[cle] || {}
@@ -1892,10 +1892,10 @@ export default function Finances() {
         { label: 'Commissions apporteurs', r: x.r.comApporteursBrut||0 },
         { label: 'Honoraires',             r: x.r.honBrut||0 },
       ].filter(l => l.r !== 0)
-      // Reversements : apporteur (TOTAL) dans tous les modes ; + parts agentes en société.
+      // Reversements : apporteur (TOTAL) dans tous les modes ; + parts agents en société.
       const lignesReversements = isCTP
         ? [
-            { label: 'Parts agentes',         r: x.r.gainsAgenteReels||0 },
+            { label: 'Parts agents',         r: x.r.gainsAgenteReels||0 },
             { label: 'Apporteurs remboursés', r: x.reelApporteur },
           ]
         : [{ label: 'Apporteurs remboursés', r: x.reelApporteur }]
@@ -1914,7 +1914,7 @@ export default function Finances() {
             <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total produits (net)</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td></tr>
             <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Reversements</td></tr>
             {lignesReversements.map(l => {
-              const isParts = l.label === 'Parts agentes'   // ce que le mode Société retire → mis en évidence
+              const isParts = l.label === 'Parts agents'   // ce que le mode Société retire → mis en évidence
               return (<tr key={l.label} style={isParts ? {background:'rgba(245,158,11,0.12)'} : undefined}>
                 <td style={{...tdL, ...(isParts ? {fontWeight:600,color:'var(--ink-700)'} : {})}}>{l.label}</td>
                 <td style={{...tdR,color:'#ef4444',fontWeight:isParts ? 700 : 500}}>{fmt(l.r)}</td>
@@ -2147,10 +2147,10 @@ export default function Finances() {
       <div className="tabs">
         <button className={`tab ${tab==='gains'?'active':''}`} onClick={() => handleTab('gains')}>💰 CA · Chantiers</button>
         <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => handleTab('suivi')}>📈Compte de résultat</button>
-        <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => handleTab('facturation')}>🗒️Facturation agentes</button>
+        <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => handleTab('facturation')}>🗒️Facturation agents</button>
       </div>
 
-      {/* KPI strip — masqué sur l'onglet Facturation agentes (contexte de facturation différent). */}
+      {/* KPI strip — masqué sur l'onglet Facturation agents (contexte de facturation différent). */}
       {tab !== 'facturation' && (
       <div className="kpi-grid">
         {isAdmin ? (
@@ -2259,8 +2259,8 @@ export default function Finances() {
               border: `1px solid ${suiviMode === 'ctp' ? 'rgba(245,158,11,0.30)' : 'rgba(0,148,212,0.22)'}`,
             }}>
               {suiviMode === 'ctp'
-                ? <><strong style={{color:'var(--ink-800)'}}>Société</strong> · résultat net conservé, <strong>après</strong> déduction des parts agentes reversées.</>
-                : <><strong style={{color:'var(--ink-800)'}}>Agence</strong> · CA généré au niveau agence, parts agentes <strong>incluses</strong> (non déduites).</>}
+                ? <><strong style={{color:'var(--ink-800)'}}>Société</strong> · résultat net conservé, <strong>après</strong> déduction des parts agents reversées.</>
+                : <><strong style={{color:'var(--ink-800)'}}>Agence</strong> · CA généré au niveau agence, parts agents <strong>incluses</strong> (non déduites).</>}
             </div>
           )}
 

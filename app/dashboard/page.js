@@ -195,8 +195,8 @@ export default function Dashboard() {
   }
 
   const roleLabel = (role) => {
-    if (role === 'admin') return 'Franchisée'
-    if (role === 'agente') return 'Agente'
+    if (role === 'admin') return 'Franchisé'
+    if (role === 'agente') return 'Agent'
     return 'Client'
   }
 

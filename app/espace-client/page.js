@@ -443,7 +443,7 @@ export default function EspaceClient() {
               <div className="grid grid-cols-2 gap-3 text-sm">
                 {dossier.referente && (
                   <div>
-                    <p className="text-xs text-gray-400">Votre référente</p>
+                    <p className="text-xs text-gray-400">Votre référent</p>
                     <p className="font-medium text-gray-800">{dossier.referente.prenom} {dossier.referente.nom}</p>
                   </div>
                 )}
@@ -616,7 +616,7 @@ export default function EspaceClient() {
               <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
                 <p className="text-4xl mb-3">📄</p>
                 <p className="text-gray-400">Aucun compte-rendu disponible</p>
-                <p className="text-xs text-gray-300 mt-1">Votre référente les publiera après chaque visite</p>
+                <p className="text-xs text-gray-300 mt-1">Votre référent les publiera après chaque visite</p>
               </div>
             ) : (
               comptesRendus.map(cr => (
@@ -702,7 +702,7 @@ export default function EspaceClient() {
                 <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
                   <p className="text-4xl mb-3">📅</p>
                   <p className="text-gray-400">Aucun rendez-vous prévu</p>
-                  <p className="text-xs text-gray-300 mt-1">Votre référente les planifiera avec vous</p>
+                  <p className="text-xs text-gray-300 mt-1">Votre référent les planifiera avec vous</p>
                 </div>
               ) : (
                 <>
@@ -779,7 +779,7 @@ export default function EspaceClient() {
           <div className="space-y-4">
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="p-4 border-b border-gray-100">
-                <p className="font-medium text-gray-800 text-sm">Échanges avec votre référente</p>
+                <p className="font-medium text-gray-800 text-sm">Échanges avec votre référent</p>
                 <p className="text-xs text-gray-400">{dossier.referente?.prenom} {dossier.referente?.nom}</p>
               </div>
               <div className="p-4 space-y-3 max-h-96 overflow-y-auto">

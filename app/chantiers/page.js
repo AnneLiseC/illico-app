@@ -242,7 +242,7 @@ function ChantierPreview({ d, onOpen, onBack, isMobile }) {
             : <span style={{ color: '#b91c1c' }}>Non signé</span>}
           />
           {d.referente && (
-            <FactRow label="Référente" value={
+            <FactRow label="Référent" value={
               <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                 <Avatar name={`${d.referente.prenom} ${d.referente.nom}`} size={20} />
                 {d.referente.prenom} {d.referente.nom}

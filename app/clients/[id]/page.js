@@ -658,7 +658,7 @@ function FicheClientInner({ params }) {
               <select {...inputProps} value={client.referente?.id || client.referente || ''} onChange={e => set('referente', e.target.value)}>
                 <option value="">— Choisir —</option>
                 {profiles.map(p => (
-                  <option key={p.id} value={p.id}>{p.prenom} {p.nom} ({p.role === 'admin' ? 'Franchisée' : 'Agente'})</option>
+                  <option key={p.id} value={p.id}>{p.prenom} {p.nom} ({p.role === 'admin' ? 'Franchisé' : 'Agent'})</option>
                 ))}
               </select>
             ) : (

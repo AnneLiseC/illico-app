@@ -2832,7 +2832,7 @@ export default function FicheChantier({ params }) {
                   {dossier.referente.prenom} {dossier.referente.nom}
                 </div>
                 <div style={{fontSize:11,color:'var(--ink-500)'}}>
-                  {dossier.referente.role === 'admin' ? 'Franchisée' : 'Agente'}
+                  {dossier.referente.role === 'admin' ? 'Franchisé' : 'Agent'}
                 </div>
               </div>
             </div>
@@ -3345,7 +3345,7 @@ export default function FicheChantier({ params }) {
 
           {!referentEstAdmin && profile?.parts_agente_disponibles?.length > 1 && (
             <div style={{paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
-              <label className="eyebrow" style={{display:'block', marginBottom:8}}>Répartition commission (agente / Société)</label>
+              <label className="eyebrow" style={{display:'block', marginBottom:8}}>Répartition commission (agent / Société)</label>
               <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
                 {profile.parts_agente_disponibles.map(pct => {
                   const pctFloat = parseFloat(pct)
@@ -3649,7 +3649,7 @@ export default function FicheChantier({ params }) {
                         return (
                           <div className="devis-info-block">
                             <div className="devis-info-title">Parts</div>
-                            <div className="devis-kv"><span>{dossier.referente?.prenom || 'agente'}</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.parts.agente)}</span></div>
+                            <div className="devis-kv"><span>{dossier.referente?.prenom || 'agent'}</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.parts.agente)}</span></div>
                             <div className="devis-kv"><span>{prenomAdmin}</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-700)'}}>{fmt(finDevis.parts.admin)}</span></div>
                           </div>
                         )
@@ -4124,11 +4124,11 @@ export default function FicheChantier({ params }) {
               tone="brand"
             />
             <MiniKpi
-              label={referentEstAdmin ? 'Net franchisée' : 'Net total'}
+              label={referentEstAdmin ? 'Net franchisé' : 'Net total'}
               value={fmt(totalNet)}
               sub={partAgenteCfg > 0
                 ? `Agente ${fmt(gainAgente)} · Société ${fmt(gainAdmin)}`
-                : 'tout pour la franchisée'}
+                : 'tout pour le franchisé'}
               tone="brand"
             />
           </div>

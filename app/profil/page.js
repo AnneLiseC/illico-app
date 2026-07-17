@@ -14,7 +14,7 @@ import MesCalendriers from '../components/MesCalendriers'
 // requête forgée. Le RIB est owner (upload/voir) ; le Kbis est admin-only (voir seul).
 
 const fmtPart = (v) => (v === undefined || v === null) ? '—' : `${Math.round(v * 100)} / ${100 - Math.round(v * 100)}`
-const roleLabel = (r) => r === 'admin' ? 'Franchisée' : r === 'agente' ? 'Agente' : 'Membre'
+const roleLabel = (r) => r === 'admin' ? 'Franchisé' : r === 'agente' ? 'Agent' : 'Membre'
 
 export default function Profil() {
   const { user, profile, initialized, displayAgenceName, fetchProfile } = useAuth()

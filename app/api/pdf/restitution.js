@@ -411,7 +411,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
           ['Client',             nomClient],
           client?.adresse ? ['Adresse', client.adresse] : null,
           ['Prestation',         TYPO[dossier.typologie] || dossier.typologie],
-          ['Référente',          nomRef],
+          ['Référent',          nomRef],
           dossier.date_demarrage_chantier ? ['Démarrage chantier', new Date(dossier.date_demarrage_chantier).toLocaleDateString('fr-FR')] : null,
           dossier.date_fin_chantier ? ['Fin de chantier', new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR')] : null,
           ['Document établi le', dateAuj],
@@ -636,7 +636,7 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
           ['Client',             nomClient],
           client?.adresse ? ['Adresse', client.adresse] : null,
           ['Prestation',         TYPO[dossier.typologie] || dossier.typologie],
-          ['Référente',          nomRef],
+          ['Référent',          nomRef],
           ['Document établi le', dateAuj],
         ].filter(Boolean).map(([l, v]) =>
           React.createElement(View, { key: l, style: CS.infoRow },

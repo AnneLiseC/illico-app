@@ -210,7 +210,7 @@ export default function Statistiques() {
   })()
 
   // ── Sections 3-6 (mémoïsées) ──
-  // Loyers agentes encaissés (redevances statut 'regle') — REVENU de la société,
+  // Loyers agents encaissés (redevances statut 'regle') — REVENU de la société,
   // distinct du CA brokerage et des royalties (charge vers le franchiseur).
   const loyers = useMemo(() => {
     const base = agenceActive ? redevances.filter(r => r.agence_id === agenceActive) : redevances
@@ -344,8 +344,8 @@ export default function Statistiques() {
       {isAdmin && (
         <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: -8 }}>
           {modeEff === 'societe'
-            ? <><strong style={{ color: 'var(--ink-700)' }}>Société</strong> · tes dossiers d&apos;admin uniquement ; ta part sur les chantiers agentes + leurs loyers s&apos;ajoutent dans les chiffres clés.</>
-            : <><strong style={{ color: 'var(--ink-700)' }}>Agence</strong> · toute l&apos;agence, agentes incluses.</>}
+            ? <><strong style={{ color: 'var(--ink-700)' }}>Société</strong> · tes dossiers d&apos;admin uniquement ; ta part sur les chantiers agents + leurs loyers s&apos;ajoutent dans les chiffres clés.</>
+            : <><strong style={{ color: 'var(--ink-700)' }}>Agence</strong> · toute l&apos;agence, agents inclus.</>}
         </div>
       )}
 
@@ -357,7 +357,7 @@ export default function Statistiques() {
           <StatKpi label="Royalties reversées au franchiseur" value={fmtEur(roy.total)} tone="warn"
             sub={`Frais ${fmtEur(roy.parPoste.frais)} · Comm. ${fmtEur(roy.parPoste.commissions)} · Hono. ${fmtEur(roy.parPoste.honoraires)}`} />
         ) : (
-          <StatKpi label="Mes gains (part agente)" value={fmtEur(compta.partAgentes)} tone="ok"
+          <StatKpi label="Mes gains (part agent)" value={fmtEur(compta.partAgentes)} tone="ok"
             sub={`Royalties générées ${fmtEur(roy.total)}`} />
         )}
         <StatKpi label="Dossiers" value={`${nbSignes} signés`} tone="ok"
@@ -404,8 +404,8 @@ export default function Statistiques() {
         </div>
         {showAgentes && (
           <div className="card" style={{ padding: 20 }}>
-            <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>CA par agente</h2>
-            <div className="eyebrow" style={{ marginBottom: 14 }}>Contribution de chacune · {annee}</div>
+            <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>CA par agent</h2>
+            <div className="eyebrow" style={{ marginBottom: 14 }}>Contribution de chacun · {annee}</div>
             <BarList items={repartition.agente.map(a => ({ label: a.nom, value: a.ca, right: fmtEur(a.ca) }))} couleur="#8b5cf6" />
           </div>
         )}
@@ -430,7 +430,7 @@ export default function Statistiques() {
             <div>
               <div className="eyebrow" style={{ marginBottom: 6 }}>Répartition du CA net</div>
               <LigneCompta label="Part société" value={compta.caSociete} />
-              <LigneCompta label="Part agentes" value={compta.partAgentes} />
+              <LigneCompta label="Part agents" value={compta.partAgentes} />
               <div style={{ borderTop: '1px solid var(--ink-200)', marginTop: 6, paddingTop: 6 }}>
                 <LigneCompta label="Royalties au franchiseur (déjà déduites, indicatif)" value={compta.royalties} accent />
               </div>
@@ -439,8 +439,8 @@ export default function Statistiques() {
             <div>
               <div className="eyebrow" style={{ marginBottom: 6 }}>Revenu total de la société</div>
               <LigneCompta label="Mon CA (mes dossiers)" value={compta.total} />
-              <LigneCompta label="Ma part sur chantiers agentes" value={compta.partSurAgentes} />
-              <LigneCompta label="Loyers agentes encaissés" value={loyers.annee} />
+              <LigneCompta label="Ma part sur chantiers agents" value={compta.partSurAgentes} />
+              <LigneCompta label="Loyers agents encaissés" value={loyers.annee} />
               <div style={{ borderTop: '1px solid var(--ink-200)', marginTop: 6, paddingTop: 6 }}>
                 <LigneCompta label="Total encaissé société" value={round2(compta.total + compta.partSurAgentes + loyers.annee)} bold />
               </div>
@@ -491,18 +491,18 @@ export default function Statistiques() {
         </div>
       </div>
 
-      {/* ── SECTION 6 — Performance par agente (admin) ── */}
+      {/* ── SECTION 6 — Performance par agent (admin) ── */}
       {showAgentes && agentesRows.length > 0 && (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--ink-200)' }}>
-            <h2 className="page" style={{ fontSize: 15 }}>Performance par agente · {annee}</h2>
-            <div className="eyebrow" style={{ marginTop: 3 }}>La reddition déclinée par agente</div>
+            <h2 className="page" style={{ fontSize: 15 }}>Performance par agent · {annee}</h2>
+            <div className="eyebrow" style={{ marginTop: 3 }}>La reddition déclinée par agent</div>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead>
                 <tr style={{ background: 'var(--surface-2)' }}>
-                  {['Agente', 'CA généré', 'Part société', 'Dossiers', 'Taux signé', 'Royalties', 'vs Objectif'].map((h, i) => (
+                  {['Agent', 'CA généré', 'Part société', 'Dossiers', 'Taux signé', 'Royalties', 'vs Objectif'].map((h, i) => (
                     <th key={h} style={{ padding: '10px 14px', textAlign: i === 0 ? 'left' : 'right', fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
