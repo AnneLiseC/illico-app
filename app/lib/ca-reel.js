@@ -13,7 +13,7 @@
 // l'apporteur en pratique : apporteur_actif n'est chargé nulle part). À périmètre
 // égal, les 3 pages (dashboard, stats, finances) affichent le même montant.
 // ─────────────────────────────────────────────────────────────────────────────
-import { calculateDossierFinance, calculateDevisFinance, getActiveDevis, calculateSoldeAmoReel } from './finance'
+import { calculateDossierFinance, calculateDevisFinance, getSignedDevis, calculateSoldeAmoReel } from './finance'
 
 export const normDossier = (d) => ({
   ...d,
@@ -54,7 +54,7 @@ export function computeCAMensuel(dossiers, annee, mode = 'agence') {
       const sfA = suivi.find(s => s.type_echeance === 'solde_amo')
       if (nd.typologie === 'amo' && sfA?.statut_client === 'regle') add(sfA.date_paiement || nd.date_fin_chantier, fin.honoraires.soldeAmo.net, fin.honoraires.soldeAmo.parts.agente)
     }
-    for (const dv of getActiveDevis(d)) {
+    for (const dv of getSignedDevis(d)) {
       const sfAc = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id && s.statut_illico === 'recu')
       if (!sfAc) continue
       const dvFin = calculateDevisFinance(dv, nd)
@@ -92,7 +92,7 @@ export function computeRoyalties(dossiers, annee) {
       const sfA = suivi.find(s => s.type_echeance === 'solde_amo')
       if (nd.typologie === 'amo' && sfA?.statut_client === 'regle') add(sfA.date_paiement || nd.date_fin_chantier, fin.honoraires.soldeAmo.royalties, 'honoraires')
     }
-    for (const dv of getActiveDevis(d)) {
+    for (const dv of getSignedDevis(d)) {
       const sfAc = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id && s.statut_illico === 'recu')
       if (!sfAc) continue
       const dvFin = calculateDevisFinance(dv, nd)
