@@ -399,45 +399,42 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
     } catch (e) { setErreur('Erreur F2 : ' + e.message) }
   }
 
-  const FactureDetailCard = ({ title, subtitle, type, accent }) => {
-    const fs = facturesAg.filter(f => f.type_facture === type)
+  // PDF déposer/voir — intégré à la ligne dépliable (fusion des anciennes cartes détail).
+  // f absent (mois pas encore facturé) → cible synthétique : l'upload crée la ligne.
+  const renderPdfControl = (f, annee, mois, type) => {
+    const cible = f || { annee, mois, type_facture: type, montant: 0 }
+    const voir = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }
     return (
-      <div className="card" style={{padding:0,overflow:'hidden'}}>
-        <div style={{padding:'14px 18px',borderBottom:'1px solid var(--ink-200)',borderLeft:`4px solid ${accent}`}}>
-          <div style={{fontSize:14,fontWeight:700,color:'var(--ink-900)'}}>{title}</div>
-          <div style={{fontSize:11.5,color:'var(--ink-500)',marginTop:4,lineHeight:1.4}}>{subtitle}</div>
-        </div>
-        <div>
-          {fs.map(f => {
-            const m = calcMois(f.annee, f.mois)
-            const montant = type === 'agente_vers_ctp' ? f1Eff(f, m.montantF1) : f2Eff(f, m.montantF2)
-            const [fFaStr, fFmStr] = shiftMoisKey(`${f.annee}-${String(f.mois).padStart(2, '0')}`, +1).split('-')
-            return (
-            <div key={f.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:12,alignItems:'center',padding:'12px 18px',borderTop:'1px solid var(--ink-100)'}}>
-              <div>
-                <div style={{fontSize:13,fontWeight:600,color:'var(--ink-900)'}}>{MOIS[parseInt(fFmStr)]} {fFaStr}</div>
-                <div style={{fontSize:10,color:'var(--ink-400)'}}>activité de {MOIS[f.mois]} {f.annee}</div>
-                <div style={{fontSize:11,color:'var(--ink-500)',marginTop:2}}>
-                  {f.facture_path
-                    ? <button onClick={async () => { const { data } = await supabase.storage.from('documents').createSignedUrl(f.facture_path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }}
-                        style={{fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>
-                    : <span style={{color:'var(--ink-400)'}}>Pas de PDF déposé</span>}
-                </div>
-              </div>
-              <div style={{fontWeight:700,color:'var(--ink-900)',fontVariantNumeric:'tabular-nums'}}>{fmt(montant)}</div>
-              <div style={{display:'flex',gap:6,alignItems:'center'}}>
-                <StatutFacture f={f}/>
-                <label style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid var(--ink-200)',cursor:'pointer',color:'var(--ink-600)',background:'#fff'}}>
-                  {f.facture_path ? '📤 Remplacer le PDF' : '📤 Déposer un PDF'}
-                  <input type="file" accept=".pdf" style={{display:'none'}} onChange={e => e.target.files[0] && uploadPdf(f, e.target.files[0])}/>
-                </label>
-              </div>
-            </div>
-            )
-          })}
-          {fs.length === 0 && <div style={{padding:24,textAlign:'center',color:'var(--ink-400)',fontSize:13}}>Aucune facture</div>}
-        </div>
+      <div style={{display:'flex',gap:12,alignItems:'center',marginTop:6}}>
+        {f?.facture_path
+          ? <button onClick={() => voir(f.facture_path)} style={{fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>
+          : <span style={{fontSize:11,color:'var(--ink-400)'}}>Pas de PDF</span>}
+        <label style={{fontSize:11,color:'var(--ink-600)',cursor:'pointer',border:'1px solid var(--ink-200)',borderRadius:6,padding:'3px 8px',background:'#fff'}}>
+          {f?.facture_path ? '📤 Remplacer' : '📤 Déposer un PDF'}
+          <input type="file" accept=".pdf" style={{display:'none'}} onChange={e => e.target.files[0] && uploadPdf(cible, e.target.files[0])}/>
+        </label>
       </div>
+    )
+  }
+
+  // Statut cliquable explicite (bouton, pas badge-hover) — lisible et tactile-friendly.
+  // canToggle=false (F2 côté agente) → badge lecture seule. montant 0 + non payé → « — ».
+  const renderStatutToggle = (f, onToggle, canToggle, montant) => {
+    const paye = f?.statut === 'paye'
+    if (montant === 0 && !paye) return <span style={{color:'var(--ink-400)'}}>—</span>
+    if (!canToggle) return <StatutFacture f={f}/>
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); onToggle() }}
+        title={paye ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
+        style={{
+          fontSize:11.5, fontWeight:600, borderRadius:8, padding:'5px 11px', cursor:'pointer', border:'1px solid',
+          ...(paye
+            ? { background:'rgba(22,163,74,0.1)', borderColor:'rgba(22,163,74,0.35)', color:'#15803d' }
+            : { background:'#fff', borderColor:'var(--brand-500)', color:'var(--brand-700)' }),
+        }}>
+        {paye ? '✅ Reçu' : 'Marquer reçu'}
+      </button>
     )
   }
 
@@ -468,8 +465,8 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
 
       {/* KPI strip */}
       <div className="kpi-grid">
-        <FinKpiCard label="F1 — Gains à facturer"       value={fmt(totalF1)}    sub={`Reçu ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
-        <FinKpiCard label="F2 — Redevances + apporteur" value={fmt(totalF2)}    sub={`Reçu ${fmt(totalF2Paye)}`}                                              tone="warn"/>
+        <FinKpiCard label="Gains à facturer par l'agente · F1" value={fmt(totalF1)}    sub={`Reçu ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
+        <FinKpiCard label="À régler par l'agente · F2"         value={fmt(totalF2)}    sub={`Reçu ${fmt(totalF2Paye)} · redevance + apporteur`}                     tone="warn"/>
         <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
       </div>
 
@@ -488,10 +485,10 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
           <thead style={{background:'var(--surface-2)'}}>
             <tr>
               {thL('Mois')}
-              {thR('F1 (Agente → Société)')}
-              <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F1</th>
-              {thR('F2 (Société → Agente)')}
-              <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F2</th>
+              <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Agente → Société<div style={{fontSize:9,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>facture F1</div></th>
+              <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut</th>
+              <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Société → Agente<div style={{fontSize:9,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>facture F2</div></th>
+              <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut</th>
             </tr>
           </thead>
           <tbody>
@@ -506,7 +503,6 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
               const f1m = f1Eff(f1, d.montantF1)
               const f2m = f2Eff(f2, d.montantF2)
               const isOpen = moisDeplie === key
-              const voirPdf = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }
               return (
                 <React.Fragment key={key}>
                 <tr style={{borderTop:'1px solid var(--ink-100)',cursor:'pointer'}} className="row-hover" onClick={() => setMoisDeplie(isOpen ? null : key)}>
@@ -518,37 +514,13 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                     {f1m > 0 ? fmt(f1m) : '—'}
                   </td>
                   <td style={{padding:'14px 16px',textAlign:'center'}}>
-                    {(f1m === 0 && f1?.statut !== 'paye') ? (
-                      <span style={{color:'var(--ink-400)'}}>—</span>
-                    ) : (
-                      <span
-                        onClick={(e) => { e.stopPropagation(); toggleF1Statut(annee, mois, f1) }}
-                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
-                        title={f1?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
-                        style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
-                        <StatutFacture f={f1}/>
-                      </span>
-                    )}
+                    {renderStatutToggle(f1, () => toggleF1Statut(annee, mois, f1), true, f1m)}
                   </td>
                   <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f2m>0?'#b91c1c':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
                     {f2m > 0 ? fmt(f2m) : '—'}
                   </td>
                   <td style={{padding:'14px 16px',textAlign:'center'}}>
-                    {(f2m === 0 && f2?.statut !== 'paye') ? (
-                      <span style={{color:'var(--ink-400)'}}>—</span>
-                    ) : isAdmin ? (
-                      <span
-                        onClick={(e) => { e.stopPropagation(); toggleF2Statut(annee, mois, f2) }}
-                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
-                        title={f2?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
-                        style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
-                        <StatutFacture f={f2}/>
-                      </span>
-                    ) : (
-                      <StatutFacture f={f2}/>
-                    )}
+                    {renderStatutToggle(f2, () => toggleF2Statut(annee, mois, f2), isAdmin, f2m)}
                   </td>
                 </tr>
                 {isOpen && (
@@ -563,7 +535,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                           {d.partN  > 0 && <Row label="Part partenaire"         value={fmt(d.partN)} />}
                           {f1m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucun gain encaissé ce mois</span>}
                           <Row label="Total F1" value={fmt(f1m)} bold accent />
-                          {f1?.facture_path && <button onClick={() => voirPdf(f1.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
+                          {renderPdfControl(f1, annee, mois, 'agente_vers_ctp')}
                         </div>
                         <div style={{display:'flex',flexDirection:'column',gap:6}}>
                           <div className="eyebrow" style={{color:'#b91c1c'}}>F2 — La Société facture l&apos;agente</div>
@@ -571,7 +543,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                           {d.apporteur > 0 && <Row label="Apporteur remboursé"      value={fmt(d.apporteur)} />}
                           {f2m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucune charge ce mois</span>}
                           <Row label="Total F2" value={fmt(f2m)} bold accent />
-                          {f2?.facture_path && <button onClick={() => voirPdf(f2.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
+                          {renderPdfControl(f2, annee, mois, 'ctp_vers_agente')}
                         </div>
                       </div>
                     </td>
@@ -597,22 +569,6 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
           )}
         </table>
         </div>
-      </div>
-
-      {/* Détail factures F1 + F2 côte à côte */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18}}>
-        <FactureDetailCard
-          title="F1 — Factures émises par l'agente"
-          subtitle="L'agente facture la Société pour ses gains du mois (frais + commissions + honoraires)"
-          type="agente_vers_ctp"
-          accent="#16a34a"
-        />
-        <FactureDetailCard
-          title="F2 — Factures émises par la franchisée"
-          subtitle="La Société facture l'agente pour la redevance + apporteur remboursé"
-          type="ctp_vers_agente"
-          accent="#dc2626"
-        />
       </div>
 
       {/* Redevances 12 mois */}
