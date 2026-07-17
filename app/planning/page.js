@@ -641,7 +641,7 @@ export default function Planning() {
 
         {profile?.role === 'admin' && (
           <select className="input" value={agenteFiltre} onChange={e => setAgenteFiltre(e.target.value)} style={{height:34, minWidth:140}}>
-            <option value="">Toutes les agentes</option>
+            <option value="">Tous les agents</option>
             {agentes.map(a => <option key={a.id} value={a.id}>{a.prenom} {a.nom}</option>)}
           </select>
         )}

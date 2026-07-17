@@ -381,9 +381,9 @@ export default function Parametres() {
   if (loading) return <div className="page-loading" />
 
   const NAV = [
-    { k:'profil',       l:'Profil franchisée' },
+    { k:'profil',       l:'Profil franchisé' },
     { k:'agence',       l:'Agence' },
-    { k:'equipe',       l:'Équipe & agentes', count: agentes.length },
+    { k:'equipe',       l:'Équipe & agents', count: agentes.length },
     { k:'parts',        l:'Parts & royalties' },
     { k:'documents',    l:'RIB & Kbis' },
     { k:'notifs',       l:'Notifications' },
@@ -427,11 +427,11 @@ export default function Parametres() {
         {/* Contenu */}
         <div style={{padding:28, overflowY:'auto'}}>
 
-          {/* ── Profil franchisée ── */}
+          {/* ── Profil franchisé ── */}
           {section === 'profil' && (
             <div style={{display:'flex', flexDirection:'column', gap:18}}>
               <div>
-                <h2 className="page" style={{fontSize:18, marginBottom:4}}>Profil franchisée</h2>
+                <h2 className="page" style={{fontSize:18, marginBottom:4}}>Profil franchisé</h2>
                 <p style={{color:'var(--ink-500)', fontSize:13}}>Informations affichées sur les documents générés par l'application.</p>
               </div>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, maxWidth:680}}>
@@ -511,15 +511,15 @@ export default function Parametres() {
             </div>
           )}
 
-          {/* ── Équipe & agentes ── */}
+          {/* ── Équipe & agents ── */}
           {section === 'equipe' && (
             <div style={{display:'flex', flexDirection:'column', gap:18}}>
               <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end'}}>
                 <div>
-                  <h2 className="page" style={{fontSize:18, marginBottom:4}}>Équipe & agentes</h2>
-                  <p style={{color:'var(--ink-500)', fontSize:13}}>Comptes agentes, accès et documents. Les parts sont dans "Parts & royalties".</p>
+                  <h2 className="page" style={{fontSize:18, marginBottom:4}}>Équipe & agents</h2>
+                  <p style={{color:'var(--ink-500)', fontSize:13}}>Comptes agents, accès et documents. Les parts sont dans "Parts & royalties".</p>
                 </div>
-                <button className="btn btn-primary" onClick={ouvrirCreer}>+ Nouvelle agente</button>
+                <button className="btn btn-primary" onClick={ouvrirCreer}>+ Nouvel agent</button>
               </div>
 
               {/* Objectif de CA de l'agence (annuel) */}
@@ -560,7 +560,7 @@ export default function Parametres() {
               )}
 
               {agentes.length === 0 ? (
-                <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:24}}>Aucune agente</p>
+                <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:24}}>Aucun agent</p>
               ) : (
                 <div style={{display:'flex', flexDirection:'column', gap:10}}>
                   {agentes.map(agente => {
@@ -617,10 +617,10 @@ export default function Parametres() {
             <div style={{display:'flex', flexDirection:'column', gap:18}}>
               <div>
                 <h2 className="page" style={{fontSize:18, marginBottom:4}}>Parts & royalties</h2>
-                <p style={{color:'var(--ink-500)', fontSize:13}}>Répartitions commission, frais et redevances par agente. Cliquez "Modifier" pour éditer.</p>
+                <p style={{color:'var(--ink-500)', fontSize:13}}>Répartitions commission, frais et redevances par agent. Cliquez "Modifier" pour éditer.</p>
               </div>
               {agentes.length === 0 ? (
-                <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:24}}>Aucune agente</p>
+                <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:24}}>Aucun agent</p>
               ) : (
                 <div style={{display:'flex', flexDirection:'column', gap:10}}>
                   {agentes.map(agente => (
@@ -637,12 +637,12 @@ export default function Parametres() {
                               ? agente.parts_agente_disponibles.map(p => `${Math.round(p * 100)} / ${Math.round((1 - p) * 100)}`).join(' · ')
                               : fmtPct(agente.part_agente_defaut)}
                           </div>
-                          <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>agente / Société</div>
+                          <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>agent / Société</div>
                         </div>
                         <div style={{background:'var(--surface-2)', borderRadius:8, padding:'10px 14px'}}>
                           <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>Répartition frais</div>
                           <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:13}}>{fmtPct(agente.frais_part_agente_defaut)}</div>
-                          <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>agente / Société</div>
+                          <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>agent / Société</div>
                         </div>
                         <div style={{background:'var(--surface-2)', borderRadius:8, padding:'10px 14px'}}>
                           <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>Redevances depuis</div>
@@ -672,7 +672,7 @@ export default function Parametres() {
                   <div style={{display:'flex', alignItems:'center', gap:12}}>
                     <div style={{width:36, height:36, borderRadius:8, background: profile?.rib_url ? 'var(--brand-50)' : 'rgba(245,158,11,0.12)', color: profile?.rib_url ? 'var(--brand-800)' : '#a16207', display:'grid', placeItems:'center', fontSize:18}}>📄</div>
                     <div>
-                      <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>RIB franchisée</div>
+                      <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>RIB franchisé</div>
                       <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{profile?.rib_url ? 'Fichier uploadé' : 'Aucun fichier'}</div>
                     </div>
                   </div>
@@ -695,7 +695,7 @@ export default function Parametres() {
                   <div style={{display:'flex', alignItems:'center', gap:12}}>
                     <div style={{width:36, height:36, borderRadius:8, background: profile?.kbis_url ? 'var(--brand-50)' : 'rgba(245,158,11,0.12)', color: profile?.kbis_url ? 'var(--brand-800)' : '#a16207', display:'grid', placeItems:'center', fontSize:18}}>📄</div>
                     <div>
-                      <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>KBIS franchisée</div>
+                      <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>KBIS franchisé</div>
                       <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{profile?.kbis_url ? 'Fichier uploadé' : 'Aucun fichier'}</div>
                     </div>
                   </div>
@@ -858,7 +858,7 @@ export default function Parametres() {
         <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
           <div className="card" style={{padding:0, maxWidth:520, width:'100%', maxHeight:'90vh', overflow:'auto'}}>
             <div style={{padding:'18px 22px', borderBottom:'1px solid var(--ink-200)'}}>
-              <h2 className="page" style={{fontSize:16}}>{modal === 'creer' ? 'Nouvelle agente' : `Modifier — ${agenteEditee?.prenom} ${agenteEditee?.nom}`}</h2>
+              <h2 className="page" style={{fontSize:16}}>{modal === 'creer' ? 'Nouvel agent' : `Modifier — ${agenteEditee?.prenom} ${agenteEditee?.nom}`}</h2>
               <div className="eyebrow" style={{marginTop:4}}>{modal === 'creer' ? 'Invitation par email' : 'Profil et parts'}</div>
             </div>
             <div style={{padding:22, display:'flex', flexDirection:'column', gap:14}}>
@@ -896,12 +896,12 @@ export default function Parametres() {
                 <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Montant fixe dû chaque mois (à partir de la date ci-dessus). Vide = à paramétrer.</div>
               </div>
               <div>
-                <label style={LS}>Répartitions commission disponibles — agente %</label>
+                <label style={LS}>Répartitions commission disponibles — agent %</label>
                 <input className="input" value={form.parts_agente_disponibles} onChange={e => setForm(f => ({ ...f, parts_agente_disponibles: e.target.value }))} placeholder="ex: 60 ou 50, 60"/>
-                <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Une valeur = pas de choix. Plusieurs séparées par virgule = l'agente choisit.</div>
+                <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Une valeur = pas de choix. Plusieurs séparées par virgule = l'agent choisit.</div>
               </div>
               <div>
-                <label style={LS}>Répartition frais de consultation — agente / Société</label>
+                <label style={LS}>Répartition frais de consultation — agent / Société</label>
                 <div style={{display:'flex', alignItems:'center', gap:10}}>
                   <div style={{flex:1}}>
                     <input className="input" type="number" min="0" max="100" value={form.frais_part_agente_defaut} onChange={e => setForm(f => ({ ...f, frais_part_agente_defaut: parseInt(e.target.value) || 0 }))} style={{textAlign:'center'}}/>
@@ -915,7 +915,7 @@ export default function Parametres() {
                 </div>
               </div>
               <div>
-                <label style={LS}>Objectif de CA — agente {new Date().getFullYear()}</label>
+                <label style={LS}>Objectif de CA — agent {new Date().getFullYear()}</label>
                 <input className="input" type="number" min="0" value={form.objectif} onChange={e => setForm(f => ({ ...f, objectif: e.target.value }))} placeholder="Objectif annuel €"/>
                 <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Montant annuel. Modifiable à tout moment.</div>
               </div>
@@ -939,7 +939,7 @@ export default function Parametres() {
             <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:16}}>
               <div style={{width:40, height:40, borderRadius:99, background:'rgba(239,68,68,0.1)', color:'#DC2626', display:'grid', placeItems:'center', fontSize:18, flexShrink:0}}>⚠</div>
               <div>
-                <div style={{fontWeight:700, color:'var(--ink-900)'}}>Désactiver cette agente ?</div>
+                <div style={{fontWeight:700, color:'var(--ink-900)'}}>Désactiver cet agent ?</div>
                 <div style={{fontSize:13, color:'var(--ink-500)', marginTop:2}}>{agenteASupprimer.prenom} {agenteASupprimer.nom}</div>
               </div>
             </div>

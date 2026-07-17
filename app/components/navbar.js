@@ -119,7 +119,7 @@ export default function NavBar() {
     : displayAgenceName
 
   const initials = `${profile.prenom?.[0] ?? ''}${profile.nom?.[0] ?? ''}`.toUpperCase()
-  const roleLabel = profile.role === 'admin' ? 'Franchisée' : profile.role === 'agente' ? 'Agente' : 'Membre'
+  const roleLabel = profile.role === 'admin' ? 'Franchisé' : profile.role === 'agente' ? 'Agent' : 'Membre'
 
   return (
     <>
