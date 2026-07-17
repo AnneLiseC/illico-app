@@ -2226,14 +2226,14 @@ export default function Finances() {
                 </div>
               </div>
             </FinKpiCard>
-            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} sub="Net · à venir" tone="ok"/>
+            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} tone="ok"/>
             <FinKpiCard label="Part société" value={fmt(totalNetCTP)} sub={`Part agentes · ${fmt(totalGainsAgentesReels)}`} tone="brand"/>
           </>
         ) : (
           <>
             {/* Agente : ce que j'ai encaissé · ce qui reste à venir · mes commissions */}
             <FinKpiCard label={`Encaissé ${anneeEnCours}`} value={fmt(totalCAGenere)} sub="Réel net" tone="brand"/>
-            <FinKpiCard label="À venir" value={fmt(totPreviNet)} sub="Prévisionnel net, non encaissé" tone="ok"/>
+            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} tone="ok"/>
             <FinKpiCard label="Commissions HT" value={fmt(totComHT)} sub={`Frais conso. ${fmt(totFraisHT)} HT`} tone="warn"/>
           </>
         )}
