@@ -2216,32 +2216,32 @@ export default function Finances() {
         <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => handleTab('facturation')}>🗒️Facturation agentes</button>
       </div>
 
-      {/* KPI strip — même layout pour admin et agente, données scopées */}
+      {/* KPI strip — 3 indicateurs adaptés au rôle (variables inchangées, affichage resserré). */}
       <div className="kpi-grid">
-        {isAdmin && (
-          <FinKpiCard label={`CA généré ${anneeEnCours}`} value={fmt(totalCAGenere)} tone="brand">
-            <div style={{marginTop:8}}>
-              <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
-                <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
+        {isAdmin ? (
+          <>
+            {/* Admin : CA société généré + objectif · prévi · partage société/agentes */}
+            <FinKpiCard label={`CA généré ${anneeEnCours}`} value={fmt(totalCAGenere)} tone="brand">
+              <div style={{marginTop:8}}>
+                <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
+                  <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
+                </div>
+                <div style={{fontSize:11,color:'var(--ink-500)'}}>
+                  Objectif <span style={{fontWeight:600,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(objectifAnnuel)}</span> · {pctObjectif}%
+                </div>
               </div>
-              <div style={{fontSize:11,color:'var(--ink-500)'}}>
-                Objectif <span style={{fontWeight:600,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(objectifAnnuel)}</span> · {pctObjectif}%
-              </div>
-            </div>
-          </FinKpiCard>
+            </FinKpiCard>
+            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} sub="Net · à venir" tone="ok"/>
+            <FinKpiCard label="Part société" value={fmt(totalNetCTP)} sub={`Part agentes · ${fmt(totalGainsAgentesReels)}`} tone="brand"/>
+          </>
+        ) : (
+          <>
+            {/* Agente : ce que j'ai encaissé · ce qui reste à venir · mes commissions */}
+            <FinKpiCard label={`Encaissé ${anneeEnCours}`} value={fmt(totalCAGenere)} sub="Réel net" tone="brand"/>
+            <FinKpiCard label="À venir" value={fmt(totPreviNet)} sub="Prévisionnel net, non encaissé" tone="ok"/>
+            <FinKpiCard label="Commissions HT" value={fmt(totComHT)} sub={`Frais conso. ${fmt(totFraisHT)} HT`} tone="warn"/>
+          </>
         )}
-        <FinKpiCard label="CA prévisionnel"
-          value={fmt(totPreviNet)}
-          sub={`${fmt(round2(totComHT+totFraisHT))} brut · ${fmt(totRoyalties)} royalties`}
-          tone="ok"/>
-        <FinKpiCard label="Commissions HT"
-          value={fmt(totComHT)}
-          sub={`Frais conso. ${fmt(totFraisHT)} HT`}
-          tone="warn"/>
-        <FinKpiCard label={isAdmin ? "Part franchisée" : "CA généré"}
-          value={fmt(isAdmin ? totalNetCTP : totalCAGenere)}
-          sub={isAdmin ? `Part agentes ${fmt(totalGainsAgentesReels)}` : 'Réel encaissé'}
-          tone="brand"/>
       </div>
 
       {/* ── PRÉVISIONNEL ── */}
