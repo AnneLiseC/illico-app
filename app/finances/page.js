@@ -399,45 +399,42 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
     } catch (e) { setErreur('Erreur F2 : ' + e.message) }
   }
 
-  const FactureDetailCard = ({ title, subtitle, type, accent }) => {
-    const fs = facturesAg.filter(f => f.type_facture === type)
+  // PDF déposer/voir — intégré à la ligne dépliable (fusion des anciennes cartes détail).
+  // f absent (mois pas encore facturé) → cible synthétique : l'upload crée la ligne.
+  const renderPdfControl = (f, annee, mois, type) => {
+    const cible = f || { annee, mois, type_facture: type, montant: 0 }
+    const voir = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }
     return (
-      <div className="card" style={{padding:0,overflow:'hidden'}}>
-        <div style={{padding:'14px 18px',borderBottom:'1px solid var(--ink-200)',borderLeft:`4px solid ${accent}`}}>
-          <div style={{fontSize:14,fontWeight:700,color:'var(--ink-900)'}}>{title}</div>
-          <div style={{fontSize:11.5,color:'var(--ink-500)',marginTop:4,lineHeight:1.4}}>{subtitle}</div>
-        </div>
-        <div>
-          {fs.map(f => {
-            const m = calcMois(f.annee, f.mois)
-            const montant = type === 'agente_vers_ctp' ? f1Eff(f, m.montantF1) : f2Eff(f, m.montantF2)
-            const [fFaStr, fFmStr] = shiftMoisKey(`${f.annee}-${String(f.mois).padStart(2, '0')}`, +1).split('-')
-            return (
-            <div key={f.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:12,alignItems:'center',padding:'12px 18px',borderTop:'1px solid var(--ink-100)'}}>
-              <div>
-                <div style={{fontSize:13,fontWeight:600,color:'var(--ink-900)'}}>{MOIS[parseInt(fFmStr)]} {fFaStr}</div>
-                <div style={{fontSize:10,color:'var(--ink-400)'}}>activité de {MOIS[f.mois]} {f.annee}</div>
-                <div style={{fontSize:11,color:'var(--ink-500)',marginTop:2}}>
-                  {f.facture_path
-                    ? <button onClick={async () => { const { data } = await supabase.storage.from('documents').createSignedUrl(f.facture_path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }}
-                        style={{fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>
-                    : <span style={{color:'var(--ink-400)'}}>Pas de PDF déposé</span>}
-                </div>
-              </div>
-              <div style={{fontWeight:700,color:'var(--ink-900)',fontVariantNumeric:'tabular-nums'}}>{fmt(montant)}</div>
-              <div style={{display:'flex',gap:6,alignItems:'center'}}>
-                <StatutFacture f={f}/>
-                <label style={{fontSize:11,padding:'4px 8px',borderRadius:6,border:'1px solid var(--ink-200)',cursor:'pointer',color:'var(--ink-600)',background:'#fff'}}>
-                  {f.facture_path ? '📤 Remplacer le PDF' : '📤 Déposer un PDF'}
-                  <input type="file" accept=".pdf" style={{display:'none'}} onChange={e => e.target.files[0] && uploadPdf(f, e.target.files[0])}/>
-                </label>
-              </div>
-            </div>
-            )
-          })}
-          {fs.length === 0 && <div style={{padding:24,textAlign:'center',color:'var(--ink-400)',fontSize:13}}>Aucune facture</div>}
-        </div>
+      <div style={{display:'flex',gap:12,alignItems:'center',marginTop:6}}>
+        {f?.facture_path
+          ? <button onClick={() => voir(f.facture_path)} style={{fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>
+          : <span style={{fontSize:11,color:'var(--ink-400)'}}>Pas de PDF</span>}
+        <label style={{fontSize:11,color:'var(--ink-600)',cursor:'pointer',border:'1px solid var(--ink-200)',borderRadius:6,padding:'3px 8px',background:'#fff'}}>
+          {f?.facture_path ? '📤 Remplacer' : '📤 Déposer un PDF'}
+          <input type="file" accept=".pdf" style={{display:'none'}} onChange={e => e.target.files[0] && uploadPdf(cible, e.target.files[0])}/>
+        </label>
       </div>
+    )
+  }
+
+  // Statut cliquable explicite (bouton, pas badge-hover) — lisible et tactile-friendly.
+  // canToggle=false (F2 côté agente) → badge lecture seule. montant 0 + non payé → « — ».
+  const renderStatutToggle = (f, onToggle, canToggle, montant) => {
+    const paye = f?.statut === 'paye'
+    if (montant === 0 && !paye) return <span style={{color:'var(--ink-400)'}}>—</span>
+    if (!canToggle) return <StatutFacture f={f}/>
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); onToggle() }}
+        title={paye ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
+        style={{
+          fontSize:11.5, fontWeight:600, borderRadius:8, padding:'5px 11px', cursor:'pointer', border:'1px solid',
+          ...(paye
+            ? { background:'rgba(22,163,74,0.1)', borderColor:'rgba(22,163,74,0.35)', color:'#15803d' }
+            : { background:'#fff', borderColor:'var(--brand-500)', color:'var(--brand-700)' }),
+        }}>
+        {paye ? '✅ Reçu' : 'Marquer reçu'}
+      </button>
     )
   }
 
@@ -468,8 +465,8 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
 
       {/* KPI strip */}
       <div className="kpi-grid">
-        <FinKpiCard label="F1 — Gains à facturer"       value={fmt(totalF1)}    sub={`Reçu ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
-        <FinKpiCard label="F2 — Redevances + apporteur" value={fmt(totalF2)}    sub={`Reçu ${fmt(totalF2Paye)}`}                                              tone="warn"/>
+        <FinKpiCard label="Gains à facturer par l'agente · F1" value={fmt(round2(totalF1-totalF1Paye))} sub={`Reçu ${fmt(totalF1Paye)} · Total ${fmt(totalF1)}`} tone="ok"/>
+        <FinKpiCard label="À régler par l'agente · F2"         value={fmt(round2(totalF2-totalF2Paye))} sub={`Reçu ${fmt(totalF2Paye)} · Total ${fmt(totalF2)}`} tone="warn"/>
         <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
       </div>
 
@@ -488,10 +485,10 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
           <thead style={{background:'var(--surface-2)'}}>
             <tr>
               {thL('Mois')}
-              {thR('F1 (Agente → Société)')}
-              <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F1</th>
-              {thR('F2 (Société → Agente)')}
-              <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut F2</th>
+              <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Agente → Société<div style={{fontSize:9,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>facture F1</div></th>
+              <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut</th>
+              <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Société → Agente<div style={{fontSize:9,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>facture F2</div></th>
+              <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut</th>
             </tr>
           </thead>
           <tbody>
@@ -506,7 +503,6 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
               const f1m = f1Eff(f1, d.montantF1)
               const f2m = f2Eff(f2, d.montantF2)
               const isOpen = moisDeplie === key
-              const voirPdf = async (path) => { const { data } = await supabase.storage.from('documents').createSignedUrl(path, 3600); if (data?.signedUrl) window.open(data.signedUrl + '&t=' + Date.now(), '_blank') }
               return (
                 <React.Fragment key={key}>
                 <tr style={{borderTop:'1px solid var(--ink-100)',cursor:'pointer'}} className="row-hover" onClick={() => setMoisDeplie(isOpen ? null : key)}>
@@ -518,37 +514,13 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                     {f1m > 0 ? fmt(f1m) : '—'}
                   </td>
                   <td style={{padding:'14px 16px',textAlign:'center'}}>
-                    {(f1m === 0 && f1?.statut !== 'paye') ? (
-                      <span style={{color:'var(--ink-400)'}}>—</span>
-                    ) : (
-                      <span
-                        onClick={(e) => { e.stopPropagation(); toggleF1Statut(annee, mois, f1) }}
-                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
-                        title={f1?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
-                        style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
-                        <StatutFacture f={f1}/>
-                      </span>
-                    )}
+                    {renderStatutToggle(f1, () => toggleF1Statut(annee, mois, f1), true, f1m)}
                   </td>
                   <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f2m>0?'#b91c1c':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
                     {f2m > 0 ? fmt(f2m) : '—'}
                   </td>
                   <td style={{padding:'14px 16px',textAlign:'center'}}>
-                    {(f2m === 0 && f2?.statut !== 'paye') ? (
-                      <span style={{color:'var(--ink-400)'}}>—</span>
-                    ) : isAdmin ? (
-                      <span
-                        onClick={(e) => { e.stopPropagation(); toggleF2Statut(annee, mois, f2) }}
-                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.06)'; e.currentTarget.style.filter = 'brightness(0.93)' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.filter = 'none' }}
-                        title={f2?.statut === 'paye' ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
-                        style={{cursor:'pointer',display:'inline-block',borderRadius:99,transition:'transform .12s, filter .12s'}}>
-                        <StatutFacture f={f2}/>
-                      </span>
-                    ) : (
-                      <StatutFacture f={f2}/>
-                    )}
+                    {renderStatutToggle(f2, () => toggleF2Statut(annee, mois, f2), isAdmin, f2m)}
                   </td>
                 </tr>
                 {isOpen && (
@@ -563,7 +535,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                           {d.partN  > 0 && <Row label="Part partenaire"         value={fmt(d.partN)} />}
                           {f1m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucun gain encaissé ce mois</span>}
                           <Row label="Total F1" value={fmt(f1m)} bold accent />
-                          {f1?.facture_path && <button onClick={() => voirPdf(f1.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
+                          {renderPdfControl(f1, annee, mois, 'agente_vers_ctp')}
                         </div>
                         <div style={{display:'flex',flexDirection:'column',gap:6}}>
                           <div className="eyebrow" style={{color:'#b91c1c'}}>F2 — La Société facture l&apos;agente</div>
@@ -571,7 +543,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                           {d.apporteur > 0 && <Row label="Apporteur remboursé"      value={fmt(d.apporteur)} />}
                           {f2m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucune charge ce mois</span>}
                           <Row label="Total F2" value={fmt(f2m)} bold accent />
-                          {f2?.facture_path && <button onClick={() => voirPdf(f2.facture_path)} style={{alignSelf:'flex-start',fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>}
+                          {renderPdfControl(f2, annee, mois, 'ctp_vers_agente')}
                         </div>
                       </div>
                     </td>
@@ -597,22 +569,6 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
           )}
         </table>
         </div>
-      </div>
-
-      {/* Détail factures F1 + F2 côte à côte */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:18}}>
-        <FactureDetailCard
-          title="F1 — Factures émises par l'agente"
-          subtitle="L'agente facture la Société pour ses gains du mois (frais + commissions + honoraires)"
-          type="agente_vers_ctp"
-          accent="#16a34a"
-        />
-        <FactureDetailCard
-          title="F2 — Factures émises par la franchisée"
-          subtitle="La Société facture l'agente pour la redevance + apporteur remboursé"
-          type="ctp_vers_agente"
-          accent="#dc2626"
-        />
       </div>
 
       {/* Redevances 12 mois */}
@@ -1892,17 +1848,8 @@ export default function Finances() {
     // agence (profiles.agence_id), sinon non défini (on n'affiche jamais 0 comme cible).
     const objAgentePerso     = getObjectif('agente', profile?.id)
     const objAgenceDeLAgente = objectifs.find(o => o.cible === 'agence' && o.agence_id === profile?.agence_id)?.montant || 0
-    const objectifSource = isAdmin ? 'agence' : (objAgentePerso ? 'perso' : objAgenceDeLAgente ? 'agence' : 'aucun')
     const objectifAnnuelCible = isAdmin ? getObjectif('agence') : (objAgentePerso || objAgenceDeLAgente || 0)
     const objectifMensuel = round2(objectifAnnuelCible / 12)
-    const netLabel = isCTP ? 'Société' : (mode === 'agent' ? 'Agente' : 'Agence')
-    // Libellé objectif : la barre mesure le CA GÉNÉRÉ du périmètre (≠ « Résultat net »
-    // du tableau société), d'où le « CA généré » explicite + l'échelle (mois/an).
-    const objectifLabelPour = (montant, suffixe) =>
-        objectifAnnuelCible <= 0      ? 'Objectif non défini'
-      : isAdmin                       ? `Objectif CA généré ${netLabel} (${fmt(montant)}${suffixe})`
-      : objectifSource === 'perso'    ? `Objectif CA généré (${fmt(montant)}${suffixe})`
-      :                                 `Objectif CA généré agence (${fmt(montant)}${suffixe})`
 
     // CA généré : l'apporteur remboursé est déduit pour son COÛT TOTAL dans les 3
     // modes (agent inclus) — c'est un flux sortant, pas une part perso.
@@ -1933,10 +1880,6 @@ export default function Finances() {
       const reelCharges  = isCTP ? round2((r.gainsAgenteReels||0) + reelApporteur) : reelApporteur
       return { p, r, previProduits, reelProduits, previApporteur, reelApporteur, previCharges, reelCharges, previNet: round2(previProduits - previCharges), reelNet: round2(reelProduits - reelCharges) }
     }
-    // CA généré d'un mois pour le périmètre (mode-agnostique) : produits nets − apporteur
-    // total, SANS soustraire les parts agentes. En agent/agence, = reelNet ; en société,
-    // = reelNet + parts. La somme annuelle = totalCAGenere (aligné sur le KPI haut).
-    const caGenerePourCle = (cle) => { const x = comptePourCle(cle); return round2(x.reelProduits - x.reelApporteur) }
     const ecart = (pv, rv) => { const e = round2(rv - pv); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
 
     // Détail compte de résultat (RÉEL uniquement) d'un mois — vue groupée par encaissement.
@@ -1970,7 +1913,13 @@ export default function Finances() {
             <tr><td style={tdL}>Royalties illiCO</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{`-${fmt(x.r.royaltyBucket||0)}`}</td></tr>
             <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total produits (net)</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td></tr>
             <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Reversements</td></tr>
-            {lignesReversements.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
+            {lignesReversements.map(l => {
+              const isParts = l.label === 'Parts agentes'   // ce que le mode Société retire → mis en évidence
+              return (<tr key={l.label} style={isParts ? {background:'rgba(245,158,11,0.12)'} : undefined}>
+                <td style={{...tdL, ...(isParts ? {fontWeight:600,color:'var(--ink-700)'} : {})}}>{l.label}</td>
+                <td style={{...tdR,color:'#ef4444',fontWeight:isParts ? 700 : 500}}>{fmt(l.r)}</td>
+              </tr>)
+            })}
             <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total reversements</td><td style={{...tdR,fontWeight:500,color:'#ef4444'}}>{fmt(x.reelCharges)}</td></tr>
             <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>{isCTP ? 'Résultat net Société' : 'CA généré'}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:x.reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(x.reelNet)}</td></tr>
           </tbody>
@@ -2067,12 +2016,7 @@ export default function Finances() {
       const chartNetAnnee = anneesAsc.map(y => sumAnnee(y, 'reelNet'))
       return (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {/* CA généré annuel du périmètre (= totalCAGenere, année courante, mode-agnostique) —
-              même valeur que le KPI haut → même %. Libellé « /an » pour ne pas confondre
-              avec le « Réel net » du tableau ci-dessous (mode société). */}
-          <ObjectifBar label={objectifLabelPour(objectifAnnuelCible, '/an')}
-            reel={totalCAGenere}
-            objectifMontant={objectifAnnuelCible} cible="agence" canEdit={false} />
+          {/* Objectif retiré ici : porté par la carte KPI « Objectif CA généré agence » en haut de page. */}
           <div className="card" style={{overflow:'hidden'}}>
           <div className="table-scroll">
           <table style={{width:'100%',fontSize:13}}>
@@ -2132,12 +2076,7 @@ export default function Finances() {
         />
         {sfSousOnglet === 'mois' && (
           <div style={{display:'flex',flexDirection:'column',gap:20}}>
-            {/* cible="agence" : prop morte tant que canEdit={false} (jamais lue —
-                onSave n'est pas fourni et le bloc d'édition est inaccessible).
-                reel = CA généré du mois (≠ résultat net) — cohérent avec le KPI haut. */}
-            <ObjectifBar label={objectifLabelPour(objectifMensuel, '/mois')}
-              reel={caGenerePourCle(moisCourantCle)}
-              objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
+            {/* Barre objectif retirée : portée par la carte KPI en haut de page. */}
             <div className="card" style={{overflow:'hidden'}}>
               <div className="table-scroll">
               <table style={{width:'100%',fontSize:11}}>
@@ -2211,23 +2150,25 @@ export default function Finances() {
         <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => handleTab('facturation')}>🗒️Facturation agentes</button>
       </div>
 
-      {/* KPI strip — 3 indicateurs adaptés au rôle (variables inchangées, affichage resserré). */}
+      {/* KPI strip — masqué sur l'onglet Facturation agentes (contexte de facturation différent). */}
+      {tab !== 'facturation' && (
       <div className="kpi-grid">
         {isAdmin ? (
           <>
-            {/* Admin : CA société généré + objectif · prévi · partage société/agentes */}
-            <FinKpiCard label={`CA généré ${anneeEnCours}`} value={fmt(totalCAGenere)} tone="brand">
+            {/* Admin : CA société généré · prévi · partage société/agentes · objectif agence */}
+            <FinKpiCard label={`CA généré ${anneeEnCours}`} value={fmt(totalCAGenere)} tone="brand"/>
+            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} tone="ok"/>
+            <FinKpiCard label="Part société" value={fmt(totalNetCTP)} sub={`Part agentes · ${fmt(totalGainsAgentesReels)}`} tone="brand"/>
+            <FinKpiCard label="Objectif CA généré agence" value={`CA ${fmt(totalCAGenere)}`} tone="ok">
               <div style={{marginTop:8}}>
                 <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
                   <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
                 </div>
                 <div style={{fontSize:11,color:'var(--ink-500)'}}>
-                  Objectif <span style={{fontWeight:600,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(objectifAnnuel)}</span> · {pctObjectif}%
+                  {pctObjectif}% atteint · {fmt(objectifAnnuel)}
                 </div>
               </div>
             </FinKpiCard>
-            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} tone="ok"/>
-            <FinKpiCard label="Part société" value={fmt(totalNetCTP)} sub={`Part agentes · ${fmt(totalGainsAgentesReels)}`} tone="brand"/>
           </>
         ) : (
           <>
@@ -2238,6 +2179,7 @@ export default function Finances() {
           </>
         )}
       </div>
+      )}
 
       {/* ── CA · CHANTIERS — fusion Prévisionnel + Réel : Prévu net | Encaissé net | Reste ── */}
       {tab === 'gains' && (
@@ -2308,6 +2250,19 @@ export default function Finances() {
                 .map(a => <option key={a} value={a}>{a}</option>)}
             </select>
           </div>
+
+          {/* Légende du mode actif : rend explicite ce que Société retire vs Agence. */}
+          {isAdmin && (
+            <div style={{
+              fontSize:12, color:'var(--ink-600)', borderRadius:8, padding:'8px 12px', marginTop:-8,
+              background: suiviMode === 'ctp' ? 'rgba(245,158,11,0.10)' : 'rgba(0,148,212,0.08)',
+              border: `1px solid ${suiviMode === 'ctp' ? 'rgba(245,158,11,0.30)' : 'rgba(0,148,212,0.22)'}`,
+            }}>
+              {suiviMode === 'ctp'
+                ? <><strong style={{color:'var(--ink-800)'}}>Société</strong> · résultat net conservé, <strong>après</strong> déduction des parts agentes reversées.</>
+                : <><strong style={{color:'var(--ink-800)'}}>Agence</strong> · CA généré au niveau agence, parts agentes <strong>incluses</strong> (non déduites).</>}
+            </div>
+          )}
 
           {/* ZONE 2 — sous-onglet Mois/Année + objectif + compte de résultat + graphe Produits/Reversements */}
           {renderSuiviFinancier(!isAdmin ? 'agent' : suiviMode)}
