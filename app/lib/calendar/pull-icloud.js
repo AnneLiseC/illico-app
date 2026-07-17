@@ -61,6 +61,7 @@ function objectToNorm(url, etag, vevent) {
     ? 'cancelled' : 'confirmed'
   return {
     id: url, etag: etag || null, status, summary: e.summary || '',
+    description: e.description || '',   // porte le marqueur [illico-int:…] → anti-écho interventions
     start_utc: s.utc, start_raw: null, kind: s.kind, end_utc: en.utc, isRecurringInstance: false,
   }
 }

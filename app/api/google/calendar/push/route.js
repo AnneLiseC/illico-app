@@ -125,31 +125,50 @@ export async function POST(request) {
       }
       console.log('[push] intervention', id, '→ cible', intervention.cible_id, 'calendar', client.calendarId, 'compte', client.compteOauthId, DRY_RUN ? '(DRY-RUN)' : '')
 
-      // Construction des events extraite en lib (lot 5a) : [] → rien à pousser (skip,
-      // comme avant) ; sinon [eventPrincipal, ...extras] (multi-jours). L'event[0] porte
-      // le google_event_id (upsert + writeback) ; les extras sont insert-only.
-      const events = buildInterventionEventBodies(client, intervention)
-      if (!events.length) return NextResponse.json({ success: true, skipped: true })
-      const [firstEvent, ...extraEvents] = events
+      // parts = [{ role, body }] : période -> [start] ou [start, end] (journée entière,
+      // marqueurs début/fin) ; jours spécifiques -> [day, day, …]. [] → rien à pousser.
+      const parts = buildInterventionEventBodies(client, intervention)
+      if (!parts.length) return NextResponse.json({ success: true, skipped: true })
 
-      const result = await client.upsert({
-        eventBody: firstEvent,
-        externalId: intervention.google_event_id,
-        contexte: { type: 'intervention', itemId: id },
-      })
-      if (result.action === 'inserted') {
-        if (!result.dryRun && result.id) {
-          await supabaseAdmin.from('interventions_artisans')
-            .update({ google_event_id: result.id }).eq('id', id)
+      if (intervention.type_intervention === 'jours_specifiques') {
+        // Inchangé : le 1er event porte google_event_id (upsert + writeback), les jours
+        // suivants sont insert-only, poussés une seule fois (au 1er insert de l'intervention).
+        const [first, ...extras] = parts
+        const result = await client.upsert({
+          eventBody: first.body,
+          externalId: intervention.google_event_id,
+          contexte: { type: 'intervention', itemId: id },
+        })
+        if (result.action === 'inserted') {
+          if (!result.dryRun && result.id) {
+            await supabaseAdmin.from('interventions_artisans')
+              .update({ google_event_id: result.id }).eq('id', id)
+          }
+          for (const e of extras) {
+            await client.upsert({
+              eventBody: e.body,
+              externalId: null,
+              contexte: { type: 'intervention-day', itemId: id },
+            })
+          }
         }
-        // Extras (jours 2..n) : insert-only via upsert SANS externalId (→ insert,
-        // exactement comme l'ancien gcalWrite direct). Même appel googleapis, même dry-run.
-        for (const evt of extraEvents) {
-          await client.upsert({
-            eventBody: evt,
-            externalId: null,
-            contexte: { type: 'intervention-extra', itemId: id },
+      } else {
+        // Période : marqueur début (google_event_id) + marqueur fin (google_end_event_id),
+        // chacun idempotent (upsert sur son id stocké → update, jamais de doublon). Un seul
+        // jour → une seule occurrence (role 'start').
+        for (const part of parts) {
+          const isEnd = part.role === 'end'
+          const col = isEnd ? 'google_end_event_id' : 'google_event_id'
+          const externalId = isEnd ? intervention.google_end_event_id : intervention.google_event_id
+          const result = await client.upsert({
+            eventBody: part.body,
+            externalId,
+            contexte: { type: 'intervention', itemId: id },
           })
+          if (result.action === 'inserted' && !result.dryRun && result.id) {
+            await supabaseAdmin.from('interventions_artisans')
+              .update({ [col]: result.id }).eq('id', id)
+          }
         }
       }
     }

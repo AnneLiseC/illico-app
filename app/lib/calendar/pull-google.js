@@ -43,6 +43,7 @@ function normalizeGoogleEvent(evt) {
     etag: evt.etag || null,
     status: evt.status,
     summary: evt.summary,
+    description: evt.description || '',   // porte le marqueur [illico-int:…] → anti-écho interventions
     start_utc: s.utc,
     start_raw: s.raw,
     kind: s.kind,
