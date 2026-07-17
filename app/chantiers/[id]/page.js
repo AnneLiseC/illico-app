@@ -1754,7 +1754,17 @@ export default function FicheChantier({ params }) {
   const supprimerDevis = async (devisId) => {
     if (!confirm('Supprimer ce devis ?')) return
     const { error } = await supabase.from('devis_artisans').delete().eq('id', devisId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) {
+      // Garde-fou volontaire : un devis avec des mouvements financiers rattachés
+      // (acompte artisan, commission, honoraires…) ne peut pas être supprimé — la FK
+      // suivi_financier.devis_id le bloque (code Postgres 23503). On affiche un message
+      // clair au lieu de l'erreur SQL brute.
+      const contrainteFinance = error.code === '23503' || /foreign key|suivi_financier/i.test(error.message || '')
+      setErreur(contrainteFinance
+        ? "Impossible de supprimer ce devis : des mouvements financiers y sont rattachés (acompte, commission, honoraires…). Traite-les d'abord dans le suivi financier."
+        : 'Erreur : ' + error.message)
+      return
+    }
     await chargerDevis()
   }
 
