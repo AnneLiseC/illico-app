@@ -938,7 +938,10 @@ export default function Finances() {
           royaltiesComReel  = round2(royaltiesComReel  + dvF.royaltiesType2)
         }
       }
-      const apporteursReels = c.finance.commissions.devis.filter(dv => dv.isApporteur && dv.signed)
+      // paiement_direct (= isApporteur) = routage, pas un apporteur : commission comptée
+      // à l'encaissement réel (case cochée, statut_illico='recu'), pas à la signature.
+      const apporteursReels = c.finance.commissions.devis.filter(dv =>
+        dv.isApporteur && getSuivi(d, 'acompte_artisan', null, dv.id)?.statut_illico === 'recu')
       const comApporteursReel = round2(apporteursReels.reduce((s, dv) => s + dv.netCom, 0))
       comBruteEncaissee = round2(comBruteEncaissee + apporteursReels.reduce((s, dv) => s + dv.comHT, 0))
       const royaltiesComApporteursReel = round2(apporteursReels.reduce((s, dv) => s + dv.royaltiesType2, 0))
@@ -1008,14 +1011,18 @@ export default function Finances() {
       }
     }
 
-    // Commissions apporteurs artisans — déclenchées dès devis signé
+    // Commissions artisans en paiement direct — comptées à l'ENCAISSEMENT réel
+    // (case « Paiement direct » cochée → statut_illico='recu'), PAS à la signature.
+    // paiement_direct = routage de paiement, pas un apporteur d'affaires.
     let comApporteursReel     = 0
     let comApporteursAgente   = 0
     let royaltiesComApporteursReel = 0   // AJOUT affichage
     for (const dv of c.devisAcceptes) {
       if (!dv.artisan?.paiement_direct) continue
+      const artId = dv.artisan_id || dv.artisan?.id
       const dvF = c.devisFinanceMap.get(dv.id)
-      if (!dvF || !dvF.signed) continue
+      if (!dvF) continue
+      if (getSuivi(d, 'acompte_artisan', artId, dv.id)?.statut_illico !== 'recu') continue
       comApporteursReel        = round2(comApporteursReel        + dvF.netCom)
       comApporteursAgente      = round2(comApporteursAgente      + dvF.parts.agente)
       comBruteEncaissee        = round2(comBruteEncaissee        + dvF.comHT)
@@ -1296,12 +1303,16 @@ export default function Finances() {
         addToKey(key, 'royaltyBucket', dvF.royaltiesType2, d.id)
       }
 
-      // Commissions paiement direct (déclenchées dès signé — date_signature du devis)
+      // Commissions paiement direct — comptées à l'ENCAISSEMENT réel (case « Paiement
+      // direct » cochée → statut_illico='recu'), datées sur le déblocage, PAS à la
+      // signature. paiement_direct = routage de paiement, pas un apporteur d'affaires.
       for (const dv of devisActifs) {
         if (!dv.artisan?.paiement_direct) continue
+        const suiviAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id && s.statut_illico === 'recu')
+        if (!suiviAcompte) continue
         const dvF = c.devisFinanceMap.get(dv.id)
-        if (!dvF || !dvF.signed) continue
-        const key = getKeyFromDate(dv.date_signature, isAnnee)
+        if (!dvF) continue
+        const key = getKeyFromDate(suiviAcompte.date_deblocage || suiviAcompte.date_paiement, isAnnee)
         addToKey(key, 'comApporteursNet', dvF.netCom, d.id)
         addToKey(key, 'comApporteursAgenteNet', dvF.parts.agente, d.id)
         addToKey(key, 'comApporteursBrut', dvF.comHT, d.id)
