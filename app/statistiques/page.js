@@ -3,7 +3,8 @@ import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth-context'
-import { computeCAMensuel, computeRoyalties } from '../lib/ca-reel'
+import { computeCAMensuel, computeRoyalties, computeCABreakdown } from '../lib/ca-reel'
+import { calcStatut } from '../lib/dossiers'
 import {
   Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement,
   BarController, LineController, Tooltip, Legend,
@@ -11,6 +12,7 @@ import {
 Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, Tooltip, Legend)
 
 const MOIS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc']
+const TYPO_LABEL = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
 const round2 = (n) => Math.round(((n || 0) + Number.EPSILON) * 100) / 100
 const fmtEur = (n) => Math.round(n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' €'
 
@@ -67,6 +69,27 @@ function Legende({ items }) {
         <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 10, height: 10, borderRadius: 2, background: dashed ? 'transparent' : color, border: dashed ? `2px dashed ${color}` : 'none' }} />
           <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>{label}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Barres horizontales : label · montant · barre proportionnelle.
+function BarList({ items, couleur = '#0094d4' }) {
+  const max = Math.max(...items.map(i => i.value), 1)
+  if (items.length === 0) return <div style={{ fontSize: 12.5, color: 'var(--ink-400)' }}>Aucune donnée sur la période.</div>
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+      {items.map((it, i) => (
+        <div key={i}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, marginBottom: 3 }}>
+            <span style={{ color: 'var(--ink-700)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</span>
+            <span className="tnum" style={{ color: 'var(--ink-900)', fontWeight: 600, whiteSpace: 'nowrap' }}>{it.right}</span>
+          </div>
+          <div style={{ height: 7, borderRadius: 4, background: 'var(--ink-100)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', borderRadius: 4, background: couleur, width: `${Math.max(2, it.value / max * 100)}%` }} />
+          </div>
         </div>
       ))}
     </div>
@@ -160,6 +183,90 @@ export default function Statistiques() {
     return arr
   })()
 
+  // ── Sections 3-6 (mémoïsées) ──
+  const repartition = useMemo(() => {
+    const caDe = (ds) => round2(somme(computeCAMensuel(ds, annee, modeEff)))
+    const gTypo = {}, gAg = {}
+    for (const d of dossiersScoped) {
+      (gTypo[d.typologie || '—'] ||= []).push(d)
+      const rid = d.referente?.id || '—'
+      ;(gAg[rid] ||= { nom: d.referente ? `${d.referente.prenom || ''} ${d.referente.nom || ''}`.trim() : '—', ds: [] }).ds.push(d)
+    }
+    return {
+      typo: Object.entries(gTypo).map(([t, ds]) => ({ label: TYPO_LABEL[t] || t, ca: caDe(ds) })).filter(x => x.ca > 0).sort((a, b) => b.ca - a.ca),
+      agente: Object.values(gAg).map(g => ({ nom: g.nom, ca: caDe(g.ds) })).filter(x => x.ca > 0).sort((a, b) => b.ca - a.ca),
+    }
+  }, [dossiersScoped, annee, modeEff])
+
+  const compta = useMemo(() => {
+    const b = computeCABreakdown(dossiersScoped, annee)
+    const caAgence = round2(somme(computeCAMensuel(dossiersScoped, annee, 'agence')))
+    const caSociete = round2(somme(computeCAMensuel(dossiersScoped, annee, 'societe')))
+    return { ...b, caSociete, partAgentes: round2(caAgence - caSociete), royalties: roy.total }
+  }, [dossiersScoped, annee, roy.total])
+
+  const funnel = useMemo(() => {
+    const actifs = dossiersScoped.filter(d => d.archive !== true)
+    const buckets = [
+      { label: 'À traiter', match: s => ['a_contacter', 'a_relancer'].includes(s) },
+      { label: 'En étude', match: s => ['en_etude', 'devis_en_attente', 'devis_prets', 'devis_a_modifier'].includes(s) },
+      { label: 'Attente signature', match: s => s === 'en_attente_signature' },
+      { label: 'Chantier à venir', match: s => s === 'chantier_a_venir' },
+      { label: 'En chantier', match: s => s === 'en_cours_chantier' },
+      { label: 'Terminés', match: s => s === 'termine' },
+    ].map(b => ({ label: b.label, n: actifs.filter(d => b.match(calcStatut(d))).length }))
+    const tot = dossiersScoped.length
+    const nbSign = dossiersScoped.filter(d => d.contrat_signe).length
+    let dvT = 0, dvA = 0
+    for (const d of dossiersScoped) for (const dv of (d.devis_artisans || [])) { dvT++; if (dv.statut === 'accepte' || dv.date_signature) dvA++ }
+    const jours = (a, c) => (a && c) ? Math.round((new Date(c) - new Date(a)) / 86400000) : null
+    const moy = (arr) => { const v = arr.filter(x => x != null && x >= 0); return v.length ? Math.round(v.reduce((s, x) => s + x, 0) / v.length) : null }
+    return {
+      buckets,
+      tauxSignature: tot ? Math.round(nbSign / tot * 100) : 0,
+      tauxDevis: dvT ? Math.round(dvA / dvT * 100) : 0,
+      delaiSign: moy(dossiersScoped.map(d => jours(d.created_at, d.date_signature_contrat))),
+      delaiChantier: moy(dossiersScoped.map(d => jours(d.date_signature_contrat, d.date_fin_chantier))),
+    }
+  }, [dossiersScoped])
+
+  const devisArt = useMemo(() => {
+    const art = {}, met = {}
+    let sMnt = 0, nMnt = 0
+    for (const d of dossiersScoped) for (const dv of (d.devis_artisans || [])) {
+      if (!(dv.statut === 'accepte' || dv.date_signature)) continue
+      const mnt = Number(dv.montant_ht) || 0
+      sMnt += mnt; nMnt++
+      const e = dv.artisan?.entreprise || '—', m = dv.artisan?.metier || '—'
+      ;(art[e] ||= { montant: 0, commission: 0, metier: m }); art[e].montant += mnt; art[e].commission += round2(mnt * (Number(dv.commission_pourcentage) || 0))
+      ;(met[m] ||= { montant: 0, n: 0 }); met[m].montant += mnt; met[m].n++
+    }
+    return {
+      montantMoyen: nMnt ? round2(sMnt / nMnt) : 0,
+      nbSignes: nMnt,
+      topArtisans: Object.entries(art).map(([e, v]) => ({ e, ...v })).sort((a, b) => b.montant - a.montant).slice(0, 8),
+      topMetiers: Object.entries(met).map(([m, v]) => ({ m, ...v })).sort((a, b) => b.montant - a.montant).slice(0, 6),
+    }
+  }, [dossiersScoped])
+
+  const agentesRows = useMemo(() => {
+    if (!isAdmin) return []
+    const g = {}
+    for (const d of dossiersScoped) { const r = d.referente; if (!r) continue; (g[r.id] ||= { nom: `${r.prenom || ''} ${r.nom || ''}`.trim(), role: r.role, ds: [] }).ds.push(d) }
+    return Object.entries(g).map(([id, v]) => {
+      const ca = round2(somme(computeCAMensuel(v.ds, annee, 'agence')))
+      const nb = v.ds.length
+      const signed = v.ds.filter(d => d.contrat_signe).length
+      return {
+        nom: v.nom, role: v.role, ca, nb,
+        caSoc: round2(somme(computeCAMensuel(v.ds, annee, 'societe'))),
+        taux: nb ? Math.round(signed / nb * 100) : 0,
+        roy: computeRoyalties(v.ds, annee).total,
+        obj: objectifs.find(o => o.annee === annee && o.cible === 'agente' && o.agente_id === id)?.montant || 0,
+      }
+    }).sort((a, b) => b.ca - a.ca)
+  }, [dossiersScoped, annee, isAdmin, objectifs])
+
   if (!initialized || loading) {
     return (
       <div className="page-enter page-pad">
@@ -206,8 +313,13 @@ export default function Statistiques() {
       <div className="kpi-grid">
         <StatKpi label={modeEff === 'societe' ? `Résultat société ${annee}` : `CA généré ${annee}`} value={fmtEur(caTotal)} tone="brand"
           sub={evolCA != null ? `${evolCA >= 0 ? '▲' : '▼'} ${Math.abs(evolCA)}% vs ${annee - 1} (${fmtEur(caTotalN1)})` : `vs ${annee - 1} : n/a`} />
-        <StatKpi label={isAdmin ? 'Royalties dues au franchiseur' : 'Redevances générées'} value={fmtEur(roy.total)} tone="warn"
-          sub={`Frais ${fmtEur(roy.parPoste.frais)} · Comm. ${fmtEur(roy.parPoste.commissions)} · Hono. ${fmtEur(roy.parPoste.honoraires)}`} />
+        {isAdmin ? (
+          <StatKpi label="Royalties dues au franchiseur" value={fmtEur(roy.total)} tone="warn"
+            sub={`Frais ${fmtEur(roy.parPoste.frais)} · Comm. ${fmtEur(roy.parPoste.commissions)} · Hono. ${fmtEur(roy.parPoste.honoraires)}`} />
+        ) : (
+          <StatKpi label="Mes gains (part agente)" value={fmtEur(compta.partAgentes)} tone="ok"
+            sub={`Royalties générées ${fmtEur(roy.total)}`} />
+        )}
         <StatKpi label="Dossiers" value={`${nbSignes} signés`} tone="ok"
           sub={`${nbTermines} chantiers terminés en ${annee}`} />
         <StatKpi label="Objectif CA agence" value={objectifAnnuel > 0 ? fmtEur(objectifAnnuel) : '—'} tone="brand"
@@ -242,9 +354,112 @@ export default function Statistiques() {
         </div>
       </div>
 
-      <div className="card" style={{ padding: '14px 18px', fontSize: 12.5, color: 'var(--ink-500)' }}>
-        Sections à venir : <strong>répartition du CA</strong> (typologie / agente), <strong>entonnoir de conversion</strong>, <strong>devis &amp; artisans</strong>, et <strong>performance par agente</strong>.
+      {/* ── SECTION 3 — D'où vient le CA (typologie / agente) ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+        <div className="card" style={{ padding: 20 }}>
+          <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>CA par typologie</h2>
+          <div className="eyebrow" style={{ marginBottom: 14 }}>D&apos;où vient le chiffre d&apos;affaires · {annee}</div>
+          <BarList items={repartition.typo.map(t => ({ label: t.label, value: t.ca, right: fmtEur(t.ca) }))} couleur="#0094d4" />
+        </div>
+        {isAdmin && (
+          <div className="card" style={{ padding: 20 }}>
+            <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>CA par agente</h2>
+            <div className="eyebrow" style={{ marginBottom: 14 }}>Contribution de chacune · {annee}</div>
+            <BarList items={repartition.agente.map(a => ({ label: a.nom, value: a.ca, right: fmtEur(a.ca) }))} couleur="#8b5cf6" />
+          </div>
+        )}
       </div>
+
+      {/* ── Bloc comptable — Chiffres clés ── */}
+      <div className="card" style={{ padding: 20 }}>
+        <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>Chiffres clés {annee}</h2>
+        <div className="eyebrow" style={{ marginBottom: 14 }}>Réel encaissé · à transmettre au comptable</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
+          {[
+            ['Frais de consultation', compta.frais],
+            ['Commissions', compta.commissions],
+            ['Honoraires', compta.honoraires],
+            ['− Apporteur client', -compta.apporteur],
+            ['CA généré (net)', compta.total],
+            ['Royalties franchiseur', compta.royalties],
+            ['Part société', compta.caSociete],
+            ['Part agentes', compta.partAgentes],
+          ].map(([label, val]) => (
+            <div key={label} style={{ padding: '10px 12px', border: '1px solid var(--ink-100)', borderRadius: 8, background: 'var(--surface-2)' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-500)', marginBottom: 4 }}>{label}</div>
+              <div className="tnum" style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink-900)' }}>{fmtEur(val)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── SECTION 4 — Entonnoir de conversion ── */}
+      <div className="card" style={{ padding: 20 }}>
+        <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>Entonnoir de conversion</h2>
+        <div className="eyebrow" style={{ marginBottom: 14 }}>Où en sont les dossiers actifs · taux &amp; délais</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
+          {funnel.buckets.map(b => (
+            <div key={b.label} style={{ padding: '10px 12px', border: '1px solid var(--ink-100)', borderRadius: 8, textAlign: 'center' }}>
+              <div className="tnum" style={{ fontSize: 22, fontWeight: 800, color: 'var(--brand-800)' }}>{b.n}</div>
+              <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>{b.label}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', fontSize: 12.5, color: 'var(--ink-600)' }}>
+          <div>Taux de contrat signé : <strong style={{ color: 'var(--ink-900)' }}>{funnel.tauxSignature}%</strong></div>
+          <div>Devis acceptés : <strong style={{ color: 'var(--ink-900)' }}>{funnel.tauxDevis}%</strong></div>
+          <div>Délai moyen → signature : <strong style={{ color: 'var(--ink-900)' }}>{funnel.delaiSign != null ? `${funnel.delaiSign} j` : '—'}</strong></div>
+          <div>Durée moyenne chantier : <strong style={{ color: 'var(--ink-900)' }}>{funnel.delaiChantier != null ? `${funnel.delaiChantier} j` : '—'}</strong></div>
+        </div>
+      </div>
+
+      {/* ── SECTION 5 — Devis & artisans ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+        <div className="card" style={{ padding: 20 }}>
+          <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>Top artisans</h2>
+          <div className="eyebrow" style={{ marginBottom: 14 }}>Volume signé · commission générée</div>
+          <BarList items={devisArt.topArtisans.map(a => ({ label: `${a.e}${a.metier && a.metier !== '—' ? ' · ' + a.metier : ''}`, value: a.montant, right: `${fmtEur(a.montant)} · ${fmtEur(a.commission)}` }))} couleur="#16a34a" />
+        </div>
+        <div className="card" style={{ padding: 20 }}>
+          <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>Par métier</h2>
+          <div className="eyebrow" style={{ marginBottom: 14 }}>{devisArt.nbSignes} devis signés · montant moyen {fmtEur(devisArt.montantMoyen)}</div>
+          <BarList items={devisArt.topMetiers.map(m => ({ label: m.m, value: m.montant, right: `${fmtEur(m.montant)} (${m.n})` }))} couleur="#f59e0b" />
+        </div>
+      </div>
+
+      {/* ── SECTION 6 — Performance par agente (admin) ── */}
+      {isAdmin && agentesRows.length > 0 && (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--ink-200)' }}>
+            <h2 className="page" style={{ fontSize: 15 }}>Performance par agente · {annee}</h2>
+            <div className="eyebrow" style={{ marginTop: 3 }}>La reddition déclinée par agente</div>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ background: 'var(--surface-2)' }}>
+                  {['Agente', 'CA généré', 'Part société', 'Dossiers', 'Taux signé', 'Royalties', 'vs Objectif'].map((h, i) => (
+                    <th key={h} style={{ padding: '10px 14px', textAlign: i === 0 ? 'left' : 'right', fontSize: 11, fontWeight: 700, color: 'var(--ink-500)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {agentesRows.map(r => (
+                  <tr key={r.nom} style={{ borderTop: '1px solid var(--ink-100)' }}>
+                    <td style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--ink-900)', whiteSpace: 'nowrap' }}>{r.nom}{r.role === 'admin' ? ' · admin' : ''}</td>
+                    <td className="tnum" style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600 }}>{fmtEur(r.ca)}</td>
+                    <td className="tnum" style={{ padding: '10px 14px', textAlign: 'right' }}>{fmtEur(r.caSoc)}</td>
+                    <td className="tnum" style={{ padding: '10px 14px', textAlign: 'right' }}>{r.nb}</td>
+                    <td className="tnum" style={{ padding: '10px 14px', textAlign: 'right' }}>{r.taux}%</td>
+                    <td className="tnum" style={{ padding: '10px 14px', textAlign: 'right', color: '#a16207' }}>{fmtEur(r.roy)}</td>
+                    <td className="tnum" style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--ink-500)' }}>{r.obj > 0 ? `${Math.round(r.ca / r.obj * 100)}%` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

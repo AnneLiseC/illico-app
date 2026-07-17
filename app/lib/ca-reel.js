@@ -118,3 +118,43 @@ export function computeRoyalties(dossiers, annee) {
   const total = Math.round((parPoste.frais + parPoste.commissions + parPoste.honoraires) * 100) / 100
   return { parMois, parPoste, total }
 }
+
+// Ventilation du CA réel de l'année par poste (net encaissé) + coût apporteur.
+// Mêmes critères que computeCAMensuel. total = frais + commissions + honoraires − apporteur.
+export function computeCABreakdown(dossiers, annee) {
+  const r2 = (n) => Math.round(((n || 0) + Number.EPSILON) * 100) / 100
+  const b = { frais: 0, commissions: 0, honoraires: 0, apporteur: 0 }
+  const inYear = (dateStr) => !!dateStr && new Date(dateStr).getFullYear() === annee
+  for (const d of dossiers) {
+    const nd = normDossier(d)
+    const fin = calculateDossierFinance(nd)
+    const suivi = d.suivi_financier || []
+    if (nd.frais_statut === 'regle') {
+      const sf = suivi.find(s => s.type_echeance === 'frais_consultation')
+      if (inYear(sf?.date_paiement || nd.date_signature_contrat)) b.frais += fin.frais.net
+    }
+    const sfC = suivi.find(s => s.type_echeance === 'honoraires_courtage')
+    if (sfC?.statut_client === 'regle' && inYear(sfC.date_paiement || nd.date_signature_contrat)) b.honoraires += fin.honoraires.courtage.net
+    const soldeAmoR = calculateSoldeAmoReel({ ...nd, suivi_financier: suivi })
+    if (soldeAmoR.hasTranches) {
+      for (const t of soldeAmoR.tranches) if (inYear(t.date_paiement || nd.date_fin_chantier)) b.honoraires += t.net
+    } else {
+      const sfA = suivi.find(s => s.type_echeance === 'solde_amo')
+      if (nd.typologie === 'amo' && sfA?.statut_client === 'regle' && inYear(sfA.date_paiement || nd.date_fin_chantier)) b.honoraires += fin.honoraires.soldeAmo.net
+    }
+    for (const dv of getSignedDevis(d)) {
+      const sfAc = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id && s.statut_illico === 'recu')
+      if (!sfAc || !inYear(sfAc.date_deblocage || sfAc.date_paiement)) continue
+      b.commissions += calculateDevisFinance(dv, nd).netCom
+    }
+    const apporteurLines = fin.apporteur?.lines || []
+    for (const sf of suivi.filter(s => s.type_echeance === 'apporteur_agente' && s.statut_ctp === 'rembourse' && s.date_paiement)) {
+      if (!inYear(sf.date_paiement)) continue
+      const ligne = sf.artisan_id == null
+        ? apporteurLines.find(l => l.type === 'total_chantier_ht')
+        : apporteurLines.find(l => { const dv = (d.devis_artisans || []).find(x => x.id === l.devisId); return (dv?.artisan_id || dv?.artisan?.id) === sf.artisan_id })
+      if (ligne?.totalHT) b.apporteur += ligne.totalHT
+    }
+  }
+  return { frais: r2(b.frais), commissions: r2(b.commissions), honoraires: r2(b.honoraires), apporteur: r2(b.apporteur), total: r2(b.frais + b.commissions + b.honoraires - b.apporteur) }
+}
