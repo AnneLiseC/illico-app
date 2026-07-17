@@ -171,7 +171,7 @@ export default function Planning() {
   // débouncé à 500 ms : une rafale d'événements (ex. sync cron multi-lignes) ne déclenche
   // qu'UN seul re-fetch. Même pattern que la messagerie (removeChannel au cleanup).
   const chargerToutRef = useRef(chargerTout)
-  chargerToutRef.current = chargerTout
+  useEffect(() => { chargerToutRef.current = chargerTout })
   const realtimeDebounceRef = useRef(null)
   useEffect(() => {
     if (!profile?.id) return

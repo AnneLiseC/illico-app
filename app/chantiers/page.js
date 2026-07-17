@@ -395,7 +395,7 @@ function ChantiersInner() {
   const [onglet,       setOnglet]       = useState('moi')
   const [vueArchives,  setVueArchives]  = useState(false)  // Actifs vs Archivés (terminé/annulé)
   const [selectedId,   setSelectedId]   = useState(null)
-  const [isMobile,     setIsMobile]     = useState(false)
+  const [isMobile,     setIsMobile]     = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches)
   const [showPreview,  setShowPreview]  = useState(false)
   const [modaleClient, setModaleClient] = useState(false)
   const router        = useRouter()
@@ -412,7 +412,6 @@ function ChantiersInner() {
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)')
     const handler = (e) => setIsMobile(e.matches)
-    setIsMobile(mq.matches)
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
   }, [])
