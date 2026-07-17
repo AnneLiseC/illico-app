@@ -3879,11 +3879,12 @@ export default function FicheChantier({ params }) {
         const fraisAgente      = fraisRegle ? fin.frais.parts.agente : 0
         const fraisAdmin       = fraisRegle ? fin.frais.parts.admin : 0
 
-        // Commissions — comptées si l'acompte illiCO est débloqué (statut_illico='recu'),
-        // sauf paiement direct (commission déclenchée dès la signature)
+        // Commissions — comptées uniquement si l'encaissement est confirmé
+        // (statut_illico='recu'), y compris paiement direct : ce flag est un routage de
+        // paiement, pas un apporteur d'affaires → la commission n'est PAS acquise dès la
+        // signature, mais quand la case « Paiement direct » est cochée.
         const comDebloque = (fin.commissions?.devis || []).filter(dv => {
           if (dv.refused) return false
-          if (dv.isApporteur) return dv.signed
           const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id)
           return sf?.statut_illico === 'recu'
         })

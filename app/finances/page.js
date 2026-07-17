@@ -763,11 +763,6 @@ export default function Finances() {
     if (profile?.role === 'agente') setScope('moi')
   }, [profile?.role])
 
-  // Prévisionnel n'a pas de vue 'Par mois' : si l'état est resté sur 'mois' (venant du Réel), forcer 'chantier'.
-  useEffect(() => {
-    if (tab === 'previsionnel' && period === 'mois') setPeriod('chantier')
-  }, [tab, period])
-
   // Vue agence : si l'agente sélectionnée dans le pill n'appartient pas à l'agence
   // active, réinitialiser à 'tous' (évite un périmètre vide silencieux au changement de vue).
   useEffect(() => {
@@ -943,7 +938,10 @@ export default function Finances() {
           royaltiesComReel  = round2(royaltiesComReel  + dvF.royaltiesType2)
         }
       }
-      const apporteursReels = c.finance.commissions.devis.filter(dv => dv.isApporteur && dv.signed)
+      // paiement_direct (= isApporteur) = routage, pas un apporteur : commission comptée
+      // à l'encaissement réel (case cochée, statut_illico='recu'), pas à la signature.
+      const apporteursReels = c.finance.commissions.devis.filter(dv =>
+        dv.isApporteur && getSuivi(d, 'acompte_artisan', null, dv.id)?.statut_illico === 'recu')
       const comApporteursReel = round2(apporteursReels.reduce((s, dv) => s + dv.netCom, 0))
       comBruteEncaissee = round2(comBruteEncaissee + apporteursReels.reduce((s, dv) => s + dv.comHT, 0))
       const royaltiesComApporteursReel = round2(apporteursReels.reduce((s, dv) => s + dv.royaltiesType2, 0))
@@ -1013,14 +1011,18 @@ export default function Finances() {
       }
     }
 
-    // Commissions apporteurs artisans — déclenchées dès devis signé
+    // Commissions artisans en paiement direct — comptées à l'ENCAISSEMENT réel
+    // (case « Paiement direct » cochée → statut_illico='recu'), PAS à la signature.
+    // paiement_direct = routage de paiement, pas un apporteur d'affaires.
     let comApporteursReel     = 0
     let comApporteursAgente   = 0
     let royaltiesComApporteursReel = 0   // AJOUT affichage
     for (const dv of c.devisAcceptes) {
       if (!dv.artisan?.paiement_direct) continue
+      const artId = dv.artisan_id || dv.artisan?.id
       const dvF = c.devisFinanceMap.get(dv.id)
-      if (!dvF || !dvF.signed) continue
+      if (!dvF) continue
+      if (getSuivi(d, 'acompte_artisan', artId, dv.id)?.statut_illico !== 'recu') continue
       comApporteursReel        = round2(comApporteursReel        + dvF.netCom)
       comApporteursAgente      = round2(comApporteursAgente      + dvF.parts.agente)
       comBruteEncaissee        = round2(comBruteEncaissee        + dvF.comHT)
@@ -1301,12 +1303,16 @@ export default function Finances() {
         addToKey(key, 'royaltyBucket', dvF.royaltiesType2, d.id)
       }
 
-      // Commissions paiement direct (déclenchées dès signé — date_signature du devis)
+      // Commissions paiement direct — comptées à l'ENCAISSEMENT réel (case « Paiement
+      // direct » cochée → statut_illico='recu'), datées sur le déblocage, PAS à la
+      // signature. paiement_direct = routage de paiement, pas un apporteur d'affaires.
       for (const dv of devisActifs) {
         if (!dv.artisan?.paiement_direct) continue
+        const suiviAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id && s.statut_illico === 'recu')
+        if (!suiviAcompte) continue
         const dvF = c.devisFinanceMap.get(dv.id)
-        if (!dvF || !dvF.signed) continue
-        const key = getKeyFromDate(dv.date_signature, isAnnee)
+        if (!dvF) continue
+        const key = getKeyFromDate(suiviAcompte.date_deblocage || suiviAcompte.date_paiement, isAnnee)
         addToKey(key, 'comApporteursNet', dvF.netCom, d.id)
         addToKey(key, 'comApporteursAgenteNet', dvF.parts.agente, d.id)
         addToKey(key, 'comApporteursBrut', dvF.comHT, d.id)
@@ -1383,10 +1389,6 @@ export default function Finances() {
   const rowsReelScoped  = useMemo(() => agrégerParPaiement(scopedDossiers, false), [scopedDossiers])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rowsAnneeScoped = useMemo(() => agrégerParPaiement(scopedDossiers, true), [scopedDossiers])
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const rowsPreviMoisScoped  = useMemo(() => agrégerPrevi(scopedDossiers, false), [scopedDossiers])
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const rowsPreviAnneeScoped = useMemo(() => agrégerPrevi(scopedDossiers, true), [scopedDossiers])
 
   const totalGainsAgentesReels = (() => {
     const keysAnnee = rowsReelScoped
@@ -1562,27 +1564,28 @@ export default function Finances() {
     )
   }
 
-  const renderFinanceTable = (listeDossiers, isReel) => {
+  // Tableau FUSIONNÉ par chantier : colonnes Prévu net | Encaissé net | Reste.
+  // Le détail (frais / commissions / honoraires / royalties) reste accessible en
+  // dépliant la ligne (renderDossierDetail). Remplace les 2 anciens onglets Prévi/Réel.
+  const renderFinanceTable = (listeDossiers) => {
     const totals = listeDossiers.reduce((acc, d) => {
       const c = calculer(d)
       const r = calculerReel(d)
+      const netPrevi = c.gainsAdminPreviTotal + c.gainsAgentePreviTotal
+      const netReel  = r.gainAdminReel + r.gainsAgenteReels
       return {
-        fraisHT:   round2(acc.fraisHT   + (isReel ? r.fraisBrutReel     : c.fraisHT)),
-        comHT:     round2(acc.comHT     + (isReel ? r.comBruteEncaissee : c.comHT)),
-        honoraires:round2(acc.honoraires + (isReel ? r.honReelBrut      : c.honPreviBrut)),
-        royalties: round2(acc.royalties + (isReel ? r.royaltyReelle     : c.royaltyPreviActifs)),
-        net:       round2(acc.net + (isReel
-          ? (r.gainAdminReel + r.gainsAgenteReels)
-          : (c.gainsAdminPreviTotal + c.gainsAgentePreviTotal))),
+        prevu:    round2(acc.prevu    + netPrevi),
+        encaisse: round2(acc.encaisse + netReel),
+        reste:    round2(acc.reste    + (netPrevi - netReel)),
       }
-    }, { fraisHT: 0, comHT: 0, honoraires: 0, royalties: 0, net: 0 })
+    }, { prevu: 0, encaisse: 0, reste: 0 })
 
     return (
       <div className="card" style={{padding:0,overflow:'hidden'}}>
         <div style={{padding:'14px 22px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid var(--ink-200)'}}>
           <div>
             <div style={{fontSize:16,fontWeight:700,color:'var(--ink-900)'}}>
-              {isReel ? 'Encaissements réels' : 'Engagements prévisionnels'} · {listeDossiers.length} dossiers
+              CA par chantier · {listeDossiers.length} dossiers
             </div>
             <div className="eyebrow" style={{marginTop:4}}>
               {period === 'chantier' ? 'Détail par chantier' : period === 'mois' ? 'Agrégation par mois de paiement' : 'Agrégation annuelle'}
@@ -1596,11 +1599,9 @@ export default function Finances() {
               <Th>Dossier</Th>
               <Th>Référente</Th>
               <Th>Statut</Th>
-              <Th right>Frais de consultation</Th>
-              <Th right>Commissions HT</Th>
-              <Th right>Honoraires</Th>
-              <Th right>Royalties</Th>
-              <Th right>Net {isReel ? 'réel' : 'prévisionnel'}</Th>
+              <Th right>Prévu net</Th>
+              <Th right>Encaissé net</Th>
+              <Th right>Reste</Th>
               <Th right>Avancement</Th>
               <Th right></Th>
             </tr>
@@ -1611,7 +1612,6 @@ export default function Finances() {
               const r       = calculerReel(d)
               const netPrevi = round2(c.gainsAdminPreviTotal + c.gainsAgentePreviTotal)
               const netReel  = round2(r.gainAdminReel + r.gainsAgenteReels)
-              const net      = isReel ? netReel : netPrevi
               const avancement = netPrevi > 0 ? Math.min(100, Math.round(netReel / netPrevi * 100)) : 0
               const isOpen   = dossierOuvert === d.id
               const cs       = calcStatut(d)
@@ -1649,11 +1649,9 @@ export default function Finances() {
                       </span>
                       {nbAlertes > 0 && <span style={{fontSize:10,marginLeft:4,color:'#b91c1c'}}>⚠️ {nbAlertes}</span>}
                     </Td>
-                    <Td right mono>{fmt(isReel ? r.fraisBrutReel : c.fraisHT)}</Td>
-                    <Td right mono>{fmt(isReel ? r.comBruteEncaissee : c.comHT)}</Td>
-                    <Td right mono>{fmt(isReel ? r.honReelBrut : c.honPreviBrut)}</Td>
-                    <Td right mono dim>{fmt(isReel ? r.royaltyReelle : c.royaltyPreviActifs)}</Td>
-                    <Td right mono bold accent={net > 0}>{fmt(net)}</Td>
+                    <Td right mono>{fmt(netPrevi)}</Td>
+                    <Td right mono bold accent={netReel > 0}>{fmt(netReel)}</Td>
+                    <Td right mono dim>{fmt(round2(netPrevi - netReel))}</Td>
                     <Td right>
                       <div style={{display:'flex',alignItems:'center',gap:8}}>
                         <div style={{width:60,height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden'}}>
@@ -1665,26 +1663,24 @@ export default function Finances() {
                     <Td right><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></Td>
                   </tr>
                   {isOpen && !isMobile && (
-                    <tr><td colSpan={10} style={{padding:0,borderTop:'1px solid var(--ink-100)'}}>
-                      {renderDossierDetail(d, isReel)}
+                    <tr><td colSpan={8} style={{padding:0,borderTop:'1px solid var(--ink-100)'}}>
+                      {renderDossierDetail(d, true)}
                     </td></tr>
                   )}
                 </React.Fragment>
               )
             })}
             {listeDossiers.length === 0 && (
-              <tr><td colSpan={10} style={{textAlign:'center',color:'var(--ink-400)',fontSize:13,padding:'32px 0'}}>Aucun chantier</td></tr>
+              <tr><td colSpan={8} style={{textAlign:'center',color:'var(--ink-400)',fontSize:13,padding:'32px 0'}}>Aucun chantier</td></tr>
             )}
           </tbody>
           {listeDossiers.length > 0 && (
             <tfoot style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-200)'}}>
               <tr>
                 <td colSpan={3} style={{padding:'12px 16px',fontSize:12,fontWeight:700,color:'var(--ink-600)'}}>Total ({listeDossiers.length})</td>
-                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.fraisHT)}</td>
-                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.comHT)}</td>
-                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.honoraires)}</td>
-                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-400)'}}>{fmt(totals.royalties)}</td>
-                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--brand-800)'}}>{fmt(totals.net)}</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.prevu)}</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--brand-800)'}}>{fmt(totals.encaisse)}</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-400)'}}>{fmt(totals.reste)}</td>
                 <td colSpan={2}/>
               </tr>
             </tfoot>
@@ -1699,7 +1695,7 @@ export default function Finances() {
           if (!d) return null
           return (
             <div style={{borderTop:'1px solid var(--ink-200)'}}>
-              {renderDossierDetail(d, isReel)}
+              {renderDossierDetail(d, true)}
             </div>
           )
         })()}
@@ -2210,8 +2206,7 @@ export default function Finances() {
 
       {/* Tab bar */}
       <div className="tabs">
-        <button className={`tab ${tab==='previsionnel'?'active':''}`} onClick={() => handleTab('previsionnel')}>Prévisionnel</button>
-        <button className={`tab ${tab==='reel'?'active':''}`} onClick={() => handleTab('reel')}>Réel</button>
+        <button className={`tab ${tab==='gains'?'active':''}`} onClick={() => handleTab('gains')}>💰 CA · Chantiers</button>
         <button className={`tab ${tab==='suivi'?'active':''}`} onClick={() => handleTab('suivi')}>📈Compte de résultat</button>
         <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => handleTab('facturation')}>🗒️Facturation agentes</button>
       </div>
@@ -2231,62 +2226,21 @@ export default function Finances() {
                 </div>
               </div>
             </FinKpiCard>
-            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} sub="Net · à venir" tone="ok"/>
+            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} tone="ok"/>
             <FinKpiCard label="Part société" value={fmt(totalNetCTP)} sub={`Part agentes · ${fmt(totalGainsAgentesReels)}`} tone="brand"/>
           </>
         ) : (
           <>
             {/* Agente : ce que j'ai encaissé · ce qui reste à venir · mes commissions */}
             <FinKpiCard label={`Encaissé ${anneeEnCours}`} value={fmt(totalCAGenere)} sub="Réel net" tone="brand"/>
-            <FinKpiCard label="À venir" value={fmt(totPreviNet)} sub="Prévisionnel net, non encaissé" tone="ok"/>
+            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} tone="ok"/>
             <FinKpiCard label="Commissions HT" value={fmt(totComHT)} sub={`Frais conso. ${fmt(totFraisHT)} HT`} tone="warn"/>
           </>
         )}
       </div>
 
-      {/* ── PRÉVISIONNEL ── */}
-      {tab === 'previsionnel' && (
-        <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
-            <div className="eyebrow">Vue</div>
-            <div className="pill-toggle">
-              {periodOptions.filter(p => p.key !== 'mois').map(p => (
-                <button key={p.key} onClick={() => setPeriod(p.key)} style={{
-                  padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
-                  background: period === p.key ? '#fff' : 'transparent',
-                  color:      period === p.key ? 'var(--brand-800)' : 'var(--ink-500)',
-                  boxShadow:  period === p.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                }}>{p.label}</button>
-              ))}
-            </div>
-            {isAdmin && (
-              <div style={{marginLeft:6,display:'flex',gap:4,alignItems:'center'}}>
-                <div className="eyebrow">Périmètre</div>
-                <div className="pill-toggle" style={{marginLeft:8}}>
-                  {[
-                    { key:'tous', label:'Tous' },
-                    { key:'moi', label: profile?.prenom || 'Moi' },
-                    ...agentesScope.map(a => ({ key: a.id, label: a.prenom })),
-                  ].map(s => (
-                    <button key={s.key} onClick={() => setScope(s.key)} style={{
-                      padding:'6px 12px', fontSize:12.5, fontWeight:600, borderRadius:7, border:'none', cursor:'pointer',
-                      background: scope === s.key ? '#fff' : 'transparent',
-                      color:      scope === s.key ? 'var(--brand-800)' : 'var(--ink-500)',
-                      boxShadow:  scope === s.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                    }}>{s.label}</button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          {period === 'chantier' && renderFinanceTable(scopedDossiers, false)}
-          {period === 'mois'     && renderTousPeriode(scopedDossiers, rowsPreviMoisScoped, 'Mois', true)}
-          {period === 'annee'    && renderTousPeriode(scopedDossiers, rowsPreviAnneeScoped, 'Année', true)}
-        </div>
-      )}
-
-      {/* ── RÉEL ── */}
-      {tab === 'reel' && (
+      {/* ── CA · CHANTIERS — fusion Prévisionnel + Réel : Prévu net | Encaissé net | Reste ── */}
+      {tab === 'gains' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
           <div className="card" style={{padding:'12px 16px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
             <div className="eyebrow">Vue</div>
@@ -2320,7 +2274,7 @@ export default function Finances() {
               </div>
             )}
           </div>
-          {period === 'chantier' && renderFinanceTable(scopedDossiers, true)}
+          {period === 'chantier' && renderFinanceTable(scopedDossiers)}
           {period === 'mois'     && renderTousPeriode(scopedDossiers, rowsReelScoped, 'Mois', false)}
           {period === 'annee'    && renderTousPeriode(scopedDossiers, rowsAnneeScoped, 'Année', false)}
         </div>
