@@ -10,6 +10,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { pullRecurrentsCible } from '../../../lib/calendar/pull-dispatch'
+import { checkBearerSecret } from '../../../lib/http-auth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -17,7 +18,7 @@ const supabaseAdmin = createClient(
 )
 
 export async function GET(req) {
-  if (req.headers.get('authorization') !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!checkBearerSecret(req, process.env.CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

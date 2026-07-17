@@ -7,6 +7,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { checkBearerSecret } from '../../../lib/http-auth'
 // import { sendEmail } from '../../../lib/email' // TODO: activer après config HEXAOM (admin consent Azure)
 const sendEmail = async ({ to, subject }) => { /* emails désactivés temporairement */ }
 
@@ -68,8 +69,7 @@ async function notifyUser(userId, { type, titre, message, dossier_id }) {
 }
 
 export async function GET(req) {
-  const auth = req.headers.get('authorization')
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!checkBearerSecret(req, process.env.CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
