@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fullcalendar/daygrid": "^6.1.20",
@@ -38,7 +40,8 @@
     "eslint-config-next": "^16.2.0",
     "playwright": "^1.60.0",
     "prisma": "^6.19.3",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "vitest": "~3.1.4"
   },
   "overrides": {
     "postcss": "^8.5.10"
