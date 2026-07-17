@@ -6,6 +6,7 @@ import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleShe
 import '../../lib/pdf/fonts.js'
 import RecapHonoraires from '../../lib/pdf/RecapHonoraires.js'
 import { formatNomClient } from '../../lib/clients.js'
+import { TVA_FRAIS } from '../../lib/finance.js'
 import { PDFDocument, degrees, rgb, StandardFonts } from 'pdf-lib'
 import { SEP_PAGE_GARDE } from '../../lib/sep_page_garde.js'
 import { SEP_DESCRIPTIF }    from '../../lib/sep_descriptif.js'
@@ -304,7 +305,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
   const totalHT  = devisAcceptes.reduce((s, d) => s + toNum(d.montant_ht), 0)
   const totalTTC = devisAcceptes.reduce((s, d) => s + toNum(d.montant_ttc), 0)
   const fraisTTC = toNum(dossier.frais_consultation)
-  const fraisHT  = fraisTTC / 1.2
+  const fraisHT  = fraisTTC / TVA_FRAIS
   const isAMO = dossier.typologie === 'amo'
   const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
 
@@ -543,7 +544,7 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
   const totalHT  = devisR3.reduce((s, d) => s + toNum(d.montant_ht), 0)
   const totalTTC = devisR3.reduce((s, d) => s + toNum(d.montant_ttc), 0)
   const fraisTTC = toNum(dossier.frais_consultation)
-  const fraisHT  = fraisTTC / 1.2
+  const fraisHT  = fraisTTC / TVA_FRAIS
 
   let rowNum = 0
   const showFrais = fraisTTC > 0 && dossier.frais_statut !== 'offerts'

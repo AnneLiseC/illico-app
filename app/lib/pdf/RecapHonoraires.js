@@ -86,8 +86,8 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
   const baseTTC = preview ? f.totalDevisTTCRecuAccepte : f.totalDevisTTCSignes
   if (!(baseTTC > 0)) return null
 
-  const tauxCourtage = toNum(dossier.taux_courtage ?? 0.06)
-  const tauxAmo      = toNum(dossier.honoraires_amo_taux ?? 9) / 100
+  const tauxCourtage = toNum(dossier.taux_courtage ?? COURTAGE_STANDARD)
+  const tauxAmo      = toNum(dossier.honoraires_amo_taux ?? AMO_STANDARD * 100) / 100
 
   const courtageReel = f.courtage.brut            // base × taux courtage (BRUT, avant frais)
   const courtageStd  = f.standard.courtageTTCBrut // base × 6%

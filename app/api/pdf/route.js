@@ -4,6 +4,7 @@
 import React from 'react'
 import { buildDossierSuivi, buildSuiviPaiementsSection } from './restitution.js'
 import { formatNomClient } from '../../lib/clients.js'
+import { TVA_FRAIS } from '../../lib/finance.js'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
@@ -169,7 +170,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
                   <Text style={[styles.cell, { width: 18, color: GRIS_TEXTE }]}>0</Text>
                   <Text style={[styles.cell, { flex: 3 }]}>illiCO travaux</Text>
                   <Text style={[styles.cell, { flex: 4 }]}>Frais de consultation</Text>
-                  <Text style={[styles.cellRight, { flex: 2 }]}>{fmt(fraisTTC / 1.2)}</Text>
+                  <Text style={[styles.cellRight, { flex: 2 }]}>{fmt(fraisTTC / TVA_FRAIS)}</Text>
                   <Text style={[styles.cellRightBold, { flex: 2 }]}>{fmt(fraisTTC)}</Text>
                 </View>
               ) : null}
@@ -200,7 +201,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
                 <Text style={[styles.cell, { width: 18 }]}> </Text>
                 <Text style={[styles.cell, { flex: 9, fontSize: 7.5 }]}>Total HT</Text>
                 <Text style={[styles.cellRight, { flex: 2, color: BLEU, fontSize: 7.5 }]}>
-                  {fmt(totalDevisHTSignes + (fraisInTable ? fraisTTC / 1.2 : 0))}
+                  {fmt(totalDevisHTSignes + (fraisInTable ? fraisTTC / TVA_FRAIS : 0))}
                 </Text>
                 <Text style={{ flex: 2 }}> </Text>
               </View>
