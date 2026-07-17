@@ -393,6 +393,7 @@ function ChantiersInner() {
   const [filtreStatut, setFiltreStatut] = useState('tous')
   const [filtreTypo,   setFiltreTypo]   = useState('tous')
   const [onglet,       setOnglet]       = useState('moi')
+  const [vueArchives,  setVueArchives]  = useState(false)  // Actifs vs Archivés (terminé/annulé)
   const [selectedId,   setSelectedId]   = useState(null)
   const [isMobile,     setIsMobile]     = useState(false)
   const [showPreview,  setShowPreview]  = useState(false)
@@ -452,7 +453,11 @@ function ChantiersInner() {
   )
 
   const dossiersFiltresOnglet = getDossiersByScope(dossiersScoped, profile, onglet, agentes)
-  const dossiersFiltres       = getFilteredDossiers(dossiersFiltresOnglet, recherche, filtreStatut, filtreTypo, nomClient)
+  const dossiersFiltresBase   = getFilteredDossiers(dossiersFiltresOnglet, recherche, filtreStatut, filtreTypo, nomClient)
+  // Vue Actifs / Archivés : un chantier terminé ou annulé bascule en "Archivés"
+  // (statut uniquement — le client n'est JAMAIS archivé par cette bascule).
+  const estChantierArchive = (d) => ['termine', 'annule'].includes(calcStatut(d))
+  const dossiersFiltres       = dossiersFiltresBase.filter(d => vueArchives ? estChantierArchive(d) : !estChantierArchive(d))
   const compteurs             = getCompteurs(dossiersFiltresOnglet)
   const aujourdhui            = new Date()
 
@@ -511,6 +516,12 @@ function ChantiersInner() {
           ))}
         </div>
       )}
+
+      {/* Toggle Actifs / Archivés (tous rôles). Archivés = chantiers terminés ou annulés. */}
+      <div className="tabs">
+        <button className={`tab ${!vueArchives ? 'active' : ''}`} onClick={() => setVueArchives(false)}>Actifs</button>
+        <button className={`tab ${vueArchives ? 'active' : ''}`} onClick={() => setVueArchives(true)}>Archivés</button>
+      </div>
 
       {/* KPI strip */}
       <div className="kpi-grid">
