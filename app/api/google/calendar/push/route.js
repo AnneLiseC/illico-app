@@ -23,10 +23,11 @@ import { requireUser } from '../../../../lib/api-auth'
 import { getClientForCible, buildRdvEventBody, buildInterventionEventBodies } from '../../../../lib/calendar/dispatch'
 import { DRY_RUN } from '../../../../lib/calendar/google'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 // Token Bearer ré-extrait inline (lot 4b) : requireUser le valide mais ne le renvoie
 // pas. On en a besoin pour construire un client RLS-authentifié servant de GATE
@@ -71,7 +72,7 @@ export async function POST(request) {
 
     // ── RDV ─────────────────────────────────────────────────────────────────
     if (type === 'rdv') {
-      const { data: rdv } = await supabaseAdmin
+      const { data: rdv } = await getSupabaseAdmin()
         .from('rendez_vous')
         .select('*, dossier:dossiers(id, reference, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)')
         .eq('id', id)
@@ -100,13 +101,13 @@ export async function POST(request) {
         // google_etag stocké seulement si le handle le fournit (iCloud, B9-3) — anti-écho pull.
         const patch = { google_event_id: result.id }
         if (result.etag) patch.google_etag = result.etag
-        await supabaseAdmin.from('rendez_vous').update(patch).eq('id', id)
+        await getSupabaseAdmin().from('rendez_vous').update(patch).eq('id', id)
       }
     }
 
     // ── Intervention ─────────────────────────────────────────────────────────
     if (type === 'intervention') {
-      const { data: intervention } = await supabaseAdmin
+      const { data: intervention } = await getSupabaseAdmin()
         .from('interventions_artisans')
         .select('*, dossier:dossiers(id, reference, client:clients(prenom, nom)), artisan:artisans(id, entreprise)')
         .eq('id', id)
@@ -141,7 +142,7 @@ export async function POST(request) {
         })
         if (result.action === 'inserted') {
           if (!result.dryRun && result.id) {
-            await supabaseAdmin.from('interventions_artisans')
+            await getSupabaseAdmin().from('interventions_artisans')
               .update({ google_event_id: result.id }).eq('id', id)
           }
           for (const e of extras) {
@@ -166,7 +167,7 @@ export async function POST(request) {
             contexte: { type: 'intervention', itemId: id },
           })
           if (result.action === 'inserted' && !result.dryRun && result.id) {
-            await supabaseAdmin.from('interventions_artisans')
+            await getSupabaseAdmin().from('interventions_artisans')
               .update({ [col]: result.id }).eq('id', id)
           }
         }

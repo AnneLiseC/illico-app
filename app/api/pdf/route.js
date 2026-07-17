@@ -15,10 +15,11 @@ import { requireUser } from '../../lib/api-auth'
 import RecapHonoraires from '../../lib/pdf/RecapHonoraires.js'
 import { stripEmojiPdf } from '../../lib/pdf/stripEmoji.js'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 // ── Couleurs ──
 const BLEU = '#00578e'
@@ -457,7 +458,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Paramètres manquants' }, { status: 400 })
     }
 
-    const { data: dossier, error: dossierError } = await supabaseAdmin
+    const { data: dossier, error: dossierError } = await getSupabaseAdmin()
       .from('dossiers')
       .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, email, telephone), client:clients(*), agence:agences!dossiers_agence_id_fkey(nom, ville, adresse, code_postal, telephone, societe:societes(nom_societe, siret, rcs))')
       .eq('id', dossierId)
@@ -487,7 +488,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
     }
 
-    const { data: devis, error: devisError } = await supabaseAdmin
+    const { data: devis, error: devisError } = await getSupabaseAdmin()
       .from('devis_artisans')
       .select('*, artisan:artisans(id, entreprise)')
       .eq('dossier_id', dossierId)
@@ -504,56 +505,56 @@ export async function POST(request) {
       // pour que getPivotCourtage voie le pivot et applique la TS-1 (cohérence avec
       // le Suivi_Financier et le DossierSuivi). Base devis inchangée (recu+accepte,
       // preview:true) ; seul le suivi passe de [] au réel.
-      const { data: suiviFinancier, error: suiviError } = await supabaseAdmin
+      const { data: suiviFinancier, error: suiviError } = await getSupabaseAdmin()
         .from('suivi_financier').select('*').eq('dossier_id', dossierId)
       if (suiviError) return NextResponse.json({ error: suiviError.message }, { status: 500 })
       const doc = buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], factures: [], preview: true })
       pdfBuffer = await renderToBuffer(doc)
 
     } else if (type === 'recapitulatif') {
-      const { data: suiviFinancier, error: suiviError } = await supabaseAdmin
+      const { data: suiviFinancier, error: suiviError } = await getSupabaseAdmin()
         .from('suivi_financier').select('*').eq('dossier_id', dossierId)
       if (suiviError) return NextResponse.json({ error: suiviError.message }, { status: 500 })
-      const { data: factures, error: facturesError } = await supabaseAdmin
+      const { data: factures, error: facturesError } = await getSupabaseAdmin()
         .from('factures_artisans').select('*').eq('dossier_id', dossierId).order('date_paiement')
       if (facturesError) return NextResponse.json({ error: facturesError.message }, { status: 500 })
       const doc = buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], factures: factures || [] })
       pdfBuffer = await renderToBuffer(doc)
 
     } else if (type === 'dossier_suivi') {
-      const { data: devisComplets } = await supabaseAdmin
+      const { data: devisComplets } = await getSupabaseAdmin()
         .from('devis_artisans')
         .select('*, artisan:artisans(id, entreprise, metier, kbis_url, decennale_url, decennale_expiration)')
         .eq('dossier_id', dossierId).order('ordre', { nullsFirst: false }).order('created_at')
 
-      const { data: photos } = await supabaseAdmin
+      const { data: photos } = await getSupabaseAdmin()
         .from('photos').select('*')
         .eq('dossier_id', dossierId).eq('categorie', 'maquette').order('created_at')
 
-      const { data: interventions } = await supabaseAdmin
+      const { data: interventions } = await getSupabaseAdmin()
         .from('interventions_artisans')
         .select('*, artisan:artisans(id, entreprise)')
         .eq('dossier_id', dossierId).order('date_debut')
 
-      const { data: fichesTech } = await supabaseAdmin
+      const { data: fichesTech } = await getSupabaseAdmin()
         .from('chantier_fiches_techniques')
         .select('fiche:fiches_techniques(id, nom, description, url)')
         .eq('dossier_id', dossierId)
 
-      const { data: docsRestitution } = await supabaseAdmin
+      const { data: docsRestitution } = await getSupabaseAdmin()
         .from('chantier_documents').select('*')
         .eq('dossier_id', dossierId).eq('dans_restitution', true).order('created_at')
 
-      const { data: factures } = await supabaseAdmin
+      const { data: factures } = await getSupabaseAdmin()
         .from('factures_artisans').select('*')
         .eq('dossier_id', dossierId).order('date_paiement')
 
-      const { data: suiviFinancier } = await supabaseAdmin
+      const { data: suiviFinancier } = await getSupabaseAdmin()
         .from('suivi_financier').select('*').eq('dossier_id', dossierId)
 
       const photosWithBase64 = await Promise.all((photos || []).map(async (photo) => {
         try {
-          const { data: fileData } = await supabaseAdmin.storage.from('photos').download(photo.url)
+          const { data: fileData } = await getSupabaseAdmin().storage.from('photos').download(photo.url)
           if (fileData) {
             const buf = Buffer.from(await fileData.arrayBuffer())
             const ext = (photo.url || '').split('.').pop().toLowerCase()
@@ -565,7 +566,7 @@ export async function POST(request) {
       }))
 
       // RIB + KBIS de l'admin franchisé de la société du dossier (pour la restitution).
-      const { data: adminFranchise } = await supabaseAdmin
+      const { data: adminFranchise } = await getSupabaseAdmin()
         .from('profiles')
         .select('id, prenom, nom, rib_url, kbis_url')
         .eq('societe_id', dossier.societe_id)
@@ -583,12 +584,12 @@ export async function POST(request) {
         suiviFinancier: suiviFinancier || [],
         adminFranchise: adminFranchise || null,
         logo: getLogoBase64(),
-        supabaseAdmin,
+        supabaseAdmin: getSupabaseAdmin(),
       })
 
     } else if (type === 'cr') {
       if (!crId) return NextResponse.json({ error: 'crId manquant' }, { status: 400 })
-      const { data: crData } = await supabaseAdmin.from('comptes_rendus').select('*').eq('id', crId).single()
+      const { data: crData } = await getSupabaseAdmin().from('comptes_rendus').select('*').eq('id', crId).single()
       // Le CR doit être rattaché au dossier validé (crId vient du body) — sinon 404.
       if (!crData || crData.dossier_id !== dossierId) return NextResponse.json({ error: 'CR non trouvé' }, { status: 404 })
       cr = crData
@@ -609,7 +610,7 @@ export async function POST(request) {
       // photosWithBase64 (:526), mais source = cr.photos_jointes, sans toucher la maquette.
       const photosJointes = await Promise.all((crData.photos_jointes || []).map(async (path) => {
         try {
-          const { data: fileData } = await supabaseAdmin.storage.from('photos').download(path)
+          const { data: fileData } = await getSupabaseAdmin().storage.from('photos').download(path)
           if (fileData) {
             const buf = Buffer.from(await fileData.arrayBuffer())
             const ext = (path || '').split('.').pop().toLowerCase()
@@ -643,7 +644,7 @@ export async function POST(request) {
       if (!devisCible.devis_signe_path) {
         return NextResponse.json({ error: 'PDF du devis non disponible' }, { status: 404 })
       }
-      const { data: fileData, error: dlErr } = await supabaseAdmin.storage
+      const { data: fileData, error: dlErr } = await getSupabaseAdmin().storage
         .from('documents').download(devisCible.devis_signe_path)
       if (dlErr || !fileData) {
         return NextResponse.json({ error: 'PDF du devis non disponible' }, { status: 404 })

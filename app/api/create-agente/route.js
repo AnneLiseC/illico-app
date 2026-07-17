@@ -4,10 +4,11 @@ import { NextResponse } from 'next/server'
 import { requireRole } from '../../lib/api-auth'
 import { isAllowedStaffEmail } from '../../lib/email-validation'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 export async function POST(request) {
   const auth = await requireRole(request, ['admin'])
@@ -40,14 +41,14 @@ export async function POST(request) {
     // - agence_id absent (mono-agence) → déduction de l'unique agence (.order('code') déterministe).
     let agenceId
     if (agence_id) {
-      const { data: ag } = await supabaseAdmin
+      const { data: ag } = await getSupabaseAdmin()
         .from('agences').select('id').eq('id', agence_id).eq('societe_id', auth.profile.societe_id).maybeSingle()
       if (!ag) {
         return NextResponse.json({ error: 'Agence invalide' }, { status: 400 })
       }
       agenceId = ag.id
     } else {
-      const { data: ag } = await supabaseAdmin
+      const { data: ag } = await getSupabaseAdmin()
         .from('agences').select('id').eq('societe_id', auth.profile.societe_id).order('code').limit(1).single()
       if (!ag?.id) {
         return NextResponse.json({ error: 'Aucune agence trouvée pour la société de l\'admin' }, { status: 500 })
@@ -56,7 +57,7 @@ export async function POST(request) {
     }
 
     // 1. Inviter l'utilisateur via Supabase Auth — envoie l'email d'invitation
-    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+    const { data: inviteData, error: inviteError } = await getSupabaseAdmin().auth.admin.inviteUserByEmail(email, {
       data: {
         prenom,
         nom,
@@ -72,7 +73,7 @@ export async function POST(request) {
     const userId = inviteData.user.id
 
     // 2. Créer le profil dans profiles
-    const { error: profileError } = await supabaseAdmin
+    const { error: profileError } = await getSupabaseAdmin()
       .from('profiles')
       .insert({
         id: userId,
@@ -92,7 +93,7 @@ export async function POST(request) {
 
     if (profileError) {
       // Rollback : supprimer l'utilisateur auth si le profil échoue
-      await supabaseAdmin.auth.admin.deleteUser(userId)
+      await getSupabaseAdmin().auth.admin.deleteUser(userId)
       return NextResponse.json({ error: profileError.message }, { status: 400 })
     }
 
@@ -101,7 +102,7 @@ export async function POST(request) {
     //    (réglable ensuite en édition). PAS de rollback Auth pour un objectif raté.
     if (objectif != null) {
       try {
-        await supabaseAdmin.from('objectifs_ca').insert({
+        await getSupabaseAdmin().from('objectifs_ca').insert({
           annee: new Date().getFullYear(),
           cible: 'agente',
           agente_id: userId,
@@ -150,12 +151,12 @@ export async function PATCH(request) {
     // Contrôle d'appartenance — service_role contourne la RLS, on la reflète :
     // un admin n'édite que les profils de SA société. 404 uniforme (introuvable
     // ou autre société : même réponse, pas de fuite d'existence cross-tenant).
-    const { data: cible } = await supabaseAdmin.from('profiles').select('societe_id').eq('id', id).single()
+    const { data: cible } = await getSupabaseAdmin().from('profiles').select('societe_id').eq('id', id).single()
     if (!cible || cible.societe_id !== auth.profile.societe_id) {
       return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 })
     }
 
-    const { error } = await supabaseAdmin.from('profiles').update(updates).eq('id', id)
+    const { error } = await getSupabaseAdmin().from('profiles').update(updates).eq('id', id)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 })

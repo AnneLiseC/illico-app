@@ -11,10 +11,11 @@ import { checkBearerSecret } from '../../../lib/http-auth'
 // import { sendEmail } from '../../../lib/email' // TODO: activer après config HEXAOM (admin consent Azure)
 const sendEmail = async ({ to, subject }) => { /* emails désactivés temporairement */ }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 function today() { return new Date().toISOString().slice(0, 10) }
 
@@ -65,7 +66,7 @@ function signatureHtml(referente) {
 
 async function notifyUser(userId, { type, titre, message, dossier_id }) {
   if (!userId) return
-  await supabase.from('notifications').insert({ user_id: userId, type, titre, message, dossier_id: dossier_id || null })
+  await getSupabaseAdmin().from('notifications').insert({ user_id: userId, type, titre, message, dossier_id: dossier_id || null })
 }
 
 export async function GET(req) {
@@ -85,7 +86,7 @@ export async function GET(req) {
   // 1. Devis artisan non reçu — deadline dans 7 jours
   // ─────────────────────────────────────────────────────────────
   try {
-    const { data: devis } = await supabase
+    const { data: devis } = await getSupabaseAdmin()
       .from('devis_artisans')
       .select(`
         id, dossier_id, date_limite,
@@ -123,7 +124,7 @@ export async function GET(req) {
   //    → uniquement la référente du dossier
   // ─────────────────────────────────────────────────────────────
   try {
-    const { data: dossiers } = await supabase
+    const { data: dossiers } = await getSupabaseAdmin()
       .from('dossiers')
       .select('id, reference, date_limite_devis, referente_id')
       .eq('date_limite_devis', in7)
@@ -147,7 +148,7 @@ export async function GET(req) {
   // ─────────────────────────────────────────────────────────────
   try {
     // Acomptes artisans dus aujourd'hui
-    const { data: lignesArtisans } = await supabase
+    const { data: lignesArtisans } = await getSupabaseAdmin()
       .from('suivi_financier')
       .select(`
         id, dossier_id, montant_ttc, artisan_id,
@@ -162,7 +163,7 @@ export async function GET(req) {
       .eq('date_echeance', todayStr)
 
     // Acomptes AMO/courtage dus aujourd'hui (même email que les artisans)
-    const { data: lignesAmo } = await supabase
+    const { data: lignesAmo } = await getSupabaseAdmin()
       .from('suivi_financier')
       .select('dossier_id, montant_ttc, type_echeance')
       .in('type_echeance', ['acompte_amo', 'honoraires_courtage'])
@@ -201,7 +202,7 @@ export async function GET(req) {
       const ref = dossier?.reference || dossierId
 
       // Trier les artisans par date_debut d'intervention
-      const { data: interventions } = await supabase
+      const { data: interventions } = await getSupabaseAdmin()
         .from('interventions_artisans')
         .select('artisan_id, date_debut')
         .eq('dossier_id', dossierId)
@@ -293,7 +294,7 @@ export async function GET(req) {
   // 4. Facture finale non réglée — relance 7 jours après échéance
   // ─────────────────────────────────────────────────────────────
   try {
-    const { data: factures } = await supabase
+    const { data: factures } = await getSupabaseAdmin()
       .from('suivi_financier')
       .select(`
         id, dossier_id, montant_ttc, date_echeance,
@@ -331,7 +332,7 @@ export async function GET(req) {
   // 5. Rappel RDV client — J-1
   // ─────────────────────────────────────────────────────────────
   try {
-    const { data: rdvs } = await supabase
+    const { data: rdvs } = await getSupabaseAdmin()
       .from('rendez_vous')
       .select(`
         id, dossier_id, type_rdv, date_heure,
@@ -370,7 +371,7 @@ export async function GET(req) {
   //    → boîte générale (pas rattaché à un dossier précis)
   // ─────────────────────────────────────────────────────────────
   try {
-    const { data: artisans } = await supabase
+    const { data: artisans } = await getSupabaseAdmin()
       .from('artisans')
       .select('id, email, entreprise, nom, prenom, decennale_expiration, societe_id')
       .eq('decennale_expiration', in30)
@@ -385,9 +386,9 @@ export async function GET(req) {
       let admin = null, villes = []
       try {
         const [{ data: adm }, { data: ags }] = await Promise.all([
-          supabase.from('profiles').select('email, prenom, nom')
+          getSupabaseAdmin().from('profiles').select('email, prenom, nom')
             .eq('role', 'admin').eq('societe_id', societeId).limit(1).maybeSingle(),
-          supabase.from('agences').select('ville').eq('societe_id', societeId),
+          getSupabaseAdmin().from('agences').select('ville').eq('societe_id', societeId),
         ])
         admin = adm || null
         villes = (ags || []).map(a => a.ville).filter(Boolean)
@@ -423,7 +424,7 @@ export async function GET(req) {
   // 7. Nouveau compte rendu validé — email client AMO
   // ─────────────────────────────────────────────────────────────
   try {
-    const { data: crs } = await supabase
+    const { data: crs } = await getSupabaseAdmin()
       .from('comptes_rendus')
       .select(`
         id, dossier_id, type_visite, date_visite,
@@ -463,7 +464,7 @@ export async function GET(req) {
   //      côté SQL). Pas d'email : action base uniquement.
   // ─────────────────────────────────────────────────────────────
   try {
-    const { data, error } = await supabase.rpc('desactiver_acces_expires')
+    const { data, error } = await getSupabaseAdmin().rpc('desactiver_acces_expires')
     if (error) throw error
     log.push(`[8] Désactivation accès : ${data ?? 0} compte(s) désactivé(s)`)
   } catch (e) { errors.push(`[8] désactivation accès : ${e.message}`) }

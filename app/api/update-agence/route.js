@@ -3,10 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../lib/api-auth'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 export async function PATCH(request) {
   const auth = await requireRole(request, ['admin'])
@@ -26,7 +27,7 @@ export async function PATCH(request) {
     // Contrôle d'appartenance AVANT écriture (service_role contourne la RLS) :
     // l'agence doit appartenir à la société de l'admin. 404 uniforme (introuvable
     // ou autre société : même réponse, pas de fuite d'existence cross-tenant).
-    const { data: agence } = await supabaseAdmin
+    const { data: agence } = await getSupabaseAdmin()
       .from('agences').select('id, societe_id').eq('id', agence_id).single()
     if (!agence || agence.societe_id !== auth.profile.societe_id) {
       return NextResponse.json({ error: 'Agence introuvable' }, { status: 404 })
@@ -45,7 +46,7 @@ export async function PATCH(request) {
       responsable_nom: responsable_nom?.trim() || null,
     }
 
-    const { data: updated, error } = await supabaseAdmin
+    const { data: updated, error } = await getSupabaseAdmin()
       .from('agences').update(updates).eq('id', agence_id).select().single()
 
     if (error) {

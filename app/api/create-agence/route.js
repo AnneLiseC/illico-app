@@ -3,10 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../lib/api-auth'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 export async function POST(request) {
   const auth = await requireRole(request, ['admin'])
@@ -22,7 +23,7 @@ export async function POST(request) {
 
     // societe_id dérivé du profil de l'admin (JAMAIS du body — non falsifiable).
     // code NON fourni : le trigger agences_generer_code_trg le génère (format LLNN).
-    const { data: agence, error } = await supabaseAdmin
+    const { data: agence, error } = await getSupabaseAdmin()
       .from('agences')
       .insert({
         societe_id: auth.profile.societe_id,

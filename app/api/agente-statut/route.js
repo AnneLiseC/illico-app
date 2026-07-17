@@ -13,10 +13,11 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../lib/api-auth'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 const BAN_DURATION = '876000h' // ~100 ans (réversible via 'none')
 
@@ -31,7 +32,7 @@ export async function POST(request) {
 
     // Appartenance + rôle (service_role contourne la RLS, on la reflète) : même société,
     // et bien une agente (jamais un admin). 404 uniforme (pas de fuite cross-tenant).
-    const { data: profil } = await supabaseAdmin
+    const { data: profil } = await getSupabaseAdmin()
       .from('profiles').select('role, societe_id').eq('id', id).single()
     if (!profil || profil.societe_id !== auth.profile.societe_id) {
       return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 })
@@ -41,7 +42,7 @@ export async function POST(request) {
     }
 
     // 1. Ban / unban Auth (bloque / débloque la connexion).
-    const { error: banError } = await supabaseAdmin.auth.admin.updateUserById(id, {
+    const { error: banError } = await getSupabaseAdmin().auth.admin.updateUserById(id, {
       ban_duration: actif ? 'none' : BAN_DURATION,
     })
     if (banError) {
@@ -49,7 +50,7 @@ export async function POST(request) {
     }
 
     // 2. Marquer actif/inactif (la ligne profiles reste → attribution préservée).
-    const { error } = await supabaseAdmin.from('profiles').update({ actif }).eq('id', id)
+    const { error } = await getSupabaseAdmin().from('profiles').update({ actif }).eq('id', id)
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }

@@ -11,10 +11,11 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../lib/api-auth'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 export async function POST(request) {
   // 1. Gate : staff uniquement (le référent du dossier, ou un admin de la société).
@@ -29,7 +30,7 @@ export async function POST(request) {
     // 2. Charger le dossier + CONTRÔLE D'APPARTENANCE (service_role contourne la
     //    RLS → on la reflète). agente : référente du dossier ; admin : sa société.
     //    404 uniforme (introuvable ou hors périmètre : même réponse).
-    const { data: dossier } = await supabaseAdmin
+    const { data: dossier } = await getSupabaseAdmin()
       .from('dossiers')
       .select('id, client_id, societe_id, agence_id, referente_id')
       .eq('id', dossierId)
@@ -47,7 +48,7 @@ export async function POST(request) {
     }
 
     // 3. Lire le client du dossier (email/prénom/nom).
-    const { data: client } = await supabaseAdmin
+    const { data: client } = await getSupabaseAdmin()
       .from('clients')
       .select('id, email, prenom, nom')
       .eq('id', dossier.client_id)
@@ -69,7 +70,7 @@ export async function POST(request) {
     //    est le lien qui compte ; un client = une personne = un compte, couvrant
     //    tous ses dossiers via mes_dossiers_client().) Sert d'AIGUILLAGE : compte
     //    existant → on régénère un lien (recovery), sinon → on crée (invite).
-    const { data: existing } = await supabaseAdmin
+    const { data: existing } = await getSupabaseAdmin()
       .from('profiles')
       .select('id')
       .eq('client_id', client.id)
@@ -80,7 +81,7 @@ export async function POST(request) {
 
     // 5a. COMPTE EXISTANT → régénérer un lien SANS recréer (renvoi d'invitation).
     if (existing) {
-      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+      const { data: linkData, error: linkError } = await getSupabaseAdmin().auth.admin.generateLink({
         type: 'recovery',
         email,
         options: { redirectTo },
@@ -90,7 +91,7 @@ export async function POST(request) {
       }
       // Réinviter = rouvrir l'accès : si le compte avait été désactivé (cron J+14),
       // on le réactive. On ne touche QUE ce profil client.
-      await supabaseAdmin.from('profiles').update({ acces_actif: true }).eq('id', existing.id)
+      await getSupabaseAdmin().from('profiles').update({ acces_actif: true }).eq('id', existing.id)
       return NextResponse.json({
         status: 'relinked',
         actionLink: linkData.properties.action_link,
@@ -101,7 +102,7 @@ export async function POST(request) {
 
     // 5b. PAS DE COMPTE → générer le lien d'invitation (crée le auth.users SANS
     //     envoyer d'email) + insert profiles + rollback si échec.
-    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+    const { data: linkData, error: linkError } = await getSupabaseAdmin().auth.admin.generateLink({
       type: 'invite',
       email,
       options: {
@@ -114,7 +115,7 @@ export async function POST(request) {
     }
     const userId = linkData.user.id
 
-    const { error: profileError } = await supabaseAdmin
+    const { error: profileError } = await getSupabaseAdmin()
       .from('profiles')
       .insert({
         id: userId,
@@ -129,7 +130,7 @@ export async function POST(request) {
 
     if (profileError) {
       // Rollback : pas d'auth.users orphelin si le profil échoue (comme create-agente).
-      await supabaseAdmin.auth.admin.deleteUser(userId)
+      await getSupabaseAdmin().auth.admin.deleteUser(userId)
       return NextResponse.json({ error: profileError.message }, { status: 400 })
     }
 

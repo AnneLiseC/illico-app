@@ -17,10 +17,11 @@ import { createClient } from '@supabase/supabase-js'
 import { parseEvent } from './parse-event'
 import { rdvSummary } from './mapping'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 // Rapport agnostique (mêmes champs/valeurs qu'avant).
 export function makeReport(cibleRow) {
@@ -69,7 +70,7 @@ export async function loadCandidates(societeId) {
   const fetchAll = async (table, cols) => {
     const rows = []; const PAGE = 1000
     for (let from = 0; ; from += PAGE) {
-      const { data, error } = await supabaseAdmin.from(table).select(cols)
+      const { data, error } = await getSupabaseAdmin().from(table).select(cols)
         .eq('societe_id', societeId).order('id', { ascending: true }).range(from, from + PAGE - 1)
       if (error || !data || data.length === 0) break
       rows.push(...data)
@@ -96,7 +97,7 @@ export async function loadByGid(cibleRow) {
   const byGid = new Map()
   const PAGE = 1000
   for (let from = 0; ; from += PAGE) {
-    const { data: rows, error } = await supabaseAdmin
+    const { data: rows, error } = await getSupabaseAdmin()
       .from('rendez_vous').select('id, google_event_id, google_etag, dossier_id')
       .eq('cible_id', cibleRow.id).not('google_event_id', 'is', null)
       .order('id', { ascending: true }).range(from, from + PAGE - 1)
@@ -235,13 +236,13 @@ export function classifyNormalized(norm, ctx) {
 // Écrit le curseur en 'error' SANS toucher sync_token (on ne perd pas le curseur sur panne).
 export async function markCursorError(cibleId, message) {
   const nowIso = new Date().toISOString()
-  const { data: existing } = await supabaseAdmin
+  const { data: existing } = await getSupabaseAdmin()
     .from('cible_sync_state').select('cible_id').eq('cible_id', cibleId).maybeSingle()
   if (existing) {
-    await supabaseAdmin.from('cible_sync_state')
+    await getSupabaseAdmin().from('cible_sync_state')
       .update({ last_status: 'error', last_error: message, last_sync_at: nowIso }).eq('cible_id', cibleId)
   } else {
-    await supabaseAdmin.from('cible_sync_state')
+    await getSupabaseAdmin().from('cible_sync_state')
       .insert({ cible_id: cibleId, sync_token: null, last_status: 'error', last_error: message, last_sync_at: nowIso })
   }
 }
@@ -254,7 +255,7 @@ async function reecrireTrames(writer, trame, idByGid) {
     if (!rdvId) { out.ko++; continue }
     try {
       const newEtag = await writer.rewriteTrame(t.google_event_id, t.summary)
-      await supabaseAdmin.from('rendez_vous').update({ google_etag: newEtag }).eq('id', rdvId)
+      await getSupabaseAdmin().from('rendez_vous').update({ google_etag: newEtag }).eq('id', rdvId)
       out.ok++
     } catch (e) {
       console.error('[pull][B5] trame KO event', t.google_event_id, e?.message || e)
@@ -269,21 +270,21 @@ async function reecrireTrames(writer, trame, idByGid) {
 async function appliquerUpdatesB6(writer, updates) {
   const out = { ok: 0, ko: 0, trame_ok: 0, trame_ko: 0 }
   for (const u of updates) {
-    const { error } = await supabaseAdmin.from('rendez_vous').update(u.payload).eq('id', u.id)
+    const { error } = await getSupabaseAdmin().from('rendez_vous').update(u.payload).eq('id', u.id)
     if (error) { console.error('[pull][B6] update KO', u.id, error.message); out.ko++; continue }
     out.ok++
     if (u.trameSummary) {
       try {
         const newEtag = await writer.rewriteTrame(u.google_event_id, u.trameSummary)
-        await supabaseAdmin.from('rendez_vous').update({ google_etag: newEtag }).eq('id', u.id)
+        await getSupabaseAdmin().from('rendez_vous').update({ google_etag: newEtag }).eq('id', u.id)
         out.trame_ok++
       } catch (e) {
         console.error('[pull][B6] trame KO', u.google_event_id, e?.message || e)
         out.trame_ko++
-        await supabaseAdmin.from('rendez_vous').update({ google_etag: u.currentEtag }).eq('id', u.id)
+        await getSupabaseAdmin().from('rendez_vous').update({ google_etag: u.currentEtag }).eq('id', u.id)
       }
     } else {
-      await supabaseAdmin.from('rendez_vous').update({ google_etag: u.currentEtag }).eq('id', u.id)
+      await getSupabaseAdmin().from('rendez_vous').update({ google_etag: u.currentEtag }).eq('id', u.id)
     }
   }
   return out
@@ -297,7 +298,7 @@ export async function applyActions(cibleRow, { report, actions, nextSyncToken, s
 
   // 410 : reset curseur -> full au prochain run. AUCUNE écriture rendez_vous. sync_floor préservé.
   if (status === 'full_resync_needed') {
-    await supabaseAdmin.from('cible_sync_state').upsert({
+    await getSupabaseAdmin().from('cible_sync_state').upsert({
       cible_id: cibleRow.id, sync_token: null, last_sync_at: nowIso, sync_floor: syncFloor,
       last_status: 'full_resync_needed', last_error: report.erreur,
     }, { onConflict: 'cible_id' })
@@ -314,14 +315,14 @@ export async function applyActions(cibleRow, { report, actions, nextSyncToken, s
   // status === 'ok' -> GARDE-FOU levé : lecture complète réussie, on applique.
   let writeError = null
   if (actions.deletes.length) {
-    const { error } = await supabaseAdmin.from('rendez_vous').delete().in('id', actions.deletes)
+    const { error } = await getSupabaseAdmin().from('rendez_vous').delete().in('id', actions.deletes)
     if (error) writeError = 'delete KO: ' + error.message
     else applied.deletes = actions.deletes.length
   }
 
   let idByGid = new Map()
   if (actions.inserts.length) {
-    const { data: inserted, error } = await supabaseAdmin
+    const { data: inserted, error } = await getSupabaseAdmin()
       .from('rendez_vous').insert(actions.inserts).select('id, google_event_id')
     if (error) writeError = (writeError ? writeError + ' | ' : '') + 'insert KO: ' + error.message
     else {
@@ -345,7 +346,7 @@ export async function applyActions(cibleRow, { report, actions, nextSyncToken, s
 
   // B6 — backfill etag des RDV sans référence : capte l'etag, NE modifie rien.
   for (const b of actions.etagBackfill) {
-    await supabaseAdmin.from('rendez_vous').update({ google_etag: b.etag }).eq('id', b.id)
+    await getSupabaseAdmin().from('rendez_vous').update({ google_etag: b.etag }).eq('id', b.id)
   }
   applied.etag_init = actions.etagBackfill.length
 
@@ -355,7 +356,7 @@ export async function applyActions(cibleRow, { report, actions, nextSyncToken, s
     applied.updates = r.ok; applied.updates_trame_ok = r.trame_ok; applied.updates_trame_ko = r.trame_ko
   }
 
-  await supabaseAdmin.from('cible_sync_state').upsert({
+  await getSupabaseAdmin().from('cible_sync_state').upsert({
     cible_id: cibleRow.id, sync_token: nextSyncToken, last_sync_at: nowIso, sync_floor: syncFloor,
     last_status: 'ok', last_error: null,
   }, { onConflict: 'cible_id' })
