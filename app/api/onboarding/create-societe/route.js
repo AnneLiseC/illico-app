@@ -8,10 +8,11 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 function extractToken(request) {
   const header = request.headers.get('authorization') || request.headers.get('Authorization')
@@ -27,7 +28,7 @@ export async function POST(request) {
   if (!token) {
     return NextResponse.json({ error: 'Non authentifié' }, { status: 401 })
   }
-  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData, error: userError } = await getSupabaseAdmin().auth.getUser(token)
   if (userError || !userData?.user) {
     return NextResponse.json({ error: 'Session invalide' }, { status: 401 })
   }
@@ -48,7 +49,7 @@ export async function POST(request) {
 
     // 3. Création atomique. p_user_id vient du JWT vérifié → non falsifiable
     //    (le body ne porte PAS d'id).
-    const { data: societeId, error: rpcError } = await supabaseAdmin.rpc('onboarding_create_societe', {
+    const { data: societeId, error: rpcError } = await getSupabaseAdmin().rpc('onboarding_create_societe', {
       p_user_id:       userId,
       p_nom_societe:   nom_societe,
       p_siret:         siret || '',

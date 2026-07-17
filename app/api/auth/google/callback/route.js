@@ -11,10 +11,11 @@ const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_REDIRECT_URI
 )
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 // Vérifie et décode le state signé HMAC produit par /api/auth/google.
 // Retourne userId si valide, sinon null.
@@ -59,7 +60,7 @@ export async function GET(request) {
 
     // W1 — tokens stockés CHIFFRÉS (AES-256-GCM). refresh_token peut être null (Google ne le
     // renvoie qu'au 1er consentement) → on ne chiffre que s'il est présent. expiry_date en clair.
-    await supabaseAdmin.from('comptes_oauth').upsert({
+    await getSupabaseAdmin().from('comptes_oauth').upsert({
       user_id: userId,
       fournisseur: 'google',
       access_token: encrypt(tokens.access_token),

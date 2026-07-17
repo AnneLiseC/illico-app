@@ -19,10 +19,11 @@ import { buildICloudClient, isCalDAVAuthError, canonicalIcloudUrl } from './iclo
 import { parseEvent } from './parse-event'
 import * as engine from './pull-engine'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 // ── Normalisation ICS ──────────────────────────────────────────────────────────────────
 // Enregistre les VTIMEZONE de l'objet pour que ical.js résolve les TZID -> instants absolus.
@@ -163,7 +164,7 @@ export async function applyPullCibleICloud(cibleRow) {
   }
   const calendarUrl = resolved.cible.calendar_id
 
-  const { data: state } = await supabaseAdmin
+  const { data: state } = await getSupabaseAdmin()
     .from('cible_sync_state').select('sync_token, sync_floor').eq('cible_id', cibleRow.id).maybeSingle()
   // sync_token porte désormais le CTag iCloud (réutilisation de colonne, pas de migration).
   const syncToken = state?.sync_token || null
@@ -244,7 +245,7 @@ export async function pullRecurrentsCibleICloud(cibleRow, { horizonDays = 180 } 
   const seen = new Set()
   const PAGE = 1000
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await getSupabaseAdmin()
       .from('rendez_vous').select('google_event_id')
       .eq('cible_id', cibleRow.id).not('google_event_id', 'is', null)
       .order('google_event_id', { ascending: true }).range(from, from + PAGE - 1)
@@ -298,7 +299,7 @@ export async function pullRecurrentsCibleICloud(cibleRow, { horizonDays = 180 } 
 
   report.nouvelles = inserts.length
   if (inserts.length) {
-    const { error } = await supabaseAdmin.from('rendez_vous').insert(inserts)
+    const { error } = await getSupabaseAdmin().from('rendez_vous').insert(inserts)
     if (error) report.erreur = 'insert KO: ' + error.message
     else applied.inserts = inserts.length
   }

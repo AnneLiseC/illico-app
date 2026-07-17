@@ -10,10 +10,11 @@ import { NextResponse } from 'next/server'
 import { isAllowedStaffEmail } from '../../../lib/email-validation'
 import { checkBearerSecret } from '../../../lib/http-auth'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000  // 7 jours
 
@@ -41,7 +42,7 @@ export async function POST(request) {
     // 4. Anti-doublon (lectures en service_role — la table est service_role-only).
     //    On récupère les statuts bloquants (en_attente / consommee) pour cet email.
     //    Les 'revoquee' n'empêchent pas une nouvelle invitation.
-    const { data: existing, error: existErr } = await supabaseAdmin
+    const { data: existing, error: existErr } = await getSupabaseAdmin()
       .from('admin_invitations')
       .select('statut')
       .eq('email', email)
@@ -57,7 +58,7 @@ export async function POST(request) {
     }
 
     // 5. Déjà admin d'une société existante ? (source : profiles.email)
-    const { data: adminProfiles, error: profErr } = await supabaseAdmin
+    const { data: adminProfiles, error: profErr } = await getSupabaseAdmin()
       .from('profiles')
       .select('id')
       .eq('email', email)
@@ -72,7 +73,7 @@ export async function POST(request) {
 
     // 6. Invitation Supabase — crée le compte auth.users immédiatement (id dispo).
     //    Échoue si l'email a déjà un compte auth (emails uniques) → message clair.
-    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+    const { data: inviteData, error: inviteError } = await getSupabaseAdmin().auth.admin.inviteUserByEmail(email, {
       data: { role: 'admin' },
       // PROVISOIRE 3a — redirectTo à rebrancher vers l'écran de création société en 3c.
       redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/set-password`,
@@ -85,7 +86,7 @@ export async function POST(request) {
     // 7. Ligne d'invitation (expiration à +7j). L'index unique partiel
     //    (email WHERE statut='en_attente') est le filet anti-doublon concurrent.
     const expiresAt = new Date(Date.now() + INVITATION_TTL_MS).toISOString()
-    const { data: inserted, error: insErr } = await supabaseAdmin
+    const { data: inserted, error: insErr } = await getSupabaseAdmin()
       .from('admin_invitations')
       .insert({ email, user_id: userId, statut: 'en_attente', invited_by, expires_at: expiresAt })
       .select('id')
@@ -94,7 +95,7 @@ export async function POST(request) {
     // 8. Rollback : si l'INSERT échoue (dont collision sur l'index unique partiel),
     //    supprimer le compte auth créé par l'invite — pas de compte orphelin.
     if (insErr) {
-      await supabaseAdmin.auth.admin.deleteUser(userId)
+      await getSupabaseAdmin().auth.admin.deleteUser(userId)
       return NextResponse.json({ error: insErr.message }, { status: 500 })
     }
 

@@ -6,10 +6,11 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 function extractToken(request) {
   const header = request.headers.get('authorization') || request.headers.get('Authorization')
@@ -28,12 +29,12 @@ export async function requireUser(request) {
     return { error: NextResponse.json({ error: 'Non authentifié' }, { status: 401 }) }
   }
 
-  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token)
+  const { data: userData, error: userError } = await getSupabaseAdmin().auth.getUser(token)
   if (userError || !userData?.user) {
     return { error: NextResponse.json({ error: 'Session invalide' }, { status: 401 }) }
   }
 
-  const { data: profile, error: profileError } = await supabaseAdmin
+  const { data: profile, error: profileError } = await getSupabaseAdmin()
     .from('profiles')
     .select('id, role, client_id, prenom, nom, email, agence_id, societe_id')
     .eq('id', userData.user.id)

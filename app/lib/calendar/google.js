@@ -17,10 +17,11 @@ import {
   interventionSummary, interventionDescription, interventionOccurrences,
 } from './mapping'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 // Mode simulation : calcule + logge l'événement sans rien écrire (Google ni base).
 export const DRY_RUN = process.env.GOOGLE_SYNC_DRY_RUN === '1'
@@ -47,7 +48,7 @@ export function buildOAuthClientForCompte(compteOauthId, tokens) {
       // W2 — le refresh renvoie un nouvel access_token : on le stocke CHIFFRÉ (AES-256-GCM).
       // Google ne renvoie pas de nouveau refresh_token ici → rien à réécrire pour lui.
       // expiry_date reste EN CLAIR (timestamp, pas un secret).
-      await supabaseAdmin.from('comptes_oauth').update({
+      await getSupabaseAdmin().from('comptes_oauth').update({
         access_token: encrypt(newTokens.access_token),
         expiry_date: newTokens.expiry_date,
         updated_at: new Date().toISOString(),
@@ -101,13 +102,13 @@ export async function listGoogleCalendars(compte) {
 // compte.fournisseur pour router (cf. app/lib/calendar/dispatch.js). null = cible
 // introuvable ou sans compte rattaché → rien à pousser (l'appelant skip, comme avant).
 export async function resolveCible(cibleId) {
-  const { data: cible } = await supabaseAdmin
+  const { data: cible } = await getSupabaseAdmin()
     .from('cibles_calendrier')
     .select('id, calendar_id, compte_oauth_id')
     .eq('id', cibleId)
     .single()
   if (!cible || !cible.compte_oauth_id) return null
-  const { data: compte } = await supabaseAdmin
+  const { data: compte } = await getSupabaseAdmin()
     .from('comptes_oauth')
     .select('*')
     .eq('id', cible.compte_oauth_id)

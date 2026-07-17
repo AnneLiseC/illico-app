@@ -15,14 +15,15 @@ import { NextResponse } from 'next/server'
 import { requireRole } from '../../../../lib/api-auth'
 import { dryRunPullCibleGoogle, applyPullCibleGoogle } from '../../../../lib/calendar/pull-google'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 // Cibles google ACTIVES de la société de l'admin.
 async function getCiblesGoogle(societeId) {
-  return supabaseAdmin
+  return getSupabaseAdmin()
     .from('cibles_calendrier')
     .select('id, agenda_nom, calendar_id, agence_id, societe_id, actif, fournisseur')
     .eq('fournisseur', 'google')

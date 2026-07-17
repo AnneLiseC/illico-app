@@ -6,10 +6,11 @@ import { NextResponse } from 'next/server'
 import { requireRole } from '../../lib/api-auth'
 import { formatNomClient } from '../../lib/clients'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 const TYPES_VISITE = {
   r1: 'R1 – Première visite / visite technique',
@@ -198,7 +199,7 @@ export async function POST(request) {
     }
 
     // Charger dossier + devis
-    const { data: dossier } = await supabaseAdmin
+    const { data: dossier } = await getSupabaseAdmin()
       .from('dossiers')
       .select('*, referente:profiles!dossiers_referente_id_fkey(id, prenom, nom), client:clients(*), agence:agences(nom)')
       .eq('id', dossierId).single()
@@ -220,7 +221,7 @@ export async function POST(request) {
     // dossier ; (b) préfixe Storage du dossier (convention : chantiers/{dossier_id}/…).
     // Un seul path invalide → 400, requête entière rejetée (fail loud).
     if (docsPaths?.length) {
-      const { data: docsDossier } = await supabaseAdmin
+      const { data: docsDossier } = await getSupabaseAdmin()
         .from('chantier_documents')
         .select('path')
         .eq('dossier_id', dossierId)
@@ -239,7 +240,7 @@ export async function POST(request) {
     // (b) il suit la convention dédiée chantiers/{dossierId}/cr/ (photos ordi, hors table).
     // Un seul path invalide → 400 (fail loud). Le contrôle tenant amont reste le garde-fou.
     if (photosPaths?.length) {
-      const { data: photosDossier } = await supabaseAdmin
+      const { data: photosDossier } = await getSupabaseAdmin()
         .from('photos')
         .select('url')
         .eq('dossier_id', dossierId)
@@ -254,7 +255,7 @@ export async function POST(request) {
       }
     }
 
-    const { data: devis } = await supabaseAdmin
+    const { data: devis } = await getSupabaseAdmin()
       .from('devis_artisans')
       .select('*, artisan:artisans(id, entreprise)')
       .eq('dossier_id', dossierId)
@@ -269,7 +270,7 @@ export async function POST(request) {
     // Documents du chantier sélectionnés
     for (const doc of (docsPaths || [])) {
       try {
-        const { data: fileData } = await supabaseAdmin.storage.from('documents').download(doc.path)
+        const { data: fileData } = await getSupabaseAdmin().storage.from('documents').download(doc.path)
         if (!fileData) continue
         const buf = Buffer.from(await fileData.arrayBuffer())
         const b64 = buf.toString('base64')
@@ -286,7 +287,7 @@ export async function POST(request) {
     // media_type déduit de l'extension.
     for (const path of (photosPaths || [])) {
       try {
-        const { data: fileData } = await supabaseAdmin.storage.from('photos').download(path)
+        const { data: fileData } = await getSupabaseAdmin().storage.from('photos').download(path)
         if (!fileData) continue
         const buf = Buffer.from(await fileData.arrayBuffer())
         const b64 = buf.toString('base64')

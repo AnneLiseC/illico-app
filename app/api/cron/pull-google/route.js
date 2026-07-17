@@ -11,17 +11,18 @@ import { NextResponse } from 'next/server'
 import { applyPullCible } from '../../../lib/calendar/pull-dispatch'
 import { checkBearerSecret } from '../../../lib/http-auth'
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabaseAdmin
+function getSupabaseAdmin() {
+  if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _supabaseAdmin
+}
 
 export async function GET(req) {
   if (!checkBearerSecret(req, process.env.CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { data: cibles, error } = await supabaseAdmin
+  const { data: cibles, error } = await getSupabaseAdmin()
     .from('cibles_calendrier')
     .select('id, agenda_nom, calendar_id, agence_id, societe_id, actif, fournisseur')
     .eq('actif', true)   // TOUTES sociétés, TOUS fournisseurs
