@@ -146,6 +146,83 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
     )
   }
 
+  // ── Bloc honoraires illiCO (courtage / AMO) ──
+  // Montants lus dans suivi_financier (posés par le RPC suivi_toggle_honoraires) → cohérents
+  // avec l'écran. ⚠️ Sur AMO, honoraires_courtage et acompte_amo sont le MÊME encaissement
+  // (part courtage vue AMO) : on n'affiche QUE 'Acompte AMO', jamais les deux.
+  {
+    const typo = dossier.typologie
+    const findSuivi = (type) => (suiviFinancier || []).find(s => s.type_echeance === type)
+    const estPaye = (s) => s?.statut_client === 'regle'
+    const dateDe = (s) => s?.date_paiement ? new Date(s.date_paiement).toLocaleDateString('fr-FR') : '—'
+    const honoLignes = []
+
+    if (typo === 'courtage') {
+      const courtage = findSuivi('honoraires_courtage')
+      if (courtage && toNum(courtage.montant_ttc) > 0) {
+        honoLignes.push({ libelle: 'Honoraires courtage', date: dateDe(courtage), montant: toNum(courtage.montant_ttc), paye: estPaye(courtage) })
+      }
+      const ts = (suiviFinancier || [])
+        .filter(s => s.type_echeance === 'honoraires_courtage_ts' && toNum(s.montant_ttc) > 0)
+        .sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))
+      ts.forEach((s, i) => honoLignes.push({
+        libelle: `Honoraires courtage — travaux suppl.${ts.length > 1 ? ' ' + (i + 1) : ''}`,
+        date: dateDe(s), montant: toNum(s.montant_ttc), paye: estPaye(s),
+      }))
+    } else if (typo === 'amo') {
+      const acompte = findSuivi('acompte_amo')
+      if (acompte && toNum(acompte.montant_ttc) > 0) {
+        honoLignes.push({ libelle: 'Acompte AMO', date: dateDe(acompte), montant: toNum(acompte.montant_ttc), paye: estPaye(acompte) })
+      }
+      // Solde AMO : tranches encaissées si elles existent (une ligne = un versement reçu),
+      // sinon la ligne solde_amo globale.
+      const tranches = (suiviFinancier || [])
+        .filter(s => s.type_echeance === 'solde_amo_paiement' && toNum(s.montant_ttc) > 0)
+        .sort((a, b) => new Date(a.date_paiement || a.created_at || 0) - new Date(b.date_paiement || b.created_at || 0))
+      if (tranches.length > 0) {
+        tranches.forEach((s, i) => honoLignes.push({
+          libelle: `Solde AMO — versement ${i + 1}`, date: dateDe(s), montant: toNum(s.montant_ttc), paye: true,
+        }))
+      } else {
+        const solde = findSuivi('solde_amo')
+        if (solde && toNum(solde.montant_ttc) > 0) {
+          honoLignes.push({ libelle: 'Solde AMO', date: dateDe(solde), montant: toNum(solde.montant_ttc), paye: estPaye(solde) })
+        }
+      }
+    }
+
+    if (honoLignes.length > 0) {
+      const totalHono = honoLignes.reduce((s, l) => s + l.montant, 0)
+      const totalPaye = honoLignes.filter(l => l.paye).reduce((s, l) => s + l.montant, 0)
+      const reste = totalHono - totalPaye
+      const resteColor = reste > 0 ? '#d97706' : '#00578e'
+      const children = [
+        React.createElement(View, { key: 'head', style: CS.paiementHeader },
+          React.createElement(Text, { style: CS.paiementHeaderTitle }, 'illiCO travaux — Honoraires'),
+          React.createElement(Text, { style: CS.paiementHeaderMontant }, `${fmt(totalHono)} TTC`),
+        ),
+      ]
+      honoLignes.forEach((l, i) => children.push(
+        React.createElement(View, { key: `h${i}`, style: CS.paiementLigne },
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 2.5, color: GRIS }] }, l.libelle),
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, l.date),
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, fmt(l.montant)),
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: l.paye ? '#16a34a' : '#d97706', fontFamily: 'Roboto-Bold' }] },
+            l.paye ? 'Payé' : 'En attente'),
+        )
+      ))
+      children.push(
+        React.createElement(View, { key: 'total', style: CS.paiementTotal },
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 2.5, fontFamily: 'Roboto-Bold' }] }, 'Total payé'),
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 1 }] }, ''),
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', fontFamily: 'Roboto-Bold' }] }, fmt(totalPaye)),
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: resteColor, fontFamily: 'Roboto-Bold' }] }, `Reste : ${fmt(reste)}`),
+        )
+      )
+      blocs.push(React.createElement(View, { key: 'honoraires', style: CS.paiementBloc, wrap: false }, ...children))
+    }
+  }
+
   // ── Un bloc par devis ──
   for (const d of devisList) {
     const ttc = toNum(d.montant_ttc)
