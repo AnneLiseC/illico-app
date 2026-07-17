@@ -1341,6 +1341,19 @@ export default function FicheChantier({ params }) {
     if (error) console.error('saveMontant :', error.message)
   }
 
+  // Sélecteur de version d'une ligne (simulations manuelles) : '' = version courante
+  // (live). Choisir une version épingle la ligne dessus et efface l'override manuel
+  // (le montant affiché devient celui de la version).
+  const saveVersionLigne = async (simId, ligneId, versionId) => {
+    const vid = versionId || null
+    setSimulations(prev => prev.map(s => s.id === simId
+      ? { ...s, lignes: (s.lignes || []).map(l => l.id === ligneId
+          ? { ...l, devis_version_id: vid, montant_ttc_override: vid ? null : l.montant_ttc_override } : l) } : s))
+    const payload = vid ? { devis_version_id: vid, montant_ttc_override: null } : { devis_version_id: null }
+    const { error } = await supabase.from('comparateur_lignes').update(payload).eq('id', ligneId)
+    if (error) console.error('saveVersionLigne :', error.message)
+  }
+
   const supprimerSimulation = async (simId) => {
     if (!confirm('Supprimer cette simulation ?')) return
     setSimulations(prev => prev.filter(s => s.id !== simId))   // optimiste (CASCADE supprime les lignes)
@@ -4773,6 +4786,24 @@ export default function FicheChantier({ params }) {
                                 </button>
                               )}
                             </div>
+                            {/* Sélecteur de version (4b) — si le devis a plusieurs versions. */}
+                            {versionsDevis[d.id]?.length > 1 && (
+                              sim.type === 'base' ? (
+                                <div style={{fontSize:9.5, color:'var(--ink-400)', marginTop:3}}>
+                                  {l.devis_version_id ? `v${versionById[l.devis_version_id]?.version_num ?? '?'}` : 'actuelle'}
+                                </div>
+                              ) : (
+                                <select value={l.devis_version_id || ''}
+                                  onChange={e => saveVersionLigne(sim.id, l.id, e.target.value)}
+                                  title="Version du devis utilisée pour cette simulation"
+                                  style={{marginTop:3, fontSize:10, padding:'1px 3px', border:'1px solid var(--ink-200)', borderRadius:4, color:'var(--ink-600)', maxWidth:130}}>
+                                  <option value="">Actuelle</option>
+                                  {versionsDevis[d.id].map(v => (
+                                    <option key={v.id} value={v.id}>v{v.version_num} · {fmt(v.montant_ttc || 0)}</option>
+                                  ))}
+                                </select>
+                              )
+                            )}
                           </td>
                         )
                       })}
