@@ -2216,23 +2216,25 @@ export default function Finances() {
         <button className={`tab ${tab==='facturation'?'active':''}`} onClick={() => handleTab('facturation')}>🗒️Facturation agentes</button>
       </div>
 
-      {/* KPI strip — 3 indicateurs adaptés au rôle (variables inchangées, affichage resserré). */}
+      {/* KPI strip — masqué sur l'onglet Facturation agentes (contexte de facturation différent). */}
+      {tab !== 'facturation' && (
       <div className="kpi-grid">
         {isAdmin ? (
           <>
-            {/* Admin : CA société généré + objectif · prévi · partage société/agentes */}
-            <FinKpiCard label={`CA généré ${anneeEnCours}`} value={fmt(totalCAGenere)} tone="brand">
+            {/* Admin : CA société généré · prévi · partage société/agentes · objectif agence */}
+            <FinKpiCard label={`CA généré ${anneeEnCours}`} value={fmt(totalCAGenere)} tone="brand"/>
+            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} tone="ok"/>
+            <FinKpiCard label="Part société" value={fmt(totalNetCTP)} sub={`Part agentes · ${fmt(totalGainsAgentesReels)}`} tone="brand"/>
+            <FinKpiCard label="Objectif CA généré agence" value={fmt(objectifAnnuel)} tone="ok">
               <div style={{marginTop:8}}>
                 <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
                   <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
                 </div>
                 <div style={{fontSize:11,color:'var(--ink-500)'}}>
-                  Objectif <span style={{fontWeight:600,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(objectifAnnuel)}</span> · {pctObjectif}%
+                  {pctObjectif}% atteint · CA {fmt(totalCAGenere)}
                 </div>
               </div>
             </FinKpiCard>
-            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} tone="ok"/>
-            <FinKpiCard label="Part société" value={fmt(totalNetCTP)} sub={`Part agentes · ${fmt(totalGainsAgentesReels)}`} tone="brand"/>
           </>
         ) : (
           <>
@@ -2243,6 +2245,7 @@ export default function Finances() {
           </>
         )}
       </div>
+      )}
 
       {/* ── CA · CHANTIERS — fusion Prévisionnel + Réel : Prévu net | Encaissé net | Reste ── */}
       {tab === 'gains' && (
