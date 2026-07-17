@@ -3,7 +3,7 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { calculateDossierFinance, calculateDevisFinance, getActiveDevis, calculateSoldeAmoReel } from '../lib/finance'
+import { computeCAMensuel } from '../lib/ca-reel'
 import { KpiCard, Progress } from '../components/shared'
 import { calcStatut } from '../lib/dossiers'
 import ModaleChoixClient from '../components/ModaleChoixClient'
@@ -123,56 +123,6 @@ function Pipeline({ dossiers, onOpen }) {
   )
 }
 
-/* ── Helpers finance (dashboard) ── */
-
-const normDossier = (d) => ({
-  ...d,
-  part_agente:       d.part_agente ?? (d.referente?.role === 'admin' ? 0 : 0.5),
-  frais_part_agente: d.frais_part_agente ?? null,
-  taux_amo:          d?.honoraires_amo_taux,
-  client: d?.client ? {
-    ...d.client,
-    apporteur_mode: d.client?.apporteur_base === 'total_chantier' ? 'total_chantier_ht' : 'par_devis',
-  } : null,
-})
-
-function computeCAMensuel(dossiers, annee) {
-  const monthly = {}
-  const add = (dateStr, amount) => {
-    if (!dateStr || !amount) return
-    const d = new Date(dateStr)
-    if (d.getFullYear() !== annee) return
-    const m = d.getMonth() + 1
-    monthly[m] = (monthly[m] || 0) + amount
-  }
-  for (const d of dossiers) {
-    const nd    = normDossier(d)
-    const fin   = calculateDossierFinance(nd)
-    const suivi = d.suivi_financier || []
-    const sfFrais    = suivi.find(s => s.type_echeance === 'frais_consultation'  && s.statut_illico === 'recu')
-    const sfCourtage = suivi.find(s => s.type_echeance === 'honoraires_courtage' && s.statut_illico === 'recu')
-    const sfAmo      = suivi.find(s => s.type_echeance === 'solde_amo'           && s.statut_illico === 'recu')
-    if (sfFrais    && nd.frais_statut !== 'offerts') add(sfFrais.date_paiement    || nd.date_signature_contrat, fin.frais.net)
-    if (sfCourtage) add(sfCourtage.date_paiement || nd.date_signature_contrat, fin.honoraires.courtage.net)
-    // Cohabitation solde AMO échelonné : Σ tranches (chacune à sa date) si présentes,
-    // sinon le gate statut_illico==='recu' actuel (branche else laissée verbatim).
-    const soldeAmoR = calculateSoldeAmoReel({ ...nd, suivi_financier: suivi })
-    if (soldeAmoR.hasTranches) {
-      for (const t of soldeAmoR.tranches) add(t.date_paiement, t.net)
-    } else if (sfAmo) {
-      add(sfAmo.date_paiement, fin.honoraires.soldeAmo.net)
-    }
-    for (const dv of getActiveDevis(d)) {
-      const artId     = dv.artisan?.id
-      const sfAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id && s.statut_illico === 'recu')
-      const sfFacture = suivi.find(s => s.type_echeance === 'facture_finale'  && s.artisan_id === artId && s.statut_illico === 'recu')
-      const dvFin = calculateDevisFinance(dv, nd)
-      if (sfAcompte)      add(sfAcompte.date_deblocage || sfAcompte.date_paiement, dvFin.netCom)
-      else if (sfFacture) add(sfFacture.date_paiement, dvFin.netCom)
-    }
-  }
-  return monthly
-}
 
 const fmtEur = (n) =>
   Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' €'
