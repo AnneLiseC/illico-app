@@ -26,9 +26,14 @@ const normDossier = (d) => ({
   } : null,
 })
 
-// CA réel encaissé par mois — logique IDENTIQUE au dashboard (source unique).
-// mode 'agence' = CA généré (net, parts agentes incluses).
-// mode 'societe' = résultat net société (parts agentes déduites → part société).
+// CA réel encaissé par mois — MÊMES critères de reconnaissance que la page Finances
+// (source de vérité), et non ceux du dashboard :
+//   • frais    → dossier.frais_statut === 'regle'
+//   • courtage → suivi honoraires_courtage.statut_client === 'regle'
+//   • solde AMO→ tranches, sinon solde_amo.statut_client === 'regle'
+//   • commissions → acompte_artisan.statut_illico === 'recu' (couvre le paiement direct)
+// mode 'agence' = CA généré (net, parts agentes incluses) ;
+// mode 'societe' = résultat net société (parts agentes déduites).
 function computeCAMensuel(dossiers, annee, mode = 'agence') {
   const soc = mode === 'societe'
   const monthly = {}
@@ -43,21 +48,28 @@ function computeCAMensuel(dossiers, annee, mode = 'agence') {
     const nd = normDossier(d)
     const fin = calculateDossierFinance(nd)
     const suivi = d.suivi_financier || []
-    const sfFrais    = suivi.find(s => s.type_echeance === 'frais_consultation'  && s.statut_illico === 'recu')
-    const sfCourtage = suivi.find(s => s.type_echeance === 'honoraires_courtage' && s.statut_illico === 'recu')
-    const sfAmo      = suivi.find(s => s.type_echeance === 'solde_amo'           && s.statut_illico === 'recu')
-    if (sfFrais && nd.frais_statut !== 'offerts') add(sfFrais.date_paiement || nd.date_signature_contrat, fin.frais.net, fin.frais.parts.agente)
-    if (sfCourtage) add(sfCourtage.date_paiement || nd.date_signature_contrat, fin.honoraires.courtage.net, fin.honoraires.courtage.parts.agente)
+    // Frais
+    if (nd.frais_statut === 'regle') {
+      const sf = suivi.find(s => s.type_echeance === 'frais_consultation')
+      add(sf?.date_paiement || nd.date_signature_contrat, fin.frais.net, fin.frais.parts.agente)
+    }
+    // Honoraires courtage
+    const sfC = suivi.find(s => s.type_echeance === 'honoraires_courtage')
+    if (sfC?.statut_client === 'regle') add(sfC.date_paiement || nd.date_signature_contrat, fin.honoraires.courtage.net, fin.honoraires.courtage.parts.agente)
+    // Solde AMO — Σ tranches encaissées, sinon gate tout-ou-rien
     const soldeAmoR = calculateSoldeAmoReel({ ...nd, suivi_financier: suivi })
-    if (soldeAmoR.hasTranches) { for (const t of soldeAmoR.tranches) add(t.date_paiement, t.net, t.parts?.agente) }
-    else if (sfAmo) add(sfAmo.date_paiement, fin.honoraires.soldeAmo.net, fin.honoraires.soldeAmo.parts.agente)
+    if (soldeAmoR.hasTranches) {
+      for (const t of soldeAmoR.tranches) add(t.date_paiement || nd.date_fin_chantier, t.net, t.parts?.agente)
+    } else {
+      const sfA = suivi.find(s => s.type_echeance === 'solde_amo')
+      if (nd.typologie === 'amo' && sfA?.statut_client === 'regle') add(sfA.date_paiement || nd.date_fin_chantier, fin.honoraires.soldeAmo.net, fin.honoraires.soldeAmo.parts.agente)
+    }
+    // Commissions
     for (const dv of getActiveDevis(d)) {
-      const artId = dv.artisan?.id
-      const sfAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id && s.statut_illico === 'recu')
-      const sfFacture = suivi.find(s => s.type_echeance === 'facture_finale'  && s.artisan_id === artId && s.statut_illico === 'recu')
+      const sfAc = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id && s.statut_illico === 'recu')
+      if (!sfAc) continue
       const dvFin = calculateDevisFinance(dv, nd)
-      if (sfAcompte)      add(sfAcompte.date_deblocage || sfAcompte.date_paiement, dvFin.netCom, dvFin.parts.agente)
-      else if (sfFacture) add(sfFacture.date_paiement, dvFin.netCom, dvFin.parts.agente)
+      add(sfAc.date_deblocage || sfAc.date_paiement, dvFin.netCom, dvFin.parts.agente)
     }
   }
   return monthly
@@ -79,21 +91,24 @@ function computeRoyalties(dossiers, annee) {
     const nd = normDossier(d)
     const fin = calculateDossierFinance(nd)
     const suivi = d.suivi_financier || []
-    const sfFrais    = suivi.find(s => s.type_echeance === 'frais_consultation'  && s.statut_illico === 'recu')
-    const sfCourtage = suivi.find(s => s.type_echeance === 'honoraires_courtage' && s.statut_illico === 'recu')
-    const sfAmo      = suivi.find(s => s.type_echeance === 'solde_amo'           && s.statut_illico === 'recu')
-    if (sfFrais && nd.frais_statut !== 'offerts') add(sfFrais.date_paiement || nd.date_signature_contrat, fin.frais.royalties, 'frais')
-    if (sfCourtage) add(sfCourtage.date_paiement || nd.date_signature_contrat, fin.honoraires.courtage.royalties, 'honoraires')
+    if (nd.frais_statut === 'regle') {
+      const sf = suivi.find(s => s.type_echeance === 'frais_consultation')
+      add(sf?.date_paiement || nd.date_signature_contrat, fin.frais.royalties, 'frais')
+    }
+    const sfC = suivi.find(s => s.type_echeance === 'honoraires_courtage')
+    if (sfC?.statut_client === 'regle') add(sfC.date_paiement || nd.date_signature_contrat, fin.honoraires.courtage.royalties, 'honoraires')
     const soldeAmoR = calculateSoldeAmoReel({ ...nd, suivi_financier: suivi })
-    if (soldeAmoR.hasTranches) { for (const t of soldeAmoR.tranches) add(t.date_paiement, t.royalties, 'honoraires') }
-    else if (sfAmo) add(sfAmo.date_paiement, fin.honoraires.soldeAmo.royalties, 'honoraires')
+    if (soldeAmoR.hasTranches) {
+      for (const t of soldeAmoR.tranches) add(t.date_paiement || nd.date_fin_chantier, t.royalties, 'honoraires')
+    } else {
+      const sfA = suivi.find(s => s.type_echeance === 'solde_amo')
+      if (nd.typologie === 'amo' && sfA?.statut_client === 'regle') add(sfA.date_paiement || nd.date_fin_chantier, fin.honoraires.soldeAmo.royalties, 'honoraires')
+    }
     for (const dv of getActiveDevis(d)) {
-      const artId = dv.artisan?.id
-      const sfAcompte = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id && s.statut_illico === 'recu')
-      const sfFacture = suivi.find(s => s.type_echeance === 'facture_finale'  && s.artisan_id === artId && s.statut_illico === 'recu')
+      const sfAc = suivi.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id && s.statut_illico === 'recu')
+      if (!sfAc) continue
       const dvFin = calculateDevisFinance(dv, nd)
-      if (sfAcompte)      add(sfAcompte.date_deblocage || sfAcompte.date_paiement, dvFin.royaltiesType2, 'commissions')
-      else if (sfFacture) add(sfFacture.date_paiement, dvFin.royaltiesType2, 'commissions')
+      add(sfAc.date_deblocage || sfAc.date_paiement, dvFin.royaltiesType2, 'commissions')
     }
   }
   const total = round2(parPoste.frais + parPoste.commissions + parPoste.honoraires)
