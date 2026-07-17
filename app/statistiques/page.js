@@ -111,6 +111,7 @@ export default function Statistiques() {
   const router = useRouter()
   const [dossiers, setDossiers] = useState([])
   const [objectifs, setObjectifs] = useState([])
+  const [redevances, setRedevances] = useState([])
   const [loading, setLoading] = useState(true)
   const [annee, setAnnee] = useState(new Date().getFullYear())
   const [mode, setMode] = useState('agence')   // admin : 'agence' (CA généré) | 'societe' (résultat net)
@@ -129,7 +130,7 @@ export default function Statistiques() {
     async function load() {
       setLoading(true)
       // Pas de filtre referente : la RLS scope (admin = société, agente = ses dossiers).
-      const [{ data: dos }, { data: obj }] = await Promise.all([
+      const [{ data: dos }, { data: obj }, { data: redev }] = await Promise.all([
         supabase.from('dossiers').select(`
           id, reference, statut, typologie, created_at, archive, agence_id,
           frais_statut, frais_consultation, part_agente, frais_part_agente,
@@ -142,23 +143,31 @@ export default function Statistiques() {
           suivi_financier(*)
         `).order('created_at', { ascending: false }),
         supabase.from('objectifs_ca').select('*'),
+        supabase.from('redevances').select('*'),
       ])
       if (annule) return
       setDossiers(dos || [])
       setObjectifs(obj || [])
+      setRedevances(redev || [])
       setLoading(false)
     }
     load()
     return () => { annule = true }
   }, [initialized, user?.id, profile?.id])
 
-  // Périmètre admin : Consolidé (null) = toutes les agences ; sinon une agence.
-  const dossiersScoped = useMemo(
-    () => (agenceActive ? dossiers.filter(d => d.agence_id === agenceActive) : dossiers),
-    [dossiers, agenceActive]
-  )
+  // Périmètre : toute l'agence active (agenceActive). Le mode Société ne restreint
+  // PAS les dossiers — il change le CALCUL : Agence = net (parts agentes incluses),
+  // Société = net − parts agentes (la part que la société garde sur TOUS les
+  // chantiers, agentes comprises). Les loyers agentes s'ajoutent à part (voir compta).
+  const dossiersScoped = useMemo(() => {
+    return agenceActive ? dossiers.filter(d => d.agence_id === agenceActive) : dossiers
+  }, [dossiers, agenceActive])
 
-  const caMois    = useMemo(() => computeCAMensuel(dossiersScoped, annee,     modeEff), [dossiersScoped, annee, modeEff])
+  // Affiche les découpages PAR agente uniquement en vue Agence (admin) — pas en
+  // Société (agrégat société) ni pour une agente connectée (RLS = ses dossiers).
+  const showAgentes = isAdmin && modeEff === 'agence'
+
+  const caMois    = useMemo(() => computeCAMensuel(dossiersScoped, annee, modeEff),     [dossiersScoped, annee, modeEff])
   const caMoisN1  = useMemo(() => computeCAMensuel(dossiersScoped, annee - 1, modeEff), [dossiersScoped, annee, modeEff])
   const roy       = useMemo(() => computeRoyalties(dossiersScoped, annee),     [dossiersScoped, annee])
   const royN1     = useMemo(() => computeRoyalties(dossiersScoped, annee - 1), [dossiersScoped, annee])
@@ -194,6 +203,14 @@ export default function Statistiques() {
   })()
 
   // ── Sections 3-6 (mémoïsées) ──
+  // Loyers agentes encaissés (redevances statut 'regle') — REVENU de la société,
+  // distinct du CA brokerage et des royalties (charge vers le franchiseur).
+  const loyers = useMemo(() => {
+    const base = agenceActive ? redevances.filter(r => r.agence_id === agenceActive) : redevances
+    const enc = (an) => round2(base.filter(r => r.annee === an && r.statut === 'regle').reduce((s, r) => s + (Number(r.montant_ht) || 0), 0))
+    return { annee: enc(annee), n1: enc(annee - 1) }
+  }, [redevances, agenceActive, annee])
+
   const repartition = useMemo(() => {
     const caDe = (ds) => round2(somme(computeCAMensuel(ds, annee, modeEff)))
     const gTypo = {}, gAg = {}
@@ -314,14 +331,14 @@ export default function Statistiques() {
       {isAdmin && (
         <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: -8 }}>
           {modeEff === 'societe'
-            ? <><strong style={{ color: 'var(--ink-700)' }}>Société (franchisé)</strong> · résultat net conservé, après déduction des parts agentes.</>
-            : <><strong style={{ color: 'var(--ink-700)' }}>Agence</strong> · CA généré au niveau activité, parts agentes incluses.</>}
+            ? <><strong style={{ color: 'var(--ink-700)' }}>Société</strong> · part société sur toute l&apos;agence (net − parts agentes) + loyers agentes.</>
+            : <><strong style={{ color: 'var(--ink-700)' }}>Agence</strong> · CA total de l&apos;agence, parts agentes incluses.</>}
         </div>
       )}
 
       {/* ── SECTION 1 — Synthèse franchiseur ── */}
       <div className="kpi-grid">
-        <StatKpi label={modeEff === 'societe' ? `Résultat société ${annee}` : `CA généré ${annee}`} value={fmtEur(caTotal)} tone="brand"
+        <StatKpi label={`CA généré ${annee}`} value={fmtEur(caTotal)} tone="brand"
           sub={evolCA != null ? `${evolCA >= 0 ? '▲' : '▼'} ${Math.abs(evolCA)}% vs ${annee - 1} (${fmtEur(caTotalN1)})` : `vs ${annee - 1} : n/a`} />
         {isAdmin ? (
           <StatKpi label="Royalties dues au franchiseur" value={fmtEur(roy.total)} tone="warn"
@@ -351,7 +368,7 @@ export default function Statistiques() {
       {/* ── SECTION 2 — CA & royalties dans le temps (N vs N-1) ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
         <div className="card" style={{ padding: 20 }}>
-          <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>{modeEff === 'societe' ? 'Résultat société par mois' : 'CA généré par mois'}</h2>
+          <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>CA généré par mois</h2>
           <div className="eyebrow" style={{ marginBottom: 12 }}>Réel encaissé · {annee} vs {annee - 1}</div>
           <Legende items={[{ color: '#0094d4', label: `${annee}` }, { color: '#94a3b8', label: `${annee - 1}`, dashed: true }]} />
           <BarLineChart id="stats_ca" courant={caMois} precedent={caMoisN1} annee={annee} couleur="#0094d4" />
@@ -371,7 +388,7 @@ export default function Statistiques() {
           <div className="eyebrow" style={{ marginBottom: 14 }}>D&apos;où vient le chiffre d&apos;affaires · {annee}</div>
           <BarList items={repartition.typo.map(t => ({ label: t.label, value: t.ca, right: fmtEur(t.ca) }))} couleur="#0094d4" />
         </div>
-        {isAdmin && (
+        {showAgentes && (
           <div className="card" style={{ padding: 20 }}>
             <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>CA par agente</h2>
             <div className="eyebrow" style={{ marginBottom: 14 }}>Contribution de chacune · {annee}</div>
@@ -386,23 +403,43 @@ export default function Statistiques() {
         <div className="eyebrow" style={{ marginBottom: 14 }}>Réel encaissé</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 28 }}>
           <div>
-            <div className="eyebrow" style={{ marginBottom: 6 }}>Produits encaissés</div>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>Produits encaissés{modeEff === 'societe' ? ' · agence' : ''}</div>
             <LigneCompta label="Frais de consultation" value={compta.frais} />
             <LigneCompta label="Commissions" value={compta.commissions} />
             <LigneCompta label="Honoraires" value={compta.honoraires} />
             <LigneCompta label="Apporteur client remboursé" value={-compta.apporteur} neg />
             <div style={{ borderTop: '1px solid var(--ink-200)', marginTop: 6, paddingTop: 6 }}>
-              <LigneCompta label="CA généré (net)" value={compta.total} bold />
+              <LigneCompta label={modeEff === 'societe' ? 'CA généré agence (net)' : 'CA généré (net)'} value={compta.total} bold />
             </div>
           </div>
-          <div>
-            <div className="eyebrow" style={{ marginBottom: 6 }}>Répartition du CA net</div>
-            <LigneCompta label="Part société" value={compta.caSociete} />
-            <LigneCompta label="Part agentes" value={compta.partAgentes} />
-            <div style={{ borderTop: '1px solid var(--ink-200)', marginTop: 6, paddingTop: 6 }}>
-              <LigneCompta label="Royalties reversées au franchiseur" value={compta.royalties} accent />
+          {showAgentes ? (
+            <div>
+              <div className="eyebrow" style={{ marginBottom: 6 }}>Répartition du CA net</div>
+              <LigneCompta label="Part société" value={compta.caSociete} />
+              <LigneCompta label="Part agentes" value={compta.partAgentes} />
+              <div style={{ borderTop: '1px solid var(--ink-200)', marginTop: 6, paddingTop: 6 }}>
+                <LigneCompta label="Royalties reversées au franchiseur" value={compta.royalties} accent />
+              </div>
             </div>
-          </div>
+          ) : modeEff === 'societe' ? (
+            <div>
+              <div className="eyebrow" style={{ marginBottom: 6 }}>Revient à la société</div>
+              <LigneCompta label="Part agentes déduite" value={-compta.partAgentes} neg />
+              <LigneCompta label="CA société (net − parts)" value={compta.caSociete} />
+              <LigneCompta label="Loyers agentes encaissés" value={loyers.annee} />
+              <div style={{ borderTop: '1px solid var(--ink-200)', marginTop: 6, paddingTop: 6 }}>
+                <LigneCompta label="Total encaissé société" value={round2(compta.caSociete + loyers.annee)} bold />
+              </div>
+              <div style={{ marginTop: 10 }}>
+                <LigneCompta label="Royalties dues au franchiseur (charge)" value={compta.royalties} accent />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="eyebrow" style={{ marginBottom: 6 }}>Redevance franchiseur</div>
+              <LigneCompta label="Royalties générées" value={compta.royalties} accent />
+            </div>
+          )}
         </div>
       </div>
 
@@ -441,7 +478,7 @@ export default function Statistiques() {
       </div>
 
       {/* ── SECTION 6 — Performance par agente (admin) ── */}
-      {isAdmin && agentesRows.length > 0 && (
+      {showAgentes && agentesRows.length > 0 && (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--ink-200)' }}>
             <h2 className="page" style={{ fontSize: 15 }}>Performance par agente · {annee}</h2>
