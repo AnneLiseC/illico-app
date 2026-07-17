@@ -1656,6 +1656,24 @@ export default function FicheChantier({ params }) {
     if (error) console.error('archiverVersionDevis :', error.message)
   }
 
+  // Upload/remplacement du PDF d'un devis → chemin versionné + nouvelle version.
+  // Partagé par « + Uploader » (pas de PDF) et « Remplacer » (PDF existant).
+  const uploadDevisPdf = async (devisId, fichier) => {
+    if (!fichier) return
+    setUploadingDoc(devisId + '_devis')
+    const ext = fichier.name.split('.').pop()
+    const chemin = `chantiers/${id}/devis/${devisId}/${Date.now()}.${ext}`   // versionné, jamais écrasé
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier)
+    if (!error) {
+      const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_pdf_path: chemin }).eq('id', devisId)
+      if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
+      await archiverVersionDevis(devisId)   // nouveau PDF = nouvelle version
+      await chargerDevis()
+      setSucces('Devis artisan uploadé ✓')
+    } else { setErreur('Erreur upload : ' + error.message) }
+    setUploadingDoc(null)
+  }
+
   const saveDevisFromModal = async (form) => {
     // Avertissement doux (non bloquant) : acompte 0 + commission > 0 sur un
     // artisan non partenaire → la commission ne pourra pas être prélevée.
@@ -3566,6 +3584,11 @@ export default function FicheChantier({ params }) {
                             <>
                               <button onClick={() => ouvrirDocument(d.devis_pdf_path, `Devis ${d.artisan?.entreprise || ''}.pdf`)}
                                 style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>Voir PDF</button>
+                              <label style={{fontSize:11, cursor: uploadingDoc === d.id + '_devis' ? 'wait' : 'pointer', color: uploadingDoc === d.id + '_devis' ? 'var(--ink-400)' : 'var(--brand-700)'}}>
+                                {uploadingDoc === d.id + '_devis' ? 'Upload…' : 'Remplacer'}
+                                <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id + '_devis'}
+                                  onChange={e => uploadDevisPdf(d.id, e.target.files[0])} />
+                              </label>
                               <button onClick={async () => {
                                 if (!confirm('Supprimer le PDF du devis ?')) return
                                 const { error: rmErr } = await supabase.storage.from('documents').remove([d.devis_pdf_path])
@@ -3579,23 +3602,7 @@ export default function FicheChantier({ params }) {
                             <label className="devis-doc-upload" style={{cursor: uploadingDoc === d.id + '_devis' ? 'wait' : 'pointer', color: uploadingDoc === d.id + '_devis' ? 'var(--ink-400)' : 'var(--brand-700)'}}>
                               {uploadingDoc === d.id + '_devis' ? 'Upload…' : '+ Uploader'}
                               <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id + '_devis'}
-                                onChange={async e => {
-                                  const fichier = e.target.files[0]
-                                  if (!fichier) return
-                                  setUploadingDoc(d.id + '_devis')
-                                  const ext = fichier.name.split('.').pop()
-                                  // Chemin versionné (jamais écrasé) → l'ancien PDF reste consultable.
-                                  const chemin = `chantiers/${id}/devis/${d.id}/${Date.now()}.${ext}`
-                                  const { error } = await supabase.storage.from('documents').upload(chemin, fichier)
-                                  if (!error) {
-                                    const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_pdf_path: chemin }).eq('id', d.id)
-                                    if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
-                                    await archiverVersionDevis(d.id)   // nouveau PDF = nouvelle version
-                                    await chargerDevis()
-                                    setSucces('Devis artisan uploadé ✓')
-                                  } else { setErreur('Erreur upload : ' + error.message) }
-                                  setUploadingDoc(null)
-                                }} />
+                                onChange={e => uploadDevisPdf(d.id, e.target.files[0])} />
                             </label>
                           )}
                         </div>
