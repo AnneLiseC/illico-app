@@ -93,6 +93,10 @@ export default function Planning() {
     date_debut: '', date_fin: '', jours_specifiques: [], notes: '',
     heure_debut: '', duree_minutes: 60, agence_id: '', cible_id: '',
   })
+  // Jour en cours de saisie pour le mode "jours spécifiques". Séparé de la liste :
+  // ajouter un jour exige un clic explicite sur "Ajouter" -> naviguer dans le
+  // calendrier natif (changer de mois) ne coche plus jamais un jour par accident.
+  const [nouveauJour, setNouveauJour] = useState('')
   // Mémorise la dernière cible auto-résolue, pour ne pas écraser un choix manuel.
   const lastAutoCibleRdv = useRef('')
   const lastAutoCibleInt = useRef('')
@@ -1028,7 +1032,16 @@ export default function Planning() {
                   {formIntervention.type_intervention === 'jours_specifiques' && (
                     <div>
                       <label className={labelCls}>Ajouter des jours</label>
-                      <input type="date" className={inputCls} style={{marginTop:6}} onChange={e => { const d = e.target.value; if (!d) return; setFormIntervention(f => ({ ...f, jours_specifiques: f.jours_specifiques.includes(d) ? f.jours_specifiques.filter(j => j !== d) : [...f.jours_specifiques, d].sort() })); e.target.value = '' }} />
+                      <div style={{display:'flex', gap:8, marginTop:6}}>
+                        <input type="date" className={inputCls} value={nouveauJour} onChange={e => setNouveauJour(e.target.value)} style={{flex:1}} />
+                        <button type="button" className="btn btn-ghost" style={{whiteSpace:'nowrap'}}
+                          onClick={() => {
+                            const d = nouveauJour
+                            if (!d) return
+                            setFormIntervention(f => ({ ...f, jours_specifiques: f.jours_specifiques.includes(d) ? f.jours_specifiques : [...f.jours_specifiques, d].sort() }))
+                            setNouveauJour('')
+                          }}>+ Ajouter</button>
+                      </div>
                       {formIntervention.jours_specifiques.length > 0 && (
                         <div style={{display:'flex', flexWrap:'wrap', gap:6, marginTop:8}}>
                           {formIntervention.jours_specifiques.map(j => (
