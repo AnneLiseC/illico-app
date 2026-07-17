@@ -120,7 +120,7 @@ function isStaleSyncToken(err) {
 //   -> status 'error' -> applyActions n'applique AUCUN delete). Même garde que le lot C Google.
 // ⚠️ On exclut du DIFF de suppression les occurrences récurrentes (google_event_id = URL#YYYYMMDD,
 //   gérées par le canal B9-5, insert-only) : elles ne correspondent à aucune URL d'objet CalDAV.
-async function readICloudChanges(client, calendarUrl, storedCtag, knownUrls) {
+async function readICloudChanges(client, calendarUrl, storedCtag, knownUrls, cibleId) {
   // 1. CTag (best-effort) : court-circuit si inchangé.
   let serverCtag = null
   try {
@@ -142,7 +142,22 @@ async function readICloudChanges(client, calendarUrl, storedCtag, knownUrls) {
 
   // 3. DIFF suppression : URL connue (objet simple, sans '#') absente du fetch.
   const knownSingle = [...knownUrls].filter((u) => u && !u.includes('#'))
-  const deleted = knownSingle.filter((u) => !fetchedSet.has(u))
+  let deleted = knownSingle.filter((u) => !fetchedSet.has(u))
+
+  // ⚠️ GARDE-FOU SUPPRESSION EN MASSE : iCloud renvoie parfois une liste VIDE avec un 200
+  // (fetch "réussi" mais 0 objet, panne transitoire) alors que la base connaît des RDV. Sans
+  // garde-fou, la totalité des knownSingle serait alors classée SUPPRIMÉE → delete en masse en
+  // aval. Règle SÛRE : fetch vide (fetched.length === 0) MAIS base non vide (knownSingle non
+  // vide) = SUSPECT → on n'applique AUCUNE suppression. Un fetch réellement vide sur cible
+  // réellement vide (knownSingle vide) reste OK ; un fetch NON vide suit le diff normal.
+  if (fetched.length === 0 && knownSingle.length > 0) {
+    console.warn(
+      `[pull-icloud] GARDE-FOU suppression en masse : fetch iCloud VIDE (0 objet) alors que la ` +
+      `base connaît ${knownSingle.length} RDV pour la cible ${cibleId} — aucune suppression appliquée ` +
+      `(anomalie iCloud transitoire probable).`,
+    )
+    deleted = []
+  }
 
   return { changed: fetched, deleted, nextToken: serverCtag || storedCtag || null }
 }
@@ -188,7 +203,7 @@ export async function applyPullCibleICloud(cibleRow) {
   let nextToken = syncToken
   try {
     const knownUrls = new Set(byGid.keys())
-    const { changed, deleted, nextToken: nt } = await readICloudChanges(client, calendarUrl, syncToken, knownUrls)
+    const { changed, deleted, nextToken: nt } = await readICloudChanges(client, calendarUrl, syncToken, knownUrls, cibleRow.id)
     nextToken = nt
     // Suppressions (objet 404) -> event 'cancelled' pour le moteur (delete si match unique).
     for (const url of deleted) {
