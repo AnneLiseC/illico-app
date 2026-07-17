@@ -29,7 +29,8 @@ export async function DELETE(request) {
   if (auth.error) return auth.error
   try {
     const body = await request.json()
-    const { googleEventId, cibleId } = body
+    // googleEndEventId : 2e marqueur d'une intervention période (le « (fin) »). Optionnel.
+    const { googleEventId, googleEndEventId, cibleId } = body
 
     // Rien à supprimer côté Google : pas d'event (item jamais poussé) ou pas de cible
     // (un item sans cible n'a jamais été poussé) → skip propre.
@@ -63,18 +64,21 @@ export async function DELETE(request) {
       return NextResponse.json({ success: true, skipped: true, reason: 'cible non résolvable' })
     }
 
-    try {
-      await client.delete({
-        externalId: googleEventId,
-        contexte: { type: 'event-delete', itemId: googleEventId },
-      })
-    } catch (err) {
-      // L'event n'existe plus côté Google (déjà supprimé) → pas une erreur critique.
-      if (err.code === 410 || err.code === 404) {
-        return NextResponse.json({ success: true, alreadyDeleted: true })
+    // Supprime un id externe en ignorant « déjà supprimé » (410/404). Retourne true si OK.
+    const deleteOne = async (externalId) => {
+      if (!externalId) return true
+      try {
+        await client.delete({ externalId, contexte: { type: 'event-delete', itemId: externalId } })
+        return true
+      } catch (err) {
+        if (err.code === 410 || err.code === 404) return true  // déjà absent → OK
+        throw err
       }
-      throw err
     }
+
+    // Marqueur principal (début / jour unique) + marqueur fin éventuel (intervention période).
+    await deleteOne(googleEventId)
+    await deleteOne(googleEndEventId)
 
     return NextResponse.json({ success: true })
   } catch (err) {

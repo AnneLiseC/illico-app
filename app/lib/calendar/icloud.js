@@ -72,16 +72,19 @@ export function rdvToICS(rdv) {
   })
 }
 
-// Renvoie le tableau ordonné [icsPrincipal, ...icsExtras] (multi-jours), ou [] pour les cas
-// à ignorer — même structure que interventionToGoogleEvents (l'event[0] porte l'externalId/
-// writeback ; les extras sont insert-only). UID déterministe = illico-int-<id><idSuffix>.
+// Renvoie [{ role, body }] (role = 'start' | 'end' | 'day') — même structure que
+// interventionToGoogleEvents. UID déterministe = illico-int-<id><idSuffix> (idempotent au
+// re-push). Le titre porte le préfixe d'occurrence ('(début) ' / '(fin) '). Journée entière.
 export function interventionToICS(intervention) {
   const summary = interventionSummary(intervention)
-  return interventionOccurrences(intervention).map((o) => icsString({
-    uid: `illico-int-${intervention.id}${o.idSuffix}@illico-travaux.com`,
-    summary,
-    description: interventionDescription(intervention, o.marker),
-    ...icloudTimeFields(o.time),
+  return interventionOccurrences(intervention).map((o) => ({
+    role: o.role,
+    body: icsString({
+      uid: `illico-int-${intervention.id}${o.idSuffix}@illico-travaux.com`,
+      summary: (o.label || '') + summary,
+      description: interventionDescription(intervention, o.marker),
+      ...icloudTimeFields(o.time),
+    }),
   }))
 }
 

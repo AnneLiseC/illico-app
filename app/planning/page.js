@@ -311,9 +311,12 @@ export default function Planning() {
     .flatMap(i => {
       const color = couleurArtisan(i.artisan_id)
       const client = `${i.dossier?.client?.prenom || ''} ${i.dossier?.client?.nom || ''}`.trim()
-      const titre = ` ${i.artisan?.entreprise || ''} · ${client}`
+      const titre = `${i.artisan?.entreprise || ''}${client ? ' x ' + client : ''}`
       if (i.type_intervention === 'periode') {
-        const endExclusive = (() => { const d = new Date(i.date_fin); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10) })()
+        // Barre continue journée entière du 1er au dernier jour (fin exclusive = date_fin + 1).
+        // date_fin absente -> intervention d'un seul jour (borne = date_debut).
+        const finDate = i.date_fin || i.date_debut
+        const endExclusive = (() => { const d = new Date(finDate); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10) })()
         return [{ id: 'int-' + i.id, title: titre, start: i.date_debut, end: endExclusive, backgroundColor: color + '28', borderColor: color, textColor: color, allDay: true, extendedProps: { type: 'intervention', data: i } }]
       }
       return (i.jours_specifiques || []).map((jour, idx) => {
@@ -516,7 +519,8 @@ export default function Planning() {
         headers,
         // cible_id de l'item (lot 5c) : /event résout le bon calendrier. L'item existe
         // encore ici (appel non bloquant fired avant le delete DB) → cible_id dispo.
-        body: JSON.stringify({ googleEventId, cibleId: elementSelectionne.data.cible_id }),
+        // googleEndEventId : 2e marqueur (fin) d'une intervention période, s'il existe.
+        body: JSON.stringify({ googleEventId, googleEndEventId: elementSelectionne.data.google_end_event_id, cibleId: elementSelectionne.data.cible_id }),
       })).catch(() => {})
     }
     const { error } = elementSelectionne.type === 'rdv'
@@ -695,6 +699,11 @@ export default function Planning() {
               .fc-scrollgrid td, .fc-scrollgrid th { border-color: #F1F5F9 !important; }
               .fc-daygrid-day { min-height: 80px !important; }
               .fc-more-link { font-size: 10px !important; font-weight: 700 !important; color: ${COLORS.blue} !important; }
+              /* Zone "journée entière" (interventions, dates-clés) agrandie et scrollable
+                 en vue semaine, pour voir plusieurs marqueurs sans les tronquer. */
+              .fc-timegrid .fc-daygrid-body { min-height: 64px !important; }
+              .fc-timegrid-axis { min-height: 64px !important; }
+              .fc .fc-timegrid-axis-cushion { font-weight: 700 !important; }
             `}</style>
             <FullCalendar
               plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin, luxonPlugin]}

@@ -234,14 +234,17 @@ function googleTimeFields(time) {
   return buildIntervTimes(time.date, time.heure_debut, time.duree_minutes)
 }
 
-// Renvoie le tableau ordonné [eventPrincipal, ...extraEvents] (multi-jours), ou [] pour les
-// cas à ignorer (l'appelant répond alors skipped). L'event[0] porte le google_event_id
-// (upsert + writeback) ; les extras sont insert-only.
+// Renvoie [{ role, body }] (role = 'start' | 'end' | 'day'), ou [] pour les cas à ignorer
+// (l'appelant répond alors skipped). Le titre porte le préfixe d'occurrence ('(début) ' /
+// '(fin) ') ; le contenu (Entreprise x Client) est commun. Journée entière (googleTimeFields).
 export function interventionToGoogleEvents(intervention) {
   const summary = interventionSummary(intervention)
   return interventionOccurrences(intervention).map((o) => ({
-    summary,
-    description: interventionDescription(intervention, o.marker),
-    ...googleTimeFields(o.time),
+    role: o.role,
+    body: {
+      summary: (o.label || '') + summary,
+      description: interventionDescription(intervention, o.marker),
+      ...googleTimeFields(o.time),
+    },
   }))
 }

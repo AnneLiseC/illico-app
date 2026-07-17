@@ -144,6 +144,14 @@ export function buildInsertRow(cibleRow, norm, utc, parsed, needsTrame) {
 export function classifyNormalized(norm, ctx) {
   const { report, actions, byGid, cand, floorMs, cibleRow } = ctx
   report.events_lus++
+  // ANTI-ÉCHO INTERVENTIONS : nos propres pushes d'intervention portent le marqueur
+  // [illico-int:…] dans leur description. On ne les ré-importe JAMAIS comme RDV — leurs
+  // ids vivent dans interventions_artisans (pas rendez_vous), donc byGid ne les reconnaît
+  // pas et ils seraient sinon insérés en RDV fantômes à chaque pull.
+  if (norm.description && norm.description.includes('[illico-int:')) {
+    report.interventions_ignorees = (report.interventions_ignorees || 0) + 1
+    return
+  }
   // PLANCHER : event fini avant sync_floor -> ignoré (aucun import d'historique).
   if (norm.end_utc && new Date(norm.end_utc).getTime() < floorMs) { report.ignores_plancher++; return }
   if (report.exemples_utc.length < 3) {

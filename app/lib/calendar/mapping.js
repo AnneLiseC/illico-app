@@ -48,7 +48,7 @@ export function interventionSummary(intervention) {
   const artisan = intervention.artisan?.entreprise || 'Artisan'
   const client = intervention.dossier?.client
   const nomClient = client ? `${client.prenom} ${client.nom}`.trim() : ''
-  return `${artisan}${nomClient ? ' | ' + nomClient : ''}`
+  return `${artisan}${nomClient ? ' x ' + nomClient : ''}`
 }
 
 // baseDesc (référence chantier + notes) + marqueur d'occurrence → description.
@@ -61,37 +61,47 @@ export function interventionDescription(intervention, marker) {
 }
 
 // Liste NEUTRE des occurrences à émettre (contrôle de flux période/jours partagé), ou []
-// pour les cas à ignorer. Chaque occurrence : { marker, idSuffix, time } où time est une
-// spec neutre que chaque fournisseur formate à sa façon :
-//   { kind:'timed', date, heure_debut, duree_minutes }
-//   { kind:'allday', date }                       (jour unique)
-//   { kind:'allday-range', dateDebut, dateFin }   (période multi-jours sans heure)
-// marker = texte [illico-int:…] (identique Google/iCloud) ; idSuffix = suffixe d'UID
-// (utilisé par iCloud ; Google l'ignore).
+// pour les cas à ignorer. Chaque occurrence : { marker, idSuffix, label, role, time }.
+//   time  : spec neutre journée entière -> { kind:'allday', date }
+//   label : préfixe de titre ('(début) ', '(fin) ' ou '')
+//   role  : 'start' (début / jour unique) | 'end' (fin) | 'day' (jour spécifique)
+//           -> pilote le stockage de l'id externe côté push (google_event_id vs
+//              google_end_event_id ; 'day' = insert-only).
+// marker = texte [illico-int:…] (identique Google/iCloud, sert aussi à l'anti-écho du pull) ;
+// idSuffix = suffixe d'UID (utilisé par iCloud ; Google l'ignore).
+//
+// ⚠️ Une intervention est TOUJOURS en journée entière (jamais un créneau horaire) :
+//    heure_debut / duree_minutes ne sont PAS utilisés pour l'affichage calendrier.
 export function interventionOccurrences(intervention) {
-  const { id, heure_debut, duree_minutes } = intervention
+  const { id } = intervention
 
+  // PÉRIODE (plage continue) : plusieurs jours -> 2 marqueurs distincts (début 1er jour,
+  // fin dernier jour) ; un seul jour (ou date_fin absente/identique) -> 1 marqueur.
   if (intervention.type_intervention === 'periode') {
-    if (!intervention.date_fin && !heure_debut) return []
-    if (heure_debut) {
-      return [{
-        marker: `[illico-int:${id}]`, idSuffix: '',
-        time: { kind: 'timed', date: intervention.date_debut, heure_debut, duree_minutes },
-      }]
+    const debut = intervention.date_debut
+    if (!debut) return []
+    const fin = intervention.date_fin
+    if (!fin || fin === debut) {
+      return [{ marker: `[illico-int:${id}]`, idSuffix: '', label: '', role: 'start',
+        time: { kind: 'allday', date: debut } }]
     }
-    return [{
-      marker: `[illico-int:${id}]`, idSuffix: '',
-      time: { kind: 'allday-range', dateDebut: intervention.date_debut, dateFin: intervention.date_fin },
-    }]
+    return [
+      { marker: `[illico-int:${id}:debut]`, idSuffix: '-debut', label: '(début) ', role: 'start',
+        time: { kind: 'allday', date: debut } },
+      { marker: `[illico-int:${id}:fin]`, idSuffix: '-fin', label: '(fin) ', role: 'end',
+        time: { kind: 'allday', date: fin } },
+    ]
   }
 
+  // JOURS SPÉCIFIQUES (jours non contigus cochés à la main) : 1 marqueur par jour
+  // (comportement inchangé), en journée entière.
   const jours = [...(intervention.jours_specifiques || [])].sort()
   if (!jours.length) return []
   return jours.map((date, i) => ({
     marker: `[illico-int:${id}:${i}]`,
     idSuffix: `-${i}`,
-    time: heure_debut
-      ? { kind: 'timed', date, heure_debut, duree_minutes }
-      : { kind: 'allday', date },
+    label: '',
+    role: 'day',
+    time: { kind: 'allday', date },
   }))
 }
