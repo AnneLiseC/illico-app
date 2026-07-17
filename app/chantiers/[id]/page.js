@@ -803,6 +803,7 @@ export default function FicheChantier({ params }) {
   const [succes, setSucces] = useState('')
   const [modalModif, setModalModif] = useState(false)
   const [devis, setDevis] = useState([])
+  const [versionsDevis, setVersionsDevis] = useState({})   // { devis_id: [versions triées desc] }
   // Comparateur de devis (onglet dédié, lazy)
   const [simulations, setSimulations] = useState([])          // [{ id, nom, taux_courtage, taux_amo, lignes:[...] }]
   const [loadingComparateur, setLoadingComparateur] = useState(false)
@@ -1213,6 +1214,14 @@ export default function FicheChantier({ params }) {
   const chargerDevis = async () => {
     const { data } = await supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier, partenaire, paiement_direct)').eq('dossier_id', id).order('ordre').order('created_at')
     setDevis(data || [])
+    // Historique des versions (Phase 3) — groupé par devis, plus récent d'abord.
+    const ids = (data || []).map(d => d.id)
+    if (ids.length) {
+      const { data: vs } = await supabase.from('devis_versions').select('*').in('devis_artisan_id', ids).order('version_num', { ascending: false })
+      const map = {}
+      for (const v of (vs || [])) (map[v.devis_artisan_id] ||= []).push(v)
+      setVersionsDevis(map)
+    } else setVersionsDevis({})
   }
 
   // ── Comparateur de devis : chargement + CRUD (sauvegarde auto, erreurs silencieuses) ──
@@ -1672,6 +1681,22 @@ export default function FicheChantier({ params }) {
       setSucces('Devis artisan uploadé ✓')
     } else { setErreur('Erreur upload : ' + error.message) }
     setUploadingDoc(null)
+  }
+
+  // Restaurer une ancienne version : recopie son contenu dans la ligne courante et
+  // re-pointe est_courante. Exclut le STATUT (on ne régresse pas le cycle de vie /
+  // le financier — un devis accepté reste accepté). La version restaurée redevient
+  // ce que voient finance.js et le comparateur.
+  const restaurerVersion = async (devisId, version) => {
+    if (!confirm(`Restaurer la version v${version.version_num} de ce devis ?`)) return
+    const payload = {}
+    for (const c of CHAMPS_VERSION) if (c !== 'statut') payload[c] = version[c] ?? null
+    const { error } = await supabase.from('devis_artisans').update(payload).eq('id', devisId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    await supabase.from('devis_versions').update({ est_courante: false }).eq('devis_artisan_id', devisId).eq('est_courante', true)
+    await supabase.from('devis_versions').update({ est_courante: true }).eq('id', version.id)
+    await chargerDevis()
+    setSucces(`Version v${version.version_num} restaurée ✓`)
   }
 
   const saveDevisFromModal = async (form) => {
@@ -3672,6 +3697,37 @@ export default function FicheChantier({ params }) {
                         </div>
                       </div>
                     </div>
+
+                    {/* Historique des versions (Phase 3) — v1/v2… + PDF + Restaurer */}
+                    {versionsDevis[d.id]?.length > 0 && (
+                      <div style={{marginTop:4, border:'1px solid var(--ink-100)', borderRadius:8, padding:'10px 12px', background:'var(--surface-2)'}}>
+                        <div style={{fontSize:11, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8}}>
+                          🕓 Historique · {versionsDevis[d.id].length} version{versionsDevis[d.id].length > 1 ? 's' : ''}
+                        </div>
+                        <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                          {versionsDevis[d.id].map(v => (
+                            <div key={v.id} style={{display:'flex', alignItems:'center', gap:10, fontSize:12, padding:'6px 8px', borderRadius:6,
+                              background: v.est_courante ? 'rgba(0,148,212,0.08)' : 'transparent',
+                              border: v.est_courante ? '1px solid rgba(0,148,212,0.25)' : '1px solid transparent'}}>
+                              <span style={{fontWeight:700, color:'var(--ink-700)', minWidth:26}}>v{v.version_num}</span>
+                              <span className="tnum" style={{fontWeight:600, color:'var(--ink-800)', minWidth:92}}>{fmt(v.montant_ttc || 0)} TTC</span>
+                              <span style={{color:'var(--ink-400)', fontSize:11}}>{v.created_at ? new Date(v.created_at).toLocaleDateString('fr-FR', {day:'2-digit', month:'short', year:'2-digit'}) : ''}</span>
+                              {v.est_courante && <span style={{fontSize:10, fontWeight:600, color:'var(--brand-700)', background:'rgba(0,148,212,0.12)', padding:'1px 7px', borderRadius:99}}>Courante</span>}
+                              <div style={{marginLeft:'auto', display:'flex', gap:8, alignItems:'center'}}>
+                                {v.devis_pdf_path && (
+                                  <button onClick={() => ouvrirDocument(v.devis_pdf_path, `Devis v${v.version_num} ${d.artisan?.entreprise || ''}.pdf`)}
+                                    style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>PDF</button>
+                                )}
+                                {!v.est_courante && (
+                                  <button onClick={() => restaurerVersion(d.id, v)}
+                                    style={{fontSize:11, color:'#15803d', background:'none', border:'1px solid rgba(22,163,74,0.35)', borderRadius:6, padding:'2px 8px', cursor:'pointer'}}>Restaurer</button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Factures — liste + formulaire (pleine largeur) */}
                     {factures.filter(f => f.devis_id === d.id).length > 0 && (
