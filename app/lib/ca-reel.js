@@ -8,10 +8,11 @@
 //   • solde AMO   → tranches encaissées, sinon solde_amo.statut_client === 'regle'
 //   • commissions → suivi acompte_artisan.statut_illico === 'recu'
 //
-// « CA généré » = produits nets encaissés (frais + commissions + honoraires),
-// exactement comme le KPI « CA généré » de Finances (qui ne déduit pas non plus
-// l'apporteur en pratique : apporteur_actif n'est chargé nulle part). À périmètre
-// égal, les 3 pages (dashboard, stats, finances) affichent le même montant.
+// « CA généré » = produits nets encaissés (frais + commissions + honoraires)
+// − coût apporteur client remboursé, EXACTEMENT comme le KPI « CA généré » de
+// Finances. Nécessite que la requête charge dossier.apporteur_actif (+ pourcentage)
+// pour que la déduction apporteur s'applique. À périmètre égal, les 3 pages
+// (dashboard, stats, finances) affichent le même montant.
 // ─────────────────────────────────────────────────────────────────────────────
 import { calculateDossierFinance, calculateDevisFinance, getSignedDevis, calculateSoldeAmoReel } from './finance'
 
@@ -59,6 +60,21 @@ export function computeCAMensuel(dossiers, annee, mode = 'agence') {
       if (!sfAc) continue
       const dvFin = calculateDevisFinance(dv, nd)
       add(sfAc.date_deblocage || sfAc.date_paiement, dvFin.netCom, dvFin.parts.agente)
+    }
+    // Apporteur client remboursé — COÛT déduit du CA (comme le KPI CA généré de
+    // Finances : produits − apporteur), en entier dans les deux modes. Nécessite que
+    // le champ dossier.apporteur_actif soit chargé (sinon fin.apporteur.lines est vide).
+    const apporteurLines = fin.apporteur?.lines || []
+    for (const sf of suivi.filter(s => s.type_echeance === 'apporteur_agente' && s.statut_ctp === 'rembourse' && s.date_paiement)) {
+      const dt = new Date(sf.date_paiement)
+      if (dt.getFullYear() !== annee) continue
+      const ligne = sf.artisan_id == null
+        ? apporteurLines.find(l => l.type === 'total_chantier_ht')
+        : apporteurLines.find(l => {
+            const dv = (d.devis_artisans || []).find(x => x.id === l.devisId)
+            return (dv?.artisan_id || dv?.artisan?.id) === sf.artisan_id
+          })
+      if (ligne?.totalHT) monthly[dt.getMonth() + 1] = (monthly[dt.getMonth() + 1] || 0) - ligne.totalHT
     }
   }
   return monthly

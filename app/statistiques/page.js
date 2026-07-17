@@ -100,7 +100,7 @@ export default function Statistiques() {
         supabase.from('dossiers').select(`
           id, reference, statut, typologie, created_at, archive, agence_id,
           frais_statut, frais_consultation, part_agente, frais_part_agente,
-          honoraires_amo_taux, taux_courtage, contrat_signe,
+          honoraires_amo_taux, taux_courtage, contrat_signe, apporteur_actif, apporteur_pourcentage,
           date_signature_contrat, date_signature_devis, date_demarrage_chantier,
           date_fin_chantier, date_limite_devis, date_cloture,
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
