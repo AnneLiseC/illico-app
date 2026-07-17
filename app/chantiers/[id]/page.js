@@ -7,7 +7,7 @@ import { formatNomClient } from '../../lib/clients'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement, detecterCategorie } from '../../lib/dossiers'
-import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS } from '../../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
 import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
@@ -624,7 +624,7 @@ function DevisModal({ open, devis, onClose, onSave, artisans }) {
                   const ht = e.target.value
                   setForm(f => f.ttc_manuel
                     ? { ...f, montant_ht: ht }
-                    : { ...f, montant_ht: ht, montant_ttc: ht !== '' ? (parseFloat(ht) * 1.1).toFixed(2) : '' })
+                    : { ...f, montant_ht: ht, montant_ttc: ht !== '' ? (parseFloat(ht) * TVA_TRAVAUX).toFixed(2) : '' })
                 }}
                 style={{height:40, width:'100%'}} />
             </div>
