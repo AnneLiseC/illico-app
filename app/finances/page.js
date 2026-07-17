@@ -1895,12 +1895,11 @@ export default function Finances() {
     const objectifSource = isAdmin ? 'agence' : (objAgentePerso ? 'perso' : objAgenceDeLAgente ? 'agence' : 'aucun')
     const objectifAnnuelCible = isAdmin ? getObjectif('agence') : (objAgentePerso || objAgenceDeLAgente || 0)
     const objectifMensuel = round2(objectifAnnuelCible / 12)
-    const netLabel = isCTP ? 'Société' : (mode === 'agent' ? 'Agente' : 'Agence')
     // Libellé objectif : la barre mesure le CA GÉNÉRÉ du périmètre (≠ « Résultat net »
     // du tableau société), d'où le « CA généré » explicite + l'échelle (mois/an).
     const objectifLabelPour = (montant, suffixe) =>
         objectifAnnuelCible <= 0      ? 'Objectif non défini'
-      : isAdmin                       ? `Objectif CA généré ${netLabel} (${fmt(montant)}${suffixe})`
+      : isAdmin                       ? `Objectif CA généré agence (${fmt(montant)}${suffixe})`
       : objectifSource === 'perso'    ? `Objectif CA généré (${fmt(montant)}${suffixe})`
       :                                 `Objectif CA généré agence (${fmt(montant)}${suffixe})`
 
@@ -1970,7 +1969,13 @@ export default function Finances() {
             <tr><td style={tdL}>Royalties illiCO</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{`-${fmt(x.r.royaltyBucket||0)}`}</td></tr>
             <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total produits (net)</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td></tr>
             <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Reversements</td></tr>
-            {lignesReversements.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
+            {lignesReversements.map(l => {
+              const isParts = l.label === 'Parts agentes'   // ce que le mode Société retire → mis en évidence
+              return (<tr key={l.label} style={isParts ? {background:'rgba(245,158,11,0.12)'} : undefined}>
+                <td style={{...tdL, ...(isParts ? {fontWeight:600,color:'var(--ink-700)'} : {})}}>{l.label}</td>
+                <td style={{...tdR,color:'#ef4444',fontWeight:isParts ? 700 : 500}}>{fmt(l.r)}</td>
+              </tr>)
+            })}
             <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total reversements</td><td style={{...tdR,fontWeight:500,color:'#ef4444'}}>{fmt(x.reelCharges)}</td></tr>
             <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>{isCTP ? 'Résultat net Société' : 'CA généré'}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:x.reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(x.reelNet)}</td></tr>
           </tbody>
@@ -2308,6 +2313,19 @@ export default function Finances() {
                 .map(a => <option key={a} value={a}>{a}</option>)}
             </select>
           </div>
+
+          {/* Légende du mode actif : rend explicite ce que Société retire vs Agence. */}
+          {isAdmin && (
+            <div style={{
+              fontSize:12, color:'var(--ink-600)', borderRadius:8, padding:'8px 12px', marginTop:-8,
+              background: suiviMode === 'ctp' ? 'rgba(245,158,11,0.10)' : 'rgba(0,148,212,0.08)',
+              border: `1px solid ${suiviMode === 'ctp' ? 'rgba(245,158,11,0.30)' : 'rgba(0,148,212,0.22)'}`,
+            }}>
+              {suiviMode === 'ctp'
+                ? <><strong style={{color:'var(--ink-800)'}}>Société</strong> · résultat net conservé, <strong>après</strong> déduction des parts agentes reversées.</>
+                : <><strong style={{color:'var(--ink-800)'}}>Agence</strong> · CA généré au niveau agence, parts agentes <strong>incluses</strong> (non déduites).</>}
+            </div>
+          )}
 
           {/* ZONE 2 — sous-onglet Mois/Année + objectif + compte de résultat + graphe Produits/Reversements */}
           {renderSuiviFinancier(!isAdmin ? 'agent' : suiviMode)}
