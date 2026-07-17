@@ -1760,6 +1760,30 @@ export default function FicheChantier({ params }) {
     setSucces(`Version v${version.version_num} restaurée ✓`)
   }
 
+  // Supprimer une version de l'historique (jamais la courante). Le PDF du storage
+  // n'est retiré que s'il n'est partagé par aucune autre version ni par le devis
+  // courant (une modif de montant sans nouveau PDF réutilise le même fichier).
+  // NB : une base du comparateur épinglée sur cette version repasse en montant live
+  // (FK ON DELETE SET NULL).
+  const supprimerVersion = async (devisId, version) => {
+    if (version.est_courante) { setErreur('Impossible de supprimer la version courante.'); return }
+    if (!confirm(`Supprimer définitivement la version v${version.version_num} ?`)) return
+    if (version.devis_pdf_path) {
+      const autres = (versionsDevis[devisId] || []).filter(v => v.id !== version.id)
+      const devisCourant = devis.find(d => d.id === devisId)
+      const partage = autres.some(v => v.devis_pdf_path === version.devis_pdf_path)
+        || devisCourant?.devis_pdf_path === version.devis_pdf_path
+      if (!partage) {
+        const { error: rmErr } = await supabase.storage.from('documents').remove([version.devis_pdf_path])
+        if (rmErr) console.error('Suppression PDF version (non bloquant) :', rmErr.message)
+      }
+    }
+    const { error } = await supabase.from('devis_versions').delete().eq('id', version.id)
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    await chargerDevis()
+    setSucces(`Version v${version.version_num} supprimée ✓`)
+  }
+
   const saveDevisFromModal = async (form) => {
     // Avertissement doux (non bloquant) : acompte 0 + commission > 0 sur un
     // artisan non partenaire → la commission ne pourra pas être prélevée.
@@ -3782,6 +3806,10 @@ export default function FicheChantier({ params }) {
                                 {!v.est_courante && (
                                   <button onClick={() => restaurerVersion(d.id, v)}
                                     style={{fontSize:11, color:'#15803d', background:'none', border:'1px solid rgba(22,163,74,0.35)', borderRadius:6, padding:'2px 8px', cursor:'pointer'}}>Restaurer</button>
+                                )}
+                                {!v.est_courante && (
+                                  <button onClick={() => supprimerVersion(d.id, v)} title="Supprimer cette version"
+                                    style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Suppr.</button>
                                 )}
                               </div>
                             </div>
