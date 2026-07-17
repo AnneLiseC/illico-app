@@ -8,6 +8,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { isAllowedStaffEmail } from '../../../lib/email-validation'
+import { checkBearerSecret } from '../../../lib/http-auth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -17,9 +18,8 @@ const supabaseAdmin = createClient(
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000  // 7 jours
 
 export async function POST(request) {
-  // 1. Secret (pattern CRON_SECRET) — barrière d'accès à la route.
-  const auth = request.headers.get('authorization')
-  if (auth !== `Bearer ${process.env.ADMIN_INVITE_SECRET}`) {
+  // 1. Secret (fail-closed + timing-safe) — barrière d'accès à la route.
+  if (!checkBearerSecret(request, process.env.ADMIN_INVITE_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
