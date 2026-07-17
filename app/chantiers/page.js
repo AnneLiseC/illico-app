@@ -167,7 +167,7 @@ function ChantierPreview({ d, onOpen, onBack, isMobile }) {
     <div className="card" style={{ display: 'grid', placeItems: 'center', textAlign: 'center', color: 'var(--ink-400)' }}>
       <div>
         <FolderIcon size={36} />
-        <div style={{ marginTop: 10, fontSize: 13 }}>Sélectionne un dossier pour voir l'aperçu</div>
+        <div style={{ marginTop: 10, fontSize: 13 }}>Sélectionne un dossier pour voir l&apos;aperçu</div>
       </div>
     </div>
   )
@@ -395,7 +395,7 @@ function ChantiersInner() {
   const [onglet,       setOnglet]       = useState('moi')
   const [vueArchives,  setVueArchives]  = useState(false)  // Actifs vs Archivés (terminé/annulé)
   const [selectedId,   setSelectedId]   = useState(null)
-  const [isMobile,     setIsMobile]     = useState(false)
+  const [isMobile,     setIsMobile]     = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches)
   const [showPreview,  setShowPreview]  = useState(false)
   const [modaleClient, setModaleClient] = useState(false)
   const router        = useRouter()
@@ -412,7 +412,6 @@ function ChantiersInner() {
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)')
     const handler = (e) => setIsMobile(e.matches)
-    setIsMobile(mq.matches)
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
   }, [])

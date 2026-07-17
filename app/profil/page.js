@@ -16,6 +16,15 @@ import MesCalendriers from '../components/MesCalendriers'
 const fmtPart = (v) => (v === undefined || v === null) ? '—' : `${Math.round(v * 100)} / ${100 - Math.round(v * 100)}`
 const roleLabel = (r) => r === 'admin' ? 'Franchisé' : r === 'agente' ? 'Agent' : 'Membre'
 
+// Champ lecture seule (label + valeur). Défini au niveau module : composant
+// stable entre les rendus (sinon React recrée le type à chaque render).
+const RO = ({ label, value }) => (
+  <div>
+    <div className="eyebrow" style={{ marginBottom: 4 }}>{label}</div>
+    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>{value || '—'}</div>
+  </div>
+)
+
 export default function Profil() {
   const { user, profile, initialized, displayAgenceName, fetchProfile } = useAuth()
   const router = useRouter()
@@ -113,12 +122,6 @@ export default function Profil() {
   }
 
   const LS = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', marginBottom: 5 }
-  const RO = ({ label, value }) => (
-    <div>
-      <div className="eyebrow" style={{ marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>{value || '—'}</div>
-    </div>
-  )
 
   // Paliers de commission : liste des splits disponibles ; à défaut, le palier courant.
   const paliers = (profile.parts_agente_disponibles && profile.parts_agente_disponibles.length > 0)
@@ -170,7 +173,7 @@ export default function Profil() {
           <div className="card" style={cardStyle}>
             <div className="eyebrow">Mon objectif annuel {new Date().getFullYear()}</div>
             <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>
-              Tu fixes ton objectif de CA généré pour l'année. Visible dans Finances.
+              Tu fixes ton objectif de CA généré pour l&apos;année. Visible dans Finances.
             </div>
             <div>
               <label style={LS}>Objectif de CA (€)</label>
@@ -193,7 +196,7 @@ export default function Profil() {
 
         {/* ── Rémunération (lecture seule — réglée par l'administrateur) ── */}
         <div className="card" style={cardStyle}>
-          <div className="eyebrow">Rémunération · réglée par l'administrateur</div>
+          <div className="eyebrow">Rémunération · réglée par l&apos;administrateur</div>
 
           {(() => {
             const frais = profile.frais_part_agente_defaut
@@ -261,7 +264,7 @@ export default function Profil() {
           {/* Kbis (admin-only : voir seulement) */}
           <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 14 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)', marginBottom: 8 }}>
-              Kbis <span style={{ fontWeight: 400, color: 'var(--ink-400)', fontSize: 12 }}>· géré par l'administrateur</span>
+              Kbis <span style={{ fontWeight: 400, color: 'var(--ink-400)', fontSize: 12 }}>· géré par l&apos;administrateur</span>
             </div>
             {profile.kbis_url ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

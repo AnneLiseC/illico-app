@@ -307,7 +307,7 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
       {icloudOpen && (
         <div style={{ border: '1px solid var(--ink-200)', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>
-            Génère un mot de passe d'application sur{' '}
+            Génère un mot de passe d&apos;application sur{' '}
             <a href="https://appleid.apple.com" target="_blank" rel="noreferrer" style={{ color: 'var(--brand-700)' }}>appleid.apple.com</a>{' '}
             (Connexion et sécurité → Mots de passe des apps), puis saisis-le ici.
           </div>
@@ -339,7 +339,7 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
             onClick={() => { setCibleOpen(o => !o); setErreurCible('') }}>+ Ajouter un calendrier cible</button>
         </div>
         {comptesCal.length === 0 && (
-          <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Connecte d'abord un compte ci-dessus.</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Connecte d&apos;abord un compte ci-dessus.</div>
         )}
 
         {cibles.length > 0 && (

@@ -171,7 +171,7 @@ export default function Planning() {
   // débouncé à 500 ms : une rafale d'événements (ex. sync cron multi-lignes) ne déclenche
   // qu'UN seul re-fetch. Même pattern que la messagerie (removeChannel au cleanup).
   const chargerToutRef = useRef(chargerTout)
-  chargerToutRef.current = chargerTout
+  useEffect(() => { chargerToutRef.current = chargerTout })
   const realtimeDebounceRef = useRef(null)
   useEffect(() => {
     if (!profile?.id) return
@@ -1022,7 +1022,7 @@ export default function Planning() {
                       <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Aucun artisan avec devis signé sur ce chantier</div>
                     )}
                   </div>
-                  <div><label className={labelCls}>Type d'intervention</label>
+                  <div><label className={labelCls}>Type d&apos;intervention</label>
                     <div style={{display:'flex', gap:16, marginTop:8}}>
                       {[{ v: 'periode', l: 'Période continue' }, { v: 'jours_specifiques', l: 'Jours spécifiques' }].map(({ v, l }) => (
                         <label key={v} style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer'}}>

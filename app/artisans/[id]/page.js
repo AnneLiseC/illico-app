@@ -305,7 +305,7 @@ export default function FicheArtisan({ params }) {
             <span>
               <strong>Paiement direct</strong>
               <span style={{display:'block', color:'var(--ink-500)', fontSize:12, marginTop:2}}>
-                Le client paie l'entreprise en direct (hors PROTECTACOMPTE).
+                Le client paie l&apos;entreprise en direct (hors PROTECTACOMPTE).
               </span>
             </span>
           </label>
@@ -320,7 +320,7 @@ export default function FicheArtisan({ params }) {
             <span>
               <strong>Partenaire</strong>
               <span style={{display:'block', color:'var(--ink-500)', fontSize:12, marginTop:2}}>
-                Bureau d'études, architecte d'intérieur, fournisseur… On facture une commission sur son devis HT.
+                Bureau d&apos;études, architecte d&apos;intérieur, fournisseur… On facture une commission sur son devis HT.
               </span>
             </span>
           </label>

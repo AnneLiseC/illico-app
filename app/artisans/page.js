@@ -32,7 +32,7 @@ export default function Artisans() {
   const [modeSelection, setModeSelection] = useState(false)
   const [selectionnes, setSelectionnes] = useState([])
   const [supprimant, setSupprimant] = useState(false)
-  const [isMobile, setIsMobile] = useState(false)
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches)
 
   const router = useRouter()
   const { user, initialized } = useAuth()
@@ -40,7 +40,6 @@ export default function Artisans() {
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)')
     const handler = (e) => setIsMobile(e.matches)
-    setIsMobile(mq.matches)
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
   }, [])

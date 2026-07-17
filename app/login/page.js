@@ -159,7 +159,7 @@ export default function Login() {
             </button>
             <h2 style={{fontSize:24, fontWeight:800, color:'var(--ink-900)', letterSpacing:-0.02, margin:0}}>Mot de passe oublié ?</h2>
             <p style={{fontSize:13.5, color:'var(--ink-500)', marginTop:8, marginBottom:24}}>
-              On t'envoie un lien sécurisé pour réinitialiser ton mot de passe.
+              On t&apos;envoie un lien sécurisé pour réinitialiser ton mot de passe.
             </p>
             <div>
               <label style={{display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5}}>Email</label>

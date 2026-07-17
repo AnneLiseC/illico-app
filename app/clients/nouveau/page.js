@@ -412,7 +412,7 @@ export default function NouveauClient() {
                     onChange={e => set('adresse_chantier_identique', e.target.checked)}
                     className="w-4 h-4 accent-blue-700"
                   />
-                  <span className="text-xs text-gray-500">Identique à l'adresse client</span>
+                  <span className="text-xs text-gray-500">Identique à l&apos;adresse client</span>
                 </label>
               </div>
               {!form.adresse_chantier_identique && (
@@ -475,7 +475,7 @@ export default function NouveauClient() {
           {/* Apporteur d'affaires */}
           <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-gray-800">Apporteur d'affaires</h2>
+              <h2 className="font-semibold text-gray-800">Apporteur d&apos;affaires</h2>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -490,7 +490,7 @@ export default function NouveauClient() {
             {form.apporteur_affaires && (
               <div className="space-y-4 pt-2 border-t border-gray-100">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom de l'apporteur</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom de l&apos;apporteur</label>
                   <input
                     type="text"
                     value={form.apporteur_nom}
