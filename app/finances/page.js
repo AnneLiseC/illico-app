@@ -1848,16 +1848,8 @@ export default function Finances() {
     // agence (profiles.agence_id), sinon non défini (on n'affiche jamais 0 comme cible).
     const objAgentePerso     = getObjectif('agente', profile?.id)
     const objAgenceDeLAgente = objectifs.find(o => o.cible === 'agence' && o.agence_id === profile?.agence_id)?.montant || 0
-    const objectifSource = isAdmin ? 'agence' : (objAgentePerso ? 'perso' : objAgenceDeLAgente ? 'agence' : 'aucun')
     const objectifAnnuelCible = isAdmin ? getObjectif('agence') : (objAgentePerso || objAgenceDeLAgente || 0)
     const objectifMensuel = round2(objectifAnnuelCible / 12)
-    // Libellé objectif : la barre mesure le CA GÉNÉRÉ du périmètre (≠ « Résultat net »
-    // du tableau société), d'où le « CA généré » explicite + l'échelle (mois/an).
-    const objectifLabelPour = (montant, suffixe) =>
-        objectifAnnuelCible <= 0      ? 'Objectif non défini'
-      : isAdmin                       ? `Objectif CA généré agence (${fmt(montant)}${suffixe})`
-      : objectifSource === 'perso'    ? `Objectif CA généré (${fmt(montant)}${suffixe})`
-      :                                 `Objectif CA généré agence (${fmt(montant)}${suffixe})`
 
     // CA généré : l'apporteur remboursé est déduit pour son COÛT TOTAL dans les 3
     // modes (agent inclus) — c'est un flux sortant, pas une part perso.
@@ -1888,10 +1880,6 @@ export default function Finances() {
       const reelCharges  = isCTP ? round2((r.gainsAgenteReels||0) + reelApporteur) : reelApporteur
       return { p, r, previProduits, reelProduits, previApporteur, reelApporteur, previCharges, reelCharges, previNet: round2(previProduits - previCharges), reelNet: round2(reelProduits - reelCharges) }
     }
-    // CA généré d'un mois pour le périmètre (mode-agnostique) : produits nets − apporteur
-    // total, SANS soustraire les parts agentes. En agent/agence, = reelNet ; en société,
-    // = reelNet + parts. La somme annuelle = totalCAGenere (aligné sur le KPI haut).
-    const caGenerePourCle = (cle) => { const x = comptePourCle(cle); return round2(x.reelProduits - x.reelApporteur) }
     const ecart = (pv, rv) => { const e = round2(rv - pv); return <span style={{fontSize:11,fontWeight:500,color:e >= 0 ? '#16a34a' : '#ef4444'}}>{e >= 0 ? '+' : ''}{fmt(e)}</span> }
 
     // Détail compte de résultat (RÉEL uniquement) d'un mois — vue groupée par encaissement.
@@ -2028,12 +2016,7 @@ export default function Finances() {
       const chartNetAnnee = anneesAsc.map(y => sumAnnee(y, 'reelNet'))
       return (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {/* CA généré annuel du périmètre (= totalCAGenere, année courante, mode-agnostique) —
-              même valeur que le KPI haut → même %. Libellé « /an » pour ne pas confondre
-              avec le « Réel net » du tableau ci-dessous (mode société). */}
-          <ObjectifBar label={objectifLabelPour(objectifAnnuelCible, '/an')}
-            reel={totalCAGenere}
-            objectifMontant={objectifAnnuelCible} cible="agence" canEdit={false} />
+          {/* Objectif retiré ici : porté par la carte KPI « Objectif CA généré agence » en haut de page. */}
           <div className="card" style={{overflow:'hidden'}}>
           <div className="table-scroll">
           <table style={{width:'100%',fontSize:13}}>
@@ -2093,12 +2076,7 @@ export default function Finances() {
         />
         {sfSousOnglet === 'mois' && (
           <div style={{display:'flex',flexDirection:'column',gap:20}}>
-            {/* cible="agence" : prop morte tant que canEdit={false} (jamais lue —
-                onSave n'est pas fourni et le bloc d'édition est inaccessible).
-                reel = CA généré du mois (≠ résultat net) — cohérent avec le KPI haut. */}
-            <ObjectifBar label={objectifLabelPour(objectifMensuel, '/mois')}
-              reel={caGenerePourCle(moisCourantCle)}
-              objectifMontant={objectifMensuel} cible="agence" canEdit={false} />
+            {/* Barre objectif retirée : portée par la carte KPI en haut de page. */}
             <div className="card" style={{overflow:'hidden'}}>
               <div className="table-scroll">
               <table style={{width:'100%',fontSize:11}}>
@@ -2181,13 +2159,13 @@ export default function Finances() {
             <FinKpiCard label={`CA généré ${anneeEnCours}`} value={fmt(totalCAGenere)} tone="brand"/>
             <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} tone="ok"/>
             <FinKpiCard label="Part société" value={fmt(totalNetCTP)} sub={`Part agentes · ${fmt(totalGainsAgentesReels)}`} tone="brand"/>
-            <FinKpiCard label="Objectif CA généré agence" value={fmt(objectifAnnuel)} tone="ok">
+            <FinKpiCard label="Objectif CA généré agence" value={`CA ${fmt(totalCAGenere)}`} tone="ok">
               <div style={{marginTop:8}}>
                 <div style={{height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden',marginBottom:4}}>
                   <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${Math.min(pctObjectif,100)}%`}}/>
                 </div>
                 <div style={{fontSize:11,color:'var(--ink-500)'}}>
-                  {pctObjectif}% atteint · CA {fmt(totalCAGenere)}
+                  {pctObjectif}% atteint · {fmt(objectifAnnuel)}
                 </div>
               </div>
             </FinKpiCard>
