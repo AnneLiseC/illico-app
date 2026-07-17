@@ -155,20 +155,27 @@ export default function Statistiques() {
     return () => { annule = true }
   }, [initialized, user?.id, profile?.id])
 
-  // Périmètre : toute l'agence active (agenceActive). Le mode Société ne restreint
-  // PAS les dossiers — il change le CALCUL : Agence = net (parts agentes incluses),
-  // Société = net − parts agentes (la part que la société garde sur TOUS les
-  // chantiers, agentes comprises). Les loyers agentes s'ajoutent à part (voir compta).
+  // Périmètre agence active (agenceActive) = base pour les royalties (charge sur
+  // TOUT le CA agence) et le calcul de « ma part sur les chantiers des agentes ».
   const dossiersScoped = useMemo(() => {
     return agenceActive ? dossiers.filter(d => d.agence_id === agenceActive) : dossiers
   }, [dossiers, agenceActive])
 
-  // Affiche les découpages PAR agente uniquement en vue Agence (admin) — pas en
-  // Société (agrégat société) ni pour une agente connectée (RLS = ses dossiers).
+  // « Société » = SÉPARATION de périmètre (le monde de la franchisée, à part des
+  // agentes) : toutes les vues (CA, top artisans, métiers, typologie, entonnoir,
+  // dossiers) portent sur les seuls dossiers de l'admin. Ce que la société gagne
+  // grâce aux agentes (sa part + les loyers) s'ajoute en lignes séparées (compta).
+  const dossiersVue = useMemo(() => {
+    return (isAdmin && modeEff === 'societe')
+      ? dossiersScoped.filter(d => d.referente?.id === profile?.id)
+      : dossiersScoped
+  }, [dossiersScoped, isAdmin, modeEff, profile?.id])
+
+  // Découpages PAR agente : uniquement en vue Agence (admin).
   const showAgentes = isAdmin && modeEff === 'agence'
 
-  const caMois    = useMemo(() => computeCAMensuel(dossiersScoped, annee, modeEff),     [dossiersScoped, annee, modeEff])
-  const caMoisN1  = useMemo(() => computeCAMensuel(dossiersScoped, annee - 1, modeEff), [dossiersScoped, annee, modeEff])
+  const caMois    = useMemo(() => computeCAMensuel(dossiersVue, annee),     [dossiersVue, annee])
+  const caMoisN1  = useMemo(() => computeCAMensuel(dossiersVue, annee - 1), [dossiersVue, annee])
   const roy       = useMemo(() => computeRoyalties(dossiersScoped, annee),     [dossiersScoped, annee])
   const royN1     = useMemo(() => computeRoyalties(dossiersScoped, annee - 1), [dossiersScoped, annee])
 
@@ -177,8 +184,8 @@ export default function Statistiques() {
   const evolCA    = caTotalN1 > 0 ? Math.round((caTotal - caTotalN1) / caTotalN1 * 100) : null
 
   // Dossiers signés / terminés dans l'année (par date).
-  const nbSignes  = dossiersScoped.filter(d => d.date_signature_contrat && new Date(d.date_signature_contrat).getFullYear() === annee).length
-  const nbTermines = dossiersScoped.filter(d => d.date_fin_chantier && new Date(d.date_fin_chantier).getFullYear() === annee).length
+  const nbSignes  = dossiersVue.filter(d => d.date_signature_contrat && new Date(d.date_signature_contrat).getFullYear() === annee).length
+  const nbTermines = dossiersVue.filter(d => d.date_fin_chantier && new Date(d.date_fin_chantier).getFullYear() === annee).length
 
   // Objectif annuel selon le périmètre (les objectifs sont ANNUELS dans la base).
   const objectifAnnuel = useMemo(() => {
@@ -212,9 +219,9 @@ export default function Statistiques() {
   }, [redevances, agenceActive, annee])
 
   const repartition = useMemo(() => {
-    const caDe = (ds) => round2(somme(computeCAMensuel(ds, annee, modeEff)))
+    const caDe = (ds) => round2(somme(computeCAMensuel(ds, annee)))
     const gTypo = {}, gAg = {}
-    for (const d of dossiersScoped) {
+    for (const d of dossiersVue) {
       (gTypo[d.typologie || '—'] ||= []).push(d)
       const rid = d.referente?.id || '—'
       ;(gAg[rid] ||= { nom: d.referente ? `${d.referente.prenom || ''} ${d.referente.nom || ''}`.trim() : '—', ds: [] }).ds.push(d)
@@ -223,17 +230,23 @@ export default function Statistiques() {
       typo: Object.entries(gTypo).map(([t, ds]) => ({ label: TYPO_LABEL[t] || t, ca: caDe(ds) })).filter(x => x.ca > 0).sort((a, b) => b.ca - a.ca),
       agente: Object.values(gAg).map(g => ({ nom: g.nom, ca: caDe(g.ds) })).filter(x => x.ca > 0).sort((a, b) => b.ca - a.ca),
     }
-  }, [dossiersScoped, annee, modeEff])
+  }, [dossiersVue, annee])
 
   const compta = useMemo(() => {
-    const b = computeCABreakdown(dossiersScoped, annee)
-    const caAgence = round2(somme(computeCAMensuel(dossiersScoped, annee, 'agence')))
-    const caSociete = round2(somme(computeCAMensuel(dossiersScoped, annee, 'societe')))
-    return { ...b, caSociete, partAgentes: round2(caAgence - caSociete), royalties: roy.total }
-  }, [dossiersScoped, annee, roy.total])
+    const b = computeCABreakdown(dossiersVue, annee)                                       // produits de la VUE (société = mes dossiers)
+    const caAgenceNet = round2(somme(computeCAMensuel(dossiersScoped, annee, 'agence')))   // CA agence net (parts incluses)
+    const caAgenceSociete = round2(somme(computeCAMensuel(dossiersScoped, annee, 'societe'))) // net − parts sur toute l'agence
+    return {
+      ...b,
+      caSociete: caAgenceSociete,
+      partAgentes: round2(caAgenceNet - caAgenceSociete),   // parts versées aux agentes (vue Agence)
+      partSurAgentes: round2(caAgenceSociete - b.total),    // ma part sur les chantiers des agentes (vue Société)
+      royalties: roy.total,
+    }
+  }, [dossiersVue, dossiersScoped, annee, roy.total])
 
   const funnel = useMemo(() => {
-    const actifs = dossiersScoped.filter(d => d.archive !== true)
+    const actifs = dossiersVue.filter(d => d.archive !== true)
     const buckets = [
       { label: 'À traiter', match: s => ['a_contacter', 'a_relancer'].includes(s) },
       { label: 'En étude', match: s => ['en_etude', 'devis_en_attente', 'devis_prets', 'devis_a_modifier'].includes(s) },
@@ -242,25 +255,25 @@ export default function Statistiques() {
       { label: 'En chantier', match: s => s === 'en_cours_chantier' },
       { label: 'Terminés', match: s => s === 'termine' },
     ].map(b => ({ label: b.label, n: actifs.filter(d => b.match(calcStatut(d))).length }))
-    const tot = dossiersScoped.length
-    const nbSign = dossiersScoped.filter(d => d.contrat_signe).length
+    const tot = dossiersVue.length
+    const nbSign = dossiersVue.filter(d => d.contrat_signe).length
     let dvT = 0, dvA = 0
-    for (const d of dossiersScoped) for (const dv of (d.devis_artisans || [])) { dvT++; if (dv.statut === 'accepte' || dv.date_signature) dvA++ }
+    for (const d of dossiersVue) for (const dv of (d.devis_artisans || [])) { dvT++; if (dv.statut === 'accepte' || dv.date_signature) dvA++ }
     const jours = (a, c) => (a && c) ? Math.round((new Date(c) - new Date(a)) / 86400000) : null
     const moy = (arr) => { const v = arr.filter(x => x != null && x >= 0); return v.length ? Math.round(v.reduce((s, x) => s + x, 0) / v.length) : null }
     return {
       buckets,
       tauxSignature: tot ? Math.round(nbSign / tot * 100) : 0,
       tauxDevis: dvT ? Math.round(dvA / dvT * 100) : 0,
-      delaiSign: moy(dossiersScoped.map(d => jours(d.created_at, d.date_signature_contrat))),
-      delaiChantier: moy(dossiersScoped.map(d => jours(d.date_signature_contrat, d.date_fin_chantier))),
+      delaiSign: moy(dossiersVue.map(d => jours(d.created_at, d.date_signature_contrat))),
+      delaiChantier: moy(dossiersVue.map(d => jours(d.date_signature_contrat, d.date_fin_chantier))),
     }
-  }, [dossiersScoped])
+  }, [dossiersVue])
 
   const devisArt = useMemo(() => {
     const art = {}, met = {}
     let sMnt = 0, nMnt = 0
-    for (const d of dossiersScoped) for (const dv of (d.devis_artisans || [])) {
+    for (const d of dossiersVue) for (const dv of (d.devis_artisans || [])) {
       if (!(dv.statut === 'accepte' || dv.date_signature)) continue
       const mnt = Number(dv.montant_ht) || 0
       sMnt += mnt; nMnt++
@@ -274,7 +287,7 @@ export default function Statistiques() {
       topArtisans: Object.entries(art).map(([e, v]) => ({ e, ...v })).sort((a, b) => b.montant - a.montant).slice(0, 8),
       topMetiers: Object.entries(met).map(([m, v]) => ({ m, ...v })).sort((a, b) => b.montant - a.montant).slice(0, 6),
     }
-  }, [dossiersScoped])
+  }, [dossiersVue])
 
   const agentesRows = useMemo(() => {
     if (!isAdmin) return []
@@ -331,14 +344,14 @@ export default function Statistiques() {
       {isAdmin && (
         <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: -8 }}>
           {modeEff === 'societe'
-            ? <><strong style={{ color: 'var(--ink-700)' }}>Société</strong> · part société sur toute l&apos;agence (net − parts agentes) + loyers agentes.</>
-            : <><strong style={{ color: 'var(--ink-700)' }}>Agence</strong> · CA total de l&apos;agence, parts agentes incluses.</>}
+            ? <><strong style={{ color: 'var(--ink-700)' }}>Société</strong> · tes dossiers d&apos;admin uniquement ; ta part sur les chantiers agentes + leurs loyers s&apos;ajoutent dans les chiffres clés.</>
+            : <><strong style={{ color: 'var(--ink-700)' }}>Agence</strong> · toute l&apos;agence, agentes incluses.</>}
         </div>
       )}
 
       {/* ── SECTION 1 — Synthèse franchiseur ── */}
       <div className="kpi-grid">
-        <StatKpi label={`CA généré ${annee}`} value={fmtEur(caTotal)} tone="brand"
+        <StatKpi label={modeEff === 'societe' ? `Mon CA ${annee}` : `CA généré ${annee}`} value={fmtEur(caTotal)} tone="brand"
           sub={evolCA != null ? `${evolCA >= 0 ? '▲' : '▼'} ${Math.abs(evolCA)}% vs ${annee - 1} (${fmtEur(caTotalN1)})` : `vs ${annee - 1} : n/a`} />
         {isAdmin ? (
           <StatKpi label="Royalties dues au franchiseur" value={fmtEur(roy.total)} tone="warn"
@@ -349,11 +362,12 @@ export default function Statistiques() {
         )}
         <StatKpi label="Dossiers" value={`${nbSignes} signés`} tone="ok"
           sub={`${nbTermines} chantiers terminés en ${annee}`} />
-        <StatKpi label="Objectif CA agence" value={objectifAnnuel > 0 ? fmtEur(objectifAnnuel) : '—'} tone="brand"
-          sub={pctObjectif != null ? `${pctObjectif}% atteint` : 'objectif non défini'} >
-        </StatKpi>
+        {modeEff !== 'societe' && (
+          <StatKpi label="Objectif CA agence" value={objectifAnnuel > 0 ? fmtEur(objectifAnnuel) : '—'} tone="brand"
+            sub={pctObjectif != null ? `${pctObjectif}% atteint` : 'objectif non défini'} />
+        )}
       </div>
-      {objectifAnnuel > 0 && (
+      {modeEff !== 'societe' && objectifAnnuel > 0 && (
         <div className="card" style={{ padding: '12px 18px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--ink-500)', marginBottom: 6 }}>
             <span>Avancement objectif {annee}</span>
@@ -368,7 +382,7 @@ export default function Statistiques() {
       {/* ── SECTION 2 — CA & royalties dans le temps (N vs N-1) ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
         <div className="card" style={{ padding: 20 }}>
-          <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>CA généré par mois</h2>
+          <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>{modeEff === 'societe' ? 'Mon CA par mois' : 'CA généré par mois'}</h2>
           <div className="eyebrow" style={{ marginBottom: 12 }}>Réel encaissé · {annee} vs {annee - 1}</div>
           <Legende items={[{ color: '#0094d4', label: `${annee}` }, { color: '#94a3b8', label: `${annee - 1}`, dashed: true }]} />
           <BarLineChart id="stats_ca" courant={caMois} precedent={caMoisN1} annee={annee} couleur="#0094d4" />
@@ -403,13 +417,13 @@ export default function Statistiques() {
         <div className="eyebrow" style={{ marginBottom: 14 }}>Réel encaissé</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 28 }}>
           <div>
-            <div className="eyebrow" style={{ marginBottom: 6 }}>Produits encaissés{modeEff === 'societe' ? ' · agence' : ''}</div>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>Produits encaissés{modeEff === 'societe' ? ' · mes dossiers' : ''}</div>
             <LigneCompta label="Frais de consultation" value={compta.frais} />
             <LigneCompta label="Commissions" value={compta.commissions} />
             <LigneCompta label="Honoraires" value={compta.honoraires} />
             <LigneCompta label="Apporteur client remboursé" value={-compta.apporteur} neg />
             <div style={{ borderTop: '1px solid var(--ink-200)', marginTop: 6, paddingTop: 6 }}>
-              <LigneCompta label={modeEff === 'societe' ? 'CA généré agence (net)' : 'CA généré (net)'} value={compta.total} bold />
+              <LigneCompta label={modeEff === 'societe' ? 'Mon CA (net)' : 'CA généré (net)'} value={compta.total} bold />
             </div>
           </div>
           {showAgentes ? (
@@ -423,12 +437,12 @@ export default function Statistiques() {
             </div>
           ) : modeEff === 'societe' ? (
             <div>
-              <div className="eyebrow" style={{ marginBottom: 6 }}>Revient à la société</div>
-              <LigneCompta label="Part agentes déduite" value={-compta.partAgentes} neg />
-              <LigneCompta label="CA société (net − parts)" value={compta.caSociete} />
+              <div className="eyebrow" style={{ marginBottom: 6 }}>Revenu total de la société</div>
+              <LigneCompta label="Mon CA (mes dossiers)" value={compta.total} />
+              <LigneCompta label="Ma part sur chantiers agentes" value={compta.partSurAgentes} />
               <LigneCompta label="Loyers agentes encaissés" value={loyers.annee} />
               <div style={{ borderTop: '1px solid var(--ink-200)', marginTop: 6, paddingTop: 6 }}>
-                <LigneCompta label="Total encaissé société" value={round2(compta.caSociete + loyers.annee)} bold />
+                <LigneCompta label="Total encaissé société" value={round2(compta.total + compta.partSurAgentes + loyers.annee)} bold />
               </div>
               <div style={{ marginTop: 10 }}>
                 <LigneCompta label="Royalties dues au franchiseur (charge)" value={compta.royalties} accent />
