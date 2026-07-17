@@ -66,7 +66,21 @@ function CABarChart({ data }) {
   )
 }
 
-function Pipeline({ dossiers }) {
+// Ligne de dossier cliquable → ouvre la fiche chantier au clic (simple clic).
+function DossierRow({ d, onOpen }) {
+  const client = `${d.client?.prenom || ''} ${d.client?.nom || ''}`.trim()
+  return (
+    <button onClick={() => onOpen(d.id)} className="row-hover"
+      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '9px 6px', borderTop: '1px solid var(--ink-100)' }}>
+      <span className="mono" style={{ fontSize: 12, color: 'var(--brand-800)', fontWeight: 600 }}>{d.reference || '—'}</span>
+      <span style={{ fontSize: 13, color: 'var(--ink-800)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{client || '—'}</span>
+      <span style={{ fontSize: 16, color: 'var(--ink-300)' }}>›</span>
+    </button>
+  )
+}
+
+function Pipeline({ dossiers, onOpen }) {
+  const [open, setOpen] = useState(null)
   const buckets = [
     { key: 'a_traiter', label: 'À traiter',            tone: '#0094d4', match: s => ['a_contacter','a_relancer'].includes(s) },
     { key: 'etude',     label: 'En étude',             tone: '#8b5cf6', match: s => ['en_etude','devis_en_attente','devis_prets','devis_a_modifier'].includes(s) },
@@ -78,6 +92,8 @@ function Pipeline({ dossiers }) {
   // annule : volontairement dans aucun bucket (exclu du pipeline, comme avant).
   const counts = buckets.map(b => dossiers.filter(d => b.match(calcStatut(d))).length)
   const total  = counts.reduce((a, b) => a + b, 0) || 1
+  const bucketOuvert   = open ? buckets.find(b => b.key === open) : null
+  const dossiersOuverts = bucketOuvert ? dossiers.filter(d => bucketOuvert.match(calcStatut(d))) : []
   return (
     <div>
       <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', height: 14, marginBottom: 18, background: 'var(--ink-100)' }}>
@@ -85,15 +101,24 @@ function Pipeline({ dossiers }) {
           <div key={b.key} style={{ width: `${counts[i] / total * 100}%`, background: b.tone, transition: 'width 400ms ease' }} />
         ))}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         {buckets.map((b, i) => (
-          <div key={b.key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button key={b.key} onClick={() => setOpen(open === b.key ? null : b.key)}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', padding: '6px', borderRadius: 8, background: open === b.key ? 'var(--surface-2)' : 'none' }}>
             <span style={{ width: 10, height: 10, borderRadius: 3, background: b.tone, flex: '0 0 10px' }} />
             <span style={{ fontSize: 12.5, color: 'var(--ink-700)', flex: 1 }}>{b.label}</span>
             <span className="tnum" style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink-900)', letterSpacing: -0.02 }}>{counts[i]}</span>
-          </div>
+          </button>
         ))}
       </div>
+      {bucketOuvert && (
+        <div style={{ marginTop: 14, borderTop: '1px solid var(--ink-200)', paddingTop: 8 }}>
+          <div className="eyebrow" style={{ marginBottom: 4 }}>{bucketOuvert.label} — {dossiersOuverts.length} dossier(s)</div>
+          {dossiersOuverts.length === 0
+            ? <div style={{ fontSize: 12.5, color: 'var(--ink-400)', padding: '10px 0' }}>Aucun dossier</div>
+            : dossiersOuverts.map(d => <DossierRow key={d.id} d={d} onOpen={onOpen} />)}
+        </div>
+      )}
     </div>
   )
 }
@@ -161,7 +186,9 @@ export default function Dashboard() {
   const [rdvAujourdhui, setRdvAujourdhui] = useState([])
   const [loading,      setLoading]      = useState(true)
   const [modaleClient, setModaleClient] = useState(false)
+  const [showEnCours,  setShowEnCours]  = useState(false)
   const router = useRouter()
+  const openDossier = (dossierId) => router.push(`/chantiers/${dossierId}`)
   const { user, profile, initialized, fetchProfile, agenceActive } = useAuth()
   const retriedRef = useRef(false)
 
@@ -326,7 +353,7 @@ export default function Dashboard() {
       <div className="kpi-grid">
         <KpiCard label="Chantiers en cours" value={loading ? '—' : enCours.length}
           sub={`${dossiersActifs.filter(d => !['termine','annule'].includes(calcStatut(d))).length} dossiers actifs`}
-          icon={<BuildingIcon />} tone="brand" />
+          icon={<BuildingIcon />} tone="brand" onClick={() => setShowEnCours(v => !v)} />
         <KpiCard label="Devis à relancer <7j" value={loading ? '—' : aRelancer.length}
           sub={enRetardCount > 0 ? `${enRetardCount} en retard` : 'aucun en retard'}
           icon={<AlertIcon />}
@@ -352,6 +379,16 @@ export default function Dashboard() {
           )}
         </KpiCard>
       </div>
+
+      {/* ── Liste "Chantiers en cours" (dépliée au clic sur le KPI) ── */}
+      {showEnCours && (
+        <div className="card" style={{ padding: 16, marginBottom: 20 }}>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>Chantiers en cours — {enCours.length}</div>
+          {enCours.length === 0
+            ? <div style={{ fontSize: 12.5, color: 'var(--ink-400)', padding: '10px 0' }}>Aucun chantier en cours</div>
+            : enCours.map(d => <DossierRow key={d.id} d={d} onOpen={openDossier} />)}
+        </div>
+      )}
 
       {/* ── Grille principale ── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 20 }}>
@@ -409,12 +446,12 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* CA Chart */}
-          <div className="card" style={{ padding: 20 }}>
+          {/* CA Chart — clic → onglet Finances */}
+          <div className="card" style={{ padding: 20, cursor: 'pointer' }} onClick={() => router.push('/finances')}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 18 }}>
               <div>
                 <h2 className="page" style={{ fontSize: 16 }}>Chiffre d'affaires {annee}</h2>
-                <div className="eyebrow" style={{ marginTop: 4 }}>Réel vs objectif mensuel</div>
+                <div className="eyebrow" style={{ marginTop: 4 }}>Réel vs objectif mensuel · cliquer pour le détail Finances →</div>
               </div>
               <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--ink-500)' }}>
@@ -489,7 +526,7 @@ export default function Dashboard() {
             </div>
             {loading
               ? <div style={{ height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span className="eyebrow">Chargement…</span></div>
-              : <Pipeline dossiers={dossiersActifs} />}
+              : <Pipeline dossiers={dossiersActifs} onOpen={openDossier} />}
           </div>
 
           {/* Activité récente */}

@@ -86,7 +86,7 @@ export function Avatar({ name, color, size = 28, ring = false }) {
   )
 }
 
-export function KpiCard({ label, value, sub, tone = 'brand', icon, corner = true, trend, children }) {
+export function KpiCard({ label, value, sub, tone = 'brand', icon, corner = true, trend, children, onClick }) {
   const cornerColor = {
     brand: 'rgba(0,148,212,0.10)',
     ok:    'rgba(22,163,74,0.10)',
@@ -94,7 +94,7 @@ export function KpiCard({ label, value, sub, tone = 'brand', icon, corner = true
     bad:   'rgba(220,38,38,0.10)',
   }[tone]
   return (
-    <div className="card kpi" style={{ minHeight: 128 }}>
+    <div className="card kpi" style={{ minHeight: 128, ...(onClick ? { cursor: 'pointer' } : null) }} onClick={onClick}>
       {corner && (
         <svg className="kpi-corner" viewBox="0 0 80 80" aria-hidden="true">
           <path d="M0 0 L80 0 L80 80 Z" fill={cornerColor} />
