@@ -84,7 +84,12 @@ export default function Artisans() {
       const { error: fichesErr } = await supabase.from('fiches_techniques').delete().eq('artisan_id', artisanId)
       if (fichesErr) { erreurs.push(`${artisan?.entreprise} (${fichesErr.message})`); continue }
       const { error } = await supabase.from('artisans').delete().eq('id', artisanId)
-      if (error) erreurs.push(`${artisan?.entreprise} (${error.message})`)
+      if (error) {
+        const contrainteFK = error.code === '23503' || /foreign key/i.test(error.message || '')
+        erreurs.push(`${artisan?.entreprise} (${contrainteFK
+          ? 'rattaché à des devis ou interventions — détache-les d\'abord'
+          : error.message})`)
+      }
     }
     const { data } = await supabase.from('artisans').select('*, devis_artisans(id, montant_ht)').order('entreprise')
     setArtisans(data || [])

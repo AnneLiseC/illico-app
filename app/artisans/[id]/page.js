@@ -139,7 +139,13 @@ export default function FicheArtisan({ params }) {
   const supprimerFiche = async (ficheId) => {
     if (!confirm('Supprimer cette fiche technique ?')) return
     const { error } = await supabase.from('fiches_techniques').delete().eq('id', ficheId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) {
+      const contrainteFK = error.code === '23503' || /foreign key/i.test(error.message || '')
+      setErreur(contrainteFK
+        ? 'Impossible de supprimer cette fiche technique : elle est rattachée à un ou plusieurs chantiers. Détache-la de ces chantiers avant de la supprimer.'
+        : 'Erreur : ' + error.message)
+      return
+    }
     await chargerFiches()
   }
 
