@@ -465,8 +465,8 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
 
       {/* KPI strip */}
       <div className="kpi-grid">
-        <FinKpiCard label="Gains à facturer par l'agente · F1" value={fmt(totalF1)}    sub={`Reçu ${fmt(totalF1Paye)} · Reste ${fmt(round2(totalF1-totalF1Paye))}`} tone="ok"/>
-        <FinKpiCard label="À régler par l'agente · F2"         value={fmt(totalF2)}    sub={`Reçu ${fmt(totalF2Paye)} · Reste ${fmt(round2(totalF2-totalF2Paye))}`} tone="warn"/>
+        <FinKpiCard label="Gains à facturer par l'agente · F1" value={fmt(round2(totalF1-totalF1Paye))} sub={`Reçu ${fmt(totalF1Paye)} · Total ${fmt(totalF1)}`} tone="ok"/>
+        <FinKpiCard label="À régler par l'agente · F2"         value={fmt(round2(totalF2-totalF2Paye))} sub={`Reçu ${fmt(totalF2Paye)} · Total ${fmt(totalF2)}`} tone="warn"/>
         <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
       </div>
 
