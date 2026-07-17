@@ -75,6 +75,16 @@ function Legende({ items }) {
   )
 }
 
+// Ligne d'un relevé comptable : libellé à gauche, montant à droite.
+function LigneCompta({ label, value, bold, neg, accent }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, padding: '5px 0' }}>
+      <span style={{ fontSize: 12.5, color: bold ? 'var(--ink-900)' : 'var(--ink-600)', fontWeight: bold ? 700 : 500 }}>{label}</span>
+      <span className="tnum" style={{ fontSize: bold ? 17 : 14, fontWeight: bold ? 800 : 600, color: accent ? '#a16207' : neg ? '#b91c1c' : 'var(--ink-900)', whiteSpace: 'nowrap' }}>{fmtEur(value)}</span>
+    </div>
+  )
+}
+
 // Barres horizontales : label · montant · barre proportionnelle.
 function BarList({ items, couleur = '#0094d4' }) {
   const max = Math.max(...items.map(i => i.value), 1)
@@ -373,23 +383,26 @@ export default function Statistiques() {
       {/* ── Bloc comptable — Chiffres clés ── */}
       <div className="card" style={{ padding: 20 }}>
         <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>Chiffres clés {annee}</h2>
-        <div className="eyebrow" style={{ marginBottom: 14 }}>Réel encaissé · à transmettre au comptable</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
-          {[
-            ['Frais de consultation', compta.frais],
-            ['Commissions', compta.commissions],
-            ['Honoraires', compta.honoraires],
-            ['− Apporteur client', -compta.apporteur],
-            ['CA généré (net)', compta.total],
-            ['Royalties franchiseur', compta.royalties],
-            ['Part société', compta.caSociete],
-            ['Part agentes', compta.partAgentes],
-          ].map(([label, val]) => (
-            <div key={label} style={{ padding: '10px 12px', border: '1px solid var(--ink-100)', borderRadius: 8, background: 'var(--surface-2)' }}>
-              <div style={{ fontSize: 11.5, color: 'var(--ink-500)', marginBottom: 4 }}>{label}</div>
-              <div className="tnum" style={{ fontSize: 17, fontWeight: 700, color: 'var(--ink-900)' }}>{fmtEur(val)}</div>
+        <div className="eyebrow" style={{ marginBottom: 14 }}>Réel encaissé</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 28 }}>
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>Produits encaissés</div>
+            <LigneCompta label="Frais de consultation" value={compta.frais} />
+            <LigneCompta label="Commissions" value={compta.commissions} />
+            <LigneCompta label="Honoraires" value={compta.honoraires} />
+            <LigneCompta label="Apporteur client remboursé" value={-compta.apporteur} neg />
+            <div style={{ borderTop: '1px solid var(--ink-200)', marginTop: 6, paddingTop: 6 }}>
+              <LigneCompta label="CA généré (net)" value={compta.total} bold />
             </div>
-          ))}
+          </div>
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>Répartition du CA net</div>
+            <LigneCompta label="Part société" value={compta.caSociete} />
+            <LigneCompta label="Part agentes" value={compta.partAgentes} />
+            <div style={{ borderTop: '1px solid var(--ink-200)', marginTop: 6, paddingTop: 6 }}>
+              <LigneCompta label="Royalties reversées au franchiseur" value={compta.royalties} accent />
+            </div>
+          </div>
         </div>
       </div>
 
