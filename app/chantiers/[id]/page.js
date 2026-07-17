@@ -809,6 +809,7 @@ export default function FicheChantier({ params }) {
   const [loadingComparateur, setLoadingComparateur] = useState(false)
   const [editingTaux, setEditingTaux] = useState(null)        // simulation_id en cours d'édition
   const [editingMontant, setEditingMontant] = useState(null)  // ligne_id en cours d'édition
+  const [historiqueBasesOuvert, setHistoriqueBasesOuvert] = useState(false)  // comparateur : replier/déplier les bases historiques
   const [artisans, setArtisans] = useState([])
   const [devisModal, setDevisModal] = useState({ open: false, devis: null })
   const [devisExpanded, setDevisExpanded] = useState(() => new Set())
@@ -1234,6 +1235,14 @@ export default function FicheChantier({ params }) {
       .order('created_at')
     if (error) { console.error('chargerComparateur :', error.message); setLoadingComparateur(false); return }
 
+    // Base initiale : à l'ouverture, si aucune base n'existe encore, on fige l'état
+    // courant comme « Base 1 ». skipSync évite la récursion.
+    if (!skipSync && devis.length > 0 && !(data || []).some(s => s.type === 'base')) {
+      await creerBaseComparateur()
+      await chargerComparateur(true)
+      return
+    }
+
     // Synchro : crée les lignes manquantes pour les devis ajoutés après la création
     // d'une simulation. skipSync évite la récursion infinie (1 seul re-chargement).
     if (!skipSync && (data || []).length > 0 && devis.length > 0) {
@@ -1253,6 +1262,42 @@ export default function FicheChantier({ params }) {
 
     setSimulations(data || [])
     setLoadingComparateur(false)
+  }
+
+  // Comparateur — crée une BASE figée : une colonne épinglée sur la version COURANTE
+  // de chaque devis (frise A-B-C-D). Appelée (a) à l'ouverture si aucune base,
+  // (b) à chaque changement de MONTANT d'un devis. Non bloquant.
+  const creerBaseComparateur = async () => {
+    try {
+      const { data: das } = await supabase.from('devis_artisans').select('id').eq('dossier_id', id)
+      const devisIds = (das || []).map(d => d.id)
+      if (!devisIds.length) return
+      const { data: vs } = await supabase.from('devis_versions')
+        .select('id, devis_artisan_id').in('devis_artisan_id', devisIds).eq('est_courante', true)
+      const { data: bases } = await supabase.from('comparateur_simulations')
+        .select('id').eq('dossier_id', id).eq('type', 'base')
+      const num = (bases?.length || 0) + 1
+      await supabase.from('comparateur_simulations').update({ est_base_courante: false })
+        .eq('dossier_id', id).eq('est_base_courante', true)
+      const { data: base } = await supabase.from('comparateur_simulations')
+        .insert({ dossier_id: id, nom: `Base ${num}`, type: 'base', est_base_courante: true, taux_courtage: 6, taux_amo: 9 })
+        .select().single()
+      if (!base) return
+      const lignes = (vs || []).map(v => ({
+        simulation_id: base.id, devis_artisan_id: v.devis_artisan_id,
+        devis_version_id: v.id, inclus: true, montant_ttc_override: null,
+      }))
+      if (lignes.length) await supabase.from('comparateur_lignes').insert(lignes)
+    } catch (e) { console.error('creerBaseComparateur :', e?.message) }
+  }
+
+  // Nouvelle base seulement si le comparateur est déjà utilisé pour ce dossier
+  // (≥1 simulation) — évite de générer des bases pour des dossiers jamais comparés.
+  const majBaseSurChangementMontant = async () => {
+    const { count } = await supabase.from('comparateur_simulations')
+      .select('id', { count: 'exact', head: true }).eq('dossier_id', id)
+    if ((count || 0) === 0) return
+    await creerBaseComparateur()
   }
 
   const ajouterSimulation = async () => {
@@ -1653,6 +1698,7 @@ export default function FicheChantier({ params }) {
     const courante = versions?.find(v => v.est_courante) || versions?.[0]
     // No-op : contenu identique à la version courante → pas de doublon.
     if (courante && CHAMPS_VERSION.every(c => (da[c] ?? null) === (courante[c] ?? null))) return
+    const montantChange = !courante || (da.montant_ttc ?? null) !== (courante.montant_ttc ?? null)
     const nextNum = versions?.length ? Math.max(...versions.map(v => v.version_num)) + 1 : 1
     // Bascule l'ancienne courante puis insère la nouvelle (index partiel unique respecté).
     if (versions?.some(v => v.est_courante)) {
@@ -1662,7 +1708,9 @@ export default function FicheChantier({ params }) {
     const snap = { devis_artisan_id: devisId, version_num: nextNum, est_courante: true }
     for (const c of CHAMPS_VERSION) snap[c] = da[c] ?? null
     const { error } = await supabase.from('devis_versions').insert(snap)
-    if (error) console.error('archiverVersionDevis :', error.message)
+    if (error) { console.error('archiverVersionDevis :', error.message); return }
+    // Changement de MONTANT → nouvelle base figée du comparateur (si déjà utilisé).
+    if (montantChange) await majBaseSurChangementMontant()
   }
 
   // Upload/remplacement du PDF d'un devis → chemin versionné + nouvelle version.
@@ -4607,9 +4655,12 @@ export default function FicheChantier({ params }) {
         const linkBtn = { border:'none', background:'none', cursor:'pointer', fontSize:11, color:'var(--brand-700)', textDecoration:'underline' }
 
         const devisById   = Object.fromEntries(devis.map(d => [d.id, d]))
+        const versionById = Object.fromEntries(Object.values(versionsDevis).flat().map(v => [v.id, v]))
         const montantLigne = (l) => {
           if (l.montant_ttc_override != null) return Number(l.montant_ttc_override) || 0
-          return Number(devisById[l.devis_artisan_id]?.montant_ttc) || 0
+          // Ligne épinglée sur une version → montant de CETTE version (base figée).
+          if (l.devis_version_id) return Number(versionById[l.devis_version_id]?.montant_ttc) || 0
+          return Number(devisById[l.devis_artisan_id]?.montant_ttc) || 0   // sinon montant courant (live)
         }
         const ligneFor = (sim, devisId) => (sim.lignes || []).find(l => l.devis_artisan_id === devisId)
         const totauxSim = (sim) => {
@@ -4620,6 +4671,20 @@ export default function FicheChantier({ params }) {
         }
         const totalBaseTTC = devis.reduce((s, d) => s + (Number(d.montant_ttc) || 0), 0)
 
+        // Frise : bases figées (chronologiques) + simulations manuelles. La dernière
+        // base = base courante (mise en avant) ; les précédentes = historique repliable.
+        const basesTri = simulations.filter(s => s.type === 'base').sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+        const baseCourante = basesTri.find(b => b.est_base_courante) || basesTri[basesTri.length - 1] || null
+        const basesHistorique = basesTri.filter(b => b.id !== baseCourante?.id)
+        const manuelles = simulations.filter(s => s.type !== 'base')
+        const colonnes = [
+          ...(historiqueBasesOuvert ? basesHistorique : []),
+          ...(baseCourante ? [baseCourante] : []),
+          ...manuelles,
+        ]
+        const estBaseHisto = (sim) => sim.type === 'base' && sim.id !== baseCourante?.id
+        const estBaseCourante = (sim) => sim.type === 'base' && sim.id === baseCourante?.id
+
         return (
         <div style={{display:'flex', flexDirection:'column', gap:14}}>
           <div className="card" style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap'}}>
@@ -4627,9 +4692,16 @@ export default function FicheChantier({ params }) {
               <h2 className="page" style={{fontSize:15}}>Comparateur de devis</h2>
               <div className="eyebrow" style={{marginTop:4}}>Simule des scénarios : inclusion des devis, montants ajustés, taux d'honoraires.</div>
             </div>
-            <button onClick={ajouterSimulation} className="btn btn-primary" style={{fontSize:12.5}}>
-              <PlusIcon /> Nouvelle simulation
-            </button>
+            <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
+              {basesHistorique.length > 0 && (
+                <button onClick={() => setHistoriqueBasesOuvert(o => !o)} className="btn btn-ghost" style={{fontSize:12}}>
+                  {historiqueBasesOuvert ? '▾' : '▸'} Historique bases ({basesHistorique.length})
+                </button>
+              )}
+              <button onClick={ajouterSimulation} className="btn btn-primary" style={{fontSize:12.5}}>
+                <PlusIcon /> Nouvelle simulation
+              </button>
+            </div>
           </div>
 
           {loadingComparateur ? (
@@ -4640,15 +4712,22 @@ export default function FicheChantier({ params }) {
             <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucune simulation — clique « Nouvelle simulation ».</div>
           ) : (
             <div className="card" style={{padding:0, overflowX:'auto'}}>
-              <table style={{width:'100%', borderCollapse:'collapse', fontSize:12.5, minWidth: 320 + simulations.length * 180}}>
+              <table style={{width:'100%', borderCollapse:'collapse', fontSize:12.5, minWidth: 320 + colonnes.length * 180}}>
                 <thead>
                   <tr>
                     <th style={{...thStyle, textAlign:'left', minWidth:190}}>Devis / artisan</th>
-                    <th style={{...thStyle, minWidth:110}}>Base</th>
-                    {simulations.map(sim => (
-                      <th key={sim.id} style={{...thStyle, minWidth:170}}>
+                    <th style={{...thStyle, minWidth:110}}>Actuel</th>
+                    {colonnes.map(sim => {
+                      const histo = estBaseHisto(sim), courante = estBaseCourante(sim)
+                      return (
+                      <th key={sim.id} style={{...thStyle, minWidth:170, background: courante ? 'rgba(0,148,212,0.06)' : histo ? 'var(--surface-2)' : undefined}}>
                         <div style={{display:'flex', flexDirection:'column', gap:4, alignItems:'center'}}>
-                          <span style={{fontWeight:700, color:'var(--ink-900)', fontSize:12.5}}>{sim.nom}</span>
+                          <span style={{fontWeight: histo ? 500 : 700, color: histo ? 'var(--ink-500)' : 'var(--ink-900)', fontSize: histo ? 11.5 : 12.5}}>{sim.nom}</span>
+                          {(courante || histo) && (
+                            <span style={{fontSize:9.5, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.04em', color: courante ? 'var(--brand-700)' : 'var(--ink-400)'}}>
+                              {courante ? '● Base courante' : 'Base · historique'}
+                            </span>
+                          )}
                           {editingTaux === sim.id ? (
                             <TauxEditor sim={sim} onSave={saveTaux} onCancel={() => setEditingTaux(null)} />
                           ) : (
@@ -4658,7 +4737,7 @@ export default function FicheChantier({ params }) {
                           )}
                         </div>
                       </th>
-                    ))}
+                    )})}
                   </tr>
                 </thead>
                 <tbody>
@@ -4669,7 +4748,7 @@ export default function FicheChantier({ params }) {
                         {d.artisan?.metier && <div style={{fontSize:11, color:'var(--ink-500)'}}>{d.artisan.metier}</div>}
                       </td>
                       <td style={{...tdStyle, fontWeight:600}} className="tnum">{fmt(d.montant_ttc || 0)}</td>
-                      {simulations.map(sim => {
+                      {colonnes.map(sim => {
                         const l = ligneFor(sim, d.id)
                         if (!l) return <td key={sim.id} style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
                         return (
@@ -4703,34 +4782,36 @@ export default function FicheChantier({ params }) {
                   <tr style={{borderTop:'2px solid var(--ink-300)', background:'var(--surface-2)'}}>
                     <td style={{...tdStyle, textAlign:'left', fontWeight:700}}>Total TTC</td>
                     <td style={{...tdStyle, fontWeight:700}} className="tnum">{fmt(totalBaseTTC)}</td>
-                    {simulations.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700}} className="tnum">{fmt(totauxSim(sim).totalTTC)}</td>)}
+                    {colonnes.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700}} className="tnum">{fmt(totauxSim(sim).totalTTC)}</td>)}
                   </tr>
                   <tr style={{borderTop:'1px solid var(--ink-100)'}}>
                     <td style={{...tdStyle, textAlign:'left'}}>Honoraires courtage</td>
                     <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
-                    {simulations.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honCourtage)}</td>)}
+                    {colonnes.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honCourtage)}</td>)}
                   </tr>
                   <tr>
                     <td style={{...tdStyle, textAlign:'left'}}>Honoraires AMO</td>
                     <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
-                    {simulations.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honAMO)}</td>)}
+                    {colonnes.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honAMO)}</td>)}
                   </tr>
                   <tr style={{borderTop:'1px solid var(--ink-200)'}}>
                     <td style={{...tdStyle, textAlign:'left', fontWeight:700, color:'var(--brand-800)'}}>Total chantier courtage</td>
                     <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
-                    {simulations.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--brand-800)'}} className="tnum">{fmt(totauxSim(sim).totalCourtage)}</td>)}
+                    {colonnes.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--brand-800)'}} className="tnum">{fmt(totauxSim(sim).totalCourtage)}</td>)}
                   </tr>
                   <tr>
                     <td style={{...tdStyle, textAlign:'left', fontWeight:700, color:'var(--brand-800)'}}>Total chantier AMO</td>
                     <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
-                    {simulations.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--brand-800)'}} className="tnum">{fmt(totauxSim(sim).totalAMO)}</td>)}
+                    {colonnes.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--brand-800)'}} className="tnum">{fmt(totauxSim(sim).totalAMO)}</td>)}
                   </tr>
                   <tr style={{borderTop:'1px solid var(--ink-100)'}}>
                     <td style={tdStyle}></td>
                     <td style={tdStyle}></td>
-                    {simulations.map(sim => (
+                    {colonnes.map(sim => (
                       <td key={sim.id} style={tdStyle}>
-                        <button onClick={() => supprimerSimulation(sim.id)} className="btn btn-ghost" style={{fontSize:11, color:'#b91c1c'}}>Supprimer</button>
+                        {sim.type !== 'base' && (
+                          <button onClick={() => supprimerSimulation(sim.id)} className="btn btn-ghost" style={{fontSize:11, color:'#b91c1c'}}>Supprimer</button>
+                        )}
                       </td>
                     ))}
                   </tr>
