@@ -354,7 +354,7 @@ export default function Statistiques() {
         <StatKpi label={modeEff === 'societe' ? `Mon CA ${annee}` : `CA généré ${annee}`} value={fmtEur(caTotal)} tone="brand"
           sub={evolCA != null ? `${evolCA >= 0 ? '▲' : '▼'} ${Math.abs(evolCA)}% vs ${annee - 1} (${fmtEur(caTotalN1)})` : `vs ${annee - 1} : n/a`} />
         {isAdmin ? (
-          <StatKpi label="Royalties dues au franchiseur" value={fmtEur(roy.total)} tone="warn"
+          <StatKpi label="Royalties reversées au franchiseur" value={fmtEur(roy.total)} tone="warn"
             sub={`Frais ${fmtEur(roy.parPoste.frais)} · Comm. ${fmtEur(roy.parPoste.commissions)} · Hono. ${fmtEur(roy.parPoste.honoraires)}`} />
         ) : (
           <StatKpi label="Mes gains (part agente)" value={fmtEur(compta.partAgentes)} tone="ok"
@@ -389,7 +389,7 @@ export default function Statistiques() {
         </div>
         <div className="card" style={{ padding: 20 }}>
           <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>Royalties franchiseur par mois</h2>
-          <div className="eyebrow" style={{ marginBottom: 12 }}>Redevance reversée · {annee} vs {annee - 1}</div>
+          <div className="eyebrow" style={{ marginBottom: 12 }}>Reversées au franchiseur · {annee} vs {annee - 1}</div>
           <Legende items={[{ color: '#d97706', label: `Royalties ${annee}` }, { color: '#94a3b8', label: `${annee - 1}`, dashed: true }]} />
           <BarLineChart id="stats_roy" courant={roy.parMois} precedent={royN1.parMois} annee={annee} couleur="#d97706" />
         </div>
@@ -432,7 +432,7 @@ export default function Statistiques() {
               <LigneCompta label="Part société" value={compta.caSociete} />
               <LigneCompta label="Part agentes" value={compta.partAgentes} />
               <div style={{ borderTop: '1px solid var(--ink-200)', marginTop: 6, paddingTop: 6 }}>
-                <LigneCompta label="Royalties reversées au franchiseur" value={compta.royalties} accent />
+                <LigneCompta label="Royalties au franchiseur (déjà déduites, indicatif)" value={compta.royalties} accent />
               </div>
             </div>
           ) : modeEff === 'societe' ? (
@@ -445,13 +445,13 @@ export default function Statistiques() {
                 <LigneCompta label="Total encaissé société" value={round2(compta.total + compta.partSurAgentes + loyers.annee)} bold />
               </div>
               <div style={{ marginTop: 10 }}>
-                <LigneCompta label="Royalties dues au franchiseur (charge)" value={compta.royalties} accent />
+                <LigneCompta label="Royalties au franchiseur (déjà déduites, indicatif)" value={compta.royalties} accent />
               </div>
             </div>
           ) : (
             <div>
-              <div className="eyebrow" style={{ marginBottom: 6 }}>Redevance franchiseur</div>
-              <LigneCompta label="Royalties générées" value={compta.royalties} accent />
+              <div className="eyebrow" style={{ marginBottom: 6 }}>Royalties franchiseur</div>
+              <LigneCompta label="Royalties générées (indicatif)" value={compta.royalties} accent />
             </div>
           )}
         </div>
