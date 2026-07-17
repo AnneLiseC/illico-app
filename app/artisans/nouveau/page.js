@@ -232,7 +232,7 @@ export default function NouvelArtisan() {
           <div className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
             <div>
               <p className="text-sm font-medium text-gray-800">Kbis</p>
-              <p className="text-xs text-gray-400">Extrait Kbis de l'entreprise</p>
+              <p className="text-xs text-gray-400">Extrait Kbis de l&apos;entreprise</p>
             </div>
             <label className="cursor-pointer text-xs px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 text-gray-700">
               {fichiers.kbis ? `✓ ${fichiers.kbis.name}` : '+ Ajouter PDF'}

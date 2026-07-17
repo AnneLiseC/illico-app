@@ -290,7 +290,7 @@ export default function Dashboard() {
           <h1 className="page" style={{ fontSize: 28 }}>Bonjour {profile.prenom} 👋</h1>
           <p style={{ color: 'var(--ink-500)', fontSize: 14, marginTop: 6 }}>
             Tu as <strong style={{ color: 'var(--ink-700)' }}>{aRelancer.length} devis à relancer</strong> cette semaine
-            {rdvAujourdhuiScoped.length > 0 && <> et <strong style={{ color: 'var(--ink-700)' }}>{rdvAujourdhuiScoped.length} rendez-vous</strong> programmés aujourd'hui</>}.
+            {rdvAujourdhuiScoped.length > 0 && <> et <strong style={{ color: 'var(--ink-700)' }}>{rdvAujourdhuiScoped.length} rendez-vous</strong> programmés aujourd&apos;hui</>}.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -400,7 +400,7 @@ export default function Dashboard() {
           <div className="card" style={{ padding: 20, cursor: 'pointer' }} onClick={() => router.push('/finances')}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 18 }}>
               <div>
-                <h2 className="page" style={{ fontSize: 16 }}>Chiffre d'affaires {annee}</h2>
+                <h2 className="page" style={{ fontSize: 16 }}>Chiffre d&apos;affaires {annee}</h2>
                 <div className="eyebrow" style={{ marginTop: 4 }}>Réel vs objectif mensuel · cliquer pour le détail Finances →</div>
               </div>
               <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
@@ -425,7 +425,7 @@ export default function Dashboard() {
           <div className="card" style={{ padding: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <div>
-                <h2 className="page" style={{ fontSize: 16 }}>Aujourd'hui</h2>
+                <h2 className="page" style={{ fontSize: 16 }}>Aujourd&apos;hui</h2>
                 <div className="eyebrow" style={{ marginTop: 4 }}>
                   {loading ? '…' : rdvAujourdhuiScoped.length === 0 ? 'Aucun rendez-vous' : `${rdvAujourdhuiScoped.length} rendez-vous`}
                 </div>
@@ -436,7 +436,7 @@ export default function Dashboard() {
               <div style={{ padding: '16px 0', textAlign: 'center' }}><span className="eyebrow">Chargement…</span></div>
             ) : rdvAujourdhuiScoped.length === 0 ? (
               <div style={{ padding: '16px 0', textAlign: 'center', color: 'var(--ink-400)', fontSize: 13 }}>
-                Aucun rendez-vous programmé aujourd'hui
+                Aucun rendez-vous programmé aujourd&apos;hui
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 0, position: 'relative' }}>

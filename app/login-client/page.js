@@ -151,7 +151,7 @@ export default function LoginClient() {
             </button>
 
             <p style={{fontSize:12, color:'var(--ink-500)', marginTop:30, textAlign:'center'}}>
-              Vous avez reçu un lien d'invitation ? Suivez-le pour créer votre mot de passe.
+              Vous avez reçu un lien d&apos;invitation ? Suivez-le pour créer votre mot de passe.
             </p>
           </form>
         ) : (

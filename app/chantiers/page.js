@@ -167,7 +167,7 @@ function ChantierPreview({ d, onOpen, onBack, isMobile }) {
     <div className="card" style={{ display: 'grid', placeItems: 'center', textAlign: 'center', color: 'var(--ink-400)' }}>
       <div>
         <FolderIcon size={36} />
-        <div style={{ marginTop: 10, fontSize: 13 }}>Sélectionne un dossier pour voir l'aperçu</div>
+        <div style={{ marginTop: 10, fontSize: 13 }}>Sélectionne un dossier pour voir l&apos;aperçu</div>
       </div>
     </div>
   )

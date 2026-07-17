@@ -397,7 +397,7 @@ export default function Parametres() {
       <div>
         <div className="eyebrow" style={{marginBottom:4}}>Système</div>
         <h1 className="page">Paramètres</h1>
-        <div style={{color:'var(--ink-500)', fontSize:13, marginTop:6}}>Configuration de l'agence et de l'équipe</div>
+        <div style={{color:'var(--ink-500)', fontSize:13, marginTop:6}}>Configuration de l&apos;agence et de l&apos;équipe</div>
       </div>
 
       {succes && !modal && <div style={{background:'rgba(22,163,74,0.07)', border:'1px solid rgba(22,163,74,0.25)', borderRadius:10, padding:'10px 16px', fontSize:13, color:'#15803d'}}>{succes}</div>}
@@ -432,7 +432,7 @@ export default function Parametres() {
             <div style={{display:'flex', flexDirection:'column', gap:18}}>
               <div>
                 <h2 className="page" style={{fontSize:18, marginBottom:4}}>Profil franchisé</h2>
-                <p style={{color:'var(--ink-500)', fontSize:13}}>Informations affichées sur les documents générés par l'application.</p>
+                <p style={{color:'var(--ink-500)', fontSize:13}}>Informations affichées sur les documents générés par l&apos;application.</p>
               </div>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, maxWidth:680}}>
                 <div>
@@ -517,7 +517,7 @@ export default function Parametres() {
               <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end'}}>
                 <div>
                   <h2 className="page" style={{fontSize:18, marginBottom:4}}>Équipe & agents</h2>
-                  <p style={{color:'var(--ink-500)', fontSize:13}}>Comptes agents, accès et documents. Les parts sont dans "Parts & royalties".</p>
+                  <p style={{color:'var(--ink-500)', fontSize:13}}>Comptes agents, accès et documents. Les parts sont dans &quot;Parts & royalties&quot;.</p>
                 </div>
                 <button className="btn btn-primary" onClick={ouvrirCreer}>+ Nouvel agent</button>
               </div>
@@ -617,7 +617,7 @@ export default function Parametres() {
             <div style={{display:'flex', flexDirection:'column', gap:18}}>
               <div>
                 <h2 className="page" style={{fontSize:18, marginBottom:4}}>Parts & royalties</h2>
-                <p style={{color:'var(--ink-500)', fontSize:13}}>Répartitions commission, frais et redevances par agent. Cliquez "Modifier" pour éditer.</p>
+                <p style={{color:'var(--ink-500)', fontSize:13}}>Répartitions commission, frais et redevances par agent. Cliquez &quot;Modifier&quot; pour éditer.</p>
               </div>
               {agentes.length === 0 ? (
                 <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:24}}>Aucun agent</p>
@@ -745,7 +745,7 @@ export default function Parametres() {
             <div style={{display:'flex', flexDirection:'column', gap:18}}>
               <div>
                 <h2 className="page" style={{fontSize:18, marginBottom:4}}>Intégrations</h2>
-                <p style={{color:'var(--ink-500)', fontSize:13}}>Services connectés à l'application.</p>
+                <p style={{color:'var(--ink-500)', fontSize:13}}>Services connectés à l&apos;application.</p>
               </div>
               <MesCalendriers profile={profile} onError={setErreur} onSucces={setSucces} onDefautChange={fetchProfile} />
             </div>
@@ -872,7 +872,7 @@ export default function Parametres() {
                 <div>
                   <label style={LS}>Email *</label>
                   <input className="input" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@exemple.com"/>
-                  <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Un email d'invitation sera envoyé à cette adresse</div>
+                  <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Un email d&apos;invitation sera envoyé à cette adresse</div>
                 </div>
               )}
               {modal === 'creer' && agencesCtx.length >= 2 && (
@@ -898,7 +898,7 @@ export default function Parametres() {
               <div>
                 <label style={LS}>Répartitions commission disponibles — agent %</label>
                 <input className="input" value={form.parts_agente_disponibles} onChange={e => setForm(f => ({ ...f, parts_agente_disponibles: e.target.value }))} placeholder="ex: 60 ou 50, 60"/>
-                <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Une valeur = pas de choix. Plusieurs séparées par virgule = l'agent choisit.</div>
+                <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Une valeur = pas de choix. Plusieurs séparées par virgule = l&apos;agent choisit.</div>
               </div>
               <div>
                 <label style={LS}>Répartition frais de consultation — agent / Société</label>
@@ -946,7 +946,7 @@ export default function Parametres() {
             <div style={{background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.3)', borderRadius:10, padding:'12px 16px', fontSize:13, color:'var(--ink-700)', marginBottom:14, lineHeight:1.5}}>
               Elle <strong>ne pourra plus se connecter</strong>. Ses chantiers, clients, dossiers,
               comptes-rendus et documents <strong>restent attribués et conservés</strong>.
-              C'est <strong>réversible</strong> : tu pourras la réactiver à tout moment.
+              C&apos;est <strong>réversible</strong> : tu pourras la réactiver à tout moment.
             </div>
             {erreur && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c', marginBottom:12}}>{erreur}</div>}
             <div style={{display:'flex', gap:8}}>

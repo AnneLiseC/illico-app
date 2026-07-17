@@ -641,7 +641,7 @@ function FicheClientInner({ params }) {
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>Adresse chantier</label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--ink-500)' }}>
               <input type="checkbox" checked={client.adresse_chantier_identique ?? true} onChange={e => set('adresse_chantier_identique', e.target.checked)} style={{ width: 14, height: 14 }}/>
-              Identique à l'adresse client
+              Identique à l&apos;adresse client
             </label>
           </div>
           {!(client.adresse_chantier_identique ?? true) ? (
@@ -673,7 +673,7 @@ function FicheClientInner({ params }) {
       {/* Apporteur d'affaires */}
       <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="eyebrow">Apporteur d'affaires</div>
+          <div className="eyebrow">Apporteur d&apos;affaires</div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
             <input type="checkbox" checked={client.apporteur_affaires || false} onChange={e => set('apporteur_affaires', e.target.checked)} style={{ width: 14, height: 14 }}/>
             Activer
@@ -682,7 +682,7 @@ function FicheClientInner({ params }) {
         {client.apporteur_affaires ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 8, borderTop: '1px solid var(--ink-100)' }}>
             <div>
-              <label style={labelStyle}>Nom de l'apporteur</label>
+              <label style={labelStyle}>Nom de l&apos;apporteur</label>
               <input {...inputProps} type="text" value={client.apporteur_nom || ''} onChange={e => set('apporteur_nom', e.target.value)}/>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -701,7 +701,7 @@ function FicheClientInner({ params }) {
             </div>
           </div>
         ) : (
-          <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Aucun apporteur d'affaires</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Aucun apporteur d&apos;affaires</div>
         )}
       </div>
 

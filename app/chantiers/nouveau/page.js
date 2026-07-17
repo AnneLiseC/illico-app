@@ -131,7 +131,7 @@ function NouveauChantierForm() {
               <div>
                 <h2 className="font-semibold text-amber-900">Client archivé</h2>
                 <p className="text-sm text-amber-700 mt-1">
-                  Ce client est archivé. Désarchivez-le d'abord pour créer un dossier.
+                  Ce client est archivé. Désarchivez-le d&apos;abord pour créer un dossier.
                 </p>
               </div>
             </div>
@@ -241,7 +241,7 @@ function NouveauChantierForm() {
                 />
                 {form.frais_statut === 'factures' && (
                   <p className="text-xs text-amber-600 mt-1">
-                    ⚠️ Le courtage ne démarrera qu'après règlement des frais de consultation
+                    ⚠️ Le courtage ne démarrera qu&apos;après règlement des frais de consultation
                   </p>
                 )}
               </div>

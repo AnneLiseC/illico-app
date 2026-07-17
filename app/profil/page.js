@@ -170,7 +170,7 @@ export default function Profil() {
           <div className="card" style={cardStyle}>
             <div className="eyebrow">Mon objectif annuel {new Date().getFullYear()}</div>
             <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>
-              Tu fixes ton objectif de CA généré pour l'année. Visible dans Finances.
+              Tu fixes ton objectif de CA généré pour l&apos;année. Visible dans Finances.
             </div>
             <div>
               <label style={LS}>Objectif de CA (€)</label>
@@ -193,7 +193,7 @@ export default function Profil() {
 
         {/* ── Rémunération (lecture seule — réglée par l'administrateur) ── */}
         <div className="card" style={cardStyle}>
-          <div className="eyebrow">Rémunération · réglée par l'administrateur</div>
+          <div className="eyebrow">Rémunération · réglée par l&apos;administrateur</div>
 
           {(() => {
             const frais = profile.frais_part_agente_defaut
@@ -261,7 +261,7 @@ export default function Profil() {
           {/* Kbis (admin-only : voir seulement) */}
           <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 14 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)', marginBottom: 8 }}>
-              Kbis <span style={{ fontWeight: 400, color: 'var(--ink-400)', fontSize: 12 }}>· géré par l'administrateur</span>
+              Kbis <span style={{ fontWeight: 400, color: 'var(--ink-400)', fontSize: 12 }}>· géré par l&apos;administrateur</span>
             </div>
             {profile.kbis_url ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

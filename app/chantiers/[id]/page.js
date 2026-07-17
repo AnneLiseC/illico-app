@@ -4731,7 +4731,7 @@ export default function FicheChantier({ params }) {
           <div className="card" style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap'}}>
             <div>
               <h2 className="page" style={{fontSize:15}}>Comparateur de devis</h2>
-              <div className="eyebrow" style={{marginTop:4}}>Simule des scénarios : inclusion des devis, montants ajustés, taux d'honoraires.</div>
+              <div className="eyebrow" style={{marginTop:4}}>Simule des scénarios : inclusion des devis, montants ajustés, taux d&apos;honoraires.</div>
             </div>
             <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
               {basesHistorique.length > 0 && (
@@ -4748,7 +4748,7 @@ export default function FicheChantier({ params }) {
           {loadingComparateur ? (
             <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Chargement…</div>
           ) : devis.length === 0 ? (
-            <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucun devis à comparer — ajoute des devis dans l'onglet « Devis & artisans ».</div>
+            <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucun devis à comparer — ajoute des devis dans l&apos;onglet « Devis & artisans ».</div>
           ) : simulations.length === 0 ? (
             <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucune simulation — clique « Nouvelle simulation ».</div>
           ) : (
@@ -5348,7 +5348,7 @@ export default function FicheChantier({ params }) {
               <div>
                 <h2 className="page" style={{fontSize:15}}>Comptes-rendus de visite</h2>
                 <div className="eyebrow" style={{marginTop:4}}>
-                  {comptesRendus.length} CR · les CR publiés sont visibles dans l'espace client
+                  {comptesRendus.length} CR · les CR publiés sont visibles dans l&apos;espace client
                 </div>
               </div>
               <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
@@ -5356,7 +5356,7 @@ export default function FicheChantier({ params }) {
                   <PlusIcon /> CR manuel
                 </button>
                 <button onClick={() => { setCrModal(true); setCrEtape(1) }} className="btn btn-primary" style={{fontSize:12.5}}>
-                  ✨ Générer avec l'IA
+                  ✨ Générer avec l&apos;IA
                 </button>
               </div>
             </div>
@@ -5451,11 +5451,11 @@ export default function FicheChantier({ params }) {
                 <div style={{borderTop:'1px solid var(--ink-200)', padding:'14px 22px'}}>
                   <h3 className="page" style={{fontSize:13.5}}>Documents joints marqués compte-rendu</h3>
                   <div className="eyebrow" style={{marginTop:4, marginBottom:10}}>
-                    Fichiers uploadés dans l'onglet Documents et tagués CR ({docsCR.length})
+                    Fichiers uploadés dans l&apos;onglet Documents et tagués CR ({docsCR.length})
                   </div>
                   {docsCR.length === 0 ? (
                     <div style={{fontSize:12.5, color:'var(--ink-400)'}}>
-                      Aucun document marqué compte-rendu — taguez un fichier depuis l'onglet Documents (bouton « CR »).
+                      Aucun document marqué compte-rendu — taguez un fichier depuis l&apos;onglet Documents (bouton « CR »).
                     </div>
                   ) : docsCR.map(doc => (
                     <div key={doc.id} className="row-hover" style={{
@@ -5509,7 +5509,7 @@ export default function FicheChantier({ params }) {
             <div className="card" style={{padding:18}}>
               <div className="eyebrow" style={{marginBottom:10}}>Documents joignables au CR</div>
               {documents.length === 0 ? (
-                <div style={{fontSize:12, color:'var(--ink-400)'}}>Aucun document — ajoute des fichiers dans l'onglet Documents.</div>
+                <div style={{fontSize:12, color:'var(--ink-400)'}}>Aucun document — ajoute des fichiers dans l&apos;onglet Documents.</div>
               ) : (
                 <div style={{display:'flex', flexDirection:'column', gap:8, fontSize:12.5, color:'var(--ink-700)'}}>
                   {documents.slice(0, 6).map(doc => (
@@ -5716,7 +5716,7 @@ export default function FicheChantier({ params }) {
                 <div style={{display:'flex', flexDirection:'column', gap:14}}>
                   <div>
                     <div style={{fontSize:13.5, fontWeight:600, color:'var(--ink-700)'}}>Saisie des notes brutes</div>
-                    <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:2}}>Combinez plusieurs sources — l'IA synthétise tout</div>
+                    <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:2}}>Combinez plusieurs sources — l&apos;IA synthétise tout</div>
                   </div>
 
                   <ModalField label="📝 Texte (copier-coller depuis OneNote, Outlook…)">
@@ -5976,7 +5976,7 @@ export default function FicheChantier({ params }) {
         <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--ink-200)', gap:8, flexWrap:'wrap'}}>
           <div>
             <h2 className="page" style={{fontSize:15}}>Conversation client</h2>
-            <div className="eyebrow" style={{marginTop:4}}>Visible dans l'espace client AMO · {messages.length} message{messages.length > 1 ? 's' : ''}</div>
+            <div className="eyebrow" style={{marginTop:4}}>Visible dans l&apos;espace client AMO · {messages.length} message{messages.length > 1 ? 's' : ''}</div>
           </div>
           <div style={{display:'flex', gap:8, alignItems:'center'}}>
             {nbMsgNonLus > 0 && (
