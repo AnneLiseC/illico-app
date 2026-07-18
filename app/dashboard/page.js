@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { computeCAMensuel } from '../lib/ca-reel'
 import { KpiCard, Progress } from '../components/shared'
-import { calcStatut } from '../lib/dossiers'
+import { calcStatut, deadlineDevisPertinente } from '../lib/dossiers'
 import ModaleChoixClient from '../components/ModaleChoixClient'
 
 /* ── Icônes KPI ── */
@@ -257,12 +257,15 @@ export default function Dashboard() {
   const dossiersActifs = dossiersScoped.filter(d => d.archive !== true)
 
   const enCours    = dossiersActifs.filter(d => calcStatut(d) === 'en_cours_chantier')
+  // Écart en jours pleins (minuit→minuit). « À relancer » = phase devis
+  // uniquement : un chantier déjà signé/en cours n'a plus de deadline devis.
+  const jourTS = (v) => { const x = new Date(v); x.setHours(0, 0, 0, 0); return x.getTime() }
   const aRelancer  = dossiersActifs.filter(d => {
-    if (!d.date_limite_devis) return false
-    const diff = (new Date(d.date_limite_devis) - today) / 86400000
-    return diff <= 7 && diff >= -2 && !['termine','annule'].includes(calcStatut(d))
+    if (!d.date_limite_devis || !deadlineDevisPertinente(calcStatut(d))) return false
+    const diff = (jourTS(d.date_limite_devis) - jourTS(today)) / 86400000
+    return diff <= 7 && diff >= -2
   }).sort((a, b) => new Date(a.date_limite_devis) - new Date(b.date_limite_devis))
-  const enRetardCount = aRelancer.filter(d => (new Date(d.date_limite_devis) - today) / 86400000 < 0).length
+  const enRetardCount = aRelancer.filter(d => (jourTS(d.date_limite_devis) - jourTS(today)) / 86400000 < 0).length
 
   const caParMois      = computeCAMensuel(dossiersScoped, annee)
   const caMoisReel     = caParMois[moisCourant] || 0
@@ -364,7 +367,7 @@ export default function Dashboard() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--ink-200)' }}>
                 {aRelancer.slice(0, 5).map(d => {
-                  const diff      = Math.round((new Date(d.date_limite_devis) - today) / 86400000)
+                  const diff      = Math.round((jourTS(d.date_limite_devis) - jourTS(today)) / 86400000)
                   const enRetard  = diff < 0
                   const nomClient = d.client ? `${d.client.prenom || ''} ${d.client.nom || ''}`.trim() : '—'
                   return (
