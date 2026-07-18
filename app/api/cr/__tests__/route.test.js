@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSystemPrompt, buildUserPrompt, imageMediaType, parseCrJson } from '../route.js'
+import { buildSystemPrompt, buildUserPrompt, imageMediaType, parseCrJson, isHeic } from '../route.js'
 
 describe('buildSystemPrompt', () => {
   // Garde-fou du bug corrigé : `reglesSpecifiques` non défini faisait lever une
@@ -39,10 +39,23 @@ describe('imageMediaType', () => {
     expect(imageMediaType('scan.webp')).toBe('image/webp')
     expect(imageMediaType('anim.gif')).toBe('image/gif')
   })
-  it('retourne null pour un format non supporté (HEIC) ou vide', () => {
+  it('retourne null pour un format non directement supporté (HEIC → sera converti) ou vide', () => {
     expect(imageMediaType('IMG_1234.HEIC')).toBeNull()
     expect(imageMediaType('')).toBeNull()
     expect(imageMediaType(null)).toBeNull()
+  })
+})
+
+describe('isHeic', () => {
+  it('détecte les photos iPhone (HEIC/HEIF) par extension ou mime', () => {
+    expect(isHeic('IMG_1234.HEIC')).toBe(true)
+    expect(isHeic('photo.heif')).toBe(true)
+    expect(isHeic('image/heic')).toBe(true)
+  })
+  it('faux pour les formats standards', () => {
+    expect(isHeic('photo.jpg')).toBe(false)
+    expect(isHeic('image/png')).toBe(false)
+    expect(isHeic('')).toBe(false)
   })
 })
 

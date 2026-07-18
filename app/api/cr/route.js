@@ -3,6 +3,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import heicConvert from 'heic-convert'
 import { requireRole } from '../../lib/api-auth'
 import { formatNomClient } from '../../lib/clients'
 
@@ -170,6 +171,27 @@ export function imageMediaType(nameOrMime) {
   return null
 }
 
+// Détecte le HEIC/HEIF (format par défaut des photos iPhone). Claude ne le lit
+// pas → on le CONVERTIT en JPEG côté serveur (jamais le rejeter : beaucoup
+// d'utilisateurs sont sur iPhone).
+export function isHeic(nameOrMime) {
+  const s = (nameOrMime || '').toLowerCase()
+  return s.includes('heic') || s.includes('heif')
+}
+
+// Prépare une image pour l'API Claude : convertit le HEIC en JPEG, sinon garde
+// le type d'origine s'il est supporté. Retourne { media_type, data(base64) } ou
+// null si le format est réellement inexploitable.
+export async function bufferToClaudeImage(buffer, nameOrMime) {
+  if (isHeic(nameOrMime)) {
+    const jpeg = await heicConvert({ buffer, format: 'JPEG', quality: 0.85 })
+    return { media_type: 'image/jpeg', data: Buffer.from(jpeg).toString('base64') }
+  }
+  const mime = imageMediaType(nameOrMime)
+  if (!mime) return null
+  return { media_type: mime, data: buffer.toString('base64') }
+}
+
 // Parse la réponse IA en JSON, avec réparation : retire les fences ```…```, puis
 // si le parse échoue, tente d'extraire du premier '{' au dernier '}' (cas d'un
 // préambule ou d'un suffixe parasite). Retourne null si irrécupérable.
@@ -300,29 +322,27 @@ export async function POST(request) {
         const { data: fileData } = await getSupabaseAdmin().storage.from('documents').download(doc.path)
         if (!fileData) { console.error('CR: download document vide', doc.path); continue }
         const buf = Buffer.from(await fileData.arrayBuffer())
-        const b64 = buf.toString('base64')
         if (doc.type_mime?.includes('pdf')) {
-          userContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } })
+          userContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buf.toString('base64') } })
         } else {
-          const mime = imageMediaType(doc.type_mime)
-          if (mime) userContent.push({ type: 'image', source: { type: 'base64', media_type: mime, data: b64 } })
+          const img = await bufferToClaudeImage(buf, doc.type_mime || doc.path)
+          if (img) userContent.push({ type: 'image', source: { type: 'base64', ...img } })
           else console.error('CR: type de document non supporté (ignoré) :', doc.type_mime, doc.path)
         }
-      } catch (e) { console.error('CR: échec download document', doc.path, e.message) }
+      } catch (e) { console.error('CR: échec traitement document', doc.path, e.message) }
     }
 
     // Photos du chantier sélectionnées (paths Storage, bucket `photos`).
     // media_type déduit de l'extension.
     for (const path of (photosPaths || [])) {
       try {
-        const mime = imageMediaType(path)
-        if (!mime) { console.error('CR: format photo non supporté (ignoré, ex. HEIC) :', path); continue }
         const { data: fileData } = await getSupabaseAdmin().storage.from('photos').download(path)
         if (!fileData) { console.error('CR: download photo vide', path); continue }
         const buf = Buffer.from(await fileData.arrayBuffer())
-        const b64 = buf.toString('base64')
-        userContent.push({ type: 'image', source: { type: 'base64', media_type: mime, data: b64 } })
-      } catch (e) { console.error('CR: échec download photo', path, e.message) }
+        const img = await bufferToClaudeImage(buf, path)   // HEIC (iPhone) converti en JPEG
+        if (!img) { console.error('CR: format photo non supporté (ignoré) :', path); continue }
+        userContent.push({ type: 'image', source: { type: 'base64', ...img } })
+      } catch (e) { console.error('CR: échec traitement photo', path, e.message) }
     }
 
     // Texte
