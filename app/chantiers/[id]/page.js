@@ -11,6 +11,7 @@ import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFin
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
 import ModalShell from '../../components/ModalShell'
+import ImageAnnotator from '../../components/ImageAnnotator'
 import { compressImageToBlob, heicToJpegFile } from '../../lib/images'
 import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
 import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../../lib/cibles'
@@ -749,6 +750,7 @@ export default function FicheChantier({ params }) {
     return next
   })
   const [photos, setPhotos] = useState([])
+  const [annot, setAnnot] = useState(null)   // { src, onSave, titre } — éditeur d'annotation ouvert
   const [zippingPhotos, setZippingPhotos] = useState(false)
   const [categorie, setCategorie] = useState('all')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
@@ -964,6 +966,18 @@ export default function FicheChantier({ params }) {
     const autres = echecs - tropLourd
     if (autres > 0) details.push(`${autres} en échec`)
     setErreur(`${resultats.length - echecs} ajouté(s) · ${details.join(' · ')} — réessayez.`)
+  }
+
+  // Enregistre une photo annotée comme NOUVELLE image de la catégorie (l'originale
+  // est conservée). Alimenté par l'éditeur d'annotation depuis la galerie.
+  const enregistrerPhotoAnnotee = async (blob, cat) => {
+    const chemin = `chantiers/${id}/${cat}/${Date.now()}_annot_${Math.random().toString(36).slice(2)}.jpg`
+    const { error: upErr } = await supabase.storage.from('photos').upload(chemin, blob, { contentType: 'image/jpeg' })
+    if (upErr) { setErreur('Annotation : ' + upErr.message); return }
+    const { error: insErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie: cat, uploaded_by: profile?.id, type_media: 'photo' })
+    if (insErr) { setErreur('Annotation : ' + insErr.message); return }
+    await chargerPhotos()
+    setSucces('Photo annotée ajoutée ✓')
   }
 
   const supprimerPhoto = async (photoId, chemin) => {
@@ -4522,8 +4536,17 @@ export default function FicheChantier({ params }) {
                       backdropFilter:'blur(4px)',
                     }}>{photo.categorie}</span>
                     <div data-actions style={{
-                      position:'absolute', bottom:8, right:8, opacity:0, transition:'opacity 150ms',
+                      position:'absolute', bottom:8, right:8, opacity:0, transition:'opacity 150ms', display:'flex', gap:6,
                     }}>
+                      {photo.type_media !== 'video' && (
+                        <button onClick={e => { e.stopPropagation(); setAnnot({ src: photo.url_signee, titre: `Annoter · ${photo.categorie}`, onSave: async (blob) => { await enregistrerPhotoAnnotee(blob, photo.categorie); setAnnot(null) } }) }}
+                          style={{
+                            background:'rgba(37,99,235,0.95)', color:'#fff', border:'none', borderRadius:6,
+                            padding:'4px 10px', fontSize:11, fontWeight:700, cursor:'pointer',
+                          }}>
+                          ✏️ Annoter
+                        </button>
+                      )}
                       <button onClick={e => { e.stopPropagation(); supprimerPhoto(photo.id, photo.url) }}
                         style={{
                           background:'rgba(220,38,38,0.95)', color:'#fff', border:'none', borderRadius:6,
@@ -5615,6 +5638,10 @@ export default function FicheChantier({ params }) {
       )}
 
       {/* ── MODAL CR AVEC IA (wizard 3 étapes) ── */}
+      {annot && (
+        <ImageAnnotator src={annot.src} titre={annot.titre} onClose={() => setAnnot(null)} onSave={annot.onSave} />
+      )}
+
       {crModal && (() => {
         const TYPES_CR = [
           { value: 'r1',        label: 'R1 — Visite technique',  emoji: '🔍' },
@@ -5832,6 +5859,21 @@ export default function FicheChantier({ params }) {
                               background:'#dc2626', color:'#fff', border:'none', cursor:'pointer',
                               fontSize:10, display:'grid', placeItems:'center',
                             }}>✕</button>
+                          <button title="Annoter" onClick={() => setAnnot({ src: img.url_signee, titre: 'Annoter la photo', onSave: async (blob) => {
+                              const path = `chantiers/${id}/cr/${Date.now()}_annot_${Math.random().toString(36).slice(2)}.jpg`
+                              const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' })
+                              if (error) { setErreur('Annotation : ' + error.message); setAnnot(null); return }
+                              const { data: signed } = await supabase.storage.from('photos').createSignedUrl(path, 3600)
+                              try { await supabase.storage.from('photos').remove([img.path]) } catch {}
+                              setCrImages(imgs => imgs.map((im, j) => j === i ? { path, url_signee: signed?.signedUrl || '' } : im))
+                              setAnnot(null)
+                            } })}
+                            style={{
+                              position:'absolute', bottom:-6, right:-6,
+                              width:20, height:20, borderRadius:'50%',
+                              background:'#2563eb', color:'#fff', border:'none', cursor:'pointer',
+                              fontSize:10, display:'grid', placeItems:'center',
+                            }}>✏️</button>
                         </div>
                       ))}
                       <label style={{
