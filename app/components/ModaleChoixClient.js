@@ -37,7 +37,7 @@ export default function ModaleChoixClient({ open, onClose }) {
 
   return (
     <div style={{
-      position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:9999,
+      position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:200,
       display:'flex', alignItems:'center', justifyContent:'center', padding:20,
     }}>
       <div style={{

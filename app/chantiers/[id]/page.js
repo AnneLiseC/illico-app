@@ -75,7 +75,7 @@ function Fact({ label, value, highlight, mono }) {
 // Format euro court partagé (helpers module-level)
 const fmtEurShort = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
 
-function ModalShell({ title, subtitle, onClose, width = 580, children, footer }) {
+function ModalShell({ title, subtitle, onClose, width = 580, maxH = '90vh', children, footer }) {
   // Ferme avec Échap
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose && onClose() }
@@ -88,7 +88,7 @@ function ModalShell({ title, subtitle, onClose, width = 580, children, footer })
       display:'grid', placeItems:'center', padding:20, overflow:'auto',
     }}>
       <div className="card" style={{
-        padding:0, maxWidth:width, width:'100%', maxHeight:'90vh',
+        padding:0, maxWidth:width, width:'100%', maxHeight:maxH,
         overflow:'hidden', display:'flex', flexDirection:'column',
       }}>
         <div style={{
@@ -5666,7 +5666,8 @@ export default function FicheChantier({ params }) {
               setCrPhotosUp(false)
               setCrModal(false)
             }}
-            width={720}
+            width="min(1400px, 96vw)"
+            maxH="94vh"
           >
             <div style={{padding:24, display:'flex', flexDirection:'column', gap:16}}>
 
@@ -5762,6 +5763,11 @@ export default function FicheChantier({ params }) {
                     <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:2}}>Combinez plusieurs sources — l&apos;IA synthétise tout</div>
                   </div>
 
+                  {/* 2 colonnes sur large écran (auto-fit → 1 colonne sur mobile) :
+                      gauche = sources texte ; droite = photos & documents. */}
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(340px, 1fr))', gap:16, alignItems:'start'}}>
+                  <div style={{display:'flex', flexDirection:'column', gap:14, minWidth:0}}>
+
                   <ModalField label="📝 Texte (copier-coller depuis OneNote, Outlook…)">
                     <textarea value={crNotes} onChange={e => setCrNotes(e.target.value)}
                       rows={5} placeholder="Coller vos notes brutes ici — bullet points, phrases incomplètes, tout est ok…"
@@ -5820,6 +5826,9 @@ export default function FicheChantier({ params }) {
                         className="input" style={{marginTop:8, minHeight:90, padding:10, fontSize:12.5, lineHeight:1.5, resize:'vertical'}} />
                     )}
                   </ModalField>
+
+                  </div>
+                  <div style={{display:'flex', flexDirection:'column', gap:14, minWidth:0}}>
 
                   <ModalField label="📷 Photos (cahier, capture d'écran, document)">
                     <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
@@ -5952,6 +5961,9 @@ export default function FicheChantier({ params }) {
                       </div>
                     </ModalField>
                   )}
+
+                  </div>
+                  </div>
 
                   <div style={{display:'flex', gap:10, paddingTop:6}}>
                     <button onClick={() => setCrEtape(1)} className="btn btn-ghost" style={{flex:1, justifyContent:'center', height:42}}>

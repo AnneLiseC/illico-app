@@ -793,7 +793,7 @@ export default function Parametres() {
 
       {/* ── Modal ajouter une agence ── */}
       {modal === 'creer_agence' && (
-        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
+        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:200, display:'grid', placeItems:'center', padding:20}}>
           <div className="card" style={{padding:0, maxWidth:520, width:'100%', maxHeight:'90vh', overflow:'auto'}}>
             <div style={{padding:'18px 22px', borderBottom:'1px solid var(--ink-200)'}}>
               <h2 className="page" style={{fontSize:16}}>Ajouter une agence</h2>
@@ -825,7 +825,7 @@ export default function Parametres() {
 
       {/* ── Modal modifier une agence ── */}
       {modal === 'editer_agence' && (
-        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
+        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:200, display:'grid', placeItems:'center', padding:20}}>
           <div className="card" style={{padding:0, maxWidth:520, width:'100%', maxHeight:'90vh', overflow:'auto'}}>
             <div style={{padding:'18px 22px', borderBottom:'1px solid var(--ink-200)'}}>
               <h2 className="page" style={{fontSize:16}}>Modifier l&apos;agence</h2>
@@ -857,7 +857,7 @@ export default function Parametres() {
 
       {/* ── Modal créer / modifier ── */}
       {(modal === 'creer' || modal === 'modifier') && (
-        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
+        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:200, display:'grid', placeItems:'center', padding:20}}>
           <div className="card" style={{padding:0, maxWidth:520, width:'100%', maxHeight:'90vh', overflow:'auto'}}>
             <div style={{padding:'18px 22px', borderBottom:'1px solid var(--ink-200)'}}>
               <h2 className="page" style={{fontSize:16}}>{modal === 'creer' ? 'Nouvel agent' : `Modifier — ${agenteEditee?.prenom} ${agenteEditee?.nom}`}</h2>
@@ -936,8 +936,8 @@ export default function Parametres() {
 
       {/* ── Modal suppression ── */}
       {modal === 'supprimer' && agenteASupprimer && (
-        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
-          <div className="card" style={{padding:24, maxWidth:440, width:'100%'}}>
+        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:200, display:'grid', placeItems:'center', padding:20}}>
+          <div className="card" style={{padding:24, maxWidth:440, width:'100%', maxHeight:'90vh', overflow:'auto'}}>
             <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:16}}>
               <div style={{width:40, height:40, borderRadius:99, background:'rgba(239,68,68,0.1)', color:'#DC2626', display:'grid', placeItems:'center', fontSize:18, flexShrink:0}}>⚠</div>
               <div>
