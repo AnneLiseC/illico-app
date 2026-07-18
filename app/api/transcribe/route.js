@@ -78,6 +78,11 @@ export async function POST(request) {
       },
       body: JSON.stringify({ url: signed.signedUrl }),
     })
+    // Deepgram a fini de lire l'audio (succès OU échec) → purge immédiate du
+    // fichier en Storage. Aucun audio ne s'accumule : la seule donnée durable est
+    // le transcript (sauvegardé dans notes_brutes du CR). Pas besoin de cron.
+    try { await getSupabaseAdmin().storage.from('documents').remove([audioPath]) }
+    catch (e) { console.error('Purge audio échouée:', audioPath, e.message) }
     if (!dgRes.ok) {
       const errTxt = await dgRes.text()
       console.error('Deepgram error:', dgRes.status, errTxt)
