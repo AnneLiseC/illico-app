@@ -111,8 +111,9 @@ FORMATS :
 - Les autres sections sont rédigées sous forme de listes à puces.`,
 }
 
-function buildSystemPrompt(type, agenceNom) {
+export function buildSystemPrompt(type, agenceNom) {
   const typLabel = TYPES_VISITE[type] || 'Visite de chantier'
+  const reglesSpecifiques = REGLES_SPECIFIQUES[type] || ''
   const sections = (SECTIONS_PAR_TYPE[type] || SECTIONS_PAR_TYPE.suivi)
     .map((s, i) => `${i + 1}. ${s}`)
     .join('\n')
@@ -151,13 +152,39 @@ RÉPONSE : JSON strict uniquement, aucun texte avant ou après :
     {
       "numero": 1,
       "titre": "Titre de section",
-      "contenu": "Texte rédigé.
+      "contenu": "Texte rédigé."
     }
   ]
 }`
 }
 
-function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants, notesBrutes }) {
+// Types image supportés par l'API Claude (vision) : jpeg, png, gif, webp.
+// HEIC/HEIF (photos iPhone par défaut) NON supportés → retourne null → on ignore
+// proprement plutôt que d'envoyer des octets HEIC étiquetés jpeg (rejet API).
+export function imageMediaType(nameOrMime) {
+  const s = (nameOrMime || '').toLowerCase()
+  if (s.includes('png')) return 'image/png'
+  if (s.includes('webp')) return 'image/webp'
+  if (s.includes('gif')) return 'image/gif'
+  if (s.includes('jpeg') || s.includes('jpg')) return 'image/jpeg'
+  return null
+}
+
+// Parse la réponse IA en JSON, avec réparation : retire les fences ```…```, puis
+// si le parse échoue, tente d'extraire du premier '{' au dernier '}' (cas d'un
+// préambule ou d'un suffixe parasite). Retourne null si irrécupérable.
+export function parseCrJson(rawText) {
+  const cleaned = (rawText || '').replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+  try { return JSON.parse(cleaned) } catch { /* tentative de réparation ci-dessous */ }
+  const start = cleaned.indexOf('{')
+  const end = cleaned.lastIndexOf('}')
+  if (start !== -1 && end > start) {
+    try { return JSON.parse(cleaned.slice(start, end + 1)) } catch { /* irrécupérable */ }
+  }
+  return null
+}
+
+export function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants, notesBrutes }) {
   const client = dossier.client
   const nomClient = client ? formatNomClient(client, { civilite: true, withRepresentant: true }) : 'Client inconnu'
 
@@ -271,29 +298,31 @@ export async function POST(request) {
     for (const doc of (docsPaths || [])) {
       try {
         const { data: fileData } = await getSupabaseAdmin().storage.from('documents').download(doc.path)
-        if (!fileData) continue
+        if (!fileData) { console.error('CR: download document vide', doc.path); continue }
         const buf = Buffer.from(await fileData.arrayBuffer())
         const b64 = buf.toString('base64')
         if (doc.type_mime?.includes('pdf')) {
           userContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } })
-        } else if (doc.type_mime?.startsWith('image')) {
-          const mime = doc.type_mime.includes('png') ? 'image/png' : 'image/jpeg'
-          userContent.push({ type: 'image', source: { type: 'base64', media_type: mime, data: b64 } })
+        } else {
+          const mime = imageMediaType(doc.type_mime)
+          if (mime) userContent.push({ type: 'image', source: { type: 'base64', media_type: mime, data: b64 } })
+          else console.error('CR: type de document non supporté (ignoré) :', doc.type_mime, doc.path)
         }
-      } catch {}
+      } catch (e) { console.error('CR: échec download document', doc.path, e.message) }
     }
 
     // Photos du chantier sélectionnées (paths Storage, bucket `photos`).
     // media_type déduit de l'extension.
     for (const path of (photosPaths || [])) {
       try {
+        const mime = imageMediaType(path)
+        if (!mime) { console.error('CR: format photo non supporté (ignoré, ex. HEIC) :', path); continue }
         const { data: fileData } = await getSupabaseAdmin().storage.from('photos').download(path)
-        if (!fileData) continue
+        if (!fileData) { console.error('CR: download photo vide', path); continue }
         const buf = Buffer.from(await fileData.arrayBuffer())
         const b64 = buf.toString('base64')
-        const mime = /\.png$/i.test(path) ? 'image/png' : 'image/jpeg'
         userContent.push({ type: 'image', source: { type: 'base64', media_type: mime, data: b64 } })
-      } catch {}
+      } catch (e) { console.error('CR: échec download photo', path, e.message) }
     }
 
     // Texte
@@ -315,7 +344,7 @@ export async function POST(request) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 4000,
+        max_tokens: 8000,
         temperature: 0.3,
         system: systemPrompt,
         messages: [{ role: 'user', content: userContent }],
@@ -330,11 +359,8 @@ export async function POST(request) {
     const claudeData = await claudeRes.json()
     const rawText = claudeData.content?.[0]?.text || ''
 
-    let crJSON
-    try {
-      const cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-      crJSON = JSON.parse(cleaned)
-    } catch {
+    const crJSON = parseCrJson(rawText)
+    if (!crJSON) {
       return NextResponse.json({ error: 'Réponse IA invalide', raw: rawText }, { status: 500 })
     }
 
