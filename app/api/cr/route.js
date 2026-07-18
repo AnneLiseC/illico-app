@@ -3,6 +3,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import heicConvert from 'heic-convert'
 import { requireRole } from '../../lib/api-auth'
 import { formatNomClient } from '../../lib/clients'
 
@@ -111,8 +112,9 @@ FORMATS :
 - Les autres sections sont rédigées sous forme de listes à puces.`,
 }
 
-function buildSystemPrompt(type, agenceNom) {
+export function buildSystemPrompt(type, agenceNom) {
   const typLabel = TYPES_VISITE[type] || 'Visite de chantier'
+  const reglesSpecifiques = REGLES_SPECIFIQUES[type] || ''
   const sections = (SECTIONS_PAR_TYPE[type] || SECTIONS_PAR_TYPE.suivi)
     .map((s, i) => `${i + 1}. ${s}`)
     .join('\n')
@@ -151,13 +153,60 @@ RÉPONSE : JSON strict uniquement, aucun texte avant ou après :
     {
       "numero": 1,
       "titre": "Titre de section",
-      "contenu": "Texte rédigé.
+      "contenu": "Texte rédigé."
     }
   ]
 }`
 }
 
-function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants, notesBrutes }) {
+// Types image supportés par l'API Claude (vision) : jpeg, png, gif, webp.
+// HEIC/HEIF (photos iPhone par défaut) NON supportés → retourne null → on ignore
+// proprement plutôt que d'envoyer des octets HEIC étiquetés jpeg (rejet API).
+export function imageMediaType(nameOrMime) {
+  const s = (nameOrMime || '').toLowerCase()
+  if (s.includes('png')) return 'image/png'
+  if (s.includes('webp')) return 'image/webp'
+  if (s.includes('gif')) return 'image/gif'
+  if (s.includes('jpeg') || s.includes('jpg')) return 'image/jpeg'
+  return null
+}
+
+// Détecte le HEIC/HEIF (format par défaut des photos iPhone). Claude ne le lit
+// pas → on le CONVERTIT en JPEG côté serveur (jamais le rejeter : beaucoup
+// d'utilisateurs sont sur iPhone).
+export function isHeic(nameOrMime) {
+  const s = (nameOrMime || '').toLowerCase()
+  return s.includes('heic') || s.includes('heif')
+}
+
+// Prépare une image pour l'API Claude : convertit le HEIC en JPEG, sinon garde
+// le type d'origine s'il est supporté. Retourne { media_type, data(base64) } ou
+// null si le format est réellement inexploitable.
+export async function bufferToClaudeImage(buffer, nameOrMime) {
+  if (isHeic(nameOrMime)) {
+    const jpeg = await heicConvert({ buffer, format: 'JPEG', quality: 0.85 })
+    return { media_type: 'image/jpeg', data: Buffer.from(jpeg).toString('base64') }
+  }
+  const mime = imageMediaType(nameOrMime)
+  if (!mime) return null
+  return { media_type: mime, data: buffer.toString('base64') }
+}
+
+// Parse la réponse IA en JSON, avec réparation : retire les fences ```…```, puis
+// si le parse échoue, tente d'extraire du premier '{' au dernier '}' (cas d'un
+// préambule ou d'un suffixe parasite). Retourne null si irrécupérable.
+export function parseCrJson(rawText) {
+  const cleaned = (rawText || '').replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+  try { return JSON.parse(cleaned) } catch { /* tentative de réparation ci-dessous */ }
+  const start = cleaned.indexOf('{')
+  const end = cleaned.lastIndexOf('}')
+  if (start !== -1 && end > start) {
+    try { return JSON.parse(cleaned.slice(start, end + 1)) } catch { /* irrécupérable */ }
+  }
+  return null
+}
+
+export function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, intervenants, notesBrutes }) {
   const client = dossier.client
   const nomClient = client ? formatNomClient(client, { civilite: true, withRepresentant: true }) : 'Client inconnu'
 
@@ -271,16 +320,16 @@ export async function POST(request) {
     for (const doc of (docsPaths || [])) {
       try {
         const { data: fileData } = await getSupabaseAdmin().storage.from('documents').download(doc.path)
-        if (!fileData) continue
+        if (!fileData) { console.error('CR: download document vide', doc.path); continue }
         const buf = Buffer.from(await fileData.arrayBuffer())
-        const b64 = buf.toString('base64')
         if (doc.type_mime?.includes('pdf')) {
-          userContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } })
-        } else if (doc.type_mime?.startsWith('image')) {
-          const mime = doc.type_mime.includes('png') ? 'image/png' : 'image/jpeg'
-          userContent.push({ type: 'image', source: { type: 'base64', media_type: mime, data: b64 } })
+          userContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buf.toString('base64') } })
+        } else {
+          const img = await bufferToClaudeImage(buf, doc.type_mime || doc.path)
+          if (img) userContent.push({ type: 'image', source: { type: 'base64', ...img } })
+          else console.error('CR: type de document non supporté (ignoré) :', doc.type_mime, doc.path)
         }
-      } catch {}
+      } catch (e) { console.error('CR: échec traitement document', doc.path, e.message) }
     }
 
     // Photos du chantier sélectionnées (paths Storage, bucket `photos`).
@@ -288,12 +337,12 @@ export async function POST(request) {
     for (const path of (photosPaths || [])) {
       try {
         const { data: fileData } = await getSupabaseAdmin().storage.from('photos').download(path)
-        if (!fileData) continue
+        if (!fileData) { console.error('CR: download photo vide', path); continue }
         const buf = Buffer.from(await fileData.arrayBuffer())
-        const b64 = buf.toString('base64')
-        const mime = /\.png$/i.test(path) ? 'image/png' : 'image/jpeg'
-        userContent.push({ type: 'image', source: { type: 'base64', media_type: mime, data: b64 } })
-      } catch {}
+        const img = await bufferToClaudeImage(buf, path)   // HEIC (iPhone) converti en JPEG
+        if (!img) { console.error('CR: format photo non supporté (ignoré) :', path); continue }
+        userContent.push({ type: 'image', source: { type: 'base64', ...img } })
+      } catch (e) { console.error('CR: échec traitement photo', path, e.message) }
     }
 
     // Texte
@@ -315,7 +364,7 @@ export async function POST(request) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 4000,
+        max_tokens: 8000,
         temperature: 0.3,
         system: systemPrompt,
         messages: [{ role: 'user', content: userContent }],
@@ -330,11 +379,8 @@ export async function POST(request) {
     const claudeData = await claudeRes.json()
     const rawText = claudeData.content?.[0]?.text || ''
 
-    let crJSON
-    try {
-      const cleaned = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-      crJSON = JSON.parse(cleaned)
-    } catch {
+    const crJSON = parseCrJson(rawText)
+    if (!crJSON) {
       return NextResponse.json({ error: 'Réponse IA invalide', raw: rawText }, { status: 500 })
     }
 
