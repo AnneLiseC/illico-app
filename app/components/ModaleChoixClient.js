@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import { formatNomClient } from '../lib/clients'
 import { useAuth } from '../lib/auth-context'
+import ModalShell from './ModalShell'
 
 export default function ModaleChoixClient({ open, onClose }) {
   const router = useRouter()
@@ -36,68 +37,58 @@ export default function ModaleChoixClient({ open, onClose }) {
   const creerClient = () => { onClose(); router.push('/clients/nouveau') }
 
   return (
-    <div style={{
-      position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:200,
-      display:'flex', alignItems:'center', justifyContent:'center', padding:20,
-    }}>
-      <div style={{
-        background:'#fff', borderRadius:14, width:'100%', maxWidth:480,
-        maxHeight:'85vh', display:'flex', flexDirection:'column', overflow:'hidden',
-      }}>
-        <div style={{padding:'20px 24px', borderBottom:'1px solid var(--ink-100)'}}>
-          <h2 style={{fontSize:17, fontWeight:800, color:'var(--ink-900)', margin:0}}>Pour quel client ?</h2>
-          <p style={{fontSize:13, color:'var(--ink-500)', margin:'6px 0 0'}}>
-            Choisis un client existant ou crée-en un nouveau.
-          </p>
-        </div>
-
-        <div style={{padding:'14px 24px'}}>
-          <input
-            className="input"
-            placeholder="Rechercher un client…"
-            value={recherche}
-            onChange={e => setRecherche(e.target.value)}
-            style={{width:'100%', height:40}}
-            autoFocus
-          />
-        </div>
-
-        <div style={{flex:1, overflowY:'auto', padding:'0 24px 12px'}}>
-          {loading ? (
-            <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, padding:24}}>Chargement…</p>
-          ) : filtres.length === 0 ? (
-            <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, padding:24}}>
-              {clients.length === 0 ? 'Aucun client en base' : 'Aucun client ne correspond'}
-            </p>
-          ) : (
-            <div style={{display:'flex', flexDirection:'column', gap:4}}>
-              {filtres.map(c => (
-                <button
-                  key={c.id}
-                  onClick={() => choisir(c.id)}
-                  className="row-hover"
-                  style={{
-                    width:'100%', textAlign:'left', padding:'10px 12px',
-                    border:'1px solid var(--ink-100)', borderRadius:8,
-                    background:'transparent', cursor:'pointer',
-                  }}>
-                  <div style={{fontSize:13.5, fontWeight:600, color:'var(--ink-900)'}}>{nomComplet(c)}</div>
-                  {c.email && <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{c.email}</div>}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div style={{padding:'14px 24px', borderTop:'1px solid var(--ink-100)', display:'flex', gap:8}}>
-          <button onClick={onClose} className="btn btn-ghost" style={{flex:1, height:40, justifyContent:'center'}}>
-            Annuler
-          </button>
-          <button onClick={creerClient} className="btn btn-primary" style={{flex:1, height:40, justifyContent:'center'}}>
-            + Nouveau client
-          </button>
-        </div>
+    <ModalShell
+      title="Pour quel client ?"
+      subtitle="Choisis un client existant ou crée-en un nouveau."
+      onClose={onClose}
+      width={480}
+      maxH="85vh"
+      footer={<>
+        <button onClick={onClose} className="btn btn-ghost" style={{flex:1, height:40, justifyContent:'center'}}>
+          Annuler
+        </button>
+        <button onClick={creerClient} className="btn btn-primary" style={{flex:1, height:40, justifyContent:'center'}}>
+          + Nouveau client
+        </button>
+      </>}
+    >
+      <div style={{padding:'14px 24px 0'}}>
+        <input
+          className="input"
+          placeholder="Rechercher un client…"
+          value={recherche}
+          onChange={e => setRecherche(e.target.value)}
+          style={{width:'100%', height:40}}
+          autoFocus
+        />
       </div>
-    </div>
+
+      <div style={{padding:'12px 24px'}}>
+        {loading ? (
+          <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, padding:24}}>Chargement…</p>
+        ) : filtres.length === 0 ? (
+          <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, padding:24}}>
+            {clients.length === 0 ? 'Aucun client en base' : 'Aucun client ne correspond'}
+          </p>
+        ) : (
+          <div style={{display:'flex', flexDirection:'column', gap:4}}>
+            {filtres.map(c => (
+              <button
+                key={c.id}
+                onClick={() => choisir(c.id)}
+                className="row-hover"
+                style={{
+                  width:'100%', textAlign:'left', padding:'10px 12px',
+                  border:'1px solid var(--ink-100)', borderRadius:8,
+                  background:'transparent', cursor:'pointer',
+                }}>
+                <div style={{fontSize:13.5, fontWeight:600, color:'var(--ink-900)'}}>{nomComplet(c)}</div>
+                {c.email && <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{c.email}</div>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </ModalShell>
   )
 }

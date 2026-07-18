@@ -10,6 +10,7 @@ import { calculerAvancement, detecterCategorie } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
+import ModalShell from '../../components/ModalShell'
 import { compressImageToBlob, heicToJpegFile } from '../../lib/images'
 import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
 import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../../lib/cibles'
@@ -75,42 +76,6 @@ function Fact({ label, value, highlight, mono }) {
 // Format euro court partagé (helpers module-level)
 const fmtEurShort = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
 
-function ModalShell({ title, subtitle, onClose, width = 580, maxH = '90vh', children, footer }) {
-  // Ferme avec Échap
-  useEffect(() => {
-    const handler = (e) => { if (e.key === 'Escape') onClose && onClose() }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [onClose])
-  return (
-    <div style={{
-      position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:200,
-      display:'grid', placeItems:'center', padding:20, overflow:'auto',
-    }}>
-      <div className="card" style={{
-        padding:0, maxWidth:width, width:'100%', maxHeight:maxH,
-        overflow:'hidden', display:'flex', flexDirection:'column',
-      }}>
-        <div style={{
-          padding:'18px 24px', borderBottom:'1px solid var(--ink-200)',
-          display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:14,
-        }}>
-          <div style={{minWidth:0}}>
-            <h2 className="page" style={{fontSize:17}}>{title}</h2>
-            {subtitle && <div className="eyebrow" style={{marginTop:4}}>{subtitle}</div>}
-          </div>
-          <button className="btn btn-ghost" style={{padding:'6px 10px', fontSize:16, lineHeight:1}} onClick={onClose} aria-label="Fermer">×</button>
-        </div>
-        <div style={{flex:1, overflow:'auto'}}>{children}</div>
-        {footer && (
-          <div style={{padding:'14px 24px', borderTop:'1px solid var(--ink-200)', display:'flex', justifyContent:'flex-end', gap:8, flexWrap:'wrap'}}>
-            {footer}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
 
 function ModalField({ label, children, required }) {
   return (
