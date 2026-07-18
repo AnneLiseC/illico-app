@@ -283,7 +283,7 @@ function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKe
   )
 }
 
-function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelectionnee, redevancesAgente, agrégerParPaiement, dossiersAgente, agenteActuelle, erreur, succes, setErreur, setSucces, upsertFactureMoisType, isAdmin, agentes, anneeEnCours }) {
+function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelectionnee, redevancesAgente, agrégerParPaiement, dossiersAgente, agenteActuelle, erreur, succes, setErreur, setSucces, upsertFactureMoisType, ajouterPaiementFacture, supprimerPaiementFacture, isAdmin, agentes, anneeEnCours }) {
   const facturesAg  = facturesAgente.filter(f => f.agente_id === agenteSelectionnee)
   const redevAg     = redevancesAgente
   const [moisDeplie, setMoisDeplie] = useState(null)
@@ -315,8 +315,11 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
   }
 
   // F1/F2 effectif : figé (snapshot factures_agente.montant) si payé, sinon live.
-  const f1Eff = (f, liveF1) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF1
-  const f2Eff = (f, liveF2) => f?.statut === 'paye' ? round2(f.montant || 0) : liveF2
+  // « reçu » = somme des versements enregistrés sur la facture (paiement en plusieurs fois).
+  const recu = (f) => round2(((f?.paiements) || []).reduce((s, p) => s + Number(p.montant || 0), 0))
+  // Total figé dès qu'un versement existe (ou statut payé) ; sinon montant live.
+  const f1Eff = (f, liveF1) => (f && (f.statut === 'paye' || (f.paiements || []).length > 0)) ? round2(f.montant || 0) : liveF1
+  const f2Eff = (f, liveF2) => (f && (f.statut === 'paye' || (f.paiements || []).length > 0)) ? round2(f.montant || 0) : liveF2
 
   // Facturation décalée : la facture du mois M porte sur l'activité du mois M−1.
   // P2 : on persiste / apparie / toggle sur le mois d'ACTIVITÉ ; seul le libellé est décalé.
@@ -353,8 +356,8 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
     const f1eff = f1Eff(f1, montantF1)
     const f2eff = f2Eff(f2, montantF2)
     totalF1 = round2(totalF1 + f1eff); totalF2 = round2(totalF2 + f2eff)
-    if (f1?.statut === 'paye') totalF1Paye = round2(totalF1Paye + f1eff)
-    if (f2?.statut === 'paye') totalF2Paye = round2(totalF2Paye + f2eff)
+    totalF1Paye = round2(totalF1Paye + recu(f1))
+    totalF2Paye = round2(totalF2Paye + recu(f2))
   })
   const totalRedev = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => round2(s + (r.montant_ht || 0)), 0)
 
@@ -370,33 +373,65 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
     } catch (e) { setErreur('Erreur enregistrement : ' + e.message) }
   }
 
-  // Bascule du statut F1 (agente → CTP). Au clic « payé » : fige le montant LIVE
-  // (calcMois, jamais f.montant). Au déclic : montant remis à NULL → le live reprend.
-  // INSERT si le mois n'a pas de ligne (montant positionnel), UPDATE sinon (montant dans updates).
-  const toggleF1Statut = async (annee, mois, f1) => {
-    const live = calcMois(annee, mois).montantF1
-    try {
-      if (f1?.statut === 'paye') {
-        await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'a_facturer', montant: null })
-      } else {
-        await upsertFactureMoisType(mois, annee, live, 'agente_vers_ctp', { statut: 'paye', montant: live })
-      }
-    } catch (e) { setErreur('Erreur F1 : ' + e.message) }
+  // Paiement en plusieurs fois : « reçu » (Σ versements) / « reste » (total − reçu).
+  // Statut : à facturer → partiel → soldé. « Marquer reçu » = un versement du reste
+  // en une fois. Détail des versements dans la ligne dépliée.
+  const [ajout, setAjout] = useState(null)   // { type, montant, date } — formulaire d'ajout ouvert
+  const todayISO = () => new Date().toISOString().split('T')[0]
+
+  // Cellule Statut : badge (à facturer / partiel / soldé) + « Marquer reçu ».
+  const renderStatutV = (f, type, annee, mois, total, canEdit) => {
+    const cumul = recu(f)
+    const reste = round2(total - cumul)
+    if (total <= 0 && cumul <= 0) return <span style={{color:'var(--ink-400)'}}>—</span>
+    let bg, col, txt
+    if (cumul <= 0.001) { txt = '📋 À facturer'; bg = 'var(--ink-100)'; col = 'var(--ink-500)' }
+    else if (reste <= 0.01) { txt = '✅ Soldé'; bg = 'rgba(22,163,74,0.1)'; col = '#15803d' }
+    else { txt = `🕓 ${fmt(cumul)} / ${fmt(total)}`; bg = 'rgba(217,119,6,0.12)'; col = '#a16207' }
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'center'}}>
+        <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,background:bg,color:col}}>{txt}</span>
+        {canEdit && reste > 0.01 && (
+          <button onClick={(e) => { e.stopPropagation(); ajouterPaiementFacture(mois, annee, type, reste, todayISO(), total) }}
+            title="Enregistrer le paiement du reste (solde en une fois)"
+            style={{fontSize:10.5,fontWeight:600,borderRadius:6,padding:'3px 8px',cursor:'pointer',border:'1px solid var(--brand-500)',background:'#fff',color:'var(--brand-700)'}}>
+            Marquer reçu
+          </button>
+        )}
+      </div>
+    )
   }
 
-  // Bascule du statut F2 (CTP → agente). ADMIN ONLY (appelé uniquement depuis la
-  // branche isAdmin de la cellule). Fige le montant LIVE (calcMois().montantF2,
-  // jamais f.montant) au clic « reçu », NULL au déclic. Le type 'ctp_vers_agente'
-  // déclenche la synchro redevances dans upsertFactureMoisType (regle / en_attente).
-  const toggleF2Statut = async (annee, mois, f2) => {
-    const live = calcMois(annee, mois).montantF2
-    try {
-      if (f2?.statut === 'paye') {
-        await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'a_facturer', montant: null })
-      } else {
-        await upsertFactureMoisType(mois, annee, live, 'ctp_vers_agente', { statut: 'paye', montant: live })
-      }
-    } catch (e) { setErreur('Erreur F2 : ' + e.message) }
+  // Bloc « Versements » dans le détail : liste (date + montant + suppression) + ajout partiel.
+  const renderVersements = (f, type, annee, mois, total, canEdit) => {
+    const paiements = ((f?.paiements) || []).slice().sort((a, b) => (a.date_paiement < b.date_paiement ? -1 : 1))
+    const cumul = recu(f)
+    const reste = round2(total - cumul)
+    const formOuvert = ajout?.type === type
+    return (
+      <div style={{marginTop:8,borderTop:'1px dashed var(--ink-200)',paddingTop:8,display:'flex',flexDirection:'column',gap:4}}>
+        <div style={{fontSize:11.5,color:'var(--ink-500)'}}>Reçu <strong>{fmt(cumul)}</strong> · reste <strong>{fmt(reste)}</strong></div>
+        {paiements.map(p => (
+          <div key={p.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:12}}>
+            <span style={{color:'var(--ink-600)'}}>{new Date(p.date_paiement).toLocaleDateString('fr-FR')}</span>
+            <span style={{display:'flex',gap:8,alignItems:'center'}}>
+              <span className="tnum" style={{fontWeight:600}}>{fmt(p.montant)}</span>
+              {canEdit && <button onClick={() => supprimerPaiementFacture(p.id, f.id, mois, annee, type)} title="Supprimer ce versement" style={{border:'none',background:'none',color:'#b91c1c',cursor:'pointer',fontSize:12,lineHeight:1}}>✕</button>}
+            </span>
+          </div>
+        ))}
+        {canEdit && reste > 0.01 && (formOuvert ? (
+          <div style={{display:'flex',gap:6,alignItems:'center',marginTop:4,flexWrap:'wrap'}}>
+            <input type="number" step="0.01" min="0" value={ajout.montant} onChange={e => setAjout(a => ({ ...a, montant: e.target.value }))} placeholder="€" className="input" style={{width:90,height:32,fontSize:12}}/>
+            <input type="date" value={ajout.date} onChange={e => setAjout(a => ({ ...a, date: e.target.value }))} className="input" style={{height:32,fontSize:12}}/>
+            <button className="btn btn-primary" style={{fontSize:11.5,padding:'5px 10px'}} onClick={async () => { await ajouterPaiementFacture(mois, annee, type, ajout.montant, ajout.date, total); setAjout(null) }}>Valider</button>
+            <button className="btn btn-ghost" style={{fontSize:11.5,padding:'5px 10px'}} onClick={() => setAjout(null)}>Annuler</button>
+          </div>
+        ) : (
+          <button className="btn btn-ghost" style={{fontSize:11.5,padding:'4px 10px',marginTop:4,alignSelf:'flex-start'}} onClick={() => setAjout({ type, montant: String(reste), date: todayISO() })}>+ Ajouter un paiement</button>
+        ))}
+      </div>
+    )
   }
 
   // PDF déposer/voir — intégré à la ligne dépliable (fusion des anciennes cartes détail).
@@ -417,26 +452,6 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
     )
   }
 
-  // Statut cliquable explicite (bouton, pas badge-hover) — lisible et tactile-friendly.
-  // canToggle=false (F2 côté agente) → badge lecture seule. montant 0 + non payé → « — ».
-  const renderStatutToggle = (f, onToggle, canToggle, montant) => {
-    const paye = f?.statut === 'paye'
-    if (montant === 0 && !paye) return <span style={{color:'var(--ink-400)'}}>—</span>
-    if (!canToggle) return <StatutFacture f={f}/>
-    return (
-      <button
-        onClick={(e) => { e.stopPropagation(); onToggle() }}
-        title={paye ? 'Cliquer pour repasser « à facturer » (le montant redevient live)' : 'Cliquer pour marquer « reçu » (fige le montant)'}
-        style={{
-          fontSize:11.5, fontWeight:600, borderRadius:8, padding:'5px 11px', cursor:'pointer', border:'1px solid',
-          ...(paye
-            ? { background:'rgba(22,163,74,0.1)', borderColor:'rgba(22,163,74,0.35)', color:'#15803d' }
-            : { background:'#fff', borderColor:'var(--brand-500)', color:'var(--brand-700)' }),
-        }}>
-        {paye ? '✅ Reçu' : 'Marquer reçu'}
-      </button>
-    )
-  }
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:18}}>
@@ -514,13 +529,13 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                     {f1m > 0 ? fmt(f1m) : '—'}
                   </td>
                   <td style={{padding:'14px 16px',textAlign:'center'}}>
-                    {renderStatutToggle(f1, () => toggleF1Statut(annee, mois, f1), true, f1m)}
+                    {renderStatutV(f1, 'agente_vers_ctp', annee, mois, f1m, true)}
                   </td>
                   <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f2m>0?'#b91c1c':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
                     {f2m > 0 ? fmt(f2m) : '—'}
                   </td>
                   <td style={{padding:'14px 16px',textAlign:'center'}}>
-                    {renderStatutToggle(f2, () => toggleF2Statut(annee, mois, f2), isAdmin, f2m)}
+                    {renderStatutV(f2, 'ctp_vers_agente', annee, mois, f2m, isAdmin)}
                   </td>
                 </tr>
                 {isOpen && (
@@ -535,6 +550,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                           {d.partN  > 0 && <Row label="Part partenaire"         value={fmt(d.partN)} />}
                           {f1m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucun gain encaissé ce mois</span>}
                           <Row label="Total F1" value={fmt(f1m)} bold accent />
+                          {f1m > 0 && renderVersements(f1, 'agente_vers_ctp', annee, mois, f1m, true)}
                           {renderPdfControl(f1, annee, mois, 'agente_vers_ctp')}
                         </div>
                         <div style={{display:'flex',flexDirection:'column',gap:6}}>
@@ -543,6 +559,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                           {d.apporteur > 0 && <Row label="Apporteur remboursé"      value={fmt(d.apporteur)} />}
                           {f2m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucune charge ce mois</span>}
                           <Row label="Total F2" value={fmt(f2m)} bold accent />
+                          {f2m > 0 && renderVersements(f2, 'ctp_vers_agente', annee, mois, f2m, isAdmin)}
                           {renderPdfControl(f2, annee, mois, 'ctp_vers_agente')}
                         </div>
                       </div>
@@ -672,7 +689,7 @@ export default function Finances() {
         suivi_financier(*)
       `).order('created_at', { ascending: false }),
       supabase.from('redevances').select('*').order('annee', { ascending: false }).order('mois', { ascending: false }),
-      supabase.from('factures_agente').select('*').order('annee', { ascending: false }).order('mois', { ascending: false }),
+      supabase.from('factures_agente').select('*, paiements:factures_agente_paiements(id, montant, date_paiement)').order('annee', { ascending: false }).order('mois', { ascending: false }),
       isAdmin
         ? supabase.from('profiles').select('*').eq('role', 'agente').order('prenom')
         : Promise.resolve({ data: [] }),
@@ -1114,13 +1131,67 @@ export default function Finances() {
         }
       }
 
-      const { data } = await supabase.from('factures_agente').select('*')
+      const { data } = await supabase.from('factures_agente').select('*, paiements:factures_agente_paiements(id, montant, date_paiement)')
         .order('annee', { ascending: false }).order('mois', { ascending: false })
       setFacturesAgente(data || [])
       await chargerTout()
     } finally {
       fxSavingRef.current = false
     }
+  }
+
+  // ── Versements (paiement en plusieurs fois d'une facture F1/F2) ─────────────
+  // Le montant total de la facture est FIGÉ au 1er versement (factures_agente.montant),
+  // les versements s'accumulent, et le statut passe 'paye' quand le cumul couvre le
+  // total. Le passage de statut est routé par upsertFactureMoisType → la synchro
+  // redevance F2 reste intacte. finance.js n'est pas touché.
+  const ajouterPaiementFacture = async (mois, annee, type, montantVersement, datePaiement, totalLive) => {
+    const montant = round2(Number(montantVersement) || 0)
+    if (montant <= 0) { setErreur('Montant du versement invalide'); return }
+    const agenteId = agenteSelectionnee || profile?.id
+    const cle = (q) => q.eq('agente_id', agenteId).eq('annee', annee).eq('mois', mois).eq('type_facture', type)
+    try {
+      // 1. garantir la ligne facture + figer le total
+      let { data: fa } = await cle(supabase.from('factures_agente').select('id, montant')).maybeSingle()
+      if (!fa) {
+        const { data: ins, error } = await supabase.from('factures_agente')
+          .insert({ agente_id: agenteId, mois, annee, type_facture: type, montant: round2(totalLive), statut: 'facture' })
+          .select('id, montant').single()
+        if (error) throw new Error(error.message)
+        fa = ins
+      } else if (fa.montant == null) {
+        await supabase.from('factures_agente').update({ montant: round2(totalLive) }).eq('id', fa.id)
+        fa = { ...fa, montant: round2(totalLive) }
+      }
+      // 2. insérer le versement
+      const { error: pErr } = await supabase.from('factures_agente_paiements')
+        .insert({ facture_agente_id: fa.id, montant, date_paiement: datePaiement || new Date().toISOString().split('T')[0] })
+      if (pErr) throw new Error(pErr.message)
+      // 3. cumul → statut (routé par upsertFactureMoisType pour la synchro redevance F2)
+      const { data: vers } = await supabase.from('factures_agente_paiements').select('montant').eq('facture_agente_id', fa.id)
+      const cumul = round2((vers || []).reduce((s, v) => s + Number(v.montant || 0), 0))
+      const total = round2(Number(fa.montant ?? totalLive))
+      await upsertFactureMoisType(mois, annee, total, type, { statut: cumul + 0.01 >= total ? 'paye' : 'facture', montant: total })
+      setSucces('Versement enregistré ✓')
+    } catch (e) { setErreur('Versement : ' + e.message) }
+  }
+
+  const supprimerPaiementFacture = async (paiementId, factureId, mois, annee, type) => {
+    try {
+      const { error } = await supabase.from('factures_agente_paiements').delete().eq('id', paiementId)
+      if (error) throw new Error(error.message)
+      const { data: vers } = await supabase.from('factures_agente_paiements').select('montant').eq('facture_agente_id', factureId)
+      const cumul = round2((vers || []).reduce((s, v) => s + Number(v.montant || 0), 0))
+      const { data: fa } = await supabase.from('factures_agente').select('montant').eq('id', factureId).single()
+      const total = round2(Number(fa?.montant || 0))
+      if (cumul <= 0.001) {
+        // Plus aucun versement → la facture redevient « à facturer », total dé-figé (live reprend).
+        await upsertFactureMoisType(mois, annee, 0, type, { statut: 'a_facturer', montant: null })
+      } else {
+        await upsertFactureMoisType(mois, annee, total, type, { statut: cumul + 0.01 >= total ? 'paye' : 'facture', montant: total })
+      }
+      setSucces('Versement supprimé ✓')
+    } catch (e) { setErreur('Suppression versement : ' + e.message) }
   }
 
 
@@ -2275,7 +2346,7 @@ export default function Finances() {
       {/* ── FACTURATION — même composant, données filtrées sur agente connectée ── */}
       {tab === 'facturation' && (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <FacturationAgentes facturesAgente={facturesAgente} agenteSelectionnee={agenteSelectionnee} setAgenteSelectionnee={setAgenteSelectionnee} redevancesAgente={redevancesAgente} agrégerParPaiement={agrégerParPaiement} dossiersAgente={dossiersAgente} agenteActuelle={agenteActuelle} erreur={erreur} succes={succes} setErreur={setErreur} setSucces={setSucces} upsertFactureMoisType={upsertFactureMoisType} isAdmin={isAdmin} agentes={agentesScope} anneeEnCours={anneeEnCours} />
+          <FacturationAgentes facturesAgente={facturesAgente} agenteSelectionnee={agenteSelectionnee} setAgenteSelectionnee={setAgenteSelectionnee} redevancesAgente={redevancesAgente} agrégerParPaiement={agrégerParPaiement} dossiersAgente={dossiersAgente} agenteActuelle={agenteActuelle} erreur={erreur} succes={succes} setErreur={setErreur} setSucces={setSucces} upsertFactureMoisType={upsertFactureMoisType} ajouterPaiementFacture={ajouterPaiementFacture} supprimerPaiementFacture={supprimerPaiementFacture} isAdmin={isAdmin} agentes={agentesScope} anneeEnCours={anneeEnCours} />
         </div>
       )}
 
