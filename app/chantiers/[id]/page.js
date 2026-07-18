@@ -75,6 +75,7 @@ function Fact({ label, value, highlight, mono }) {
 
 // Format euro court partagé (helpers module-level)
 const fmtEurShort = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
+const MAX_VIDEO_MO = 100   // plafond par vidéo (galerie chantier) — cohérent avec la limite du bucket Storage
 
 
 function ModalField({ label, children, required }) {
@@ -909,13 +910,14 @@ export default function FicheChantier({ params }) {
   // Télécharge toutes les photos du dossier en un ZIP, rangées par catégorie.
   // Signed URLs régénérées au clic (60s), côté client uniquement (pas de route API).
   const telechargerZipPhotos = async () => {
-    if (photos.length === 0) return
+    const photosOnly = photos.filter(p => p.type_media !== 'video')   // ZIP = photos uniquement (pas les vidéos, trop lourdes)
+    if (photosOnly.length === 0) return
     setZippingPhotos(true)
     try {
-      const { data: signed } = await supabase.storage.from('photos').createSignedUrls(photos.map(p => p.url), 60)
+      const { data: signed } = await supabase.storage.from('photos').createSignedUrls(photosOnly.map(p => p.url), 60)
       const parChemin = new Map((signed || []).map(u => [u.path, u.signedUrl]))
       const zip = new JSZip()
-      for (const p of photos) {
+      for (const p of photosOnly) {
         const url = parChemin.get(p.url)
         if (!url) continue
         const blob = await (await fetch(url)).blob()
@@ -935,24 +937,33 @@ export default function FicheChantier({ params }) {
     setZippingPhotos(false)
   }
 
+  // Galerie chantier : photos ET vidéos (même table `photos`, colonne type_media).
   const uploadPhotos = async (fichiers) => {
     if (!fichiers.length) return
     setUploadingPhoto(true)
+    let tropLourd = 0
     const resultats = await Promise.all(fichiers.map(async (fichier) => {
-      const f = await heicToJpegFile(fichier)   // photo iPhone (HEIC) → JPEG
-      const ext = (f.name.split('.').pop() || 'jpg')
+      const estVideo = (fichier.type || '').startsWith('video/') || /\.(mp4|mov|m4v|webm|avi|mkv|3gp)$/i.test(fichier.name)
+      if (estVideo && fichier.size > MAX_VIDEO_MO * 1024 * 1024) { tropLourd++; return false }
+      // Vidéo : envoyée telle quelle (pas de conversion). Photo : HEIC iPhone → JPEG.
+      const f = estVideo ? fichier : await heicToJpegFile(fichier)
+      const ext = (f.name.split('.').pop() || (estVideo ? 'mp4' : 'jpg')).toLowerCase()
       const chemin = `chantiers/${id}/${categorie}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error: uploadError } = await supabase.storage.from('photos').upload(chemin, f, { contentType: f.type || undefined })
       if (uploadError) return false
-      const { error: insertErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id })
+      const { error: insertErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id, type_media: estVideo ? 'video' : 'photo' })
       if (insertErr) return false
       return true
     }))
     await chargerPhotos()
     setUploadingPhoto(false)
     const echecs = resultats.filter(r => !r).length
-    if (echecs === 0) setSucces('Photo(s) ajoutée(s) ✓')
-    else setErreur(`${resultats.length - echecs} photo(s) ajoutée(s), ${echecs} en échec — réessayez les manquantes.`)
+    if (echecs === 0) { setSucces('Fichier(s) ajouté(s) ✓'); return }
+    const details = []
+    if (tropLourd) details.push(`${tropLourd} vidéo(s) > ${MAX_VIDEO_MO} Mo refusée(s)`)
+    const autres = echecs - tropLourd
+    if (autres > 0) details.push(`${autres} en échec`)
+    setErreur(`${resultats.length - echecs} ajouté(s) · ${details.join(' · ')} — réessayez.`)
   }
 
   const supprimerPhoto = async (photoId, chemin) => {
@@ -4448,26 +4459,34 @@ export default function FicheChantier({ params }) {
               })}
             </div>
             <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
-              {photos.length > 0 && (
+              {photos.some(p => p.type_media !== 'video') && (
                 <button onClick={telechargerZipPhotos} disabled={zippingPhotos}
                   className="btn btn-ghost" style={{fontSize:12.5}}>
                   <DlIcon /> {zippingPhotos ? 'Préparation…' : 'Télécharger les photos'}
                 </button>
               )}
-              <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingPhoto ? 'wait' : 'pointer', opacity: uploadingPhoto ? 0.6 : 1}}>
-                <CamIcon /> {uploadingPhoto
-                  ? 'Upload en cours…'
-                  : `Ajouter des photos${categorie !== 'all' ? ` (${CATS.find(c => c.k === categorie)?.l})` : ''}`}
-                <input type="file" accept="image/*" multiple style={{display:'none'}}
-                  disabled={uploadingPhoto || categorie === 'all'}
-                  onChange={e => uploadPhotos(Array.from(e.target.files))} />
-              </label>
+              {/* Upload uniquement dans une catégorie précise (Avant/Pendant/Après/Maquette)
+                  → tout média est catégorisé, donc triable. Pas d'ajout depuis « Toutes ». */}
+              {categorie !== 'all' && (
+                <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingPhoto ? 'wait' : 'pointer', opacity: uploadingPhoto ? 0.6 : 1}}>
+                  <CamIcon /> {uploadingPhoto
+                    ? 'Upload en cours…'
+                    : `Ajouter photos / vidéos (${CATS.find(c => c.k === categorie)?.l})`}
+                  <input type="file" accept="image/*,video/*" multiple style={{display:'none'}}
+                    disabled={uploadingPhoto}
+                    onChange={e => uploadPhotos(Array.from(e.target.files))} />
+                </label>
+              )}
             </div>
           </div>
 
-          {categorie === 'all' && (
+          {categorie === 'all' ? (
             <div style={{fontSize:11.5, color:'var(--ink-500)', padding:'0 4px'}}>
               Choisis une catégorie (Avant, Pendant, Après, Maquette) pour uploader.
+            </div>
+          ) : (
+            <div style={{fontSize:11.5, color:'var(--ink-400)', padding:'0 4px'}}>
+              Photos et vidéos acceptées · vidéo max {MAX_VIDEO_MO} Mo. Les vidéos iPhone .mov peuvent ne pas se lire sur Chrome/Android.
             </div>
           )}
 
@@ -4488,8 +4507,14 @@ export default function FicheChantier({ params }) {
                     onClick={() => setPhotoOuverte(index)}
                     onMouseEnter={e => { const b = e.currentTarget.querySelector('[data-actions]'); if (b) b.style.opacity = '1' }}
                     onMouseLeave={e => { const b = e.currentTarget.querySelector('[data-actions]'); if (b) b.style.opacity = '0' }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={photo.url_signee} alt="" style={{width:'100%', height:'100%', objectFit:'cover', display:'block'}} />
+                    {photo.type_media === 'video' ? (
+                      <div style={{width:'100%', height:'100%', display:'grid', placeItems:'center', background:'#0f2744'}}>
+                        <span style={{fontSize:34, color:'rgba(255,255,255,0.9)'}}>▶</span>
+                      </div>
+                    ) : (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={photo.url_signee} alt="" style={{width:'100%', height:'100%', objectFit:'cover', display:'block'}} />
+                    )}
                     <span style={{
                       position:'absolute', top:8, right:8,
                       background:'rgba(0,0,0,0.55)', color:'#fff', fontSize:9.5, padding:'3px 8px',
@@ -4533,9 +4558,14 @@ export default function FicheChantier({ params }) {
                   fontSize:24, fontWeight:300,
                 }}>‹</button>
               <div onClick={e => e.stopPropagation()} style={{maxWidth:'90vw', maxHeight:'90vh', padding:20}}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={filtered[photoOuverte]?.url_signee} alt=""
-                  style={{maxHeight:'80vh', maxWidth:'100%', objectFit:'contain', borderRadius:10, display:'block'}} />
+                {filtered[photoOuverte]?.type_media === 'video' ? (
+                  <video src={filtered[photoOuverte]?.url_signee} controls autoPlay playsInline
+                    style={{maxHeight:'80vh', maxWidth:'90vw', borderRadius:10, display:'block'}} />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={filtered[photoOuverte]?.url_signee} alt=""
+                    style={{maxHeight:'80vh', maxWidth:'100%', objectFit:'contain', borderRadius:10, display:'block'}} />
+                )}
                 <div style={{color:'rgba(255,255,255,0.7)', fontSize:12, textAlign:'center', marginTop:10}}>
                   {photoOuverte + 1} / {filtered.length} · {filtered[photoOuverte]?.categorie} · clic en dehors pour fermer
                 </div>
@@ -5846,7 +5876,7 @@ export default function FicheChantier({ params }) {
                         display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(80px, 1fr))', gap:8,
                         border:'1px solid var(--ink-200)', borderRadius:10, padding:8, maxHeight:200, overflowY:'auto',
                       }}>
-                        {photos.map(p => {
+                        {photos.filter(p => p.type_media !== 'video').map(p => {
                           const selected = crPhotosDossier.includes(p.url)
                           return (
                             // Clic = (dé)sélection. Aucun fichier n'est touché : ce sont des photos

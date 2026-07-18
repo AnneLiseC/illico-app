@@ -539,8 +539,12 @@ export default function EspaceClient() {
                     <div key={p.id}
                       onClick={() => { setCategoriePhoto(p.categorie); setOnglet('photos') }}
                       className="cursor-pointer rounded-lg overflow-hidden aspect-square bg-gray-100">
-                      <img src={p.url_signee} alt=""
-                        className="w-full h-full object-cover hover:scale-105 transition-transform" />
+                      {p.type_media === 'video' ? (
+                        <div className="w-full h-full flex items-center justify-center bg-slate-800 text-white text-2xl">▶</div>
+                      ) : (
+                        <img src={p.url_signee} alt=""
+                          className="w-full h-full object-cover hover:scale-105 transition-transform" />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -577,7 +581,11 @@ export default function EspaceClient() {
                   {photosCatActuelle.map((p, idx) => (
                     <div key={p.id} onClick={() => setLightbox({ open: true, index: idx })}
                       className="cursor-pointer rounded-xl overflow-hidden aspect-square bg-gray-100">
-                      <img src={p.url_signee} alt="" className="w-full h-full object-cover hover:scale-105 transition-transform" />
+                      {p.type_media === 'video' ? (
+                        <div className="w-full h-full flex items-center justify-center bg-slate-800 text-white text-3xl">▶</div>
+                      ) : (
+                        <img src={p.url_signee} alt="" className="w-full h-full object-cover hover:scale-105 transition-transform" />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -591,12 +599,21 @@ export default function EspaceClient() {
                       <button className="absolute left-4 text-white text-4xl z-10 p-3 hover:bg-white hover:bg-opacity-20 rounded-full"
                         onClick={e => { e.stopPropagation(); setLightbox(l => ({ ...l, index: l.index > 0 ? l.index - 1 : photosCatActuelle.length - 1 })) }}>‹</button>
                     )}
-                    <img
-                      src={photosCatActuelle[lightbox.index].url_signee}
-                      alt=""
-                      className="max-h-[85vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
-                      onClick={e => e.stopPropagation()}
-                    />
+                    {photosCatActuelle[lightbox.index].type_media === 'video' ? (
+                      <video
+                        src={photosCatActuelle[lightbox.index].url_signee}
+                        controls autoPlay playsInline
+                        className="max-h-[85vh] max-w-[90vw] rounded-lg shadow-2xl"
+                        onClick={e => e.stopPropagation()}
+                      />
+                    ) : (
+                      <img
+                        src={photosCatActuelle[lightbox.index].url_signee}
+                        alt=""
+                        className="max-h-[85vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
+                        onClick={e => e.stopPropagation()}
+                      />
+                    )}
                     {photosCatActuelle.length > 1 && (
                       <button className="absolute right-4 text-white text-4xl z-10 p-3 hover:bg-white hover:bg-opacity-20 rounded-full"
                         onClick={e => { e.stopPropagation(); setLightbox(l => ({ ...l, index: (l.index + 1) % photosCatActuelle.length })) }}>›</button>
