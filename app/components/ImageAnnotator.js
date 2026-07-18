@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 
 // Éditeur d'annotation de photo (style Archireport) : flèche, rectangle, cercle,
 // crayon libre, texte, couleur + épaisseur. Modèle « tracer + annuler / effacer »
@@ -145,8 +146,15 @@ export default function ImageAnnotator({ src, onSave, onClose, titre = 'Annoter 
   }
 
   const enregistrer = () => {
+    // Intègre un éventuel texte encore en cours de saisie (sinon perdu : setShapes
+    // est asynchrone, le redraw ci-dessous verrait l'ancien état).
+    let list = shapes
+    if (texteInput && texteInput.value.trim()) {
+      list = [...shapes, { type: 'texte', x: texteInput.x, y: texteInput.y, texte: texteInput.value.trim(), couleur, epaisseur }]
+      setShapes(list); setTexteInput(null)
+    }
     setSaving(true)
-    redraw(shapes)
+    redraw(list)
     canvasRef.current.toBlob(async (blob) => {
       try { if (blob) await onSave(blob) } finally { setSaving(false) }
     }, 'image/jpeg', 0.9)
@@ -159,10 +167,10 @@ export default function ImageAnnotator({ src, onSave, onClose, titre = 'Annoter 
     color: '#fff', cursor: 'pointer', fontSize: 15, fontWeight: 600, lineHeight: 1,
   })
 
-  return (
+  const contenu = (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 400, display: 'flex', flexDirection: 'column' }}>
-      {/* Barre d'outils */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(15,23,42,0.95)', flexWrap: 'wrap', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+      {/* Barre d'outils — toujours visible (flexShrink:0), le canvas prend le reste */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'rgba(15,23,42,0.95)', flexWrap: 'wrap', borderBottom: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
         <span style={{ color: '#fff', fontSize: 13, fontWeight: 700, marginRight: 4 }}>{titre}</span>
         <div style={{ display: 'flex', gap: 6 }}>
           {OUTILS.map(o => <button key={o.k} title={o.t} onClick={() => setOutil(o.k)} style={btn(outil === o.k)}>{o.l}</button>)}
@@ -181,22 +189,31 @@ export default function ImageAnnotator({ src, onSave, onClose, titre = 'Annoter 
         <button onClick={enregistrer} disabled={saving || !pret} className="btn btn-primary" style={{ fontSize: 13 }}>{saving ? 'Enregistrement…' : '✓ Enregistrer'}</button>
       </div>
       {/* Zone canvas */}
-      <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 16, overflow: 'auto' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'grid', placeItems: 'center', padding: 16, overflow: 'hidden' }}>
         {!pret && <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13 }}>Chargement…</span>}
         <canvas ref={canvasRef}
           onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
           onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}
-          style={{ maxWidth: '100%', maxHeight: 'calc(100vh - 120px)', display: pret ? 'block' : 'none', borderRadius: 8, touchAction: 'none', cursor: 'crosshair', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }} />
+          style={{ maxWidth: '100%', maxHeight: '100%', display: pret ? 'block' : 'none', borderRadius: 8, touchAction: 'none', cursor: 'crosshair', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }} />
       </div>
-      {/* Saisie texte flottante */}
+      {/* Saisie texte flottante — focus explicite (l'autoFocus échoue parfois sur un
+          input monté dynamiquement → les frappes partent dans le vide). Position
+          bornée à la fenêtre pour rester toujours visible. */}
       {texteInput && (
-        <input autoFocus value={texteInput.value}
+        <input
+          ref={el => { if (el && document.activeElement !== el) el.focus() }}
+          value={texteInput.value}
           onChange={e => setTexteInput(t => ({ ...t, value: e.target.value }))}
-          onKeyDown={e => { if (e.key === 'Enter') commitTexte(); if (e.key === 'Escape') setTexteInput(null) }}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitTexte() } if (e.key === 'Escape') setTexteInput(null) }}
           onBlur={commitTexte}
           placeholder="Texte + Entrée"
-          style={{ position: 'fixed', left: Math.min(texteInput.clientX, window.innerWidth - 200), top: texteInput.clientY, zIndex: 401, fontSize: 14, padding: '6px 10px', borderRadius: 8, border: '2px solid var(--brand-500)', background: '#fff', color: '#111', minWidth: 160 }} />
+          style={{ position: 'fixed', left: Math.min(texteInput.clientX, window.innerWidth - 200), top: Math.min(texteInput.clientY, window.innerHeight - 56), zIndex: 401, fontSize: 14, padding: '6px 10px', borderRadius: 8, border: '2px solid var(--brand-500)', background: '#fff', color: '#111', minWidth: 160 }} />
       )}
     </div>
   )
+
+  // Rendu via portal sur <body> : l'overlay est garanti calé sur la fenêtre,
+  // indépendamment de tout ancêtre (transform/contain/overflow) — sinon la barre
+  // d'outils et la saisie texte pouvaient se retrouver hors écran.
+  return typeof document !== 'undefined' ? createPortal(contenu, document.body) : null
 }
