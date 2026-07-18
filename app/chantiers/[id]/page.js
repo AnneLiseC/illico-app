@@ -555,19 +555,17 @@ function DevisModal({ open, devis, onClose, onSave, artisans }) {
   const canSave = !!form.artisan_id && form.montant_ht !== '' && !ttcInferieurHt
 
   return (
-    <div style={{
-      position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:60,
-      display:'grid', placeItems:'center', padding:16,
-    }}>
-      <div className="card" style={{
-        width:'100%', maxWidth:600, padding:0, maxHeight:'90vh', display:'flex', flexDirection:'column',
-        boxShadow:'var(--shadow-pop)',
-      }}>
-        <div style={{padding:'18px 24px', borderBottom:'1px solid var(--ink-200)', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-          <h2 className="page" style={{fontSize:17}}>{isEdit ? 'Modifier le devis' : 'Nouveau devis'}</h2>
-          <button onClick={onClose} className="btn btn-ghost" style={{padding:'4px 10px', fontSize:16}}>✕</button>
-        </div>
-
+    <ModalShell
+      title={isEdit ? 'Modifier le devis' : 'Nouveau devis'}
+      onClose={onClose}
+      width={600}
+      footer={<>
+        <button onClick={onClose} className="btn btn-ghost">Annuler</button>
+        <button onClick={() => onSave(form)} className="btn btn-primary" disabled={!canSave}>
+          {isEdit ? 'Enregistrer' : 'Créer le devis'}
+        </button>
+      </>}
+    >
         <div style={{padding:24, overflow:'auto', display:'flex', flexDirection:'column', gap:14}}>
           {!isEdit && (
             <div>
@@ -680,15 +678,7 @@ function DevisModal({ open, devis, onClose, onSave, artisans }) {
             </div>
           )}
         </div>
-
-        <div style={{padding:'16px 24px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:8, justifyContent:'flex-end'}}>
-          <button onClick={onClose} className="btn btn-ghost">Annuler</button>
-          <button onClick={() => onSave(form)} className="btn btn-primary" disabled={!canSave}>
-            {isEdit ? 'Enregistrer' : 'Créer le devis'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   )
 }
 
@@ -4532,7 +4522,7 @@ export default function FicheChantier({ params }) {
           {/* Lightbox */}
           {photoOuverte !== null && (
             <div style={{
-              position:'fixed', inset:0, background:'rgba(0,0,0,0.92)', zIndex:200,
+              position:'fixed', inset:0, background:'rgba(0,0,0,0.92)', zIndex:300,
               display:'flex', alignItems:'center', justifyContent:'center',
             }} onClick={() => setPhotoOuverte(null)}>
               <button onClick={e => { e.stopPropagation(); setPhotoOuverte(i => i > 0 ? i - 1 : filtered.length - 1) }}
