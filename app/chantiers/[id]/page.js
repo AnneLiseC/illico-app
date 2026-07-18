@@ -827,6 +827,11 @@ export default function FicheChantier({ params }) {
   const [crPhotosDossier, setCrPhotosDossier] = useState([]) // paths (photos.url) de photos EXISTANTES du dossier — jamais supprimées de Storage
   const [crVocal, setCrVocal] = useState(false)
   const [crVocalTexte, setCrVocalTexte] = useState('')
+  const [crAudioTexte, setCrAudioTexte] = useState('')       // transcription Deepgram (audio enregistré/déposé)
+  const [crRecording, setCrRecording] = useState(false)
+  const [crTranscribing, setCrTranscribing] = useState(false)
+  const crMediaRec = useRef(null)
+  const crAudioChunks = useRef([])
   const [crGenerating, setCrGenerating] = useState(false)
   const [crGenere, setCrGenere] = useState(null) // { titre, sections[] }
   const [crSectionsEditees, setCrSectionsEditees] = useState([])
@@ -2035,7 +2040,7 @@ export default function FicheChantier({ params }) {
   // ── GÉNÉRER CR AVEC IA ──
   const genererCRAvecIA = async () => {
     if (!crForm.type_visite) return
-    const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('\n\n')
+    const notesCombinees = [crNotes, crVocalTexte, crAudioTexte].filter(Boolean).join('\n\n')
     if (!notesCombinees.trim() && crImages.length === 0 && crPhotosDossier.length === 0) return
     setCrGenerating(true)
     setErreur('')
@@ -2077,7 +2082,7 @@ export default function FicheChantier({ params }) {
     if (!crGenere) return
     setCrSavingFinal(true)
     const contenuFinal = crSectionsEditees.map(s => `## ${s.numero}. ${s.titre}\n\n${s.contenu}`).join('\n\n')
-    const notesCombinees = [crNotes, crVocalTexte].filter(Boolean).join('\n\n')
+    const notesCombinees = [crNotes, crVocalTexte, crAudioTexte].filter(Boolean).join('\n\n')
     const { error: insertErr } = await supabase.from('comptes_rendus').insert({
       dossier_id: id,
       type_visite: crForm.type_visite,
@@ -2099,6 +2104,7 @@ export default function FicheChantier({ params }) {
     setCrImages([])
     setCrPhotosDossier([]) // vidage simple : ce sont des photos du dossier, jamais de remove Storage
     setCrVocalTexte('')
+    setCrAudioTexte('')
     setCrGenere(null)
     setCrSectionsEditees([])
     setCrSavingFinal(false)
@@ -2132,6 +2138,67 @@ export default function FicheChantier({ params }) {
   const arreterVocal = () => {
     window._crRecognition?.stop()
     setCrVocal(false)
+  }
+
+  // ── Audio → transcription (Deepgram) : marche partout, iPhone compris (≠ Web
+  // Speech). L'audio est déposé en Storage puis transcrit par /api/transcribe ;
+  // le texte alimente crAudioTexte (combiné aux notes pour le CR). ──
+  const transcrireAudioBlob = async (blob, ext = 'webm') => {
+    setCrTranscribing(true)
+    setErreur('')
+    try {
+      const path = `chantiers/${id}/audio/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+      const { error: upErr } = await supabase.storage.from('documents').upload(path, blob, { contentType: blob.type || undefined })
+      if (upErr) { setErreur('Échec de l’envoi de l’audio : ' + upErr.message); return }
+      const res = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: await authHeaders(),
+        body: JSON.stringify({ dossierId: id, audioPath: path }),
+      })
+      if (!res.ok) {
+        const brut = await res.text().catch(() => '')
+        setErreur(`Échec de la transcription (${res.status}) : ${brut.slice(0, 200) || 'réessayez'}`)
+        return
+      }
+      const data = await res.json()
+      if (data.error) { setErreur('Transcription : ' + data.error); return }
+      setCrAudioTexte(prev => [prev, data.transcript].filter(Boolean).join('\n\n'))
+    } catch (e) {
+      setErreur('Erreur transcription : ' + (e?.message || 'réessayez'))
+    } finally {
+      setCrTranscribing(false)
+    }
+  }
+
+  const demarrerEnregistrement = async () => {
+    setErreur('')
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mr = new MediaRecorder(stream)
+      crAudioChunks.current = []
+      mr.ondataavailable = e => { if (e.data.size) crAudioChunks.current.push(e.data) }
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop())
+        const type = mr.mimeType || 'audio/webm'
+        const blob = new Blob(crAudioChunks.current, { type })
+        await transcrireAudioBlob(blob, type.includes('mp4') ? 'mp4' : 'webm')
+      }
+      mr.start()
+      crMediaRec.current = mr
+      setCrRecording(true)
+    } catch (e) {
+      setErreur('Micro inaccessible — autorisez le micro dans le navigateur. ' + (e?.message || ''))
+    }
+  }
+
+  const arreterEnregistrement = () => {
+    crMediaRec.current?.stop()
+    setCrRecording(false)
+  }
+
+  const onAudioFile = async (file) => {
+    if (!file) return
+    await transcrireAudioBlob(file, (file.name.split('.').pop() || 'm4a').toLowerCase())
   }
 
   const supprimerCR = async (crId) => {
@@ -5724,6 +5791,36 @@ export default function FicheChantier({ params }) {
                     </div>
                   </ModalField>
 
+                  <ModalField label="🎙️ Audio de visite (enregistrer ou déposer un fichier — iPhone compris)">
+                    <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+                      <button onClick={crRecording ? arreterEnregistrement : demarrerEnregistrement} disabled={crTranscribing}
+                        style={{
+                          flexShrink:0, padding:'8px 16px', borderRadius:10,
+                          fontSize:13, fontWeight:600, border:'none', cursor: crTranscribing ? 'default' : 'pointer', transition:'all 150ms',
+                          background: crRecording ? 'rgba(220,38,38,0.12)' : 'var(--surface-2)',
+                          color: crRecording ? '#b91c1c' : 'var(--ink-700)',
+                          animation: crRecording ? 'fadeIn 1s ease-in-out infinite alternate' : 'none',
+                          opacity: crTranscribing ? 0.6 : 1,
+                        }}>
+                        {crRecording ? '⏹ Arrêter et transcrire' : '🎙 Enregistrer'}
+                      </button>
+                      <label className="btn btn-ghost" style={{cursor: (crRecording || crTranscribing) ? 'default' : 'pointer', fontSize:13, padding:'8px 14px', opacity:(crRecording || crTranscribing) ? 0.6 : 1}}>
+                        📂 Déposer un audio
+                        <input type="file" accept="audio/*" style={{display:'none'}} disabled={crRecording || crTranscribing}
+                          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onAudioFile(f) }} />
+                      </label>
+                      {crTranscribing && <span style={{fontSize:12, color:'var(--ink-500)'}}>Transcription en cours…</span>}
+                    </div>
+                    <div style={{fontSize:11, color:'var(--ink-400)', marginTop:6}}>
+                      ⚠️ Prévenez les participants que la visite est enregistrée.
+                    </div>
+                    {crAudioTexte && (
+                      <textarea value={crAudioTexte} onChange={e => setCrAudioTexte(e.target.value)} rows={4}
+                        placeholder="Transcription — relisez et corrigez si besoin avant de générer le CR."
+                        className="input" style={{marginTop:8, minHeight:90, padding:10, fontSize:12.5, lineHeight:1.5, resize:'vertical'}} />
+                    )}
+                  </ModalField>
+
                   <ModalField label="📷 Photos (cahier, capture d'écran, document)">
                     <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
                       {crImages.map((img, i) => (
@@ -5861,7 +5958,7 @@ export default function FicheChantier({ params }) {
                       ← Retour
                     </button>
                     <button onClick={genererCRAvecIA}
-                      disabled={crGenerating || crPhotosUp || (!crNotes.trim() && !crVocalTexte.trim() && crImages.length === 0 && crPhotosDossier.length === 0)}
+                      disabled={crGenerating || crPhotosUp || crTranscribing || crRecording || (!crNotes.trim() && !crVocalTexte.trim() && !crAudioTexte.trim() && crImages.length === 0 && crPhotosDossier.length === 0)}
                       className="btn btn-primary" style={{flex:2, justifyContent:'center', height:42, fontSize:13}}>
                       {crGenerating ? (
                         <span style={{display:'inline-flex', alignItems:'center', gap:8}}>
