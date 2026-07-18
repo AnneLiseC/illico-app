@@ -10,6 +10,7 @@ import { calculerAvancement, detecterCategorie } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
+import { compressImageToBlob, heicToJpegFile } from '../../lib/images'
 import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
 import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../../lib/cibles'
 import { buildInviteMailto } from '../../lib/inviteMail'
@@ -763,33 +764,6 @@ async function signerPhotos(rows) {
 // JPEG. Retourne un Blob (uploadé dans Storage, plus de base64 dans le body /api/cr).
 // L'API Claude retaille de toute façon à ~1568 px → aucune perte utile pour l'IA ; la
 // compression sert désormais à réduire le stockage et accélérer l'upload.
-function compressImageToBlob(file, maxSide = 1600, quality = 0.8) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const img = new Image()
-      img.onload = () => {
-        const scale = Math.min(1, maxSide / Math.max(img.width, img.height))
-        const w = Math.max(1, Math.round(img.width * scale))
-        const h = Math.max(1, Math.round(img.height * scale))
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
-        canvas.toBlob(
-          blob => (blob ? resolve(blob) : reject(new Error('compression échouée'))),
-          'image/jpeg',
-          quality
-        )
-      }
-      img.onerror = reject
-      img.src = reader.result
-    }
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
-
 export default function FicheChantier({ params }) {
   const { id } = use(params)
   const [dossier, setDossier] = useState(null)
@@ -1005,9 +979,10 @@ export default function FicheChantier({ params }) {
     if (!fichiers.length) return
     setUploadingPhoto(true)
     const resultats = await Promise.all(fichiers.map(async (fichier) => {
-      const ext = fichier.name.split('.').pop()
+      const f = await heicToJpegFile(fichier)   // photo iPhone (HEIC) → JPEG
+      const ext = (f.name.split('.').pop() || 'jpg')
       const chemin = `chantiers/${id}/${categorie}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-      const { error: uploadError } = await supabase.storage.from('photos').upload(chemin, fichier)
+      const { error: uploadError } = await supabase.storage.from('photos').upload(chemin, f, { contentType: f.type || undefined })
       if (uploadError) return false
       const { error: insertErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id })
       if (insertErr) return false
@@ -1429,9 +1404,10 @@ export default function FicheChantier({ params }) {
     if (!fichier) return
     setUploadingContrat(true)
     setErreur('')
-    const ext = fichier.name.split('.').pop()
+    const f = await heicToJpegFile(fichier)   // photo iPhone (HEIC) du contrat → JPEG
+    const ext = f.name.split('.').pop()
     const chemin = `chantiers/${id}/contrat/contrat.${ext}`
-    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+    const { error } = await supabase.storage.from('documents').upload(chemin, f, { upsert: true })
     if (error) { setErreur('Erreur upload : ' + error.message); setUploadingContrat(false); return }
     // Auto-signature : déposer le PDF du contrat coche le mandat (sauf s'il l'est déjà).
     const today = new Date().toISOString().slice(0, 10)

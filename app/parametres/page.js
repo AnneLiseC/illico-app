@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { authHeaders } from '../lib/api-auth-client'
 import MesCalendriers from '../components/MesCalendriers'
+import { heicToJpegFile } from '../lib/images'
 
 const LS = { display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5 }
 
@@ -332,10 +333,11 @@ export default function Parametres() {
   const uploadKbisFranchise = async (fichier) => {
     if (!profile) return
     setUploadingKbisFranchise(true)
-    const ext = fichier.name.split('.').pop()
+    const f = await heicToJpegFile(fichier)   // photo iPhone (HEIC) du KBIS → JPEG
+    const ext = f.name.split('.').pop()
     const chemin = `kbis/${profile.id}.${ext}`
     const { error: uploadError } = await supabase.storage
-      .from('documents').upload(chemin, fichier, { upsert: true })
+      .from('documents').upload(chemin, f, { upsert: true })
     if (uploadError) { setErreur('Erreur upload KBIS : ' + uploadError.message); setUploadingKbisFranchise(false); return }
     const { error } = await supabase.from('profiles').update({ kbis_url: chemin }).eq('id', profile.id)
     if (error) { setErreur('Erreur sauvegarde KBIS : ' + error.message) }
