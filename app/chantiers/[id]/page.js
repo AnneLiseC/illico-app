@@ -910,13 +910,14 @@ export default function FicheChantier({ params }) {
   // Télécharge toutes les photos du dossier en un ZIP, rangées par catégorie.
   // Signed URLs régénérées au clic (60s), côté client uniquement (pas de route API).
   const telechargerZipPhotos = async () => {
-    if (photos.length === 0) return
+    const photosOnly = photos.filter(p => p.type_media !== 'video')   // ZIP = photos uniquement (pas les vidéos, trop lourdes)
+    if (photosOnly.length === 0) return
     setZippingPhotos(true)
     try {
-      const { data: signed } = await supabase.storage.from('photos').createSignedUrls(photos.map(p => p.url), 60)
+      const { data: signed } = await supabase.storage.from('photos').createSignedUrls(photosOnly.map(p => p.url), 60)
       const parChemin = new Map((signed || []).map(u => [u.path, u.signedUrl]))
       const zip = new JSZip()
-      for (const p of photos) {
+      for (const p of photosOnly) {
         const url = parChemin.get(p.url)
         if (!url) continue
         const blob = await (await fetch(url)).blob()
@@ -4458,20 +4459,24 @@ export default function FicheChantier({ params }) {
               })}
             </div>
             <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
-              {photos.length > 0 && (
+              {photos.some(p => p.type_media !== 'video') && (
                 <button onClick={telechargerZipPhotos} disabled={zippingPhotos}
                   className="btn btn-ghost" style={{fontSize:12.5}}>
                   <DlIcon /> {zippingPhotos ? 'Préparation…' : 'Télécharger les photos'}
                 </button>
               )}
-              <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingPhoto ? 'wait' : 'pointer', opacity: uploadingPhoto ? 0.6 : 1}}>
-                <CamIcon /> {uploadingPhoto
-                  ? 'Upload en cours…'
-                  : `Ajouter photos / vidéos${categorie !== 'all' ? ` (${CATS.find(c => c.k === categorie)?.l})` : ''}`}
-                <input type="file" accept="image/*,video/*" multiple style={{display:'none'}}
-                  disabled={uploadingPhoto || categorie === 'all'}
-                  onChange={e => uploadPhotos(Array.from(e.target.files))} />
-              </label>
+              {/* Upload uniquement dans une catégorie précise (Avant/Pendant/Après/Maquette)
+                  → tout média est catégorisé, donc triable. Pas d'ajout depuis « Toutes ». */}
+              {categorie !== 'all' && (
+                <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingPhoto ? 'wait' : 'pointer', opacity: uploadingPhoto ? 0.6 : 1}}>
+                  <CamIcon /> {uploadingPhoto
+                    ? 'Upload en cours…'
+                    : `Ajouter photos / vidéos (${CATS.find(c => c.k === categorie)?.l})`}
+                  <input type="file" accept="image/*,video/*" multiple style={{display:'none'}}
+                    disabled={uploadingPhoto}
+                    onChange={e => uploadPhotos(Array.from(e.target.files))} />
+                </label>
+              )}
             </div>
           </div>
 
