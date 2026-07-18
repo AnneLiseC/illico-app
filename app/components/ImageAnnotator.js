@@ -14,20 +14,24 @@ const OUTILS = [
   { k: 'ellipse', l: '◯', t: 'Cercle' },
   { k: 'crayon',  l: '✎', t: 'Crayon' },
   { k: 'texte',   l: 'T', t: 'Texte' },
+  { k: 'gomme',   l: '🧽', t: 'Gomme (efface les annotations)' },
 ]
 const COULEURS = ['#e11d48', '#f59e0b', '#16a34a', '#2563eb', '#ffffff', '#111827']
 
 export default function ImageAnnotator({ src, onSave, onClose, titre = 'Annoter la photo' }) {
   const canvasRef = useRef(null)
   const imgRef = useRef(null)
+  const offRef = useRef(null)     // calque hors écran (photo seule) → source de la gomme
   const draftRef = useRef(null)
+  const texteRef = useRef(null)   // input texte flottant (focus différé)
   const [pret, setPret] = useState(false)
   const [shapes, setShapes] = useState([])
   const [outil, setOutil] = useState('fleche')
   const [couleur, setCouleur] = useState('#e11d48')
   const [epaisseur, setEpaisseur] = useState(5)
   const [saving, setSaving] = useState(false)
-  const [texteInput, setTexteInput] = useState(null) // { x, y, clientX, clientY, value }
+  // Saisie texte : clic sur l'image → champ à cet endroit, puis on tape. { x, y, clientX, clientY, value }
+  const [texteInput, setTexteInput] = useState(null)
 
   const dessinerFleche = (ctx, x0, y0, x1, y1, w) => {
     const head = Math.max(12, w * 3.2)
@@ -43,7 +47,22 @@ export default function ImageAnnotator({ src, onSave, onClose, titre = 'Annoter 
   const dessinerShape = useCallback((ctx, s) => {
     ctx.strokeStyle = s.couleur; ctx.fillStyle = s.couleur; ctx.lineWidth = s.epaisseur
     ctx.lineCap = 'round'; ctx.lineJoin = 'round'
-    if (s.type === 'crayon') {
+    if (s.type === 'gomme') {
+      // Efface les annotations en re-peignant la PHOTO d'origine le long du tracé
+      // (calque hors écran). N'altère pas la photo (mêmes pixels), seulement ce
+      // qui a été dessiné avant. La gomme est plus large que le trait.
+      const off = offRef.current
+      if (off && s.points.length) {
+        ctx.save()
+        ctx.strokeStyle = ctx.createPattern(off, 'no-repeat')
+        ctx.lineWidth = Math.max(14, s.epaisseur * 4)
+        ctx.beginPath(); s.points.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)))
+        // point unique (simple clic) : petit trait pour marquer
+        if (s.points.length === 1) { const p = s.points[0]; ctx.lineTo(p.x + 0.1, p.y + 0.1) }
+        ctx.stroke()
+        ctx.restore()
+      }
+    } else if (s.type === 'crayon') {
       ctx.beginPath(); s.points.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.stroke()
     } else if (s.type === 'rect') {
       ctx.strokeRect(s.x0, s.y0, s.x1 - s.x0, s.y1 - s.y0)
@@ -87,6 +106,11 @@ export default function ImageAnnotator({ src, onSave, onClose, titre = 'Annoter 
           canvas.width = Math.round(img.width * scale)
           canvas.height = Math.round(img.height * scale)
           imgRef.current = img
+          // Calque hors écran (photo seule) pour la gomme.
+          const off = document.createElement('canvas')
+          off.width = canvas.width; off.height = canvas.height
+          off.getContext('2d').drawImage(img, 0, 0, off.width, off.height)
+          offRef.current = off
           setPret(true)
         }
         img.src = objectUrl
@@ -99,11 +123,12 @@ export default function ImageAnnotator({ src, onSave, onClose, titre = 'Annoter 
 
   useEffect(() => {
     const h = (e) => {
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); setShapes(s => s.slice(0, -1)) }
-      else if (e.key === 'Escape' && !texteInput) onClose && onClose()
+      const dansChamp = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { if (!dansChamp) { e.preventDefault(); setShapes(s => s.slice(0, -1)) } }
+      else if (e.key === 'Escape' && !dansChamp) onClose && onClose()
     }
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
-  }, [onClose, texteInput])
+  }, [onClose])
 
   const pos = (e) => {
     const canvas = canvasRef.current, rect = canvas.getBoundingClientRect()
@@ -118,16 +143,17 @@ export default function ImageAnnotator({ src, onSave, onClose, titre = 'Annoter 
   const onDown = (e) => {
     if (!pret || texteInput) return
     const p = pos(e)
+    // Texte : clic → champ de saisie à cet endroit (le texte se pose en validant).
     if (outil === 'texte') { setTexteInput({ x: p.x, y: p.y, clientX: p.clientX, clientY: p.clientY, value: '' }); return }
-    draftRef.current = outil === 'crayon'
-      ? { type: 'crayon', points: [{ x: p.x, y: p.y }], couleur, epaisseur }
+    draftRef.current = (outil === 'crayon' || outil === 'gomme')
+      ? { type: outil, points: [{ x: p.x, y: p.y }], couleur, epaisseur }
       : { type: outil, x0: p.x, y0: p.y, x1: p.x, y1: p.y, couleur, epaisseur }
     redraw(shapes, draftRef.current)
   }
   const onMove = (e) => {
     if (!draftRef.current) return
     const p = pos(e)
-    if (draftRef.current.type === 'crayon') draftRef.current.points.push({ x: p.x, y: p.y })
+    if (draftRef.current.points) draftRef.current.points.push({ x: p.x, y: p.y })
     else { draftRef.current.x1 = p.x; draftRef.current.y1 = p.y }
     redraw(shapes, draftRef.current)
   }
@@ -137,17 +163,24 @@ export default function ImageAnnotator({ src, onSave, onClose, titre = 'Annoter 
     setShapes(s => [...s, d])
   }
 
+  // Focus DIFFÉRÉ du champ texte : au moment du clic, le navigateur redonne le
+  // focus au <body> juste après (le canvas n'est pas focusable) → un focus
+  // synchrone serait volé. rAF le repousse après ce comportement par défaut.
+  useEffect(() => {
+    if (!texteInput) return
+    const id = requestAnimationFrame(() => texteRef.current && texteRef.current.focus())
+    return () => cancelAnimationFrame(id)
+  }, [!!texteInput])   // eslint-disable-line react-hooks/exhaustive-deps
+
   const commitTexte = () => {
-    if (texteInput && texteInput.value.trim()) {
-      const t = texteInput
-      setShapes(s => [...s, { type: 'texte', x: t.x, y: t.y, texte: t.value.trim(), couleur, epaisseur }])
-    }
-    setTexteInput(null)
+    setTexteInput(t => {
+      if (t && t.value.trim()) setShapes(s => [...s, { type: 'texte', x: t.x, y: t.y, texte: t.value.trim(), couleur, epaisseur }])
+      return null
+    })
   }
 
   const enregistrer = () => {
-    // Intègre un éventuel texte encore en cours de saisie (sinon perdu : setShapes
-    // est asynchrone, le redraw ci-dessous verrait l'ancien état).
+    // Intègre un texte encore en cours de saisie (setShapes est asynchrone).
     let list = shapes
     if (texteInput && texteInput.value.trim()) {
       list = [...shapes, { type: 'texte', x: texteInput.x, y: texteInput.y, texte: texteInput.value.trim(), couleur, epaisseur }]
@@ -189,25 +222,28 @@ export default function ImageAnnotator({ src, onSave, onClose, titre = 'Annoter 
         <button onClick={enregistrer} disabled={saving || !pret} className="btn btn-primary" style={{ fontSize: 13 }}>{saving ? 'Enregistrement…' : '✓ Enregistrer'}</button>
       </div>
       {/* Zone canvas */}
-      <div style={{ flex: 1, minHeight: 0, display: 'grid', placeItems: 'center', padding: 16, overflow: 'hidden' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'grid', placeItems: 'center', padding: 16, overflow: 'hidden', position: 'relative' }}>
         {!pret && <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13 }}>Chargement…</span>}
         <canvas ref={canvasRef}
           onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
           onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}
-          style={{ maxWidth: '100%', maxHeight: '100%', display: pret ? 'block' : 'none', borderRadius: 8, touchAction: 'none', cursor: 'crosshair', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }} />
+          style={{ maxWidth: '100%', maxHeight: '100%', display: pret ? 'block' : 'none', borderRadius: 8, touchAction: 'none', cursor: outil === 'texte' ? 'text' : 'crosshair', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }} />
+        {pret && outil === 'texte' && !texteInput && (
+          <div style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', background: 'rgba(15,23,42,0.9)', color: '#fff', fontSize: 12, padding: '6px 12px', borderRadius: 999, pointerEvents: 'none' }}>
+            Cliquez sur l&apos;image à l&apos;endroit du texte, puis tapez
+          </div>
+        )}
       </div>
-      {/* Saisie texte flottante — focus explicite (l'autoFocus échoue parfois sur un
-          input monté dynamiquement → les frappes partent dans le vide). Position
-          bornée à la fenêtre pour rester toujours visible. */}
+      {/* Saisie texte flottante : apparaît à l'endroit cliqué, focus différé. */}
       {texteInput && (
         <input
-          ref={el => { if (el && document.activeElement !== el) el.focus() }}
+          ref={texteRef}
           value={texteInput.value}
           onChange={e => setTexteInput(t => ({ ...t, value: e.target.value }))}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitTexte() } if (e.key === 'Escape') setTexteInput(null) }}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitTexte() } else if (e.key === 'Escape') { e.preventDefault(); setTexteInput(null) } }}
           onBlur={commitTexte}
-          placeholder="Texte + Entrée"
-          style={{ position: 'fixed', left: Math.min(texteInput.clientX, window.innerWidth - 200), top: Math.min(texteInput.clientY, window.innerHeight - 56), zIndex: 401, fontSize: 14, padding: '6px 10px', borderRadius: 8, border: '2px solid var(--brand-500)', background: '#fff', color: '#111', minWidth: 160 }} />
+          placeholder="Tapez, puis Entrée"
+          style={{ position: 'fixed', left: Math.min(texteInput.clientX, window.innerWidth - 220), top: Math.min(texteInput.clientY, window.innerHeight - 56), zIndex: 401, fontSize: 14, padding: '6px 10px', borderRadius: 8, border: '2px solid var(--brand-500)', background: '#fff', color: '#111', minWidth: 180 }} />
       )}
     </div>
   )
