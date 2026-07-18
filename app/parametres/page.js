@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { authHeaders } from '../lib/api-auth-client'
 import MesCalendriers from '../components/MesCalendriers'
+import ModalShell from '../components/ModalShell'
 import { heicToJpegFile } from '../lib/images'
 
 const LS = { display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5 }
@@ -793,76 +794,82 @@ export default function Parametres() {
 
       {/* ── Modal ajouter une agence ── */}
       {modal === 'creer_agence' && (
-        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
-          <div className="card" style={{padding:0, maxWidth:520, width:'100%', maxHeight:'90vh', overflow:'auto'}}>
-            <div style={{padding:'18px 22px', borderBottom:'1px solid var(--ink-200)'}}>
-              <h2 className="page" style={{fontSize:16}}>Ajouter une agence</h2>
-              <div className="eyebrow" style={{marginTop:4}}>Le code agence est généré automatiquement</div>
+        <ModalShell
+          title="Ajouter une agence"
+          subtitle="Le code agence est généré automatiquement"
+          onClose={() => { setModal(false); setErreur('') }}
+          width={520}
+          footer={<>
+            <button className="btn btn-ghost" onClick={() => { setModal(false); setErreur('') }}>Annuler</button>
+            <button className="btn btn-primary" onClick={creerAgence}
+              disabled={savingAgence || !formAgence.nom.trim() || !formAgence.ville.trim()}
+              style={{opacity: (savingAgence || !formAgence.nom.trim() || !formAgence.ville.trim()) ? 0.5 : 1}}>
+              {savingAgence ? 'Création…' : 'Créer l\'agence'}
+            </button>
+          </>}
+        >
+          <div style={{padding:22, display:'flex', flexDirection:'column', gap:14}}>
+            {erreur && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c'}}>{erreur}</div>}
+            <div><label style={LS}>Nom de l&apos;agence *</label><input className="input" value={formAgence.nom} onChange={e => setFormAgence(f => ({ ...f, nom: e.target.value }))} placeholder="illiCO travaux [ville]"/></div>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+              <div><label style={LS}>Ville *</label><input className="input" value={formAgence.ville} onChange={e => setFormAgence(f => ({ ...f, ville: e.target.value }))} placeholder="Votre ville"/></div>
+              <div><label style={LS}>Code postal</label><input className="input" value={formAgence.code_postal} onChange={e => setFormAgence(f => ({ ...f, code_postal: e.target.value }))}/></div>
             </div>
-            <div style={{padding:22, display:'flex', flexDirection:'column', gap:14}}>
-              {erreur && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c'}}>{erreur}</div>}
-              <div><label style={LS}>Nom de l&apos;agence *</label><input className="input" value={formAgence.nom} onChange={e => setFormAgence(f => ({ ...f, nom: e.target.value }))} placeholder="illiCO travaux [ville]"/></div>
-              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
-                <div><label style={LS}>Ville *</label><input className="input" value={formAgence.ville} onChange={e => setFormAgence(f => ({ ...f, ville: e.target.value }))} placeholder="Votre ville"/></div>
-                <div><label style={LS}>Code postal</label><input className="input" value={formAgence.code_postal} onChange={e => setFormAgence(f => ({ ...f, code_postal: e.target.value }))}/></div>
-              </div>
-              <div><label style={LS}>Adresse</label><input className="input" value={formAgence.adresse} onChange={e => setFormAgence(f => ({ ...f, adresse: e.target.value }))}/></div>
-              <div><label style={LS}>Téléphone</label><input className="input" type="tel" value={formAgence.telephone} onChange={e => setFormAgence(f => ({ ...f, telephone: e.target.value }))} placeholder="04 00 00 00 00"/></div>
-              <div><label style={LS}>Email</label><input className="input" type="email" value={formAgence.email} onChange={e => setFormAgence(f => ({ ...f, email: e.target.value }))} placeholder="agence@illico-travaux.com"/></div>
-              <div><label style={LS}>Nom du responsable</label><input className="input" value={formAgence.responsable_nom} onChange={e => setFormAgence(f => ({ ...f, responsable_nom: e.target.value }))}/></div>
-            </div>
-            <div style={{padding:'14px 22px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:8, justifyContent:'flex-end'}}>
-              <button className="btn btn-ghost" onClick={() => { setModal(false); setErreur('') }}>Annuler</button>
-              <button className="btn btn-primary" onClick={creerAgence}
-                disabled={savingAgence || !formAgence.nom.trim() || !formAgence.ville.trim()}
-                style={{opacity: (savingAgence || !formAgence.nom.trim() || !formAgence.ville.trim()) ? 0.5 : 1}}>
-                {savingAgence ? 'Création…' : 'Créer l\'agence'}
-              </button>
-            </div>
+            <div><label style={LS}>Adresse</label><input className="input" value={formAgence.adresse} onChange={e => setFormAgence(f => ({ ...f, adresse: e.target.value }))}/></div>
+            <div><label style={LS}>Téléphone</label><input className="input" type="tel" value={formAgence.telephone} onChange={e => setFormAgence(f => ({ ...f, telephone: e.target.value }))} placeholder="04 00 00 00 00"/></div>
+            <div><label style={LS}>Email</label><input className="input" type="email" value={formAgence.email} onChange={e => setFormAgence(f => ({ ...f, email: e.target.value }))} placeholder="agence@illico-travaux.com"/></div>
+            <div><label style={LS}>Nom du responsable</label><input className="input" value={formAgence.responsable_nom} onChange={e => setFormAgence(f => ({ ...f, responsable_nom: e.target.value }))}/></div>
           </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* ── Modal modifier une agence ── */}
       {modal === 'editer_agence' && (
-        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
-          <div className="card" style={{padding:0, maxWidth:520, width:'100%', maxHeight:'90vh', overflow:'auto'}}>
-            <div style={{padding:'18px 22px', borderBottom:'1px solid var(--ink-200)'}}>
-              <h2 className="page" style={{fontSize:16}}>Modifier l&apos;agence</h2>
-              <div className="eyebrow" style={{marginTop:4}}>Code {formAgence.code || '—'} · non modifiable</div>
+        <ModalShell
+          title="Modifier l&apos;agence"
+          subtitle={`Code ${formAgence.code || '—'} · non modifiable`}
+          onClose={() => { setModal(false); setErreur('') }}
+          width={520}
+          footer={<>
+            <button className="btn btn-ghost" onClick={() => { setModal(false); setErreur('') }}>Annuler</button>
+            <button className="btn btn-primary" onClick={modifierAgence}
+              disabled={savingAgence || !formAgence.nom.trim() || !formAgence.ville.trim()}
+              style={{opacity: (savingAgence || !formAgence.nom.trim() || !formAgence.ville.trim()) ? 0.5 : 1}}>
+              {savingAgence ? 'Enregistrement…' : 'Enregistrer'}
+            </button>
+          </>}
+        >
+          <div style={{padding:22, display:'flex', flexDirection:'column', gap:14}}>
+            {erreur && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c'}}>{erreur}</div>}
+            <div><label style={LS}>Nom de l&apos;agence *</label><input className="input" value={formAgence.nom} onChange={e => setFormAgence(f => ({ ...f, nom: e.target.value }))} placeholder="illiCO travaux [ville]"/></div>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+              <div><label style={LS}>Ville *</label><input className="input" value={formAgence.ville} onChange={e => setFormAgence(f => ({ ...f, ville: e.target.value }))} placeholder="Votre ville"/></div>
+              <div><label style={LS}>Code postal</label><input className="input" value={formAgence.code_postal} onChange={e => setFormAgence(f => ({ ...f, code_postal: e.target.value }))}/></div>
             </div>
-            <div style={{padding:22, display:'flex', flexDirection:'column', gap:14}}>
-              {erreur && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c'}}>{erreur}</div>}
-              <div><label style={LS}>Nom de l&apos;agence *</label><input className="input" value={formAgence.nom} onChange={e => setFormAgence(f => ({ ...f, nom: e.target.value }))} placeholder="illiCO travaux [ville]"/></div>
-              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
-                <div><label style={LS}>Ville *</label><input className="input" value={formAgence.ville} onChange={e => setFormAgence(f => ({ ...f, ville: e.target.value }))} placeholder="Votre ville"/></div>
-                <div><label style={LS}>Code postal</label><input className="input" value={formAgence.code_postal} onChange={e => setFormAgence(f => ({ ...f, code_postal: e.target.value }))}/></div>
-              </div>
-              <div><label style={LS}>Adresse</label><input className="input" value={formAgence.adresse} onChange={e => setFormAgence(f => ({ ...f, adresse: e.target.value }))}/></div>
-              <div><label style={LS}>Téléphone</label><input className="input" type="tel" value={formAgence.telephone} onChange={e => setFormAgence(f => ({ ...f, telephone: e.target.value }))} placeholder="04 00 00 00 00"/></div>
-              <div><label style={LS}>Email</label><input className="input" type="email" value={formAgence.email} onChange={e => setFormAgence(f => ({ ...f, email: e.target.value }))} placeholder="agence@illico-travaux.com"/></div>
-              <div><label style={LS}>Nom du responsable</label><input className="input" value={formAgence.responsable_nom} onChange={e => setFormAgence(f => ({ ...f, responsable_nom: e.target.value }))}/></div>
-            </div>
-            <div style={{padding:'14px 22px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:8, justifyContent:'flex-end'}}>
-              <button className="btn btn-ghost" onClick={() => { setModal(false); setErreur('') }}>Annuler</button>
-              <button className="btn btn-primary" onClick={modifierAgence}
-                disabled={savingAgence || !formAgence.nom.trim() || !formAgence.ville.trim()}
-                style={{opacity: (savingAgence || !formAgence.nom.trim() || !formAgence.ville.trim()) ? 0.5 : 1}}>
-                {savingAgence ? 'Enregistrement…' : 'Enregistrer'}
-              </button>
-            </div>
+            <div><label style={LS}>Adresse</label><input className="input" value={formAgence.adresse} onChange={e => setFormAgence(f => ({ ...f, adresse: e.target.value }))}/></div>
+            <div><label style={LS}>Téléphone</label><input className="input" type="tel" value={formAgence.telephone} onChange={e => setFormAgence(f => ({ ...f, telephone: e.target.value }))} placeholder="04 00 00 00 00"/></div>
+            <div><label style={LS}>Email</label><input className="input" type="email" value={formAgence.email} onChange={e => setFormAgence(f => ({ ...f, email: e.target.value }))} placeholder="agence@illico-travaux.com"/></div>
+            <div><label style={LS}>Nom du responsable</label><input className="input" value={formAgence.responsable_nom} onChange={e => setFormAgence(f => ({ ...f, responsable_nom: e.target.value }))}/></div>
           </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* ── Modal créer / modifier ── */}
       {(modal === 'creer' || modal === 'modifier') && (
-        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
-          <div className="card" style={{padding:0, maxWidth:520, width:'100%', maxHeight:'90vh', overflow:'auto'}}>
-            <div style={{padding:'18px 22px', borderBottom:'1px solid var(--ink-200)'}}>
-              <h2 className="page" style={{fontSize:16}}>{modal === 'creer' ? 'Nouvel agent' : `Modifier — ${agenteEditee?.prenom} ${agenteEditee?.nom}`}</h2>
-              <div className="eyebrow" style={{marginTop:4}}>{modal === 'creer' ? 'Invitation par email' : 'Profil et parts'}</div>
-            </div>
+        <ModalShell
+          title={modal === 'creer' ? 'Nouvel agent' : `Modifier — ${agenteEditee?.prenom} ${agenteEditee?.nom}`}
+          subtitle={modal === 'creer' ? 'Invitation par email' : 'Profil et parts'}
+          onClose={() => { setModal(false); setErreur(''); setSucces('') }}
+          width={520}
+          footer={<>
+            <button className="btn btn-ghost" onClick={() => { setModal(false); setErreur(''); setSucces('') }}>Annuler</button>
+            <button className="btn btn-primary" onClick={modal === 'creer' ? creerAgente : modifierAgente}
+              disabled={saving || !form.prenom || !form.nom || (modal === 'creer' && !form.email) || (modal === 'creer' && agencesCtx.length >= 2 && !form.agence_id)}
+              style={{opacity: (saving || !form.prenom || !form.nom || (modal === 'creer' && !form.email) || (modal === 'creer' && agencesCtx.length >= 2 && !form.agence_id)) ? 0.5 : 1}}>
+              {saving ? 'Enregistrement…' : modal === 'creer' ? "Envoyer l'invitation" : 'Enregistrer'}
+            </button>
+          </>}
+        >
             <div style={{padding:22, display:'flex', flexDirection:'column', gap:14}}>
               {erreur && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c'}}>{erreur}</div>}
               {succes && <div style={{background:'rgba(22,163,74,0.07)', border:'1px solid rgba(22,163,74,0.25)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#15803d'}}>{succes}</div>}
@@ -922,22 +929,22 @@ export default function Parametres() {
                 <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Montant annuel. Modifiable à tout moment.</div>
               </div>
             </div>
-            <div style={{padding:'14px 22px', borderTop:'1px solid var(--ink-200)', display:'flex', gap:8, justifyContent:'flex-end'}}>
-              <button className="btn btn-ghost" onClick={() => { setModal(false); setErreur(''); setSucces('') }}>Annuler</button>
-              <button className="btn btn-primary" onClick={modal === 'creer' ? creerAgente : modifierAgente}
-                disabled={saving || !form.prenom || !form.nom || (modal === 'creer' && !form.email) || (modal === 'creer' && agencesCtx.length >= 2 && !form.agence_id)}
-                style={{opacity: (saving || !form.prenom || !form.nom || (modal === 'creer' && !form.email) || (modal === 'creer' && agencesCtx.length >= 2 && !form.agence_id)) ? 0.5 : 1}}>
-                {saving ? 'Enregistrement…' : modal === 'creer' ? "Envoyer l'invitation" : 'Enregistrer'}
-              </button>
-            </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* ── Modal suppression ── */}
       {modal === 'supprimer' && agenteASupprimer && (
-        <div style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:100, display:'grid', placeItems:'center', padding:20}}>
-          <div className="card" style={{padding:24, maxWidth:440, width:'100%'}}>
+        <ModalShell
+          onClose={() => { setModal(false); setAgenteASupprimer(null); setErreur('') }}
+          width={440}
+          footer={<>
+            <button className="btn btn-ghost" style={{flex:1}} onClick={() => { setModal(false); setAgenteASupprimer(null); setErreur('') }}>Annuler</button>
+            <button className="btn btn-primary" style={{flex:1, background:'#DC2626', opacity: supprimant ? 0.5 : 1}} onClick={desactiverAgente} disabled={supprimant}>
+              {supprimant ? 'Désactivation…' : 'Désactiver'}
+            </button>
+          </>}
+        >
+          <div style={{padding:24}}>
             <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:16}}>
               <div style={{width:40, height:40, borderRadius:99, background:'rgba(239,68,68,0.1)', color:'#DC2626', display:'grid', placeItems:'center', fontSize:18, flexShrink:0}}>⚠</div>
               <div>
@@ -951,14 +958,8 @@ export default function Parametres() {
               C&apos;est <strong>réversible</strong> : tu pourras la réactiver à tout moment.
             </div>
             {erreur && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c', marginBottom:12}}>{erreur}</div>}
-            <div style={{display:'flex', gap:8}}>
-              <button className="btn btn-ghost" style={{flex:1}} onClick={() => { setModal(false); setAgenteASupprimer(null); setErreur('') }}>Annuler</button>
-              <button className="btn btn-primary" style={{flex:1, background:'#DC2626', opacity: supprimant ? 0.5 : 1}} onClick={desactiverAgente} disabled={supprimant}>
-                {supprimant ? 'Désactivation…' : 'Désactiver'}
-              </button>
-            </div>
           </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   )
