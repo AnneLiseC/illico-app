@@ -849,10 +849,6 @@ export default function FicheChantier({ params }) {
           rendez_vous(*, artisan:artisans(id, entreprise)),
           interventions_artisans(*, artisan:artisans(id, entreprise)),
           suivi_financier(*),
-          chantier_documents(*),
-          factures_artisans(*),
-          comptes_rendus(*),
-          messages(*, auteur:profiles(prenom, nom, role)),
           chantier_fiches_techniques(*, fiche:fiches_techniques(id, nom, description))
         `)
           .eq('id', id)
@@ -861,10 +857,6 @@ export default function FicheChantier({ params }) {
           .order('created_at', { referencedTable: 'photos', ascending: false })
           .order('date_heure', { referencedTable: 'rendez_vous' })
           .order('date_debut', { referencedTable: 'interventions_artisans' })
-          .order('created_at', { referencedTable: 'chantier_documents', ascending: false })
-          .order('created_at', { referencedTable: 'factures_artisans' })
-          .order('created_at', { referencedTable: 'comptes_rendus', ascending: false })
-          .order('created_at', { referencedTable: 'messages' })
           .single(),
         supabase.from('artisans').select('id, entreprise, metier, partenaire').order('entreprise'),
         supabase.from('cibles_calendrier').select('*').eq('actif', true).order('created_at'),
@@ -882,11 +874,6 @@ export default function FicheChantier({ params }) {
       setRdvsDossier(d?.rendez_vous || [])
       setInterventionsDossier(d?.interventions_artisans || [])
       setSuiviFinancier(d?.suivi_financier || [])
-      setDocuments(d?.chantier_documents || [])
-      setFactures(d?.factures_artisans || [])
-      setComptesRendus(d?.comptes_rendus || [])
-      setMessages(d?.messages || [])
-      setNbMsgNonLus((d?.messages || []).filter(m => m.auteur_role === 'client' && !m.lu_agence).length)
 
       const grouped = {}
       ;(d?.chantier_fiches_techniques || []).forEach(item => {
@@ -903,6 +890,31 @@ export default function FicheChantier({ params }) {
         supabase.from('profiles').select('prenom, nom').eq('role', 'admin').order('prenom').limit(1).maybeSingle()
           .then(({ data }) => { if (data) setPrenomAdmin(data.prenom || '—') })
       }
+
+      // Enfants LOURDS (markdown des CR, messages, factures, documents) : sortis de
+      // la requête critique → chargés en arrière-plan APRÈS le premier affichage.
+      // L'aperçu et les compteurs d'onglets se remplissent une fraction de seconde
+      // plus tard ; le LCP, lui, n'attend plus ce gros payload.
+      supabase.from('dossiers').select(`
+        chantier_documents(*),
+        factures_artisans(*),
+        comptes_rendus(*),
+        messages(*, auteur:profiles(prenom, nom, role))
+      `)
+        .eq('id', id)
+        .order('created_at', { referencedTable: 'chantier_documents', ascending: false })
+        .order('created_at', { referencedTable: 'factures_artisans' })
+        .order('created_at', { referencedTable: 'comptes_rendus', ascending: false })
+        .order('created_at', { referencedTable: 'messages' })
+        .single()
+        .then(({ data: sec }) => {
+          if (!sec) return
+          setDocuments(sec.chantier_documents || [])
+          setFactures(sec.factures_artisans || [])
+          setComptesRendus(sec.comptes_rendus || [])
+          setMessages(sec.messages || [])
+          setNbMsgNonLus((sec.messages || []).filter(m => m.auteur_role === 'client' && !m.lu_agence).length)
+        })
     }
     init()
   }, [id, router])
