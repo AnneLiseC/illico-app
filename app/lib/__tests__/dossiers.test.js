@@ -42,6 +42,13 @@ describe('calculerAvancement — 5 jalons métier', () => {
     const done = calculerEtapes({ contrat_signe: false }, [{ statut: 'accepte' }], 'en_cours_chantier')
     expect(done).toEqual([true, true, true, true, false])
   })
+
+  it('dossier null (chargement) ne crashe pas → 0 % / aucune étape', () => {
+    // Régression : à l'ouverture d'une fiche, dossier === null le temps du fetch.
+    expect(() => calculerAvancement(null)).not.toThrow()
+    expect(calculerAvancement(null)).toBe(0)
+    expect(calculerEtapes(null)).toEqual([false, false, false, false, false])
+  })
 })
 
 describe('deadlineDevisPertinente — cadre du « retard » devis', () => {
