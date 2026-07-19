@@ -190,6 +190,14 @@ export async function deltaQuery(accessToken, driveId, itemId, deltaLink) {
   return { items, deltaLink: finalDelta }
 }
 
+// Télécharge le contenu d'un item (driveId, itemId). Renvoie { buffer, contentType }.
+export async function downloadItemContent(accessToken, driveId, itemId) {
+  const res = await graphFetch(accessToken, `/drives/${driveId}/items/${itemId}/content`)
+  if (!res.ok) throw new Error(`download_failed_${res.status}`)
+  const contentType = res.headers.get('content-type') || 'application/octet-stream'
+  return { buffer: Buffer.from(await res.arrayBuffer()), contentType }
+}
+
 // Supprime un item (driveId, itemId). 404 (déjà supprimé) = succès idempotent.
 export async function deleteItem(accessToken, driveId, itemId) {
   const res = await graphFetch(accessToken, `/drives/${driveId}/items/${itemId}`, { method: 'DELETE' })

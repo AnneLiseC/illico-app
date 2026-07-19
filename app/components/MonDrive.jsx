@@ -27,7 +27,11 @@ export default function MonDrive({ profile, onError, onSucces }) {
   const [createName, setCreateName] = useState('')
   const [saving, setSaving] = useState(false)
   const [rattrapage, setRattrapage] = useState(null) // null | { done, total } pendant le backfill
-  const [inbox, setInbox] = useState(0)              // fichiers déposés dans le Drive « à rattacher »
+  const [inbox, setInbox] = useState([])             // fichiers déposés dans le Drive « à rattacher »
+  const [dossiersRef, setDossiersRef] = useState([]) // mes chantiers (pour rattacher)
+  const [rattacherId, setRattacherId] = useState(null)
+  const [rForm, setRForm] = useState({ dossier_id: '', categorie: '' })
+  const [importing, setImporting] = useState(false)
 
   const charger = useCallback(async () => {
     if (!profile) return
@@ -36,10 +40,14 @@ export default function MonDrive({ profile, onError, onSucces }) {
       .eq('user_id', profile.id).eq('fournisseur', 'microsoft').maybeSingle()
     setCompte(data || null)
     if (data) {
-      const { count } = await supabase.from('drive_inbox')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', profile.id).eq('statut', 'a_rattacher')
-      setInbox(count || 0)
+      const { data: inboxData } = await supabase.from('drive_inbox')
+        .select('id, name, parent_path, web_url').eq('user_id', profile.id).eq('statut', 'a_rattacher')
+        .order('created_at', { ascending: false })
+      setInbox(inboxData || [])
+      const { data: doss } = await supabase.from('dossiers')
+        .select('id, created_at, client:clients(nom)').eq('referente_id', profile.id)
+        .order('created_at', { ascending: false })
+      setDossiersRef(doss || [])
     }
   }, [profile?.id])
 
@@ -159,6 +167,31 @@ export default function MonDrive({ profile, onError, onSucces }) {
     }
     setRattrapage(null)
     onSucces?.(`Rattrapage OneDrive : ${envoyes} envoyé(s), ${sautes} déjà présent(s), ${echecs} échec(s)`)
+  }
+
+  const importer = async () => {
+    if (!rattacherId || !rForm.dossier_id) return
+    setImporting(true); onError?.(''); onSucces?.('')
+    try {
+      const res = await fetch('/api/drive/import', {
+        method: 'POST', headers: await authHeaders(),
+        body: JSON.stringify({ inbox_id: rattacherId, dossier_id: rForm.dossier_id, categorie: rForm.categorie || null }),
+      })
+      const d = await res.json()
+      if (res.ok && d.ok) { onSucces?.('Fichier rattaché au chantier ✓'); setRattacherId(null); setRForm({ dossier_id: '', categorie: '' }); charger() }
+      else onError?.(d.error || 'Rattachement impossible')
+    } catch { onError?.('Rattachement impossible') }
+    setImporting(false)
+  }
+
+  const ignorer = async (id) => {
+    onError?.(''); onSucces?.('')
+    try {
+      const res = await fetch('/api/drive/inbox', {
+        method: 'POST', headers: await authHeaders(), body: JSON.stringify({ inbox_id: id, action: 'ignore' }),
+      })
+      if (res.ok) charger()
+    } catch { /* ignore */ }
   }
 
   const choisir = (f) => enregistrerRacine({ drive_id: f.driveId, item_id: f.itemId, name: f.name })
@@ -293,15 +326,41 @@ export default function MonDrive({ profile, onError, onSucces }) {
             )}
           </div>
 
-          {/* ── Fichiers déposés dans le Drive (détection entrante, v1) ── */}
-          {inbox > 0 && (
-            <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 14 }}>
-              <div style={{ fontSize: 12.5, color: 'var(--ink-700)' }}>
-                📥 <strong>{inbox}</strong> fichier{inbox > 1 ? 's' : ''} déposé{inbox > 1 ? 's' : ''} dans ton OneDrive détecté{inbox > 1 ? 's' : ''}.
-              </div>
-              <div style={{ fontSize: 11.5, color: 'var(--ink-500)', marginTop: 3 }}>
-                Le rattachement automatique au bon chantier arrive prochainement.
-              </div>
+          {/* ── Fichiers déposés dans le Drive → à rattacher à un chantier ── */}
+          {inbox.length > 0 && (
+            <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>📥 Fichiers déposés à rattacher ({inbox.length})</div>
+              {inbox.map(it => (
+                <div key={it.id} style={{ border: '1px solid var(--ink-100)', borderRadius: 8, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, color: 'var(--ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📄 {it.name}</div>
+                      {it.parent_path && <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{it.parent_path.replace(/^.*root:/, '')}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => { setRattacherId(rattacherId === it.id ? null : it.id); setRForm({ dossier_id: '', categorie: '' }) }}>Rattacher</button>
+                      <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => ignorer(it.id)}>Ignorer</button>
+                    </div>
+                  </div>
+                  {rattacherId === it.id && (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <select className="input" style={{ height: 38, flex: 1, minWidth: 180 }} value={rForm.dossier_id} onChange={e => setRForm(f => ({ ...f, dossier_id: e.target.value }))}>
+                        <option value="">— Chantier —</option>
+                        {dossiersRef.map(d => <option key={d.id} value={d.id}>{(d.created_at || '').slice(0, 10)} {d.client?.nom || ''}</option>)}
+                      </select>
+                      <select className="input" style={{ height: 38 }} value={rForm.categorie} onChange={e => setRForm(f => ({ ...f, categorie: e.target.value }))}>
+                        <option value="">Autres</option>
+                        <option value="compte_rendu">Compte rendu</option>
+                        <option value="plans">Plans</option>
+                        <option value="administratif">Administratif</option>
+                      </select>
+                      <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={importing || !rForm.dossier_id} onClick={importer}>
+                        {importing ? '…' : 'Valider'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </>
