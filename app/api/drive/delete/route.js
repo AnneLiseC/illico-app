@@ -23,13 +23,15 @@ export async function POST(request) {
 
   let body
   try { body = await request.json() } catch { body = {} }
-  const documentId = body.document_id
-  if (!documentId) return NextResponse.json({ error: 'document_id manquant' }, { status: 400 })
-
   const db = admin()
 
-  const { data: idx } = await db.from('doc_index')
-    .select('id, drive_id, item_id, user_id').eq('document_id', documentId).maybeSingle()
+  // Cible par document_id OU photo_id.
+  let q = db.from('doc_index').select('id, drive_id, item_id, user_id')
+  if (body.document_id) q = q.eq('document_id', body.document_id)
+  else if (body.photo_id) q = q.eq('photo_id', body.photo_id)
+  else return NextResponse.json({ error: 'document_id ou photo_id requis' }, { status: 400 })
+
+  const { data: idx } = await q.maybeSingle()
   if (!idx) return NextResponse.json({ ok: true, nothing: true }) // jamais miroité → rien à faire
 
   // Compte Drive de la référente propriétaire du miroir.
