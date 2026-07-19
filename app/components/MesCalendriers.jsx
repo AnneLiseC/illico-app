@@ -45,8 +45,13 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
   // connexion / déconnexion d'un compte (8c).
   const chargerComptes = useCallback(async () => {
     if (!profile) return
+    // Fournisseurs CALENDRIER uniquement : on exclut les comptes Drive (ex. 'microsoft'
+    // = OneDrive, géré par le composant MonDrive), qui partagent la table comptes_oauth
+    // mais n'ont ni agenda ni cible. Sinon un compte Drive s'afficherait à tort ici et
+    // /api/calendar/list échouerait dessus (token Files, pas Calendar).
     const { data } = await supabase.from('comptes_oauth')
       .select('id, fournisseur, compte_email, caldav_username').eq('user_id', profile.id)
+      .in('fournisseur', ['google', 'icloud', 'outlook'])
     const list = data || []
     setComptesCal(list)
     setAgendas({})
