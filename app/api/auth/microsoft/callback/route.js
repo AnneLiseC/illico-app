@@ -48,13 +48,21 @@ export async function GET(request) {
   const state = searchParams.get('state')
 
   if (error || !code || !state) {
-    return NextResponse.redirect(new URL('/parametres?onedrive=error', request.url))
+    return NextResponse.redirect(new URL('/profil?onedrive=error', request.url))
   }
 
   const userId = verifySignedState(state)
   if (!userId) {
-    return NextResponse.redirect(new URL('/parametres?onedrive=error&reason=state_invalid', request.url))
+    return NextResponse.redirect(new URL('/profil?onedrive=error&reason=state_invalid', request.url))
   }
+
+  // Destination selon le rôle : admin voit « Mon Drive » dans /parametres, l'agente
+  // dans /profil. On y renvoie pour que le bandeau (connected/error) s'affiche au bon endroit.
+  let dest = '/profil'
+  try {
+    const { data: prof } = await getSupabaseAdmin().from('profiles').select('role').eq('id', userId).maybeSingle()
+    if (prof?.role === 'admin') dest = '/parametres'
+  } catch { /* défaut /profil */ }
 
   try {
     // 1) Échange code → tokens (application/x-www-form-urlencoded).
@@ -73,7 +81,7 @@ export async function GET(request) {
     const tok = await tokenRes.json()
     if (!tokenRes.ok || !tok.access_token) {
       console.error('Microsoft token exchange error:', tok?.error, tok?.error_description)
-      return NextResponse.redirect(new URL('/parametres?onedrive=error', request.url))
+      return NextResponse.redirect(new URL(`${dest}?onedrive=error`, request.url))
     }
 
     // 2) Identité du compte (Graph /me) — pour l'affichage. Non bloquant.
@@ -99,9 +107,9 @@ export async function GET(request) {
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id,fournisseur' })
 
-    return NextResponse.redirect(new URL('/parametres?onedrive=connected', request.url))
+    return NextResponse.redirect(new URL(`${dest}?onedrive=connected`, request.url))
   } catch (err) {
     console.error('Microsoft OAuth callback error:', err)
-    return NextResponse.redirect(new URL('/parametres?onedrive=error', request.url))
+    return NextResponse.redirect(new URL(`${dest}?onedrive=error`, request.url))
   }
 }
