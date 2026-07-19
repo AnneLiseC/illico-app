@@ -1484,6 +1484,13 @@ export default function FicheChantier({ params }) {
 
   const supprimerDocumentChantier = async (docId, path) => {
     if (!confirm('Supprimer ce document ?')) return
+    // Miroir OneDrive (maître→miroir) : supprimer la copie AVANT le cascade FK qui
+    // retire doc_index. Best-effort — n'empêche pas la suppression app si le Drive échoue.
+    try {
+      await authHeaders().then(h => fetch('/api/drive/delete', {
+        method: 'POST', headers: h, body: JSON.stringify({ document_id: docId }),
+      }))
+    } catch { /* non bloquant */ }
     const { error: rmErr } = await supabase.storage.from('documents').remove([path])
     if (rmErr) console.error('Suppression fichier document (non bloquant) :', rmErr.message)
     const { error } = await supabase.from('chantier_documents').delete().eq('id', docId)

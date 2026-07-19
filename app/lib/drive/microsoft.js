@@ -167,6 +167,13 @@ export async function ensureFolderPath(accessToken, rootDriveId, rootItemId, seg
   return parent
 }
 
+// Supprime un item (driveId, itemId). 404 (déjà supprimé) = succès idempotent.
+export async function deleteItem(accessToken, driveId, itemId) {
+  const res = await graphFetch(accessToken, `/drives/${driveId}/items/${itemId}`, { method: 'DELETE' })
+  if (res.ok || res.status === 404) return true
+  throw new Error(`delete_failed_${res.status}`)
+}
+
 // Upload SIMPLE (≤ ~250 Mo) d'un fichier sous (driveId, parentItemId). Conflit → renomme.
 // `body` = Buffer/Uint8Array. Renvoie { id, name, webUrl }.
 export async function uploadSmallFile(accessToken, driveId, parentItemId, fileName, body, contentType) {
