@@ -75,6 +75,7 @@ export default function Planning() {
 
   const [googleConnected, setGoogleConnected] = useState(false)
   const [demandeSuppr, setDemandeSuppr]       = useState(false) // choix portée suppr. d'une série
+  const [demandeModif, setDemandeModif]       = useState(false) // choix portée modif. d'une série
   const [fournisseursConnectes, setFournisseursConnectes] = useState([])
   const [syncMessage, setSyncMessage]         = useState('')
   const [calendarView, setCalendarView]       = useState('timeGridWeek')
@@ -427,7 +428,7 @@ export default function Planning() {
   }
 
   const fermerModal = () => {
-    setModalOuvert(false); setElementSelectionne(null); setModeEdition(false); setErreur(''); setDemandeSuppr(false)
+    setModalOuvert(false); setElementSelectionne(null); setModeEdition(false); setErreur(''); setDemandeSuppr(false); setDemandeModif(false)
     setFormRdv({ dossier_id: '', type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', agence_id: '', cible_id: '' })
     setFormIntervention({ dossier_id: '', artisan_id: '', type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', agence_id: '', cible_id: '' })
     lastAutoCibleRdv.current = ''; lastAutoCibleInt.current = ''
@@ -442,8 +443,26 @@ export default function Planning() {
     })).catch(() => {})
   }
 
-  const sauvegarderRdv = async () => {
+  // portee : 'un' (cette occurrence) | 'serie' (toute la série) | undefined (demander).
+  const sauvegarderRdv = async (portee) => {
     if (!formRdv.date_heure) return
+    const recurrente = elementSelectionne?.type === 'rdv' && modeEdition && estRecurrente(elementSelectionne.data.google_event_id)
+    if (recurrente && !portee) { setDemandeModif(true); return }
+    setDemandeModif(false)
+
+    // Toute la série : SEULES les métadonnées BATILIS se propagent (type, artisan,
+    // notes). PAS les champs Google (titre / heure / durée) : Google en est la source,
+    // la prochaine synchro les réécraserait → on ne les touche pas ici. Aucun push.
+    if (portee === 'serie') {
+      setSaving(true); setErreur('')
+      const base = baseRecurrente(elementSelectionne.data.google_event_id)
+      const meta = { type_rdv: formRdv.type_rdv, artisan_id: formRdv.artisan_id || null, notes: formRdv.notes || null }
+      const { error } = await supabase.from('rendez_vous').update(meta).like('google_event_id', escapeLike(base) + '\\_%')
+      if (error) { setErreur(error.message); setSaving(false); return }
+      fermerModal(); setSaving(false); chargerTout()
+      return
+    }
+
     const estAutresSansDossier = formRdv.type_rdv === 'autres' && !formRdv.dossier_id
     const adminVueToutes = profile?.role === 'admin' && agenceActive === null
     // Admin en vue « toutes agences », RDV libre sans dossier : l'agence est obligatoire
@@ -869,6 +888,22 @@ export default function Planning() {
         </div>
       )}
 
+      {demandeModif && (
+        <div onClick={() => setDemandeModif(false)} style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:250, display:'grid', placeItems:'center', padding:16}}>
+          <div onClick={e => e.stopPropagation()} className="card" style={{maxWidth:380, width:'100%', padding:20}}>
+            <h3 style={{fontSize:15, fontWeight:800, color:'var(--ink-900)', margin:0}}>Événement récurrent</h3>
+            <p style={{fontSize:13, color:'var(--ink-600)', marginTop:8, lineHeight:1.5}}>
+              Appliquer à quoi ? « Toute la série » ne propage que le <strong>type, l&apos;artisan et les notes</strong> — le titre et l&apos;horaire restent gérés par Google Agenda.
+            </p>
+            <div style={{display:'flex', flexDirection:'column', gap:8, marginTop:16}}>
+              <button onClick={() => sauvegarderRdv('un')} className="btn btn-ghost">Cet événement</button>
+              <button onClick={() => sauvegarderRdv('serie')} className="btn btn-primary">Toute la série</button>
+              <button onClick={() => setDemandeModif(false)} className="btn btn-ghost" style={{opacity:0.7}}>Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modalOuvert && (
         <ModalShell onClose={fermerModal} width={448}>
 
@@ -1024,7 +1059,7 @@ export default function Planning() {
                   <div><label className={labelCls}>Notes</label><textarea value={formRdv.notes} onChange={e => setFormRdv(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} style={{marginTop:6}}/></div>
                   <div style={{display:'flex', gap:8, paddingTop:4}}>
                     <button onClick={fermerModal} className="btn btn-ghost" style={{flex:1}}>Annuler</button>
-                    <button onClick={sauvegarderRdv} disabled={(!formRdv.dossier_id && formRdv.type_rdv !== 'autres') || !formRdv.date_heure || saving} className="btn btn-primary" style={{flex:1, opacity: ((!formRdv.dossier_id && formRdv.type_rdv !== 'autres') || !formRdv.date_heure || saving) ? 0.5 : 1}}>
+                    <button onClick={() => sauvegarderRdv()} disabled={(!formRdv.dossier_id && formRdv.type_rdv !== 'autres') || !formRdv.date_heure || saving} className="btn btn-primary" style={{flex:1, opacity: ((!formRdv.dossier_id && formRdv.type_rdv !== 'autres') || !formRdv.date_heure || saving) ? 0.5 : 1}}>
                       {saving ? 'Enregistrement…' : modeEdition ? 'Enregistrer' : 'Créer le RDV'}
                     </button>
                   </div>
