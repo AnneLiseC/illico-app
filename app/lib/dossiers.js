@@ -107,24 +107,42 @@ export function getAlertesDevis(dossiers, today = new Date()) {
   })
 }
 
-// 🔹 Avancement chantier (0-100) basé sur les encaissements reçus
-// Ratio : montants reçus / montants prévus × 100
-// Exclut apporteur_agente (sortie, pas un encaissement)
-export function calculerAvancement(dossier) {
-  const suivi = (dossier?.suivi_financier || [])
-    .filter(sf => sf.type_echeance !== 'apporteur_agente')
+// 🔹 Avancement chantier — basé sur 5 JALONS MÉTIER (et non sur l'argent
+// encaissé, qui n'est pas l'avancement réel du chantier). Source UNIQUE partagée
+// par la barre d'avancement et les pastilles d'étapes de la fiche chantier.
+export const ETAPES_LABELS = ['Contact', 'Devis', 'Signature', 'Chantier', 'Livraison']
 
-  if (suivi.length === 0) return 0
+// Renvoie 5 booléens (jalons franchis), MONOTONES : un jalon franchi implique
+// tous les précédents. `devis`/`statut` optionnels : sinon lus/déduits du dossier.
+export function calculerEtapes(dossier, devis, statut) {
+  const dv = devis || dossier?.devis_artisans || []
+  const st = statut || calcStatut(dossier)
+  const step1 = !!dossier?.contrat_signe                                  // Mandat / contrat signé
+  const step2 = dv.length > 0                                             // ≥1 devis
+  const step3 = dv.length > 0 && dv.every(d => d.statut !== 'recu')       // devis tous tranchés
+  const step4 = !!dossier?.date_demarrage_chantier || st === 'en_cours_chantier' || st === 'termine' // chantier démarré
+  const step5 = st === 'termine'                                          // chantier livré
+  return [
+    step1 || step2 || step3 || step4 || step5,
+    step2 || step3 || step4 || step5,
+    step3 || step4 || step5,
+    step4 || step5,
+    step5,
+  ]
+}
 
-  const totalPrevu = suivi.reduce((s, sf) => s + (Number(sf.montant_ttc) || 0), 0)
-  if (totalPrevu === 0) return 0
+// Avancement 0-100 = part des 5 jalons franchis (0 / 20 / 40 / 60 / 80 / 100).
+export function calculerAvancement(dossier, devis, statut) {
+  const done = calculerEtapes(dossier, devis, statut).filter(Boolean).length
+  return Math.round((done / 5) * 100)
+}
 
-  const totalRecu = suivi
-    .filter(sf => sf.statut_illico === 'recu')
-    .reduce((s, sf) => s + (Number(sf.montant_ttc) || 0), 0)
-
-  const pct = Math.round((totalRecu / totalPrevu) * 100)
-  return Math.min(100, Math.max(0, pct))
+// La deadline du DEVIS (date_limite_devis) ne veut plus rien dire une fois le
+// dossier signé / en chantier / clos → ne pas afficher de « retard » dessus
+// (sinon on obtient des « retard 187j » sur un chantier en cours).
+const STATUTS_APRES_DEVIS = ['chantier_a_venir', 'en_cours_chantier', 'termine', 'annule']
+export function deadlineDevisPertinente(statut) {
+  return !STATUTS_APRES_DEVIS.includes(statut)
 }
 
 // 🔹 Détection de catégorie d'un document depuis son nom de fichier (upload).

@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { formatNomClient } from '../../lib/clients'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
-import { calculerAvancement, detecterCategorie } from '../../lib/dossiers'
+import { calculerAvancement, calculerEtapes, ETAPES_LABELS, detecterCategorie } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
@@ -2427,8 +2427,9 @@ export default function FicheChantier({ params }) {
   // Statut frais = dossiers.frais_statut (source unique) ; date = ligne frais_consultation si réglé.
   const suiviFrais = suiviFinancier.find(s => s.type_echeance === 'frais_consultation')
 
-  // Avancement calculé depuis suivi_financier (source de vérité unique)
-  const avancement = calculerAvancement({ ...dossier, suivi_financier: suiviFinancier })
+  // Avancement = 5 jalons métier (Contact→Livraison), source unique partagée
+  // avec les pastilles d'étapes ci-dessous. (N'est plus le % d'argent encaissé.)
+  const avancement = calculerAvancement(dossier, devis)
 
   // Compteurs acomptes / factures (basés sur statut_illico='recu')
   const acomptesTotal  = devisSignes.length
@@ -3083,20 +3084,9 @@ export default function FicheChantier({ params }) {
             <Progress value={avancement} height={10} />
             <div style={{display:'grid', gridTemplateColumns:'repeat(5, 1fr)', marginTop:18, gap:10}}>
               {(() => {
-                const step1 = !!dossier.contrat_signe                                   // Mandat R1 signé
-                const step2 = devis.length > 0                                          // ≥1 devis (tout statut)
-                const step3 = devis.length > 0 && devis.every(d => d.statut !== 'recu')  // 0 devis 'recu' (tous tranchés)
-                const step4 = !!(dossier.date_demarrage_chantier || dossier.statut === 'en_cours_chantier') // chantier démarré
-                const step5 = dossier.statut === 'termine'                              // chantier terminé
-                // Monotonicité : étape N cochée ⇒ étapes 1..N-1 cochées.
-                const done = [
-                  step1 || step2 || step3 || step4 || step5,
-                  step2 || step3 || step4 || step5,
-                  step3 || step4 || step5,
-                  step4 || step5,
-                  step5,
-                ]
-                return ['Contact', 'Devis', 'Signature', 'Chantier', 'Livraison'].map((l, i) => (
+                // Même source que la barre d'avancement (lib/dossiers).
+                const done = calculerEtapes(dossier, devis)
+                return ETAPES_LABELS.map((l, i) => (
                   <div key={i} style={{textAlign:'center'}}>
                     <div style={{
                       width:28, height:28, borderRadius:99, margin:'0 auto',
