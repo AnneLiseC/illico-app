@@ -1449,11 +1449,12 @@ export default function FicheChantier({ params }) {
     if (!fichiers?.length) return
     setUploadingDocChantier(true)
     let echecsDoc = 0
+    let derniereErreur = ''
     for (const fichier of fichiers) {
       const ext = fichier.name.split('.').pop()
       const chemin = `chantiers/${id}/documents/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error } = await supabase.storage.from('documents').upload(chemin, fichier)
-      if (error) { echecsDoc++; continue }
+      if (error) { echecsDoc++; derniereErreur = error.message; continue }
       const { error: insertErr } = await supabase.from('chantier_documents').insert({
         dossier_id: id, nom: fichier.name, path: chemin,
         type_mime: fichier.type, taille: fichier.size,
@@ -1461,11 +1462,16 @@ export default function FicheChantier({ params }) {
         categorie: options.categorie ?? detecterCategorie(fichier.name),
         artisan_id: options.artisan_id ?? null,
       })
-      if (insertErr) { echecsDoc++; continue }
+      if (insertErr) {
+        echecsDoc++; derniereErreur = insertErr.message
+        // enregistrement KO → on retire le fichier uploadé pour ne pas laisser d'orphelin.
+        await supabase.storage.from('documents').remove([chemin]).catch(() => {})
+        continue
+      }
     }
     await chargerDocuments()
     if (echecsDoc === 0) setSucces('Document(s) ajouté(s) ✓')
-    else setErreur(`${fichiers.length - echecsDoc} document(s) ajouté(s), ${echecsDoc} en échec — réessayez les manquants.`)
+    else setErreur(`${fichiers.length - echecsDoc} ajouté(s), ${echecsDoc} en échec — ${derniereErreur || 'erreur inconnue'}`)
     setUploadingDocChantier(false)
   }
 
@@ -3771,26 +3777,7 @@ export default function FicheChantier({ params }) {
                           )}
                         </div>
                       </div>
-                      {/* PV de réception */}
-                      <div className="devis-doc">
-                        <span className="devis-doc-label">📋 PV de réception</span>
-                        <div className="devis-doc-act">
-                          {d.pv_path ? (
-                            <>
-                              <button onClick={() => ouvrirDocument(d.pv_path, `PV réception ${d.artisan?.entreprise || ''}.pdf`)}
-                                style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>Voir PDF</button>
-                              <button onClick={() => supprimerPV(d.id, d.pv_path)}
-                                style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
-                            </>
-                          ) : (
-                            <label className="devis-doc-upload" style={{cursor: uploadingDoc === d.id ? 'wait' : 'pointer', color: uploadingDoc === d.id ? 'var(--ink-400)' : 'var(--brand-700)'}}>
-                              {uploadingDoc === d.id ? 'Upload…' : '+ Uploader'}
-                              <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingDoc === d.id}
-                                onChange={e => e.target.files[0] && uploadPV(d.id, e.target.files[0])} />
-                            </label>
-                          )}
-                        </div>
-                      </div>
+                      {/* PV de réception : déplacé dans l'onglet Documents (section artisans). */}
                       {/* Factures artisan (tuile) */}
                       <div className="devis-doc">
                         <span className="devis-doc-label">🧾 Factures artisan · {factures.filter(f => f.devis_id === d.id).length}</span>
@@ -4647,10 +4634,11 @@ export default function FicheChantier({ params }) {
         }
         // Docs JALONS par artisan (Phase 1). multi = plusieurs possibles (paiements).
         const ARTISAN_DOCS = [
-          { k: 'attestation_demarrage', l: 'Attestation démarrage', multi: false },
-          { k: 'deblocage_acompte',     l: 'Déblocage acompte',     multi: true  },
-          { k: 'avis_virement',         l: 'Avis de virement',      multi: true  },
-          { k: 'pv_reception',          l: 'PV de réception',       multi: false },
+          { k: 'attestation_demarrage', l: 'Attestation démarrage', multi: false, restit: false },
+          { k: 'deblocage_acompte',     l: 'Déblocage acompte',     multi: true,  restit: false },
+          { k: 'avis_virement',         l: 'Avis de virement',      multi: true,  restit: false },
+          // PV de réception : va dans le PDF de restitution client (dans_restitution).
+          { k: 'pv_reception',          l: 'PV de réception',       multi: false, restit: true  },
         ]
         // Artisans du chantier = ceux avec un devis accepté (ils y travaillent).
         const artisansChantier = [...new Map(
@@ -4671,6 +4659,8 @@ export default function FicheChantier({ params }) {
               <div style={{padding:'6px 16px'}}>
                 {artisansChantier.map(a => {
                   const docsA = documents.filter(d => d.artisan_id === a.id)
+                  // Factures : PDF affichés ici (lecture seule) ; le suivi financier reste dans l'onglet Devis.
+                  const facturesA = factures.filter(f => f.pdf_path && devis.find(d => d.id === f.devis_id)?.artisan_id === a.id)
                   return (
                     <div key={a.id} style={{padding:'12px 8px', borderBottom:'1px solid var(--ink-100)'}}>
                       <div style={{fontSize:13, fontWeight:700, color:'var(--ink-900)', marginBottom:8}}>{a.entreprise}</div>
@@ -4686,7 +4676,7 @@ export default function FicheChantier({ params }) {
                               <label style={{cursor: uploadingDocChantier ? 'wait' : 'pointer', color:'var(--brand-600)', fontWeight:800, fontSize:15, lineHeight:1}} title={`Ajouter : ${dt.l}`}>
                                 +
                                 <input type="file" style={{display:'none'}} multiple disabled={uploadingDocChantier}
-                                  onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files), { categorie: dt.k, artisan_id: a.id })} />
+                                  onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files), { categorie: dt.k, artisan_id: a.id, dans_restitution: dt.restit })} />
                               </label>
                             </div>
                           )
@@ -4703,6 +4693,17 @@ export default function FicheChantier({ params }) {
                               <button onClick={() => supprimerDocumentChantier(doc.id, doc.path)} className="btn btn-ghost"
                                 style={{padding:'2px 7px', color:'#b91c1c'}} title="Supprimer"><span style={{fontSize:13, lineHeight:1}}>×</span></button>
                             </div>
+                          ))}
+                        </div>
+                      )}
+                      {facturesA.length > 0 && (
+                        <div style={{marginTop:8, display:'flex', flexDirection:'column', gap:5}}>
+                          <div style={{fontSize:11, color:'var(--ink-400)', fontWeight:700}}>🧾 Factures <span style={{fontWeight:500}}>(suivi dans l&apos;onglet Devis)</span></div>
+                          {facturesA.map(f => (
+                            <button key={f.id} onClick={() => ouvrirDocument(f.pdf_path, `Facture ${a.entreprise}.pdf`)} className="clip-1"
+                              style={{background:'none', border:'none', color:'var(--ink-700)', cursor:'pointer', textAlign:'left', padding:0, fontSize:12}}>
+                              {f.libelle || 'Facture'} — voir le PDF
+                            </button>
                           ))}
                         </div>
                       )}
