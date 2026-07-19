@@ -973,8 +973,14 @@ export default function FicheChantier({ params }) {
       const chemin = `chantiers/${id}/${categorie}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error: uploadError } = await supabase.storage.from('photos').upload(chemin, f, { contentType: f.type || undefined })
       if (uploadError) return false
-      const { error: insertErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id, type_media: estVideo ? 'video' : 'photo' })
+      const { data: photoInseree, error: insertErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id, type_media: estVideo ? 'video' : 'photo' }).select('id').single()
       if (insertErr) return false
+      // Miroir OneDrive — PHOTOS seulement (vidéos = lot suivant). Non bloquant.
+      if (!estVideo && photoInseree?.id) {
+        authHeaders().then(h => fetch('/api/drive/push', {
+          method: 'POST', headers: h, body: JSON.stringify({ photo_id: photoInseree.id }),
+        })).catch(() => {})
+      }
       return true
     }))
     await chargerPhotos()
@@ -994,14 +1000,25 @@ export default function FicheChantier({ params }) {
     const chemin = `chantiers/${id}/${cat}/${Date.now()}_annot_${Math.random().toString(36).slice(2)}.jpg`
     const { error: upErr } = await supabase.storage.from('photos').upload(chemin, blob, { contentType: 'image/jpeg' })
     if (upErr) { setErreur('Annotation : ' + upErr.message); return }
-    const { error: insErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie: cat, uploaded_by: profile?.id, type_media: 'photo' })
+    const { data: photoAnnot, error: insErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie: cat, uploaded_by: profile?.id, type_media: 'photo' }).select('id').single()
     if (insErr) { setErreur('Annotation : ' + insErr.message); return }
+    if (photoAnnot?.id) {
+      authHeaders().then(h => fetch('/api/drive/push', {
+        method: 'POST', headers: h, body: JSON.stringify({ photo_id: photoAnnot.id }),
+      })).catch(() => {})
+    }
     await chargerPhotos()
     setSucces('Photo annotée ajoutée ✓')
   }
 
   const supprimerPhoto = async (photoId, chemin) => {
     if (!confirm('Supprimer cette photo ?')) return
+    // Miroir OneDrive (maître→miroir) — AVANT le cascade FK qui retire l'index. Non bloquant.
+    try {
+      await authHeaders().then(h => fetch('/api/drive/delete', {
+        method: 'POST', headers: h, body: JSON.stringify({ photo_id: photoId }),
+      }))
+    } catch { /* non bloquant */ }
     const { error: rmErr } = await supabase.storage.from('photos').remove([chemin])
     if (rmErr) console.error('Suppression fichier photo (non bloquant) :', rmErr.message)
     const { error } = await supabase.from('photos').delete().eq('id', photoId)
