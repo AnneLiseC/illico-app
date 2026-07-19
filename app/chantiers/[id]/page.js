@@ -1459,6 +1459,7 @@ export default function FicheChantier({ params }) {
         type_mime: fichier.type, taille: fichier.size,
         dans_restitution: options.dans_restitution ?? false,
         categorie: options.categorie ?? detecterCategorie(fichier.name),
+        artisan_id: options.artisan_id ?? null,
       })
       if (insertErr) { echecsDoc++; continue }
     }
@@ -4644,14 +4645,80 @@ export default function FicheChantier({ params }) {
           sheet: { color: '#16a34a', label: 'tableur' },
           autre: { color: '#94a3b8', label: 'fichier' },
         }
+        // Docs JALONS par artisan (Phase 1). multi = plusieurs possibles (paiements).
+        const ARTISAN_DOCS = [
+          { k: 'attestation_demarrage', l: 'Attestation démarrage', multi: false },
+          { k: 'deblocage_acompte',     l: 'Déblocage acompte',     multi: true  },
+          { k: 'avis_virement',         l: 'Avis de virement',      multi: true  },
+          { k: 'pv_reception',          l: 'PV de réception',       multi: false },
+        ]
+        // Artisans du chantier = ceux avec un devis accepté (ils y travaillent).
+        const artisansChantier = [...new Map(
+          devis.filter(d => d.statut === 'accepte' && d.artisan).map(d => [d.artisan.id, d.artisan])
+        ).values()]
+        const docsGeneraux = documents.filter(d => !d.artisan_id) // les docs artisans ont leur section
+        const totalGenKo = docsGeneraux.reduce((s, d) => s + (d.taille || 0) / 1024, 0)
         return (
         <div style={{display:'flex', flexDirection:'column', gap:14}}>
+
+          {/* ── Documents ARTISANS (par artisan + check-list) ── */}
+          {artisansChantier.length > 0 && (
+            <div className="card" style={{padding:0, overflow:'hidden'}}>
+              <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
+                <h2 className="page" style={{fontSize:15}}>Documents artisans</h2>
+                <div className="eyebrow" style={{marginTop:4}}>Par artisan · attestation de démarrage, déblocage acompte, avis de virement, PV de réception</div>
+              </div>
+              <div style={{padding:'6px 16px'}}>
+                {artisansChantier.map(a => {
+                  const docsA = documents.filter(d => d.artisan_id === a.id)
+                  return (
+                    <div key={a.id} style={{padding:'12px 8px', borderBottom:'1px solid var(--ink-100)'}}>
+                      <div style={{fontSize:13, fontWeight:700, color:'var(--ink-900)', marginBottom:8}}>{a.entreprise}</div>
+                      <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
+                        {ARTISAN_DOCS.map(dt => {
+                          const n = docsA.filter(d => d.categorie === dt.k).length
+                          const ok = n > 0
+                          return (
+                            <div key={dt.k} style={{display:'flex', alignItems:'center', gap:8, background: ok ? 'rgba(22,163,74,0.08)' : 'var(--ink-100)', borderRadius:8, padding:'5px 8px 5px 10px'}}>
+                              <span style={{fontSize:12, color: ok ? '#15803d' : 'var(--ink-500)', fontWeight:600, whiteSpace:'nowrap'}}>
+                                {ok ? '✓' : '⌛'} {dt.l}{dt.multi && ok ? ` (${n})` : ''}
+                              </span>
+                              <label style={{cursor: uploadingDocChantier ? 'wait' : 'pointer', color:'var(--brand-600)', fontWeight:800, fontSize:15, lineHeight:1}} title={`Ajouter : ${dt.l}`}>
+                                +
+                                <input type="file" style={{display:'none'}} multiple disabled={uploadingDocChantier}
+                                  onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files), { categorie: dt.k, artisan_id: a.id })} />
+                              </label>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {docsA.length > 0 && (
+                        <div style={{marginTop:10, display:'flex', flexDirection:'column', gap:5}}>
+                          {docsA.map(doc => (
+                            <div key={doc.id} style={{display:'flex', alignItems:'center', gap:8}}>
+                              <button onClick={() => ouvrirDocument(doc.path, doc.nom)} className="clip-1"
+                                style={{background:'none', border:'none', color:'var(--ink-700)', cursor:'pointer', textAlign:'left', padding:0, flex:1, fontSize:12}}>
+                                {doc.nom}
+                              </button>
+                              <button onClick={() => supprimerDocumentChantier(doc.id, doc.path)} className="btn btn-ghost"
+                                style={{padding:'2px 7px', color:'#b91c1c'}} title="Supprimer"><span style={{fontSize:13, lineHeight:1}}>×</span></button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="card" style={{padding:0, overflow:'hidden'}}>
             <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, borderBottom:'1px solid var(--ink-200)', flexWrap:'wrap'}}>
               <div>
                 <h2 className="page" style={{fontSize:15}}>Documents du chantier</h2>
                 <div className="eyebrow" style={{marginTop:4}}>
-                  {documents.length} fichier{documents.length > 1 ? 's' : ''}{documents.length > 0 && ` · ${fmtSize(totalKo)}`}
+                  {docsGeneraux.length} fichier{docsGeneraux.length > 1 ? 's' : ''}{docsGeneraux.length > 0 && ` · ${fmtSize(totalGenKo)}`} · plans, administratif…
                 </div>
               </div>
               <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
@@ -4670,13 +4737,13 @@ export default function FicheChantier({ params }) {
                 </label>
               </div>
             </div>
-            {documents.length === 0 ? (
+            {docsGeneraux.length === 0 ? (
               <div style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
                 Aucun document — plans, courriers, notes…
               </div>
             ) : (
               <div style={{padding:'6px 16px'}}>
-                {documents.map(doc => {
+                {docsGeneraux.map(doc => {
                   const t = typeOf(doc)
                   const meta = typeMeta[t]
                   return (
