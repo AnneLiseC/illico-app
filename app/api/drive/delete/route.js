@@ -30,7 +30,8 @@ export async function POST(request) {
   if (body.document_id) q = q.eq('document_id', body.document_id)
   else if (body.photo_id) q = q.eq('photo_id', body.photo_id)
   else if (body.cr_id) q = q.eq('cr_id', body.cr_id)
-  else return NextResponse.json({ error: 'document_id, photo_id ou cr_id requis' }, { status: 400 })
+  else if (body.devis_id) q = q.eq('devis_id', body.devis_id)
+  else return NextResponse.json({ error: 'document_id, photo_id, cr_id ou devis_id requis' }, { status: 400 })
 
   const { data: idx } = await q.maybeSingle()
   if (!idx) return NextResponse.json({ ok: true, nothing: true }) // jamais miroité → rien à faire

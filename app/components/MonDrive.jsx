@@ -140,15 +140,17 @@ export default function MonDrive({ profile, onError, onSucces }) {
     const { data: doss } = await supabase.from('dossiers').select('id').eq('referente_id', profile.id)
     const ids = (doss || []).map(d => d.id)
     if (!ids.length) { setRattrapage(null); onSucces?.('Aucun chantier à synchroniser.'); return }
-    const [{ data: docs }, { data: phts }, { data: crs }] = await Promise.all([
+    const [{ data: docs }, { data: phts }, { data: crs }, { data: dvs }] = await Promise.all([
       supabase.from('chantier_documents').select('id').in('dossier_id', ids),
       supabase.from('photos').select('id, type_media').in('dossier_id', ids),
       supabase.from('comptes_rendus').select('id, valide').in('dossier_id', ids),
+      supabase.from('devis_artisans').select('id, devis_pdf_path, devis_signe_path').in('dossier_id', ids),
     ])
     const jobs = [
       ...(docs || []).map(d => ['/api/drive/push', { document_id: d.id }]),
       ...(phts || []).filter(p => p.type_media === 'photo').map(p => ['/api/drive/push', { photo_id: p.id }]),
       ...(crs || []).filter(c => c.valide).map(c => ['/api/drive/push-cr', { cr_id: c.id }]),
+      ...(dvs || []).filter(d => d.devis_pdf_path || d.devis_signe_path).map(d => ['/api/drive/push-devis', { devis_id: d.id }]),
     ]
     const total = jobs.length
     setRattrapage({ done: 0, total })

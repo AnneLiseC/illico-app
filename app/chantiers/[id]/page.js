@@ -1771,6 +1771,22 @@ export default function FicheChantier({ params }) {
 
   // Upload/remplacement du PDF d'un devis → chemin versionné + nouvelle version.
   // Partagé par « + Uploader » (pas de PDF) et « Remplacer » (PDF existant).
+  // Miroir OneDrive des devis (sortant, non bloquant). push-devis est MOVE-AWARE : il
+  // range le PDF selon le statut (Reçus/Signés/Refusés) et déplace le fichier si le statut
+  // a changé. À appeler après tout changement matériel d'un devis.
+  const pousserDevisDrive = (devisId) => {
+    if (!devisId) return
+    authHeaders().then(h => fetch('/api/drive/push-devis', {
+      method: 'POST', headers: h, body: JSON.stringify({ devis_id: devisId }),
+    })).catch(() => {})
+  }
+  const retirerDevisDrive = (devisId) => {
+    if (!devisId) return Promise.resolve()
+    return authHeaders().then(h => fetch('/api/drive/delete', {
+      method: 'POST', headers: h, body: JSON.stringify({ devis_id: devisId }),
+    })).catch(() => {})
+  }
+
   const uploadDevisPdf = async (devisId, fichier) => {
     if (!fichier) return
     setUploadingDoc(devisId + '_devis')
@@ -1782,6 +1798,7 @@ export default function FicheChantier({ params }) {
       if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
       await archiverVersionDevis(devisId)   // nouveau PDF = nouvelle version
       await chargerDevis()
+      pousserDevisDrive(devisId)
       setSucces('Devis artisan uploadé ✓')
     } else { setErreur('Erreur upload : ' + error.message) }
     setUploadingDoc(null)
@@ -1891,6 +1908,7 @@ export default function FicheChantier({ params }) {
       }
       await archiverVersionDevis(devisInsere[0].id)   // crée la v1 (capture l'état final + PDF)
       await chargerDevis()
+      if (form.fichier && uploadDevisOk) pousserDevisDrive(devisInsere[0].id)  // devis créé avec PDF → OneDrive
       if (uploadDevisOk) setSucces('Devis ajouté ✓')
       else setErreur('Devis ajouté, mais échec de l\'upload du PDF — réessayez via la fiche devis.')
     }
@@ -1952,14 +1970,18 @@ export default function FicheChantier({ params }) {
     // désormais des devis (cascade v2). La colonne ne porte que les overrides
     // manuels (NULL/annule/termine). Persister le calculé la re-périmerait.
     await chargerDevis()
+    pousserDevisDrive(devisId)  // statut changé → le PDF se déplace (Reçus/Signés/Refusés)
     // TS-2 : une signature (statut 'accepte' + date_signature) peut créer un TS courtage.
     if (statut === 'accepte') await declencherCourtageTS()
   }
 
   const supprimerDevis = async (devisId) => {
     if (!confirm('Supprimer ce devis ?')) return
+    // Miroir OneDrive : retirer la copie AVANT le cascade FK (sinon on perd l'item_id).
+    await retirerDevisDrive(devisId)
     const { error } = await supabase.from('devis_artisans').delete().eq('id', devisId)
     if (error) {
+      pousserDevisDrive(devisId)  // suppression refusée (contrainte finance) → on restaure la copie Drive
       // Garde-fou volontaire : un devis avec des mouvements financiers rattachés
       // (acompte artisan, commission, honoraires…) ne peut pas être supprimé — la FK
       // suivi_financier.devis_id le bloque (code Postgres 23503). On affiche un message
@@ -1999,6 +2021,7 @@ export default function FicheChantier({ params }) {
         }
       }
       await chargerDevis()
+      pousserDevisDrive(devisId)  // signé → Devis/Signés
       // TS-2 : l'upload d'un devis signé pose date_signature → peut créer un TS courtage.
       if (statutOk) await declencherCourtageTS()
       if (statutOk) setSucces('Devis signé uploadé ✓')
@@ -2015,6 +2038,7 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.from('devis_artisans').update({ devis_signe_path: null }).eq('id', devisId)
     if (error) { setErreur('Erreur : ' + error.message); return }
     await chargerDevis()
+    pousserDevisDrive(devisId)  // signé retiré → re-push (Signés depuis le devis reçu, ou selon statut)
     setSucces('Devis signé supprimé ✓')
   }
 
@@ -3812,6 +3836,7 @@ export default function FicheChantier({ params }) {
                                 const { error } = await supabase.from('devis_artisans').update({ devis_pdf_path: null }).eq('id', d.id)
                                 if (error) { setErreur('Erreur : ' + error.message); return }
                                 await chargerDevis()
+                                pousserDevisDrive(d.id)  // PDF retiré → met à jour/retire la copie Drive
                               }} style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
                             </>
                           ) : (
