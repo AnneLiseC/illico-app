@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { authHeaders } from '../lib/api-auth-client'
 import MesCalendriers from '../components/MesCalendriers'
+import MonDrive from '../components/MonDrive'
 import ModalShell from '../components/ModalShell'
 import { heicToJpegFile } from '../lib/images'
 
@@ -751,6 +752,7 @@ export default function Parametres() {
                 <p style={{color:'var(--ink-500)', fontSize:13}}>Services connectés à l&apos;application.</p>
               </div>
               <MesCalendriers profile={profile} onError={setErreur} onSucces={setSucces} onDefautChange={fetchProfile} />
+              <MonDrive profile={profile} onError={setErreur} onSucces={setSucces} />
             </div>
           )}
 
