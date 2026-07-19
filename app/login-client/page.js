@@ -62,6 +62,12 @@ export default function LoginClient() {
     setLoading(false)
   }
 
+  // Loader tant que l'auth n'est pas tranchée / session déjà présente (cf. /login) :
+  // évite le flash du formulaire pour un utilisateur déjà connecté.
+  if (!initialized || user) {
+    return <div className="page-loading" style={{position:'fixed', inset:0, zIndex:9999, background:'#fff'}} />
+  }
+
   return (
     <div className="login-shell" style={{position:'fixed', inset:0, display:'grid', gridTemplateColumns:'1fr 1fr', background:'#fff', overflow:'auto', zIndex:9999}}>
 

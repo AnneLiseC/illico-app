@@ -58,6 +58,13 @@ export default function Login() {
     setLoading(false)
   }
 
+  // Tant que l'auth n'est pas tranchée, ou si une session existe déjà (redirection
+  // imminente par le useEffect), on affiche un loader plutôt que le FORMULAIRE — sinon
+  // un utilisateur déjà connecté voit le login « flasher » avant d'être renvoyé.
+  if (!initialized || user) {
+    return <div className="page-loading" style={{position:'fixed', inset:0, zIndex:9999, background:'#fff'}} />
+  }
+
   return (
     <div className="login-shell" style={{position:'fixed', inset:0, display:'grid', gridTemplateColumns:'1fr 1fr', background:'#fff', overflow:'auto', zIndex:9999}}>
 
