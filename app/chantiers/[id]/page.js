@@ -2,6 +2,7 @@
 
 'use client'
 import { useState, useEffect, useRef, use } from 'react'
+import dynamic from 'next/dynamic'
 import { supabase } from '../../lib/supabase'
 import { formatNomClient } from '../../lib/clients'
 import { useRouter } from 'next/navigation'
@@ -11,13 +12,13 @@ import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFin
 import { authHeaders } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
 import ModalShell from '../../components/ModalShell'
-import ImageAnnotator from '../../components/ImageAnnotator'
+// Éditeur d'annotation chargé à la demande (canvas + logique lourde) : hors bundle initial.
+const ImageAnnotator = dynamic(() => import('../../components/ImageAnnotator'), { ssr: false })
 import { compressImageToBlob, heicToJpegFile } from '../../lib/images'
 import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
 import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../../lib/cibles'
 import { buildInviteMailto } from '../../lib/inviteMail'
 import { calculerExpiration } from '../../lib/expiration'
-import JSZip from 'jszip'
 
 // Liste des entités supprimées avec un chantier — source unique des 2 libellés
 // (confirm de suppression + sous-titre du bouton), pour éviter qu'ils divergent.
@@ -834,11 +835,11 @@ export default function FicheChantier({ params }) {
       // Restent séparés : profile (own), profile (admin), liste artisans, signature photos (storage).
       // Profil propre fetché d'abord pour connaître le rôle ; le fetch admin n'est exécuté
       // QUE pour un admin (policy L5a-1 : agente n'accède qu'à son propre profil).
-      const { data: profData } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      setProfile(profData)
-      const isAdmin = profData?.role === 'admin'
-
-      const [dossierRes, adminRes, artisansRes, ciblesRes] = await Promise.all([
+      // Profil récupéré EN PARALLÈLE du dossier (il ne le conditionne pas) : on
+      // gagne un aller-retour sur le LCP. Le prénom admin (affichage secondaire)
+      // est chargé APRÈS, hors du chemin critique, et seulement pour un admin.
+      const [profRes, dossierRes, artisansRes, ciblesRes] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', user.id).single(),
         supabase.from('dossiers').select(`
           *,
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role),
@@ -865,17 +866,15 @@ export default function FicheChantier({ params }) {
           .order('created_at', { referencedTable: 'comptes_rendus', ascending: false })
           .order('created_at', { referencedTable: 'messages' })
           .single(),
-        isAdmin
-          ? supabase.from('profiles').select('prenom, nom').eq('role', 'admin').order('prenom').limit(1).maybeSingle()
-          : Promise.resolve({ data: null }),
         supabase.from('artisans').select('id, entreprise, metier, partenaire').order('entreprise'),
         supabase.from('cibles_calendrier').select('*').eq('actif', true).order('created_at'),
       ])
 
+      const profData = profRes.data
+      setProfile(profData)
       const d = dossierRes.data
       setCibles(ciblesRes.data || [])
 
-      if (adminRes.data) { setPrenomAdmin(adminRes.data.prenom || '—') }
       setDossier(d)
       setClient(d?.client)
       setDevis(d?.devis_artisans || [])
@@ -896,10 +895,14 @@ export default function FicheChantier({ params }) {
       })
       setFichesTechChantier(grouped)
 
-      // Photos : signature groupée (1 appel) au lieu de N appels individuels.
-      setPhotos(await signerPhotos(d?.photos))
-
       setLoading(false)
+
+      // Hors chemin critique (après affichage) : signatures photos + prénom admin.
+      signerPhotos(d?.photos).then(setPhotos)
+      if (profData?.role === 'admin') {
+        supabase.from('profiles').select('prenom, nom').eq('role', 'admin').order('prenom').limit(1).maybeSingle()
+          .then(({ data }) => { if (data) setPrenomAdmin(data.prenom || '—') })
+      }
     }
     init()
   }, [id, router])
@@ -918,6 +921,7 @@ export default function FicheChantier({ params }) {
     try {
       const { data: signed } = await supabase.storage.from('photos').createSignedUrls(photosOnly.map(p => p.url), 60)
       const parChemin = new Map((signed || []).map(u => [u.path, u.signedUrl]))
+      const JSZip = (await import('jszip')).default   // chargé seulement au clic « télécharger ZIP »
       const zip = new JSZip()
       for (const p of photosOnly) {
         const url = parChemin.get(p.url)
