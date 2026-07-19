@@ -824,7 +824,11 @@ export default function FicheChantier({ params }) {
 
   useEffect(() => {
     const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      // getSession (token local, sans réseau) plutôt que getUser (round-trip qui
+      // TIENT le verrou d'auth → contention « Lock not released » + LCP ralenti).
+      // La sécurité reste la RLS côté serveur, pas ce check client.
+      const { data: { session } } = await supabase.auth.getSession()
+      const user = session?.user
       if (!user) { router.push('/login'); return }
 
       // Le dossier ET tous ses enfants sont récupérés en UNE requête imbriquée
