@@ -176,12 +176,12 @@ export async function deleteItem(accessToken, driveId, itemId) {
 
 // Upload SIMPLE (≤ ~250 Mo) d'un fichier sous (driveId, parentItemId). Conflit → renomme.
 // `body` = Buffer/Uint8Array. Renvoie { id, name, webUrl }.
-export async function uploadSmallFile(accessToken, driveId, parentItemId, fileName, body, contentType) {
+export async function uploadSmallFile(accessToken, driveId, parentItemId, fileName, body, contentType, conflictBehavior = 'rename') {
   const enc = encodeURIComponent(fileName)
   const path = parentItemId === 'root'
     ? `/drives/${driveId}/root:/${enc}:/content`
     : `/drives/${driveId}/items/${parentItemId}:/${enc}:/content`
-  const res = await graphFetch(accessToken, `${path}?@microsoft.graph.conflictBehavior=rename`, {
+  const res = await graphFetch(accessToken, `${path}?@microsoft.graph.conflictBehavior=${conflictBehavior}`, {
     method: 'PUT',
     headers: { 'Content-Type': contentType || 'application/octet-stream' },
     body,

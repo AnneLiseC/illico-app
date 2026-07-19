@@ -2241,6 +2241,12 @@ export default function FicheChantier({ params }) {
 
   const supprimerCR = async (crId) => {
     if (!confirm('Supprimer ce compte-rendu ?')) return
+    // Miroir OneDrive (maître→miroir) — AVANT le cascade FK. Non bloquant.
+    try {
+      await authHeaders().then(h => fetch('/api/drive/delete', {
+        method: 'POST', headers: h, body: JSON.stringify({ cr_id: crId }),
+      }))
+    } catch { /* non bloquant */ }
     const { error } = await supabase.from('comptes_rendus').delete().eq('id', crId)
     if (error) { setErreur('Erreur : ' + error.message); return }
     setComptesRendus(prev => prev.filter(c => c.id !== crId))
@@ -2250,6 +2256,11 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.from('comptes_rendus').update({ valide }).eq('id', crId)
     if (error) { setErreur('Erreur : ' + error.message); return }
     setComptesRendus(prev => prev.map(c => c.id === crId ? { ...c, valide } : c))
+    // Miroir OneDrive (non bloquant) : CR validé/publié → PDF dans « Comptes rendus/ » ;
+    // dé-validé → retiré du Drive.
+    authHeaders().then(h => fetch(valide ? '/api/drive/push-cr' : '/api/drive/delete', {
+      method: 'POST', headers: h, body: JSON.stringify({ cr_id: crId }),
+    })).catch(() => {})
   }
 
     const generatePDF = async (type, crId = null) => {
