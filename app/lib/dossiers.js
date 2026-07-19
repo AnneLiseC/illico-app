@@ -21,6 +21,7 @@ export const STATUT_CONFIG = {
 // (R3 'presentation_devis', R2 'visite_technique_artisan', 'etude').
 // Tolérant : devis_artisans / rendez_vous absents → traités comme [].
 export function calcStatut(dossier) {
+  if (!dossier) return 'a_contacter' // garde-fou : dossier null (chargement) → défaut inoffensif
   // 1-2 — Overrides manuels (non dérivables). statut peut être NULL.
   if (dossier.statut === 'annule') return 'annule'
   if (dossier.statut === 'termine') return 'termine'
@@ -115,6 +116,7 @@ export const ETAPES_LABELS = ['Contact', 'Devis', 'Signature', 'Chantier', 'Livr
 // Renvoie 5 booléens (jalons franchis), MONOTONES : un jalon franchi implique
 // tous les précédents. `devis`/`statut` optionnels : sinon lus/déduits du dossier.
 export function calculerEtapes(dossier, devis, statut) {
+  if (!dossier) return [false, false, false, false, false] // dossier en cours de chargement
   const dv = devis || dossier?.devis_artisans || []
   const st = statut || calcStatut(dossier)
   const step1 = !!dossier?.contrat_signe                                  // Mandat / contrat signé
