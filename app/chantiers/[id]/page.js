@@ -1449,11 +1449,12 @@ export default function FicheChantier({ params }) {
     if (!fichiers?.length) return
     setUploadingDocChantier(true)
     let echecsDoc = 0
+    let derniereErreur = ''
     for (const fichier of fichiers) {
       const ext = fichier.name.split('.').pop()
       const chemin = `chantiers/${id}/documents/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error } = await supabase.storage.from('documents').upload(chemin, fichier)
-      if (error) { echecsDoc++; continue }
+      if (error) { echecsDoc++; derniereErreur = error.message; continue }
       const { error: insertErr } = await supabase.from('chantier_documents').insert({
         dossier_id: id, nom: fichier.name, path: chemin,
         type_mime: fichier.type, taille: fichier.size,
@@ -1461,11 +1462,16 @@ export default function FicheChantier({ params }) {
         categorie: options.categorie ?? detecterCategorie(fichier.name),
         artisan_id: options.artisan_id ?? null,
       })
-      if (insertErr) { echecsDoc++; continue }
+      if (insertErr) {
+        echecsDoc++; derniereErreur = insertErr.message
+        // enregistrement KO → on retire le fichier uploadé pour ne pas laisser d'orphelin.
+        await supabase.storage.from('documents').remove([chemin]).catch(() => {})
+        continue
+      }
     }
     await chargerDocuments()
     if (echecsDoc === 0) setSucces('Document(s) ajouté(s) ✓')
-    else setErreur(`${fichiers.length - echecsDoc} document(s) ajouté(s), ${echecsDoc} en échec — réessayez les manquants.`)
+    else setErreur(`${fichiers.length - echecsDoc} ajouté(s), ${echecsDoc} en échec — ${derniereErreur || 'erreur inconnue'}`)
     setUploadingDocChantier(false)
   }
 
