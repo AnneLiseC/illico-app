@@ -735,11 +735,15 @@ select.input { padding-right: 32px; }
    Page transitions
    ───────────────────────────────────────────────────────────────── */
 
+/* Animation d'entrée de page. PAS d'opacity:0 au départ : un élément transparent
+   n'est pas compté comme « peint » par le navigateur → ça RETARDAIT le LCP (le
+   conteneur .page-enter est l'élément LCP de chaque page). On garde le léger
+   glissement (le transform ne pénalise pas le LCP), sans le fondu. */
 @keyframes page-enter {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: none; }
+  from { transform: translateY(8px); }
+  to   { transform: none; }
 }
-.page-enter { animation: page-enter 320ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.page-enter { animation: page-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
