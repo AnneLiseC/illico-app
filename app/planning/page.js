@@ -74,6 +74,7 @@ export default function Planning() {
   const [erreur, setErreur]                   = useState('')
 
   const [googleConnected, setGoogleConnected] = useState(false)
+  const [demandeSuppr, setDemandeSuppr]       = useState(false) // choix portée suppr. d'une série
   const [fournisseursConnectes, setFournisseursConnectes] = useState([])
   const [syncMessage, setSyncMessage]         = useState('')
   const [calendarView, setCalendarView]       = useState('timeGridWeek')
@@ -426,7 +427,7 @@ export default function Planning() {
   }
 
   const fermerModal = () => {
-    setModalOuvert(false); setElementSelectionne(null); setModeEdition(false); setErreur('')
+    setModalOuvert(false); setElementSelectionne(null); setModeEdition(false); setErreur(''); setDemandeSuppr(false)
     setFormRdv({ dossier_id: '', type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', agence_id: '', cible_id: '' })
     setFormIntervention({ dossier_id: '', artisan_id: '', type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', agence_id: '', cible_id: '' })
     lastAutoCibleRdv.current = ''; lastAutoCibleInt.current = ''
@@ -510,24 +511,52 @@ export default function Planning() {
     fermerModal(); setSaving(false)
   }
 
-  const supprimer = async () => {
-    if (!elementSelectionne || !confirm('Supprimer cet élément ?')) return
-    // Supprimer l'événement Google Calendar en premier (non bloquant)
-    const googleEventId = elementSelectionne.data.google_event_id
-    if (googleConnected && googleEventId) {
-      authHeaders().then(headers => fetch('/api/google/calendar/event', {
-        method: 'DELETE',
-        headers,
-        // cible_id de l'item (lot 5c) : /event résout le bon calendrier. L'item existe
-        // encore ici (appel non bloquant fired avant le delete DB) → cible_id dispo.
-        // googleEndEventId : 2e marqueur (fin) d'une intervention période, s'il existe.
-        body: JSON.stringify({ googleEventId, googleEndEventId: elementSelectionne.data.google_end_event_id, cibleId: elementSelectionne.data.cible_id }),
-      })).catch(() => {})
+  // ── Récurrents (occurrences synchronisées Google) ──
+  // L'ID d'occurrence = « <base>_YYYYMMDDTHHMMSSZ ». La base = l'événement maître :
+  // supprimer/modifier la base côté Google agit sur TOUTE la série.
+  const RECUR_SUFFIX = /_\d{8}T\d{6}Z$/
+  const estRecurrente = (gid) => !!gid && RECUR_SUFFIX.test(gid)
+  const baseRecurrente = (gid) => gid.replace(RECUR_SUFFIX, '')
+  const escapeLike = (s) => s.replace(/([\\%_])/g, '\\$1')
+
+  // portee : 'un' (cette occurrence) | 'serie' (toute la série) | undefined (demander).
+  const supprimer = async (portee) => {
+    if (!elementSelectionne) return
+    const data = elementSelectionne.data
+    const gid = data.google_event_id
+    const recurrente = elementSelectionne.type === 'rdv' && estRecurrente(gid)
+
+    // Occurrence d'une série → on demande d'abord la portée (cet événement / toute la série).
+    if (recurrente && !portee) { setDemandeSuppr(true); return }
+    if (!recurrente && !portee && !confirm('Supprimer cet élément ?')) return
+    setDemandeSuppr(false)
+
+    if (portee === 'serie') {
+      const base = baseRecurrente(gid)
+      // Google : supprimer l'événement MAÎTRE efface toute la série (non bloquant).
+      if (googleConnected) {
+        authHeaders().then(headers => fetch('/api/google/calendar/event', {
+          method: 'DELETE', headers,
+          body: JSON.stringify({ googleEventId: base, cibleId: data.cible_id }),
+        })).catch(() => {})
+      }
+      // BATILIS : toutes les occurrences, par MOTIF sur la base (fiable même si la
+      // liste chargée est tronquée à 1000). Underscores échappés (méta LIKE).
+      const { error } = await supabase.from('rendez_vous').delete().like('google_event_id', escapeLike(base) + '\\_%')
+      if (error) { setErreur(error.message); return }
+    } else {
+      // Occurrence seule (ou élément non récurrent) — comportement d'origine.
+      if (googleConnected && gid) {
+        authHeaders().then(headers => fetch('/api/google/calendar/event', {
+          method: 'DELETE', headers,
+          body: JSON.stringify({ googleEventId: gid, googleEndEventId: data.google_end_event_id, cibleId: data.cible_id }),
+        })).catch(() => {})
+      }
+      const { error } = elementSelectionne.type === 'rdv'
+        ? await supabase.from('rendez_vous').delete().eq('id', data.id)
+        : await supabase.from('interventions_artisans').delete().eq('id', data.id)
+      if (error) { setErreur(error.message); return }
     }
-    const { error } = elementSelectionne.type === 'rdv'
-      ? await supabase.from('rendez_vous').delete().eq('id', elementSelectionne.data.id)
-      : await supabase.from('interventions_artisans').delete().eq('id', elementSelectionne.data.id)
-    if (error) { setErreur(error.message); return }
     fermerModal()
     chargerTout()
   }
@@ -824,6 +853,22 @@ export default function Planning() {
       </div>
 
       {/* ── MODAL ──────────────────────────────────────────────────────────── */}
+      {demandeSuppr && (
+        <div onClick={() => setDemandeSuppr(false)} style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:250, display:'grid', placeItems:'center', padding:16}}>
+          <div onClick={e => e.stopPropagation()} className="card" style={{maxWidth:360, width:'100%', padding:20}}>
+            <h3 style={{fontSize:15, fontWeight:800, color:'var(--ink-900)', margin:0}}>Événement récurrent</h3>
+            <p style={{fontSize:13, color:'var(--ink-600)', marginTop:8, lineHeight:1.5}}>
+              Que veux-tu supprimer ? « Toute la série » efface aussi l&apos;événement dans Google Agenda.
+            </p>
+            <div style={{display:'flex', flexDirection:'column', gap:8, marginTop:16}}>
+              <button onClick={() => supprimer('un')} className="btn btn-ghost">Cet événement</button>
+              <button onClick={() => supprimer('serie')} className="btn btn-ghost" style={{color:'#b91c1c', borderColor:'rgba(220,38,38,0.2)'}}>Toute la série</button>
+              <button onClick={() => setDemandeSuppr(false)} className="btn btn-ghost" style={{opacity:0.7}}>Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modalOuvert && (
         <ModalShell onClose={fermerModal} width={448}>
 
@@ -882,7 +927,7 @@ export default function Planning() {
                   <div style={{display:'flex', gap:8, paddingTop:4}}>
                     <button onClick={() => setModeEdition(true)} className="btn btn-ghost" style={{flex:1}}>Modifier</button>
                     <button onClick={() => router.push(`/chantiers/${elementSelectionne.data.dossier_id}`)} className="btn btn-primary" style={{flex:1}}>Voir le chantier →</button>
-                    <button onClick={supprimer} className="btn btn-ghost" style={{color:'#b91c1c', borderColor:'rgba(220,38,38,0.2)'}}>🗑</button>
+                    <button onClick={() => supprimer()} className="btn btn-ghost" style={{color:'#b91c1c', borderColor:'rgba(220,38,38,0.2)'}}>🗑</button>
                   </div>
                 </div>
               )}
@@ -901,7 +946,7 @@ export default function Planning() {
                   <div style={{display:'flex', gap:8, paddingTop:4}}>
                     <button onClick={() => setModeEdition(true)} className="btn btn-ghost" style={{flex:1}}>Modifier</button>
                     <button onClick={() => router.push(`/chantiers/${elementSelectionne.data.dossier_id}`)} className="btn btn-primary" style={{flex:1}}>Voir le chantier →</button>
-                    <button onClick={supprimer} className="btn btn-ghost" style={{color:'#b91c1c', borderColor:'rgba(220,38,38,0.2)'}}>🗑</button>
+                    <button onClick={() => supprimer()} className="btn btn-ghost" style={{color:'#b91c1c', borderColor:'rgba(220,38,38,0.2)'}}>🗑</button>
                   </div>
                 </div>
               )}
