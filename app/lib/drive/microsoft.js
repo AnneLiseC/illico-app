@@ -167,6 +167,29 @@ export async function ensureFolderPath(accessToken, rootDriveId, rootItemId, seg
   return parent
 }
 
+// Delta query sur le sous-arbre de (driveId, itemId). Suit la pagination (@odata.nextLink)
+// et renvoie { items, deltaLink }. deltaLink=null en entrée → INIT avec token=latest :
+// Graph renvoie un curseur SANS énumérer l'existant (invariant n°2 : pas d'avalanche).
+// deltaLink fourni → seulement les changements depuis.
+export async function deltaQuery(accessToken, driveId, itemId, deltaLink) {
+  let next = deltaLink || (itemId === 'root'
+    ? `${GRAPH}/drives/${driveId}/root/delta?token=latest`
+    : `${GRAPH}/drives/${driveId}/items/${itemId}/delta?token=latest`)
+  const items = []
+  let finalDelta = null
+  let guard = 0
+  while (next && guard++ < 200) {
+    const res = await graphFetch(accessToken, next)
+    if (!res.ok) throw new Error(`delta_failed_${res.status}`)
+    const data = await res.json()
+    for (const it of (data.value || [])) items.push(it)
+    if (data['@odata.nextLink']) { next = data['@odata.nextLink']; continue }
+    finalDelta = data['@odata.deltaLink'] || null
+    next = null
+  }
+  return { items, deltaLink: finalDelta }
+}
+
 // Supprime un item (driveId, itemId). 404 (déjà supprimé) = succès idempotent.
 export async function deleteItem(accessToken, driveId, itemId) {
   const res = await graphFetch(accessToken, `/drives/${driveId}/items/${itemId}`, { method: 'DELETE' })
@@ -176,12 +199,12 @@ export async function deleteItem(accessToken, driveId, itemId) {
 
 // Upload SIMPLE (≤ ~250 Mo) d'un fichier sous (driveId, parentItemId). Conflit → renomme.
 // `body` = Buffer/Uint8Array. Renvoie { id, name, webUrl }.
-export async function uploadSmallFile(accessToken, driveId, parentItemId, fileName, body, contentType) {
+export async function uploadSmallFile(accessToken, driveId, parentItemId, fileName, body, contentType, conflictBehavior = 'rename') {
   const enc = encodeURIComponent(fileName)
   const path = parentItemId === 'root'
     ? `/drives/${driveId}/root:/${enc}:/content`
     : `/drives/${driveId}/items/${parentItemId}:/${enc}:/content`
-  const res = await graphFetch(accessToken, `${path}?@microsoft.graph.conflictBehavior=rename`, {
+  const res = await graphFetch(accessToken, `${path}?@microsoft.graph.conflictBehavior=${conflictBehavior}`, {
     method: 'PUT',
     headers: { 'Content-Type': contentType || 'application/octet-stream' },
     body,

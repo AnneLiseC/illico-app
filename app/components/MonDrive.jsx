@@ -26,6 +26,8 @@ export default function MonDrive({ profile, onError, onSucces }) {
   const [reconnect, setReconnect] = useState(false)
   const [createName, setCreateName] = useState('')
   const [saving, setSaving] = useState(false)
+  const [rattrapage, setRattrapage] = useState(null) // null | { done, total } pendant le backfill
+  const [inbox, setInbox] = useState(0)              // fichiers déposés dans le Drive « à rattacher »
 
   const charger = useCallback(async () => {
     if (!profile) return
@@ -33,6 +35,12 @@ export default function MonDrive({ profile, onError, onSucces }) {
       .select('id, compte_email, drive_root_drive_id, drive_root_id, drive_root_path')
       .eq('user_id', profile.id).eq('fournisseur', 'microsoft').maybeSingle()
     setCompte(data || null)
+    if (data) {
+      const { count } = await supabase.from('drive_inbox')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', profile.id).eq('statut', 'a_rattacher')
+      setInbox(count || 0)
+    }
   }, [profile?.id])
 
   useEffect(() => { charger() }, [charger])
@@ -114,6 +122,43 @@ export default function MonDrive({ profile, onError, onSucces }) {
       } else onError?.(d.error || 'Enregistrement impossible')
     } catch { onError?.('Enregistrement impossible') }
     setSaving(false)
+  }
+
+  // Rattrapage initial : envoie TOUS mes chantiers existants (docs, photos, CR validés)
+  // vers mon OneDrive. Une seule fois après avoir choisi la racine. Idempotent (les routes
+  // sautent ce qui est déjà dans doc_index) → re-cliquer reprend là où ça s'était arrêté.
+  const lancerRattrapage = async () => {
+    onError?.(''); onSucces?.(''); setRattrapage({ done: 0, total: 0 })
+    const { data: doss } = await supabase.from('dossiers').select('id').eq('referente_id', profile.id)
+    const ids = (doss || []).map(d => d.id)
+    if (!ids.length) { setRattrapage(null); onSucces?.('Aucun chantier à synchroniser.'); return }
+    const [{ data: docs }, { data: phts }, { data: crs }] = await Promise.all([
+      supabase.from('chantier_documents').select('id').in('dossier_id', ids),
+      supabase.from('photos').select('id, type_media').in('dossier_id', ids),
+      supabase.from('comptes_rendus').select('id, valide').in('dossier_id', ids),
+    ])
+    const jobs = [
+      ...(docs || []).map(d => ['/api/drive/push', { document_id: d.id }]),
+      ...(phts || []).filter(p => p.type_media === 'photo').map(p => ['/api/drive/push', { photo_id: p.id }]),
+      ...(crs || []).filter(c => c.valide).map(c => ['/api/drive/push-cr', { cr_id: c.id }]),
+    ]
+    const total = jobs.length
+    setRattrapage({ done: 0, total })
+    const h = await authHeaders()
+    let envoyes = 0, sautes = 0, echecs = 0
+    for (let i = 0; i < jobs.length; i++) {
+      const [url, payload] = jobs[i]
+      try {
+        const r = await fetch(url, { method: 'POST', headers: h, body: JSON.stringify(payload) })
+        const d = await r.json().catch(() => ({}))
+        if (d.already || d.skipped) sautes++
+        else if (d.ok) envoyes++
+        else echecs++
+      } catch { echecs++ }
+      setRattrapage({ done: i + 1, total })
+    }
+    setRattrapage(null)
+    onSucces?.(`Rattrapage OneDrive : ${envoyes} envoyé(s), ${sautes} déjà présent(s), ${echecs} échec(s)`)
   }
 
   const choisir = (f) => enregistrerRacine({ drive_id: f.driveId, item_id: f.itemId, name: f.name })
@@ -231,6 +276,34 @@ export default function MonDrive({ profile, onError, onSucces }) {
               </div>
             )}
           </div>
+
+          {/* ── Rattrapage initial (backfill de MES chantiers) ── */}
+          <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>Rattrapage initial</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-500)', marginBottom: 8 }}>
+              Envoie tous tes chantiers existants (documents, photos, CR validés) vers ton OneDrive.
+              À faire une seule fois, après avoir choisi ta racine.
+            </div>
+            <button className="btn btn-ghost" style={{ fontSize: 12.5 }}
+              disabled={!compte.drive_root_id || !!rattrapage} onClick={lancerRattrapage}>
+              {rattrapage ? `Synchronisation… ${rattrapage.done}/${rattrapage.total}` : '☁️ Envoyer tous mes chantiers'}
+            </button>
+            {!compte.drive_root_id && (
+              <div style={{ fontSize: 11.5, color: '#a16207', marginTop: 6 }}>Choisis d&apos;abord un dossier racine ci-dessus.</div>
+            )}
+          </div>
+
+          {/* ── Fichiers déposés dans le Drive (détection entrante, v1) ── */}
+          {inbox > 0 && (
+            <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 14 }}>
+              <div style={{ fontSize: 12.5, color: 'var(--ink-700)' }}>
+                📥 <strong>{inbox}</strong> fichier{inbox > 1 ? 's' : ''} déposé{inbox > 1 ? 's' : ''} dans ton OneDrive détecté{inbox > 1 ? 's' : ''}.
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-500)', marginTop: 3 }}>
+                Le rattachement automatique au bon chantier arrive prochainement.
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
