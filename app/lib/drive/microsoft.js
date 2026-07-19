@@ -1,9 +1,11 @@
 // app/lib/drive/microsoft.js
-// Accès Microsoft Graph (OneDrive) côté SERVEUR uniquement. Fournit :
-//   - getValidAccessToken(compte) : renvoie un access_token valide, en rafraîchissant
-//     via le refresh_token si l'access_token a expiré. ⚠️ Microsoft ROTATE le
-//     refresh_token à chaque refresh → on réécrit access + refresh chiffrés.
-//   - graphFetch / listRootFolders / createRootFolder : helpers Graph de base (Lot 2a).
+// Accès Microsoft Graph (OneDrive) côté SERVEUR uniquement.
+//
+//   - getValidAccessToken(compte) : access_token valide (refresh transparent). ⚠️
+//     Microsoft ROTATE le refresh_token → on réécrit access + refresh chiffrés.
+//   - Navigation DRIVE-AWARE : un dossier est un couple (driveId, itemId). Ça couvre
+//     les dossiers PARTAGÉS (qui vivent dans le Drive de leur propriétaire) autant que
+//     « Mes fichiers ». getMyDriveId / listFolders / listSharedFolders / createFolder.
 //
 // Tokens lus/écrits CHIFFRÉS (crypto.js AES-256-GCM). Jamais côté client.
 
@@ -12,6 +14,7 @@ import { encrypt, decrypt } from '../calendar/crypto'
 
 const GRAPH = 'https://graph.microsoft.com/v1.0'
 const SCOPE = 'offline_access User.Read Files.ReadWrite'
+const SELECT = '$select=id,name,folder,remoteItem,parentReference&$top=200'
 
 function authority() {
   return `https://login.microsoftonline.com/${process.env.MICROSOFT_TENANT || 'consumers'}`
@@ -23,19 +26,15 @@ function admin() {
   return _admin
 }
 
-// Erreur signalant qu'une reconnexion OneDrive est nécessaire (refresh KO / absent).
 export class DriveReconnectError extends Error {
   constructor(msg = 'reconnect') { super(msg); this.reconnect = true }
 }
 
-// Renvoie un access_token valide pour ce compte. `compte` doit contenir :
-//   id, access_token(chiffré), refresh_token(chiffré), expiry_date(ms epoch).
+// `compte` doit contenir : id, access_token(chiffré), refresh_token(chiffré), expiry_date(ms).
 export async function getValidAccessToken(compte) {
-  const SKEW = 60_000 // 1 min de marge avant expiration
+  const SKEW = 60_000
   const access = compte.access_token ? decrypt(compte.access_token) : null
-  if (access && compte.expiry_date && compte.expiry_date - SKEW > Date.now()) {
-    return access
-  }
+  if (access && compte.expiry_date && compte.expiry_date - SKEW > Date.now()) return access
 
   const refresh = compte.refresh_token ? decrypt(compte.refresh_token) : null
   if (!refresh) throw new DriveReconnectError()
@@ -57,7 +56,6 @@ export async function getValidAccessToken(compte) {
     throw new DriveReconnectError()
   }
 
-  // Microsoft renvoie un NOUVEAU refresh_token → on réécrit les deux (chiffrés).
   await admin().from('comptes_oauth').update({
     access_token: encrypt(tok.access_token),
     refresh_token: tok.refresh_token ? encrypt(tok.refresh_token) : compte.refresh_token,
@@ -68,34 +66,73 @@ export async function getValidAccessToken(compte) {
   return tok.access_token
 }
 
-// Wrapper Graph : préfixe l'URL + Authorization. Renvoie la Response brute.
 export async function graphFetch(accessToken, path, opts = {}) {
   const url = path.startsWith('http') ? path : `${GRAPH}${path}`
-  return fetch(url, {
-    ...opts,
-    headers: { Authorization: `Bearer ${accessToken}`, ...(opts.headers || {}) },
-  })
+  return fetch(url, { ...opts, headers: { Authorization: `Bearer ${accessToken}`, ...(opts.headers || {}) } })
 }
 
-// Dossiers de premier niveau du OneDrive (pour choisir la racine). [{id, name}]
-export async function listRootFolders(accessToken) {
-  const res = await graphFetch(accessToken, '/me/drive/root/children?$select=id,name,folder&$top=200')
+// Normalise un enfant Graph en entrée dossier { driveId, itemId, name } ou null si ce
+// n'est pas un dossier. Résout les raccourcis/partagés (remoteItem) vers leur vraie
+// adresse (driveId du propriétaire + itemId distant).
+function toFolderEntry(x, contextDriveId) {
+  const isFolder = !!(x.folder || x.remoteItem?.folder)
+  if (!isFolder) return null
+  return {
+    driveId: x.remoteItem?.parentReference?.driveId || contextDriveId,
+    itemId: x.remoteItem?.id || x.id,
+    name: x.name || x.remoteItem?.name || '(sans nom)',
+  }
+}
+
+// Id du Drive personnel du user (pour adresser « Mes fichiers »).
+export async function getMyDriveId(accessToken) {
+  const res = await graphFetch(accessToken, '/me/drive?$select=id')
+  if (!res.ok) throw new Error(`graph_drive_failed_${res.status}`)
+  const data = await res.json()
+  return data.id
+}
+
+// Dossiers enfants d'un item (driveId, itemId). itemId='root' → racine du drive.
+export async function listFolders(accessToken, driveId, itemId) {
+  const base = itemId === 'root'
+    ? `/drives/${driveId}/root/children`
+    : `/drives/${driveId}/items/${itemId}/children`
+  const res = await graphFetch(accessToken, `${base}?${SELECT}`)
   if (!res.ok) throw new Error(`graph_list_failed_${res.status}`)
   const data = await res.json()
   return (data.value || [])
-    .filter(x => x.folder)
-    .map(x => ({ id: x.id, name: x.name }))
+    .map(x => toFolderEntry(x, driveId))
+    .filter(Boolean)
     .sort((a, b) => a.name.localeCompare(b.name, 'fr'))
 }
 
-// Crée un dossier à la racine du OneDrive (conflit → renomme). {id, name}
-export async function createRootFolder(accessToken, name) {
-  const res = await graphFetch(accessToken, '/me/drive/root/children', {
+// Dossiers « Partagés avec moi » (vivent dans le Drive de leur propriétaire).
+export async function listSharedFolders(accessToken) {
+  const res = await graphFetch(accessToken, '/me/drive/sharedWithMe')
+  if (!res.ok) throw new Error(`graph_shared_failed_${res.status}`)
+  const data = await res.json()
+  return (data.value || [])
+    .filter(x => x.remoteItem?.folder)
+    .map(x => ({
+      driveId: x.remoteItem?.parentReference?.driveId,
+      itemId: x.remoteItem?.id,
+      name: x.name || x.remoteItem?.name || '(sans nom)',
+    }))
+    .filter(f => f.driveId && f.itemId)
+    .sort((a, b) => a.name.localeCompare(b.name, 'fr'))
+}
+
+// Crée un dossier sous un parent (driveId, itemId). Conflit → renomme.
+export async function createFolder(accessToken, parentDriveId, parentItemId, name) {
+  const base = parentItemId === 'root'
+    ? `/drives/${parentDriveId}/root/children`
+    : `/drives/${parentDriveId}/items/${parentItemId}/children`
+  const res = await graphFetch(accessToken, base, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, folder: {}, '@microsoft.graph.conflictBehavior': 'rename' }),
   })
   if (!res.ok) throw new Error(`graph_create_failed_${res.status}`)
   const data = await res.json()
-  return { id: data.id, name: data.name }
+  return { driveId: parentDriveId, itemId: data.id, name: data.name }
 }

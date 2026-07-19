@@ -4,39 +4,39 @@ import { supabase } from '../lib/supabase'
 import { authHeaders } from '../lib/api-auth-client'
 
 // Carte « Mon Drive » (OneDrive / Microsoft Graph) :
-//   - Lot 1 : connexion / déconnexion (tokens chiffrés dans comptes_oauth).
-//   - Lot 2a : choix du DOSSIER RACINE (« c'est là que mes chantiers atterrissent »).
-//     Liste les dossiers de premier niveau via /api/drive/folders (prouve que le token
-//     parle à Graph + refresh transparent), ou crée un dossier dédié.
+//   - connexion / déconnexion (tokens chiffrés dans comptes_oauth).
+//   - DOSSIER RACINE via un navigateur drive-aware : Mes fichiers + Partagés avec moi,
+//     navigation dans les sous-dossiers, choix de N'IMPORTE QUEL dossier (y compris
+//     partagé, qui vit dans le Drive de son propriétaire → couple driveId+itemId).
 //
 // Props : profile, onError, onSucces (pilotent le bandeau de la page hôte).
 
 const cardStyle = { padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }
+const labelStyle = { fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', display: 'block', marginBottom: 5 }
 
 export default function MonDrive({ profile, onError, onSucces }) {
-  const [compte, setCompte] = useState(null)   // ligne comptes_oauth 'microsoft' (ou null)
+  const [compte, setCompte] = useState(null)
   const [connecting, setConnecting] = useState(false)
 
-  // Dossier racine
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [crumbs, setCrumbs] = useState([])        // [{driveId,itemId,name}] chemin courant
   const [folders, setFolders] = useState([])
+  const [myDriveId, setMyDriveId] = useState(null)
   const [loadingFolders, setLoadingFolders] = useState(false)
   const [reconnect, setReconnect] = useState(false)
-  const [selectedId, setSelectedId] = useState('')
   const [createName, setCreateName] = useState('')
   const [saving, setSaving] = useState(false)
 
   const charger = useCallback(async () => {
     if (!profile) return
     const { data } = await supabase.from('comptes_oauth')
-      .select('id, compte_email, drive_root_id, drive_root_path')
+      .select('id, compte_email, drive_root_drive_id, drive_root_id, drive_root_path')
       .eq('user_id', profile.id).eq('fournisseur', 'microsoft').maybeSingle()
     setCompte(data || null)
   }, [profile?.id])
 
   useEffect(() => { charger() }, [charger])
 
-  // Retour du callback (?onedrive=connected|error), une fois, puis nettoyage de l'URL.
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
@@ -77,20 +77,28 @@ export default function MonDrive({ profile, onError, onSucces }) {
     } catch { onError?.('Déconnexion impossible') }
   }
 
-  // Ouvre le sélecteur : charge les dossiers de premier niveau du OneDrive.
-  const ouvrirPicker = async () => {
-    setPickerOpen(true); setReconnect(false); setCreateName(''); onError?.(''); onSucces?.('')
-    setSelectedId(compte?.drive_root_id || '')
-    setLoadingFolders(true)
+  // Charge un niveau : `path` vide → racine (Mes fichiers + Partagés) ; sinon enfants
+  // du dernier dossier de `path`.
+  const loadLevel = async (path) => {
+    setLoadingFolders(true); setReconnect(false); onError?.('')
     try {
-      const res = await fetch('/api/drive/folders', { headers: await authHeaders() })
+      let url = '/api/drive/folders'
+      if (path.length) {
+        const last = path[path.length - 1]
+        url += `?drive_id=${encodeURIComponent(last.driveId)}&item_id=${encodeURIComponent(last.itemId)}`
+      }
+      const res = await fetch(url, { headers: await authHeaders() })
       const d = await res.json()
       if (d.reconnect) { setReconnect(true); setFolders([]) }
-      else if (res.ok) { setFolders(d.folders || []) }
+      else if (res.ok) { setFolders(d.folders || []); if (d.my_drive_id) setMyDriveId(d.my_drive_id) }
       else onError?.(d.error || 'Impossible de lister les dossiers')
     } catch { onError?.('Impossible de lister les dossiers') }
     setLoadingFolders(false)
   }
+
+  const ouvrirPicker = () => { setPickerOpen(true); setCreateName(''); setCrumbs([]); loadLevel([]) }
+  const entrer = (f) => { const p = [...crumbs, f]; setCrumbs(p); loadLevel(p) }
+  const allerA = (i) => { const p = crumbs.slice(0, i + 1); setCrumbs(p); loadLevel(p) } // i=-1 → racine
 
   const enregistrerRacine = async (payload) => {
     setSaving(true); onError?.(''); onSucces?.('')
@@ -100,7 +108,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
       })
       const d = await res.json()
       if (res.ok) {
-        setCompte(c => ({ ...c, drive_root_id: d.root_id, drive_root_path: d.root_path }))
+        setCompte(c => ({ ...c, drive_root_drive_id: d.root_drive_id, drive_root_id: d.root_id, drive_root_path: d.root_path }))
         setPickerOpen(false); setCreateName('')
         onSucces?.(`Dossier racine : ${d.root_path} ✓`)
       } else onError?.(d.error || 'Enregistrement impossible')
@@ -108,7 +116,12 @@ export default function MonDrive({ profile, onError, onSucces }) {
     setSaving(false)
   }
 
-  const dossierChoisi = folders.find(f => f.id === selectedId)
+  const choisir = (f) => enregistrerRacine({ drive_id: f.driveId, item_id: f.itemId, name: f.name })
+  const courant = crumbs[crumbs.length - 1]
+  const creer = () => {
+    const parent = courant || { driveId: myDriveId, itemId: 'root' }
+    enregistrerRacine({ create_name: createName.trim(), parent_drive_id: parent.driveId, parent_item_id: parent.itemId })
+  }
 
   return (
     <div className="card" style={cardStyle}>
@@ -124,8 +137,8 @@ export default function MonDrive({ profile, onError, onSucces }) {
         </div>
       </div>
       <p style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>
-        Connecte ton OneDrive et choisis le dossier racine : c&apos;est là que les dossiers
-        de tes chantiers seront rangés automatiquement.
+        Connecte ton OneDrive et choisis le dossier racine (n&apos;importe lequel, y compris
+        un dossier partagé) : c&apos;est là que les chantiers seront rangés automatiquement.
       </p>
 
       {compte ? (
@@ -159,41 +172,54 @@ export default function MonDrive({ profile, onError, onSucces }) {
 
             {pickerOpen && (
               <div style={{ border: '1px solid var(--ink-200)', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {loadingFolders && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Lecture de tes dossiers OneDrive…</div>}
+                {/* Fil d'Ariane */}
+                <div style={{ fontSize: 12, color: 'var(--ink-600)', display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                  <button className="btn btn-ghost" style={{ fontSize: 12, padding: '2px 6px' }} onClick={() => allerA(-1)}>🏠 Racine</button>
+                  {crumbs.map((c, i) => (
+                    <span key={c.itemId} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ color: 'var(--ink-300)' }}>/</span>
+                      <button className="btn btn-ghost" style={{ fontSize: 12, padding: '2px 6px' }} onClick={() => allerA(i)}>{c.name}</button>
+                    </span>
+                  ))}
+                </div>
 
-                {reconnect && (
-                  <div style={{ fontSize: 12.5, color: '#dc2626' }}>
-                    Ton accès OneDrive a expiré. Déconnecte puis reconnecte ton compte ci-dessus.
-                  </div>
-                )}
+                {loadingFolders && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Lecture des dossiers…</div>}
+                {reconnect && <div style={{ fontSize: 12.5, color: '#dc2626' }}>Accès OneDrive expiré. Déconnecte puis reconnecte ton compte ci-dessus.</div>}
 
                 {!loadingFolders && !reconnect && (
                   <>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', display: 'block', marginBottom: 5 }}>
-                        Choisir un dossier existant
-                      </label>
-                      <select className="input" value={selectedId} onChange={e => setSelectedId(e.target.value)} style={{ height: 40 }}>
-                        <option value="">— Sélectionne un dossier —</option>
-                        {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                      </select>
-                      <button className="btn btn-primary" style={{ fontSize: 12.5, marginTop: 8 }}
-                        disabled={saving || !dossierChoisi}
-                        onClick={() => enregistrerRacine({ root_id: dossierChoisi.id, root_name: dossierChoisi.name })}>
-                        {saving ? 'Enregistrement…' : 'Utiliser ce dossier'}
+                    {/* Choisir le dossier courant (si on est descendu quelque part) */}
+                    {courant && (
+                      <button className="btn btn-primary" style={{ fontSize: 12.5 }} disabled={saving}
+                        onClick={() => choisir(courant)}>
+                        {saving ? 'Enregistrement…' : `Utiliser « ${courant.name} » comme racine`}
                       </button>
-                    </div>
+                    )}
 
+                    {/* Liste des dossiers du niveau courant */}
+                    {folders.length === 0
+                      ? <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Aucun sous-dossier ici.</div>
+                      : <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
+                          {folders.map(f => (
+                            <div key={`${f.driveId}:${f.itemId}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, border: '1px solid var(--ink-100)', borderRadius: 8, padding: '8px 10px' }}>
+                              <button onClick={() => entrer(f)} title="Ouvrir"
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 13, color: 'var(--ink-900)', display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                                <span>📁</span>
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                                {f.source === 'partage' && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: 'var(--ink-100)', color: 'var(--ink-600)' }}>Partagé</span>}
+                              </button>
+                              <button className="btn btn-ghost" style={{ fontSize: 11.5, flexShrink: 0 }} disabled={saving} onClick={() => choisir(f)}>Choisir</button>
+                            </div>
+                          ))}
+                        </div>}
+
+                    {/* Créer un dossier ici */}
                     <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 12 }}>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', display: 'block', marginBottom: 5 }}>
-                        …ou créer un nouveau dossier à la racine de ton OneDrive
-                      </label>
+                      <label style={labelStyle}>…ou créer un dossier ici {courant ? `(dans « ${courant.name} »)` : '(dans Mes fichiers)'}</label>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         <input className="input" placeholder="Nom du dossier (ex. BATILIS)" value={createName}
                           onChange={e => setCreateName(e.target.value)} style={{ height: 40, flex: 1, minWidth: 180 }} />
-                        <button className="btn btn-ghost" style={{ fontSize: 12.5 }}
-                          disabled={saving || !createName.trim()}
-                          onClick={() => enregistrerRacine({ create_name: createName.trim() })}>
+                        <button className="btn btn-ghost" style={{ fontSize: 12.5 }} disabled={saving || !createName.trim()} onClick={creer}>
                           {saving ? 'Création…' : 'Créer et utiliser'}
                         </button>
                       </div>
@@ -201,9 +227,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
                   </>
                 )}
 
-                <div>
-                  <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setPickerOpen(false)}>Fermer</button>
-                </div>
+                <div><button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => setPickerOpen(false)}>Fermer</button></div>
               </div>
             )}
           </div>
