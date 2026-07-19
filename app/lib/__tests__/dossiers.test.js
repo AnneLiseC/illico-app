@@ -49,6 +49,41 @@ describe('calculerAvancement — 5 jalons métier', () => {
     expect(calculerAvancement(null)).toBe(0)
     expect(calculerEtapes(null)).toEqual([false, false, false, false, false])
   })
+
+  // ── Régressions signalées : « Chantier »/« Signature » cochés à tort ──
+
+  it('Signature = tous tranchés ET ≥1 accepté', () => {
+    const S = 2 // index « Signature »
+    // Tous refusés → PAS signé.
+    expect(calculerEtapes({}, [{ statut: 'refuse' }, { statut: 'refuse' }], 'devis_a_modifier')[S]).toBe(false)
+    // 1 signé + 4 reçus (en attente) → PAS signé (des devis pas encore tranchés).
+    expect(calculerEtapes({}, [{ statut: 'accepte' }, ...Array.from({ length: 4 }, () => ({ statut: 'recu' }))], 'en_attente_signature')[S]).toBe(false)
+    // 1 signé + le reste refusé → signé.
+    expect(calculerEtapes({}, [{ statut: 'accepte' }, { statut: 'refuse' }, { statut: 'refuse' }], 'chantier_a_venir')[S]).toBe(true)
+    // 5 signés → signé.
+    expect(calculerEtapes({}, Array.from({ length: 5 }, () => ({ statut: 'accepte' })), 'chantier_a_venir')[S]).toBe(true)
+  })
+
+  it('devis refusé + reçu, rien signé, date de démarrage FUTURE → 40% (ni Signature ni Chantier)', () => {
+    // Cas réel : date_demarrage_chantier saisie au 01/03/2027 (futur), aucun devis
+    // accepté, pas de mandat. calcStatut ne passe PAS en_cours (date future) → step4 faux.
+    const dossier = { date_demarrage_chantier: '2999-01-01', contrat_signe: false }
+    const devis = [{ statut: 'refuse' }, { statut: 'recu' }]
+    expect(calculerEtapes(dossier, devis)).toEqual([true, true, false, false, false])
+    expect(calculerAvancement(dossier, devis)).toBe(40)
+  })
+
+  it('signé mais date de démarrage FUTURE (chantier planifié) → Chantier PAS coché', () => {
+    const dossier = { date_demarrage_chantier: '2999-01-01', contrat_signe: true }
+    const devis = [{ statut: 'accepte' }]
+    expect(calculerEtapes(dossier, devis)[3]).toBe(false) // Chantier
+    expect(calculerAvancement(dossier, devis)).toBe(60)   // Contact + Devis + Signature
+  })
+
+  it('date de démarrage PASSÉE mais rien signé → Chantier PAS coché', () => {
+    // Le statut est en_cours (date passée) mais sans devis accepté ni mandat : pas de chantier.
+    expect(calculerEtapes({ date_demarrage_chantier: '2020-01-01', contrat_signe: false }, [{ statut: 'recu' }], 'en_cours_chantier')[3]).toBe(false)
+  })
 })
 
 describe('deadlineDevisPertinente — cadre du « retard » devis', () => {

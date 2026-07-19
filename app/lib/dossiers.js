@@ -119,11 +119,20 @@ export function calculerEtapes(dossier, devis, statut) {
   if (!dossier) return [false, false, false, false, false] // dossier en cours de chargement
   const dv = devis || dossier?.devis_artisans || []
   const st = statut || calcStatut(dossier)
-  const step1 = !!dossier?.contrat_signe                                  // Mandat / contrat signé
-  const step2 = dv.length > 0                                             // ≥1 devis
-  const step3 = dv.length > 0 && dv.every(d => d.statut !== 'recu')       // devis tous tranchés
-  const step4 = !!dossier?.date_demarrage_chantier || st === 'en_cours_chantier' || st === 'termine' // chantier démarré
-  const step5 = st === 'termine'                                          // chantier livré
+  const nbAccepte = dv.filter(d => d.statut === 'accepte').length
+  const nbRecu    = dv.filter(d => d.statut === 'recu').length
+  // « Signé » = TOUS les devis tranchés ET ≥1 accepté (soit tous signés, soit
+  // signé(s) + le reste refusé). 1 signé + des devis encore « reçus » (en attente)
+  // ≠ signature. Le mandat (contrat_signe) est le jalon « Contact », pas celui-ci.
+  const signe = nbAccepte > 0 && nbRecu === 0
+  const step1 = !!dossier?.contrat_signe                                  // Contact : mandat signé
+  const step2 = dv.length > 0                                             // Devis : ≥1 devis
+  const step3 = signe                                                     // Signature : devis tranchés + ≥1 accepté
+  // Chantier : signé ET réellement démarré. On s'appuie sur le statut (en_cours =
+  // date de démarrage ≤ aujourd'hui, cf. calcStatut) — surtout PAS sur la simple
+  // présence de la date, qui peut être FUTURE (chantier planifié, pas commencé).
+  const step4 = signe && (st === 'en_cours_chantier' || st === 'termine')
+  const step5 = st === 'termine'                                          // Livraison : terminé
   return [
     step1 || step2 || step3 || step4 || step5,
     step2 || step3 || step4 || step5,
