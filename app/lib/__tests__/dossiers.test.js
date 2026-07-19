@@ -8,7 +8,7 @@
 // Lancer : npm test   (vitest run)
 
 import { describe, it, expect } from 'vitest'
-import { calculerEtapes, calculerAvancement, deadlineDevisPertinente } from '../dossiers'
+import { calculerEtapes, calculerAvancement, deadlineDevisPertinente, diffJours, joursAvantDeadlineDevis, badgeDeadlineDevis } from '../dossiers'
 
 describe('calculerAvancement — 5 jalons métier', () => {
   it('dossier vide (rien de franchi) = 0 %', () => {
@@ -55,5 +55,50 @@ describe('deadlineDevisPertinente — cadre du « retard » devis', () => {
     for (const st of ['chantier_a_venir', 'en_cours_chantier', 'termine', 'annule']) {
       expect(deadlineDevisPertinente(st)).toBe(false)
     }
+  })
+})
+
+describe('diffJours — jours pleins, robuste au fuseau', () => {
+  const ref = new Date(2026, 6, 17) // 17 juillet 2026, minuit local
+
+  it('date future = écart positif', () => {
+    expect(diffJours('2026-07-20', ref)).toBe(3)
+  })
+  it('même jour = 0 (peu importe l\'heure de la référence)', () => {
+    expect(diffJours('2026-07-17', new Date(2026, 6, 17, 23, 59))).toBe(0)
+  })
+  it('date passée = écart négatif', () => {
+    expect(diffJours('2026-07-10', ref)).toBe(-7)
+  })
+  it('une string YYYY-MM-DD (minuit UTC) ne décale pas d\'un jour', () => {
+    // Le bug classique : new Date("2026-07-17") = minuit UTC → -1j en fuseau négatif.
+    expect(diffJours('2026-07-17', ref)).toBe(0)
+  })
+})
+
+describe('badgeDeadlineDevis — convention UNIQUE (liste = dashboard)', () => {
+  const ref = new Date(2026, 6, 17)
+  const enPhase = (dateLimite) => ({ statut: 'a_contacter', date_limite_devis: dateLimite })
+
+  it('à venir 1-7 j → « J-N » (ambre), JAMAIS pour un retard', () => {
+    expect(badgeDeadlineDevis(enPhase('2026-07-20'), ref)).toEqual({ jours: 3, texte: 'J-3', ton: 'urgent' })
+  })
+  it('aujourd\'hui → « Aujourd\'hui » (et non « J-0 »)', () => {
+    expect(badgeDeadlineDevis(enPhase('2026-07-17'), ref)).toEqual({ jours: 0, texte: "Aujourd'hui", ton: 'urgent' })
+  })
+  it('retard → « Retard Nj » (rouge), plus jamais « J-… »', () => {
+    expect(badgeDeadlineDevis(enPhase('2026-07-14'), ref)).toEqual({ jours: -3, texte: 'Retard 3j', ton: 'retard' })
+  })
+  it('au-delà de 7 j → texte null (le composant affiche la date)', () => {
+    const b = badgeDeadlineDevis(enPhase('2026-08-15'), ref)
+    expect(b.ton).toBe('normal')
+    expect(b.texte).toBeNull()
+  })
+  it('hors phase devis (terminé) → aucun badge', () => {
+    expect(joursAvantDeadlineDevis({ statut: 'termine', date_limite_devis: '2026-01-01' }, ref)).toBeNull()
+    expect(badgeDeadlineDevis({ statut: 'termine', date_limite_devis: '2026-01-01' }, ref)).toBeNull()
+  })
+  it('pas de deadline → aucun badge', () => {
+    expect(badgeDeadlineDevis(enPhase(null), ref)).toBeNull()
   })
 })
