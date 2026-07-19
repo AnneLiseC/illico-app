@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { computeCAMensuel } from '../lib/ca-reel'
 import { KpiCard, Progress } from '../components/shared'
-import { calcStatut, deadlineDevisPertinente } from '../lib/dossiers'
+import { calcStatut, joursAvantDeadlineDevis, badgeDeadlineDevis } from '../lib/dossiers'
 import ModaleChoixClient from '../components/ModaleChoixClient'
 
 /* ── Icônes KPI ── */
@@ -257,15 +257,14 @@ export default function Dashboard() {
   const dossiersActifs = dossiersScoped.filter(d => d.archive !== true)
 
   const enCours    = dossiersActifs.filter(d => calcStatut(d) === 'en_cours_chantier')
-  // Écart en jours pleins (minuit→minuit). « À relancer » = phase devis
-  // uniquement : un chantier déjà signé/en cours n'a plus de deadline devis.
-  const jourTS = (v) => { const x = new Date(v); x.setHours(0, 0, 0, 0); return x.getTime() }
+  // « À relancer » = échéance devis à ≤ 7 j, phase devis uniquement. Plus de borne
+  // basse : TOUS les retards sont inclus (avant, > 2 j de retard disparaissait du
+  // dashboard tout en restant visible sur la page Chantiers → incohérence).
   const aRelancer  = dossiersActifs.filter(d => {
-    if (!d.date_limite_devis || !deadlineDevisPertinente(calcStatut(d))) return false
-    const diff = (jourTS(d.date_limite_devis) - jourTS(today)) / 86400000
-    return diff <= 7 && diff >= -2
+    const j = joursAvantDeadlineDevis(d, today)
+    return j != null && j <= 7
   }).sort((a, b) => new Date(a.date_limite_devis) - new Date(b.date_limite_devis))
-  const enRetardCount = aRelancer.filter(d => (jourTS(d.date_limite_devis) - jourTS(today)) / 86400000 < 0).length
+  const enRetardCount = aRelancer.filter(d => joursAvantDeadlineDevis(d, today) < 0).length
 
   const caParMois      = computeCAMensuel(dossiersScoped, annee)
   const caMoisReel     = caParMois[moisCourant] || 0
@@ -367,14 +366,14 @@ export default function Dashboard() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--ink-200)' }}>
                 {aRelancer.slice(0, 5).map(d => {
-                  const diff      = Math.round((jourTS(d.date_limite_devis) - jourTS(today)) / 86400000)
-                  const enRetard  = diff < 0
+                  const dl        = badgeDeadlineDevis(d, today)  // convention unique (cf. liste)
+                  const enRetard  = dl?.ton === 'retard'
                   const nomClient = d.client ? `${d.client.prenom || ''} ${d.client.nom || ''}`.trim() : '—'
                   return (
                     <button key={d.id} onClick={() => router.push(`/chantiers/${d.id}`)} className="row-hover"
                       style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: 14, alignItems: 'center', padding: '14px 4px', textAlign: 'left', cursor: 'pointer', background: 'none', border: 'none', borderBottom: '1px solid var(--ink-100)', width: '100%' }}>
-                      <div className="tnum" style={{ width: 36, height: 36, borderRadius: 10, background: enRetard ? 'rgba(220,38,38,0.10)' : 'rgba(245,158,11,0.13)', color: enRetard ? '#b91c1c' : '#a16207', display: 'grid', placeItems: 'center', fontSize: 13, fontWeight: 800 }}>
-                        {enRetard ? `J${diff}` : `+${diff}j`}
+                      <div className="tnum" style={{ minWidth: 36, height: 36, padding: '0 8px', borderRadius: 10, background: enRetard ? 'rgba(220,38,38,0.10)' : 'rgba(245,158,11,0.13)', color: enRetard ? '#b91c1c' : '#a16207', display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                        {dl?.texte}
                       </div>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { formatNomClient } from '../lib/clients'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { getDossiersByScope, getFilteredDossiers, getCompteurs, calcStatut, calculerAvancement, deadlineDevisPertinente, STATUT_CONFIG } from '../lib/dossiers'
+import { getDossiersByScope, getFilteredDossiers, getCompteurs, calcStatut, calculerAvancement, badgeDeadlineDevis, STATUT_CONFIG } from '../lib/dossiers'
 import { calculateDossierFinance } from '../lib/finance'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniMeta } from '../components/shared'
 import ModaleChoixClient from '../components/ModaleChoixClient'
@@ -84,14 +84,9 @@ function ChantiersList({ items, selectedId, onSelect, onOpen, aujourdhui, isMobi
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {items.map(d => {
             const s        = calcStatut(d)
-            // Deadline devis pertinente UNIQUEMENT en phase devis (sinon « retard
-            // 187j » sur un chantier en cours). Écart en jours pleins (minuit à
-            // minuit) pour éviter les bascules selon l'heure de la journée.
-            const minuit   = (v) => { const x = new Date(v); x.setHours(0, 0, 0, 0); return x.getTime() }
-            const limite   = (d.date_limite_devis && deadlineDevisPertinente(s)) ? new Date(d.date_limite_devis) : null
-            const diff     = limite ? Math.round((minuit(d.date_limite_devis) - minuit(aujourdhui)) / 86400000) : null
-            const urgent   = diff !== null && diff <= 7 && diff >= 0
-            const enRetard = diff !== null && diff < 0
+            // Échéance devis : convention + calcul centralisés (lib/dossiers).
+            // null hors phase devis (→ plus de « retard 187j » sur un chantier).
+            const dl       = badgeDeadlineDevis(d, aujourdhui) // { jours, texte, ton } | null
             const isSel    = d.id === selectedId
             return (
               <button key={d.id} onClick={() => onSelect(d.id)}
@@ -134,10 +129,10 @@ function ChantiersList({ items, selectedId, onSelect, onOpen, aujourdhui, isMobi
                 })()}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, gap: 10 }}>
                   <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-                    {limite ? (
-                      <MiniMeta icon={<ClockIcon size={12} />} mute={!urgent && !enRetard}>
-                        <span style={{ color: enRetard ? '#b91c1c' : urgent ? '#a16207' : undefined, fontWeight: enRetard || urgent ? 700 : 500 }}>
-                          {enRetard ? `retard ${Math.abs(diff)}j` : urgent ? `J-${diff}` : fmtDate(d.date_limite_devis)}
+                    {dl ? (
+                      <MiniMeta icon={<ClockIcon size={12} />} mute={dl.ton === 'normal'}>
+                        <span style={{ color: dl.ton === 'retard' ? '#b91c1c' : dl.ton === 'urgent' ? '#a16207' : undefined, fontWeight: dl.ton !== 'normal' ? 700 : 500 }}>
+                          {dl.texte || fmtDate(d.date_limite_devis)}
                         </span>
                       </MiniMeta>
                     ) : d.date_fin_chantier ? (

@@ -145,6 +145,43 @@ export function deadlineDevisPertinente(statut) {
   return !STATUTS_APRES_DEVIS.includes(statut)
 }
 
+// Écart en JOURS PLEINS entre une date cible et une référence (défaut : maintenant).
+// Robuste au fuseau : compare des dates CIVILES locales (composantes y-m-d), pas des
+// instants — un 'YYYY-MM-DD' (minuit UTC) ne décale donc jamais d'un jour.
+// >0 = à venir, 0 = aujourd'hui, <0 = passé.
+export function diffJours(cible, ref = new Date()) {
+  const civ = (v) => {
+    if (typeof v === 'string') {
+      const [y, m, d] = v.slice(0, 10).split('-').map(Number)
+      return new Date(y, (m || 1) - 1, d || 1).getTime()
+    }
+    const x = new Date(v)
+    return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  }
+  return Math.round((civ(cible) - civ(ref)) / 86400000)
+}
+
+// Jours avant la deadline DEVIS d'un dossier — null si pas de deadline OU hors phase
+// devis (dès qu'un dossier est signé/en chantier/clos, cette deadline n'a plus de sens
+// → fini les « retard 187j »).
+export function joursAvantDeadlineDevis(dossier, ref = new Date()) {
+  if (!dossier?.date_limite_devis || !deadlineDevisPertinente(calcStatut(dossier))) return null
+  return diffJours(dossier.date_limite_devis, ref)
+}
+
+// Badge d'échéance devis — CONVENTION UNIQUE partagée liste + dashboard :
+//   <0 → « Retard Nj » (rouge) · 0 → « Aujourd'hui » (ambre) · 1-7 → « J-N » (ambre)
+//   >7 → texte null (le composant affiche la date). « J-N » ne désigne JAMAIS un
+//   retard (c'était l'incohérence : J-2 = « dans 2 j » ici mais « 2 j de retard » là).
+export function badgeDeadlineDevis(dossier, ref = new Date()) {
+  const jours = joursAvantDeadlineDevis(dossier, ref)
+  if (jours == null) return null
+  if (jours < 0)   return { jours, texte: `Retard ${Math.abs(jours)}j`, ton: 'retard' }
+  if (jours === 0) return { jours, texte: "Aujourd'hui",                ton: 'urgent' }
+  if (jours <= 7)  return { jours, texte: `J-${jours}`,                 ton: 'urgent' }
+  return { jours, texte: null, ton: 'normal' }
+}
+
 // 🔹 Détection de catégorie d'un document depuis son nom de fichier (upload).
 // Anti-faux-positifs CR : on normalise (sans accents, minuscules, sans extension)
 // puis on exige soit « compte[-_ ]rendu », soit « CR/C.R. » comme JETON délimité
