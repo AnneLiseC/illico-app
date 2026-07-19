@@ -27,6 +27,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
   const [createName, setCreateName] = useState('')
   const [saving, setSaving] = useState(false)
   const [rattrapage, setRattrapage] = useState(null) // null | { done, total } pendant le backfill
+  const [inbox, setInbox] = useState(0)              // fichiers déposés dans le Drive « à rattacher »
 
   const charger = useCallback(async () => {
     if (!profile) return
@@ -34,6 +35,12 @@ export default function MonDrive({ profile, onError, onSucces }) {
       .select('id, compte_email, drive_root_drive_id, drive_root_id, drive_root_path')
       .eq('user_id', profile.id).eq('fournisseur', 'microsoft').maybeSingle()
     setCompte(data || null)
+    if (data) {
+      const { count } = await supabase.from('drive_inbox')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', profile.id).eq('statut', 'a_rattacher')
+      setInbox(count || 0)
+    }
   }, [profile?.id])
 
   useEffect(() => { charger() }, [charger])
@@ -285,6 +292,18 @@ export default function MonDrive({ profile, onError, onSucces }) {
               <div style={{ fontSize: 11.5, color: '#a16207', marginTop: 6 }}>Choisis d&apos;abord un dossier racine ci-dessus.</div>
             )}
           </div>
+
+          {/* ── Fichiers déposés dans le Drive (détection entrante, v1) ── */}
+          {inbox > 0 && (
+            <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 14 }}>
+              <div style={{ fontSize: 12.5, color: 'var(--ink-700)' }}>
+                📥 <strong>{inbox}</strong> fichier{inbox > 1 ? 's' : ''} déposé{inbox > 1 ? 's' : ''} dans ton OneDrive détecté{inbox > 1 ? 's' : ''}.
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-500)', marginTop: 3 }}>
+                Le rattachement automatique au bon chantier arrive prochainement.
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>

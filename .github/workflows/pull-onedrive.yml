@@ -1,0 +1,30 @@
+# .github/workflows/pull-onedrive.yml
+# Poller ENTRANT OneDrive -> BATILIS (détection des fichiers déposés à la main).
+# Même principe que pull-recurrents.yml : GitHub Actions (gratuit) pour une cadence fine,
+# le plan Vercel Hobby limitant les crons natifs. Cadence best-effort GitHub.
+#
+# ⚠️ INERTE tant que :
+#   1) ce workflow n'est pas sur la branche PAR DÉFAUT (les schedules ne tournent que là) ;
+#   2) les secrets repo ne sont pas définis (les MÊMES que les autres pulls) :
+#        APP_BASE_URL = URL de prod (ex. https://illico-app-pied.vercel.app)  [PAS de / final]
+#        CRON_SECRET  = même valeur que la variable d'env Vercel CRON_SECRET
+
+name: Pull OneDrive (déposés -> à rattacher)
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # ~15 min (best-effort)
+  workflow_dispatch:
+
+jobs:
+  pull-onedrive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull OneDrive
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl -fsS --max-time 300 -X GET \
+            "$APP_BASE_URL/api/cron/pull-onedrive" \
+            -H "Authorization: Bearer $CRON_SECRET"
