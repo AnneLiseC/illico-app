@@ -136,3 +136,50 @@ export async function createFolder(accessToken, parentDriveId, parentItemId, nam
   const data = await res.json()
   return { driveId: parentDriveId, itemId: data.id, name: data.name }
 }
+
+// IDEMPOTENT : renvoie l'itemId d'un sous-dossier `name` sous `parentId` (même driveId),
+// en le CRÉANT s'il n'existe pas. Conflit (409) → on relit et on retrouve l'existant.
+export async function ensureChildFolder(accessToken, driveId, parentId, name) {
+  const base = parentId === 'root'
+    ? `/drives/${driveId}/root/children`
+    : `/drives/${driveId}/items/${parentId}/children`
+  const res = await graphFetch(accessToken, base, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
+  })
+  if (res.ok) { const d = await res.json(); return d.id }
+  if (res.status === 409) {
+    const kids = await listFolders(accessToken, driveId, parentId)
+    const found = kids.find(f => f.name.toLowerCase() === name.toLowerCase())
+    if (found) return found.itemId
+  }
+  throw new Error(`ensure_folder_failed_${res.status}`)
+}
+
+// Crée/retrouve toute une chaîne de sous-dossiers sous (rootDriveId, rootItemId).
+// Renvoie l'itemId du dernier (la feuille), dans rootDriveId.
+export async function ensureFolderPath(accessToken, rootDriveId, rootItemId, segments) {
+  let parent = rootItemId
+  for (const seg of segments) {
+    parent = await ensureChildFolder(accessToken, rootDriveId, parent, seg)
+  }
+  return parent
+}
+
+// Upload SIMPLE (≤ ~250 Mo) d'un fichier sous (driveId, parentItemId). Conflit → renomme.
+// `body` = Buffer/Uint8Array. Renvoie { id, name, webUrl }.
+export async function uploadSmallFile(accessToken, driveId, parentItemId, fileName, body, contentType) {
+  const enc = encodeURIComponent(fileName)
+  const path = parentItemId === 'root'
+    ? `/drives/${driveId}/root:/${enc}:/content`
+    : `/drives/${driveId}/items/${parentItemId}:/${enc}:/content`
+  const res = await graphFetch(accessToken, `${path}?@microsoft.graph.conflictBehavior=rename`, {
+    method: 'PUT',
+    headers: { 'Content-Type': contentType || 'application/octet-stream' },
+    body,
+  })
+  if (!res.ok) throw new Error(`upload_failed_${res.status}`)
+  const d = await res.json()
+  return { id: d.id, name: d.name, webUrl: d.webUrl }
+}

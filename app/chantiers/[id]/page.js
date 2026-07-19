@@ -1455,18 +1455,25 @@ export default function FicheChantier({ params }) {
       const chemin = `chantiers/${id}/documents/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error } = await supabase.storage.from('documents').upload(chemin, fichier)
       if (error) { echecsDoc++; derniereErreur = error.message; continue }
-      const { error: insertErr } = await supabase.from('chantier_documents').insert({
+      const { data: docInsere, error: insertErr } = await supabase.from('chantier_documents').insert({
         dossier_id: id, nom: fichier.name, path: chemin,
         type_mime: fichier.type, taille: fichier.size,
         dans_restitution: options.dans_restitution ?? false,
         categorie: options.categorie ?? detecterCategorie(fichier.name),
         artisan_id: options.artisan_id ?? null,
-      })
+      }).select('id').single()
       if (insertErr) {
         echecsDoc++; derniereErreur = insertErr.message
         // enregistrement KO → on retire le fichier uploadé pour ne pas laisser d'orphelin.
         await supabase.storage.from('documents').remove([chemin]).catch(() => {})
         continue
+      }
+      // Miroir OneDrive (Lot 2a-2) — NON BLOQUANT : le magasin maître (Supabase) est déjà
+      // écrit ; si la référente n'a pas de Drive, la route saute proprement.
+      if (docInsere?.id) {
+        authHeaders().then(h => fetch('/api/drive/push', {
+          method: 'POST', headers: h, body: JSON.stringify({ document_id: docInsere.id }),
+        })).catch(() => {})
       }
     }
     await chargerDocuments()
