@@ -9,7 +9,7 @@ export default defineConfig({
       NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co',
       NEXT_PUBLIC_SUPABASE_ANON_KEY: 'placeholder-anon',
       SUPABASE_SERVICE_ROLE_KEY: 'placeholder-service-role',
-      CALDAV_ENC_KEY: 'YmFzZTY0LTMyLWJ5dGVzLWtleS1wbGFjZWhvbGRlci0wMDA=',
+      CALDAV_ENC_KEY: 'yNLyf2O+krKdJOlN7AhzfNfXkr1aroCasrUv6l8igf0=', // 32o base64 (clé de TEST uniquement)
     },
   },
 })
