@@ -813,6 +813,7 @@ export default function FicheChantier({ params }) {
   const [fichesTechChantier, setFichesTechChantier] = useState({})
   const [fichesPanelOuvert, setFichesPanelOuvert] = useState(null)
   const [documents, setDocuments] = useState([])
+  const [syncDrive, setSyncDrive] = useState(null) // null | 'running' — backfill OneDrive du dossier
   const [uploadingDocChantier, setUploadingDocChantier] = useState(false)
   const [uploadingContrat, setUploadingContrat] = useState(false)
   const [docViewer, setDocViewer] = useState(null) // { url, nom }
@@ -1497,6 +1498,29 @@ export default function FicheChantier({ params }) {
     if (echecsDoc === 0) setSucces('Document(s) ajouté(s) ✓')
     else setErreur(`${fichiers.length - echecsDoc} ajouté(s), ${echecsDoc} en échec — ${derniereErreur || 'erreur inconnue'}`)
     setUploadingDocChantier(false)
+  }
+
+  // Backfill OneDrive du dossier : pousse les fichiers DÉJÀ existants (documents, photos,
+  // CR validés) vers le Drive de la référente. Idempotent — les routes sautent ce qui est
+  // déjà miroité (doc_index). Séquentiel pour ne pas saturer Graph.
+  const synchroniserDriveDossier = async () => {
+    setSyncDrive('running'); setErreur(''); setSucces('')
+    let envoyes = 0, sautes = 0, echecs = 0
+    const h = await authHeaders()
+    const call = async (url, payload) => {
+      try {
+        const r = await fetch(url, { method: 'POST', headers: h, body: JSON.stringify(payload) })
+        const d = await r.json().catch(() => ({}))
+        if (d.already || d.skipped) sautes++
+        else if (d.ok) envoyes++
+        else echecs++
+      } catch { echecs++ }
+    }
+    for (const doc of documents) await call('/api/drive/push', { document_id: doc.id })
+    for (const p of photos.filter(x => x.type_media === 'photo')) await call('/api/drive/push', { photo_id: p.id })
+    for (const cr of comptesRendus.filter(c => c.valide)) await call('/api/drive/push-cr', { cr_id: cr.id })
+    setSyncDrive(null)
+    setSucces(`Synchronisation OneDrive : ${envoyes} envoyé(s), ${sautes} déjà présent(s), ${echecs} échec(s)`)
   }
 
   const supprimerDocumentChantier = async (docId, path) => {
@@ -4690,6 +4714,14 @@ export default function FicheChantier({ params }) {
         const totalGenKo = docsGeneraux.reduce((s, d) => s + (d.taille || 0) / 1024, 0)
         return (
         <div style={{display:'flex', flexDirection:'column', gap:14}}>
+
+          {/* ── Synchronisation OneDrive (backfill du dossier) ── */}
+          <div className="card" style={{padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+            <div style={{fontSize:12.5, color:'var(--ink-600)'}}>Envoyer les documents, photos et CR validés de ce dossier vers ton OneDrive (les fichiers déjà rangés sont ignorés).</div>
+            <button className="btn btn-ghost" style={{fontSize:12.5}} disabled={syncDrive === 'running'} onClick={synchroniserDriveDossier}>
+              {syncDrive === 'running' ? 'Synchronisation…' : '☁️ Synchroniser vers OneDrive'}
+            </button>
+          </div>
 
           {/* ── Documents ARTISANS (par artisan + check-list) ── */}
           {artisansChantier.length > 0 && (
