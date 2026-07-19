@@ -26,14 +26,22 @@ export async function POST(request) {
   const db = admin()
 
   // Cible par document_id, photo_id OU cr_id.
-  let q = db.from('doc_index').select('id, drive_id, item_id, user_id')
+  let q = db.from('doc_index').select('id, drive_id, item_id, user_id, origine')
   if (body.document_id) q = q.eq('document_id', body.document_id)
   else if (body.photo_id) q = q.eq('photo_id', body.photo_id)
   else if (body.cr_id) q = q.eq('cr_id', body.cr_id)
-  else return NextResponse.json({ error: 'document_id, photo_id ou cr_id requis' }, { status: 400 })
+  else if (body.devis_id) q = q.eq('devis_id', body.devis_id)
+  else return NextResponse.json({ error: 'document_id, photo_id, cr_id ou devis_id requis' }, { status: 400 })
 
   const { data: idx } = await q.maybeSingle()
   if (!idx) return NextResponse.json({ ok: true, nothing: true }) // jamais miroité → rien à faire
+
+  // Fichier NÉ dans OneDrive (origine='onedrive') : OneDrive en est le MAÎTRE. On ne
+  // supprime JAMAIS le master depuis l'app — on retire seulement le pointeur d'index.
+  if (idx.origine === 'onedrive') {
+    await db.from('doc_index').delete().eq('id', idx.id)
+    return NextResponse.json({ ok: true, detached: true })
+  }
 
   // Compte Drive de la référente propriétaire du miroir.
   const { data: compte } = await db.from('comptes_oauth')
