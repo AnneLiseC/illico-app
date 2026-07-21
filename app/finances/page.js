@@ -317,9 +317,8 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
   // F1/F2 effectif : figé (snapshot factures_agente.montant) si payé, sinon live.
   // « reçu » = somme des versements enregistrés sur la facture (paiement en plusieurs fois).
   const recu = (f) => round2(((f?.paiements) || []).reduce((s, p) => s + Number(p.montant || 0), 0))
-  // Total figé dès qu'un versement existe (ou statut payé) ; sinon montant live.
-  const f1Eff = (f, liveF1) => (f && (f.statut === 'paye' || (f.paiements || []).length > 0)) ? round2(f.montant || 0) : liveF1
-  const f2Eff = (f, liveF2) => (f && (f.statut === 'paye' || (f.paiements || []).length > 0)) ? round2(f.montant || 0) : liveF2
+  // NB : F1/F2 sont désormais toujours affichés en LIVE (défixé). Le snapshot
+  // factures_agente.montant ne sert plus qu'au PDF + statut ; on a la régularisation pour l'écart.
 
   // Facturation décalée : la facture du mois M porte sur l'activité du mois M−1.
   // P2 : on persiste / apparie / toggle sur le mois d'ACTIVITÉ ; seul le libellé est décalé.
@@ -347,23 +346,29 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
   ])].sort((a, b) => b.localeCompare(a))
 
   let totalF1 = 0, totalF1Paye = 0, totalF2 = 0, totalF2Paye = 0
-  let totalF1Du = 0   // Σ du DÛ live F1 (théorique), pour le solde de régularisation
+  // Régularisation : on ne compte QUE les mois PASSÉS (activité < mois courant).
+  // tropPercuF1 = Σ max(0, reçu − vérité) → argent trop touché, à déduire des prochaines F1.
+  //   C'est le seul écart non ambigu et automatisable : on ne peut pas être « trop payé en cours ».
+  // pasAssezF1  = Σ max(0, vérité − reçu) sur mois passés → reste dû (peut mêler erreur ET
+  //   mois pas encore soldé) ; affiché à part, jamais fondu dans le trop-perçu.
+  let tropPercuF1 = 0, pasAssezF1 = 0
   months.forEach(key => {
     const [aStr, mStr] = shiftMoisKey(key, -1).split('-')   // mois d'activité (M−1)
     const annee = parseInt(aStr), mois = parseInt(mStr)
-    const { montantF1, montantF2 } = calcMois(annee, mois)
+    const { montantF1, montantF2 } = calcMois(annee, mois)   // vérité LIVE (défixée)
     const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
     const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
-    const f1eff = f1Eff(f1, montantF1)
-    const f2eff = f2Eff(f2, montantF2)
-    totalF1 = round2(totalF1 + f1eff); totalF2 = round2(totalF2 + f2eff)
-    totalF1Du = round2(totalF1Du + montantF1)
-    totalF1Paye = round2(totalF1Paye + recu(f1))
+    totalF1 = round2(totalF1 + montantF1); totalF2 = round2(totalF2 + montantF2)
+    const recuF1 = recu(f1)
+    totalF1Paye = round2(totalF1Paye + recuF1)
     totalF2Paye = round2(totalF2Paye + recu(f2))
+    const activiteIndex = annee * 12 + (mois - 1)
+    if (activiteIndex < moisCourantIndex) {                  // mois passé uniquement (hors mois courant)
+      const ecart = round2(recuF1 - montantF1)
+      if (ecart > 0) tropPercuF1 = round2(tropPercuF1 + ecart)
+      else if (ecart < 0) pasAssezF1 = round2(pasAssezF1 - ecart)
+    }
   })
-  // Solde de régularisation F1 = Σ(touché) − Σ(dû live). >0 trop-perçu (à déduire des
-  // prochaines F1) ; <0 pas-assez (à rattraper). Cumulé depuis le début, read-only.
-  const soldeRegulF1 = round2(totalF1Paye - totalF1Du)
   const totalRedev = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => round2(s + (r.montant_ht || 0)), 0)
 
   const uploadPdf = async (f, fichier) => {
@@ -487,14 +492,12 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
       <div className="kpi-grid">
         <FinKpiCard label="Gains à facturer par l'agent · F1" value={fmt(round2(totalF1-totalF1Paye))} sub={`Reçu ${fmt(totalF1Paye)} · Total ${fmt(totalF1)}`} tone="ok"/>
         <FinKpiCard
-          label="Solde de régularisation · F1"
-          value={fmt(soldeRegulF1)}
-          sub={Math.abs(soldeRegulF1) < 0.01
-            ? 'À jour — touché = dû'
-            : soldeRegulF1 > 0
-              ? 'Trop-perçu → à déduire des prochaines F1'
-              : 'Pas-assez → à rattraper sur les prochaines F1'}
-          tone={Math.abs(soldeRegulF1) < 0.01 ? 'ok' : 'warn'}
+          label="Trop-perçu à régulariser · F1"
+          value={fmt(tropPercuF1)}
+          sub={tropPercuF1 < 0.01
+            ? 'Rien à déduire — aucun mois passé sur-payé'
+            : 'Reçu > dû sur mois passés → à déduire des prochaines F1'}
+          tone={tropPercuF1 < 0.01 ? 'ok' : 'warn'}
         />
         <FinKpiCard label="À régler par l'agent · F2"         value={fmt(round2(totalF2-totalF2Paye))} sub={`Reçu ${fmt(totalF2Paye)} · Total ${fmt(totalF2)}`} tone="warn"/>
         <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
@@ -530,8 +533,8 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
               const f1 = facturesAg.find(f => f.type_facture === 'agente_vers_ctp' && f.mois === mois && f.annee === annee)
               const f2 = facturesAg.find(f => f.type_facture === 'ctp_vers_agente' && f.mois === mois && f.annee === annee)
               const d   = calcMois(annee, mois)
-              const f1m = f1Eff(f1, d.montantF1)
-              const f2m = f2Eff(f2, d.montantF2)
+              const f1m = d.montantF1   // vérité LIVE (défixée) — plus de snapshot figé
+              const f2m = d.montantF2
               const isOpen = moisDeplie === key
               return (
                 <React.Fragment key={key}>
@@ -564,7 +567,20 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                           {d.honN   > 0 && <Row label="Honoraires" value={fmt(d.honN)} />}
                           {d.partN  > 0 && <Row label="Part partenaire"         value={fmt(d.partN)} />}
                           {f1m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucun gain encaissé ce mois</span>}
-                          <Row label="Total F1" value={fmt(f1m)} bold accent />
+                          <Row label="Total F1 (dû)" value={fmt(f1m)} bold accent />
+                          {(() => {
+                            const activiteIndex = annee * 12 + (mois - 1)
+                            if (activiteIndex >= moisCourantIndex || (f1m === 0 && recu(f1) === 0)) return null
+                            const ecart = round2(recu(f1) - f1m)   // reçu − dû
+                            const col = Math.abs(ecart) < 0.01 ? 'var(--ink-400)' : ecart > 0 ? '#a16207' : '#b91c1c'
+                            const lbl = Math.abs(ecart) < 0.01 ? '✅ à jour'
+                              : ecart > 0 ? `↑ trop-perçu ${fmt(ecart)}` : `↓ reste dû ${fmt(-ecart)}`
+                            return (
+                              <div style={{fontSize:11.5,color:col,fontWeight:600,marginTop:2}}>
+                                Reçu {fmt(recu(f1))} · {lbl}
+                              </div>
+                            )
+                          })()}
                           {f1m > 0 && renderVersements(f1, 'agente_vers_ctp', annee, mois, f1m, true)}
                           {renderPdfControl(f1, annee, mois, 'agente_vers_ctp')}
                         </div>
