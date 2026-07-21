@@ -352,9 +352,13 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
   const estSolde = (f, du) => recu(f) + 0.01 >= du || !!(f && f.cloture)
 
   let totalF1 = 0, totalF1Paye = 0, totalF2 = 0, totalF2Paye = 0
-  // Solde de régularisation F1 = Σ(reçu − dû) sur les mois PASSÉS soldés. Signé :
-  //   > 0 trop-perçu (à déduire des prochaines F1) · < 0 pas-assez (à rajouter).
-  // Compte auto-nettoyant : sous-facturer un mois crée un écart négatif qui résorbe le solde.
+  // Solde de régularisation combiné (compte unique agente ↔ société), sur les mois
+  // PASSÉS soldés. Écart du mois = (reçu F1 − dû F1) + (dû F2 − reçu F2). Tout HT.
+  //   · terme F1 = trop-perçu (+) / pas-assez (−) sur ce que la société doit à l'agente ;
+  //   · terme F2 = redevance/apporteur DUS mais non réglés à part → recrédités, car dans
+  //     l'ancienne méthode ils étaient déduits du F1 (ex. mai). Si le F2 a été payé à part
+  //     (février/mars = F2 Soldé), le terme s'annule tout seul. Aucun cas particulier.
+  // Signé : > 0 trop-perçu (à déduire des prochaines F1) · < 0 la société doit à l'agente.
   let soldeRegulF1 = 0
   months.forEach(key => {
     const [aStr, mStr] = shiftMoisKey(key, -1).split('-')   // mois d'activité (M−1)
@@ -367,8 +371,11 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
     totalF1Paye = round2(totalF1Paye + recuF1)
     totalF2Paye = round2(totalF2Paye + recu(f2))
     const activiteIndex = annee * 12 + (mois - 1)
-    if (activiteIndex < moisCourantIndex && estSolde(f1, montantF1)) {   // mois passé ET soldé
-      soldeRegulF1 = round2(soldeRegulF1 + round2(recuF1 - montantF1))
+    const aReelF1 = montantF1 > 0 || recuF1 > 0   // exclut les mois sans F1 (redevance seule)
+    if (activiteIndex < moisCourantIndex && aReelF1 && estSolde(f1, montantF1)) {   // passé ET F1 soldé
+      const ecartF1 = round2(recuF1 - montantF1)
+      const f2Net   = round2(montantF2 - recu(f2))   // redevance déduite du F1 (0 si payée à part)
+      soldeRegulF1  = round2(soldeRegulF1 + round2(ecartF1 + f2Net))
     }
   })
   const totalRedev = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => round2(s + (r.montant_ht || 0)), 0)
@@ -514,13 +521,13 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
       <div className="kpi-grid">
         <FinKpiCard label="Gains à facturer par l'agent · F1" value={fmt(round2(totalF1-totalF1Paye))} sub={`Reçu ${fmt(totalF1Paye)} · Total ${fmt(totalF1)}`} tone="ok"/>
         <FinKpiCard
-          label="Régularisation · F1"
+          label="Régularisation nette · F1 − F2"
           value={`${soldeRegulF1 > 0.01 ? '+' : ''}${fmt(soldeRegulF1)}`}
           sub={Math.abs(soldeRegulF1) < 0.01
             ? 'À jour — mois soldés équilibrés'
             : soldeRegulF1 > 0
-              ? 'Trop-perçu → à déduire des prochaines F1'
-              : 'Pas-assez → à rajouter aux prochaines F1'}
+              ? 'Trop-perçu net → à déduire des prochaines F1'
+              : 'La société te doit → à rajouter aux prochaines F1'}
           tone={Math.abs(soldeRegulF1) < 0.01 ? 'ok' : 'warn'}
         />
         <FinKpiCard label="À régler par l'agent · F2"         value={fmt(round2(totalF2-totalF2Paye))} sub={`Reçu ${fmt(totalF2Paye)} · Total ${fmt(totalF2)}`} tone="warn"/>
@@ -615,13 +622,16 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                           {(() => {
                             const activiteIndex = annee * 12 + (mois - 1)
                             if (activiteIndex >= moisCourantIndex || (f1m === 0 && recu(f1) === 0)) return null
-                            const ecart = round2(recu(f1) - f1m)   // reçu − dû
-                            const col = Math.abs(ecart) < 0.01 ? 'var(--ink-400)' : ecart > 0 ? '#a16207' : '#b91c1c'
-                            const lbl = Math.abs(ecart) < 0.01 ? '✅ à jour'
-                              : ecart > 0 ? `↑ trop-perçu ${fmt(ecart)}` : `↓ reste dû ${fmt(-ecart)}`
+                            const ecartF1 = round2(recu(f1) - f1m)             // reçu − dû F1
+                            const f2Net   = round2(d.montantF2 - recu(f2))     // redevance déduite du F1 (0 si payée à part)
+                            const combine = round2(ecartF1 + f2Net)
+                            const col = Math.abs(combine) < 0.01 ? 'var(--ink-400)' : combine > 0 ? '#a16207' : '#b91c1c'
+                            const lbl = Math.abs(combine) < 0.01 ? '✅ à jour'
+                              : combine > 0 ? `↑ trop-perçu ${fmt(combine)}` : `↓ société te doit ${fmt(-combine)}`
                             return (
-                              <div style={{fontSize:11.5,color:col,fontWeight:600,marginTop:2}}>
-                                Reçu {fmt(recu(f1))} · {lbl}
+                              <div style={{fontSize:11.5,color:col,fontWeight:600,marginTop:2,display:'flex',flexDirection:'column',gap:1}}>
+                                <span>Reçu {fmt(recu(f1))} · écart F1 {ecartF1 > 0 ? '+' : ''}{fmt(ecartF1)}{f2Net > 0.01 ? ` · redevance déduite +${fmt(f2Net)}` : ''}</span>
+                                <span>= net {lbl}</span>
                               </div>
                             )
                           })()}
