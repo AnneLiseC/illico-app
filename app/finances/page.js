@@ -544,7 +544,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
               {thL('Mois')}
               <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Agente → Société<div style={{fontSize:9,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>facture F1</div></th>
               <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut</th>
-              <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Société → Agente<div style={{fontSize:9,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>facture F2</div></th>
+              <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em',borderLeft:'2px solid var(--ink-200)'}}>Société → Agente<div style={{fontSize:9,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>facture F2</div></th>
               <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut</th>
             </tr>
           </thead>
@@ -573,7 +573,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                   <td style={{padding:'14px 16px',textAlign:'center'}}>
                     {renderStatutV(f1, 'agente_vers_ctp', annee, mois, f1m, true)}
                   </td>
-                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f2m>0?'#b91c1c':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
+                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f2m>0?'#b91c1c':'var(--ink-300)',fontVariantNumeric:'tabular-nums',borderLeft:'2px solid var(--ink-200)'}}>
                     {f2m > 0 ? fmt(f2m) : '—'}
                   </td>
                   <td style={{padding:'14px 16px',textAlign:'center'}}>
@@ -583,8 +583,8 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                 {isOpen && (
                   <tr style={{background:'var(--surface-2)'}}>
                     <td colSpan={5} style={{padding:'4px 16px 16px'}}>
-                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,maxWidth:720}}>
-                        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:0,maxWidth:740}}>
+                        <div style={{display:'flex',flexDirection:'column',gap:6,paddingRight:24}}>
                           <div className="eyebrow" style={{color:'#15803d'}}>F1 — Agente facture la Société</div>
                           {d.fraisN > 0 && <Row label="Frais de consultation" value={fmt(d.fraisN)} />}
                           {d.comN   > 0 && <Row label="Commissions artisans"   value={fmt(d.comN)} />}
@@ -628,7 +628,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                           {f1m > 0 && renderVersements(f1, 'agente_vers_ctp', annee, mois, f1m, true)}
                           {renderPdfControl(f1, annee, mois, 'agente_vers_ctp')}
                         </div>
-                        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                        <div style={{display:'flex',flexDirection:'column',gap:6,paddingLeft:24,borderLeft:'2px solid var(--ink-200)'}}>
                           <div className="eyebrow" style={{color:'#b91c1c'}}>F2 — La Société facture l&apos;agent</div>
                           {d.redev     > 0 && <Row label="Redevance mensuelle (HT)" value={fmt(d.redev)} />}
                           {d.apporteur > 0 && <Row label="Apporteur remboursé"      value={fmt(d.apporteur)} />}
@@ -654,7 +654,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                 <td style={{padding:'14px 16px',fontWeight:800,color:'var(--ink-900)'}}>Total</td>
                 <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#15803d',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF1)}</td>
                 <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF1Paye)} reçu</td>
-                <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#b91c1c',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF2)}</td>
+                <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#b91c1c',fontVariantNumeric:'tabular-nums',borderLeft:'2px solid var(--ink-200)'}}>{fmt(totalF2)}</td>
                 <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF2Paye)} reçu</td>
               </tr>
             </tfoot>
