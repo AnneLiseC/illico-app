@@ -98,7 +98,7 @@ export default function LoginClient() {
             Suivez votre projet de travaux en toute sérénité.
           </h1>
           <p style={{fontSize:15, opacity:0.85, lineHeight:1.6, marginTop:18}}>
-            Documents, comptes-rendus de visite, devis et échanges avec votre conseiller — tout votre projet réuni au même endroit.
+            Documents, rapports de visite, devis et échanges avec votre conseiller — tout votre projet réuni au même endroit.
           </p>
           <div style={{display:'flex', gap:24, marginTop:30, fontSize:12, opacity:0.7, flexWrap:'wrap'}}>
             <span style={{display:'inline-flex', alignItems:'center', gap:6}}>🔒 Connexion sécurisée</span>

@@ -119,7 +119,7 @@ export function buildSystemPrompt(type, agenceNom) {
     .map((s, i) => `${i + 1}. ${s}`)
     .join('\n')
 
-  return `Tu es un expert en gestion de chantiers BTP. Tu rédiges des comptes-rendus de visite professionnels pour ${agenceNom}, agence de courtage en travaux et AMO.
+  return `Tu es un expert en gestion de chantiers BTP. Tu rédiges des rapports de visite professionnels pour ${agenceNom}, agence de courtage en travaux et AMO.
 
 TYPE DE VISITE : ${typLabel}
 
@@ -148,7 +148,7 @@ ${sections}
 
 RÉPONSE : JSON strict uniquement, aucun texte avant ou après :
 {
-  "titre": "COMPTE RENDU [TYPE EN MAJUSCULES] — [résumé 5 mots max]",
+  "titre": "RAPPORT DE VISITE [TYPE EN MAJUSCULES] — [résumé 5 mots max]",
   "sections": [
     {
       "numero": 1,
