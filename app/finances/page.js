@@ -345,13 +345,17 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
     ...redevanceDueKeys.map(k => shiftMoisKey(k, +1)),
   ])].sort((a, b) => b.localeCompare(a))
 
+  // Un mois passé est « soldé » (son écart entre dans la régule) si :
+  //   - reçu ≥ dû  → trop-perçu ou pile : automatique, on ne peut pas être sur-payé « en cours » ;
+  //   - OU cloture = true → l'agente a acté « je ne toucherai plus rien » (pas-assez verrouillé).
+  // Sinon (reçu < dû, non clôturé) = mois pas encore soldé → pipeline, exclu de la régule.
+  const estSolde = (f, du) => recu(f) + 0.01 >= du || !!(f && f.cloture)
+
   let totalF1 = 0, totalF1Paye = 0, totalF2 = 0, totalF2Paye = 0
-  // Régularisation : on ne compte QUE les mois PASSÉS (activité < mois courant).
-  // tropPercuF1 = Σ max(0, reçu − vérité) → argent trop touché, à déduire des prochaines F1.
-  //   C'est le seul écart non ambigu et automatisable : on ne peut pas être « trop payé en cours ».
-  // pasAssezF1  = Σ max(0, vérité − reçu) sur mois passés → reste dû (peut mêler erreur ET
-  //   mois pas encore soldé) ; affiché à part, jamais fondu dans le trop-perçu.
-  let tropPercuF1 = 0, pasAssezF1 = 0
+  // Solde de régularisation F1 = Σ(reçu − dû) sur les mois PASSÉS soldés. Signé :
+  //   > 0 trop-perçu (à déduire des prochaines F1) · < 0 pas-assez (à rajouter).
+  // Compte auto-nettoyant : sous-facturer un mois crée un écart négatif qui résorbe le solde.
+  let soldeRegulF1 = 0
   months.forEach(key => {
     const [aStr, mStr] = shiftMoisKey(key, -1).split('-')   // mois d'activité (M−1)
     const annee = parseInt(aStr), mois = parseInt(mStr)
@@ -363,10 +367,8 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
     totalF1Paye = round2(totalF1Paye + recuF1)
     totalF2Paye = round2(totalF2Paye + recu(f2))
     const activiteIndex = annee * 12 + (mois - 1)
-    if (activiteIndex < moisCourantIndex) {                  // mois passé uniquement (hors mois courant)
-      const ecart = round2(recuF1 - montantF1)
-      if (ecart > 0) tropPercuF1 = round2(tropPercuF1 + ecart)
-      else if (ecart < 0) pasAssezF1 = round2(pasAssezF1 - ecart)
+    if (activiteIndex < moisCourantIndex && estSolde(f1, montantF1)) {   // mois passé ET soldé
+      soldeRegulF1 = round2(soldeRegulF1 + round2(recuF1 - montantF1))
     }
   })
   const totalRedev = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => round2(s + (r.montant_ht || 0)), 0)
@@ -389,23 +391,43 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
   const [ajout, setAjout] = useState(null)   // { type, montant, date } — formulaire d'ajout ouvert
   const todayISO = () => new Date().toISOString().split('T')[0]
 
-  // Cellule Statut : badge (à facturer / partiel / soldé) + « Marquer reçu ».
+  // Cellule Statut : badge (à facturer / partiel / soldé / clôturé) + « Marquer reçu » + « Clôturer ».
+  // Clôturer = acter « je ne toucherai plus rien » sur un mois passé sous-payé (F1) → l'écart
+  // (reçu − dû, souvent négatif = pas-assez) entre dans la régularisation. Réservé au passé.
   const renderStatutV = (f, type, annee, mois, total, canEdit) => {
     const cumul = recu(f)
     const reste = round2(total - cumul)
-    if (total <= 0 && cumul <= 0) return <span style={{color:'var(--ink-400)'}}>—</span>
+    const clot  = !!(f && f.cloture)
+    const estF1 = type === 'agente_vers_ctp'
+    const moisPasse = (annee * 12 + (mois - 1)) < moisCourantIndex
+    if (total <= 0 && cumul <= 0 && !clot) return <span style={{color:'var(--ink-400)'}}>—</span>
     let bg, col, txt
-    if (cumul <= 0.001) { txt = '📋 À facturer'; bg = 'var(--ink-100)'; col = 'var(--ink-500)' }
+    if (clot) { const e = round2(cumul - total); txt = `🔒 Clôturé ${e > 0 ? '+' : ''}${fmt(e)}`; bg = 'rgba(100,116,139,0.14)'; col = '#475569' }
+    else if (cumul <= 0.001) { txt = '📋 À facturer'; bg = 'var(--ink-100)'; col = 'var(--ink-500)' }
     else if (reste <= 0.01) { txt = '✅ Soldé'; bg = 'rgba(22,163,74,0.1)'; col = '#15803d' }
     else { txt = `🕓 ${fmt(cumul)} / ${fmt(total)}`; bg = 'rgba(217,119,6,0.12)'; col = '#a16207' }
     return (
       <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'center'}}>
         <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,background:bg,color:col}}>{txt}</span>
-        {canEdit && reste > 0.01 && (
+        {canEdit && !clot && reste > 0.01 && (
           <button onClick={(e) => { e.stopPropagation(); ajouterPaiementFacture(mois, annee, type, reste, todayISO(), total) }}
             title="Enregistrer le paiement du reste (solde en une fois)"
             style={{fontSize:10.5,fontWeight:600,borderRadius:6,padding:'3px 8px',cursor:'pointer',border:'1px solid var(--brand-500)',background:'#fff',color:'var(--brand-700)'}}>
             Marquer reçu
+          </button>
+        )}
+        {canEdit && estF1 && moisPasse && !clot && reste > 0.01 && (
+          <button onClick={(e) => { e.stopPropagation(); upsertFactureMoisType(mois, annee, total, type, { cloture: true }) }}
+            title="Acter « je ne toucherai plus rien » : l'écart (reçu − dû) est verrouillé et entre dans la régularisation."
+            style={{fontSize:10.5,fontWeight:600,borderRadius:6,padding:'3px 8px',cursor:'pointer',border:'1px solid var(--ink-300)',background:'#fff',color:'var(--ink-600)'}}>
+            Clôturer
+          </button>
+        )}
+        {canEdit && clot && (
+          <button onClick={(e) => { e.stopPropagation(); upsertFactureMoisType(mois, annee, total, type, { cloture: false }) }}
+            title="Rouvrir ce mois : l'écart ressort de la régularisation."
+            style={{fontSize:10,fontWeight:600,borderRadius:6,padding:'2px 8px',cursor:'pointer',border:'1px solid var(--ink-200)',background:'#fff',color:'var(--ink-400)'}}>
+            Rouvrir
           </button>
         )}
       </div>
@@ -492,12 +514,14 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
       <div className="kpi-grid">
         <FinKpiCard label="Gains à facturer par l'agent · F1" value={fmt(round2(totalF1-totalF1Paye))} sub={`Reçu ${fmt(totalF1Paye)} · Total ${fmt(totalF1)}`} tone="ok"/>
         <FinKpiCard
-          label="Trop-perçu à régulariser · F1"
-          value={fmt(tropPercuF1)}
-          sub={tropPercuF1 < 0.01
-            ? 'Rien à déduire — aucun mois passé sur-payé'
-            : 'Reçu > dû sur mois passés → à déduire des prochaines F1'}
-          tone={tropPercuF1 < 0.01 ? 'ok' : 'warn'}
+          label="Régularisation · F1"
+          value={`${soldeRegulF1 > 0.01 ? '+' : ''}${fmt(soldeRegulF1)}`}
+          sub={Math.abs(soldeRegulF1) < 0.01
+            ? 'À jour — mois soldés équilibrés'
+            : soldeRegulF1 > 0
+              ? 'Trop-perçu → à déduire des prochaines F1'
+              : 'Pas-assez → à rajouter aux prochaines F1'}
+          tone={Math.abs(soldeRegulF1) < 0.01 ? 'ok' : 'warn'}
         />
         <FinKpiCard label="À régler par l'agent · F2"         value={fmt(round2(totalF2-totalF2Paye))} sub={`Reçu ${fmt(totalF2Paye)} · Total ${fmt(totalF2)}`} tone="warn"/>
         <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
@@ -568,6 +592,26 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                           {d.partN  > 0 && <Row label="Part partenaire"         value={fmt(d.partN)} />}
                           {f1m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucun gain encaissé ce mois</span>}
                           <Row label="Total F1 (dû)" value={fmt(f1m)} bold accent />
+                          {(() => {
+                            // Mois COURANT à facturer : dû − report de régularisation = net à facturer.
+                            const activiteIndex = annee * 12 + (mois - 1)
+                            if (activiteIndex !== moisCourantIndex || Math.abs(soldeRegulF1) < 0.01) return null
+                            const net = round2(f1m - soldeRegulF1)   // >0 trop-perçu → on déduit ; <0 pas-assez → on rajoute
+                            const reste = round2(-net)               // solde non absorbé si net < 0
+                            return (
+                              <div style={{marginTop:6,padding:'8px 10px',borderRadius:8,background:'rgba(217,119,6,0.07)',border:'1px solid rgba(217,119,6,0.2)',display:'flex',flexDirection:'column',gap:3}}>
+                                <div style={{fontSize:11.5,color:'#a16207',fontWeight:600}}>
+                                  Régularisation antérieure : {soldeRegulF1 > 0 ? `−${fmt(soldeRegulF1)} (trop-perçu à déduire)` : `+${fmt(-soldeRegulF1)} (pas-assez à rajouter)`}
+                                </div>
+                                <div style={{fontSize:13,fontWeight:800,color:net > 0 ? '#15803d' : 'var(--ink-500)'}}>
+                                  Net à facturer : {net > 0 ? fmt(net) : '0,00 €'}
+                                </div>
+                                {reste > 0.01 && (
+                                  <div style={{fontSize:10.5,color:'var(--ink-500)'}}>Reste {fmt(reste)} de trop-perçu à reporter sur le mois suivant.</div>
+                                )}
+                              </div>
+                            )
+                          })()}
                           {(() => {
                             const activiteIndex = annee * 12 + (mois - 1)
                             if (activiteIndex >= moisCourantIndex || (f1m === 0 && recu(f1) === 0)) return null
