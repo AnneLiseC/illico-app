@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { authHeaders } from '../lib/api-auth-client'
+import { apiFetch } from '../lib/api-auth-client'
 
 // Carte « Mes calendriers » (lot 8) extraite de profil/page.js (Placement-1) — comptes
 // connectés + agendas (8a/8b), connexion/déconnexion iCloud (8c), cibles + renommage (8d/8f),
@@ -58,7 +58,7 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
     for (const c of list) {
       setAgendas(a => ({ ...a, [c.id]: { loading: true } }))
       try {
-        const res = await fetch(`/api/calendar/list?compte_oauth_id=${c.id}`, { headers: await authHeaders() })
+        const res = await apiFetch(`/api/calendar/list?compte_oauth_id=${c.id}`)
         const d = await res.json()
         if (res.ok) setAgendas(a => ({ ...a, [c.id]: { loading: false, items: d.calendriers || [] } }))
         else setAgendas(a => ({ ...a, [c.id]: { loading: false, error: d.error, reconnect: !!d.reconnect } }))
@@ -123,7 +123,7 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
   const connecterGoogle = async () => {
     onError(''); onSucces('')
     try {
-      const res = await fetch('/api/auth/google', { method: 'POST', headers: await authHeaders() })
+      const res = await apiFetch('/api/auth/google', { method: 'POST' })
       const d = await res.json()
       if (res.ok && d.url) window.location.href = d.url
       else onError(d.error || 'Erreur de connexion Google')
@@ -133,8 +133,8 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
   const connecterIcloud = async () => {
     setConnectingIcloud(true); setErreurIcloud(''); onSucces('')
     try {
-      const res = await fetch('/api/calendar/icloud/connect', {
-        method: 'POST', headers: await authHeaders(),
+      const res = await apiFetch('/api/calendar/icloud/connect', {
+        method: 'POST',
         body: JSON.stringify({ appleId, appPassword }),
       })
       const d = await res.json()
@@ -155,8 +155,8 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
     if (!ok) return
     onError(''); onSucces('')
     try {
-      const res = await fetch('/api/calendar/account/disconnect', {
-        method: 'POST', headers: await authHeaders(),
+      const res = await apiFetch('/api/calendar/account/disconnect', {
+        method: 'POST',
         body: JSON.stringify({ compte_oauth_id: c.id }),
       })
       const d = await res.json()

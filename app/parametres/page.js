@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { authHeaders } from '../lib/api-auth-client'
+import { apiFetch } from '../lib/api-auth-client'
 import MesCalendriers from '../components/MesCalendriers'
 import MonDrive from '../components/MonDrive'
 import ModalShell from '../components/ModalShell'
@@ -176,8 +176,8 @@ export default function Parametres() {
     if (!formAgence.nom.trim() || !formAgence.ville.trim()) return
     setSavingAgence(true); setErreur('')
     try {
-      const res = await fetch('/api/update-agence', {
-        method: 'PATCH', headers: await authHeaders(),
+      const res = await apiFetch('/api/update-agence', {
+        method: 'PATCH',
         body: JSON.stringify({
           agence_id: formAgence.id,
           nom: formAgence.nom, ville: formAgence.ville, adresse: formAgence.adresse,
@@ -201,7 +201,7 @@ export default function Parametres() {
     if (!formAgence.nom.trim() || !formAgence.ville.trim()) return
     setSavingAgence(true); setErreur('')
     try {
-      const res = await fetch('/api/create-agence', { method: 'POST', headers: await authHeaders(), body: JSON.stringify(formAgence) })
+      const res = await apiFetch('/api/create-agence', { method: 'POST', body: JSON.stringify(formAgence) })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setErreur(data.error || 'Erreur'); setSavingAgence(false); return }
       setModal(false)
@@ -251,7 +251,7 @@ export default function Parametres() {
     if (!agenteASupprimer) return
     setSupprimant(true); setErreur('')
     try {
-      const res = await fetch('/api/agente-statut', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ id: agenteASupprimer.id, actif: false }) })
+      const res = await apiFetch('/api/agente-statut', { method: 'POST', body: JSON.stringify({ id: agenteASupprimer.id, actif: false }) })
       const data = await res.json()
       if (!res.ok) { setErreur(data.error || 'Erreur lors de la désactivation') }
       else { setSucces(`${agenteASupprimer.prenom} ${agenteASupprimer.nom} désactivée ✓`); setModal(false); setAgenteASupprimer(null); await chargerAgentes() }
@@ -263,7 +263,7 @@ export default function Parametres() {
     if (!window.confirm(`Réactiver ${agente.prenom} ${agente.nom} ? Elle pourra de nouveau se connecter.`)) return
     setErreur(''); setSucces('')
     try {
-      const res = await fetch('/api/agente-statut', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ id: agente.id, actif: true }) })
+      const res = await apiFetch('/api/agente-statut', { method: 'POST', body: JSON.stringify({ id: agente.id, actif: true }) })
       const data = await res.json()
       if (!res.ok) setErreur(data.error || 'Erreur lors de la réactivation')
       else { setSucces(`${agente.prenom} ${agente.nom} réactivée ✓`); await chargerAgentes() }
@@ -275,7 +275,7 @@ export default function Parametres() {
     try {
       const partsArray = form.parts_agente_disponibles.split(',').map(v => parseInt(v.trim()) / 100).filter(v => !isNaN(v) && v > 0 && v <= 1)
       const partDefaut = partsArray[0] ?? 0.5
-      const res = await fetch('/api/create-agente', { method: 'POST', headers: await authHeaders(), body: JSON.stringify({ prenom: form.prenom, nom: form.nom, email: form.email, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, redevance_debut: form.redevance_debut || null, redevance_mensuelle_ht: form.redevance_mensuelle_ht !== '' ? parseFloat(form.redevance_mensuelle_ht) : null, objectif: form.objectif !== '' ? parseFloat(form.objectif) || 0 : null, agence_id: form.agence_id || null }) })
+      const res = await apiFetch('/api/create-agente', { method: 'POST', body: JSON.stringify({ prenom: form.prenom, nom: form.nom, email: form.email, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, redevance_debut: form.redevance_debut || null, redevance_mensuelle_ht: form.redevance_mensuelle_ht !== '' ? parseFloat(form.redevance_mensuelle_ht) : null, objectif: form.objectif !== '' ? parseFloat(form.objectif) || 0 : null, agence_id: form.agence_id || null }) })
       const data = await res.json()
       if (!res.ok) { setErreur(data.error || 'Erreur') } else { setSucces(`Invitation envoyée à ${form.email} ✓`); setModal(false); await chargerAgentes(); await chargerObjectifs() }
     } catch (err) { setErreur(err.message) }
@@ -287,7 +287,7 @@ export default function Parametres() {
     try {
       const partsArray = form.parts_agente_disponibles.split(',').map(v => parseInt(v.trim()) / 100).filter(v => !isNaN(v) && v > 0 && v <= 1)
       const partDefaut = partsArray[0] ?? 0.5
-      const res = await fetch('/api/create-agente', { method: 'PATCH', headers: await authHeaders(), body: JSON.stringify({ id: agenteEditee.id, prenom: form.prenom, nom: form.nom, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, redevance_debut: form.redevance_debut || null, redevance_mensuelle_ht: form.redevance_mensuelle_ht !== '' ? parseFloat(form.redevance_mensuelle_ht) : null }) })
+      const res = await apiFetch('/api/create-agente', { method: 'PATCH', body: JSON.stringify({ id: agenteEditee.id, prenom: form.prenom, nom: form.nom, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, redevance_debut: form.redevance_debut || null, redevance_mensuelle_ht: form.redevance_mensuelle_ht !== '' ? parseFloat(form.redevance_mensuelle_ht) : null }) })
       const data = await res.json()
       if (!res.ok) { setErreur(data.error || 'Erreur'); setSaving(false); return }
       // Objectif d'agente : écriture côté client (agence_id = celle de l'agente, dispo en state).
@@ -305,7 +305,7 @@ export default function Parametres() {
     const chemin = `kbis/${agenteId}.${ext}`
     const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (uploadError) { setErreur('Erreur upload KBIS : ' + uploadError.message); setUploadingKbis(null); return }
-    const res = await fetch('/api/create-agente', { method: 'PATCH', headers: await authHeaders(), body: JSON.stringify({ id: agenteId, kbis_url: chemin }) })
+    const res = await apiFetch('/api/create-agente', { method: 'PATCH', body: JSON.stringify({ id: agenteId, kbis_url: chemin }) })
     if (res.ok) { setSucces('KBIS uploadé ✓'); await chargerAgentes() } else { setErreur('Erreur sauvegarde KBIS') }
     setUploadingKbis(null)
   }

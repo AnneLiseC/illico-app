@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { authHeaders } from '../lib/api-auth-client'
+import { apiFetch } from '../lib/api-auth-client'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
@@ -436,11 +436,10 @@ export default function Planning() {
 
   const pushToGoogle = (type, id) => {
     if (!googleConnected || !id) return
-    authHeaders().then(headers => fetch('/api/google/calendar/push', {
+    apiFetch('/api/google/calendar/push', {
       method: 'POST',
-      headers,
       body: JSON.stringify({ type, id }),
-    })).catch(() => {})
+    }).catch(() => {})
   }
 
   // portee : 'un' (cette occurrence) | 'serie' (toute la série) | undefined (demander).
@@ -554,10 +553,10 @@ export default function Planning() {
       const base = baseRecurrente(gid)
       // Google : supprimer l'événement MAÎTRE efface toute la série (non bloquant).
       if (googleConnected) {
-        authHeaders().then(headers => fetch('/api/google/calendar/event', {
-          method: 'DELETE', headers,
+        apiFetch('/api/google/calendar/event', {
+          method: 'DELETE',
           body: JSON.stringify({ googleEventId: base, cibleId: data.cible_id }),
-        })).catch(() => {})
+        }).catch(() => {})
       }
       // BATILIS : toutes les occurrences, par MOTIF sur la base (fiable même si la
       // liste chargée est tronquée à 1000). Underscores échappés (méta LIKE).
@@ -566,10 +565,10 @@ export default function Planning() {
     } else {
       // Occurrence seule (ou élément non récurrent) — comportement d'origine.
       if (googleConnected && gid) {
-        authHeaders().then(headers => fetch('/api/google/calendar/event', {
-          method: 'DELETE', headers,
+        apiFetch('/api/google/calendar/event', {
+          method: 'DELETE',
           body: JSON.stringify({ googleEventId: gid, googleEndEventId: data.google_end_event_id, cibleId: data.cible_id }),
-        })).catch(() => {})
+        }).catch(() => {})
       }
       const { error } = elementSelectionne.type === 'rdv'
         ? await supabase.from('rendez_vous').delete().eq('id', data.id)
@@ -621,7 +620,7 @@ export default function Planning() {
             <button
               onClick={async () => {
                 try {
-                  const res = await fetch('/api/auth/google', { method: 'POST', headers: await authHeaders() })
+                  const res = await apiFetch('/api/auth/google', { method: 'POST' })
                   const data = await res.json()
                   if (res.ok && data.url) window.location.href = data.url
                   else setSyncMessage(`❌ ${data.error || 'Erreur de connexion Google'}`)
