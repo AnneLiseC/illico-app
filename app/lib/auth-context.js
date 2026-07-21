@@ -183,6 +183,31 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [fetchProfile])
 
+  // Onglet laissé ouvert longtemps (onglet épinglé, appli inactive) : le timer
+  // d'auto-refresh Supabase est suspendu quand l'onglet est masqué → au retour, le
+  // token access peut être expiré. getSession()/getUser() renvoient alors l'ancien
+  // token → 401 sur N'IMPORTE QUELLE action (DB, storage, /api/*). Au retour au
+  // premier plan, on rafraîchit la session si le token est expiré (ou < 2 min), pour
+  // que TOUTES les manipulations repartent avec un token valide.
+  useEffect(() => {
+    const rafraichirSiPresExpiration = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const expMs = session?.expires_at ? session.expires_at * 1000 : 0
+        if (session && expMs && expMs <= Date.now() + 120_000) {
+          await supabase.auth.refreshSession()
+        }
+      } catch { /* refresh token mort : onAuthStateChange gèrera la déconnexion */ }
+    }
+    document.addEventListener('visibilitychange', rafraichirSiPresExpiration)
+    window.addEventListener('focus', rafraichirSiPresExpiration)
+    return () => {
+      document.removeEventListener('visibilitychange', rafraichirSiPresExpiration)
+      window.removeEventListener('focus', rafraichirSiPresExpiration)
+    }
+  }, [])
+
   // Écoute en temps réel les nouvelles notifications
   useEffect(() => {
     if (!user?.id) return

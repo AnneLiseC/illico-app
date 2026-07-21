@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement, calculerEtapes, ETAPES_LABELS, detecterCategorie } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
-import { authHeaders, apiFetch } from '../../lib/api-auth-client'
+import { apiFetch } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
 import ModalShell from '../../components/ModalShell'
 // Éditeur d'annotation chargé à la demande (canvas + logique lourde) : hors bundle initial.
@@ -978,9 +978,9 @@ export default function FicheChantier({ params }) {
       if (insertErr) return false
       // Miroir OneDrive — PHOTOS seulement (vidéos = lot suivant). Non bloquant.
       if (!estVideo && photoInseree?.id) {
-        authHeaders().then(h => fetch('/api/drive/push', {
-          method: 'POST', headers: h, body: JSON.stringify({ photo_id: photoInseree.id }),
-        })).catch(() => {})
+        apiFetch('/api/drive/push', {
+          method: 'POST', body: JSON.stringify({ photo_id: photoInseree.id }),
+        }).catch(() => {})
       }
       return true
     }))
@@ -1004,9 +1004,9 @@ export default function FicheChantier({ params }) {
     const { data: photoAnnot, error: insErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie: cat, uploaded_by: profile?.id, type_media: 'photo' }).select('id').single()
     if (insErr) { setErreur('Annotation : ' + insErr.message); return }
     if (photoAnnot?.id) {
-      authHeaders().then(h => fetch('/api/drive/push', {
-        method: 'POST', headers: h, body: JSON.stringify({ photo_id: photoAnnot.id }),
-      })).catch(() => {})
+      apiFetch('/api/drive/push', {
+        method: 'POST', body: JSON.stringify({ photo_id: photoAnnot.id }),
+      }).catch(() => {})
     }
     await chargerPhotos()
     setSucces('Photo annotée ajoutée ✓')
@@ -1016,9 +1016,9 @@ export default function FicheChantier({ params }) {
     if (!confirm('Supprimer cette photo ?')) return
     // Miroir OneDrive (maître→miroir) — AVANT le cascade FK qui retire l'index. Non bloquant.
     try {
-      await authHeaders().then(h => fetch('/api/drive/delete', {
-        method: 'POST', headers: h, body: JSON.stringify({ photo_id: photoId }),
-      }))
+      await apiFetch('/api/drive/delete', {
+        method: 'POST', body: JSON.stringify({ photo_id: photoId }),
+      })
     } catch { /* non bloquant */ }
     const { error: rmErr } = await supabase.storage.from('photos').remove([chemin])
     if (rmErr) console.error('Suppression fichier photo (non bloquant) :', rmErr.message)
@@ -1040,9 +1040,9 @@ export default function FicheChantier({ params }) {
   // l'appel est non bloquant (la sauvegarde DB a déjà réussi). cible_id résout le calendrier.
   const pushToGoogle = (type, pushId) => {
     if (!pushId || !profile?.id) return
-    authHeaders().then(headers => fetch('/api/google/calendar/push', {
-      method: 'POST', headers, body: JSON.stringify({ type, id: pushId }),
-    })).catch(() => {})
+    apiFetch('/api/google/calendar/push', {
+      method: 'POST', body: JSON.stringify({ type, id: pushId }),
+    }).catch(() => {})
   }
 
   const sauvegarderRdvDossier = async () => {
@@ -1066,9 +1066,8 @@ export default function FicheChantier({ params }) {
   const deleteGoogleEvent = async (googleEventId, cibleId) => {
     if (!googleEventId || !profile?.id) return
     try {
-      await fetch('/api/google/calendar/event', {
+      await apiFetch('/api/google/calendar/event', {
         method: 'DELETE',
-        headers: await authHeaders(),
         // cibleId (lot 5c) : capturé sur l'objet AVANT le delete DB → /event résout le bon calendrier.
         body: JSON.stringify({ googleEventId, cibleId }),
       })
@@ -1489,9 +1488,9 @@ export default function FicheChantier({ params }) {
       // Miroir OneDrive (Lot 2a-2) — NON BLOQUANT : le magasin maître (Supabase) est déjà
       // écrit ; si la référente n'a pas de Drive, la route saute proprement.
       if (docInsere?.id) {
-        authHeaders().then(h => fetch('/api/drive/push', {
-          method: 'POST', headers: h, body: JSON.stringify({ document_id: docInsere.id }),
-        })).catch(() => {})
+        apiFetch('/api/drive/push', {
+          method: 'POST', body: JSON.stringify({ document_id: docInsere.id }),
+        }).catch(() => {})
       }
     }
     await chargerDocuments()
@@ -1506,10 +1505,9 @@ export default function FicheChantier({ params }) {
   const synchroniserDriveDossier = async () => {
     setSyncDrive('running'); setErreur(''); setSucces('')
     let envoyes = 0, sautes = 0, echecs = 0
-    const h = await authHeaders()
     const call = async (url, payload) => {
       try {
-        const r = await fetch(url, { method: 'POST', headers: h, body: JSON.stringify(payload) })
+        const r = await apiFetch(url, { method: 'POST', body: JSON.stringify(payload) })
         const d = await r.json().catch(() => ({}))
         if (d.already || d.skipped) sautes++
         else if (d.ok) envoyes++
@@ -1528,9 +1526,9 @@ export default function FicheChantier({ params }) {
     // Miroir OneDrive (maître→miroir) : supprimer la copie AVANT le cascade FK qui
     // retire doc_index. Best-effort — n'empêche pas la suppression app si le Drive échoue.
     try {
-      await authHeaders().then(h => fetch('/api/drive/delete', {
-        method: 'POST', headers: h, body: JSON.stringify({ document_id: docId }),
-      }))
+      await apiFetch('/api/drive/delete', {
+        method: 'POST', body: JSON.stringify({ document_id: docId }),
+      })
     } catch { /* non bloquant */ }
     const { error: rmErr } = await supabase.storage.from('documents').remove([path])
     if (rmErr) console.error('Suppression fichier document (non bloquant) :', rmErr.message)
@@ -1776,15 +1774,15 @@ export default function FicheChantier({ params }) {
   // a changé. À appeler après tout changement matériel d'un devis.
   const pousserDevisDrive = (devisId) => {
     if (!devisId) return
-    authHeaders().then(h => fetch('/api/drive/push-devis', {
-      method: 'POST', headers: h, body: JSON.stringify({ devis_id: devisId }),
-    })).catch(() => {})
+    apiFetch('/api/drive/push-devis', {
+      method: 'POST', body: JSON.stringify({ devis_id: devisId }),
+    }).catch(() => {})
   }
   const retirerDevisDrive = (devisId) => {
     if (!devisId) return Promise.resolve()
-    return authHeaders().then(h => fetch('/api/drive/delete', {
-      method: 'POST', headers: h, body: JSON.stringify({ devis_id: devisId }),
-    })).catch(() => {})
+    return apiFetch('/api/drive/delete', {
+      method: 'POST', body: JSON.stringify({ devis_id: devisId }),
+    }).catch(() => {})
   }
 
   const uploadDevisPdf = async (devisId, fichier) => {
@@ -2289,9 +2287,9 @@ export default function FicheChantier({ params }) {
     if (!confirm('Supprimer ce compte-rendu ?')) return
     // Miroir OneDrive (maître→miroir) — AVANT le cascade FK. Non bloquant.
     try {
-      await authHeaders().then(h => fetch('/api/drive/delete', {
-        method: 'POST', headers: h, body: JSON.stringify({ cr_id: crId }),
-      }))
+      await apiFetch('/api/drive/delete', {
+        method: 'POST', body: JSON.stringify({ cr_id: crId }),
+      })
     } catch { /* non bloquant */ }
     const { error } = await supabase.from('comptes_rendus').delete().eq('id', crId)
     if (error) { setErreur('Erreur : ' + error.message); return }
@@ -2304,18 +2302,17 @@ export default function FicheChantier({ params }) {
     setComptesRendus(prev => prev.map(c => c.id === crId ? { ...c, valide } : c))
     // Miroir OneDrive (non bloquant) : CR validé/publié → PDF dans « Comptes rendus/ » ;
     // dé-validé → retiré du Drive.
-    authHeaders().then(h => fetch(valide ? '/api/drive/push-cr' : '/api/drive/delete', {
-      method: 'POST', headers: h, body: JSON.stringify({ cr_id: crId }),
-    })).catch(() => {})
+    apiFetch(valide ? '/api/drive/push-cr' : '/api/drive/delete', {
+      method: 'POST', body: JSON.stringify({ cr_id: crId }),
+    }).catch(() => {})
   }
 
     const generatePDF = async (type, crId = null) => {
     const key = crId ? `cr-${crId}` : type
     setGeneratingPDF(key)
     try {
-      const res = await fetch('/api/pdf', {
+      const res = await apiFetch('/api/pdf', {
         method: 'POST',
-        headers: await authHeaders(),
         body: JSON.stringify({ dossierId: id, type, crId }),
       })
       if (!res.ok) {
@@ -2461,9 +2458,8 @@ export default function FicheChantier({ params }) {
   const inviterClient = async () => {
     setInviting(true); setInviteMsg(null)
     try {
-      const res = await fetch('/api/invite-client', {
+      const res = await apiFetch('/api/invite-client', {
         method: 'POST',
-        headers: await authHeaders(),
         body: JSON.stringify({ dossierId: id }),
       })
       const data = await res.json().catch(() => ({}))

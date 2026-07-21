@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { calcStatut, STATUT_CONFIG } from '../lib/dossiers'
-import { authHeaders } from '../lib/api-auth-client'
+import { apiFetch } from '../lib/api-auth-client'
 import { fmtDateHeureFR, estDansDelaiEdition } from '../lib/dates'
 import { statutAcces, formatDateFR } from '../lib/expiration'
 import MarkdownCR from '../components/MarkdownCR'
@@ -296,9 +296,8 @@ export default function EspaceClient() {
   const ouvrirDevis = async (devisId) => {
     setPdfErreur('')
     try {
-      const res = await fetch('/api/pdf', {
+      const res = await apiFetch('/api/pdf', {
         method: 'POST',
-        headers: await authHeaders(),
         body: JSON.stringify({ dossierId: dossier.id, type: 'devis', devisId }),
       })
       if (!res.ok) {
@@ -671,9 +670,8 @@ export default function EspaceClient() {
                             onClick={async () => {
                               setPdfErreur('')
                               try {
-                                const res = await fetch('/api/pdf', {
+                                const res = await apiFetch('/api/pdf', {
                                   method: 'POST',
-                                  headers: await authHeaders(),
                                   body: JSON.stringify({ dossierId: dossier.id, type: 'cr', crId: cr.cr_id }),
                                 })
                                 if (!res.ok) {

@@ -53,7 +53,11 @@ export async function apiFetch(url, options = {}) {
     if (res.status !== 401) return res
   }
 
-  // Toujours 401 → refresh token mort aussi → retour connexion.
-  if (typeof window !== 'undefined') window.location.assign('/login')
+  // Toujours 401 → refresh token mort aussi → retour connexion. Les clients se
+  // connectent sur /login-client (espace client), le staff sur /login.
+  if (typeof window !== 'undefined') {
+    const estEspaceClient = window.location.pathname.startsWith('/espace-client')
+    window.location.assign(estEspaceClient ? '/login-client' : '/login')
+  }
   return res
 }

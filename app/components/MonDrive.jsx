@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { authHeaders } from '../lib/api-auth-client'
+import { apiFetch } from '../lib/api-auth-client'
 
 // Carte « Mon Drive » (OneDrive / Microsoft Graph) :
 //   - connexion / déconnexion (tokens chiffrés dans comptes_oauth).
@@ -70,7 +70,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
   const connecter = async () => {
     setConnecting(true); onError?.(''); onSucces?.('')
     try {
-      const res = await fetch('/api/auth/microsoft', { method: 'POST', headers: await authHeaders() })
+      const res = await apiFetch('/api/auth/microsoft', { method: 'POST' })
       const d = await res.json()
       if (res.ok && d.url) window.location.href = d.url
       else { onError?.(d.error || 'Erreur de connexion OneDrive'); setConnecting(false) }
@@ -83,8 +83,8 @@ export default function MonDrive({ profile, onError, onSucces }) {
     if (!ok) return
     onError?.(''); onSucces?.('')
     try {
-      const res = await fetch('/api/calendar/account/disconnect', {
-        method: 'POST', headers: await authHeaders(),
+      const res = await apiFetch('/api/calendar/account/disconnect', {
+        method: 'POST',
         body: JSON.stringify({ compte_oauth_id: compte.id }),
       })
       const d = await res.json()
@@ -103,7 +103,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
         const last = path[path.length - 1]
         url += `?drive_id=${encodeURIComponent(last.driveId)}&item_id=${encodeURIComponent(last.itemId)}`
       }
-      const res = await fetch(url, { headers: await authHeaders() })
+      const res = await apiFetch(url)
       const d = await res.json()
       if (d.reconnect) { setReconnect(true); setFolders([]) }
       else if (res.ok) { setFolders(d.folders || []); if (d.my_drive_id) setMyDriveId(d.my_drive_id) }
@@ -119,8 +119,8 @@ export default function MonDrive({ profile, onError, onSucces }) {
   const enregistrerRacine = async (payload) => {
     setSaving(true); onError?.(''); onSucces?.('')
     try {
-      const res = await fetch('/api/drive/folders', {
-        method: 'POST', headers: await authHeaders(), body: JSON.stringify(payload),
+      const res = await apiFetch('/api/drive/folders', {
+        method: 'POST', body: JSON.stringify(payload),
       })
       const d = await res.json()
       if (res.ok) {
@@ -154,12 +154,11 @@ export default function MonDrive({ profile, onError, onSucces }) {
     ]
     const total = jobs.length
     setRattrapage({ done: 0, total })
-    const h = await authHeaders()
     let envoyes = 0, sautes = 0, echecs = 0
     for (let i = 0; i < jobs.length; i++) {
       const [url, payload] = jobs[i]
       try {
-        const r = await fetch(url, { method: 'POST', headers: h, body: JSON.stringify(payload) })
+        const r = await apiFetch(url, { method: 'POST', body: JSON.stringify(payload) })
         const d = await r.json().catch(() => ({}))
         if (d.already || d.skipped) sautes++
         else if (d.ok) envoyes++
@@ -175,8 +174,8 @@ export default function MonDrive({ profile, onError, onSucces }) {
     if (!rattacherId || !rForm.dossier_id) return
     setImporting(true); onError?.(''); onSucces?.('')
     try {
-      const res = await fetch('/api/drive/import', {
-        method: 'POST', headers: await authHeaders(),
+      const res = await apiFetch('/api/drive/import', {
+        method: 'POST',
         body: JSON.stringify({ inbox_id: rattacherId, dossier_id: rForm.dossier_id, categorie: rForm.categorie || null }),
       })
       const d = await res.json()
@@ -189,8 +188,8 @@ export default function MonDrive({ profile, onError, onSucces }) {
   const ignorer = async (id) => {
     onError?.(''); onSucces?.('')
     try {
-      const res = await fetch('/api/drive/inbox', {
-        method: 'POST', headers: await authHeaders(), body: JSON.stringify({ inbox_id: id, action: 'ignore' }),
+      const res = await apiFetch('/api/drive/inbox', {
+        method: 'POST', body: JSON.stringify({ inbox_id: id, action: 'ignore' }),
       })
       if (res.ok) charger()
     } catch { /* ignore */ }

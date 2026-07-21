@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { authHeaders } from '../lib/api-auth-client'
+import { apiFetch } from '../lib/api-auth-client'
 
 // Onboarding (sous-lot 3c). Accessible à un utilisateur connecté SANS profil
 // (admin franchisé invité). Exemptée de OnboardingGuard (anti-boucle), elle gère
@@ -76,9 +76,8 @@ export default function Onboarding() {
     }
     setSaving(true)
     try {
-      const res = await fetch('/api/onboarding/create-societe', {
+      const res = await apiFetch('/api/onboarding/create-societe', {
         method: 'POST',
-        headers: await authHeaders(),
         body: JSON.stringify(form),
       })
       const data = await res.json().catch(() => ({}))
