@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement, calculerEtapes, ETAPES_LABELS, detecterCategorie } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
-import { authHeaders } from '../../lib/api-auth-client'
+import { authHeaders, apiFetch } from '../../lib/api-auth-client'
 import MarkdownCR from '../../components/MarkdownCR'
 import ModalShell from '../../components/ModalShell'
 // Éditeur d'annotation chargé à la demande (canvas + logique lourde) : hors bundle initial.
@@ -2131,9 +2131,8 @@ export default function FicheChantier({ params }) {
     setCrGenerating(true)
     setErreur('')
     try {
-      const res = await fetch('/api/cr', {
+      const res = await apiFetch('/api/cr', {
         method: 'POST',
-        headers: await authHeaders(),
         body: JSON.stringify({
           dossierId: id,
           typeVisite: crForm.type_visite,
@@ -2236,9 +2235,8 @@ export default function FicheChantier({ params }) {
       const path = `chantiers/${id}/audio/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error: upErr } = await supabase.storage.from('documents').upload(path, blob, { contentType: blob.type || undefined })
       if (upErr) { setErreur('Échec de l’envoi de l’audio : ' + upErr.message); return }
-      const res = await fetch('/api/transcribe', {
+      const res = await apiFetch('/api/transcribe', {
         method: 'POST',
-        headers: await authHeaders(),
         body: JSON.stringify({ dossierId: id, audioPath: path }),
       })
       if (!res.ok) {
