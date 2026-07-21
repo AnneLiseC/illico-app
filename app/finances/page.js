@@ -398,9 +398,10 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
   const renderStatutV = (f, type, annee, mois, total, canEdit) => {
     const cumul = recu(f)
     const reste = round2(total - cumul)
+    const estF1 = type === 'agente_vers_ctp'   // le report (trop-perçu ↩) n'existe que sur le F1
     if (total <= 0 && cumul <= 0) return <span style={{color:'var(--ink-400)'}}>—</span>
     let bg, col, txt
-    if (reste < -0.01) { txt = `↩ Trop-perçu ${fmt(-reste)}`; bg = 'rgba(217,119,6,0.12)'; col = '#a16207' }
+    if (estF1 && reste < -0.01) { txt = `↩ Trop-perçu ${fmt(-reste)}`; bg = 'rgba(217,119,6,0.12)'; col = '#a16207' }
     else if (cumul <= 0.001) { txt = '📋 À facturer'; bg = 'var(--ink-100)'; col = 'var(--ink-500)' }
     else if (reste <= 0.01) { txt = '✅ Soldé'; bg = 'rgba(22,163,74,0.1)'; col = '#15803d' }
     else { txt = `🕓 ${fmt(cumul)} / ${fmt(total)}`; bg = 'rgba(217,119,6,0.12)'; col = '#a16207' }
@@ -1225,7 +1226,11 @@ export default function Finances() {
   const dossiersAgente   = agenteSelectionnee
     ? dossiers.filter(d => d.referente?.id === agenteSelectionnee)
     : dossiersAgentes
+  // `agentes` n'est chargé que pour l'admin ; dans sa propre vue, l'agente le résout
+  // via son `profile` (qui porte redevance_mensuelle_ht / redevance_debut) — sinon la
+  // redevance live du F2 retombe à 0.
   const agenteActuelle   = agentes.find(a => a.id === agenteSelectionnee)
+    || (profile?.id === agenteSelectionnee ? profile : null)
   const redevancesAgente = agenteSelectionnee
     ? redevances.filter(r => r.agente_id === agenteSelectionnee)
     : redevances
