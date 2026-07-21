@@ -347,6 +347,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
   ])].sort((a, b) => b.localeCompare(a))
 
   let totalF1 = 0, totalF1Paye = 0, totalF2 = 0, totalF2Paye = 0
+  let totalF1Du = 0   // Σ du DÛ live F1 (théorique), pour le solde de régularisation
   months.forEach(key => {
     const [aStr, mStr] = shiftMoisKey(key, -1).split('-')   // mois d'activité (M−1)
     const annee = parseInt(aStr), mois = parseInt(mStr)
@@ -356,9 +357,13 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
     const f1eff = f1Eff(f1, montantF1)
     const f2eff = f2Eff(f2, montantF2)
     totalF1 = round2(totalF1 + f1eff); totalF2 = round2(totalF2 + f2eff)
+    totalF1Du = round2(totalF1Du + montantF1)
     totalF1Paye = round2(totalF1Paye + recu(f1))
     totalF2Paye = round2(totalF2Paye + recu(f2))
   })
+  // Solde de régularisation F1 = Σ(touché) − Σ(dû live). >0 trop-perçu (à déduire des
+  // prochaines F1) ; <0 pas-assez (à rattraper). Cumulé depuis le début, read-only.
+  const soldeRegulF1 = round2(totalF1Paye - totalF1Du)
   const totalRedev = redevAg.filter(r => r.statut === 'regle').reduce((s, r) => round2(s + (r.montant_ht || 0)), 0)
 
   const uploadPdf = async (f, fichier) => {
@@ -481,6 +486,16 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
       {/* KPI strip */}
       <div className="kpi-grid">
         <FinKpiCard label="Gains à facturer par l'agent · F1" value={fmt(round2(totalF1-totalF1Paye))} sub={`Reçu ${fmt(totalF1Paye)} · Total ${fmt(totalF1)}`} tone="ok"/>
+        <FinKpiCard
+          label="Solde de régularisation · F1"
+          value={fmt(soldeRegulF1)}
+          sub={Math.abs(soldeRegulF1) < 0.01
+            ? 'À jour — touché = dû'
+            : soldeRegulF1 > 0
+              ? 'Trop-perçu → à déduire des prochaines F1'
+              : 'Pas-assez → à rattraper sur les prochaines F1'}
+          tone={Math.abs(soldeRegulF1) < 0.01 ? 'ok' : 'warn'}
+        />
         <FinKpiCard label="À régler par l'agent · F2"         value={fmt(round2(totalF2-totalF2Paye))} sub={`Reçu ${fmt(totalF2Paye)} · Total ${fmt(totalF2)}`} tone="warn"/>
         <FinKpiCard label="Redevances réglées"           value={fmt(totalRedev)} sub={`${redevAg.filter(r=>r.statut==='regle').length} mois · ${agenteActuelle?.redevance_mensuelle_ht != null ? `${agenteActuelle.redevance_mensuelle_ht} €/mois` : 'à paramétrer'}`}     tone="brand"/>
       </div>
