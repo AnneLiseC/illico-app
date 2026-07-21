@@ -22,7 +22,7 @@ import { calculerExpiration } from '../../lib/expiration'
 
 // Liste des entités supprimées avec un chantier — source unique des 2 libellés
 // (confirm de suppression + sous-titre du bouton), pour éviter qu'ils divergent.
-const ENTITES_CHANTIER = 'devis, factures, photos, comptes-rendus, documents, RDV, interventions, suivis financiers, messages, contrat'
+const ENTITES_CHANTIER = 'devis, factures, photos, rapports de visite, documents, RDV, interventions, suivis financiers, messages, contrat'
 
 // Aperçu texte nu d'un CR : retire la syntaxe markdown (## titres, **gras**, puces).
 function stripMarkdown(text) {
@@ -2284,7 +2284,7 @@ export default function FicheChantier({ params }) {
   }
 
   const supprimerCR = async (crId) => {
-    if (!confirm('Supprimer ce compte-rendu ?')) return
+    if (!confirm('Supprimer ce rapport de visite ?')) return
     // Miroir OneDrive (maître→miroir) — AVANT le cascade FK. Non bloquant.
     try {
       await apiFetch('/api/drive/delete', {
@@ -3083,7 +3083,7 @@ export default function FicheChantier({ params }) {
           { key:'comparateur', label:'Comparateur',    icon:<ChartIcon /> },
           { key:'planning',  label:'Planning',         icon:<CalIcon />,    count: rdvsDossier.length + interventionsDossier.length },
           { key:'photos',    label:'Photos',           icon:<CamIcon />,    count: photos.length },
-          { key:'cr',        label:'Comptes-rendus',   icon:<DocIcon />,    count: comptesRendus.length },
+          { key:'cr',        label:'Rapports de visite',   icon:<DocIcon />,    count: comptesRendus.length },
           { key:'finance',   label:'Suivi financier',  icon:<WalletIcon /> },
           { key:'documents', label:'Documents',        icon:<FolderIcon />, count: documents.length },
           ...(dossier.typologie === 'amo' ? [{ key:'messages', label:'Messages', icon:<MsgIcon />, count: nbMsgNonLus > 0 ? nbMsgNonLus : undefined }] : []),
@@ -3254,14 +3254,14 @@ export default function FicheChantier({ params }) {
           {comptesRendus.length > 0 && (
             <div className="card" style={{padding:22}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                <h2 className="page" style={{fontSize:15}}>Derniers comptes-rendus</h2>
+                <h2 className="page" style={{fontSize:15}}>Derniers rapports de visite</h2>
                 <button className="btn btn-ghost" style={{fontSize:12, padding:'4px 10px'}}
                   onClick={() => setOnglet('cr')}>Voir tout · {comptesRendus.length}</button>
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
                 {comptesRendus.slice(0, 3).map(c => {
                   const typeColor = { r1:'#0094d4', r2:'#16a34a', r3:'#f59e0b', suivi:'#94a3b8', reception:'#16a34a' }[c.type_visite] || '#94a3b8'
-                  const typeLabel = { r1:'R1', r2:'R2', r3:'R3', suivi:'Suivi', reception:'Réception' }[c.type_visite] || (c.type_visite || 'CR')
+                  const typeLabel = { r1:'R1', r2:'R2', r3:'R3', suivi:'Suivi', reception:'Réception' }[c.type_visite] || (c.type_visite || 'RV')
                   return (
                     <button key={c.id} onClick={() => setOnglet('cr')} className="row-hover"
                       style={{display:'grid', gridTemplateColumns:'auto 1fr', gap:12, alignItems:'flex-start',
@@ -3271,7 +3271,7 @@ export default function FicheChantier({ params }) {
                         textAlign:'center', fontSize:10, fontWeight:800, letterSpacing:0.05}}>{typeLabel}</div>
                       <div style={{minWidth:0}}>
                         <div style={{display:'flex',justifyContent:'space-between',gap:8}}>
-                          <div className="clip-1" style={{fontSize:13, fontWeight:700, color:'var(--ink-900)'}}>{c.titre || 'Compte-rendu'}</div>
+                          <div className="clip-1" style={{fontSize:13, fontWeight:700, color:'var(--ink-900)'}}>{c.titre || 'Rapport de visite'}</div>
                           <span className="tnum" style={{fontSize:11, color:'var(--ink-400)', flexShrink:0}}>
                             {c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR') : ''}
                           </span>
@@ -4863,7 +4863,7 @@ export default function FicheChantier({ params }) {
                         <div style={{display:'flex', alignItems:'center', gap:6, marginTop:2}}>
                           <span style={{fontSize:11, color:'var(--ink-500)', textTransform:'uppercase', letterSpacing:0.04}}>{meta.label}</span>
                           {doc.categorie === 'compte_rendu' && (
-                            <span style={{fontSize:10, fontWeight:800, letterSpacing:0.04, padding:'1px 6px', borderRadius:5, background:'rgba(0,148,212,0.12)', color:'#0094d4'}}>Compte-rendu</span>
+                            <span style={{fontSize:10, fontWeight:800, letterSpacing:0.04, padding:'1px 6px', borderRadius:5, background:'rgba(0,148,212,0.12)', color:'#0094d4'}}>Rapport de visite</span>
                           )}
                           {doc.categorie === 'facture_honoraire' && (
                             <span style={{fontSize:10, fontWeight:800, background:'rgba(234,88,12,0.12)', color:'#ea580c', borderRadius:4, padding:'1px 5px'}}>FACT</span>
@@ -4888,8 +4888,8 @@ export default function FicheChantier({ params }) {
                           <button onClick={() => toggleCategorieCR(doc.id, doc.categorie !== 'compte_rendu')}
                             className="btn btn-ghost"
                             style={{padding:'4px 8px', fontSize:11, fontWeight:700, color: doc.categorie === 'compte_rendu' ? '#0094d4' : 'var(--ink-400)'}}
-                            title={doc.categorie === 'compte_rendu' ? 'Retirer de la catégorie Compte-rendu' : 'Marquer comme compte-rendu'}>
-                            {doc.categorie === 'compte_rendu' ? '✓ CR' : 'CR'}
+                            title={doc.categorie === 'compte_rendu' ? 'Retirer de la catégorie Rapport de visite' : 'Marquer comme rapport de visite'}>
+                            {doc.categorie === 'compte_rendu' ? '✓ RV' : 'RV'}
                           </button>
                         )}
                         <button onClick={() => ouvrirDocument(doc.path, doc.nom)}
@@ -5568,9 +5568,9 @@ export default function FicheChantier({ params }) {
           <div className="card" style={{padding:0, overflow:'hidden'}}>
             <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--ink-200)', gap:8, flexWrap:'wrap'}}>
               <div>
-                <h2 className="page" style={{fontSize:15}}>Comptes-rendus de visite</h2>
+                <h2 className="page" style={{fontSize:15}}>Rapports de visite</h2>
                 <div className="eyebrow" style={{marginTop:4}}>
-                  {comptesRendus.length} CR · les CR publiés sont visibles dans l&apos;espace client
+                  {comptesRendus.length} RV · les RV publiés sont visibles dans l&apos;espace client
                 </div>
               </div>
               <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
@@ -5586,7 +5586,7 @@ export default function FicheChantier({ params }) {
             <div style={{padding:'14px 22px', display:'flex', flexDirection:'column', gap:14}}>
               {comptesRendus.length === 0 && (
                 <div style={{padding:30, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
-                  Aucun compte-rendu pour le moment
+                  Aucun rapport de visite pour le moment
                 </div>
               )}
               {comptesRendus.map(cr => {
@@ -5671,13 +5671,13 @@ export default function FicheChantier({ params }) {
               const docsCR = documents.filter(d => d.categorie === 'compte_rendu')
               return (
                 <div style={{borderTop:'1px solid var(--ink-200)', padding:'14px 22px'}}>
-                  <h3 className="page" style={{fontSize:13.5}}>Documents joints marqués compte-rendu</h3>
+                  <h3 className="page" style={{fontSize:13.5}}>Documents joints marqués rapport de visite</h3>
                   <div className="eyebrow" style={{marginTop:4, marginBottom:10}}>
-                    Fichiers uploadés dans l&apos;onglet Documents et tagués CR ({docsCR.length})
+                    Fichiers uploadés dans l&apos;onglet Documents et tagués RV ({docsCR.length})
                   </div>
                   {docsCR.length === 0 ? (
                     <div style={{fontSize:12.5, color:'var(--ink-400)'}}>
-                      Aucun document marqué compte-rendu — taguez un fichier depuis l&apos;onglet Documents (bouton « CR »).
+                      Aucun document marqué rapport de visite — taguez un fichier depuis l&apos;onglet Documents (bouton « RV »).
                     </div>
                   ) : docsCR.map(doc => (
                     <div key={doc.id} className="row-hover" style={{
@@ -5698,8 +5698,8 @@ export default function FicheChantier({ params }) {
                       </button>
                       <button onClick={() => toggleCategorieCR(doc.id, false)} className="btn btn-ghost"
                         style={{padding:'4px 8px', fontSize:11, fontWeight:700, color:'#0094d4'}}
-                        title="Retirer de la catégorie Compte-rendu">
-                        ✓ CR
+                        title="Retirer de la catégorie Rapport de visite">
+                        ✓ RV
                       </button>
                     </div>
                   ))}
@@ -5800,7 +5800,7 @@ export default function FicheChantier({ params }) {
             <ModalField label="Contenu du CR" required>
               <textarea value={crManuelForm.contenu}
                 onChange={e => setCrManuelForm(f => ({ ...f, contenu: e.target.value }))}
-                rows={10} placeholder="Rédigez ou collez le contenu du compte-rendu…"
+                rows={10} placeholder="Rédigez ou collez le contenu du rapport de visite…"
                 className="input" style={{minHeight:200, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
             </ModalField>
 

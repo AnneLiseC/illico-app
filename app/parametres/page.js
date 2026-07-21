@@ -956,7 +956,7 @@ export default function Parametres() {
             </div>
             <div style={{background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.3)', borderRadius:10, padding:'12px 16px', fontSize:13, color:'var(--ink-700)', marginBottom:14, lineHeight:1.5}}>
               Elle <strong>ne pourra plus se connecter</strong>. Ses chantiers, clients, dossiers,
-              comptes-rendus et documents <strong>restent attribués et conservés</strong>.
+              rapports de visite et documents <strong>restent attribués et conservés</strong>.
               C&apos;est <strong>réversible</strong> : tu pourras la réactiver à tout moment.
             </div>
             {erreur && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c', marginBottom:12}}>{erreur}</div>}

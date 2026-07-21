@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth-context'
 
 const TYPE_CONFIG = {
   deadline_devis:   { label: 'Échéance devis',    bg: 'rgba(245,158,11,0.12)',  color: '#a16207',           emoji: '📋' },
-  cr_depose:        { label: 'Compte-rendu',       bg: 'rgba(0,148,212,0.1)',    color: 'var(--brand-700)',  emoji: '📝' },
+  cr_depose:        { label: 'Rapport de visite',  bg: 'rgba(0,148,212,0.1)',    color: 'var(--brand-700)',  emoji: '📝' },
   acompte_debloque: { label: 'Acompte débloqué',   bg: 'rgba(22,163,74,0.1)',    color: '#15803d',           emoji: '💰' },
   msg_client:       { label: 'Message client',     bg: 'rgba(124,58,237,0.1)',   color: '#7c3aed',           emoji: '💬' },
   devis_signe:      { label: 'Devis signé',        bg: 'rgba(5,150,105,0.1)',    color: '#047857',           emoji: '✅' },

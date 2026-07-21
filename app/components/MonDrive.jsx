@@ -351,7 +351,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
                       </select>
                       <select className="input" style={{ height: 38 }} value={rForm.categorie} onChange={e => setRForm(f => ({ ...f, categorie: e.target.value }))}>
                         <option value="">Autres</option>
-                        <option value="compte_rendu">Compte rendu</option>
+                        <option value="compte_rendu">Rapport de visite</option>
                         <option value="plans">Plans</option>
                         <option value="administratif">Administratif</option>
                       </select>

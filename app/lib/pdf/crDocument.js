@@ -20,13 +20,13 @@ export function buildCRDocument({ dossier, cr, sections, logo, photos }) {
   const nomRef = ref ? (ref.prenom + ' ' + ref.nom) : ''
 
   const TITRES = {
-    r1: 'COMPTE RENDU DE PREMIÈRE VISITE',
-    r2: 'COMPTE RENDU DE VISITE TECHNIQUE',
-    r3: 'COMPTE RENDU DE PRÉSENTATION DES DEVIS',
-    suivi: 'COMPTE RENDU DE SUIVI DE CHANTIER',
-    reception: 'COMPTE RENDU DE RÉCEPTION DE CHANTIER',
+    r1: 'RAPPORT DE PREMIÈRE VISITE',
+    r2: 'RAPPORT DE VISITE TECHNIQUE',
+    r3: 'RAPPORT DE PRÉSENTATION DES DEVIS',
+    suivi: 'RAPPORT DE SUIVI DE CHANTIER',
+    reception: 'RAPPORT DE RÉCEPTION DE CHANTIER',
   }
-  const titre = TITRES[cr.type_visite] || 'COMPTE RENDU DE VISITE'
+  const titre = TITRES[cr.type_visite] || 'RAPPORT DE VISITE'
   const dateEmis = new Date(cr.created_at || Date.now()).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
 
   const CRS = StyleSheet.create({

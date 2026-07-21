@@ -386,7 +386,7 @@ export default function EspaceClient() {
     { key: 'accueil',   label: 'Mon chantier',                                    icon: '🏠' },
     { key: 'agenda',    label: `Mon agenda${nbAgendaAVenir > 0 ? ` (${nbAgendaAVenir})` : ''}`, icon: '📅' },
     { key: 'photos',    label: `Photos (${photos.length})`,                        icon: '📸' },
-    { key: 'cr',        label: `Comptes-rendus (${comptesRendus.length})`,          icon: '📄' },
+    { key: 'cr',        label: `Rapports de visite (${comptesRendus.length})`,          icon: '📄' },
     { key: 'messages',  label: `Messages${nbMsgNonLus > 0 ? ` (${nbMsgNonLus})` : ''}`, icon: '💬' },
   ]
 
@@ -631,7 +631,7 @@ export default function EspaceClient() {
             {comptesRendus.length === 0 ? (
               <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
                 <p className="text-4xl mb-3">📄</p>
-                <p className="text-gray-400">Aucun compte-rendu disponible</p>
+                <p className="text-gray-400">Aucun rapport de visite disponible</p>
                 <p className="text-xs text-gray-300 mt-1">Votre référent les publiera après chaque visite</p>
               </div>
             ) : (
@@ -643,7 +643,7 @@ export default function EspaceClient() {
                       <span className="text-xl">📄</span>
                       <div>
                         <p className="font-medium text-gray-800 text-sm">
-                          {TYPE_VISITE_LABELS[cr.type_visite] || cr.type_visite || 'Compte-rendu de visite'}
+                          {TYPE_VISITE_LABELS[cr.type_visite] || cr.type_visite || 'Rapport de visite'}
                         </p>
                         <p className="text-xs text-gray-400">
                           {cr.date_visite
@@ -662,7 +662,7 @@ export default function EspaceClient() {
                           <MarkdownCR text={cr.contenu_final} variant="client" />
                         </div>
                       ) : (
-                        <p className="text-sm text-gray-400 italic">Compte-rendu en cours de rédaction.</p>
+                        <p className="text-sm text-gray-400 italic">Rapport de visite en cours de rédaction.</p>
                       )}
                       {cr.contenu_final && (
                         <div className="space-y-2">
