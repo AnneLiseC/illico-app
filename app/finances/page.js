@@ -398,21 +398,38 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
   const renderStatutV = (f, type, annee, mois, total, canEdit) => {
     const cumul = recu(f)
     const reste = round2(total - cumul)
-    const estF1 = type === 'agente_vers_ctp'   // le report (trop-perçu ↩) n'existe que sur le F1
-    if (total <= 0 && cumul <= 0) return <span style={{color:'var(--ink-400)'}}>—</span>
+    const estF1 = type === 'agente_vers_ctp'   // le report (trop-perçu ↩) et la clôture ne concernent que le F1
+    const clot  = !!(f && f.cloture)
+    const moisPasse = (annee * 12 + (mois - 1)) < moisCourantIndex
+    if (total <= 0 && cumul <= 0 && !clot) return <span style={{color:'var(--ink-400)'}}>—</span>
     let bg, col, txt
-    if (estF1 && reste < -0.01) { txt = `↩ Trop-perçu ${fmt(-reste)}`; bg = 'rgba(217,119,6,0.12)'; col = '#a16207' }
+    if (clot) { txt = reste > 0.01 ? `🔒 Reporté ${fmt(reste)}` : '🔒 Clôturé'; bg = 'rgba(100,116,139,0.14)'; col = '#475569' }
+    else if (estF1 && reste < -0.01) { txt = `↩ Trop-perçu ${fmt(-reste)}`; bg = 'rgba(217,119,6,0.12)'; col = '#a16207' }
     else if (cumul <= 0.001) { txt = '📋 À facturer'; bg = 'var(--ink-100)'; col = 'var(--ink-500)' }
     else if (reste <= 0.01) { txt = '✅ Soldé'; bg = 'rgba(22,163,74,0.1)'; col = '#15803d' }
     else { txt = `🕓 ${fmt(cumul)} / ${fmt(total)}`; bg = 'rgba(217,119,6,0.12)'; col = '#a16207' }
     return (
       <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'center'}}>
         <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,background:bg,color:col}}>{txt}</span>
-        {canEdit && reste > 0.01 && (
+        {canEdit && !clot && reste > 0.01 && (
           <button onClick={(e) => { e.stopPropagation(); ajouterPaiementFacture(mois, annee, type, reste, todayISO(), total) }}
             title="Enregistrer le paiement du reste (solde en une fois)"
             style={{fontSize:10.5,fontWeight:600,borderRadius:6,padding:'3px 8px',cursor:'pointer',border:'1px solid var(--brand-500)',background:'#fff',color:'var(--brand-700)'}}>
             Marquer reçu
+          </button>
+        )}
+        {canEdit && estF1 && moisPasse && !clot && reste > 0.01 && (
+          <button onClick={(e) => { e.stopPropagation(); upsertFactureMoisType(mois, annee, 0, type, { cloture: true }) }}
+            title="Aucun encaissement attendu ce mois — le reste est reporté sur le mois suivant. Enlève le bouton « Marquer reçu »."
+            style={{fontSize:10.5,fontWeight:600,borderRadius:6,padding:'3px 8px',cursor:'pointer',border:'1px solid var(--ink-300)',background:'#fff',color:'var(--ink-600)'}}>
+            Clôturer
+          </button>
+        )}
+        {canEdit && estF1 && clot && (
+          <button onClick={(e) => { e.stopPropagation(); upsertFactureMoisType(mois, annee, 0, type, { cloture: false }) }}
+            title="Rouvrir ce mois (réaffiche « Marquer reçu »)."
+            style={{fontSize:10,fontWeight:600,borderRadius:6,padding:'2px 8px',cursor:'pointer',border:'1px solid var(--ink-200)',background:'#fff',color:'var(--ink-400)'}}>
+            Rouvrir
           </button>
         )}
       </div>
