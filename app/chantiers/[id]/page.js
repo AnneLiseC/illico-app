@@ -77,6 +77,8 @@ function Fact({ label, value, highlight, mono }) {
 
 // Format euro court partagé (helpers module-level)
 const fmtEurShort = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
+// Libellés des catégories photo (accessibles hors de l'IIFE de l'onglet Photos).
+const CATS_PHOTO_LABEL = { all: 'Toutes', avant: 'Avant', pendant: 'Pendant', apres: 'Après', maquette: 'Maquette' }
 const MAX_VIDEO_MO = 100   // plafond par vidéo (galerie chantier) — cohérent avec la limite du bucket Storage
 
 
@@ -758,6 +760,8 @@ export default function FicheChantier({ params }) {
   const [photos, setPhotos] = useState([])
   const [annot, setAnnot] = useState(null)   // { src, onSave, titre } — éditeur d'annotation ouvert
   const [zippingPhotos, setZippingPhotos] = useState(false)
+  const [conflitsPhotos, setConflitsPhotos] = useState(null) // { clean:File[], conflicts:[{file,existing}], choix:{[nom]:'deux'|'remplacer'|'existante'} }
+  const [dragPhotos, setDragPhotos] = useState(false)        // survol drag & drop
   const [categorie, setCategorie] = useState('all')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photosAffichees, setPhotosAffichees] = useState(3)
@@ -933,10 +937,11 @@ export default function FicheChantier({ params }) {
     setPhotos(await signerPhotos(data))
   }
 
-  // Télécharge toutes les photos du dossier en un ZIP, rangées par catégorie.
-  // Signed URLs régénérées au clic (60s), côté client uniquement (pas de route API).
+  // Télécharge les photos en un ZIP, rangées par catégorie. Respecte le filtre actif :
+  // depuis « Toutes » → tout ; depuis une catégorie (Avant/Pendant/…) → cette catégorie
+  // uniquement. Vidéos exclues (trop lourdes). Signed URLs régénérées au clic (60s).
   const telechargerZipPhotos = async () => {
-    const photosOnly = photos.filter(p => p.type_media !== 'video')   // ZIP = photos uniquement (pas les vidéos, trop lourdes)
+    const photosOnly = photos.filter(p => p.type_media !== 'video' && (categorie === 'all' || p.categorie === categorie))
     if (photosOnly.length === 0) return
     setZippingPhotos(true)
     try {
@@ -955,7 +960,7 @@ export default function FicheChantier({ params }) {
       const href = URL.createObjectURL(zipBlob)
       const a = document.createElement('a')
       a.href = href
-      a.download = `Photos_${dossier.reference}.zip`
+      a.download = categorie === 'all' ? `Photos_${dossier.reference}.zip` : `Photos_${dossier.reference}_${categorie}.zip`
       a.click()
       URL.revokeObjectURL(href)
     } catch (e) {
@@ -965,7 +970,24 @@ export default function FicheChantier({ params }) {
   }
 
   // Galerie chantier : photos ET vidéos (même table `photos`, colonne type_media).
+  // Point d'entrée upload : détecte d'abord les DOUBLONS de nom dans la MÊME catégorie
+  // (nom d'origine du fichier). S'il y en a, ouvre la modale de résolution ; sinon upload direct.
   const uploadPhotos = async (fichiers) => {
+    if (!fichiers.length) return
+    const clean = [], conflicts = []
+    for (const f of fichiers) {
+      const existing = photos.filter(p => p.categorie === categorie && p.nom && p.nom.toLowerCase() === f.name.toLowerCase())
+      if (existing.length) conflicts.push({ file: f, existing })
+      else clean.push(f)
+    }
+    if (conflicts.length === 0) { await executerUploadPhotos(fichiers); return }
+    const choix = {}
+    conflicts.forEach(c => { choix[c.file.name] = 'deux' })   // défaut : garder les deux
+    setConflitsPhotos({ clean, conflicts, choix })
+  }
+
+  // Upload effectif d'une liste de fichiers dans la catégorie active (stocke le nom).
+  const executerUploadPhotos = async (fichiers) => {
     if (!fichiers.length) return
     setUploadingPhoto(true)
     let tropLourd = 0
@@ -978,7 +1000,8 @@ export default function FicheChantier({ params }) {
       const chemin = `chantiers/${id}/${categorie}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error: uploadError } = await supabase.storage.from('photos').upload(chemin, f, { contentType: f.type || undefined })
       if (uploadError) return false
-      const { data: photoInseree, error: insertErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id, type_media: estVideo ? 'video' : 'photo' }).select('id').single()
+      // nom = nom d'ORIGINE du fichier (avant conversion HEIC→JPEG) pour la détection de doublons.
+      const { data: photoInseree, error: insertErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id, type_media: estVideo ? 'video' : 'photo', nom: fichier.name }).select('id').single()
       if (insertErr) return false
       // Miroir OneDrive — PHOTOS seulement (vidéos = lot suivant). Non bloquant.
       if (!estVideo && photoInseree?.id) {
@@ -999,6 +1022,24 @@ export default function FicheChantier({ params }) {
     setErreur(`${resultats.length - echecs} ajouté(s) · ${details.join(' · ')} — réessayez.`)
   }
 
+  // Applique les choix de la modale de doublons : 'existante' = on ignore le nouveau ;
+  // 'remplacer' = on supprime l'ancienne puis on uploade ; 'deux' = on uploade en plus.
+  const resoudreConflitsPhotos = async () => {
+    if (!conflitsPhotos) return
+    const { clean, conflicts, choix } = conflitsPhotos
+    const aUploader = [...clean]
+    const aSupprimer = []
+    for (const c of conflicts) {
+      const ch = choix[c.file.name] || 'deux'
+      if (ch === 'existante') continue
+      if (ch === 'remplacer') aSupprimer.push(...c.existing)
+      aUploader.push(c.file)
+    }
+    setConflitsPhotos(null)
+    for (const p of aSupprimer) await supprimerPhotoInterne(p.id, p.url)
+    await executerUploadPhotos(aUploader)
+  }
+
   // Enregistre une photo annotée comme NOUVELLE image de la catégorie (l'originale
   // est conservée). Alimenté par l'éditeur d'annotation depuis la galerie.
   const enregistrerPhotoAnnotee = async (blob, cat) => {
@@ -1016,8 +1057,8 @@ export default function FicheChantier({ params }) {
     setSucces('Photo annotée ajoutée ✓')
   }
 
-  const supprimerPhoto = async (photoId, chemin) => {
-    if (!confirm('Supprimer cette photo ?')) return
+  // Suppression EFFECTIVE (sans confirmation ni rechargement) — réutilisable (ex. remplacement de doublon).
+  const supprimerPhotoInterne = async (photoId, chemin) => {
     // Miroir OneDrive (maître→miroir) — AVANT le cascade FK qui retire l'index. Non bloquant.
     try {
       await apiFetch('/api/drive/delete', {
@@ -1027,8 +1068,14 @@ export default function FicheChantier({ params }) {
     const { error: rmErr } = await supabase.storage.from('photos').remove([chemin])
     if (rmErr) console.error('Suppression fichier photo (non bloquant) :', rmErr.message)
     const { error } = await supabase.from('photos').delete().eq('id', photoId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
-    await chargerPhotos()
+    if (error) { setErreur('Erreur : ' + error.message); return false }
+    return true
+  }
+
+  const supprimerPhoto = async (photoId, chemin) => {
+    if (!confirm('Supprimer cette photo ?')) return
+    const ok = await supprimerPhotoInterne(photoId, chemin)
+    if (ok) await chargerPhotos()
   }
 
   const chargerRdvsDossier = async () => {
@@ -3436,6 +3483,52 @@ export default function FicheChantier({ params }) {
       </div>
       )}
 
+      {/* ── Modale doublons de nom (upload photos) ── */}
+      {conflitsPhotos && (
+        <ModalShell
+          title="Photos déjà présentes"
+          subtitle={`${conflitsPhotos.conflicts.length} nom(s) déjà utilisé(s) dans « ${CATS_PHOTO_LABEL[categorie] || categorie} »`}
+          width={560}
+          onClose={() => setConflitsPhotos(null)}
+          footer={<>
+            <button className="btn btn-ghost" style={{ fontSize: 12.5 }} onClick={() => setConflitsPhotos(null)}>Annuler</button>
+            <button className="btn btn-primary" style={{ fontSize: 12.5 }} onClick={resoudreConflitsPhotos}>Appliquer</button>
+          </>}
+        >
+          <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: 'var(--ink-500)', alignSelf: 'center' }}>Tout :</span>
+              {[['deux', 'Garder les deux'], ['remplacer', 'Remplacer'], ['existante', 'Ignorer les nouvelles']].map(([v, l]) => (
+                <button key={v} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px' }}
+                  onClick={() => setConflitsPhotos(cp => ({ ...cp, choix: Object.fromEntries(cp.conflicts.map(c => [c.file.name, v])) }))}>{l}</button>
+              ))}
+            </div>
+            {conflitsPhotos.conflicts.map(c => (
+              <div key={c.file.name} style={{ border: '1px solid var(--ink-200)', borderRadius: 10, padding: '10px 12px' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)', marginBottom: 6, wordBreak: 'break-all' }}>{c.file.name}</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {[['deux', 'Garder les deux'], ['remplacer', 'Remplacer l\'existante'], ['existante', 'Ignorer la nouvelle']].map(([v, l]) => {
+                    const active = (conflitsPhotos.choix[c.file.name] || 'deux') === v
+                    return (
+                      <button key={v} type="button"
+                        onClick={() => setConflitsPhotos(cp => ({ ...cp, choix: { ...cp.choix, [c.file.name]: v } }))}
+                        style={{
+                          fontSize: 11.5, padding: '5px 10px', borderRadius: 8, cursor: 'pointer',
+                          border: '1px solid', borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
+                          background: active ? 'var(--brand-50)' : '#fff', color: active ? 'var(--brand-800)' : 'var(--ink-600)', fontWeight: 600,
+                        }}>{l}</button>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+            {conflitsPhotos.clean.length > 0 && (
+              <div style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{conflitsPhotos.clean.length} autre(s) fichier(s) sans doublon seront ajoutés directement.</div>
+            )}
+          </div>
+        </ModalShell>
+      )}
+
       {/* ── Mini-édition « Informations clés » (bouton Modifier de la carte) ── */}
       {modalInfos && (
         <ModalShell
@@ -4607,7 +4700,15 @@ export default function FicheChantier({ params }) {
         const filtered = categorie === 'all' ? photos : photos.filter(p => p.categorie === categorie)
         const filteredVisible = filtered.slice(0, photosAffichees)
         return (
-        <div style={{display:'flex', flexDirection:'column', gap:14}}>
+        <div style={{display:'flex', flexDirection:'column', gap:14}}
+          onDragOver={e => { if (categorie !== 'all') { e.preventDefault(); setDragPhotos(true) } }}
+          onDragLeave={e => { if (e.currentTarget === e.target) setDragPhotos(false) }}
+          onDrop={e => {
+            if (categorie === 'all') return
+            e.preventDefault(); setDragPhotos(false)
+            const files = Array.from(e.dataTransfer?.files || [])
+            if (files.length) uploadPhotos(files)
+          }}>
 
           {/* Header : pills filtres + bouton upload */}
           <div className="card" style={{padding:'14px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap'}}>
@@ -4656,8 +4757,17 @@ export default function FicheChantier({ params }) {
               Choisis une catégorie (Avant, Pendant, Après, Maquette) pour uploader.
             </div>
           ) : (
-            <div style={{fontSize:11.5, color:'var(--ink-400)', padding:'0 4px'}}>
-              Photos et vidéos acceptées · vidéo max {MAX_VIDEO_MO} Mo. Les vidéos iPhone .mov peuvent ne pas se lire sur Chrome/Android.
+            <div style={{
+              border: `2px dashed ${dragPhotos ? 'var(--brand-500)' : 'var(--ink-200)'}`,
+              background: dragPhotos ? 'var(--brand-50)' : 'transparent',
+              borderRadius: 12, padding: '14px 16px', textAlign: 'center', transition: 'all 120ms',
+            }}>
+              <div style={{fontSize:12.5, fontWeight:600, color: dragPhotos ? 'var(--brand-800)' : 'var(--ink-600)'}}>
+                {dragPhotos ? 'Déposez pour ajouter dans « ' + (CATS.find(c => c.k === categorie)?.l || '') + ' »' : 'Glissez-déposez vos photos / vidéos ici'}
+              </div>
+              <div style={{fontSize:11, color:'var(--ink-400)', marginTop:4}}>
+                ou utilisez « Ajouter » ci-dessus · vidéo max {MAX_VIDEO_MO} Mo · les .mov iPhone peuvent ne pas se lire sur Chrome/Android.
+              </div>
             </div>
           )}
 
