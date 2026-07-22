@@ -18,8 +18,8 @@ function Shell({ children }) {
     <div style={{position:'fixed', inset:0, display:'grid', placeItems:'center', padding:20, background:'linear-gradient(135deg, var(--brand-800) 0%, var(--brand-900) 60%, #001e3c 100%)'}}>
       <div className="card" style={{maxWidth:440, width:'100%', padding:'32px 30px', display:'flex', flexDirection:'column', gap:16}}>
         <div style={{display:'flex', alignItems:'center', gap:12}}>
-          <div style={{width:38, height:38, borderRadius:9, background:'var(--brand-800)', color:'#fff', display:'grid', placeItems:'center', fontWeight:800, fontSize:14}}>Ba</div>
-          <div style={{fontSize:16, fontWeight:800, color:'var(--ink-900)'}}>BATILIS</div>
+          <div style={{width:38, height:38, borderRadius:9, background:'var(--brand-800)', color:'#fff', display:'grid', placeItems:'center', fontWeight:800, fontSize:14}}>Co</div>
+          <div style={{fontSize:16, fontWeight:800, color:'var(--ink-900)'}}>Coordibat</div>
         </div>
         {children}
       </div>

@@ -449,7 +449,7 @@ export default function Planning() {
     if (recurrente && !portee) { setDemandeModif(true); return }
     setDemandeModif(false)
 
-    // Toute la série : SEULES les métadonnées BATILIS se propagent (type, artisan,
+    // Toute la série : SEULES les métadonnées Coordibat se propagent (type, artisan,
     // notes). PAS les champs Google (titre / heure / durée) : Google en est la source,
     // la prochaine synchro les réécraserait → on ne les touche pas ici. Aucun push.
     if (portee === 'serie') {
@@ -558,7 +558,7 @@ export default function Planning() {
           body: JSON.stringify({ googleEventId: base, cibleId: data.cible_id }),
         }).catch(() => {})
       }
-      // BATILIS : toutes les occurrences, par MOTIF sur la base (fiable même si la
+      // Coordibat : toutes les occurrences, par MOTIF sur la base (fiable même si la
       // liste chargée est tronquée à 1000). Underscores échappés (méta LIKE).
       const { error } = await supabase.from('rendez_vous').delete().like('google_event_id', escapeLike(base) + '\\_%')
       if (error) { setErreur(error.message); return }

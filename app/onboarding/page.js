@@ -17,8 +17,8 @@ function Shell({ children, maxWidth = 480 }) {
       background: 'linear-gradient(135deg, var(--brand-800) 0%, var(--brand-900) 60%, #001e3c 100%)' }}>
       <div className="card" style={{ maxWidth, width: '100%', padding: '32px 30px', display: 'flex', flexDirection: 'column', gap: 16, margin: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 38, height: 38, borderRadius: 9, background: 'var(--brand-800)', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14 }}>Ba</div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--ink-900)' }}>BATILIS</div>
+          <div style={{ width: 38, height: 38, borderRadius: 9, background: 'var(--brand-800)', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14 }}>Co</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--ink-900)' }}>Coordibat</div>
         </div>
         {children}
       </div>
@@ -105,7 +105,7 @@ export default function Onboarding() {
   return (
     <Shell maxWidth={560}>
       <div>
-        <h1 className="page" style={{ fontSize: 20, marginBottom: 6 }}>Bienvenue sur BATILIS 👋</h1>
+        <h1 className="page" style={{ fontSize: 20, marginBottom: 6 }}>Bienvenue sur Coordibat 👋</h1>
         <p style={{ fontSize: 13.5, color: 'var(--ink-500)', lineHeight: 1.6 }}>
           Dernière étape : créez votre société et votre première agence pour accéder à votre espace.
         </p>

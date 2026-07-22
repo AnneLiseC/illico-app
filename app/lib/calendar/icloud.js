@@ -147,7 +147,7 @@ function ensureSlash(u) {
 // iCloud stocke/retourne le chemin BRUT : `@`, espaces, accents LITTÉRAUX (c'est ce que renvoie
 // fetchCalendarObjects). `new URL().href` les PERCENT-ENCODE (%40, %20…) -> divergence avec le
 // serveur, d'où le doublon au bootstrap. On DÉCODE pour obtenir une forme unique, identique des
-// deux côtés (push ET pull). decodeURIComponent est idempotent ici (les UID BATILIS ne
+// deux côtés (push ET pull). decodeURIComponent est idempotent ici (les UID Coordibat ne
 // contiennent pas de littéral « %xx »). try/catch : une séquence % invalide retombe sur l'entrée.
 export function canonicalIcloudUrl(u) {
   if (!u) return u
