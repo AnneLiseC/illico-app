@@ -5,6 +5,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { isSuperAdminEmail } from './super-admin'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -58,4 +59,26 @@ export async function requireRole(request, roles) {
     return { error: NextResponse.json({ error: 'Accès refusé' }, { status: 403 }) }
   }
   return result
+}
+
+/**
+ * Vérifie que l'appelant est l'ÉDITRICE (super-admin), reconnue par son email
+ * dans SUPER_ADMIN_EMAILS (serveur = autorité). Ne requiert PAS de profil : le
+ * super-admin n'appartient à aucun tenant. À utiliser en tête des routes
+ * /api/super-admin/*, qui poursuivent ensuite en service_role.
+ * @returns {Promise<{user} | {error: NextResponse}>}
+ */
+export async function requireSuperAdmin(request) {
+  const token = extractToken(request)
+  if (!token) {
+    return { error: NextResponse.json({ error: 'Non authentifié' }, { status: 401 }) }
+  }
+  const { data, error } = await getSupabaseAdmin().auth.getUser(token)
+  if (error || !data?.user) {
+    return { error: NextResponse.json({ error: 'Session invalide' }, { status: 401 }) }
+  }
+  if (!isSuperAdminEmail(data.user.email, process.env.SUPER_ADMIN_EMAILS)) {
+    return { error: NextResponse.json({ error: 'Accès refusé' }, { status: 403 }) }
+  }
+  return { user: data.user }
 }
