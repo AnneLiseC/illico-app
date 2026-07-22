@@ -2656,6 +2656,28 @@ export default function FicheChantier({ params }) {
     setSuiviFinancier(data || [])
   }
 
+  // Frais de consultation : acter/défaire l'ENCAISSEMENT (case cochée du suivi).
+  // Écrit une ligne suivi_financier frais_consultation (statut_client='regle' + date)
+  // au coche, la remet en attente (date effacée) au décoche. La reconnaissance en
+  // finance (dossier + global) lit statut_client='regle' → compte les frais encaissés,
+  // y compris pour un dossier « à rembourser » (le courtage reste réduit par finance.js).
+  const setFraisRecu = async (recu, date = null) => {
+    const { data: existing, error: selErr } = await supabase.from('suivi_financier')
+      .select('id').eq('dossier_id', id).eq('type_echeance', 'frais_consultation').is('artisan_id', null).maybeSingle()
+    if (selErr) { setErreur('Erreur : ' + selErr.message); return }
+    const dateEff = recu ? (date || new Date().toISOString().slice(0, 10)) : null
+    const payload = { statut_client: recu ? 'regle' : 'en_attente', date_paiement: dateEff }
+    let error = null
+    if (existing) {
+      ({ error } = await supabase.from('suivi_financier').update(payload).eq('id', existing.id))
+    } else if (recu) {
+      ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'frais_consultation', artisan_id: null, ...payload }))
+    }
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(data || [])
+  }
+
   const majSuiviChantier = async (type, montant, valeur, date = null) => {
     // Toggle d'une échéance honoraire : coche = réglé + date du jour, décoche = suppression.
     // Sur AMO, honoraires_courtage et acompte_amo représentent le MÊME encaissement
@@ -4164,14 +4186,17 @@ export default function FicheChantier({ params }) {
       {onglet === 'finance' && (() => {
         const fin = finDossier
 
-        // Frais de consultation — comptés en réel seulement si réglés (offerts / en attente → 0)
-        const fraisRegle       = dossier?.frais_statut === 'regle'
+        // Frais de consultation — comptés en réel dès qu'ils sont ENCAISSÉS :
+        //  - statut 'regle' (facturés et réglés, défini dans les réglages), OU
+        //  - la ligne de suivi frais est marquée reçue (case cochée) — cas 'rembourse'
+        //    (frais payés d'avance, déduits du courtage par finance.js). Jamais 'offerts'.
         const fraisOfferts     = dossier?.frais_statut === 'offerts'
-        const fraisHTReal      = fraisRegle ? fin.frais.fraisHT : 0
-        const fraisNet         = fraisRegle ? fin.frais.net : 0
-        const fraisRoyalties   = fraisRegle ? fin.frais.royalties : 0
-        const fraisAgente      = fraisRegle ? fin.frais.parts.agente : 0
-        const fraisAdmin       = fraisRegle ? fin.frais.parts.admin : 0
+        const fraisRecu        = !fraisOfferts && (dossier?.frais_statut === 'regle' || suiviFrais?.statut_client === 'regle')
+        const fraisHTReal      = fraisRecu ? fin.frais.fraisHT : 0
+        const fraisNet         = fraisRecu ? fin.frais.net : 0
+        const fraisRoyalties   = fraisRecu ? fin.frais.royalties : 0
+        const fraisAgente      = fraisRecu ? fin.frais.parts.agente : 0
+        const fraisAdmin       = fraisRecu ? fin.frais.parts.admin : 0
 
         // Commissions — comptées uniquement si l'encaissement est confirmé
         // (statut_illico='recu'), y compris paiement direct : ce flag est un routage de
@@ -4300,13 +4325,18 @@ export default function FicheChantier({ params }) {
                 <div className="suivi-bloc-title">Autres échéances</div>
                 <div className="suivi-autres">
 
-              {/* Frais de consultation */}
-              {(dossier.frais_consultation || 0) > 0 && (
+              {/* Frais de consultation — cochable pour acter l'encaissement (date).
+                  Verrouillé si le statut du dossier est déjà « réglé » (géré au dropdown). */}
+              {(dossier.frais_consultation || 0) > 0 && dossier.frais_statut !== 'offerts' && (
                 <EcheanceRow
                   label="Frais de consultation"
                   sub={`${fmt(dossier.frais_consultation)} TTC`}
-                  statut={dossier.frais_statut === 'regle' || dossier.frais_statut === 'offerts' ? 'regle' : 'en_attente'}
-                  date={dossier.frais_statut === 'regle' ? (suiviFrais?.date_paiement || null) : null}
+                  statut={fraisRecu ? 'regle' : 'en_attente'}
+                  date={suiviFrais?.date_paiement || null}
+                  onSetPaid={d => setFraisRecu(true, d)}
+                  onUnsetPaid={() => setFraisRecu(false)}
+                  lock={dossier.frais_statut === 'regle'}
+                  lockMsg={dossier.frais_statut === 'regle' ? 'Statut « facturés et réglés » défini dans les réglages du dossier.' : undefined}
                   fmtDateFn={fmtD}
                 />
               )}
