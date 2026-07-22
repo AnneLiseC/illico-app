@@ -9,6 +9,8 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { isAllowedStaffEmail } from './email-validation'
+import { sendEmail } from './email'
+import { buildInvitationEmail } from './invitation-email'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -63,14 +65,17 @@ export async function provisionAgent({
 
   const db = getSupabaseAdmin()
 
-  // 1. Invitation Auth — envoie l'email d'invitation, crée le compte (id dispo).
-  const { data: inviteData, error: inviteError } = await db.auth.admin.inviteUserByEmail(email, {
-    data: { prenom, nom, role: 'agente' },
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/set-password`,
+  // 1. Génère le lien d'invitation Supabase (crée le compte auth, SANS envoyer
+  //    l'email Supabase). L'email partira de NOTRE boîte d'envoi (Outlook), plus bas.
+  const { data: linkData, error: linkError } = await db.auth.admin.generateLink({
+    type: 'invite',
+    email,
+    options: { data: { prenom, nom, role: 'agente' }, redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/set-password` },
   })
-  if (inviteError) throw new Error(inviteError.message)
+  if (linkError) throw new Error(linkError.message)
 
-  const userId = inviteData.user.id
+  const userId = linkData.user.id
+  const actionLink = linkData.properties?.action_link
 
   // 2. Profil dans profiles.
   const { error: profileError } = await db.from('profiles').insert({
@@ -108,5 +113,17 @@ export async function provisionAgent({
     }
   }
 
-  return { userId }
+  // 4. Envoi de l'email d'invitation depuis la boîte d'envoi (Outlook). BEST-EFFORT :
+  //    le compte est déjà créé — si l'email échoue (boîte non connectée p.ex.), on ne
+  //    supprime PAS l'agent ; on remonte l'info pour que l'éditrice puisse renvoyer.
+  let emailSent = false
+  if (actionLink) {
+    try {
+      const { subject, html } = buildInvitationEmail({ prenom, nom, actionLink, role: 'agente' })
+      await sendEmail({ to: email, subject, html })
+      emailSent = true
+    } catch { /* email non envoyé : compte créé quand même, à renvoyer */ }
+  }
+
+  return { userId, emailSent }
 }

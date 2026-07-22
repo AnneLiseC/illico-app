@@ -23,17 +23,21 @@ export default function SuperAdmin() {
 
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteBusy, setInviteBusy]   = useState(false)
+  const [envoi, setEnvoi]             = useState(null) // null=chargement · { connected, compte_email }
 
   const charger = async () => {
     try {
-      const [rReq, rAcc] = await Promise.all([
+      const [rReq, rAcc, rEnvoi] = await Promise.all([
         apiFetch('/api/super-admin/agent-requests'),
         apiFetch('/api/super-admin/accounts'),
+        apiFetch('/api/super-admin/email-oauth'),
       ])
       const dReq = await rReq.json().catch(() => ({}))
       const dAcc = await rAcc.json().catch(() => ({}))
+      const dEnvoi = await rEnvoi.json().catch(() => ({}))
       if (rReq.ok) setDemandes(dReq.demandes || [])
       if (rAcc.ok) setSocietes(dAcc.societes || [])
+      if (rEnvoi.ok) setEnvoi(dEnvoi)
       setChargement(false)
     } catch { setChargement(false) /* réseau : on garde l'état existant */ }
   }
@@ -43,7 +47,16 @@ export default function SuperAdmin() {
     if (!isSuperAdmin) { router.replace(user ? '/dashboard' : '/login'); return }
     // Chargement au montage : le setState n'a lieu qu'après le fetch (await),
     // encapsulé pour ne pas être un appel setState « synchrone » dans l'effet.
-    ;(async () => { await charger() })()
+    ;(async () => {
+      await charger()
+      // Retour du callback OAuth boîte d'envoi (?email=connected|error).
+      if (typeof window !== 'undefined') {
+        const p = new URLSearchParams(window.location.search).get('email')
+        if (p === 'connected') setSucces("Boîte d'envoi connectée ✓")
+        else if (p === 'error') setErreur("Échec de connexion de la boîte d'envoi. Réessaie.")
+        if (p) window.history.replaceState({}, '', '/super-admin')
+      }
+    })()
   }, [initialized, user, isSuperAdmin, router])
 
   if (!initialized || !user || !isSuperAdmin) {
@@ -52,6 +65,17 @@ export default function SuperAdmin() {
 
   const logout = async () => { await supabase.auth.signOut(); router.replace('/login') }
 
+  // Démarre la connexion de la boîte d'envoi (redirige vers Microsoft).
+  const connecterEnvoi = async () => {
+    setErreur(''); setSucces('')
+    try {
+      const res = await apiFetch('/api/super-admin/email-oauth/start', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.url) window.location.assign(data.url)
+      else setErreur(data.error || "Impossible de démarrer la connexion.")
+    } catch (err) { setErreur(err.message) }
+  }
+
   const traiter = async (id, action) => {
     if (action === 'reject' && !window.confirm('Rejeter cette demande ? Aucun compte ne sera créé.')) return
     setBusyId(id); setErreur(''); setSucces('')
@@ -59,7 +83,11 @@ export default function SuperAdmin() {
       const res = await apiFetch(`/api/super-admin/agent-requests/${id}`, { method: 'POST', body: JSON.stringify({ action }) })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) setErreur(data.error || 'Erreur')
-      else { setSucces(action === 'fulfill' ? 'Agent créé et invité ✓' : 'Demande rejetée ✓'); await charger() }
+      else {
+        if (action === 'fulfill') setSucces(data.emailSent ? 'Agent créé et invité ✓' : 'Agent créé ✓ — email NON envoyé (vérifie la boîte d\'envoi)')
+        else setSucces('Demande rejetée ✓')
+        await charger()
+      }
     } catch (err) { setErreur(err.message) }
     setBusyId(null)
   }
@@ -96,7 +124,7 @@ export default function SuperAdmin() {
       const res = await apiFetch('/api/super-admin/invite-admin', { method: 'POST', body: JSON.stringify({ email }) })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) setErreur(data.error || 'Erreur')
-      else { setSucces(`Invitation admin envoyée à ${email} ✓`); setInviteEmail('') }
+      else { setSucces(data.emailSent ? `Invitation admin envoyée à ${email} ✓` : `Invitation créée pour ${email} ✓ — email NON envoyé (vérifie la boîte d'envoi)`); setInviteEmail('') }
     } catch (err) { setErreur(err.message) }
     setInviteBusy(false)
   }
@@ -121,6 +149,24 @@ export default function SuperAdmin() {
 
         {succes && <div style={{ background: 'rgba(22,163,74,0.07)', border: '1px solid rgba(22,163,74,0.25)', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: '#15803d' }}>{succes}</div>}
         {erreur && <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: '#b91c1c' }}>{erreur}</div>}
+
+        {/* Boîte d'envoi (OAuth Outlook) — tous les emails système partent d'ici */}
+        <div className="card" style={{ padding: 24, borderColor: (envoi && !envoi.connected) ? 'rgba(245,158,11,0.4)' : undefined }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--ink-900)', marginBottom: 4 }}>Boîte d&apos;envoi</div>
+              <div style={{ fontSize: 12.5, color: 'var(--ink-500)', lineHeight: 1.5 }}>
+                {envoi === null ? 'Vérification…'
+                  : envoi.connected
+                    ? <>Connectée · <strong>{envoi.compte_email || 'compte Microsoft'}</strong>. Les invitations et notifications partent de cette adresse.</>
+                    : "Non connectée. Tant que la boîte d'envoi n'est pas connectée, aucun email (invitation, notification) ne peut partir."}
+              </div>
+            </div>
+            <button className="btn btn-primary" onClick={connecterEnvoi} style={{ whiteSpace: 'nowrap' }}>
+              {envoi?.connected ? 'Reconnecter' : 'Connecter la boîte d\'envoi'}
+            </button>
+          </div>
+        </div>
 
         {/* Demandes d'agents à valider */}
         <div className="card" style={{ padding: 24 }}>

@@ -13,8 +13,8 @@ export async function POST(request) {
 
   try {
     const body = await request.json()
-    const { invitationId } = await inviteFranchiseAdmin({ email: body.email, invited_by: auth.user.email })
-    return NextResponse.json({ success: true, invitationId }, { status: 200 })
+    const { invitationId, emailSent } = await inviteFranchiseAdmin({ email: body.email, invited_by: auth.user.email })
+    return NextResponse.json({ success: true, invitationId, emailSent }, { status: 200 })
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: err.status || 500 })
   }
