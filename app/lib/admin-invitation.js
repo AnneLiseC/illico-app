@@ -11,6 +11,8 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { isAllowedStaffEmail } from './email-validation'
+import { sendEmail } from './email'
+import { buildInvitationEmail } from './invitation-email'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -62,13 +64,16 @@ export async function inviteFranchiseAdmin({ email: rawEmail, invited_by = null 
   if (profErr) throw httpError(profErr.message, 500)
   if (adminProfiles?.length) throw httpError('Cet email est déjà admin d\'une société.', 409)
 
-  // Invitation Supabase — crée le compte auth.users (id dispo).
-  const { data: inviteData, error: inviteError } = await db.auth.admin.inviteUserByEmail(email, {
-    data: { role: 'admin' },
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/set-password`,
+  // Lien d'invitation Supabase (crée le compte auth.users, SANS envoyer l'email
+  // Supabase). L'email partira de NOTRE boîte d'envoi (Outlook), plus bas.
+  const { data: linkData, error: linkError } = await db.auth.admin.generateLink({
+    type: 'invite',
+    email,
+    options: { data: { role: 'admin' }, redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/set-password` },
   })
-  if (inviteError) throw httpError(inviteError.message, 409)
-  const userId = inviteData.user.id
+  if (linkError) throw httpError(linkError.message, 409)
+  const userId = linkData.user.id
+  const actionLink = linkData.properties?.action_link
 
   // Ligne d'invitation (expiration +7j). L'index unique partiel est le filet concurrent.
   const expiresAt = new Date(Date.now() + INVITATION_TTL_MS).toISOString()
@@ -83,5 +88,16 @@ export async function inviteFranchiseAdmin({ email: rawEmail, invited_by = null 
     throw httpError(insErr.message, 500)
   }
 
-  return { invitationId: inserted.id }
+  // Envoi de l'email d'invitation depuis la boîte d'envoi (Outlook). BEST-EFFORT :
+  // le compte + la ligne d'invitation existent déjà ; un échec d'email ne les annule pas.
+  let emailSent = false
+  if (actionLink) {
+    try {
+      const { subject, html } = buildInvitationEmail({ actionLink, role: 'admin' })
+      await sendEmail({ to: email, subject, html })
+      emailSent = true
+    } catch { /* email non envoyé : invitation créée quand même, à renvoyer */ }
+  }
+
+  return { invitationId: inserted.id, emailSent }
 }

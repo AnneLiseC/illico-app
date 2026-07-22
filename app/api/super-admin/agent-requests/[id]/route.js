@@ -56,13 +56,13 @@ export async function POST(request, { params }) {
     // 2. Créer + inviter l'agent. Pas de paramètres financiers ici : l'admin les
     //    réglera ensuite en édition (redevance, parts, objectif).
     try {
-      const { userId } = await provisionAgent({
+      const { userId, emailSent } = await provisionAgent({
         prenom: claimed.prenom, nom: claimed.nom, email: claimed.email,
         societe_id: claimed.societe_id, agence_id: claimed.agence_id,
       })
       // 3. Lier l'agent créé à la demande.
       await db.from('demandes_agents').update({ agente_id: userId }).eq('id', id)
-      return NextResponse.json({ success: true, userId }, { status: 200 })
+      return NextResponse.json({ success: true, userId, emailSent }, { status: 200 })
     } catch (e) {
       // Échec création → on REND la demande (retour 'en_attente') pour réessai.
       await db.from('demandes_agents').update({ statut: 'en_attente', traite_at: null }).eq('id', id)
