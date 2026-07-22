@@ -3,7 +3,7 @@
 > **État vivant du projet.** Lue par Claude (binôme) et Claude Code en tête de chaque session.
 > Le détail historique (journal des commits, chantier finances) est dans `07_journal_multitenant.md`.
 
-> Dernière mise à jour : 10/07/2026.
+> Dernière mise à jour : 21/07/2026.
 > Statut : Multi-agence COMPLET. Bloc A sécurité soldé. App multi-tenant fonctionnelle, cloisonnée, sécurisée. Acquis antérieurs : erreurs avalées soldé, famille AMO close, ménage infra (policies Storage versionnées + placeholder fermé). Sprint 16-18/06 : refonte finances COMPLÈTE, dossier de fin, comparateur de devis, statut staff CLOS, stepper corrigé, contrat auto-signé, PDF CR assaini. AUDIT SÉCURITÉ COMPLET (10/07) : série d'inventaires 01→07 + confrontation croisée (branche audit/inventaires, code figé 91e0db1). Cloisonnement prouvé sur les 2 couches (corps DEFINER + policies RLS lues verbatim). REVOKE 5 fonctions + DROP 2 backups appliqués. Sécurité soldée sans astérisque.
 
 > **Depuis le 18/06 (à jour au 09/07)** :
@@ -13,6 +13,14 @@
 > - **CALENDRIER étage 1 ✅ + étage 2 descendant COMPLET (24/06 → 01/07)** : scope tenant agenda, migration timestamptz UTC, vues client, cibles multi-agenda (`cibles_calendrier`), comptes_oauth multi-fournisseur, sync push Google ACTIVÉE EN RÉEL, iCloud CalDAV réel, lot 8 « Mes calendriers » (self-service connexion + gestion cibles). Outlook ABANDONNÉ (blocage tenant HEXARESO). 🟡 **SEUL RESTE = étage 3 : pull retour (Google/externe → BATILIS) + nettoyage 214 orphelins + sync/route.js refait.**
 > - **SOFT DELETE agente (30/06-01/07)** : désactiver au lieu de supprimer (résout le blocage FK). Nettoyage des comptes test.
 > - **TS — Travaux Supplémentaires COMPLET (01/07 + 09/07)** : TS-1 (cas AMO = re-ventilation, total inchangé) + TS-2 (cas courtage-only = échelonnement encaissement, lignes L1/L2). Écran + 3 PDF. Testé réel sur Jadras.
+
+> **11-21/07 (détail dans le journal)** :
+> - **Confort & complétude produit — RATTRAPAGE BACKLOG (11-16/07, confirmé produit)** : responsive/adaptation écran (côte-à-côte, fin du « queue leu-leu »), planning temps réel, solde honoraire AMO en plusieurs paiements, choix client pro/particulier + formes juridiques (SCI/EURL/SARL), honoraires dans les PDF de suivi, dashboard interactif, page statistiques, contrat sorti de la modale → dossier « à vu », archivage auto des dossiers terminés/annulés, historique des devis, avancement chantier + refonte retard/attention/relance + barre d'avancement, chargement inter-pages accéléré, vérif connexions au login, **chiffrement des tokens Google**, fix périmètre à la connexion d'une cible, RDV BNI Miramas en double + « modifier/supprimer cet événement ou toute la série », upload vidéos de chantier, photos annotées façon Archireport dans le CR, **fichiers vocaux → CR (IA)** (Deepgram + Claude).
+> - **DRIVE ONEDRIVE — COMPLET (17/07)** : miroir sortant Supabase→OneDrive de la référente (documents, photos, CR validés, devis par statut Reçus/Signés/Refusés), arborescence chantier/catégorie/artisan/lot, inbox de rattachement, pull cron. (feat/drive-cr #383 + docs-artisans-lots)
+> - **FINANCES Facturation agentes — report F1 mois à mois + clôture (17-21/07)** : modèle final = dû cumulé = composantes du mois + reste du mois précédent (report auto, sans bouton), 2 KPI (Gains à facturer F1 / À régler F2), bouton « Clôturer » (marqueur « 🔒 Reporté »). Fix redevance F2 dans la vue propre de l'agente (agenteActuelle résolu via profile). finance.js INTOUCHÉ ; migration additive `factures_agente.cloture`. (#384→#391)
+> - **AUTH ROBUSTE — 401 onglet resté ouvert RÉSOLU (21/07)** : cause prouvée (timer auto-refresh Supabase suspendu sur onglet inactif → token expiré). 3 couches : refresh au retour d'onglet (AuthProvider, couvre DB+storage+API, #393) + refresh proactif dans authHeaders + helper `apiFetch` (retry-sur-401 + redirection /login|/login-client) généralisé à TOUS les appels /api/*.
+> - **RENOMMAGE UI « Compte-rendu » → « Rapport de visite » / « CR » → « RV » (21/07, raison assurance)** : texte affiché + titres PDF + prompt IA. Technique inchangé. Anciens titres en base conservés. (branche rename/rapport-visite)
+> - 🟡 **RGPD — document RÉDIGÉ mais PAS opérationnel** : reste à remplir les [...] (SIRET, adresse, durées de conservation) + relecture conseillère. Non opposable tant que non fait.
 > **Business** : droit de commercialiser BATILIS confirmé (juridique OK, pas de non-concurrence), statut auto-entrepreneur validé (comptable). 1er client en vue = illiCO travaux Rodez (présentation faite/OK, proposition financière à partir du 20/07, prix fixé avec conseillère le 15/07).
 ---
 
