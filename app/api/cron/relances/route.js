@@ -336,8 +336,8 @@ export async function GET(req) {
       .from('rendez_vous')
       .select(`
         id, dossier_id, type_rdv, date_heure,
-        dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role),
-          clients(email, nom, prenom, civilite, nom2, adresse_chantier))
+        dossiers(reference, adresse_chantier, profiles!referente_id(email, prenom, nom, telephone, role),
+          clients(email, nom, prenom, civilite, nom2))
       `)
       .gte('date_heure', `${tomorrow}T00:00:00`)
       .lte('date_heure', `${tomorrow}T23:59:59`)
@@ -356,7 +356,7 @@ export async function GET(req) {
         html: `
           <p>Bonjour ${salutationClient(client)},</p>
           <p>Nous vous rappelons votre rendez-vous <strong>${rdv.type_rdv || ''}</strong> prévu :</p>
-          <p>📅 <strong>${dateRdv} à ${heureRdv}</strong>${client.adresse_chantier ? `<br>📍 ${client.adresse_chantier}` : ''}</p>
+          <p>📅 <strong>${dateRdv} à ${heureRdv}</strong>${rdv.dossiers?.adresse_chantier ? `<br>📍 ${rdv.dossiers.adresse_chantier}` : ''}</p>
           <p>En cas d'empêchement, merci de nous contacter dès que possible.</p>
           <p>Cordialement,</p>
           ${signatureHtml(referente)}
