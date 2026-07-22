@@ -1,5 +1,5 @@
 // app/api/cron/pull-google/route.js
-// B8/B9-6 — CRON pull incrémental external -> BATILIS (B4-B6). TOUS-TENANTS, TOUS FOURNISSEURS.
+// B8/B9-6 — CRON pull incrémental external -> Coordibat (B4-B6). TOUS-TENANTS, TOUS FOURNISSEURS.
 // Itère TOUTES les cibles ACTIVES de TOUTES les sociétés (google + icloud), dispatch par
 // fournisseur (pull-dispatch), moteur agnostique derrière, service_role. Isolation par cible.
 //

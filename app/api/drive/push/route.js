@@ -1,5 +1,5 @@
 // app/api/drive/push/route.js
-// POST { document_id } | { photo_id } — pousse un fichier BATILIS dans le OneDrive de la
+// POST { document_id } | { photo_id } — pousse un fichier Coordibat dans le OneDrive de la
 // RÉFÉRENTE du dossier, rangé dans la bonne arborescence, et enregistre l'item_id dans
 // doc_index (invariant n°1 : item_id connu AVANT tout poll).
 //

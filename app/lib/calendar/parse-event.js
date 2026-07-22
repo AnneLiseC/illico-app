@@ -27,7 +27,7 @@ function containsWord(texte, phrase) {
   return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`).test(texte)
 }
 
-// EXCLUSION 1 — nos propres pushes BATILIS ré-importés : séparateur " | " AVEC un
+// EXCLUSION 1 — nos propres pushes Coordibat ré-importés : séparateur " | " AVEC un
 // libellé de type. On ne les retype/relie PAS (risque de doublon avec le RDV natif).
 function isBatilisPush(norm) {
   return norm.includes(' | ') &&

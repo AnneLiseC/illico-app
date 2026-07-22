@@ -133,8 +133,8 @@ export default function NavBar() {
           <MenuIcon />
         </button>
         <div className="mobile-topbar-brand">
-          <div className="logo-mark" style={{ width: 28, height: 28, fontSize: 12 }}>Ba</div>
-          <span>BATILIS</span>
+          <div className="logo-mark" style={{ width: 28, height: 28, fontSize: 12 }}>Co</div>
+          <span>Coordibat</span>
         </div>
       </header>
 
@@ -152,9 +152,9 @@ export default function NavBar() {
 
           {/* Logo */}
           <div className="logo-block">
-            <div className="logo-mark">Ba</div>
+            <div className="logo-mark">Co</div>
             <div className="logo-text">
-              BATILIS
+              Coordibat
               <span className="muted">{subtitle || ' '}</span>
             </div>
             <button
