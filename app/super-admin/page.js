@@ -17,6 +17,7 @@ export default function SuperAdmin() {
   const [societes, setSocietes]   = useState([])
   const [chargement, setChargement] = useState(true)
   const [busyId, setBusyId]       = useState(null)   // id de demande en cours (valider/rejeter)
+  const [busyCompte, setBusyCompte] = useState(null) // id de compte en cours (désactiver/réactiver)
   const [erreur, setErreur]       = useState('')
   const [succes, setSucces]       = useState('')
 
@@ -61,6 +62,30 @@ export default function SuperAdmin() {
       else { setSucces(action === 'fulfill' ? 'Agent créé et invité ✓' : 'Demande rejetée ✓'); await charger() }
     } catch (err) { setErreur(err.message) }
     setBusyId(null)
+  }
+
+  // Désactive / réactive un compte. Confirmation à la désactivation (cascade
+  // société si franchisé). Jamais de suppression définitive.
+  const basculerCompte = async (c) => {
+    const activer = c.actif === false   // inactif aujourd'hui → on réactive
+    if (!activer) {
+      const msg = c.role === 'admin'
+        ? `Désactiver le franchisé ${c.prenom} ${c.nom} ? Tous les agents de sa société seront aussi désactivés (réversible).`
+        : `Désactiver ${c.prenom} ${c.nom} ? Il ne pourra plus se connecter (réversible).`
+      if (!window.confirm(msg)) return
+    }
+    setBusyCompte(c.id); setErreur(''); setSucces('')
+    try {
+      const res = await apiFetch(`/api/super-admin/accounts/${c.id}`, { method: 'POST', body: JSON.stringify({ actif: activer }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) setErreur(data.error || 'Erreur')
+      else {
+        const extra = data.cascade ? ` (+${data.cascade} agent${data.cascade > 1 ? 's' : ''})` : ''
+        setSucces(activer ? `${c.prenom} ${c.nom} réactivé ✓` : `${c.prenom} ${c.nom} désactivé ✓${extra}`)
+        await charger()
+      }
+    } catch (err) { setErreur(err.message) }
+    setBusyCompte(null)
   }
 
   const inviterAdmin = async () => {
@@ -176,7 +201,14 @@ export default function SuperAdmin() {
                               {c.role === 'admin' ? 'Franchisé' : 'Agent'}
                             </span>
                             {ag && <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{ag.nom}</span>}
-                            {c.actif === false && <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>· désactivé</span>}
+                            {c.actif === false && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-500)' }}>· désactivé</span>}
+                            <button className="btn btn-ghost"
+                              style={{ marginLeft: 'auto', fontSize: 11.5, padding: '3px 10px', opacity: busyCompte === c.id ? 0.5 : 1,
+                                color: c.actif === false ? '#15803d' : 'var(--bad)',
+                                borderColor: c.actif === false ? 'rgba(22,163,74,0.3)' : 'rgba(239,68,68,0.3)' }}
+                              onClick={() => basculerCompte(c)} disabled={busyCompte === c.id}>
+                              {busyCompte === c.id ? '…' : (c.actif === false ? 'Réactiver' : 'Désactiver')}
+                            </button>
                           </div>
                         )
                       })}
