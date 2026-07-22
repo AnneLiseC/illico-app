@@ -65,6 +65,13 @@ export default function Parametres() {
   }
   const [form, setForm] = useState(emptyForm)
 
+  // Demande d'agent (nouveau modèle) : l'admin ne crée plus, il DEMANDE. Un
+  // formulaire minimal (identité + agence) ; l'éditrice honore la demande.
+  const emptyDemande = { prenom: '', nom: '', email: '', agence_id: '' }
+  const [formDemande, setFormDemande] = useState(emptyDemande)
+  const [envoiDemande, setEnvoiDemande]   = useState(false)
+  const [demandes, setDemandes]           = useState([])
+
   // Création d'agence (multi-agence) — état séparé de la modale agente.
   const emptyFormAgence = { nom: '', ville: '', adresse: '', code_postal: '', telephone: '', email: '', responsable_nom: '' }
   const [formAgence, setFormAgence] = useState(emptyFormAgence)
@@ -73,6 +80,15 @@ export default function Parametres() {
   const chargerAgentes = async () => {
     const { data } = await supabase.from('profiles').select('*').eq('role', 'agente').order('prenom')
     setAgentes(data || [])
+  }
+
+  // Demandes d'agents de la société (suivi côté admin). Route service_role.
+  const chargerDemandes = async () => {
+    try {
+      const res = await apiFetch('/api/agent-requests')
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) setDemandes(data.demandes || [])
+    } catch { /* silencieux : le suivi des demandes n'est pas bloquant */ }
   }
 
   const chargerAgence = async (societeId) => {
@@ -224,11 +240,12 @@ export default function Parametres() {
     // Les calendriers (connexion + état) se gèrent dans /profil (lot 8b) ; plus de
     // détection Google ici (l'ancienne requête sur expiry_date était de toute façon buggée).
     chargerAgentes().then(() => setLoading(false))
+    chargerDemandes()
   }, [initialized, authProfile, router])
 
-  /* ── Handlers agentes (inchangés) ── */
-  // Défaut sélecteur d'agence : la vue active si une agence est sélectionnée, sinon choix forcé.
-  const ouvrirCreer = () => { setForm({ ...emptyForm, agence_id: agenceActive || '' }); setAgenteEditee(null); setModal('creer'); setErreur(''); setSucces('') }
+  /* ── Handlers agentes ── */
+  // Demande d'agent : formulaire minimal. Défaut agence = la vue active si sélectionnée.
+  const ouvrirDemande = () => { setFormDemande({ ...emptyDemande, agence_id: agenceActive || '' }); setModal('demander'); setErreur(''); setSucces('') }
   const ouvrirModifier = (agente) => {
     const objAgente = objectifs.find(o => o.cible === 'agente' && o.agente_id === agente.id)?.montant
     setForm({
@@ -270,16 +287,19 @@ export default function Parametres() {
     } catch (err) { setErreur(err.message) }
   }
 
-  const creerAgente = async () => {
-    setSaving(true); setErreur('')
+  // Dépose une DEMANDE d'agent (l'éditrice la validera → compte créé + invité).
+  const demanderAgent = async () => {
+    setEnvoiDemande(true); setErreur('')
     try {
-      const partsArray = form.parts_agente_disponibles.split(',').map(v => parseInt(v.trim()) / 100).filter(v => !isNaN(v) && v > 0 && v <= 1)
-      const partDefaut = partsArray[0] ?? 0.5
-      const res = await apiFetch('/api/create-agente', { method: 'POST', body: JSON.stringify({ prenom: form.prenom, nom: form.nom, email: form.email, telephone: form.telephone || null, part_agente_defaut: partDefaut, parts_agente_disponibles: partsArray, frais_part_agente_defaut: form.frais_part_agente_defaut / 100, redevance_debut: form.redevance_debut || null, redevance_mensuelle_ht: form.redevance_mensuelle_ht !== '' ? parseFloat(form.redevance_mensuelle_ht) : null, objectif: form.objectif !== '' ? parseFloat(form.objectif) || 0 : null, agence_id: form.agence_id || null }) })
-      const data = await res.json()
-      if (!res.ok) { setErreur(data.error || 'Erreur') } else { setSucces(`Invitation envoyée à ${form.email} ✓`); setModal(false); await chargerAgentes(); await chargerObjectifs() }
+      const res = await apiFetch('/api/agent-requests', { method: 'POST', body: JSON.stringify({
+        prenom: formDemande.prenom.trim(), nom: formDemande.nom.trim(), email: formDemande.email.trim(),
+        agence_id: formDemande.agence_id || null,
+      }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setErreur(data.error || 'Erreur') }
+      else { setSucces(`Demande envoyée pour ${formDemande.prenom} ${formDemande.nom} ✓`); setModal(false); await chargerDemandes() }
     } catch (err) { setErreur(err.message) }
-    setSaving(false)
+    setEnvoiDemande(false)
   }
 
   const modifierAgente = async () => {
@@ -521,10 +541,25 @@ export default function Parametres() {
               <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end'}}>
                 <div>
                   <h2 className="page" style={{fontSize:18, marginBottom:4}}>Équipe & agents</h2>
-                  <p style={{color:'var(--ink-500)', fontSize:13}}>Comptes agents, accès et documents. Les parts sont dans &quot;Parts & royalties&quot;.</p>
+                  <p style={{color:'var(--ink-500)', fontSize:13}}>La création d&apos;un compte est validée par Coordibat. Demande un agent : il sera créé et invité après validation.</p>
                 </div>
-                <button className="btn btn-primary" onClick={ouvrirCreer}>+ Nouvel agent</button>
+                <button className="btn btn-primary" onClick={ouvrirDemande}>Demander un agent</button>
               </div>
+
+              {/* Demandes d'agents en attente / récentes */}
+              {demandes.some(d => d.statut === 'en_attente') && (
+                <div className="card" style={{padding:'14px 18px', display:'flex', flexDirection:'column', gap:10, borderColor:'rgba(245,158,11,0.3)'}}>
+                  <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>Demandes en attente de validation</div>
+                  {demandes.filter(d => d.statut === 'en_attente').map(d => (
+                    <div key={d.id} style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', fontSize:13}}>
+                      <span style={{fontWeight:600, color:'var(--ink-800)'}}>{d.prenom} {d.nom}</span>
+                      <span style={{color:'var(--ink-500)'}}>{d.email}</span>
+                      <span style={{marginLeft:'auto', padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(245,158,11,0.12)', color:'#a16207'}}>En attente</span>
+                    </div>
+                  ))}
+                  <div style={{fontSize:11.5, color:'var(--ink-400)'}}>Une fois validée par Coordibat, l&apos;agent apparaîtra dans la liste ci-dessous (redevances et parts à régler ensuite via « Modifier »).</div>
+                </div>
+              )}
 
               {/* Objectif de CA de l'agence (annuel) */}
               {agences.length > 1 ? (
@@ -856,19 +891,62 @@ export default function Parametres() {
         </ModalShell>
       )}
 
-      {/* ── Modal créer / modifier ── */}
-      {(modal === 'creer' || modal === 'modifier') && (
+      {/* ── Modal demander un agent ── */}
+      {modal === 'demander' && (
         <ModalShell
-          title={modal === 'creer' ? 'Nouvel agent' : `Modifier — ${agenteEditee?.prenom} ${agenteEditee?.nom}`}
-          subtitle={modal === 'creer' ? 'Invitation par email' : 'Profil et parts'}
+          title="Demander un agent"
+          subtitle="Coordibat créera et invitera le compte après validation"
+          onClose={() => { setModal(false); setErreur(''); setSucces('') }}
+          width={480}
+          footer={<>
+            <button className="btn btn-ghost" onClick={() => { setModal(false); setErreur(''); setSucces('') }}>Annuler</button>
+            <button className="btn btn-primary" onClick={demanderAgent}
+              disabled={envoiDemande || !formDemande.prenom.trim() || !formDemande.nom.trim() || !formDemande.email.trim() || (agencesCtx.length >= 2 && !formDemande.agence_id)}
+              style={{opacity: (envoiDemande || !formDemande.prenom.trim() || !formDemande.nom.trim() || !formDemande.email.trim() || (agencesCtx.length >= 2 && !formDemande.agence_id)) ? 0.5 : 1}}>
+              {envoiDemande ? 'Envoi…' : 'Envoyer la demande'}
+            </button>
+          </>}
+        >
+          <div style={{padding:22, display:'flex', flexDirection:'column', gap:14}}>
+            {erreur && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:8, padding:'8px 12px', fontSize:13, color:'#b91c1c'}}>{erreur}</div>}
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+              <div><label style={LS}>Prénom *</label><input className="input" value={formDemande.prenom} onChange={e => setFormDemande(f => ({ ...f, prenom: e.target.value }))} placeholder="Prénom"/></div>
+              <div><label style={LS}>Nom *</label><input className="input" value={formDemande.nom} onChange={e => setFormDemande(f => ({ ...f, nom: e.target.value }))} placeholder="Nom"/></div>
+            </div>
+            <div>
+              <label style={LS}>Email *</label>
+              <input className="input" type="email" value={formDemande.email} onChange={e => setFormDemande(f => ({ ...f, email: e.target.value }))} placeholder="prenom@illico-travaux.com"/>
+              <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Adresse @illico-travaux.com. L&apos;invitation part une fois la demande validée.</div>
+            </div>
+            {agencesCtx.length >= 2 && (
+              <div>
+                <label style={LS}>Agence de rattachement *</label>
+                <select className="input" value={formDemande.agence_id} onChange={e => setFormDemande(f => ({ ...f, agence_id: e.target.value }))}>
+                  <option value="">— Choisir une agence —</option>
+                  {agencesCtx.map(ag => <option key={ag.id} value={ag.id}>{ag.nom}</option>)}
+                </select>
+              </div>
+            )}
+            <div style={{fontSize:12, color:'var(--ink-500)', background:'var(--surface-2)', borderRadius:8, padding:'10px 12px', lineHeight:1.5}}>
+              Les redevances, parts et objectif se règlent <strong>après création</strong>, via « Modifier » sur la fiche de l&apos;agent.
+            </div>
+          </div>
+        </ModalShell>
+      )}
+
+      {/* ── Modal modifier ── */}
+      {modal === 'modifier' && (
+        <ModalShell
+          title={`Modifier — ${agenteEditee?.prenom} ${agenteEditee?.nom}`}
+          subtitle="Profil et parts"
           onClose={() => { setModal(false); setErreur(''); setSucces('') }}
           width={520}
           footer={<>
             <button className="btn btn-ghost" onClick={() => { setModal(false); setErreur(''); setSucces('') }}>Annuler</button>
-            <button className="btn btn-primary" onClick={modal === 'creer' ? creerAgente : modifierAgente}
-              disabled={saving || !form.prenom || !form.nom || (modal === 'creer' && !form.email) || (modal === 'creer' && agencesCtx.length >= 2 && !form.agence_id)}
-              style={{opacity: (saving || !form.prenom || !form.nom || (modal === 'creer' && !form.email) || (modal === 'creer' && agencesCtx.length >= 2 && !form.agence_id)) ? 0.5 : 1}}>
-              {saving ? 'Enregistrement…' : modal === 'creer' ? "Envoyer l'invitation" : 'Enregistrer'}
+            <button className="btn btn-primary" onClick={modifierAgente}
+              disabled={saving || !form.prenom || !form.nom}
+              style={{opacity: (saving || !form.prenom || !form.nom) ? 0.5 : 1}}>
+              {saving ? 'Enregistrement…' : 'Enregistrer'}
             </button>
           </>}
         >
@@ -879,22 +957,6 @@ export default function Parametres() {
                 <div><label style={LS}>Prénom *</label><input className="input" value={form.prenom} onChange={e => setForm(f => ({ ...f, prenom: e.target.value }))} placeholder="Prénom"/></div>
                 <div><label style={LS}>Nom *</label><input className="input" value={form.nom} onChange={e => setForm(f => ({ ...f, nom: e.target.value }))} placeholder="Nom"/></div>
               </div>
-              {modal === 'creer' && (
-                <div>
-                  <label style={LS}>Email *</label>
-                  <input className="input" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@exemple.com"/>
-                  <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Un email d&apos;invitation sera envoyé à cette adresse</div>
-                </div>
-              )}
-              {modal === 'creer' && agencesCtx.length >= 2 && (
-                <div>
-                  <label style={LS}>Agence de rattachement *</label>
-                  <select className="input" value={form.agence_id} onChange={e => setForm(f => ({ ...f, agence_id: e.target.value }))}>
-                    <option value="">— Choisir une agence —</option>
-                    {agencesCtx.map(ag => <option key={ag.id} value={ag.id}>{ag.nom}</option>)}
-                  </select>
-                </div>
-              )}
               <div><label style={LS}>Téléphone</label><input className="input" type="tel" value={form.telephone} onChange={e => setForm(f => ({ ...f, telephone: e.target.value }))} placeholder="06 00 00 00 00"/></div>
               <div>
                 <label style={LS}>Début des redevances</label>
