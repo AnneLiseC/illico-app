@@ -1643,6 +1643,10 @@ export default function Finances() {
   // Le détail (frais / commissions / honoraires / royalties) reste accessible en
   // dépliant la ligne (renderDossierDetail). Remplace les 2 anciens onglets Prévi/Réel.
   const renderFinanceTable = (listeDossiers) => {
+    // Tri par statut : en cours d'abord, puis Terminé, puis Annulé en fin (tri stable,
+    // l'ordre d'origine est préservé au sein d'un même statut).
+    const rangStatut = { termine: 1, annule: 2 }
+    const dossiersTries = [...listeDossiers].sort((a, b) => (rangStatut[calcStatut(a)] || 0) - (rangStatut[calcStatut(b)] || 0))
     const totals = listeDossiers.reduce((acc, d) => {
       const c = calculer(d)
       const r = calculerReel(d)
@@ -1682,7 +1686,7 @@ export default function Finances() {
             </tr>
           </thead>
           <tbody>
-            {listeDossiers.map(d => {
+            {dossiersTries.map(d => {
               const c       = calculer(d)
               const r       = calculerReel(d)
               const netPrevi = round2(c.gainsAdminPreviTotal + c.gainsAgentePreviTotal)

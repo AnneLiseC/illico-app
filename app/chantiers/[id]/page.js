@@ -125,6 +125,10 @@ function DateConfirm({ initial, onConfirm, onCancel }) {
   return (
     <div style={{display:'flex', gap:4, alignItems:'center', justifyContent:'flex-end'}}>
       <input type="date" value={d} onChange={e => setD(e.target.value)} autoFocus
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); if (d) onConfirm(d) }
+          else if (e.key === 'Escape') { e.preventDefault(); onCancel() }
+        }}
         style={{height:28, fontSize:11, padding:'0 6px', border:'1px solid var(--ink-300)', borderRadius:6}} />
       <button type="button" onClick={() => { if (d) onConfirm(d) }} title="Valider la date"
         style={{width:24, height:24, borderRadius:6, border:'none', cursor:'pointer', background:'#16a34a', color:'#fff', fontSize:12, display:'grid', placeItems:'center'}}>✓</button>
@@ -734,6 +738,7 @@ export default function FicheChantier({ params }) {
   const [erreur, setErreur] = useState('')
   const [succes, setSucces] = useState('')
   const [modalModif, setModalModif] = useState(false)
+  const [modalInfos, setModalInfos] = useState(false)   // mini-édition des « Informations clés »
   const [devis, setDevis] = useState([])
   const [versionsDevis, setVersionsDevis] = useState({})   // { devis_id: [versions triées desc] }
   // Comparateur de devis (onglet dédié, lazy)
@@ -813,7 +818,6 @@ export default function FicheChantier({ params }) {
   const [fichesTechChantier, setFichesTechChantier] = useState({})
   const [fichesPanelOuvert, setFichesPanelOuvert] = useState(null)
   const [documents, setDocuments] = useState([])
-  const [syncDrive, setSyncDrive] = useState(null) // null | 'running' — backfill OneDrive du dossier
   const [uploadingDocChantier, setUploadingDocChantier] = useState(false)
   const [uploadingContrat, setUploadingContrat] = useState(false)
   const [docViewer, setDocViewer] = useState(null) // { url, nom }
@@ -1499,28 +1503,6 @@ export default function FicheChantier({ params }) {
     setUploadingDocChantier(false)
   }
 
-  // Backfill OneDrive du dossier : pousse les fichiers DÉJÀ existants (documents, photos,
-  // CR validés) vers le Drive de la référente. Idempotent — les routes sautent ce qui est
-  // déjà miroité (doc_index). Séquentiel pour ne pas saturer Graph.
-  const synchroniserDriveDossier = async () => {
-    setSyncDrive('running'); setErreur(''); setSucces('')
-    let envoyes = 0, sautes = 0, echecs = 0
-    const call = async (url, payload) => {
-      try {
-        const r = await apiFetch(url, { method: 'POST', body: JSON.stringify(payload) })
-        const d = await r.json().catch(() => ({}))
-        if (d.already || d.skipped) sautes++
-        else if (d.ok) envoyes++
-        else echecs++
-      } catch { echecs++ }
-    }
-    for (const doc of documents) await call('/api/drive/push', { document_id: doc.id })
-    for (const p of photos.filter(x => x.type_media === 'photo')) await call('/api/drive/push', { photo_id: p.id })
-    for (const cr of comptesRendus.filter(c => c.valide)) await call('/api/drive/push-cr', { cr_id: cr.id })
-    setSyncDrive(null)
-    setSucces(`Synchronisation OneDrive : ${envoyes} envoyé(s), ${sautes} déjà présent(s), ${echecs} échec(s)`)
-  }
-
   const supprimerDocumentChantier = async (docId, path) => {
     if (!confirm('Supprimer ce document ?')) return
     // Miroir OneDrive (maître→miroir) : supprimer la copie AVANT le cascade FK qui
@@ -1665,6 +1647,33 @@ export default function FicheChantier({ params }) {
       setSucces('PDF facture uploadé ✓')
     } else { setErreur('Erreur upload : ' + error.message) }
     setUploadingFacturePdf(null)
+  }
+
+  // Mini-enregistrement des « Informations clés » : uniquement les champs de la carte
+  // (dates chantier/limite devis + frais de consultation). Écrit ces colonnes seulement.
+  const handleSaveInfos = async () => {
+    setSaving(true); setErreur(''); setSucces('')
+    const { error } = await supabase.from('dossiers').update({
+      date_limite_devis: dossier.date_limite_devis || null,
+      date_demarrage_chantier: dossier.date_demarrage_chantier || null,
+      date_fin_chantier: dossier.date_fin_chantier || null,
+      frais_statut: dossier.frais_statut,
+      frais_consultation: dossier.frais_consultation === '' ? null : dossier.frais_consultation,
+    }).eq('id', id)
+    if (error) { setErreur('Erreur : ' + error.message); setSaving(false); return }
+    // Frais « facturés et réglés » → créer/màj la ligne de suivi (parité avec la
+    // sauvegarde principale : le suivi financier compte l'encaissement avec une date).
+    if (dossier.frais_statut === 'regle') {
+      const { data: existingSuivi } = await supabase.from('suivi_financier')
+        .select('id, date_paiement').eq('dossier_id', id).eq('type_echeance', 'frais_consultation').is('artisan_id', null).maybeSingle()
+      const today = new Date().toISOString().split('T')[0]
+      if (existingSuivi) {
+        await supabase.from('suivi_financier').update({ statut_client: 'regle', date_paiement: existingSuivi.date_paiement || today }).eq('id', existingSuivi.id)
+      } else {
+        await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'frais_consultation', artisan_id: null, statut_client: 'regle', date_paiement: today })
+      }
+    }
+    setSucces('Informations enregistrées ✓'); setModalInfos(false); setSaving(false)
   }
 
   const handleSave = async () => {
@@ -2526,6 +2535,12 @@ export default function FicheChantier({ params }) {
   const honorairesAMO      = finDossier.honoraires.courtage.ttc + finDossier.honoraires.soldeAmo.ttc
   const honorairesCourtagePrev = finDossier.honorairesPrevi.courtage.ttc
   const honorairesAMOPrev      = finDossier.honorairesPrevi.courtage.ttc + finDossier.honorairesPrevi.soldeAmo.ttc
+  // Total payé par le client (coût global TTC) = travaux signés + honoraires + frais
+  // (0 si offerts). Pour un dossier « à rembourser », finance.js a déjà réduit les
+  // honoraires du montant des frais → devis + honoraires réduits + frais = total plein
+  // (pas de double compte).
+  const honorairesTTCClient = dossier?.typologie === 'amo' ? honorairesAMO : dossier?.typologie === 'courtage' ? honorairesCourtage : 0
+  const totalPayeClient = Math.round((totalDevisTTCSignes + honorairesTTCClient + (dossier?.frais_statut === 'offerts' ? 0 : fraisTTC)) * 100) / 100
   const suiviCourtage = suiviFinancier.find(s => s.type_echeance === 'honoraires_courtage')
   const suiviSoldeAMO = suiviFinancier.find(s => s.type_echeance === 'solde_amo')
   // TS-2 (courtage-only) : lignes d'encaissement du courtage supplémentaire (L1, L2…),
@@ -3081,6 +3096,12 @@ export default function FicheChantier({ params }) {
           }
           tone="ok"
         />
+        <MiniKpi
+          label="Total payé client"
+          value={totalPayeClient > 0 ? fmt(totalPayeClient) : '—'}
+          sub="travaux + honoraires + frais TTC"
+          tone="info"
+        />
       </div>
 
       {/* Notifications */}
@@ -3136,7 +3157,10 @@ export default function FicheChantier({ params }) {
 
           {/* Card 1 — Informations clés */}
           <div className="card" style={{padding:22}}>
-            <h2 className="page" style={{fontSize:15, marginBottom:14}}>Informations clés</h2>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14}}>
+              <h2 className="page" style={{fontSize:15}}>Informations clés</h2>
+              <button onClick={() => setModalInfos(true)} className="btn btn-ghost" style={{fontSize:12, padding:'4px 10px'}}>Modifier</button>
+            </div>
             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', rowGap:14, columnGap:18}}>
               <Fact label="Montant chantier" value={totalDevisTTCSignes > 0 ? fmt(totalDevisTTCSignes) : '—'} highlight />
               <Fact label="Commission prévue HT" value={fmt(calculateCommissionsFinance({ ...dossier, devis_artisans: devis }).comHT)} highlight />
@@ -3412,6 +3436,63 @@ export default function FicheChantier({ params }) {
       </div>
       )}
 
+      {/* ── Mini-édition « Informations clés » (bouton Modifier de la carte) ── */}
+      {modalInfos && (
+        <ModalShell
+          title="Informations clés"
+          subtitle={dossier.reference}
+          width={560}
+          onClose={() => setModalInfos(false)}
+          footer={<>
+            <button onClick={() => setModalInfos(false)} className="btn btn-ghost" style={{fontSize:12.5}}>Annuler</button>
+            <button onClick={handleSaveInfos} disabled={saving} className="btn btn-primary"
+              style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+              <CheckIcon /> {saving ? '...' : 'Enregistrer'}
+            </button>
+          </>}
+        >
+          <div style={{display:'flex',flexDirection:'column',gap:16, padding:24}}>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+              <div>
+                <label className="eyebrow" style={{display:'block', marginBottom:6}}>Démarrage chantier</label>
+                <input type="date" className="input" value={dossier.date_demarrage_chantier || ''} onChange={e => set('date_demarrage_chantier', e.target.value)} style={{height:40, width:'100%'}}/>
+              </div>
+              <div>
+                <label className="eyebrow" style={{display:'block', marginBottom:6}}>Fin de chantier</label>
+                <input type="date" className="input" value={dossier.date_fin_chantier || ''} onChange={e => set('date_fin_chantier', e.target.value)} style={{height:40, width:'100%'}}/>
+              </div>
+              <div>
+                <label className="eyebrow" style={{display:'block', marginBottom:6}}>Date limite devis</label>
+                <input type="date" className="input" value={dossier.date_limite_devis || ''} onChange={e => set('date_limite_devis', e.target.value)} style={{height:40, width:'100%'}}/>
+              </div>
+            </div>
+            <div style={{paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
+              <label className="eyebrow" style={{display:'block', marginBottom:8}}>Frais de consultation</label>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+                <div>
+                  <label style={{display:'block', fontSize:12, color:'var(--ink-500)', marginBottom:4}}>Statut</label>
+                  <select className="input" value={dossier.frais_statut || 'offerts'} onChange={e => set('frais_statut', e.target.value)} style={{height:40, width:'100%'}}>
+                    <option value="offerts">Offerts</option>
+                    <option value="rembourse">Remboursé après signature</option>
+                    <option value="factures">Facturés (à régler)</option>
+                    <option value="regle">Facturés et réglés</option>
+                  </select>
+                </div>
+                {dossier.frais_statut !== 'offerts' && (
+                  <div>
+                    <label style={{display:'block', fontSize:12, color:'var(--ink-500)', marginBottom:4}}>Montant TTC (€)</label>
+                    <input type="number" step="0.01" min="0" className="input"
+                      value={dossier.frais_consultation || ''}
+                      onChange={e => set('frais_consultation', e.target.value === '' ? '' : parseFloat(e.target.value))}
+                      style={{height:40, width:'100%'}} />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </ModalShell>
+      )}
+
       {/* ── ÉDITION dossier — modale ouverte par le bouton "Modifier" du hero,
              accessible depuis n'importe quel onglet (avant : swap inline de l'onglet Aperçu). ── */}
       {modalModif && (
@@ -3432,61 +3513,24 @@ export default function FicheChantier({ params }) {
 
         {/* Form principal */}
         <div className="card" style={{padding:24, display:'flex',flexDirection:'column',gap:16}}>
-          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
-            <div>
-              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Typologie</label>
-              <select className="input" value={dossier.typologie || ''} onChange={e => set('typologie', e.target.value)} style={{height:40, width:'100%'}}>
-                <option value="courtage">Courtage</option>
-                <option value="amo">AMO</option>
-                <option value="estimo">Estimo</option>
-                <option value="merad">MERAD</option>
-                <option value="audit_energetique">Audit énergétique</option>
-                <option value="studio_jardin">Studio de jardin</option>
-              </select>
-            </div>
-            <div>
-              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Date limite devis</label>
-              <input type="date" className="input" value={dossier.date_limite_devis || ''} onChange={e => set('date_limite_devis', e.target.value)} style={{height:40, width:'100%'}}/>
-            </div>
-            <div>
-              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Démarrage chantier</label>
-              <input type="date" className="input" value={dossier.date_demarrage_chantier || ''} onChange={e => set('date_demarrage_chantier', e.target.value)} style={{height:40, width:'100%'}}/>
-            </div>
-            <div>
-              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Fin de chantier</label>
-              <input type="date" className="input" value={dossier.date_fin_chantier || ''} onChange={e => set('date_fin_chantier', e.target.value)} style={{height:40, width:'100%'}}/>
-            </div>
+          <div>
+            <label className="eyebrow" style={{display:'block', marginBottom:6}}>Typologie</label>
+            <select className="input" value={dossier.typologie || ''} onChange={e => set('typologie', e.target.value)} style={{height:40, width:'100%', maxWidth:360}}>
+              <option value="courtage">Courtage</option>
+              <option value="amo">AMO</option>
+              <option value="estimo">Estimo</option>
+              <option value="merad">MERAD</option>
+              <option value="audit_energetique">Audit énergétique</option>
+              <option value="studio_jardin">Studio de jardin</option>
+            </select>
+            <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:6}}>Dates et frais de consultation se modifient via « Modifier » sur la carte « Informations clés ».</div>
           </div>
 
           <div>
-            <label className="eyebrow" style={{display:'block', marginBottom:6}}>Description</label>
+            <label className="eyebrow" style={{display:'block', marginBottom:6}}>Descriptif</label>
             <textarea className="input" value={dossier.description || ''} onChange={e => set('description', e.target.value)}
               rows={4} placeholder="Décrivez les travaux envisagés, le contexte du projet…"
               style={{width:'100%', padding:'10px 12px', lineHeight:1.5, resize:'vertical'}}/>
-          </div>
-
-          <div style={{paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
-            <label className="eyebrow" style={{display:'block', marginBottom:8}}>Frais de consultation</label>
-            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
-              <div>
-                <label style={{display:'block', fontSize:12, color:'var(--ink-500)', marginBottom:4}}>Statut</label>
-                <select className="input" value={dossier.frais_statut || 'offerts'} onChange={e => set('frais_statut', e.target.value)} style={{height:40, width:'100%'}}>
-                  <option value="offerts">Offerts</option>
-                  <option value="rembourse">Remboursé après signature</option>
-                  <option value="factures">Facturés (à régler)</option>
-                  <option value="regle">Facturés et réglés</option>
-                </select>
-              </div>
-              {dossier.frais_statut !== 'offerts' && (
-                <div>
-                  <label style={{display:'block', fontSize:12, color:'var(--ink-500)', marginBottom:4}}>Montant TTC (€)</label>
-                  <input type="number" step="0.01" min="0" className="input"
-                    value={dossier.frais_consultation || ''}
-                    onChange={e => set('frais_consultation', e.target.value === '' ? '' : parseFloat(e.target.value))}
-                    style={{height:40, width:'100%'}} />
-                </div>
-              )}
-            </div>
           </div>
 
           {!referentEstAdmin && profile?.parts_agente_disponibles?.length > 1 && (
@@ -4763,14 +4807,6 @@ export default function FicheChantier({ params }) {
         const totalGenKo = docsGeneraux.reduce((s, d) => s + (d.taille || 0) / 1024, 0)
         return (
         <div style={{display:'flex', flexDirection:'column', gap:14}}>
-
-          {/* ── Synchronisation OneDrive (backfill du dossier) ── */}
-          <div className="card" style={{padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, flexWrap:'wrap'}}>
-            <div style={{fontSize:12.5, color:'var(--ink-600)'}}>Envoyer les documents, photos et CR validés de ce dossier vers ton OneDrive (les fichiers déjà rangés sont ignorés).</div>
-            <button className="btn btn-ghost" style={{fontSize:12.5}} disabled={syncDrive === 'running'} onClick={synchroniserDriveDossier}>
-              {syncDrive === 'running' ? 'Synchronisation…' : '☁️ Synchroniser vers OneDrive'}
-            </button>
-          </div>
 
           {/* ── Documents ARTISANS (par artisan + check-list) ── */}
           {artisansChantier.length > 0 && (
