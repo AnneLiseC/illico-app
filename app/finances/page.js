@@ -924,8 +924,13 @@ export default function Finances() {
   const calculerReelBase = (d) => {
     const c = calculerBase(d)
 
+    // Frais ENCAISSÉS = statut 'regle' OU ligne de suivi frais marquée reçue (case
+    // cochée côté dossier) → couvre le cas 'rembourse' (frais payés d'avance, déduits
+    // du courtage par finance.js). Sans ça, les frais 'rembourse' disparaissaient du réel.
+    const fraisEnc = d.frais_statut === 'regle' || getSuivi(d, 'frais_consultation')?.statut_client === 'regle'
+
     if (c.referentEstAdmin) {
-      const fraisReel = d.frais_statut === 'regle' ? c.fraisNet : 0
+      const fraisReel = fraisEnc ? c.fraisNet : 0
       const courtageRegle = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
       const amoRegle = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
       // Cohabitation solde AMO échelonné : Σ tranches encaissées si le dossier en a,
@@ -962,10 +967,10 @@ export default function Finances() {
       const apporteurRetire = c.apporteurAdminReel
 
       // AJOUTS affichage (brut/royalty réels) — n'entrent PAS dans le calcul du net.
-      const fraisBrutReel = d.frais_statut === 'regle' ? c.fraisHT : 0
+      const fraisBrutReel = fraisEnc ? c.fraisHT : 0
       const honReelBrut = round2((courtageRegle ? c.finance.honoraires.courtage.ht : 0) + (soldeAmoR.hasTranches ? soldeAmoR.recognizedHt : (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0)))
       const royaltyReelle = round2(
-        (d.frais_statut === 'regle' ? c.fraisRoyalties : 0) +
+        (fraisEnc ? c.fraisRoyalties : 0) +
         royaltiesComReel + royaltiesComApporteursReel +
         (courtageRegle ? c.courtRoyalties : 0) + (soldeAmoR.hasTranches ? soldeAmoR.recognizedRoyalties : (amoRegle ? c.amoRoyalties : 0))
       )
@@ -974,8 +979,8 @@ export default function Finances() {
       return { ...c, fraisReel, fraisAgenteReel: 0, honReel, comReelNet, comApporteursReel, apporteurRembourse: apporteurRetire, gainAgenteReel: 0, gainAdminReel, gainsAgenteReels: 0, soldeAmoNet: soldeAmoNetM, soldeAmoAgente: 0, fraisBrutReel, comBruteEncaissee, honReelBrut, royaltyReelle }
     }
 
-    // Frais — HT net si réglé
-    const fraisRegle         = d.frais_statut === 'regle'
+    // Frais — HT net si ENCAISSÉ (statut 'regle' OU ligne suivi reçue, cf. fraisEnc)
+    const fraisRegle         = fraisEnc
     const fraisReel          = fraisRegle ? c.fraisNet : 0
     const fraisRoyaltiesReel = fraisRegle ? c.fraisRoyalties : 0
     const fraisAgenteReel    = fraisRegle ? c.fraisAgente : 0
