@@ -18,13 +18,21 @@ function isExempt(pathname) {
 // (admin invité qui n'a pas encore créé sa société) vers /onboarding, partout dans l'app.
 // Ne touche pas la gestion !user (les pages redirigent déjà vers /login).
 export default function OnboardingGuard({ children }) {
-  const { user, profile, profileStatus } = useAuth()
+  const { user, profile, profileStatus, isSuperAdmin } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
 
   useEffect(() => {
-    if (profileStatus === 'loading') return        // statut non tranché → pas de flash/boucle
     if (!user) return                               // géré par les gardes par-page (/login)
+
+    // Éditrice (super-admin) : jamais d'onboarding, jamais l'app tenant. Elle vit
+    // uniquement sur /super-admin. Ce test passe AVANT tout (elle n'a pas de profil).
+    if (isSuperAdmin) {
+      if (!pathname?.startsWith('/super-admin')) router.replace('/super-admin')
+      return
+    }
+
+    if (profileStatus === 'loading') return        // statut non tranché → pas de flash/boucle
 
     if (profileStatus === 'absent') {
       // Connecté sans profil → onboarding, sauf sur une route exemptée.
@@ -35,7 +43,7 @@ export default function OnboardingGuard({ children }) {
         router.replace(profile?.role === 'client' ? '/espace-client' : '/dashboard')
       }
     }
-  }, [profileStatus, user, profile?.role, pathname, router])
+  }, [profileStatus, user, profile?.role, pathname, router, isSuperAdmin])
 
   return children
 }

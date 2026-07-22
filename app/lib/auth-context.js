@@ -1,6 +1,7 @@
 'use client'
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from './supabase'
+import { isSuperAdminEmail } from './super-admin'
 
 const AuthContext = createContext(null)
 
@@ -259,8 +260,13 @@ export function AuthProvider({ children }) {
     setUnreadCount(0)
   }, [user?.id])
 
+  // Éditrice (super-admin) : reconnue par son email (routage UI seulement ; la vraie
+  // barrière est serveur, cf. requireSuperAdmin). Elle n'a pas de profil → sans ce
+  // drapeau elle serait envoyée vers l'onboarding.
+  const isSuperAdmin = isSuperAdminEmail(user?.email, process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAILS)
+
   return (
-    <AuthContext.Provider value={{ user, profile, societe: profile?.societe, profileStatus, displayAgenceName, agences, agenceActive, setAgenceActive, refreshAgences, initialized, unreadCount, unreadMessages, markAllRead, loadUnread, fetchProfile }}>
+    <AuthContext.Provider value={{ user, profile, societe: profile?.societe, profileStatus, displayAgenceName, agences, agenceActive, setAgenceActive, refreshAgences, initialized, unreadCount, unreadMessages, markAllRead, loadUnread, fetchProfile, isSuperAdmin }}>
       {children}
     </AuthContext.Provider>
   )
