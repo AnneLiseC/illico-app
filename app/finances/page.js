@@ -1685,14 +1685,6 @@ export default function Finances() {
               const avancement = netPrevi > 0 ? Math.min(100, Math.round(netReel / netPrevi * 100)) : 0
               const isOpen   = dossierOuvert === d.id
               const cs       = calcStatut(d)
-              const nbAlertes = [
-                d.contrat_signe && d.frais_statut !== 'regle' && alerte48h(d.date_signature_contrat),
-                ...c.devisAcceptes.map(dv => {
-                  const artId = dv.artisan_id || dv.artisan?.id
-                  return dv.date_signature && alerte7j(dv.date_signature) && getSuivi(d, 'acompte_artisan', artId, dv.id)?.statut_client !== 'regle'
-                }),
-                d.date_fin_chantier && d.typologie === 'amo' && alerte48h(d.date_fin_chantier) && getSuivi(d, 'solde_amo')?.statut_client !== 'regle',
-              ].filter(Boolean).length
               return (
                 <React.Fragment key={d.id}>
                   <tr onClick={() => setDossierOuvert(isOpen ? null : d.id)}
@@ -1717,7 +1709,6 @@ export default function Finances() {
                         color:cs==='annule'?'#b91c1c':cs==='termine'?'#15803d':'var(--brand-700)'}}>
                         {cs === 'annule' ? 'Annulé' : cs === 'termine' ? 'Terminé' : 'En cours'}
                       </span>
-                      {nbAlertes > 0 && <span style={{fontSize:10,marginLeft:4,color:'#b91c1c'}}>⚠️ {nbAlertes}</span>}
                     </Td>
                     <Td right mono>{fmt(netPrevi)}</Td>
                     <Td right mono bold accent={netReel > 0}>{fmt(netReel)}</Td>
