@@ -287,6 +287,8 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
   const facturesAg  = facturesAgente.filter(f => f.agente_id === agenteSelectionnee)
   const redevAg     = redevancesAgente
   const [moisDeplie, setMoisDeplie] = useState(null)
+  // TTC = HT + 20 % de TVA (facturation de prestation de service).
+  const ttc = (n) => round2((n || 0) * 1.2)
 
   // Montants F1/F2 calculés EN LIVE (source unique : agrégerParPaiement → finance.js).
   // Le snapshot factures_agente ne sert plus qu'à lire le statut + le PDF (read-only ici).
@@ -512,10 +514,14 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
         </div>
       )}
 
-      {/* KPI strip — 2 indicateurs : ce qu'il reste à toucher (F1, report inclus) et à régler (F2) */}
+      {/* KPI strip — F1 (à toucher, report inclus) et F2 (à régler), en HT et en TTC.
+          Les montants F1/F2 sont calculés en HT (net) ; le TTC = HT + 20 % de TVA
+          (prestation de service ; même taux que TVA_FRAIS). */}
       <div className="kpi-grid">
-        <FinKpiCard label="Gains à facturer par l'agent · F1" value={fmt(round2(totalF1-totalF1Paye))} sub={`Reçu ${fmt(totalF1Paye)} · Total ${fmt(totalF1)}`} tone="ok"/>
-        <FinKpiCard label="À régler par l'agent · F2"         value={fmt(round2(totalF2-totalF2Paye))} sub={`Reçu ${fmt(totalF2Paye)} · Total ${fmt(totalF2)}`} tone="warn"/>
+        <FinKpiCard label="Gains à facturer par l'agent · F1 (HT)" value={fmt(round2(totalF1-totalF1Paye))} sub={`Reçu ${fmt(totalF1Paye)} · Total ${fmt(totalF1)}`} tone="ok"/>
+        <FinKpiCard label="Gains à facturer par l'agent · F1 (TTC)" value={fmt(ttc(round2(totalF1-totalF1Paye)))} sub={`Reçu ${fmt(ttc(totalF1Paye))} · Total ${fmt(ttc(totalF1))}`} tone="ok"/>
+        <FinKpiCard label="À régler par l'agent · F2 (HT)"         value={fmt(round2(totalF2-totalF2Paye))} sub={`Reçu ${fmt(totalF2Paye)} · Total ${fmt(totalF2)}`} tone="warn"/>
+        <FinKpiCard label="À régler par l'agent · F2 (TTC)"         value={fmt(ttc(round2(totalF2-totalF2Paye)))} sub={`Reçu ${fmt(ttc(totalF2Paye))} · Total ${fmt(ttc(totalF2))}`} tone="warn"/>
       </div>
 
       {/* Tableau mensuel F1 / F2 */}
