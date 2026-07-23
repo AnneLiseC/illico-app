@@ -758,6 +758,19 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   const facturesHonoraires = (docsRestitution || []).filter(d => d.categorie === 'facture_honoraire')
   const autresDocs = (docsRestitution || []).filter(d => d.categorie !== 'facture_honoraire')
 
+  // Documents « Illustrations & vues 3D » : détectés par le NOM de fichier
+  // (plan/plans, vue/vues, coupe/coupes, 3D). Cochés dans_restitution → ils vont
+  // dans la section Illustrations plutôt que dans le bloc « autres documents ».
+  // Match par MOT ENTIER (« plan_rdc.pdf » ✓ mais « planning.pdf » ✗) + motif « 3d ».
+  const MOTS_ILLU = new Set(['plan', 'plans', 'vue', 'vues', 'coupe', 'coupes'])
+  const estIllustration = (d) => {
+    const n = (d.nom || '').toLowerCase()
+    if (n.includes('3d')) return true
+    return n.split(/[^a-z0-9]+/).some(t => MOTS_ILLU.has(t))
+  }
+  const docsIllustration = autresDocs.filter(estIllustration)
+  const autresDocsRest = autresDocs.filter(d => !estIllustration(d))
+
   const loadSep = async (b64) => PDFDocument.load(Buffer.from(b64, 'base64'))
   const [sepDescriptif, sepIllustrations, sepRecap, sepDevis, sepPlanning, sepRefs, sepKbis, sepQualification] = await Promise.all([
     loadSep(SEP_DESCRIPTIF), loadSep(SEP_ILLUSTRATIONS), loadSep(SEP_RECAP),
@@ -802,6 +815,26 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
         final.addPage(p)
       })
     } catch {}
+  }
+  // Ajoute une pièce document : PDF (fusionné) OU image jpg/png (posée pleine page A4).
+  // Les autres formats (heic/webp) sont ignorés silencieusement (limite pdf-lib).
+  const addDocumentPiece = async (doc) => {
+    const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path)
+    if (!buf) return
+    const mime = (doc.type_mime || '').toLowerCase()
+    const nom = (doc.nom || '').toLowerCase()
+    const estImage = mime.startsWith('image/') || /\.(jpe?g|png)$/.test(nom)
+    if (!estImage) { await addExternalPDF(buf); return }
+    try {
+      const estPng = mime.includes('png') || nom.endsWith('.png')
+      const img = estPng ? await final.embedPng(buf) : await final.embedJpg(buf)
+      const A4 = [595.28, 841.89]
+      const page = final.addPage(A4)
+      const dim = img.scale(1)
+      const scale = Math.min((A4[0] - 80) / dim.width, (A4[1] - 80) / dim.height, 1)
+      const w = dim.width * scale, h = dim.height * scale
+      page.drawImage(img, { x: (A4[0] - w) / 2, y: (A4[1] - h) / 2, width: w, height: h })
+    } catch { /* image non intégrable : ignorée */ }
   }
 
   // ── Page de garde ──
@@ -880,12 +913,20 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     await addContent()
   }
 
-  // ── Illustrations (photos maquette — si disponibles et chantier terminé) ──
-  if (isTermine && photosMaquette.length > 0) {
+  // ── Illustrations & vues 3D ──
+  // Photos maquette (rendues dans le contenu, si chantier terminé) + documents
+  // plan/vue/coupe/3D cochés dans_restitution (PDF ou image).
+  const hasIllustrations = (isTermine && photosMaquette.length > 0) || docsIllustration.length > 0
+  if (hasIllustrations) {
     await addSep(sepIllustrations)
-    const nbPhotoPages = Math.ceil(photosMaquette.length / 2)
-    for (let i = 0; i < nbPhotoPages; i++) {
-      await addContent()
+    if (isTermine && photosMaquette.length > 0) {
+      const nbPhotoPages = Math.ceil(photosMaquette.length / 2)
+      for (let i = 0; i < nbPhotoPages; i++) {
+        await addContent()
+      }
+    }
+    for (const doc of docsIllustration) {
+      await addDocumentPiece(doc)
     }
   }
 
@@ -929,9 +970,10 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     }
   }
 
-  // ── Autres documents chantier cochés "dans_restitution" (hors factures honoraires) ──
-  if (autresDocs.length > 0) {
-    for (const doc of autresDocs) {
+  // ── Autres documents chantier cochés "dans_restitution" (hors factures honoraires
+  //    et hors plans/vues/coupes/3D, déjà placés dans la section Illustrations) ──
+  if (autresDocsRest.length > 0) {
+    for (const doc of autresDocsRest) {
       const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path)
       await addExternalPDF(buf)
     }
