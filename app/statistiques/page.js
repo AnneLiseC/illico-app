@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth-context'
-import { computeCAMensuel, computeRoyalties, computeCABreakdown } from '../lib/ca-reel'
+import { computeCAMensuel, computeRoyalties, computeCABreakdown, computeFactureClient } from '../lib/ca-reel'
 import { calcStatut } from '../lib/dossiers'
 import {
   Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement,
@@ -179,6 +179,12 @@ export default function Statistiques() {
   const roy       = useMemo(() => computeRoyalties(dossiersScoped, annee),     [dossiersScoped, annee])
   const royN1     = useMemo(() => computeRoyalties(dossiersScoped, annee - 1), [dossiersScoped, annee])
 
+  // « Ce qu'on facture au client » (HT) : frais + honoraires, BRUT facturé sur les
+  // dossiers signés de l'année. Base FACTURÉ (≠ réel encaissé du reste de la page).
+  const factureClient   = useMemo(() => computeFactureClient(dossiersVue, annee),     [dossiersVue, annee])
+  const factureClientN1 = useMemo(() => computeFactureClient(dossiersVue, annee - 1), [dossiersVue, annee])
+  const evolFacture = factureClientN1.total > 0 ? Math.round((factureClient.total - factureClientN1.total) / factureClientN1.total * 100) : null
+
   const caTotal   = round2(somme(caMois))
   const caTotalN1 = round2(somme(caMoisN1))
   const evolCA    = caTotalN1 > 0 ? Math.round((caTotal - caTotalN1) / caTotalN1 * 100) : null
@@ -353,6 +359,8 @@ export default function Statistiques() {
       <div className="kpi-grid">
         <StatKpi label={modeEff === 'societe' ? `Mon CA ${annee}` : `CA généré ${annee}`} value={fmtEur(caTotal)} tone="brand"
           sub={evolCA != null ? `${evolCA >= 0 ? '▲' : '▼'} ${Math.abs(evolCA)}% vs ${annee - 1} (${fmtEur(caTotalN1)})` : `vs ${annee - 1} : n/a`} />
+        <StatKpi label={`Facturé aux clients · HT ${annee}`} value={fmtEur(factureClient.total)} tone="ok"
+          sub={`Frais ${fmtEur(factureClient.frais)} · Honoraires ${fmtEur(factureClient.honoraires)}${evolFacture != null ? ` · ${evolFacture >= 0 ? '▲' : '▼'} ${Math.abs(evolFacture)}% vs ${annee - 1}` : ''}`} />
         {isAdmin ? (
           <StatKpi label="Royalties reversées au franchiseur" value={fmtEur(roy.total)} tone="warn"
             sub={`Frais ${fmtEur(roy.parPoste.frais)} · Comm. ${fmtEur(roy.parPoste.commissions)} · Hono. ${fmtEur(roy.parPoste.honoraires)}`} />
