@@ -70,18 +70,44 @@ export function buildCRDocument({ dossier, cr, sections, logo, photos }) {
     )
   }
 
+  // Tableaux markdown pipe : « | a | b | » + ligne de séparation « | --- | --- | ».
+  const splitRow = (line) => {
+    let s = line.trim()
+    if (s.startsWith('|')) s = s.slice(1)
+    if (s.endsWith('|')) s = s.slice(0, -1)
+    return s.split('|').map(c => c.trim())
+  }
+  const isTableRow = (line) => /\|/.test(line) && line.trim().length > 0
+  const isTableSep = (line) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line)
+  const renderMdTable = (header, rows, key) => {
+    const thStyle = { color: '#ffffff', fontSize: 8.5, fontFamily: 'Roboto-Bold', flex: 1, paddingHorizontal: 4 }
+    const tdStyle = { fontSize: 8.5, color: '#1f2937', flex: 1, paddingHorizontal: 4 }
+    return React.createElement(View, { key, style: { marginBottom: 8, marginTop: 4 }, wrap: true },
+      React.createElement(View, { style: { flexDirection: 'row', backgroundColor: BLEU, paddingVertical: 4 } },
+        ...header.map((h, i) => React.createElement(Text, { key: i, style: thStyle }, h)),
+      ),
+      ...rows.map((r, ri) =>
+        React.createElement(View, { key: ri, style: { flexDirection: 'row', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', backgroundColor: ri % 2 === 0 ? '#f9fafb' : '#ffffff' } },
+          ...header.map((_, ci) => React.createElement(Text, { key: ci, style: tdStyle }, inlineEl(r[ci] || ''))),
+        )
+      )
+    )
+  }
+
   const renderContent = (contenu, secTitre) => {
     if (!contenu) return { blocks: [], firstGroupable: true }
     const lines = contenu.split('\n').filter(l => l !== undefined)
     const isIdent = /identification/i.test(secTitre || '')
     const isPlanning = /planning/i.test(secTitre || '')
+    const hasMdTable = lines.some((l, i) => isTableRow(l) && lines[i + 1] && isTableSep(lines[i + 1]))
     const kvLines = lines.filter(l => l.trim()).map(l => {
       const m = l.match(/^\*\*(.+?)\s*:\*\*\s*(.*)/) || l.match(/^\*\*(.+?):\s*\*\*(.*)/)
       return m ? [m[1].trim(), m[2].trim()] : null
     })
     const allKV = kvLines.length > 0 && kvLines.every(Boolean)
-    if (isIdent && allKV) return { blocks: [renderKVTable(kvLines, 'Champ', 'Information', true)], firstGroupable: true }
-    if (isPlanning && allKV) return { blocks: [renderKVTable(kvLines, 'Date', 'Interventions prévues')], firstGroupable: false }
+    // Les tableaux markdown priment sur le rendu clé/valeur automatique.
+    if (!hasMdTable && isIdent && allKV) return { blocks: [renderKVTable(kvLines, 'Champ', 'Information', true)], firstGroupable: true }
+    if (!hasMdTable && isPlanning && allKV) return { blocks: [renderKVTable(kvLines, 'Date', 'Interventions prévues')], firstGroupable: false }
 
     const blocks = []
     let listItems = []
@@ -95,18 +121,33 @@ export function buildCRDocument({ dossier, cr, sections, logo, photos }) {
       )
       listItems = []
     }
-    lines.forEach((line, i) => {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      // Bloc tableau markdown : ligne pipe + ligne de séparation → avalé en entier.
+      if (isTableRow(line) && lines[i + 1] && isTableSep(lines[i + 1])) {
+        flushList()
+        const header = splitRow(line)
+        const rows = []
+        let j = i + 2
+        while (j < lines.length && isTableRow(lines[j]) && !isTableSep(lines[j])) {
+          rows.push(splitRow(lines[j]))
+          j++
+        }
+        blocks.push(renderMdTable(header, rows, 'tbl' + i))
+        i = j - 1
+        continue
+      }
       const bullet = line.match(/^[-–]\s+(.+)/)
-      if (bullet) { listItems.push(bullet[1]); return }
-      if (!line.trim()) { flushList(); return }
+      if (bullet) { listItems.push(bullet[1]); continue }
+      if (!line.trim()) { flushList(); continue }
       flushList()
       const subhead = line.match(/^\*\*(.+?)\s*:\*\*\s*$/) || line.match(/^\*\*(.+?):\s*\*\*\s*$/)
       if (subhead) {
         blocks.push(React.createElement(Text, { key: i, style: { fontSize: 9, fontFamily: 'Roboto-Bold', color: '#1f2937', marginTop: 6, marginBottom: 3 } }, subhead[1].trim() + ' :'))
-        return
+        continue
       }
       blocks.push(React.createElement(Text, { key: i, style: CRS.para }, inlineEl(line.trim())))
-    })
+    }
     flushList()
     return { blocks, firstGroupable: true }
   }
@@ -157,10 +198,12 @@ export function buildCRDocument({ dossier, cr, sections, logo, photos }) {
         React.createElement(View, { style: CRS.titleBlock },
           React.createElement(Text, { style: CRS.mainTitle }, 'Photos'),
         ),
-        React.createElement(View, { style: { flexDirection: 'column', flex: 1, justifyContent: 'space-between', paddingBottom: 40 } },
+        React.createElement(View, { style: { flexDirection: 'column', flex: 1, justifyContent: 'flex-start', paddingBottom: 40 } },
           ...chunk.map(ph =>
-            React.createElement(View, { key: ph.path, style: { flex: 1, marginVertical: 4 } },
-              React.createElement(PdfImage, { src: ph.base64, style: { width: '100%', height: '100%', objectFit: 'contain' } }),
+            // Hauteur BORNÉE (pas de height:'100%' → sinon la 1re image déborde et
+            // repousse la 2e sur une autre page). ~2 photos par page A4.
+            React.createElement(View, { key: ph.path, style: { marginVertical: 4, alignItems: 'center' } },
+              React.createElement(PdfImage, { src: ph.base64, style: { maxWidth: '100%', maxHeight: 300, objectFit: 'contain' } }),
             )
           ),
         ),

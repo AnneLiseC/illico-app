@@ -715,13 +715,27 @@ function TauxEditor({ sim, onSave, onCancel }) {
 }
 
 
-// Signature groupée des photos : 1 appel createSignedUrls au lieu de N appels.
+// Signature groupée des photos : 1 appel createSignedUrls (URL pleine résolution,
+// utilisée par la visionneuse et l'annotation) + une miniature transformée par
+// photo (createSignedUrls ne supporte PAS l'option transform → appels unitaires
+// parallèles, uniquement pour les images). La miniature (~500 px) évite au
+// navigateur de télécharger/décoder des photos 12 Mpx dans les grilles → plus de
+// plantage quand il y a beaucoup de photos. Les vidéos n'ont pas de miniature
+// (placeholder ▶). Si les Transformations d'image ne sont pas actives (plan
+// gratuit), la grille bascule sur url_signee via onError.
+const THUMB_TRANSFORM = { width: 500, height: 500, resize: 'cover', quality: 60 }
 async function signerPhotos(rows) {
   const list = rows || []
   if (!list.length) return []
   const { data } = await supabase.storage.from('photos').createSignedUrls(list.map(p => p.url), 3600)
   const parChemin = new Map((data || []).map(u => [u.path, u.signedUrl]))
-  return list.map(p => ({ ...p, url_signee: parChemin.get(p.url) || '' }))
+  const thumbs = await Promise.all(list.map(async (p) => {
+    if (p.type_media === 'video') return ''
+    const { data: t } = await supabase.storage.from('photos')
+      .createSignedUrl(p.url, 3600, { transform: THUMB_TRANSFORM })
+    return t?.signedUrl || ''
+  }))
+  return list.map((p, i) => ({ ...p, url_signee: parChemin.get(p.url) || '', url_thumb: thumbs[i] || '' }))
 }
 
 // Redimensionne une image (max `maxSide` px sur le plus grand côté) et la ré-encode en
@@ -794,6 +808,8 @@ export default function FicheChantier({ params }) {
   const [crImages, setCrImages] = useState([]) // [{ path, url_signee }] — photos uploadées dans Storage (chantiers/{id}/cr/)
   const [crPhotosUp, setCrPhotosUp] = useState(false) // upload de photos CR en cours
   const [crPhotosDossier, setCrPhotosDossier] = useState([]) // paths (photos.url) de photos EXISTANTES du dossier — jamais supprimées de Storage
+  const [crPhotoCat, setCrPhotoCat] = useState('all')        // filtre catégorie du sélecteur de photos CR
+  const [crPhotosAffichees, setCrPhotosAffichees] = useState(12) // pagination du sélecteur de photos CR
   const [crVocal, setCrVocal] = useState(false)
   const [crVocalTexte, setCrVocalTexte] = useState('')
   const [crAudioTexte, setCrAudioTexte] = useState('')       // transcription Deepgram (audio enregistré/déposé)
@@ -4924,7 +4940,9 @@ export default function FicheChantier({ params }) {
                       </div>
                     ) : (
                       /* eslint-disable-next-line @next/next/no-img-element */
-                      <img src={photo.url_signee} alt="" style={{width:'100%', height:'100%', objectFit:'cover', display:'block'}} />
+                      <img src={photo.url_thumb || photo.url_signee} alt="" loading="lazy" decoding="async"
+                        onError={e => { if (photo.url_signee && e.currentTarget.src !== photo.url_signee) e.currentTarget.src = photo.url_signee }}
+                        style={{width:'100%', height:'100%', objectFit:'cover', display:'block'}} />
                     )}
                     <span style={{
                       position:'absolute', top:8, right:8,
@@ -6160,8 +6178,8 @@ export default function FicheChantier({ params }) {
               setCrPhotosUp(false)
               setCrModal(false)
             }}
-            width="min(1400px, 96vw)"
-            maxH="94vh"
+            width="min(1600px, 97vw)"
+            maxH="96vh"
           >
             <div style={{padding:24, display:'flex', flexDirection:'column', gap:16}}>
 
@@ -6394,13 +6412,46 @@ export default function FicheChantier({ params }) {
                     </div>
                   </ModalField>
 
-                  {photos.length > 0 && (
+                  {photos.some(p => p.type_media !== 'video') && (() => {
+                    // Photos triées par catégorie (Avant/Pendant/Après/Maquette) + pagination :
+                    // on ne rend jamais toutes les photos d'un coup (miniatures + lazy) → plus de
+                    // plantage même avec beaucoup de photos.
+                    const CATS_CR = [
+                      { k: 'all', l: 'Toutes' },
+                      { k: 'avant', l: 'Avant' },
+                      { k: 'pendant', l: 'Pendant' },
+                      { k: 'apres', l: 'Après' },
+                      { k: 'maquette', l: 'Maquette' },
+                    ]
+                    const dispo = photos.filter(p => p.type_media !== 'video')
+                    const filtrees = crPhotoCat === 'all' ? dispo : dispo.filter(p => p.categorie === crPhotoCat)
+                    const visibles = filtrees.slice(0, crPhotosAffichees)
+                    return (
                     <ModalField label="🖼️ Photos du chantier (jointes au CR)">
+                      <div style={{display:'flex', gap:6, flexWrap:'wrap', marginBottom:8}}>
+                        {CATS_CR.map(c => {
+                          const n = c.k === 'all' ? dispo.length : dispo.filter(p => p.categorie === c.k).length
+                          if (n === 0 && c.k !== 'all') return null
+                          const active = crPhotoCat === c.k
+                          return (
+                            <button key={c.k} type="button"
+                              onClick={() => { setCrPhotoCat(c.k); setCrPhotosAffichees(12) }}
+                              style={{
+                                padding:'4px 10px', borderRadius:99, fontSize:11, fontWeight:600, cursor:'pointer',
+                                border:'1px solid', borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
+                                background: active ? 'var(--brand-50)' : '#fff',
+                                color: active ? 'var(--brand-800)' : 'var(--ink-600)',
+                              }}>
+                              {c.l} <span style={{opacity:0.6}}>· {n}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
                       <div style={{
                         display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(80px, 1fr))', gap:8,
-                        border:'1px solid var(--ink-200)', borderRadius:10, padding:8, maxHeight:200, overflowY:'auto',
+                        border:'1px solid var(--ink-200)', borderRadius:10, padding:8, maxHeight:260, overflowY:'auto',
                       }}>
-                        {photos.filter(p => p.type_media !== 'video').map(p => {
+                        {visibles.map(p => {
                           const selected = crPhotosDossier.includes(p.url)
                           return (
                             // Clic = (dé)sélection. Aucun fichier n'est touché : ce sont des photos
@@ -6414,7 +6465,9 @@ export default function FicheChantier({ params }) {
                                 cursor:'pointer', aspectRatio:'1', borderRadius:8, overflow:'hidden',
                               }}>
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={p.url_signee} alt="" style={{
+                              <img src={p.url_thumb || p.url_signee} alt="" loading="lazy" decoding="async"
+                                onError={e => { if (p.url_signee && e.currentTarget.src !== p.url_signee) e.currentTarget.src = p.url_signee }}
+                                style={{
                                 width:'100%', height:'100%', objectFit:'cover', display:'block',
                                 borderRadius:8,
                                 border: selected ? '2px solid var(--brand-600)' : '1px solid var(--ink-200)',
@@ -6432,13 +6485,20 @@ export default function FicheChantier({ params }) {
                           )
                         })}
                       </div>
+                      {filtrees.length > crPhotosAffichees && (
+                        <button type="button" onClick={() => setCrPhotosAffichees(n => n + 12)}
+                          className="btn btn-ghost" style={{fontSize:11.5, marginTop:8}}>
+                          Voir plus ({filtrees.length - crPhotosAffichees} restantes)
+                        </button>
+                      )}
                       {crPhotosDossier.length > 0 && (
                         <div style={{fontSize:11, color:'var(--ink-400)', marginTop:6}}>
                           {crPhotosDossier.length} photo{crPhotosDossier.length > 1 ? 's' : ''} du chantier jointe{crPhotosDossier.length > 1 ? 's' : ''}
                         </div>
                       )}
                     </ModalField>
-                  )}
+                    )
+                  })()}
 
                   {documents.length > 0 && (
                     <ModalField label="📎 Documents du chantier (contexte IA)">
