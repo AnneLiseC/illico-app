@@ -749,6 +749,7 @@ export default function FicheChantier({ params }) {
   const [editingTaux, setEditingTaux] = useState(null)        // simulation_id en cours d'édition
   const [editingMontant, setEditingMontant] = useState(null)  // ligne_id en cours d'édition
   const [historiqueBasesOuvert, setHistoriqueBasesOuvert] = useState(false)  // comparateur : replier/déplier les bases historiques
+  const [recapSimId, setRecapSimId] = useState(null)          // simulation dont le récap PDF est en cours d'export
   const [artisans, setArtisans] = useState([])
   const [devisModal, setDevisModal] = useState({ open: false, devis: null })
   const [devisExpanded, setDevisExpanded] = useState(() => new Set())
@@ -1387,6 +1388,121 @@ export default function FicheChantier({ params }) {
     setEditingMontant(null)
     const { error } = await supabase.from('comparateur_lignes').update({ montant_ttc_override: override }).eq('id', ligneId)
     if (error) console.error('saveMontant :', error.message)
+  }
+
+  // Récap financier d'UNE simulation → PDF téléchargeable. Généré côté client
+  // (pdf-lib, déjà en dépendance) pour réutiliser exactement la logique de
+  // montant/totaux du comparateur sans la ré-implémenter côté serveur.
+  const telechargerRecapSimulation = async (sim) => {
+    if (!sim) return
+    setRecapSimId(sim.id)
+    try {
+      const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib')
+
+      // Mêmes règles que le comparateur : override manuel > version épinglée > montant courant.
+      const devisById   = Object.fromEntries(devis.map(d => [d.id, d]))
+      const versionById = Object.fromEntries(Object.values(versionsDevis).flat().map(v => [v.id, v]))
+      const montantLigne = (l) => {
+        if (l.montant_ttc_override != null) return Number(l.montant_ttc_override) || 0
+        if (l.devis_version_id) return Number(versionById[l.devis_version_id]?.montant_ttc) || 0
+        return Number(devisById[l.devis_artisan_id]?.montant_ttc) || 0
+      }
+      const lignesIncluses = (sim.lignes || []).filter(l => l.inclus)
+      const totalTTC = lignesIncluses.reduce((s, l) => s + montantLigne(l), 0)
+      const tauxC = Number(sim.taux_courtage) || 0
+      const tauxA = Number(sim.taux_amo) || 0
+      const honC = totalTTC * tauxC / 100
+      const honA = totalTTC * tauxA / 100
+
+      // Les polices standard (Helvetica) n'encodent que le WinAnsi : on remplace
+      // les caractères hors jeu (€, tirets longs, guillemets typographiques…).
+      const S = (v) => String(v ?? '')
+        .replace(/€/g, 'EUR').replace(/[–—]/g, '-')
+        .replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
+        .replace(/[\u00A0\u202F\u2009\u2007]/g, ' ').replace(/[^\x20-\xFF]/g, '')
+      const eur = (n) => S((Math.round((Number(n) || 0) * 100) / 100)
+        .toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) + ' EUR'
+
+      const pdf = await PDFDocument.create()
+      const page = pdf.addPage([595.28, 841.89]) // A4 portrait
+      const font  = await pdf.embedFont(StandardFonts.Helvetica)
+      const fontB = await pdf.embedFont(StandardFonts.HelveticaBold)
+      const brand = rgb(0, 0.34, 0.557)   // #00578e
+      const ink   = rgb(0.13, 0.15, 0.18)
+      const grey  = rgb(0.42, 0.45, 0.5)
+      const line  = rgb(0.85, 0.87, 0.9)
+
+      const M = 50
+      const W = 595.28 - M * 2
+      let y = 800
+      const text = (t, x, size, f = font, color = ink) => page.drawText(S(t), { x, y, size, font: f, color })
+      const right = (t, xRight, size, f = font, color = ink) => {
+        const s = S(t)
+        page.drawText(s, { x: xRight - f.widthOfTextAtSize(s, size), y, size, font: f, color })
+      }
+      const rule = () => page.drawLine({ start: { x: M, y }, end: { x: M + W, y }, thickness: 0.75, color: line })
+
+      // En-tête
+      text('Récapitulatif financier', M, 20, fontB, brand)
+      y -= 22
+      text(sim.nom || 'Simulation', M, 13, fontB, ink)
+      y -= 26
+      const nomClient = formatNomClient(client, { civilite: true })
+      text(`Chantier ${dossier?.reference || ''}${nomClient ? '  ·  ' + nomClient : ''}`, M, 10.5, font, grey)
+      y -= 14
+      text(`Édité le ${new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}`, M, 9.5, font, grey)
+      y -= 22
+      rule()
+      y -= 24
+
+      // Détail des devis inclus
+      text('Devis inclus', M, 11, fontB, ink)
+      y -= 18
+      if (lignesIncluses.length === 0) {
+        text('Aucun devis inclus dans cette simulation.', M, 10, font, grey)
+        y -= 16
+      } else {
+        for (const l of lignesIncluses) {
+          const d = devisById[l.devis_artisan_id]
+          const nom = d?.artisan?.entreprise || 'Artisan'
+          const metier = d?.artisan?.metier ? `  (${d.artisan.metier})` : ''
+          text(nom + metier, M, 10, font, ink)
+          right(eur(montantLigne(l)), M + W, 10, font, ink)
+          y -= 16
+          if (y < 160) break
+        }
+      }
+      y -= 6
+      rule()
+      y -= 22
+
+      // Totaux
+      const ligneTotal = (label, val, opts = {}) => {
+        text(label, M, opts.big ? 11.5 : 10.5, opts.bold ? fontB : font, opts.color || ink)
+        right(eur(val), M + W, opts.big ? 11.5 : 10.5, opts.bold ? fontB : font, opts.color || ink)
+        y -= opts.big ? 22 : 18
+      }
+      ligneTotal('Total travaux TTC', totalTTC, { bold: true })
+      ligneTotal(`Honoraires courtage (${tauxC}%)`, honC)
+      ligneTotal(`Honoraires AMO (${tauxA}%)`, honA)
+      y -= 4
+      rule()
+      y -= 20
+      ligneTotal('Total chantier — courtage', totalTTC + honC, { bold: true, big: true, color: brand })
+      ligneTotal('Total chantier — AMO', totalTTC + honA, { bold: true, big: true, color: brand })
+
+      const bytes = await pdf.save()
+      const href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+      const a = document.createElement('a')
+      a.href = href
+      a.download = `Recap_${dossier?.reference || 'simulation'}_${(sim.nom || 'sim').replace(/[^\w-]+/g, '_')}.pdf`
+      a.click()
+      URL.revokeObjectURL(href)
+    } catch (e) {
+      setErreur('Erreur génération PDF : ' + e.message)
+    } finally {
+      setRecapSimId(null)
+    }
   }
 
   // Sélecteur de version d'une ligne (simulations manuelles) : '' = version courante
@@ -5188,6 +5304,11 @@ export default function FicheChantier({ params }) {
                               Courtage&nbsp;{sim.taux_courtage}% · AMO&nbsp;{sim.taux_amo}%
                             </button>
                           )}
+                          <button onClick={() => telechargerRecapSimulation(sim)} disabled={recapSimId === sim.id}
+                            title="Télécharger le récap financier (PDF)"
+                            style={{ ...linkBtn, display:'inline-flex', alignItems:'center', gap:3, opacity: recapSimId === sim.id ? 0.5 : 1 }}>
+                            {recapSimId === sim.id ? '… PDF' : '⬇ PDF'}
+                          </button>
                         </div>
                       </th>
                     )})}
