@@ -158,3 +158,34 @@ export function computeCABreakdown(dossiers, annee) {
   }
   return { frais: r2(b.frais), commissions: r2(b.commissions), honoraires: r2(b.honoraires), apporteur: r2(b.apporteur), total: r2(b.frais + b.commissions + b.honoraires - b.apporteur) }
 }
+
+// « Ce qu'on facture au client » (HT) — SEULEMENT ce qu'illiCO facture EN PROPRE :
+// frais de consultation + honoraires (courtage + AMO). Les commissions viennent des
+// artisans (pas du client) et les devis vont aux artisans → exclus.
+//
+// Base = FACTURÉ (tous dossiers signés de l'année, par date de signature du contrat),
+// qu'ils soient encaissés ou non — c'est différent du « réel encaissé » du reste de la
+// page. Montants BRUTS facturés au client (avant parts agente / royalties, qui sont des
+// répartitions internes ; le client est facturé le montant plein).
+//
+// Frais 'offerts' = non facturés (0). courtage.ht / soldeAmo.ht reflètent déjà la
+// déduction des frais 'à rembourser' → la somme frais + honoraires ne double-compte
+// pas (rembourse : fraisHT + (htBrut − fraisHT) = htBrut).
+export function computeFactureClient(dossiers, annee) {
+  const r2 = (n) => Math.round(((n || 0) + Number.EPSILON) * 100) / 100
+  const b = { frais: 0, honoraires: 0 }
+  const parMois = {}
+  for (const d of dossiers) {
+    const ds = d.date_signature_contrat
+    if (!ds || new Date(ds).getFullYear() !== annee) continue
+    const nd = normDossier(d)
+    const fin = calculateDossierFinance(nd)
+    const fraisHT = nd.frais_statut === 'offerts' ? 0 : (fin.frais.fraisHT || 0)
+    const honoHT = (fin.honoraires.courtage.ht || 0) + (fin.honoraires.soldeAmo.ht || 0)
+    b.frais += fraisHT
+    b.honoraires += honoHT
+    const m = new Date(ds).getMonth() + 1
+    parMois[m] = (parMois[m] || 0) + fraisHT + honoHT
+  }
+  return { frais: r2(b.frais), honoraires: r2(b.honoraires), total: r2(b.frais + b.honoraires), parMois }
+}

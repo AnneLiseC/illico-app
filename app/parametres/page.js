@@ -764,6 +764,24 @@ export default function Parametres() {
                 <h2 className="page" style={{fontSize:18, marginBottom:4}}>Notifications</h2>
                 <p style={{color:'var(--ink-500)', fontSize:13}}>Préférences enregistrées dans votre profil.</p>
               </div>
+              {/* 🚧 EN COURS DE DÉVELOPPEMENT — les notifications sont à l'arrêt pour le
+                  moment. Les préférences ci-dessous sont masquées le temps du dev pour ne
+                  pas laisser croire qu'elles sont actives. Pour réactiver : décommenter le
+                  bloc <div> des toggles ci-dessous et retirer le bandeau. */}
+              <div style={{
+                display:'flex', alignItems:'center', gap:12, maxWidth:520,
+                padding:'16px 18px', borderRadius:12,
+                background:'var(--surface-2)', border:'1px dashed var(--ink-300)',
+              }}>
+                <span style={{fontSize:22}}>🚧</span>
+                <div>
+                  <div style={{fontWeight:700, fontSize:13.5, color:'var(--ink-900)'}}>En cours de développement</div>
+                  <div style={{fontSize:12.5, color:'var(--ink-500)', marginTop:2}}>
+                    Les notifications sont temporairement à l&apos;arrêt. Le réglage des préférences reviendra prochainement.
+                  </div>
+                </div>
+              </div>
+              {/*
               <div style={{display:'flex', flexDirection:'column', gap:8, maxWidth:520}}>
                 {NOTIFS.map(n => {
                   const active = (profile?.notif_prefs?.[n.k]) !== false
@@ -776,6 +794,7 @@ export default function Parametres() {
                   )
                 })}
               </div>
+              */}
             </div>
           )}
 
