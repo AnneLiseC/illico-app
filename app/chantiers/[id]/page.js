@@ -1737,6 +1737,7 @@ export default function FicheChantier({ params }) {
       date_signature_contrat: dossier.date_signature_contrat, date_demarrage_chantier: dossier.date_demarrage_chantier,
       date_fin_chantier: dossier.date_fin_chantier, taux_courtage: dossier.taux_courtage, honoraires_amo_taux: dossier.honoraires_amo_taux,
       resume_projet: dossier.resume_projet || null,
+      adresse_chantier: dossier.adresse_chantier || null,
       description: dossier.description || null,
       part_agente: newPartAgente,
       frais_part_agente: dossier.frais_part_agente ?? null,
@@ -3214,6 +3215,7 @@ export default function FicheChantier({ params }) {
               <Fact label="Démarrage" value={dossier.date_demarrage_chantier ? new Date(dossier.date_demarrage_chantier).toLocaleDateString('fr-FR') : '—'} />
               <Fact label="Fin prévue" value={dossier.date_fin_chantier ? new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR') : '—'} />
               <Fact label="Limite devis" value={dossier.date_limite_devis ? new Date(dossier.date_limite_devis).toLocaleDateString('fr-FR') : '—'} />
+              <Fact label="Adresse chantier" value={dossier.adresse_chantier || '—'} />
             </div>
             {dossier.description && (
               <div style={{marginTop:14, paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
@@ -3617,6 +3619,18 @@ export default function FicheChantier({ params }) {
               <option value="studio_jardin">Studio de jardin</option>
             </select>
             <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:6}}>Dates et frais de consultation se modifient via « Modifier » sur la carte « Informations clés ».</div>
+          </div>
+
+          <div>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+              <label className="eyebrow" style={{display:'block'}}>Adresse du chantier</label>
+              {dossier.client?.adresse && (
+                <button type="button" onClick={() => set('adresse_chantier', dossier.client.adresse)}
+                  className="btn btn-ghost" style={{fontSize:11, padding:'2px 8px'}}>Reprendre l&apos;adresse du client</button>
+              )}
+            </div>
+            <input type="text" className="input" value={dossier.adresse_chantier || ''} onChange={e => set('adresse_chantier', e.target.value)}
+              placeholder="Adresse du chantier" style={{height:40, width:'100%'}}/>
           </div>
 
           <div>

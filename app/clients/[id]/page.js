@@ -108,8 +108,7 @@ function FicheClientInner({ params }) {
       setProfiles(allProfiles || [])
 
       if (!clientData) { setLoading(false); return }
-      const sameAddress = !clientData.adresse_chantier || clientData.adresse_chantier === clientData.adresse
-      setClient({ ...clientData, adresse_chantier_identique: sameAddress })
+      setClient(clientData)
       setDossiers(dossiersData || [])
       setLoading(false)
     }
@@ -142,10 +141,6 @@ function FicheClientInner({ params }) {
       return
     }
 
-    const adresseChantier = client.adresse_chantier_identique
-      ? client.adresse || null
-      : client.adresse_chantier || null
-
     // Option A : re-synchroniser `nom` selon le type au moment du save.
     // Pro → « <forme_juridique> <raison_sociale> », prenom = '' ; colonnes pro stockées.
     // Particulier → nom/prénom des champs ; colonnes pro remises à null (nettoyage).
@@ -170,7 +165,6 @@ function FicheClientInner({ params }) {
       telephone:            client.telephone || null,
       telephone2:           client.telephone2 || null,
       adresse:              client.adresse || null,
-      adresse_chantier:     adresseChantier,
       type_client:          client.type_client,
       referente:            client.referente?.id || client.referente || null,
       apporteur_affaires:   client.apporteur_affaires,
@@ -634,21 +628,6 @@ function FicheClientInner({ params }) {
         <div>
           <label style={labelStyle}>Adresse client</label>
           <input {...inputProps} type="text" value={client.adresse || ''} onChange={e => set('adresse', e.target.value)}/>
-        </div>
-
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-700)' }}>Adresse chantier</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--ink-500)' }}>
-              <input type="checkbox" checked={client.adresse_chantier_identique ?? true} onChange={e => set('adresse_chantier_identique', e.target.checked)} style={{ width: 14, height: 14 }}/>
-              Identique à l&apos;adresse client
-            </label>
-          </div>
-          {!(client.adresse_chantier_identique ?? true) ? (
-            <input {...inputProps} type="text" value={client.adresse_chantier || ''} onChange={e => set('adresse_chantier', e.target.value)} placeholder="Adresse du chantier"/>
-          ) : (
-            <div style={{ fontSize: 12, color: 'var(--ink-400)', padding: '8px 0' }}>= {client.adresse || 'Adresse client non renseignée'}</div>
-          )}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

@@ -22,6 +22,8 @@ function NouveauChantierForm() {
     date_limite_devis: '',
     part_agente: null,
     apporteur_actif: false,
+    adresse_chantier: '',
+    adresse_chantier_identique: true,
   })
 
 
@@ -75,11 +77,17 @@ function NouveauChantierForm() {
       return
     }
 
+    // Adresse chantier : identique = adresse du client, sinon la saisie manuelle.
+    const adresseChantier = form.adresse_chantier_identique
+      ? (client?.adresse || null)
+      : (form.adresse_chantier || null)
+
     try {
       const { data, error } = await supabase.from('dossiers').insert({
         client_id: clientId,
         referente_id: client?.referente_id || profile?.id,
         agence_id: client.agence_id,
+        adresse_chantier: adresseChantier,
         typologie: form.typologie,
         statut: null, // NULL = pas d'override manuel → calcStatut décide (a_contacter à la création)
         frais_consultation: form.frais_consultation ? parseFloat(form.frais_consultation) : null,
@@ -156,6 +164,24 @@ function NouveauChantierForm() {
               </div>
             </div>
           )}
+
+          {/* Adresse du chantier */}
+          <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-3">
+            <h2 className="font-semibold text-gray-800">Adresse du chantier</h2>
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+              <input type="checkbox" checked={form.adresse_chantier_identique}
+                onChange={e => set('adresse_chantier_identique', e.target.checked)} className="w-4 h-4" />
+              Identique à l&apos;adresse du client
+            </label>
+            {form.adresse_chantier_identique ? (
+              <p className="text-xs text-gray-400">{client?.adresse || 'Adresse client non renseignée'}</p>
+            ) : (
+              <input type="text" value={form.adresse_chantier}
+                onChange={e => set('adresse_chantier', e.target.value)}
+                placeholder="Adresse du chantier"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            )}
+          </div>
 
           {/* Description */}
           <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-3">
