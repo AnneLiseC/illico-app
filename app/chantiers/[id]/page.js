@@ -779,6 +779,7 @@ export default function FicheChantier({ params }) {
   const [dragPhotos, setDragPhotos] = useState(false)        // survol drag & drop
   const [categorie, setCategorie] = useState('all')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(null)   // { done, total } pendant un upload en masse
   const [photosAffichees, setPhotosAffichees] = useState(3)
   const [uploadingDoc, setUploadingDoc] = useState(null) // devisId en cours d'upload
   const [comptesRendus, setComptesRendus] = useState([])
@@ -1004,11 +1005,16 @@ export default function FicheChantier({ params }) {
   }
 
   // Upload effectif d'une liste de fichiers dans la catégorie active (stocke le nom).
+  // Traitement par LOTS (au plus UPLOAD_CONC en parallèle) et non plus tout d'un
+  // coup : uploader 50 photos iPhone lançait 50 conversions HEIC→JPEG + 50 uploads
+  // simultanés → saturation mémoire et plantage. Ici on plafonne la concurrence.
+  const UPLOAD_CONC = 3
   const executerUploadPhotos = async (fichiers) => {
     if (!fichiers.length) return
     setUploadingPhoto(true)
+    setUploadProgress({ done: 0, total: fichiers.length })
     let tropLourd = 0
-    const resultats = await Promise.all(fichiers.map(async (fichier) => {
+    const uploadUn = async (fichier) => {
       const estVideo = (fichier.type || '').startsWith('video/') || /\.(mp4|mov|m4v|webm|avi|mkv|3gp)$/i.test(fichier.name)
       if (estVideo && fichier.size > MAX_VIDEO_MO * 1024 * 1024) { tropLourd++; return false }
       // Vidéo : envoyée telle quelle (pas de conversion). Photo : HEIC iPhone → JPEG.
@@ -1027,9 +1033,17 @@ export default function FicheChantier({ params }) {
         }).catch(() => {})
       }
       return true
-    }))
+    }
+    const resultats = []
+    for (let i = 0; i < fichiers.length; i += UPLOAD_CONC) {
+      const lot = fichiers.slice(i, i + UPLOAD_CONC)
+      const r = await Promise.all(lot.map(uploadUn))
+      resultats.push(...r)
+      setUploadProgress({ done: Math.min(i + UPLOAD_CONC, fichiers.length), total: fichiers.length })
+    }
     await chargerPhotos()
     setUploadingPhoto(false)
+    setUploadProgress(null)
     const echecs = resultats.filter(r => !r).length
     if (echecs === 0) { setSucces('Fichier(s) ajouté(s) ✓'); return }
     const details = []
@@ -4888,7 +4902,7 @@ export default function FicheChantier({ params }) {
               {categorie !== 'all' && (
                 <label className="btn btn-primary" style={{fontSize:12.5, cursor: uploadingPhoto ? 'wait' : 'pointer', opacity: uploadingPhoto ? 0.6 : 1}}>
                   <CamIcon /> {uploadingPhoto
-                    ? 'Upload en cours…'
+                    ? (uploadProgress ? `Upload ${uploadProgress.done}/${uploadProgress.total}…` : 'Upload en cours…')
                     : `Ajouter photos / vidéos (${CATS.find(c => c.k === categorie)?.l})`}
                   <input type="file" accept="image/*,video/*" multiple style={{display:'none'}}
                     disabled={uploadingPhoto}
