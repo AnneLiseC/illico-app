@@ -22,7 +22,7 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata = {
-  title: "Coordibat",
+  title: "Batils",
   description: "Gestion des dossiers chantiers",
 }
 

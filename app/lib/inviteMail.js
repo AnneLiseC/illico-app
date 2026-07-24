@@ -6,7 +6,7 @@
 // isRenvoi : false = 1er accès (status 'invited'), true = renvoi à un compte
 // existant (status 'relinked') → texte neutre, sans « vous avez redemandé ».
 export function buildInviteMailto({ email, prenom, actionLink, loginUrl, isRenvoi = false }) {
-  const subject = 'Votre accès à votre espace client Coordibat'
+  const subject = 'Votre accès à votre espace client Batils'
   const body = (isRenvoi ? [
     `Bonjour ${prenom || ''},`,
     '',

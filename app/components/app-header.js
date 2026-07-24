@@ -55,7 +55,7 @@ export default function AppHeader() {
     <header className="app-header">
       {/* Breadcrumb */}
       <div style={{ display:'flex', alignItems:'center', gap:10, fontSize:13.5, color:'var(--ink-500)', flexShrink:0 }}>
-        <span style={{ color:'var(--ink-400)' }}>Coordibat</span>
+        <span style={{ color:'var(--ink-400)' }}>Batils</span>
         <ChevronRight />
         <strong style={{ color:'var(--ink-900)', fontWeight:700 }}>{pageTitle}</strong>
       </div>

@@ -1,5 +1,5 @@
 // app/lib/super-admin.js
-// Identité SUPER-ADMIN (éditrice Coordibat). Ce n'est PAS un rôle applicatif :
+// Identité SUPER-ADMIN (éditrice Batils). Ce n'est PAS un rôle applicatif :
 // l'éditrice n'a aucun profil, aucune société, aucune agence → l'RLS ne lui montre
 // rien d'aucun tenant. Son seul pouvoir passe par les routes /api/super-admin/*
 // qui tournent en service_role APRÈS avoir vérifié son email côté serveur.

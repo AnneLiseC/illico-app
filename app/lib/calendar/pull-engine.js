@@ -111,7 +111,7 @@ export async function loadByGid(cibleRow) {
   return byGid
 }
 
-// Trame Coordibat d'un event typé rattaché : réutilise rdvSummary (mapping du push).
+// Trame Batils d'un event typé rattaché : réutilise rdvSummary (mapping du push).
 export function trameSummary(parsed, cand) {
   const dossier = parsed.dossier_id ? cand.dossiersById.get(parsed.dossier_id) : null
   const client = dossier?.client_id ? cand.clientsById.get(dossier.client_id) : null

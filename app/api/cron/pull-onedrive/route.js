@@ -1,5 +1,5 @@
 // app/api/cron/pull-onedrive/route.js
-// Poller ENTRANT OneDrive → Coordibat (Lot 4, v1 = DÉTECTION seule).
+// Poller ENTRANT OneDrive → Batils (Lot 4, v1 = DÉTECTION seule).
 //
 // Pour chaque compte 'microsoft' avec une racine définie : delta query sur le sous-arbre
 // de la racine. Les FICHIERS nouvellement apparus qui NE viennent PAS de l'app (item_id
