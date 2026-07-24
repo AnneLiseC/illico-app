@@ -296,7 +296,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
                     <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 12 }}>
                       <label style={labelStyle}>…ou créer un dossier ici {courant ? `(dans « ${courant.name} »)` : '(dans Mes fichiers)'}</label>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <input className="input" placeholder="Nom du dossier (ex. Batils)" value={createName}
+                        <input className="input" placeholder="Nom du dossier (ex. Batilis)" value={createName}
                           onChange={e => setCreateName(e.target.value)} style={{ height: 40, flex: 1, minWidth: 180 }} />
                         <button className="btn btn-ghost" style={{ fontSize: 12.5 }} disabled={saving || !createName.trim()} onClick={creer}>
                           {saving ? 'Création…' : 'Créer et utiliser'}

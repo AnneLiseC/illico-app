@@ -3,7 +3,7 @@
 // selon son STATUT : recu → Devis/Reçus, accepte → Devis/Signés, refuse → Devis/Refusés.
 // MOVE-AWARE : à chaque appel on relit le statut ; si le devis était déjà miroité, on
 // supprime l'ancien item avant de reposer le fichier → il « se déplace » de dossier quand
-// le statut change (footgun tranché : le statut Batils fait foi, jamais le glisser-déposer).
+// le statut change (footgun tranché : le statut Batilis fait foi, jamais le glisser-déposer).
 //
 // Sortant SEUL (partie sûre du financier ; le RETOUR des devis reste pour plus tard).
 

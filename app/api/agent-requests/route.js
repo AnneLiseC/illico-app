@@ -43,7 +43,7 @@ async function notifierEditrice({ prenom, nom, email, societeNom, agenceNom, dem
   `
   // Un seul destinataire par envoi (sendEmail prend un `to` unique).
   await Promise.all(destinataires.map(to =>
-    sendEmail({ to, subject: `Batils — Demande d'agent : ${prenom} ${nom}`, html }).catch(() => {})
+    sendEmail({ to, subject: `Batilis — Demande d'agent : ${prenom} ${nom}`, html }).catch(() => {})
   ))
 }
 

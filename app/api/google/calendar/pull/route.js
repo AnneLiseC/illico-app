@@ -1,5 +1,5 @@
 // app/api/google/calendar/pull/route.js
-// Étage 3 — PULL Google external -> Batils. Admin uniquement, borné à la société
+// Étage 3 — PULL Google external -> Batilis. Admin uniquement, borné à la société
 // de l'admin (multi-franchise : un admin ne pilote que ses agences).
 //
 //  GET  = DRY-RUN (LOT B) : LIT + classe (RECONNU / INCONNU / CANCELLED), n'écrit RIEN.
