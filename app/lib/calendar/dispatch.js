@@ -15,6 +15,7 @@
 
 import { resolveCible, buildGoogleCalendar, makeGoogleClientHandle, rdvToGoogleEvent, interventionToGoogleEvents } from './google'
 import { rdvToICS, interventionToICS, buildICloudClient, makeICloudClientHandle, isCalDAVAuthError } from './icloud'
+import { makeMicrosoftClientHandle, rdvToGraphEvent, interventionToGraphEvents } from './microsoft'
 
 export async function getClientForCible(cibleId) {
   const resolved = await resolveCible(cibleId)
@@ -40,18 +41,26 @@ export async function getClientForCible(cibleId) {
     }
   }
 
-  // Tout autre fournisseur (ex. outlook = lot 7) : garde-fou explicite.
+  if (resolved.compte.fournisseur === 'outlook') {
+    // Compte sans refresh_token (à reconnecter) → cible inerte, comme Google.
+    if (!resolved.compte.refresh_token) return null
+    return makeMicrosoftClientHandle(resolved)
+  }
+
+  // Garde-fou explicite : fournisseur inconnu.
   throw new Error(`Fournisseur calendrier non supporté: ${resolved.compte.fournisseur}`)
 }
 
-// Build de l'eventBody selon le fournisseur du handle. Google → JSON (inchangé) ;
-// iCloud → chaîne ICS. Le chemin Google passe par rdvToGoogleEvent EXACTEMENT comme avant.
+// Build de l'eventBody selon le fournisseur du handle. Google → JSON ; iCloud → chaîne
+// ICS ; Outlook → JSON Graph. Les chemins Google/iCloud sont INCHANGÉS.
 export function buildRdvEventBody(client, rdv) {
-  return client.fournisseur === 'icloud' ? rdvToICS(rdv) : rdvToGoogleEvent(rdv)
+  if (client.fournisseur === 'icloud') return rdvToICS(rdv)
+  if (client.fournisseur === 'outlook') return rdvToGraphEvent(rdv)
+  return rdvToGoogleEvent(rdv)
 }
 
 export function buildInterventionEventBodies(client, intervention) {
-  return client.fournisseur === 'icloud'
-    ? interventionToICS(intervention)
-    : interventionToGoogleEvents(intervention)
+  if (client.fournisseur === 'icloud') return interventionToICS(intervention)
+  if (client.fournisseur === 'outlook') return interventionToGraphEvents(intervention)
+  return interventionToGoogleEvents(intervention)
 }
