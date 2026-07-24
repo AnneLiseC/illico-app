@@ -1,7 +1,7 @@
 //chantier/[id]/page.js
 
 'use client'
-import { useState, useEffect, useRef, use } from 'react'
+import { useState, useEffect, useRef, useMemo, use } from 'react'
 import dynamic from 'next/dynamic'
 import { supabase } from '../../lib/supabase'
 import { formatNomClient } from '../../lib/clients'
@@ -75,8 +75,6 @@ function Fact({ label, value, highlight, mono }) {
   )
 }
 
-// Format euro court partagé (helpers module-level)
-const fmtEurShort = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
 // Libellés des catégories photo (accessibles hors de l'IIFE de l'onglet Photos).
 const CATS_PHOTO_LABEL = { all: 'Toutes', avant: 'Avant', pendant: 'Pendant', apres: 'Après', maquette: 'Maquette' }
 const MAX_VIDEO_MO = 100   // plafond par vidéo (galerie chantier) — cohérent avec la limite du bucket Storage
@@ -256,59 +254,6 @@ function RecapRow({ label, value, strong, large, tone }) {
   )
 }
 
-function FactureMiniLine({ title, fact, expected, onAdd, onTogglePaid, onView }) {
-  const fmtE = fmtEurShort
-  if (!fact) {
-    return (
-      <button onClick={onAdd} style={{
-        padding:'10px 12px', borderRadius:10, border:'1px dashed var(--ink-300)',
-        background:'transparent', display:'flex', justifyContent:'space-between', alignItems:'center',
-        textAlign:'left', cursor:'pointer', gap:8, transition:'all 150ms',
-      }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'var(--brand-50)'; e.currentTarget.style.borderColor = 'var(--brand-500)' }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'var(--ink-300)' }}
-      >
-        <div style={{minWidth:0}}>
-          <div style={{fontSize:12, fontWeight:600, color:'var(--ink-700)'}}>{title}</div>
-          <div style={{fontSize:10.5, color:'var(--ink-400)', marginTop:2}}>
-            {expected > 0 ? `Prévu ${fmtE(expected)}` : 'Pas encore facturé'}
-          </div>
-        </div>
-        <span style={{fontSize:11, color:'var(--brand-800)', fontWeight:600, textDecoration:'underline', flexShrink:0}}>+ Facturer</span>
-      </button>
-    )
-  }
-  const paye = fact.statut === 'paye'
-  return (
-    <div style={{
-      padding:'10px 12px', borderRadius:10, border:'1px solid var(--ink-200)',
-      background:'#fff', display:'flex', justifyContent:'space-between', alignItems:'center', gap:8,
-    }}>
-      <div style={{minWidth:0}}>
-        <div style={{fontSize:12, fontWeight:600, color:'var(--ink-900)'}}>{title}</div>
-        <div style={{fontSize:10.5, color:'var(--ink-500)', marginTop:2}}>
-          {fact.date_paiement ? `Réglé ${new Date(fact.date_paiement).toLocaleDateString('fr-FR')}` : 'Pas encore daté'}
-        </div>
-      </div>
-      <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4, flexShrink:0}}>
-        <span className="tnum" style={{fontSize:12.5, fontWeight:700, color:'var(--ink-900)'}}>{fmtE(fact.montant_ttc)}</span>
-        <div style={{display:'flex', gap:4, alignItems:'center'}}>
-          {fact.pdf_path && (
-            <button onClick={onView} title="Voir PDF"
-              style={{padding:'2px 6px', fontSize:10, background:'transparent', color:'var(--brand-700)', border:'1px solid var(--ink-200)', borderRadius:6, cursor:'pointer'}}>📄</button>
-          )}
-          <button onClick={onTogglePaid} title={paye ? 'Marquer en attente' : 'Marquer payé'}
-            style={{
-              padding:'2px 8px', fontSize:10, fontWeight:700, borderRadius:99, cursor:'pointer',
-              background: paye ? 'rgba(22,163,74,0.12)' : 'rgba(245,158,11,0.13)',
-              color: paye ? '#15803d' : '#a16207',
-              border:'none',
-            }}>{paye ? 'Payé' : 'En attente'}</button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 function ContactRow({ icon, label, value, action }) {
   if (!value) return null
@@ -2725,6 +2670,12 @@ export default function FicheChantier({ params }) {
   // Honoraires depuis finance.js (source unique de calcul). Modèle frais = finance :
   // le plein montant TTC est déduit du courtage si frais_statut==='rembourse'.
   const finDossier = calculateDossierFinance({ ...dossier, devis_artisans: devis, suivi_financier: suiviFinancier })
+  // Finance par devis mémoïsée (évite N recalculs à chaque rendu de l'onglet Suivi
+  // financier — code-review #2). Recalcule seulement si les devis/dossier changent.
+  const finByDevis = useMemo(
+    () => Object.fromEntries((devis || []).map(d => [d.id, calculateDevisFinance(d, dossier)])),
+    [devis, dossier]
+  )
   const honorairesCourtage = finDossier.honoraires.courtage.ttc
   const honorairesAMO      = finDossier.honoraires.courtage.ttc + finDossier.honoraires.soldeAmo.ttc
   const honorairesCourtagePrev = finDossier.honorairesPrevi.courtage.ttc
@@ -3326,7 +3277,7 @@ export default function FicheChantier({ params }) {
           ...(dossier.typologie === 'amo' ? [{ key:'messages', label:'Messages', icon:<MsgIcon />, count: nbMsgNonLus > 0 ? nbMsgNonLus : undefined }] : []),
         ].map(t => (
           <button key={t.key} className={`tab ${onglet === t.key ? 'active' : ''}`}
-            onClick={() => setOnglet(t.key)}>
+            onClick={() => { setOnglet(t.key); setAjouterFacture(null) }}>
             <span style={{display:'inline-flex',alignItems:'center',gap:6}}>
               {t.icon} {t.label}
               {t.count != null && t.count > 0 && (
@@ -4374,6 +4325,123 @@ export default function FicheChantier({ params }) {
         const partAgenteCfg    = fin.settings.partAgente
         const fmtD = (date) => date ? new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' }) : null
 
+        // ── Rendu d'une facture artisan (ligne compacte) — réutilisé pour l'acompte
+        //    (sous « Acompte client ») et pour les autres factures. ──
+        const ligneFacture = (f) => (
+          <div key={f.id} style={{background:'var(--surface-2)', borderRadius:8, padding:'var(--space-3)', display:'flex', flexDirection:'column', gap:'var(--space-2)'}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:'var(--space-3)', flexWrap:'wrap'}}>
+              <span style={{fontSize:'var(--text-xs)', fontWeight:600, color:'var(--ink-700)'}}>
+                {f.libelle || 'Facture'} — <span className="tnum">{fmt(f.montant_ttc || 0)}</span> TTC
+              </span>
+              <div style={{display:'flex', alignItems:'center', gap:'var(--space-3)'}}>
+                {f.date_paiement && <span className="tnum" style={{fontSize:'var(--text-xs)', color:'var(--ink-400)'}}>{new Date(f.date_paiement).toLocaleDateString('fr-FR')}</span>}
+                <button onClick={() => toggleStatutFacture(f.id, f.statut)}
+                  style={{
+                    fontSize:'var(--text-xs)', padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
+                    background: f.statut === 'paye' ? TONE_BG.ok : TONE_BG.warn,
+                    color: f.statut === 'paye' ? TONE_FG.ok : TONE_FG.warn,
+                  }}>
+                  {f.statut === 'paye' ? '✓ Payé' : '⏳ En attente'}
+                </button>
+                <button onClick={() => supprimerFactureArtisan(f.id, f.pdf_path)}
+                  style={{fontSize:'var(--text-md)', color:'var(--ink-400)', background:'none', border:'none', cursor:'pointer', padding:'0 4px'}}
+                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--bad-strong)' }}
+                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-400)' }}>✕</button>
+              </div>
+            </div>
+            <div style={{display:'flex', alignItems:'center', gap:'var(--space-3)'}}>
+              {f.pdf_path ? (
+                <button onClick={() => ouvrirDocument(f.pdf_path, `Facture ${f.libelle || ''}.pdf`)}
+                  style={{fontSize:'var(--text-xs)', color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>📄 Voir PDF</button>
+              ) : (
+                <label style={{
+                  fontSize:'var(--text-xs)', cursor: uploadingFacturePdf === f.id ? 'wait' : 'pointer',
+                  padding:'2px 8px', borderRadius:6, border:'1px solid',
+                  color: uploadingFacturePdf === f.id ? 'var(--ink-400)' : 'var(--brand-700)',
+                  borderColor: uploadingFacturePdf === f.id ? 'var(--ink-200)' : 'var(--brand-200)',
+                }}>
+                  {uploadingFacturePdf === f.id ? 'Upload…' : '+ PDF'}
+                  <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingFacturePdf === f.id}
+                    onChange={e => e.target.files[0] && uploadFacturePdf(f.id, e.target.files[0])} />
+                </label>
+              )}
+            </div>
+          </div>
+        )
+
+        // Bouton qui ouvre le formulaire d'ajout PRÉ-REMPLI (acompte / solde / autre).
+        const boutonFacturer = (dv, libelle, montant, texte) => (
+          <button onClick={() => {
+            setAjouterFacture(dv.id)
+            setNouvelleFacture({ montant_ttc: montant > 0 ? montant.toFixed(2) : '', date_paiement: '', statut: 'en_attente', fichier: null, libelle, libelle_autre: '' })
+          }}
+            style={{fontSize:'var(--text-xs)', color:'var(--ok-strong)', border:'1px solid var(--ok-border)', padding:'var(--space-1) var(--space-5)', borderRadius:6, background:'transparent', cursor:'pointer', alignSelf:'flex-start'}}>
+            {texte}
+          </button>
+        )
+
+        // Formulaire d'ajout d'une facture (montant, date, libellé, statut, PDF).
+        const renderFormFacture = (dv, finDv) => (
+          <div style={{border:'1px solid var(--ok-border)', background:'var(--ok-bg)', borderRadius:10, padding:'var(--space-5)', display:'flex', flexDirection:'column', gap:'var(--space-3)'}}>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'var(--space-3)'}}>
+              <ModalField label="Montant TTC (€)" required>
+                <input type="number" step="0.01" className="input" value={nouvelleFacture.montant_ttc}
+                  onChange={e => setNouvelleFacture(f => ({ ...f, montant_ttc: e.target.value }))}
+                  style={{height:32, padding:'0 10px', fontSize:'var(--text-sm)'}} />
+              </ModalField>
+              <ModalField label="Date de paiement">
+                <input type="date" className="input" value={nouvelleFacture.date_paiement}
+                  onChange={e => setNouvelleFacture(f => ({ ...f, date_paiement: e.target.value }))}
+                  style={{height:32, padding:'0 10px', fontSize:'var(--text-sm)'}} />
+              </ModalField>
+            </div>
+            <ModalField label="Libellé">
+              <select value={nouvelleFacture.libelle}
+                onChange={e => {
+                  const libelle = e.target.value
+                  setNouvelleFacture(f => {
+                    const next = { ...f, libelle, libelle_autre: '' }
+                    if (libelle === 'Facture acompte' && finDv.acompte > 0) next.montant_ttc = finDv.acompte.toFixed(2)
+                    return next
+                  })
+                }}
+                className="input" style={{height:32, padding:'0 10px', fontSize:'var(--text-sm)'}}>
+                <option value="Facture acompte">Facture acompte</option>
+                <option value="Facture de situation">Facture de situation</option>
+                <option value="Facture solde">Facture solde</option>
+                <option value="Autre">Autre (saisie libre)</option>
+              </select>
+              {nouvelleFacture.libelle === 'Autre' && (
+                <input type="text" placeholder="Préciser le libellé"
+                  value={nouvelleFacture.libelle_autre}
+                  onChange={e => setNouvelleFacture(f => ({ ...f, libelle_autre: e.target.value }))}
+                  className="input" style={{height:32, padding:'0 10px', fontSize:'var(--text-sm)', marginTop:'var(--space-2)'}} />
+              )}
+            </ModalField>
+            <select value={nouvelleFacture.statut}
+              onChange={e => setNouvelleFacture(f => ({ ...f, statut: e.target.value }))}
+              className="input" style={{height:32, padding:'0 10px', fontSize:'var(--text-sm)'}}>
+              <option value="en_attente">⏳ En attente</option>
+              <option value="paye">✓ Payé</option>
+            </select>
+            <label style={{
+              display:'inline-flex', alignItems:'center', gap:'var(--space-3)', fontSize:'var(--text-xs)', color:'var(--ink-600)',
+              border:'1px solid var(--ink-200)', borderRadius:8, padding:'var(--space-2) var(--space-4)',
+              cursor:'pointer', alignSelf:'flex-start', background:'var(--surface)',
+            }}>
+              {nouvelleFacture.fichier ? `✓ ${nouvelleFacture.fichier.name}` : '+ PDF facture (optionnel)'}
+              <input type="file" accept=".pdf" style={{display:'none'}}
+                onChange={e => setNouvelleFacture(f => ({ ...f, fichier: e.target.files[0] || null }))} />
+            </label>
+            <div style={{display:'flex', gap:'var(--space-3)'}}>
+              <button onClick={() => setAjouterFacture(null)} className="btn btn-ghost" style={{flex:1, fontSize:'var(--text-sm)', justifyContent:'center'}}>Annuler</button>
+              <button onClick={() => ajouterFactureArtisan(dv.id, dv.artisan_id)}
+                disabled={!nouvelleFacture.montant_ttc}
+                className="btn btn-primary" style={{flex:1, fontSize:'var(--text-sm)', justifyContent:'center', background:'var(--ok-strong)', borderColor:'var(--ok-strong)'}}>Enregistrer</button>
+            </div>
+          </div>
+        )
+
         return (
         <div style={{display:'flex',flexDirection:'column',gap:18}}>
 
@@ -4428,13 +4496,24 @@ export default function FicheChantier({ params }) {
                   {devisSignes.map(dv => {
                     const artId = dv.artisan_id || dv.artisan?.id
                     const sf = suiviFinancier.find(s => s.type_echeance === 'acompte_artisan' && s.devis_id === dv.id)
-                    const finDv = calculateDevisFinance(dv, dossier)
+                    const finDv = finByDevis[dv.id] || calculateDevisFinance(dv, dossier)
                     const acompteMontant = finDv.acompte
                     const comDevisHT = finDv.comHT
+                    // Factures artisan de ce devis : acompte(s) sous « Acompte client »,
+                    // le reste en « Autres factures ». Reste à facturer = devis TTC − factures.
+                    const factsDevis   = factures.filter(f => f.devis_id === dv.id)
+                    const estAcompte   = (f) => (f.libelle || '').toLowerCase().includes('acompte')
+                    const factsAcompte = factsDevis.filter(estAcompte)
+                    const factsAutres  = factsDevis.filter(f => !estAcompte(f))
+                    const totalFacture = factsDevis.reduce((s, f) => s + (Number(f.montant_ttc) || 0), 0)
+                    const resteAFacturer = Math.max(0, (Number(dv.montant_ttc) || 0) - totalFacture)
+                    const formOuvert   = ajouterFacture === dv.id
                     return (
                       <div key={`ech-${dv.id}`} className="suivi-devis-row">
                         <div className="suivi-devis-name">{dv.artisan?.entreprise || '—'}</div>
-                        <div className="suivi-devis-cell">
+
+                        {/* Acompte client + facture(s) d'acompte rattachée(s) */}
+                        <div className="suivi-devis-cell" style={{display:'flex', flexDirection:'column', gap:'var(--space-3)'}}>
                           <EcheanceRow
                             label="Acompte client"
                             sub={`${finDv.acompteMode === 'fixe' ? 'fixe' : finDv.acomptePct + '%'} acompte · ${fmt(acompteMontant)} TTC`}
@@ -4444,7 +4523,11 @@ export default function FicheChantier({ params }) {
                             onUnsetPaid={() => setAcompteArtisanPaye(artId, false, null, dv.id)}
                             fmtDateFn={fmtD}
                           />
+                          {factsAcompte.map(ligneFacture)}
+                          {!formOuvert && boutonFacturer(dv, 'Facture acompte', acompteMontant, factsAcompte.length ? "+ Autre acompte" : "+ Facturer l'acompte")}
                         </div>
+
+                        {/* Acompte débloqué (illiCO → artisan) */}
                         <div className="suivi-devis-cell">
                           <EcheanceRow
                             label={dv.artisan?.paiement_direct ? 'Paiement direct' : 'Acompte débloqué'}
@@ -4456,6 +4539,23 @@ export default function FicheChantier({ params }) {
                             variant="illico"
                             fmtDateFn={fmtD}
                           />
+                        </div>
+
+                        {/* Autres factures + reste à facturer (ex-« Solde », calculé) — pleine largeur */}
+                        <div style={{gridColumn:'1 / -1', display:'flex', flexDirection:'column', gap:'var(--space-3)', borderTop:'1px solid var(--ink-100)', paddingTop:'var(--space-4)'}}>
+                          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:'var(--space-3)', flexWrap:'wrap'}}>
+                            <span style={{fontSize:'var(--text-xs)', fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', letterSpacing:'0.04em'}}>Autres factures</span>
+                            <span className="tnum" style={{fontSize:'var(--text-xs)', fontWeight:600, color: resteAFacturer > 0 ? 'var(--warn-strong)' : 'var(--ok-strong)'}}>
+                              {resteAFacturer > 0 ? `Reste à facturer : ${fmt(resteAFacturer)}` : '✓ Entièrement facturé'}
+                            </span>
+                          </div>
+                          {factsAutres.map(ligneFacture)}
+                          {formOuvert ? renderFormFacture(dv, finDv) : (
+                            <div style={{display:'flex', gap:'var(--space-3)', flexWrap:'wrap'}}>
+                              {resteAFacturer > 0 && boutonFacturer(dv, 'Facture solde', resteAFacturer, 'Facturer le solde')}
+                              {boutonFacturer(dv, 'Facture de situation', 0, '+ Ajouter une facture')}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )
@@ -4543,7 +4643,7 @@ export default function FicheChantier({ params }) {
                 const encaisse      = tranchesAmo.reduce((s, t) => s + Number(t.montant_ttc || 0), 0)
                 const reste         = soldeTotalTtc - encaisse
                 const soldeState    = Math.abs(reste) < 0.01 ? 'solde' : reste > 0 ? 'reste' : 'trop'
-                const soldeColor    = soldeState === 'solde' ? '#15803d' : soldeState === 'trop' ? '#b91c1c' : '#c2410c'
+                const soldeColor    = soldeState === 'solde' ? 'var(--ok-strong)' : soldeState === 'trop' ? 'var(--bad-strong)' : 'var(--warn-strong)'
                 const today         = new Date().toISOString().slice(0, 10)
                 return (
                   <div style={{display:'flex', flexDirection:'column', gap:8}}>
@@ -4635,7 +4735,7 @@ export default function FicheChantier({ params }) {
                   <div style={{marginTop:6, paddingTop:14, borderTop:'1px dashed var(--ink-200)', display:'flex', flexDirection:'column', gap:10}}>
                     <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:10, flexWrap:'wrap'}}>
                       <div>
-                        <div style={{fontSize:13, fontWeight:700, color:'#c2410c'}}>★ Apporteur d&apos;affaires — {nomApp}</div>
+                        <div style={{fontSize:13, fontWeight:700, color:'var(--warn-strong)'}}>★ Apporteur d&apos;affaires — {nomApp}</div>
                         <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>
                           {pctApp}% · {fin.apporteur.mode === 'total_chantier_ht' ? 'sur total chantier HT' : 'par devis signé'}
                         </div>
@@ -4644,7 +4744,7 @@ export default function FicheChantier({ params }) {
                         <div style={{fontSize:11, color:'var(--ink-400)'}}>
                           Total dû <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(totalDu)}</span>
                         </div>
-                        <div style={{fontSize:11, color: reste > 0 ? '#c2410c' : '#15803d', marginTop:2, fontWeight:600}}>
+                        <div style={{fontSize:11, color: reste > 0 ? 'var(--warn-strong)' : 'var(--ok-strong)', marginTop:2, fontWeight:600}}>
                           {reste > 0 ? `Reste à régler : ${fmt(reste)}` : '✓ Soldé'}
                         </div>
                       </div>
@@ -4689,182 +4789,6 @@ export default function FicheChantier({ params }) {
               </div>
             )}
           </div>
-
-          {/* ── Factures artisan (déplacé depuis l'onglet Devis) ── */}
-          {devis.length > 0 && (
-            <div className="card" style={{padding:0, overflow:'hidden'}}>
-              <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
-                <h2 className="page" style={{fontSize:15}}>Factures artisan</h2>
-                <div className="eyebrow" style={{marginTop:4}}>Acompte, solde et factures reçues — par artisan</div>
-              </div>
-              <div style={{display:'flex', flexDirection:'column'}}>
-                {devis.map((d, idx) => {
-                  const factDevis = factures.filter(f => f.devis_id === d.id)
-                  const factAcompte = factDevis.find(f => (f.libelle || '').toLowerCase().includes('acompte'))
-                  const factSolde = factDevis.find(f => (f.libelle || '').toLowerCase().includes('solde'))
-                  const finAc = calculateDevisFinance(d, dossier)
-                  const acompteExpected = finAc.acompte
-                  const soldeExpected = factAcompte?.montant_ttc != null
-                    ? Math.max(0, (d.montant_ttc || 0) - factAcompte.montant_ttc)
-                    : Math.max(0, finAc.solde)
-                  return (
-                    <div key={d.id} style={{padding:'16px 22px', borderTop: idx === 0 ? 'none' : '1px solid var(--ink-100)', display:'flex', flexDirection:'column', gap:10}}>
-                      <div style={{fontSize:13, fontWeight:700, color:'var(--ink-900)'}}>
-                        {d.artisan?.entreprise || '—'}{d.artisan?.metier && <span style={{fontSize:11.5, fontWeight:500, color:'var(--ink-500)'}}> · {d.artisan.metier}</span>}
-                      </div>
-
-                      {/* Acompte + Solde côte à côte (facturation) */}
-                      {d.statut === 'accepte' && (
-                        <div className="devis-facture-lines">
-                          <FactureMiniLine
-                            title={`Acompte ${finAc.acompteMode === 'fixe' ? '(fixe)' : finAc.acomptePct + '%'}`}
-                            fact={factAcompte} expected={acompteExpected}
-                            onAdd={() => {
-                              setAjouterFacture(d.id)
-                              setNouvelleFacture({ montant_ttc: acompteExpected > 0 ? acompteExpected.toFixed(2) : '', date_paiement: '', statut: 'en_attente', fichier: null, libelle: 'Facture acompte', libelle_autre: '' })
-                            }}
-                            onTogglePaid={() => factAcompte && toggleStatutFacture(factAcompte.id, factAcompte.statut)}
-                            onView={() => factAcompte?.pdf_path && ouvrirDocument(factAcompte.pdf_path, `Facture acompte ${d.artisan?.entreprise || ''}.pdf`)}
-                          />
-                          <FactureMiniLine
-                            title="Solde"
-                            fact={factSolde} expected={soldeExpected}
-                            onAdd={() => {
-                              setAjouterFacture(d.id)
-                              setNouvelleFacture({ montant_ttc: soldeExpected > 0 ? soldeExpected.toFixed(2) : '', date_paiement: '', statut: 'en_attente', fichier: null, libelle: 'Facture solde', libelle_autre: '' })
-                            }}
-                            onTogglePaid={() => factSolde && toggleStatutFacture(factSolde.id, factSolde.statut)}
-                            onView={() => factSolde?.pdf_path && ouvrirDocument(factSolde.pdf_path, `Facture solde ${d.artisan?.entreprise || ''}.pdf`)}
-                          />
-                        </div>
-                      )}
-
-                      {/* Factures — liste */}
-                      {factDevis.length > 0 && (
-                        <div style={{display:'flex', flexDirection:'column', gap:6}}>
-                          {factDevis.map(f => (
-                            <div key={f.id} style={{background:'var(--surface-2)', borderRadius:8, padding:8, display:'flex', flexDirection:'column', gap:6}}>
-                              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-                                <span style={{fontSize:11, fontWeight:600, color:'var(--ink-700)'}}>
-                                  {f.libelle || 'Facture'} — <span className="tnum">{fmt(f.montant_ttc || 0)}</span> TTC
-                                </span>
-                                <div style={{display:'flex', alignItems:'center', gap:8}}>
-                                  {f.date_paiement && <span className="tnum" style={{fontSize:11, color:'var(--ink-400)'}}>{new Date(f.date_paiement).toLocaleDateString('fr-FR')}</span>}
-                                  <button onClick={() => toggleStatutFacture(f.id, f.statut)}
-                                    style={{
-                                      fontSize:11, padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
-                                      background: f.statut === 'paye' ? TONE_BG.ok : TONE_BG.warn,
-                                      color: f.statut === 'paye' ? TONE_FG.ok : TONE_FG.warn,
-                                    }}>
-                                    {f.statut === 'paye' ? '✓ Payé' : '⏳ En attente'}
-                                  </button>
-                                  <button onClick={() => supprimerFactureArtisan(f.id, f.pdf_path)}
-                                    style={{fontSize:13, color:'var(--ink-400)', background:'none', border:'none', cursor:'pointer', padding:'0 4px'}}
-                                    onMouseEnter={e => { e.currentTarget.style.color = '#b91c1c' }}
-                                    onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-400)' }}>✕</button>
-                                </div>
-                              </div>
-                              <div style={{display:'flex', alignItems:'center', gap:8}}>
-                                {f.pdf_path ? (
-                                  <button onClick={() => ouvrirDocument(f.pdf_path, `Facture ${f.libelle || ''}.pdf`)}
-                                    style={{fontSize:11, color:'var(--brand-700)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>📄 Voir PDF</button>
-                                ) : (
-                                  <label style={{
-                                    fontSize:11, cursor: uploadingFacturePdf === f.id ? 'wait' : 'pointer',
-                                    padding:'2px 8px', borderRadius:6, border:'1px solid',
-                                    color: uploadingFacturePdf === f.id ? 'var(--ink-400)' : 'var(--brand-700)',
-                                    borderColor: uploadingFacturePdf === f.id ? 'var(--ink-200)' : 'var(--brand-200)',
-                                  }}>
-                                    {uploadingFacturePdf === f.id ? 'Upload…' : '+ PDF'}
-                                    <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingFacturePdf === f.id}
-                                      onChange={e => e.target.files[0] && uploadFacturePdf(f.id, e.target.files[0])} />
-                                  </label>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Ajouter une facture — bouton + formulaire */}
-                      {ajouterFacture === d.id ? (
-                        <div style={{border:'1px solid rgba(22,163,74,0.2)', background:'rgba(22,163,74,0.05)', borderRadius:10, padding:12, display:'flex', flexDirection:'column', gap:8}}>
-                          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
-                            <ModalField label="Montant TTC (€)" required>
-                              <input type="number" step="0.01" className="input" value={nouvelleFacture.montant_ttc}
-                                onChange={e => setNouvelleFacture(f => ({ ...f, montant_ttc: e.target.value }))}
-                                style={{height:32, padding:'0 10px', fontSize:12}} />
-                            </ModalField>
-                            <ModalField label="Date de paiement">
-                              <input type="date" className="input" value={nouvelleFacture.date_paiement}
-                                onChange={e => setNouvelleFacture(f => ({ ...f, date_paiement: e.target.value }))}
-                                style={{height:32, padding:'0 10px', fontSize:12}} />
-                            </ModalField>
-                          </div>
-                          <ModalField label="Libellé">
-                            <select value={nouvelleFacture.libelle}
-                              onChange={e => {
-                                const libelle = e.target.value
-                                setNouvelleFacture(f => {
-                                  const next = { ...f, libelle, libelle_autre: '' }
-                                  if (libelle === 'Facture acompte') {
-                                    const m = finAc.acompte
-                                    if (m > 0) next.montant_ttc = m.toFixed(2)
-                                  }
-                                  return next
-                                })
-                              }}
-                              className="input" style={{height:32, padding:'0 10px', fontSize:12}}>
-                              <option value="Facture acompte">Facture acompte</option>
-                              <option value="Facture de situation">Facture de situation</option>
-                              <option value="Facture solde">Facture solde</option>
-                              <option value="Autre">Autre (saisie libre)</option>
-                            </select>
-                            {nouvelleFacture.libelle === 'Autre' && (
-                              <input type="text" placeholder="Préciser le libellé"
-                                value={nouvelleFacture.libelle_autre}
-                                onChange={e => setNouvelleFacture(f => ({ ...f, libelle_autre: e.target.value }))}
-                                className="input" style={{height:32, padding:'0 10px', fontSize:12, marginTop:6}} />
-                            )}
-                          </ModalField>
-                          <select value={nouvelleFacture.statut}
-                            onChange={e => setNouvelleFacture(f => ({ ...f, statut: e.target.value }))}
-                            className="input" style={{height:32, padding:'0 10px', fontSize:12}}>
-                            <option value="en_attente">⏳ En attente</option>
-                            <option value="paye">✓ Payé</option>
-                          </select>
-                          <label style={{
-                            display:'inline-flex', alignItems:'center', gap:8, fontSize:11, color:'var(--ink-600)',
-                            border:'1px solid var(--ink-200)', borderRadius:8, padding:'6px 10px',
-                            cursor:'pointer', alignSelf:'flex-start', background:'#fff',
-                          }}>
-                            {nouvelleFacture.fichier ? `✓ ${nouvelleFacture.fichier.name}` : '+ PDF facture (optionnel)'}
-                            <input type="file" accept=".pdf" style={{display:'none'}}
-                              onChange={e => setNouvelleFacture(f => ({ ...f, fichier: e.target.files[0] || null }))} />
-                          </label>
-                          <div style={{display:'flex', gap:8}}>
-                            <button onClick={() => setAjouterFacture(null)} className="btn btn-ghost" style={{flex:1, fontSize:12, justifyContent:'center'}}>Annuler</button>
-                            <button onClick={() => ajouterFactureArtisan(d.id, d.artisan_id)}
-                              disabled={!nouvelleFacture.montant_ttc}
-                              className="btn btn-primary" style={{flex:1, fontSize:12, justifyContent:'center', background:'#15803d', borderColor:'#15803d'}}>Enregistrer</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button onClick={() => {
-                          const acompteMontant = finAc.acompte
-                          setAjouterFacture(d.id)
-                          setNouvelleFacture({ montant_ttc: acompteMontant > 0 ? acompteMontant.toFixed(2) : '', date_paiement: '', statut: 'en_attente', fichier: null, libelle: 'Facture acompte', libelle_autre: '' })
-                        }}
-                          style={{fontSize:11, color:'#15803d', border:'1px solid rgba(22,163,74,0.3)', padding:'4px 12px', borderRadius:6, background:'transparent', cursor:'pointer', alignSelf:'flex-start'}}>
-                          + Ajouter une facture
-                        </button>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
 
         </div>
         )
