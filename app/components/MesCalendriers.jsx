@@ -70,6 +70,21 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
 
   useEffect(() => { chargerComptes() }, [chargerComptes])
 
+  // Retour du flux OAuth Outlook (?outlookcal=connected|error) : bandeau + nettoyage URL.
+  // Le retour est une navigation pleine page → l'effet de montage recharge déjà les
+  // comptes (chargerComptes), inutile de le rappeler ici.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const r = params.get('outlookcal')
+    if (!r) return
+    if (r === 'connected') onSucces?.('Compte Outlook connecté ✓')
+    else onError?.('Connexion Outlook impossible. Réessaie ou vérifie l\'autorisation Microsoft (scope Calendars).')
+    params.delete('outlookcal'); params.delete('reason')
+    const qs = params.toString()
+    window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''))
+  }, [onSucces, onError])
+
   // Cibles visibles du user (RLS SELECT = perso ∪ agence ∪ admin-société) + sa cible par
   // défaut perso (profiles.cible_calendrier_defaut_id, RLS profiles own). LECTURE.
   const chargerCibles = useCallback(async () => {
@@ -95,7 +110,7 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
   if (!profile) return null
 
   // ── Helpers d'affichage ──
-  const labelFournisseur = (f) => f === 'google' ? 'Google' : f === 'icloud' ? 'iCloud' : f
+  const labelFournisseur = (f) => f === 'google' ? 'Google' : f === 'icloud' ? 'iCloud' : f === 'outlook' ? 'Outlook' : f
   // Identité affichée : compte_email si présent ; sinon Apple ID iCloud ; sinon, pour
   // Google, l'id du calendrier principal (= adresse e-mail) renvoyé par la route 8a.
   const identiteCompte = (c) => {
@@ -128,6 +143,18 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
       if (res.ok && d.url) window.location.href = d.url
       else onError(d.error || 'Erreur de connexion Google')
     } catch { onError('Erreur de connexion Google') }
+  }
+
+  // Outlook = même compte/flux Microsoft que OneDrive (kind:'calendar' → scope Calendars,
+  // stocké fournisseur='outlook', découplé du drive). Retour géré par l'effet ?outlookcal=.
+  const connecterOutlook = async () => {
+    onError(''); onSucces('')
+    try {
+      const res = await apiFetch('/api/auth/microsoft', { method: 'POST', body: JSON.stringify({ kind: 'calendar' }) })
+      const d = await res.json()
+      if (res.ok && d.url) window.location.href = d.url
+      else onError(d.error || 'Erreur de connexion Outlook')
+    } catch { onError('Erreur de connexion Outlook') }
   }
 
   const connecterIcloud = async () => {
@@ -305,6 +332,7 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <button className="btn btn-ghost" onClick={connecterGoogle} style={{ fontSize: 12.5 }}>📅 Connecter Google</button>
+        <button className="btn btn-ghost" onClick={connecterOutlook} style={{ fontSize: 12.5 }}>📆 Connecter Outlook</button>
         <button className="btn btn-ghost" onClick={() => { setIcloudOpen(o => !o); setErreurIcloud('') }}
           style={{ fontSize: 12.5 }}> Connecter iCloud</button>
       </div>
