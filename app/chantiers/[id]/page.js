@@ -1772,6 +1772,23 @@ export default function FicheChantier({ params }) {
     }
   }
 
+  // Renseigne / modifie la date de paiement d'une facture APRÈS sa création
+  // (le champ date de la ligne facture). Si la facture est payée et rattachée à un
+  // artisan, la date est répercutée dans le suivi financier (parité toggleStatutFacture).
+  const majDateFacture = async (factureId, date) => {
+    const d = date || null
+    const facture = factures.find(f => f.id === factureId)
+    const { error } = await supabase.from('factures_artisans').update({ date_paiement: d }).eq('id', factureId)
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    setFactures(prev => prev.map(f => f.id === factureId ? { ...f, date_paiement: d } : f))
+    if (facture?.statut === 'paye' && facture?.artisan_id && d) {
+      const libelle = (facture.libelle || '').toLowerCase()
+      const typeEch = libelle.includes('acompte') ? 'acompte_artisan' : 'facture_finale'
+      const devisIdSuivi = typeEch === 'acompte_artisan' ? facture.devis_id : null
+      await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'date_paiement', d, devisIdSuivi)
+    }
+  }
+
   const uploadFacturePdf = async (factureId, fichier) => {
     if (!fichier) return
     setUploadingFacturePdf(factureId)
@@ -4334,7 +4351,10 @@ export default function FicheChantier({ params }) {
                 {f.libelle || 'Facture'} — <span className="tnum">{fmt(f.montant_ttc || 0)}</span> TTC
               </span>
               <div style={{display:'flex', alignItems:'center', gap:'var(--space-3)'}}>
-                {f.date_paiement && <span className="tnum" style={{fontSize:'var(--text-xs)', color:'var(--ink-400)'}}>{new Date(f.date_paiement).toLocaleDateString('fr-FR')}</span>}
+                {/* Date de paiement éditable même après création de la facture. */}
+                <input type="date" value={f.date_paiement || ''} onChange={e => majDateFacture(f.id, e.target.value)}
+                  title="Date de paiement (modifiable)"
+                  style={{fontSize:'var(--text-2xs)', padding:'2px 6px', border:'1px solid var(--ink-200)', borderRadius:6, color:'var(--ink-500)', background:'var(--surface)'}} />
                 <button onClick={() => toggleStatutFacture(f.id, f.statut)}
                   style={{
                     fontSize:'var(--text-xs)', padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',

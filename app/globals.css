@@ -1366,8 +1366,9 @@ img, svg, video, canvas { max-width: 100%; }
    pour tenir « 40% acompte · 2 070,00 € TTC » sur UNE ligne.
    ⚠️ Si un libellé enroule encore en preview, ÉLARGIR cette part de label (→ 400),
    JAMAIS rétrécir les colonnes fixes. Sous ~380px de bloc : repli gracieux sur 2 lignes. */
+/* Empilé : BLOC A (par devis, pleine largeur) EN HAUT, BLOC B (autres échéances) EN BAS. */
 .suivi-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 22px;
+  display: grid; grid-template-columns: 1fr; gap: 18px;
   padding: 14px 22px;
 }
 .suivi-bloc { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
@@ -1376,17 +1377,17 @@ img, svg, video, canvas { max-width: 100%; }
   color: var(--brand-800); padding-bottom: 6px; border-bottom: 1px solid var(--ink-200);
 }
 
-/* BLOC A — une CARTE par devis (cadre à toute largeur : avec le devis sur 3 lignes,
-   le cadre rattache visuellement l'acompte à son devis). Nom en en-tête pleine largeur ;
-   ACOMPTE / COMMISSION côte à côte quand 2×380+gap tient, empilés sinon (auto-fit). */
-.suivi-table { display: flex; flex-direction: column; gap: 8px; overflow-x: visible; }
+/* BLOC A — DEUX entreprises côte à côte (grille auto-fit) ; empilées sur écran étroit.
+   Chaque carte devis empile son contenu (nom, acompte, débloqué, factures) verticalement. */
+.suivi-table {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 12px; align-items: start; overflow-x: visible;
+}
 .suivi-devis-row {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
-  gap: 10px; min-width: 0;
+  display: flex; flex-direction: column; gap: 10px; min-width: 0;
   border: 1px solid var(--ink-200); border-radius: 12px; padding: 12px; background: var(--surface);
 }
 .suivi-devis-name {
-  grid-column: 1 / -1;
   font-size: 12.5px; font-weight: 700; color: var(--ink-900);
   overflow-wrap: break-word; min-width: 0;
   padding-bottom: 6px; border-bottom: 1px solid var(--ink-100);
