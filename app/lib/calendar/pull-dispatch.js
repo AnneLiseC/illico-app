@@ -6,11 +6,13 @@
 
 import { applyPullCibleGoogle, pullRecurrentsCibleGoogle } from './pull-google'
 import { applyPullCibleICloud, pullRecurrentsCibleICloud } from './pull-icloud'
+import { applyPullCibleMicrosoft, pullRecurrentsCibleMicrosoft } from './pull-microsoft'
 
 // Pull incrémental (B4-B6) d'une cible, selon son fournisseur. Renvoie { report, applied }.
 export async function applyPullCible(cible) {
   if (cible.fournisseur === 'google') return applyPullCibleGoogle(cible)
   if (cible.fournisseur === 'icloud') return applyPullCibleICloud(cible)
+  if (cible.fournisseur === 'outlook') return applyPullCibleMicrosoft(cible)
   return { report: { cible_id: cible.id, agenda_nom: cible.agenda_nom, erreur: `fournisseur non supporté: ${cible.fournisseur}` }, applied: {} }
 }
 
@@ -18,5 +20,6 @@ export async function applyPullCible(cible) {
 export async function pullRecurrentsCible(cible) {
   if (cible.fournisseur === 'google') return pullRecurrentsCibleGoogle(cible)
   if (cible.fournisseur === 'icloud') return pullRecurrentsCibleICloud(cible)
+  if (cible.fournisseur === 'outlook') return pullRecurrentsCibleMicrosoft(cible)
   return { report: { cible_id: cible.id, agenda_nom: cible.agenda_nom, erreur: `fournisseur non supporté: ${cible.fournisseur}` }, applied: { inserts: 0 } }
 }
