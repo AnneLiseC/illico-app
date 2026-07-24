@@ -13,19 +13,28 @@ import crypto from 'crypto'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
 
-const SCOPE = 'offline_access User.Read Files.ReadWrite'
+// Deux usages du MÊME compte Microsoft (même app Azure, même redirect) distingués par
+// `kind`, encodé dans le state signé et relu par le callback :
+//   - 'drive'    (défaut) → OneDrive, stocké fournisseur='microsoft' (comportement historique).
+//   - 'calendar' → calendrier Outlook, stocké fournisseur='outlook' (lot 7).
+// Chaque usage demande SON scope → deux tokens indépendants (déconnexion découplée).
+const SCOPE_BY_KIND = {
+  drive:    'offline_access User.Read Files.ReadWrite',
+  calendar: 'offline_access User.Read Calendars.ReadWrite',
+}
 
 function authority() {
   return `https://login.microsoftonline.com/${process.env.MICROSOFT_TENANT || 'consumers'}`
 }
 
 // State signé HMAC-SHA256 anti-CSRF — même schéma que /api/auth/google.
-// Format : base64url(payload).base64url(signature) ; payload = { uid, nonce, exp }
-function buildSignedState(userId) {
+// Format : base64url(payload).base64url(signature) ; payload = { uid, kind, nonce, exp }
+function buildSignedState(userId, kind) {
   const secret = process.env.OAUTH_STATE_SECRET
   if (!secret) throw new Error('OAUTH_STATE_SECRET non configuré')
   const payload = JSON.stringify({
     uid: userId,
+    kind,
     nonce: crypto.randomBytes(16).toString('hex'),
     exp: Date.now() + 10 * 60 * 1000, // 10 minutes
   })
@@ -42,9 +51,16 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Configuration Microsoft manquante' }, { status: 500 })
   }
 
+  // kind facultatif dans le body ; 'drive' par défaut (rétro-compat OneDrive).
+  let kind = 'drive'
+  try {
+    const body = await request.json()
+    if (body?.kind === 'calendar') kind = 'calendar'
+  } catch { /* pas de body → drive */ }
+
   let state
   try {
-    state = buildSignedState(auth.user.id)
+    state = buildSignedState(auth.user.id, kind)
   } catch {
     return NextResponse.json({ error: 'Configuration serveur manquante' }, { status: 500 })
   }
@@ -54,7 +70,7 @@ export async function POST(request) {
     response_type: 'code',
     redirect_uri: process.env.MICROSOFT_REDIRECT_URI,
     response_mode: 'query',
-    scope: SCOPE,
+    scope: SCOPE_BY_KIND[kind],
     state,
     prompt: 'consent', // force l'écran de consentement → garantit le refresh_token
   }).toString()

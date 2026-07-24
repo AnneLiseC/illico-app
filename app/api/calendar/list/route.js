@@ -17,6 +17,7 @@ import { NextResponse } from 'next/server'
 import { requireUser } from '../../../lib/api-auth'
 import { listGoogleCalendars, isGoogleAuthError } from '../../../lib/calendar/google'
 import { listICloudCalendars, isCalDAVAuthError } from '../../../lib/calendar/icloud'
+import { listMicrosoftCalendars, isOutlookAuthError } from '../../../lib/calendar/microsoft'
 
 function extractToken(request) {
   const header = request.headers.get('authorization') || request.headers.get('Authorization')
@@ -60,11 +61,19 @@ export async function GET(request) {
       const calendriers = await listICloudCalendars(compte)
       return NextResponse.json({ fournisseur: 'icloud', calendriers })
     }
+    if (compte.fournisseur === 'outlook') {
+      if (!compte.refresh_token) {
+        return NextResponse.json({ error: 'Compte Outlook à reconnecter', reconnect: true }, { status: 401 })
+      }
+      const calendriers = await listMicrosoftCalendars(compte)
+      return NextResponse.json({ fournisseur: 'outlook', calendriers })
+    }
     return NextResponse.json({ error: `Fournisseur non supporté: ${compte.fournisseur}` }, { status: 400 })
   } catch (err) {
     const authFail =
       (compte.fournisseur === 'google' && isGoogleAuthError(err)) ||
-      (compte.fournisseur === 'icloud' && isCalDAVAuthError(err))
+      (compte.fournisseur === 'icloud' && isCalDAVAuthError(err)) ||
+      (compte.fournisseur === 'outlook' && isOutlookAuthError(err))
     if (authFail) {
       return NextResponse.json(
         { error: `Compte ${compte.fournisseur} à reconnecter`, reconnect: true },
