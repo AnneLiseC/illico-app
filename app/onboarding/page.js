@@ -18,7 +18,7 @@ function Shell({ children, maxWidth = 480 }) {
       <div className="card" style={{ maxWidth, width: '100%', padding: '32px 30px', display: 'flex', flexDirection: 'column', gap: 16, margin: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 38, height: 38, borderRadius: 9, background: 'var(--brand-800)', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14 }}>Co</div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--ink-900)' }}>Batils</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--ink-900)' }}>Batilis</div>
         </div>
         {children}
       </div>
@@ -105,7 +105,7 @@ export default function Onboarding() {
   return (
     <Shell maxWidth={560}>
       <div>
-        <h1 className="page" style={{ fontSize: 20, marginBottom: 6 }}>Bienvenue sur Batils 👋</h1>
+        <h1 className="page" style={{ fontSize: 20, marginBottom: 6 }}>Bienvenue sur Batilis 👋</h1>
         <p style={{ fontSize: 13.5, color: 'var(--ink-500)', lineHeight: 1.6 }}>
           Dernière étape : créez votre société et votre première agence pour accéder à votre espace.
         </p>

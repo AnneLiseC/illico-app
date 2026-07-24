@@ -1,6 +1,6 @@
 // app/api/drive/delete/route.js
 // POST { document_id } — supprime la COPIE OneDrive d'un document (miroir) et sa ligne
-// doc_index. Suppression maître→miroir : c'est Batils (le maître pour un fichier né dans
+// doc_index. Suppression maître→miroir : c'est Batilis (le maître pour un fichier né dans
 // l'app) qui commande la suppression de la copie Drive.
 //
 // À appeler AVANT de supprimer la ligne chantier_documents côté app (sinon le cascade FK

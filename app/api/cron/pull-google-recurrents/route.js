@@ -1,5 +1,5 @@
 // app/api/cron/pull-google-recurrents/route.js
-// B8/B9-6 — CRON balayage des RÉCURRENTS external -> Batils (B7 Google / B9-5 iCloud).
+// B8/B9-6 — CRON balayage des RÉCURRENTS external -> Batilis (B7 Google / B9-5 iCloud).
 // TOUS-TENANTS, TOUS FOURNISSEURS. Fenêtre [now ; now+180j], 1×/jour : matérialise les
 // occurrences futures des séries que le canal incrémental ne re-signale jamais. Dispatch par
 // fournisseur (pull-dispatch), service_role, isolation d'erreur par cible.

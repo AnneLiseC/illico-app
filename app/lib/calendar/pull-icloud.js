@@ -1,5 +1,5 @@
 // app/lib/calendar/pull-icloud.js
-// Étage 3 — ADAPTATEUR PULL iCLOUD (CalDAV), parité du sens Google->Batils (B9-4/B9-5).
+// Étage 3 — ADAPTATEUR PULL iCLOUD (CalDAV), parité du sens Google->Batilis (B9-4/B9-5).
 // Même MOTEUR agnostique que Google (pull-engine.js) : ce fichier ne fait que le TRANSPORT
 // CalDAV + la NORMALISATION ICS -> event { id, etag, start_utc, end_utc, kind, summary, status }.
 //   - id (remote) = URL de l'objet CalDAV ; réappariement/anti-doublon par google_event_id ;

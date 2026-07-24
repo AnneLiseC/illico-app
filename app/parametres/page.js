@@ -541,7 +541,7 @@ export default function Parametres() {
               <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end'}}>
                 <div>
                   <h2 className="page" style={{fontSize:18, marginBottom:4}}>Équipe & agents</h2>
-                  <p style={{color:'var(--ink-500)', fontSize:13}}>La création d&apos;un compte est validée par Batils. Demande un agent : il sera créé et invité après validation.</p>
+                  <p style={{color:'var(--ink-500)', fontSize:13}}>La création d&apos;un compte est validée par Batilis. Demande un agent : il sera créé et invité après validation.</p>
                 </div>
                 <button className="btn btn-primary" onClick={ouvrirDemande}>Demander un agent</button>
               </div>
@@ -557,7 +557,7 @@ export default function Parametres() {
                       <span style={{marginLeft:'auto', padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(245,158,11,0.12)', color:'#a16207'}}>En attente</span>
                     </div>
                   ))}
-                  <div style={{fontSize:11.5, color:'var(--ink-400)'}}>Une fois validée par Batils, l&apos;agent apparaîtra dans la liste ci-dessous (redevances et parts à régler ensuite via « Modifier »).</div>
+                  <div style={{fontSize:11.5, color:'var(--ink-400)'}}>Une fois validée par Batilis, l&apos;agent apparaîtra dans la liste ci-dessous (redevances et parts à régler ensuite via « Modifier »).</div>
                 </div>
               )}
 
@@ -914,7 +914,7 @@ export default function Parametres() {
       {modal === 'demander' && (
         <ModalShell
           title="Demander un agent"
-          subtitle="Batils créera et invitera le compte après validation"
+          subtitle="Batilis créera et invitera le compte après validation"
           onClose={() => { setModal(false); setErreur(''); setSucces('') }}
           width={480}
           footer={<>
