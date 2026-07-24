@@ -44,6 +44,30 @@
   --info: #0094d4;
   --mute: #94a3b8;
 
+  /* Semantic — variantes « texte » (plus foncées, pour le contraste sur fond clair)
+     + fonds/bordures teintés réutilisables. Remplacent les hex sémantiques en dur. */
+  --ok-strong:   #15803d;
+  --bad-strong:  #b91c1c;
+  --warn-strong: #c2410c;
+  --ok-border:   rgba(22,163,74,0.30);
+  --ok-bg:       rgba(22,163,74,0.06);
+  --ok-bg-2:     rgba(22,163,74,0.12);
+
+  /* Échelle typographique (px). Alias sémantiques : voir usage progressif. */
+  --text-2xs: 10px;
+  --text-xs:  11px;
+  --text-sm:  12px;
+  --text-md:  13px;
+  --text-lg:  15px;
+
+  /* Échelle d'espacement (px). */
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 12px;
+  --space-6: 14px;
+
   /* Effects */
   --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,87,142,0.08);
   --shadow-pop:  0 1px 2px rgba(0,0,0,0.04), 0 10px 30px rgba(0,87,142,0.14);
