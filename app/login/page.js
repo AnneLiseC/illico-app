@@ -81,7 +81,7 @@ export default function Login() {
         <div style={{position:'relative', display:'flex', alignItems:'center', gap:12}}>
           <div style={{width:42, height:42, borderRadius:10, background:'#fff', color:'var(--brand-800)', display:'grid', placeItems:'center', fontWeight:800, fontSize:16}}>Co</div>
           <div>
-            <div style={{fontSize:18, fontWeight:800, letterSpacing:-0.01}}>Coordibat</div>
+            <div style={{fontSize:18, fontWeight:800, letterSpacing:-0.01}}>Batils</div>
             <div style={{fontSize:11, opacity:0.6, letterSpacing:0.06, textTransform:'uppercase'}}>Gestion travaux</div>
           </div>
         </div>
@@ -106,7 +106,7 @@ export default function Login() {
 
         {/* Footer */}
         <div style={{position:'relative', fontSize:12, opacity:0.55}}>
-          © Coordibat · {new Date().getFullYear()}
+          © Batils · {new Date().getFullYear()}
         </div>
       </div>
 

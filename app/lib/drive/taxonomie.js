@@ -1,5 +1,5 @@
 // app/lib/drive/taxonomie.js
-// Traduit un dossier + un document Coordibat en CHEMIN de dossiers OneDrive, selon
+// Traduit un dossier + un document Batils en CHEMIN de dossiers OneDrive, selon
 // l'arborescence validée (SPEC_drive_onedrive.md §6).
 //
 //   <racine>/AAAA.MM.JJ NOM/<sous-dossier>/<fichier>

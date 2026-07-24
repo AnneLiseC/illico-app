@@ -19,7 +19,7 @@ function Shell({ children }) {
       <div className="card" style={{maxWidth:440, width:'100%', padding:'32px 30px', display:'flex', flexDirection:'column', gap:16}}>
         <div style={{display:'flex', alignItems:'center', gap:12}}>
           <div style={{width:38, height:38, borderRadius:9, background:'var(--brand-800)', color:'#fff', display:'grid', placeItems:'center', fontWeight:800, fontSize:14}}>Co</div>
-          <div style={{fontSize:16, fontWeight:800, color:'var(--ink-900)'}}>Coordibat</div>
+          <div style={{fontSize:16, fontWeight:800, color:'var(--ink-900)'}}>Batils</div>
         </div>
         {children}
       </div>
