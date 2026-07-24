@@ -5032,7 +5032,6 @@ export default function FicheChantier({ params }) {
         // Docs JALONS par artisan (Phase 1). multi = plusieurs possibles (paiements).
         const ARTISAN_DOCS = [
           { k: 'attestation_demarrage', l: 'Attestation démarrage', multi: false, restit: false },
-          { k: 'deblocage_acompte',     l: 'Déblocage acompte',     multi: true,  restit: false },
           { k: 'avis_virement',         l: 'Avis de virement',      multi: true,  restit: false },
           // PV de réception : va dans le PDF de restitution client (dans_restitution).
           { k: 'pv_reception',          l: 'PV de réception',       multi: false, restit: true  },
@@ -5051,7 +5050,7 @@ export default function FicheChantier({ params }) {
             <div className="card" style={{padding:0, overflow:'hidden'}}>
               <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
                 <h2 className="page" style={{fontSize:15}}>Documents artisans</h2>
-                <div className="eyebrow" style={{marginTop:4}}>Par artisan · attestation de démarrage, déblocage acompte, avis de virement, PV de réception</div>
+                <div className="eyebrow" style={{marginTop:4}}>Par artisan · attestation de démarrage, avis de virement, PV de réception</div>
               </div>
               <div style={{padding:'6px 16px'}}>
                 {artisansChantier.map(a => {
