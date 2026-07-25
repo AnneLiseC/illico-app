@@ -874,9 +874,6 @@ export default function Parametres() {
                   ))}
                 </div>
               </div>
-              <div style={{padding:14, background:'rgba(234,88,12,0.06)', border:'1px solid rgba(234,88,12,0.2)', borderRadius:10, fontSize:12.5, color:'#9a3412'}}>
-                Ces documents sont des modèles à finaliser (mentions entre crochets) et à faire relire par un conseil juridique avant diffusion.
-              </div>
             </div>
           )}
 
