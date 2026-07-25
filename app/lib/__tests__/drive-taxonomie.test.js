@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { dateDossier, nomDossierChantier, sousDossiers, photoSousDossiers, nettoyerSegment, cheminSegments } from '../drive/taxonomie.js'
+import { dateDossier, nomDossierChantier, sousDossiers, photoSousDossiers, nettoyerSegment, cheminSegments, bucketStatut, chantierBaseSegments, cheminChantier, cheminChantierPhoto, cheminArtisanGlobal } from '../drive/taxonomie.js'
 
 describe('drive/taxonomie', () => {
   it('dateDossier — formate created_at (T ou espace) en AAAA.MM.JJ', () => {
@@ -43,10 +43,50 @@ describe('drive/taxonomie', () => {
     expect(nettoyerSegment('')).toBe('-')
   })
 
-  it('cheminSegments — chemin complet nettoyé', () => {
+  it('cheminSegments — chemin complet nettoyé (déprécié, sans bucket)', () => {
     expect(cheminSegments('2026-07-19T00:00:00', 'GUERTEAU', 'compte_rendu', null))
       .toEqual(['2026.07.19 GUERTEAU', 'Comptes rendus'])
     expect(cheminSegments('2026-07-19T00:00:00', 'GUERTEAU', 'avis_virement', 'Toiture/Sud'))
       .toEqual(['2026.07.19 GUERTEAU', 'Documents artisans', 'Toiture-Sud'])
+  })
+
+  it('bucketStatut — statut dossier → bucket Clients', () => {
+    expect(bucketStatut('annule')).toBe('Annulés')
+    expect(bucketStatut('termine')).toBe('Terminés')
+    expect(bucketStatut('en_cours')).toBe('En cours')
+    expect(bucketStatut(null)).toBe('En cours')
+    expect(bucketStatut(undefined)).toBe('En cours')
+  })
+
+  it('chantierBaseSegments — Clients/<bucket>/AAAA.MM.JJ NOM', () => {
+    expect(chantierBaseSegments('en_cours', '2026-07-20T00:00:00', 'Martin'))
+      .toEqual(['Clients', 'En cours', '2026.07.20 Martin'])
+    expect(chantierBaseSegments('termine', '2026-07-25T00:00:00', 'Dupont'))
+      .toEqual(['Clients', 'Terminés', '2026.07.25 Dupont'])
+    expect(chantierBaseSegments('annule', '2026-07-25T00:00:00', 'Durand'))
+      .toEqual(['Clients', 'Annulés', '2026.07.25 Durand'])
+  })
+
+  it('cheminChantier — document dans le bon bucket', () => {
+    expect(cheminChantier('en_cours', '2026-07-20T00:00:00', 'Martin', 'compte_rendu', null))
+      .toEqual(['Clients', 'En cours', '2026.07.20 Martin', 'Comptes rendus'])
+    expect(cheminChantier('termine', '2026-07-25T00:00:00', 'Dupont', 'facture_artisan', 'SARL Toiture'))
+      .toEqual(['Clients', 'Terminés', '2026.07.25 Dupont', 'Documents artisans', 'SARL Toiture', 'Factures'])
+  })
+
+  it('cheminChantierPhoto — photo dans Photos/<catégorie> du bon bucket', () => {
+    expect(cheminChantierPhoto('en_cours', '2026-07-20T00:00:00', 'Martin', 'avant'))
+      .toEqual(['Clients', 'En cours', '2026.07.20 Martin', 'Photos', 'Avant'])
+    expect(cheminChantierPhoto('annule', '2026-07-25T00:00:00', 'Durand', null))
+      .toEqual(['Clients', 'Annulés', '2026.07.25 Durand', 'Photos', 'Autres'])
+  })
+
+  it('cheminArtisanGlobal — Artisans/<Artisan>/<sous-dossier>', () => {
+    expect(cheminArtisanGlobal('SARL Toiture', 'Fiches techniques'))
+      .toEqual(['Artisans', 'SARL Toiture', 'Fiches techniques'])
+    expect(cheminArtisanGlobal('Toiture/Sud', 'Documents administratif'))
+      .toEqual(['Artisans', 'Toiture-Sud', 'Documents administratif'])
+    expect(cheminArtisanGlobal(null, 'Fiches techniques'))
+      .toEqual(['Artisans', 'Sans artisan', 'Fiches techniques'])
   })
 })

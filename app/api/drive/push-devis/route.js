@@ -10,8 +10,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
-import { getValidAccessToken, ensureFolderPath, uploadSmallFile, deleteItem } from '../../../lib/drive/microsoft'
-import { nomDossierChantier, nettoyerSegment } from '../../../lib/drive/taxonomie'
+import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
+import { chantierBaseSegments, nettoyerSegment } from '../../../lib/drive/taxonomie'
 
 const SOUS_DOSSIER = { accepte: 'Signés', refuse: 'Refusés', recu: 'Reçus' }
 
@@ -45,29 +45,29 @@ export async function POST(request) {
 
   // Dossier + référente + Drive
   const { data: dossier } = await db.from('dossiers')
-    .select('id, created_at, client_id, referente_id').eq('id', devis.dossier_id).maybeSingle()
+    .select('id, created_at, client_id, referente_id, statut').eq('id', devis.dossier_id).maybeSingle()
   if (!dossier?.referente_id) return NextResponse.json({ skipped: true, reason: 'no_referente' })
 
-  const { data: compte } = await db.from('comptes_oauth')
-    .select('id, access_token, refresh_token, expiry_date, drive_root_drive_id, drive_root_id')
-    .eq('user_id', dossier.referente_id).eq('fournisseur', 'microsoft').maybeSingle()
+  const compte = await loadDriveCompte(db, dossier.referente_id)
   if (!compte || !compte.drive_root_drive_id || !compte.drive_root_id) {
     return NextResponse.json({ skipped: true, reason: 'no_root' })
   }
+  const mod = driveModule(compte.fournisseur)
+  if (!mod) return NextResponse.json({ skipped: true, reason: 'fournisseur' })
 
   let token
   try {
-    token = await getValidAccessToken(compte)
+    token = await mod.getValidAccessToken(compte)
   } catch (e) {
     if (e.reconnect) return NextResponse.json({ skipped: true, reason: 'reconnect' })
     console.error('[drive/push-devis] token', e)
-    return NextResponse.json({ error: 'Erreur OneDrive' }, { status: 500 })
+    return NextResponse.json({ error: 'Erreur Drive' }, { status: 500 })
   }
 
   // Pas (ou plus) de fichier → on retire la copie Drive si elle existait.
   if (!filePath) {
     if (existing) {
-      try { await deleteItem(token, existing.drive_id, existing.item_id) } catch { /* best effort */ }
+      try { await mod.deleteItem(token, existing.drive_id, existing.item_id) } catch { /* best effort */ }
       await db.from('doc_index').delete().eq('id', existing.id)
       return NextResponse.json({ ok: true, removed: true })
     }
@@ -82,10 +82,10 @@ export async function POST(request) {
       artisanNom = a?.entreprise || 'artisan'
     }
     const fileName = `${nettoyerSegment(`Devis ${artisanNom} ${devis.id.slice(0, 8)}`)}.pdf`
-    const segments = [nomDossierChantier(dossier.created_at, client?.nom), 'Devis', sousDossier].map(nettoyerSegment)
+    const segments = [...chantierBaseSegments(dossier.statut, dossier.created_at, client?.nom), 'Devis', sousDossier].map(nettoyerSegment)
 
     // Déjà miroité → on supprime l'ancien item (le statut/dossier a pu changer) avant de reposer.
-    if (existing) { try { await deleteItem(token, existing.drive_id, existing.item_id) } catch { /* best effort */ } }
+    if (existing) { try { await mod.deleteItem(token, existing.drive_id, existing.item_id) } catch { /* best effort */ } }
 
     const { data: blob, error: dlErr } = await db.storage.from('documents').download(filePath)
     if (dlErr || !blob) {
@@ -93,8 +93,8 @@ export async function POST(request) {
       return NextResponse.json({ error: 'PDF du devis introuvable' }, { status: 404 })
     }
     const buffer = Buffer.from(await blob.arrayBuffer())
-    const leafId = await ensureFolderPath(token, compte.drive_root_drive_id, compte.drive_root_id, segments)
-    const up = await uploadSmallFile(token, compte.drive_root_drive_id, leafId, fileName, buffer, 'application/pdf', 'replace')
+    const leafId = await mod.ensureFolderPath(token, compte.drive_root_drive_id, compte.drive_root_id, segments)
+    const up = await mod.uploadSmallFile(token, compte.drive_root_drive_id, leafId, fileName, buffer, 'application/pdf', 'replace')
 
     const cheminLogique = [...segments, up.name].join('/')
     await db.from('doc_index').upsert({

@@ -167,6 +167,19 @@ export async function ensureFolderPath(accessToken, rootDriveId, rootItemId, seg
   return parent
 }
 
+// Déplace un item (driveId, itemId) sous newParentId (même drive). oldParentId ignoré
+// (Graph remplace le parent). Renvoie { id }.
+export async function moveItem(accessToken, driveId, itemId, newParentId, _oldParentId) {
+  const res = await graphFetch(accessToken, `/drives/${driveId}/items/${itemId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parentReference: { id: newParentId } }),
+  })
+  if (!res.ok) throw new Error(`move_failed_${res.status}`)
+  const d = await res.json()
+  return { id: d.id }
+}
+
 // Delta query sur le sous-arbre de (driveId, itemId). Suit la pagination (@odata.nextLink)
 // et renvoie { items, deltaLink }. deltaLink=null en entrée → INIT avec token=latest :
 // Graph renvoie un curseur SANS énumérer l'existant (invariant n°2 : pas d'avalanche).
@@ -188,6 +201,21 @@ export async function deltaQuery(accessToken, driveId, itemId, deltaLink) {
     next = null
   }
   return { items, deltaLink: finalDelta }
+}
+
+// Détection ENTRANTE (inbox). Interface commune avec google-drive.pullInbox :
+//   (accessToken, driveId, rootItemId, cursor) → { files, cursor, init }
+//   - cursor absent → INIT : delta token=latest → curseur SANS énumérer l'existant
+//     (invariant n°2), files=[].
+//   - sinon → changements depuis le curseur, filtrés aux FICHIERS (hors dossiers/suppr.).
+//   files = [{ itemId, name, parentPath, webUrl }] ; cursor = deltaLink à persister.
+export async function pullInbox(accessToken, driveId, rootItemId, cursor) {
+  const { items, deltaLink } = await deltaQuery(accessToken, driveId, rootItemId, cursor)
+  const init = !cursor
+  const files = init ? [] : items
+    .filter(it => !it.deleted && !it.folder && it.file)
+    .map(it => ({ itemId: it.id, name: it.name || null, parentPath: it.parentReference?.path || null, webUrl: it.webUrl || null }))
+  return { files, cursor: deltaLink || cursor || null, init }
 }
 
 // Télécharge le contenu d'un item (driveId, itemId). Renvoie { buffer, contentType }.

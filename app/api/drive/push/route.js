@@ -14,8 +14,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
-import { getValidAccessToken, ensureFolderPath, uploadSmallFile } from '../../../lib/drive/microsoft'
-import { cheminSegments, nomDossierChantier, nettoyerSegment, photoSousDossiers } from '../../../lib/drive/taxonomie'
+import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
+import { cheminChantier, cheminChantierPhoto } from '../../../lib/drive/taxonomie'
 
 let _admin
 function admin() {
@@ -58,38 +58,38 @@ export async function POST(request) {
 
   // ── Dossier + référente + son Drive ──
   const { data: dossier } = await db.from('dossiers')
-    .select('id, created_at, client_id, referente_id').eq('id', src.dossierId).maybeSingle()
+    .select('id, created_at, client_id, referente_id, statut').eq('id', src.dossierId).maybeSingle()
   if (!dossier) return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
   if (!dossier.referente_id) return NextResponse.json({ skipped: true, reason: 'no_referente' })
 
-  const { data: compte } = await db.from('comptes_oauth')
-    .select('id, access_token, refresh_token, expiry_date, drive_root_drive_id, drive_root_id')
-    .eq('user_id', dossier.referente_id).eq('fournisseur', 'microsoft').maybeSingle()
+  const compte = await loadDriveCompte(db, dossier.referente_id)
   if (!compte || !compte.drive_root_drive_id || !compte.drive_root_id) {
     return NextResponse.json({ skipped: true, reason: 'no_root' })
   }
+  const mod = driveModule(compte.fournisseur)
+  if (!mod) return NextResponse.json({ skipped: true, reason: 'fournisseur' })
 
   let token
   try {
-    token = await getValidAccessToken(compte)
+    token = await mod.getValidAccessToken(compte)
   } catch (e) {
     if (e.reconnect) return NextResponse.json({ skipped: true, reason: 'reconnect' })
     console.error('[drive/push] token', e)
-    return NextResponse.json({ error: 'Erreur OneDrive' }, { status: 500 })
+    return NextResponse.json({ error: 'Erreur Drive' }, { status: 500 })
   }
 
-  // ── Chemin cible ──
+  // ── Chemin cible (avec bucket de statut) ──
   const { data: client } = await db.from('clients').select('nom').eq('id', dossier.client_id).maybeSingle()
   let segments
   if (src.kind === 'photo') {
-    segments = [nomDossierChantier(dossier.created_at, client?.nom), ...photoSousDossiers(src.categorie)].map(nettoyerSegment)
+    segments = cheminChantierPhoto(dossier.statut, dossier.created_at, client?.nom, src.categorie)
   } else {
     let artisanNom = null
     if (src.artisanId) {
       const { data: a } = await db.from('artisans').select('entreprise').eq('id', src.artisanId).maybeSingle()
       artisanNom = a?.entreprise || null
     }
-    segments = cheminSegments(dossier.created_at, client?.nom, src.categorie, artisanNom)
+    segments = cheminChantier(dossier.statut, dossier.created_at, client?.nom, src.categorie, artisanNom)
   }
 
   try {
@@ -100,8 +100,8 @@ export async function POST(request) {
     }
     const buffer = Buffer.from(await blob.arrayBuffer())
 
-    const leafId = await ensureFolderPath(token, compte.drive_root_drive_id, compte.drive_root_id, segments)
-    const up = await uploadSmallFile(token, compte.drive_root_drive_id, leafId, src.fileName, buffer, src.mime)
+    const leafId = await mod.ensureFolderPath(token, compte.drive_root_drive_id, compte.drive_root_id, segments)
+    const up = await mod.uploadSmallFile(token, compte.drive_root_drive_id, leafId, src.fileName, buffer, src.mime)
 
     const cheminLogique = [...segments, up.name].join('/')
     await db.from('doc_index').upsert({

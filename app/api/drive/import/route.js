@@ -1,8 +1,10 @@
 // app/api/drive/import/route.js
 // POST { inbox_id, dossier_id, categorie } — rattache un fichier DÉPOSÉ dans OneDrive
 // (drive_inbox) à un chantier : on télécharge une COPIE dans Supabase (magasin app), on
-// crée la ligne chantier_documents, et on indexe avec origine='onedrive' (OneDrive reste
-// le MAÎTRE du fichier). Rattachement MANUEL — l'utilisateur choisit le dossier + catégorie.
+// crée la ligne chantier_documents, et on indexe avec origine='onedrive' — marqueur
+// générique « né dans le drive externe » (OneDrive OU Google Drive ; contrainte CHECK
+// limitée à 'app'/'onedrive', pas de migration). Le drive reste le MAÎTRE du fichier.
+// Rattachement MANUEL — l'utilisateur choisit le dossier + catégorie.
 //
 // L'entrée d'index (item_id) neutralise aussi l'écho : le poller ne re-listera plus ce
 // fichier (il est désormais connu de doc_index).
@@ -10,7 +12,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
-import { getValidAccessToken, downloadItemContent } from '../../../lib/drive/microsoft'
+import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
 
 const CATS = new Set(['compte_rendu', 'plans', 'administratif']) // catégories libres autorisées ; sinon Autres (null)
 
@@ -40,22 +42,21 @@ export async function POST(request) {
   }
   if (inbox.statut !== 'a_rattacher') return NextResponse.json({ ok: true, already: true })
 
-  const { data: compte } = await db.from('comptes_oauth')
-    .select('id, access_token, refresh_token, expiry_date')
-    .eq('user_id', inbox.user_id).eq('fournisseur', 'microsoft').maybeSingle()
-  if (!compte) return NextResponse.json({ error: 'OneDrive non connecté' }, { status: 400 })
+  const compte = await loadDriveCompte(db, inbox.user_id)
+  const mod = compte ? driveModule(compte.fournisseur) : null
+  if (!compte || !mod) return NextResponse.json({ error: 'Drive non connecté' }, { status: 400 })
 
   let token
   try {
-    token = await getValidAccessToken(compte)
+    token = await mod.getValidAccessToken(compte)
   } catch (e) {
-    if (e.reconnect) return NextResponse.json({ reconnect: true, error: 'Reconnecte ton OneDrive' }, { status: 409 })
+    if (e.reconnect) return NextResponse.json({ reconnect: true, error: 'Reconnecte ton Drive' }, { status: 409 })
     console.error('[drive/import] token', e)
-    return NextResponse.json({ error: 'Erreur OneDrive' }, { status: 500 })
+    return NextResponse.json({ error: 'Erreur Drive' }, { status: 500 })
   }
 
   try {
-    const { buffer, contentType } = await downloadItemContent(token, inbox.drive_id, inbox.item_id)
+    const { buffer, contentType } = await mod.downloadItemContent(token, inbox.drive_id, inbox.item_id)
     const ext = (inbox.name || '').split('.').pop() || 'bin'
     const path = `chantiers/${dossier_id}/documents/onedrive_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
 
