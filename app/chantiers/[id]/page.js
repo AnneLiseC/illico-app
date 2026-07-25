@@ -696,6 +696,7 @@ export default function FicheChantier({ params }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [generatingPDF, setGeneratingPDF] = useState(null) // 'recapitulatif' | 'dossier_fin'
+  const [exportOpen, setExportOpen] = useState(false) // menu déroulant « Exporter » (en-tête)
   const [erreur, setErreur] = useState('')
   const [succes, setSucces] = useState('')
   const [modalModif, setModalModif] = useState(false)
@@ -3213,18 +3214,30 @@ export default function FicheChantier({ params }) {
             </>
           )}
           <div style={{flex:1}}/>
-          <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
-            className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-            <DlIcon /> {generatingPDF === 'recapitulatif_prev' ? '...' : 'Récap. financier'}
-          </button>
-          <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
-            className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-            <DlIcon /> {generatingPDF === 'recapitulatif' ? '...' : 'Suivi financier'}
-          </button>
-          <button onClick={() => generatePDF('dossier_suivi')} disabled={!!generatingPDF}
-            className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-            <DocIcon /> {generatingPDF === 'dossier_suivi' ? '...' : 'Dossier de suivi'}
-          </button>
+          {/* Exports secondaires regroupés dans un menu déroulant (allège l'en-tête). */}
+          <div style={{position:'relative'}}>
+            <button onClick={() => setExportOpen(o => !o)} disabled={!!generatingPDF}
+              className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+              <DlIcon /> {generatingPDF ? '...' : 'Exporter'} <span style={{fontSize:10, opacity:0.7}}>▾</span>
+            </button>
+            {exportOpen && (
+              <>
+                <div onClick={() => setExportOpen(false)} style={{position:'fixed', inset:0, zIndex:40}}/>
+                <div style={{position:'absolute', right:0, top:'calc(100% + 4px)', zIndex:41, background:'#fff', border:'1px solid var(--ink-200)', borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', minWidth:210, padding:6, display:'flex', flexDirection:'column', gap:2}}>
+                  {[
+                    { k:'recapitulatif_prev', l:'Récap. financier' },
+                    { k:'recapitulatif',      l:'Suivi financier' },
+                    { k:'dossier_suivi',      l:'Dossier de suivi' },
+                  ].map(o => (
+                    <button key={o.k} onClick={() => { setExportOpen(false); generatePDF(o.k) }} disabled={!!generatingPDF}
+                      className="row-hover" style={{textAlign:'left', border:0, background:'transparent', cursor:'pointer', padding:'8px 10px', borderRadius:7, fontSize:12.5, color:'var(--ink-800)'}}>
+                      {generatingPDF === o.k ? '…' : o.l}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -4356,10 +4369,19 @@ export default function FicheChantier({ params }) {
                 {f.libelle || 'Facture'} — <span className="tnum">{fmt(f.montant_ttc || 0)}</span> TTC
               </span>
               <div style={{display:'flex', alignItems:'center', gap:'var(--space-3)'}}>
-                {/* Date de paiement éditable même après création de la facture. */}
-                <input type="date" value={f.date_paiement || ''} onChange={e => majDateFacture(f.id, e.target.value)}
-                  title="Date de paiement (modifiable)"
-                  style={{fontSize:'var(--text-2xs)', padding:'2px 6px', border:'1px solid var(--ink-200)', borderRadius:6, color:'var(--ink-500)', background:'var(--surface)'}} />
+                {/* Date de paiement : input éditable si datée ; sinon simple « + date » discret
+                    (évite le bruit des « jj/mm/aaaa » vides répétés). Le clic date à aujourd'hui. */}
+                {f.date_paiement ? (
+                  <input type="date" value={f.date_paiement} onChange={e => majDateFacture(f.id, e.target.value)}
+                    title="Date de paiement (modifiable)"
+                    style={{fontSize:'var(--text-xs)', padding:'2px 6px', border:'1px solid var(--ink-200)', borderRadius:6, color:'var(--ink-700)', background:'var(--surface)'}} />
+                ) : (
+                  <button onClick={() => majDateFacture(f.id, new Date().toISOString().slice(0, 10))}
+                    title="Dater le paiement (aujourd'hui, modifiable ensuite)"
+                    style={{fontSize:'var(--text-xs)', padding:'2px 8px', border:'1px dashed var(--ink-300)', borderRadius:6, color:'var(--ink-500)', background:'transparent', cursor:'pointer'}}>
+                    ＋ date
+                  </button>
+                )}
                 <button onClick={() => toggleStatutFacture(f.id, f.statut)}
                   style={{
                     fontSize:'var(--text-xs)', padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
@@ -4508,8 +4530,8 @@ export default function FicheChantier({ params }) {
           <div className="card" style={{padding:0, overflow:'hidden'}}>
             <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
               <h2 className="page" style={{fontSize:15}}>Échéances · suivi financier</h2>
-              <div className="eyebrow" style={{marginTop:4}}>
-                Coche au fur et à mesure des règlements et déclenchements illiCO
+              <div style={{marginTop:4, fontSize:12, color:'var(--ink-500)'}}>
+                Coche au fur et à mesure des règlements et déclenchements
               </div>
             </div>
             {/* Deux blocs côte à côte : (A) par devis · (B) autres échéances */}

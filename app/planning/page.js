@@ -31,7 +31,7 @@ const COLORS = {
 
 const TYPE_CONFIG = {
   visite_technique_client:  { label: 'R1 — Visite client',      short: 'R1',     color: COLORS.blue,   bg: '#EFF6FF' },
-  visite_technique_artisan: { label: 'R2 — Visite artisan',     short: 'R2',     color: COLORS.teal,   bg: '#F0FDF9' },
+  visite_technique_artisan: { label: 'R2 — Visite artisan',     short: 'R2',     color: '#0891B2',  bg: '#ECFEFF' },
   presentation_devis:       { label: 'R3 — Présentation devis', short: 'R3',     color: COLORS.amber,  bg: '#FFFBEB' },
   suivi:                    { label: 'Suivi de chantier',       short: 'Suivi',  color: COLORS.violet, bg: '#F5F3FF' },
   reception:                { label: 'Réception',               short: 'Récept.',color: COLORS.mint,   bg: '#ECFDF5' },
