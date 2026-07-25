@@ -9,6 +9,7 @@ import MesCalendriers from '../components/MesCalendriers'
 import MonDrive from '../components/MonDrive'
 import ModalShell from '../components/ModalShell'
 import { heicToJpegFile } from '../lib/images'
+import { DOCS_RGPD } from '../lib/legal'
 
 const LS = { display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5 }
 
@@ -413,6 +414,7 @@ export default function Parametres() {
     { k:'notifs',       l:'Notifications' },
     { k:'integrations', l:'Intégrations' },
     { k:'securite',     l:'Sécurité' },
+    { k:'legal',        l:'Mentions légales' },
   ]
 
   return (
@@ -841,6 +843,39 @@ export default function Parametres() {
               <div style={{padding:16, background:'var(--surface-2)', borderRadius:10, border:'1px solid var(--ink-200)'}}>
                 <div style={{fontWeight:700, fontSize:13, color:'var(--ink-900)'}}>Authentification à deux facteurs</div>
                 <div style={{fontSize:12, color:'var(--ink-500)', marginTop:4}}>Non disponible pour le moment via cette interface.</div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Mentions légales & RGPD ── */}
+          {section === 'legal' && (
+            <div style={{display:'flex', flexDirection:'column', gap:18, maxWidth:560}}>
+              <div>
+                <h2 className="page" style={{fontSize:18, marginBottom:4}}>Mentions légales &amp; RGPD</h2>
+                <p style={{color:'var(--ink-500)', fontSize:13}}>Documents publics et de conformité de l&apos;application.</p>
+              </div>
+              <div style={{display:'flex', flexDirection:'column', gap:10}}>
+                <a href="/confidentialite" target="_blank" rel="noreferrer" className="btn btn-ghost" style={{justifyContent:'space-between'}}>
+                  <span>Politique de confidentialité</span><span style={{fontSize:12, color:'var(--ink-500)'}}>Page publique ↗</span>
+                </a>
+                <a href="/cgu" target="_blank" rel="noreferrer" className="btn btn-ghost" style={{justifyContent:'space-between'}}>
+                  <span>Conditions d&apos;utilisation (CGU)</span><span style={{fontSize:12, color:'var(--ink-500)'}}>Page publique ↗</span>
+                </a>
+              </div>
+              <div>
+                <div className="eyebrow" style={{marginBottom:8}}>Documents de conformité</div>
+                <div style={{display:'flex', flexDirection:'column', gap:10}}>
+                  {DOCS_RGPD.map(d => (
+                    <a key={d.fichier} href={d.fichier} target="_blank" rel="noreferrer"
+                      style={{display:'block', padding:'12px 14px', border:'1px solid var(--ink-200)', borderRadius:10, textDecoration:'none'}}>
+                      <div style={{fontWeight:700, fontSize:13, color:'var(--ink-900)'}}>{d.titre} <span style={{fontWeight:500, color:'var(--brand-800)'}}>↓ PDF</span></div>
+                      <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}}>{d.desc}</div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+              <div style={{padding:14, background:'rgba(234,88,12,0.06)', border:'1px solid rgba(234,88,12,0.2)', borderRadius:10, fontSize:12.5, color:'#9a3412'}}>
+                Ces documents sont des modèles à finaliser (mentions entre crochets) et à faire relire par un conseil juridique avant diffusion.
               </div>
             </div>
           )}
