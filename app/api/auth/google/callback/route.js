@@ -37,8 +37,10 @@ function verifySignedState(state) {
   } catch { return null }
   if (!payload?.uid || !payload?.exp) return null
   if (Date.now() > payload.exp) return null
-  return payload.uid
+  return { uid: payload.uid, kind: payload.kind === 'drive' ? 'drive' : 'calendar' }
 }
+
+const FOURNISSEUR_BY_KIND = { calendar: 'google', drive: 'googledrive' }
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -46,13 +48,30 @@ export async function GET(request) {
   const error = searchParams.get('error')
   const state = searchParams.get('state')
 
-  if (error || !code || !state) {
-    return NextResponse.redirect(new URL('/planning?google=error', request.url))
+  const decoded = state ? verifySignedState(state) : null
+
+  // Agenda → /planning?google= (inchangé). Google Drive → l'UI Mon Drive
+  // (/parametres pour l'admin, /profil pour l'agente) ?googledrive=.
+  const failUrl = (reason) => {
+    if (decoded?.kind === 'drive') return new URL(`/profil?googledrive=error${reason ? `&reason=${reason}` : ''}`, request.url)
+    return new URL(`/planning?google=error${reason ? `&reason=${reason}` : ''}`, request.url)
   }
 
-  const userId = verifySignedState(state)
-  if (!userId) {
-    return NextResponse.redirect(new URL('/planning?google=error&reason=state_invalid', request.url))
+  if (error || !code || !state) return NextResponse.redirect(failUrl())
+  if (!decoded) return NextResponse.redirect(failUrl('state_invalid'))
+
+  const userId = decoded.uid
+  const kind = decoded.kind
+  const fournisseur = FOURNISSEUR_BY_KIND[kind]
+  const param = kind === 'drive' ? 'googledrive' : 'google'
+
+  // Destination succès : agenda → /planning ; drive → /parametres (admin) ou /profil.
+  let dest = kind === 'drive' ? '/profil' : '/planning'
+  if (kind === 'drive') {
+    try {
+      const { data: prof } = await getSupabaseAdmin().from('profiles').select('role').eq('id', userId).maybeSingle()
+      if (prof?.role === 'admin') dest = '/parametres'
+    } catch { /* défaut /profil */ }
   }
 
   try {
@@ -62,16 +81,16 @@ export async function GET(request) {
     // renvoie qu'au 1er consentement) → on ne chiffre que s'il est présent. expiry_date en clair.
     await getSupabaseAdmin().from('comptes_oauth').upsert({
       user_id: userId,
-      fournisseur: 'google',
+      fournisseur,
       access_token: encrypt(tokens.access_token),
       refresh_token: tokens.refresh_token ? encrypt(tokens.refresh_token) : null,
       expiry_date: tokens.expiry_date || null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id,fournisseur' })
 
-    return NextResponse.redirect(new URL('/planning?google=connected', request.url))
+    return NextResponse.redirect(new URL(`${dest}?${param}=connected`, request.url))
   } catch (err) {
     console.error('Google OAuth callback error:', err)
-    return NextResponse.redirect(new URL('/planning?google=error', request.url))
+    return NextResponse.redirect(failUrl())
   }
 }

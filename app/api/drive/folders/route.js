@@ -1,6 +1,7 @@
 // app/api/drive/folders/route.js
-// Navigateur de dossiers OneDrive (drive-aware).
-//   GET  (top)    : ?  → « Mes fichiers » (source 'perso') + « Partagés » (source 'partage').
+// Navigateur de dossiers du drive connecté (OneDrive OU Google Drive — dispatch par
+// fournisseur ; interface commune drive-aware, driveId sentinelle 'gdrive' côté Google).
+//   GET  (top)    : ?  → « Mes fichiers » (+ « Partagés » côté OneDrive uniquement).
 //   GET  (browse) : ?drive_id=&item_id= → dossiers enfants de cet item.
 //   POST          : fixe la racine — dossier existant {drive_id,item_id,name} OU
 //                   création {create_name, parent_drive_id, parent_item_id}.
@@ -8,7 +9,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
-import { getValidAccessToken, getMyDriveId, listFolders, listSharedFolders, createFolder } from '../../../lib/drive/microsoft'
+import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
 
 let _admin
 function admin() {
@@ -16,11 +17,9 @@ function admin() {
   return _admin
 }
 
+// Compte drive du user (OneDrive OU Google Drive), avec son fournisseur.
 async function loadCompte(userId) {
-  const { data } = await admin().from('comptes_oauth')
-    .select('id, access_token, refresh_token, expiry_date, drive_root_drive_id, drive_root_id, drive_root_path')
-    .eq('user_id', userId).eq('fournisseur', 'microsoft').maybeSingle()
-  return data || null
+  return loadDriveCompte(admin(), userId)
 }
 
 function rootOf(compte) {
@@ -37,14 +36,16 @@ export async function GET(request) {
 
   const compte = await loadCompte(auth.user.id)
   if (!compte) return NextResponse.json({ connected: false })
+  const mod = driveModule(compte.fournisseur)
+  if (!mod) return NextResponse.json({ error: 'Fournisseur drive non supporté' }, { status: 400 })
 
   let token
   try {
-    token = await getValidAccessToken(compte)
+    token = await mod.getValidAccessToken(compte)
   } catch (e) {
     if (e.reconnect) return NextResponse.json({ connected: true, reconnect: true })
     console.error('[drive/folders GET] token', e)
-    return NextResponse.json({ error: 'Erreur OneDrive' }, { status: 500 })
+    return NextResponse.json({ error: 'Erreur Drive' }, { status: 500 })
   }
 
   const { searchParams } = new URL(request.url)
@@ -53,23 +54,23 @@ export async function GET(request) {
 
   try {
     if (driveId && itemId) {
-      const folders = (await listFolders(token, driveId, itemId)).map(f => ({ ...f, source: 'perso' }))
-      return NextResponse.json({ connected: true, level: 'browse', folders, root: rootOf(compte) })
+      const folders = (await mod.listFolders(token, driveId, itemId)).map(f => ({ ...f, source: 'perso' }))
+      return NextResponse.json({ connected: true, fournisseur: compte.fournisseur, level: 'browse', folders, root: rootOf(compte) })
     }
-    // Niveau racine : Mes fichiers + Partagés.
-    const myDriveId = await getMyDriveId(token)
+    // Niveau racine : Mes fichiers (+ Partagés côté OneDrive ; [] côté Google Drive).
+    const myDriveId = await mod.getMyDriveId(token)
     const [perso, shared] = await Promise.all([
-      listFolders(token, myDriveId, 'root'),
-      listSharedFolders(token).catch(() => []), // sharedWithMe peut être vide / indispo
+      mod.listFolders(token, myDriveId, 'root'),
+      mod.listSharedFolders(token).catch(() => []),
     ])
     const folders = [
       ...perso.map(f => ({ ...f, source: 'perso' })),
       ...shared.map(f => ({ ...f, source: 'partage' })),
     ]
-    return NextResponse.json({ connected: true, level: 'top', my_drive_id: myDriveId, folders, root: rootOf(compte) })
+    return NextResponse.json({ connected: true, fournisseur: compte.fournisseur, level: 'top', my_drive_id: myDriveId, folders, root: rootOf(compte) })
   } catch (e) {
     console.error('[drive/folders GET] list', e)
-    return NextResponse.json({ error: 'Impossible de lister les dossiers OneDrive' }, { status: 502 })
+    return NextResponse.json({ error: 'Impossible de lister les dossiers du Drive' }, { status: 502 })
   }
 }
 
@@ -82,15 +83,17 @@ export async function POST(request) {
   const createName = (body.create_name || '').trim()
 
   const compte = await loadCompte(auth.user.id)
-  if (!compte) return NextResponse.json({ error: 'OneDrive non connecté' }, { status: 400 })
+  if (!compte) return NextResponse.json({ error: 'Aucun Drive connecté' }, { status: 400 })
+  const mod = driveModule(compte.fournisseur)
+  if (!mod) return NextResponse.json({ error: 'Fournisseur drive non supporté' }, { status: 400 })
 
   let token
   try {
-    token = await getValidAccessToken(compte)
+    token = await mod.getValidAccessToken(compte)
   } catch (e) {
-    if (e.reconnect) return NextResponse.json({ reconnect: true, error: 'Reconnecte ton OneDrive' }, { status: 409 })
+    if (e.reconnect) return NextResponse.json({ reconnect: true, error: 'Reconnecte ton Drive' }, { status: 409 })
     console.error('[drive/folders POST] token', e)
-    return NextResponse.json({ error: 'Erreur OneDrive' }, { status: 500 })
+    return NextResponse.json({ error: 'Erreur Drive' }, { status: 500 })
   }
 
   let root
@@ -99,8 +102,8 @@ export async function POST(request) {
     let parentDriveId = body.parent_drive_id
     const parentItemId = body.parent_item_id || 'root'
     try {
-      if (!parentDriveId) parentDriveId = await getMyDriveId(token)
-      root = await createFolder(token, parentDriveId, parentItemId, createName)
+      if (!parentDriveId) parentDriveId = await mod.getMyDriveId(token)
+      root = await mod.createFolder(token, parentDriveId, parentItemId, createName)
     } catch (e) {
       console.error('[drive/folders POST] create', e)
       return NextResponse.json({ error: 'Création du dossier impossible' }, { status: 502 })

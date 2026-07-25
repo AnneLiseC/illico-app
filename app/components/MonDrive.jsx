@@ -35,9 +35,13 @@ export default function MonDrive({ profile, onError, onSucces }) {
 
   const charger = useCallback(async () => {
     if (!profile) return
-    const { data } = await supabase.from('comptes_oauth')
-      .select('id, compte_email, drive_root_drive_id, drive_root_id, drive_root_path')
-      .eq('user_id', profile.id).eq('fournisseur', 'microsoft').maybeSingle()
+    // Modèle « alternative » : le user a AU PLUS un drive (OneDrive 'microsoft' OU
+    // Google Drive 'googledrive'). On prend le plus récent.
+    const { data: rows } = await supabase.from('comptes_oauth')
+      .select('id, fournisseur, compte_email, drive_root_drive_id, drive_root_id, drive_root_path')
+      .eq('user_id', profile.id).in('fournisseur', ['microsoft', 'googledrive'])
+      .order('updated_at', { ascending: false }).limit(1)
+    const data = (rows && rows[0]) || null
     setCompte(data || null)
     if (data) {
       const { data: inboxData } = await supabase.from('drive_inbox')
@@ -56,16 +60,22 @@ export default function MonDrive({ profile, onError, onSucces }) {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
-    const r = params.get('onedrive')
-    if (!r) return
-    if (r === 'connected') { onSucces?.('OneDrive connecté ✓'); charger() }
-    else onError?.('Connexion OneDrive impossible. Réessaie ou vérifie l\'autorisation Microsoft.')
-    params.delete('onedrive'); params.delete('reason')
+    const one = params.get('onedrive')
+    const gd = params.get('googledrive')
+    if (!one && !gd) return
+    if (one === 'connected') { onSucces?.('OneDrive connecté ✓'); charger() }
+    else if (one) onError?.('Connexion OneDrive impossible. Réessaie ou vérifie l\'autorisation Microsoft.')
+    if (gd === 'connected') { onSucces?.('Google Drive connecté ✓'); charger() }
+    else if (gd) onError?.('Connexion Google Drive impossible. Réessaie ou vérifie l\'autorisation Google (scope Drive).')
+    params.delete('onedrive'); params.delete('googledrive'); params.delete('reason')
     const qs = params.toString()
     window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!profile) return null
+
+  // Libellé du drive connecté (ou générique).
+  const labelDrive = compte?.fournisseur === 'googledrive' ? 'Google Drive' : 'OneDrive'
 
   const connecter = async () => {
     setConnecting(true); onError?.(''); onSucces?.('')
@@ -77,9 +87,19 @@ export default function MonDrive({ profile, onError, onSucces }) {
     } catch { onError?.('Erreur de connexion OneDrive'); setConnecting(false) }
   }
 
+  const connecterGoogleDrive = async () => {
+    setConnecting(true); onError?.(''); onSucces?.('')
+    try {
+      const res = await apiFetch('/api/auth/google', { method: 'POST', body: JSON.stringify({ kind: 'drive' }) })
+      const d = await res.json()
+      if (res.ok && d.url) window.location.href = d.url
+      else { onError?.(d.error || 'Erreur de connexion Google Drive'); setConnecting(false) }
+    } catch { onError?.('Erreur de connexion Google Drive'); setConnecting(false) }
+  }
+
   const deconnecter = async () => {
     if (!compte) return
-    const ok = window.confirm('Déconnecter ton compte OneDrive ?\n\nLes fichiers déjà dans ton Drive n\'y touchent pas ; l\'application arrête simplement d\'y accéder.')
+    const ok = window.confirm(`Déconnecter ton compte ${labelDrive} ?\n\nLes fichiers déjà dans ton Drive n'y touchent pas ; l'application arrête simplement d'y accéder.`)
     if (!ok) return
     onError?.(''); onSucces?.('')
     try {
@@ -88,7 +108,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
         body: JSON.stringify({ compte_oauth_id: compte.id }),
       })
       const d = await res.json()
-      if (res.ok) { onSucces?.('OneDrive déconnecté ✓'); setCompte(null); setPickerOpen(false) }
+      if (res.ok) { onSucces?.(`${labelDrive} déconnecté ✓`); setCompte(null); setPickerOpen(false) }
       else onError?.(d.error || 'Déconnexion impossible')
     } catch { onError?.('Déconnexion impossible') }
   }
@@ -210,7 +230,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
           {compte
             ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 600, color: 'var(--ink-700)' }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#15803d', flexShrink: 0 }} />
-                OneDrive
+                {labelDrive}
               </span>
             : <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Aucun Drive connecté</span>}
         </div>
@@ -224,8 +244,8 @@ export default function MonDrive({ profile, onError, onSucces }) {
         <>
           <div style={{ border: '1px solid var(--ink-200)', borderRadius: 12, padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink-900)' }}>OneDrive</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>{compte.compte_email || 'Compte Microsoft'}</div>
+              <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink-900)' }}>{labelDrive}</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>{compte.compte_email || (compte.fournisseur === 'googledrive' ? 'Compte Google' : 'Compte Microsoft')}</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#15803d', flexShrink: 0 }} />
@@ -263,7 +283,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
                 </div>
 
                 {loadingFolders && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Lecture des dossiers…</div>}
-                {reconnect && <div style={{ fontSize: 12.5, color: '#dc2626' }}>Accès OneDrive expiré. Déconnecte puis reconnecte ton compte ci-dessus.</div>}
+                {reconnect && <div style={{ fontSize: 12.5, color: '#dc2626' }}>Accès {labelDrive} expiré. Déconnecte puis reconnecte ton compte ci-dessus.</div>}
 
                 {!loadingFolders && !reconnect && (
                   <>
@@ -369,6 +389,9 @@ export default function MonDrive({ profile, onError, onSucces }) {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button className="btn btn-ghost" onClick={connecter} disabled={connecting} style={{ fontSize: 12.5 }}>
             {connecting ? 'Redirection…' : '☁️ Connecter OneDrive'}
+          </button>
+          <button className="btn btn-ghost" onClick={connecterGoogleDrive} disabled={connecting} style={{ fontSize: 12.5 }}>
+            {connecting ? 'Redirection…' : '🗂️ Connecter Google Drive'}
           </button>
         </div>
       )}
