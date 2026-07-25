@@ -646,7 +646,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                 background:  r?.statut === 'regle' ? 'rgba(22,163,74,0.10)' : isPast ? 'rgba(245,158,11,0.13)' : 'var(--ink-50)',
                 border:'1px solid',borderColor: r?.statut === 'regle' ? 'rgba(22,163,74,0.2)' : isPast ? 'rgba(245,158,11,0.3)' : 'var(--ink-200)',
               }}>
-                <div style={{fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>{mLabel.slice(0,3)}</div>
+                <div style={{fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>{mLabel}</div>
                 <div style={{marginTop:6,fontSize:11.5,fontWeight:700,color:r?.statut==='regle'?'#15803d':isPast?'#a16207':'var(--ink-300)'}}>
                   {r?.statut === 'regle' ? '✓' : isPast ? '⌛' : '—'}
                 </div>
@@ -2087,7 +2087,7 @@ export default function Finances() {
     const renderMoisRow = (cle, bg) => {
       const x = comptePourCle(cle)
       const [a, m] = cle.split('-')
-      const label = `${MOIS[parseInt(m)].slice(0, 3)}. ${a}`
+      const label = `${MOIS_LABELS[parseInt(m)-1]}. ${a}`
       const ecartObj = round2(x.reelNet - objectifMensuel)
       const isOpen = moisOuvert === `${mode}_${cle}`
       return (
@@ -2118,7 +2118,7 @@ export default function Finances() {
 
     const cles = Array.from(new Set([...rowsReel.map(([k]) => k), ...redevancesScoped.filter(r => r.statut === 'regle').map(r => `${r.annee}-${String(r.mois).padStart(2, '0')}`)])).sort((a, b) => b.localeCompare(a))
     const clesAsc = [...cles].reverse()   // graphe : plus ancien à gauche -> plus récent à droite (le tableau reste en DESC)
-    const chartLabels = clesAsc.map(cle => { const [a, m] = cle.split('-'); return `${MOIS[parseInt(m)].slice(0,3)}. ${a}` })
+    const chartLabels = clesAsc.map(cle => { const [a, m] = cle.split('-'); return `${MOIS_LABELS[parseInt(m)-1]}. ${a}` })
     const chartProduits = clesAsc.map(cle => comptePourCle(cle).reelProduits)
     const chartCharges = clesAsc.map(cle => -comptePourCle(cle).reelCharges)
     const chartNet = clesAsc.map(cle => comptePourCle(cle).reelNet)
@@ -2277,7 +2277,7 @@ export default function Finances() {
           <>
             {/* Admin : CA société généré · prévi · partage société/agentes · objectif agence */}
             <FinKpiCard label={`CA généré ${anneeEnCours}`} value={fmt(totalCAGenere)} tone="brand"/>
-            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} tone="ok"/>
+            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} tone="brand"/>
             <FinKpiCard label="Part société" value={fmt(totalNetCTP)} sub={`Part agentes · ${fmt(totalGainsAgentesReels)}`} tone="brand"/>
             <FinKpiCard label="Objectif CA généré agence" value={`CA ${fmt(totalCAGenere)}`} tone="ok">
               <div style={{marginTop:8}}>
@@ -2294,8 +2294,8 @@ export default function Finances() {
           <>
             {/* Agente : ce que j'ai encaissé · ce qui reste à venir · mes commissions */}
             <FinKpiCard label={`Encaissé ${anneeEnCours}`} value={fmt(totalCAGenere)} sub="Réel net" tone="brand"/>
-            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} tone="ok"/>
-            <FinKpiCard label="Commissions HT" value={fmt(totComHT)} sub={`Frais conso. ${fmt(totFraisHT)} HT`} tone="warn"/>
+            <FinKpiCard label="CA prévisionnel" value={fmt(totPreviNet)} tone="brand"/>
+            <FinKpiCard label="Commissions HT" value={fmt(totComHT)} sub={`Frais conso. ${fmt(totFraisHT)} HT`} tone="brand"/>
           </>
         )}
       </div>

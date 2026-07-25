@@ -52,7 +52,7 @@ function BarLineChart({ id, courant, precedent, annee, couleur }) {
 }
 
 function StatKpi({ label, value, sub, tone = 'brand' }) {
-  const color = { brand: 'var(--ink-900)', ok: '#15803d', warn: '#a16207', bad: '#b91c1c' }[tone] || 'var(--ink-900)'
+  const color = { brand: 'var(--brand-800)', ok: '#15803d', warn: '#a16207', bad: '#b91c1c' }[tone] || 'var(--brand-800)'
   return (
     <div className="card kpi">
       <div className="eyebrow" style={{ marginBottom: 8 }}>{label}</div>
@@ -359,13 +359,13 @@ export default function Statistiques() {
       <div className="kpi-grid">
         <StatKpi label={modeEff === 'societe' ? `Mon CA ${annee}` : `CA généré ${annee}`} value={fmtEur(caTotal)} tone="brand"
           sub={evolCA != null ? `${evolCA >= 0 ? '▲' : '▼'} ${Math.abs(evolCA)}% vs ${annee - 1} (${fmtEur(caTotalN1)})` : `vs ${annee - 1} : n/a`} />
-        <StatKpi label={`Facturé aux clients · HT ${annee}`} value={fmtEur(factureClient.total)} tone="ok"
+        <StatKpi label={`Facturé aux clients · HT ${annee}`} value={fmtEur(factureClient.total)} tone="brand"
           sub={`Frais ${fmtEur(factureClient.frais)} · Honoraires ${fmtEur(factureClient.honoraires)}${evolFacture != null ? ` · ${evolFacture >= 0 ? '▲' : '▼'} ${Math.abs(evolFacture)}% vs ${annee - 1}` : ''}`} />
         {isAdmin ? (
-          <StatKpi label="Royalties reversées au franchiseur" value={fmtEur(roy.total)} tone="warn"
+          <StatKpi label="Royalties reversées au franchiseur" value={fmtEur(roy.total)} tone="brand"
             sub={`Frais ${fmtEur(roy.parPoste.frais)} · Comm. ${fmtEur(roy.parPoste.commissions)} · Hono. ${fmtEur(roy.parPoste.honoraires)}`} />
         ) : (
-          <StatKpi label="Mes gains (part agent)" value={fmtEur(compta.partAgentes)} tone="ok"
+          <StatKpi label="Mes gains (part agent)" value={fmtEur(compta.partAgentes)} tone="brand"
             sub={`Royalties générées ${fmtEur(roy.total)}`} />
         )}
         <StatKpi label="Dossiers" value={`${nbSignes} signés`} tone="ok"
@@ -391,7 +391,7 @@ export default function Statistiques() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
         <div className="card" style={{ padding: 20 }}>
           <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>{modeEff === 'societe' ? 'Mon CA par mois' : 'CA généré par mois'}</h2>
-          <div className="eyebrow" style={{ marginBottom: 12 }}>Réel encaissé · {annee} vs {annee - 1}</div>
+          <div className="subtitle" style={{ marginBottom: 12 }}>Réel encaissé · {annee} vs {annee - 1}</div>
           <Legende items={[{ color: 'var(--ink-900)', label: `${annee}` }, { color: '#94a3b8', label: `${annee - 1}`, dashed: true }]} />
           <BarLineChart id="stats_ca" courant={caMois} precedent={caMoisN1} annee={annee} couleur="#0094d4" />
         </div>
