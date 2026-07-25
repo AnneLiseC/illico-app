@@ -79,7 +79,7 @@ function ChantiersList({ items, selectedId, onSelect, onOpen, aujourdhui, isMobi
       </div>
       <div style={{ overflowY: isMobile ? 'visible' : 'auto', flex: 1, padding: '8px 12px' }}>
         {items.length === 0 && (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-400)', fontSize: 13 }}>Aucun dossier</div>
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-500)', fontSize: 13 }}>Aucun dossier</div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {items.map(d => {
@@ -96,7 +96,7 @@ function ChantiersList({ items, selectedId, onSelect, onOpen, aujourdhui, isMobi
                   textAlign: 'left', padding: '14px 14px', borderRadius: 12, userSelect: 'none',
                   border: '1px solid', borderColor: isSel ? 'var(--brand-500)' : 'transparent',
                   background: isSel ? 'var(--brand-50)' : 'transparent',
-                  boxShadow: isSel ? '0 0 0 3px rgba(20,184,166,0.10)' : 'none',
+                  boxShadow: isSel ? '0 0 0 3px rgba(0,148,212,0.10)' : 'none',
                   transition: 'all 150ms ease', position: 'relative',
                 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
@@ -163,7 +163,7 @@ function ChantiersList({ items, selectedId, onSelect, onOpen, aujourdhui, isMobi
 /* ── Aperçu latéral ── */
 function ChantierPreview({ d, onOpen, onBack, isMobile }) {
   if (!d) return (
-    <div className="card" style={{ display: 'grid', placeItems: 'center', textAlign: 'center', color: 'var(--ink-400)' }}>
+    <div className="card" style={{ display: 'grid', placeItems: 'center', textAlign: 'center', color: 'var(--ink-500)' }}>
       <div>
         <FolderIcon size={36} />
         <div style={{ marginTop: 10, fontSize: 13 }}>Sélectionne un dossier pour voir l&apos;aperçu</div>
@@ -199,7 +199,7 @@ function ChantierPreview({ d, onOpen, onBack, isMobile }) {
 
       {/* Header */}
       <div style={{ padding: '18px 22px 16px', borderBottom: '1px solid var(--ink-200)', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
-        <div style={{ position: 'absolute', top: 0, right: 0, width: 160, height: 80, background: 'linear-gradient(135deg, rgba(20,184,166,0.10), rgba(20,184,166,0))', pointerEvents: 'none', borderRadius: '0 var(--radius) 0 100%' }} />
+        <div style={{ position: 'absolute', top: 0, right: 0, width: 160, height: 80, background: 'linear-gradient(135deg, rgba(0,148,212,0.10), rgba(0,148,212,0))', pointerEvents: 'none', borderRadius: '0 var(--radius) 0 100%' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
@@ -530,7 +530,7 @@ function ChantiersInner() {
           { label: 'Terminés',    value: compteurs.termines,   tone: 'mute' },
         ].map(k => {
           const tc = {
-            info: { bg: 'rgba(20,184,166,0.12)',   color: '#0078ad' },
+            info: { bg: 'rgba(0,148,212,0.12)',   color: '#0078ad' },
             warn: { bg: 'rgba(245,158,11,0.13)',  color: '#a16207' },
             ok:   { bg: 'rgba(22,163,74,0.10)',   color: '#15803d' },
             mute: { bg: 'rgba(148,163,184,0.15)', color: '#475569' },
@@ -552,7 +552,7 @@ function ChantiersInner() {
       {/* Filtres */}
       <div className="card" style={{ padding: '14px 16px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: isMobile ? '100%' : 240 }}>
-          <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-400)', pointerEvents: 'none' }}>
+          <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-500)', pointerEvents: 'none' }}>
             <SearchIcon size={16} />
           </span>
           <input className="input" placeholder="Rechercher référence, client, adresse…"

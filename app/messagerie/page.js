@@ -164,7 +164,7 @@ export default function MessageriePage() {
   }
 
   if (!initialized || !profile || loading) return (
-    <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>
+    <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-500)'}}>
       Chargement…
     </div>
   )
@@ -189,7 +189,7 @@ export default function MessageriePage() {
         {/* ── Liste des dossiers AMO ── */}
         <div style={{borderRight:'1px solid var(--ink-200)', display:'flex', flexDirection:'column', overflowY:'auto', minHeight:0}}>
           {dossiers.length === 0 ? (
-            <div style={{padding:32, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+            <div style={{padding:32, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>
               Aucun chantier AMO
             </div>
           ) : (
@@ -213,7 +213,7 @@ export default function MessageriePage() {
                   </div>
                 </div>
                 {d.nbNonLus > 0 && (
-                  <span style={{background:'var(--brand-500)', color:'#fff', borderRadius:99, padding:'1px 7px', fontSize:10, fontWeight:700, flexShrink:0}}>
+                  <span style={{background:'var(--brand-500)', color:'#fff', borderRadius:99, padding:'1px 7px', fontSize:11, fontWeight:700, flexShrink:0}}>
                     {d.nbNonLus}
                   </span>
                 )}
@@ -226,7 +226,7 @@ export default function MessageriePage() {
         <div style={{display:'flex', flexDirection:'column', minHeight:0}}>
           {!dossierId ? (
             <div style={{flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:48}}>
-              <div style={{color:'var(--ink-400)', fontSize:13}}>Sélectionnez un chantier</div>
+              <div style={{color:'var(--ink-500)', fontSize:13}}>Sélectionnez un chantier</div>
             </div>
           ) : (
             <>
@@ -251,7 +251,7 @@ export default function MessageriePage() {
               {/* Messages */}
               <div style={{flex:1, overflowY:'auto', padding:'24px 22px', display:'flex', flexDirection:'column', gap:14, background:'var(--surface-2)'}}>
                 {messages.length === 0 ? (
-                  <div style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:32}}>
+                  <div style={{textAlign:'center', color:'var(--ink-500)', fontSize:13, paddingTop:32}}>
                     Aucun message pour ce chantier
                   </div>
                 ) : (

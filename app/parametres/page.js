@@ -444,7 +444,7 @@ export default function Parametres() {
                 background: active ? 'var(--brand-50)' : 'transparent',
               }}>
                 <span style={{flex:1}}>{l}</span>
-                {count != null && <span style={{background:'var(--ink-200)', color:'var(--ink-700)', fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:99}}>{count}</span>}
+                {count != null && <span style={{background:'var(--ink-200)', color:'var(--ink-700)', fontSize:11, fontWeight:700, padding:'1px 6px', borderRadius:99}}>{count}</span>}
               </button>
             )
           })}
@@ -505,7 +505,7 @@ export default function Parametres() {
                   { l:'RCS',            v:societe?.rcs },
                 ].map(({ l, v }) => (
                   <div key={l} style={{padding:'14px 16px', background:'var(--surface-2)', borderRadius:10, border:'1px solid var(--ink-100)'}}>
-                    <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>{l}</div>
+                    <div className="eyebrow" style={{fontSize:11, marginBottom:6}}>{l}</div>
                     <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>{v || '—'}</div>
                   </div>
                 ))}
@@ -526,7 +526,7 @@ export default function Parametres() {
                       { l:'Téléphone agence', v:ag.telephone },
                     ].map(({ l, v }) => (
                       <div key={l} style={{padding:'14px 16px', background:'var(--surface-2)', borderRadius:10, border:'1px solid var(--ink-100)'}}>
-                        <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>{l}</div>
+                        <div className="eyebrow" style={{fontSize:11, marginBottom:6}}>{l}</div>
                         <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>{v || '—'}</div>
                       </div>
                     ))}
@@ -559,7 +559,7 @@ export default function Parametres() {
                       <span style={{marginLeft:'auto', padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(245,158,11,0.12)', color:'#a16207'}}>En attente</span>
                     </div>
                   ))}
-                  <div style={{fontSize:11.5, color:'var(--ink-400)'}}>Une fois validée par Batilis, l&apos;agent apparaîtra dans la liste ci-dessous (redevances et parts à régler ensuite via « Modifier »).</div>
+                  <div style={{fontSize:11.5, color:'var(--ink-500)'}}>Une fois validée par Batilis, l&apos;agent apparaîtra dans la liste ci-dessous (redevances et parts à régler ensuite via « Modifier »).</div>
                 </div>
               )}
 
@@ -601,7 +601,7 @@ export default function Parametres() {
               )}
 
               {agentes.length === 0 ? (
-                <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:24}}>Aucun agent</p>
+                <p style={{textAlign:'center', color:'var(--ink-500)', fontSize:13, paddingTop:24}}>Aucun agent</p>
               ) : (
                 <div style={{display:'flex', flexDirection:'column', gap:10}}>
                   {agentes.map(agente => {
@@ -614,15 +614,15 @@ export default function Parametres() {
                         <div style={{flex:1, minWidth:180}}>
                           <div style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>{agente.prenom} {agente.nom}</div>
                           <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}}>{agente.email}</div>
-                          {agente.telephone && <div style={{fontSize:12, color:'var(--ink-400)', marginTop:1}}>{agente.telephone}</div>}
+                          {agente.telephone && <div style={{fontSize:12, color:'var(--ink-500)', marginTop:1}}>{agente.telephone}</div>}
                         </div>
                         {/* KBIS */}
                         <div style={{display:'flex', alignItems:'center', gap:8}}>
-                          <span className="eyebrow" style={{fontSize:10}}>KBIS</span>
+                          <span className="eyebrow" style={{fontSize:11}}>KBIS</span>
                           {agente.kbis_url ? (
                             <>
                               <button className="btn btn-ghost" style={{fontSize:11.5, padding:'3px 9px'}} onClick={() => voirKbis(agente.kbis_url)}>Voir</button>
-                              <label style={{fontSize:11.5, cursor:'pointer', color:'var(--ink-400)'}}>
+                              <label style={{fontSize:11.5, cursor:'pointer', color:'var(--ink-500)'}}>
                                 Remplacer
                                 <input type="file" accept=".pdf" style={{display:'none'}} onChange={e => e.target.files[0] && uploadKbis(agente.id, e.target.files[0])} />
                               </label>
@@ -661,7 +661,7 @@ export default function Parametres() {
                 <p style={{color:'var(--ink-500)', fontSize:13}}>Répartitions commission, frais et redevances par agent. Cliquez &quot;Modifier&quot; pour éditer.</p>
               </div>
               {agentes.length === 0 ? (
-                <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:24}}>Aucun agent</p>
+                <p style={{textAlign:'center', color:'var(--ink-500)', fontSize:13, paddingTop:24}}>Aucun agent</p>
               ) : (
                 <div style={{display:'flex', flexDirection:'column', gap:10}}>
                   {agentes.map(agente => (
@@ -672,21 +672,21 @@ export default function Parametres() {
                       </div>
                       <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10}}>
                         <div style={{background:'var(--surface-2)', borderRadius:8, padding:'10px 14px'}}>
-                          <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>Répartitions commission</div>
+                          <div className="eyebrow" style={{fontSize:11, marginBottom:6}}>Répartitions commission</div>
                           <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:13}}>
                             {agente.parts_agente_disponibles?.length > 0
                               ? agente.parts_agente_disponibles.map(p => `${Math.round(p * 100)} / ${Math.round((1 - p) * 100)}`).join(' · ')
                               : fmtPct(agente.part_agente_defaut)}
                           </div>
-                          <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>agent / Société</div>
+                          <div style={{fontSize:11, color:'var(--ink-500)', marginTop:3}}>agent / Société</div>
                         </div>
                         <div style={{background:'var(--surface-2)', borderRadius:8, padding:'10px 14px'}}>
-                          <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>Répartition frais</div>
+                          <div className="eyebrow" style={{fontSize:11, marginBottom:6}}>Répartition frais</div>
                           <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:13}}>{fmtPct(agente.frais_part_agente_defaut)}</div>
-                          <div style={{fontSize:11, color:'var(--ink-400)', marginTop:3}}>agent / Société</div>
+                          <div style={{fontSize:11, color:'var(--ink-500)', marginTop:3}}>agent / Société</div>
                         </div>
                         <div style={{background:'var(--surface-2)', borderRadius:8, padding:'10px 14px'}}>
-                          <div className="eyebrow" style={{fontSize:10, marginBottom:6}}>Redevances depuis</div>
+                          <div className="eyebrow" style={{fontSize:11, marginBottom:6}}>Redevances depuis</div>
                           <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:13}}>
                             {agente.redevance_debut
                               ? new Date(agente.redevance_debut).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
@@ -967,7 +967,7 @@ export default function Parametres() {
             <div>
               <label style={LS}>Email *</label>
               <input className="input" type="email" value={formDemande.email} onChange={e => setFormDemande(f => ({ ...f, email: e.target.value }))} placeholder="prenom@illico-travaux.com"/>
-              <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Adresse @illico-travaux.com. L&apos;invitation part une fois la demande validée.</div>
+              <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Adresse @illico-travaux.com. L&apos;invitation part une fois la demande validée.</div>
             </div>
             {agencesCtx.length >= 2 && (
               <div>
@@ -1012,36 +1012,36 @@ export default function Parametres() {
               <div>
                 <label style={LS}>Début des redevances</label>
                 <input className="input" type="date" value={form.redevance_debut} onChange={e => setForm(f => ({ ...f, redevance_debut: e.target.value }))}/>
-                <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Date à partir de laquelle la redevance mensuelle est due.</div>
+                <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Date à partir de laquelle la redevance mensuelle est due.</div>
               </div>
               <div>
                 <label style={LS}>Redevance mensuelle (HT)</label>
                 <input className="input" type="number" min="0" step="0.01" value={form.redevance_mensuelle_ht} onChange={e => setForm(f => ({ ...f, redevance_mensuelle_ht: e.target.value }))} placeholder="€ / mois"/>
-                <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Montant fixe dû chaque mois (à partir de la date ci-dessus). Vide = à paramétrer.</div>
+                <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Montant fixe dû chaque mois (à partir de la date ci-dessus). Vide = à paramétrer.</div>
               </div>
               <div>
                 <label style={LS}>Répartitions commission disponibles — agent %</label>
                 <input className="input" value={form.parts_agente_disponibles} onChange={e => setForm(f => ({ ...f, parts_agente_disponibles: e.target.value }))} placeholder="ex: 60 ou 50, 60"/>
-                <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Une valeur = pas de choix. Plusieurs séparées par virgule = l&apos;agent choisit.</div>
+                <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Une valeur = pas de choix. Plusieurs séparées par virgule = l&apos;agent choisit.</div>
               </div>
               <div>
                 <label style={LS}>Répartition frais de consultation — agent / Société</label>
                 <div style={{display:'flex', alignItems:'center', gap:10}}>
                   <div style={{flex:1}}>
                     <input className="input" type="number" min="0" max="100" value={form.frais_part_agente_defaut} onChange={e => setForm(f => ({ ...f, frais_part_agente_defaut: parseInt(e.target.value) || 0 }))} style={{textAlign:'center'}}/>
-                    <div style={{fontSize:11, textAlign:'center', color:'var(--ink-400)', marginTop:3}}>Agente %</div>
+                    <div style={{fontSize:11, textAlign:'center', color:'var(--ink-500)', marginTop:3}}>Agente %</div>
                   </div>
-                  <span style={{color:'var(--ink-400)', fontWeight:600}}>/</span>
+                  <span style={{color:'var(--ink-500)', fontWeight:600}}>/</span>
                   <div style={{flex:1}}>
                     <input className="input" type="number" value={100 - form.frais_part_agente_defaut} disabled style={{textAlign:'center', opacity:0.5}}/>
-                    <div style={{fontSize:11, textAlign:'center', color:'var(--ink-400)', marginTop:3}}>Société %</div>
+                    <div style={{fontSize:11, textAlign:'center', color:'var(--ink-500)', marginTop:3}}>Société %</div>
                   </div>
                 </div>
               </div>
               <div>
                 <label style={LS}>Objectif de CA — agent {new Date().getFullYear()}</label>
                 <input className="input" type="number" min="0" value={form.objectif} onChange={e => setForm(f => ({ ...f, objectif: e.target.value }))} placeholder="Objectif annuel €"/>
-                <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:4}}>Montant annuel. Modifiable à tout moment.</div>
+                <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Montant annuel. Modifiable à tout moment.</div>
               </div>
             </div>
         </ModalShell>

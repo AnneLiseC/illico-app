@@ -164,7 +164,7 @@ export default function FicheArtisan({ params }) {
   }
 
   if (loading) return <div className="page-loading" />
-  if (!artisan) return <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>Artisan introuvable</div>
+  if (!artisan) return <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-500)'}}>Artisan introuvable</div>
 
   const allDevis = artisan.devis_artisans || []
   const devisListe = profile?.role === 'admin'
@@ -216,7 +216,7 @@ export default function FicheArtisan({ params }) {
           <div style={{color:'var(--ink-500)', fontSize:13, marginTop:2}}>{[artisan.code_postal, artisan.ville].filter(Boolean).join(' ')}</div>
           <div style={{display:'flex', gap:6, marginTop:8, flexWrap:'wrap'}}>
             {artisan.metier && (
-              <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(20,184,166,0.1)', color:'var(--ink-900)'}}>
+              <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(0,148,212,0.1)', color:'var(--ink-900)'}}>
                 {artisan.metier}
               </span>
             )}
@@ -335,11 +335,11 @@ export default function FicheArtisan({ params }) {
           <div style={{padding:'14px 20px', borderBottom:'1px solid var(--ink-100)', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
             <div>
               <div style={{fontWeight:700, fontSize:14, color:'var(--ink-900)'}}>Devis par chantier</div>
-              <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:2}}>{nbDevis} devis au total</div>
+              <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{nbDevis} devis au total</div>
             </div>
           </div>
           {nbDevis === 0 ? (
-            <p style={{padding:32, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucun devis</p>
+            <p style={{padding:32, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>Aucun devis</p>
           ) : (
             devisListe.map(dv => {
               const st = STATUT_STYLE[dv.statut] || { bg:'var(--ink-100)', c:'var(--ink-500)', label: dv.statut }
@@ -353,14 +353,14 @@ export default function FicheArtisan({ params }) {
                       {dv.dossier?.reference || clientNom || '—'}
                     </div>
                     {clientNom && dv.dossier?.reference && (
-                      <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:2}} className="clip-1">{clientNom}</div>
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}} className="clip-1">{clientNom}</div>
                     )}
                   </div>
                   <span style={{fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:99, background:st.bg, color:st.c, flexShrink:0}}>
                     {st.label}
                   </span>
                   {dv.commission_pourcentage > 0 && (
-                    <span style={{fontSize:11.5, color:'var(--ink-400)', flexShrink:0}}>{Math.round(dv.commission_pourcentage * 100)}%</span>
+                    <span style={{fontSize:11.5, color:'var(--ink-500)', flexShrink:0}}>{Math.round(dv.commission_pourcentage * 100)}%</span>
                   )}
                   <span className="tnum" style={{fontSize:13, fontWeight:700, color:'var(--ink-900)', flexShrink:0}}>
                     {dv.montant_ht ? fmtEur(dv.montant_ht) : '—'}
@@ -413,7 +413,7 @@ export default function FicheArtisan({ params }) {
           {/* Fiches techniques */}
           <div className="card" style={{padding:0, overflow:'hidden'}}>
             <div style={{padding:'14px 20px', borderBottom:'1px solid var(--ink-100)', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-              <div style={{fontWeight:700, fontSize:14, color:'var(--ink-900)'}}>Fiches techniques <span style={{color:'var(--ink-400)', fontWeight:400}}>({fichesTechniques.length})</span></div>
+              <div style={{fontWeight:700, fontSize:14, color:'var(--ink-900)'}}>Fiches techniques <span style={{color:'var(--ink-500)', fontWeight:400}}>({fichesTechniques.length})</span></div>
               <button className="btn btn-ghost" style={{padding:'4px 8px'}} onClick={() => setAjouterFiche(true)}><PlusIcon size={13}/></button>
             </div>
 
@@ -438,7 +438,7 @@ export default function FicheArtisan({ params }) {
             )}
 
             {fichesTechniques.length === 0 && !ajouterFiche ? (
-              <p style={{padding:24, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucune fiche technique</p>
+              <p style={{padding:24, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>Aucune fiche technique</p>
             ) : (
               <>
                 {(fichesExpand ? fichesTechniques : fichesTechniques.slice(0, 3)).map(f => (
@@ -446,7 +446,7 @@ export default function FicheArtisan({ params }) {
                     style={{padding:'12px 20px', borderTop:'1px solid var(--ink-100)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10}}>
                     <div style={{minWidth:0}}>
                       <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)'}} className="clip-1">{f.nom}</div>
-                      {f.description && <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:2}} className="clip-1">{f.description}</div>}
+                      {f.description && <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}} className="clip-1">{f.description}</div>}
                     </div>
                     <div style={{display:'flex', gap:6, flexShrink:0}}>
                       {f.url && (

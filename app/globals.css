@@ -9,16 +9,16 @@
   --foreground: #171717;
 
   /* Brand (illiCO blue) */
-  --brand-50:  #f0fdfa;
-  --brand-100: #ccfbf1;
-  --brand-200: #99f6e4;
-  --brand-300: #5eead4;
-  --brand-400: #2dd4bf;
-  --brand-500: #14b8a6;
-  --brand-600: #0d9488;
-  --brand-700: #0f766e;
-  --brand-800: #0f766e;
-  --brand-900: #115e59;
+  --brand-50:  #f0f7ff;
+  --brand-100: #cce7f7;
+  --brand-200: #99cdef;
+  --brand-300: #66b3e7;
+  --brand-400: #3399df;
+  --brand-500: #0094d4;
+  --brand-600: #007ab0;
+  --brand-700: #00578e;
+  --brand-800: #00578e;
+  --brand-900: #003d64;
 
   /* App backgrounds */
   --bg:        #f4f7fb;
@@ -41,7 +41,7 @@
   --ok:   #16a34a;
   --warn: #f59e0b;
   --bad:  #dc2626;
-  --info: #14b8a6;
+  --info: #0094d4;
   --mute: #94a3b8;
 
   /* Semantic — variantes « texte » (plus foncées, pour le contraste sur fond clair)
@@ -69,8 +69,8 @@
   --space-6: 14px;
 
   /* Effects */
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(15,118,110,0.08);
-  --shadow-pop:  0 1px 2px rgba(0,0,0,0.04), 0 10px 30px rgba(15,118,110,0.14);
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,87,142,0.08);
+  --shadow-pop:  0 1px 2px rgba(0,0,0,0.04), 0 10px 30px rgba(0,87,142,0.14);
 
   --radius:    14px;
   --radius-sm: 10px;
@@ -117,7 +117,7 @@ input, select, textarea { font-family: inherit; color: inherit; }
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--ink-400);
+  color: var(--ink-500);
 }
 
 h1.page,
@@ -188,7 +188,7 @@ h2.page,
 .btn-primary {
   background: var(--brand-500);
   color: #fff;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 4px 12px rgba(20,184,166,0.30);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 4px 12px rgba(0,148,212,0.30);
 }
 .btn-primary:hover { background: #007fb8; transform: translateY(-1px); }
 .btn-ghost {
@@ -221,9 +221,9 @@ h2.page,
 }
 .input:focus {
   border-color: var(--brand-500);
-  box-shadow: 0 0 0 3px rgba(20,184,166,0.18);
+  box-shadow: 0 0 0 3px rgba(0,148,212,0.18);
 }
-.input::placeholder { color: var(--ink-400); }
+.input::placeholder { color: var(--ink-500); }
 select.input { padding-right: 32px; }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -364,7 +364,7 @@ select.input { padding-right: 32px; }
 .sidebar.pinned .logo-text { opacity: 1; }
 .logo-text .muted {
   display: block;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -386,7 +386,7 @@ select.input { padding-right: 32px; }
   justify-content: center;
   border: none;
   cursor: pointer;
-  font-size: 10px;
+  font-size: 11px;
   transition: background 150ms, color 150ms;
 }
 .sidebar.open .pin-btn,
@@ -466,7 +466,7 @@ select.input { padding-right: 32px; }
   margin-left: auto;
   background: var(--brand-500);
   color: #fff;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 99px;
@@ -742,7 +742,7 @@ select.input { padding-right: 32px; }
 .av {
   width: 26px; height: 26px; border-radius: 99px;
   display: grid; place-items: center;
-  font-size: 10px; font-weight: 700;
+  font-size: 11px; font-weight: 700;
   color: #fff; border: 2px solid #fff; flex: 0 0 26px;
 }
 
@@ -751,7 +751,7 @@ select.input { padding-right: 32px; }
 .deco-arc {
   position: absolute; top: -30px; left: -30px;
   width: 120px; height: 120px; border-radius: 50%;
-  background: radial-gradient(circle at 70% 70%, rgba(20,184,166,0.14), rgba(20,184,166,0) 60%);
+  background: radial-gradient(circle at 70% 70%, rgba(0,148,212,0.14), rgba(0,148,212,0) 60%);
   pointer-events: none;
 }
 
@@ -1170,7 +1170,7 @@ img, svg, video, canvas { max-width: 100%; }
   .kpi-grid .card,
   .kpi-grid .kpi { padding: 14px !important; min-height: 0 !important; }
   .kpi-grid .big-num { font-size: 22px !important; }
-  .kpi-grid .eyebrow { font-size: 10px; }
+  .kpi-grid .eyebrow { font-size: 11px; }
   /* Finance KPI uses a 26px tnum inline — shrink it */
   .kpi-grid .card .tnum { font-size: 20px !important; }
   /* Header row: stack title block and action buttons vertically.
@@ -1257,7 +1257,7 @@ img, svg, video, canvas { max-width: 100%; }
 .devis-sub { display: flex; gap: 12px; margin-top: 4px; font-size: 12px; color: var(--ink-500); flex-wrap: wrap; min-width: 0; }
 .devis-amount { text-align: right; white-space: nowrap; }
 .devis-amount-ht { font-size: 17px; font-weight: 800; color: var(--ink-900); letter-spacing: -0.01em; }
-.devis-amount-unit { font-size: 11px; font-weight: 600; color: var(--ink-400); }
+.devis-amount-unit { font-size: 11px; font-weight: 600; color: var(--ink-500); }
 .devis-amount-com { font-size: 11.5px; color: var(--ink-500); margin-top: 2px; }
 .devis-badge { display: flex; align-items: center; }
 .devis-chevron { padding: 4px 8px; }
@@ -1291,9 +1291,9 @@ img, svg, video, canvas { max-width: 100%; }
   background: #fff; border: 1px solid var(--ink-200); border-radius: 10px;
   padding: 12px; display: flex; flex-direction: column; gap: 6px;
 }
-.devis-info-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-400); margin-bottom: 2px; }
+.devis-info-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-500); margin-bottom: 2px; }
 .devis-kv { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
-.devis-kv > span:first-child { font-size: 11px; color: var(--ink-400); }
+.devis-kv > span:first-child { font-size: 11px; color: var(--ink-500); }
 
 /* Acompte + Solde côte à côte */
 .devis-facture-lines { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -1491,7 +1491,7 @@ img, svg, video, canvas { max-width: 100%; }
 .legal-content p { margin: 0 0 10px; }
 .legal-content ul { margin: 0 0 12px; padding-left: 20px; }
 .legal-content li { margin: 0 0 6px; }
-.legal-content a { color: #0f766e; }
+.legal-content a { color: #00578e; }
 .legal-content table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 13px; }
 .legal-content th, .legal-content td { border: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; vertical-align: top; }
 .legal-content th { background: #f6f8fa; font-weight: 700; color: #111827; }

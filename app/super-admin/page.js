@@ -174,9 +174,9 @@ export default function SuperAdmin() {
           <div style={{ fontSize: 12.5, color: 'var(--ink-500)', marginBottom: 16 }}>Valider = le compte est créé et l&apos;invitation envoyée. Les redevances et parts sont réglées ensuite par le franchisé.</div>
 
           {chargement ? (
-            <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Chargement…</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>Chargement…</div>
           ) : enAttente.length === 0 ? (
-            <div style={{ fontSize: 13, color: 'var(--ink-400)', textAlign: 'center', padding: '16px 0' }}>Aucune demande en attente.</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-500)', textAlign: 'center', padding: '16px 0' }}>Aucune demande en attente.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {enAttente.map(d => (
@@ -184,7 +184,7 @@ export default function SuperAdmin() {
                   <div style={{ flex: 1, minWidth: 200 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-900)' }}>{d.prenom} {d.nom}</div>
                     <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>{d.email}</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--ink-400)', marginTop: 2 }}>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-500)', marginTop: 2 }}>
                       {d.societe?.nom_societe || '—'}{d.agence?.nom ? ` · ${d.agence.nom}` : ''}
                     </div>
                   </div>
@@ -222,19 +222,19 @@ export default function SuperAdmin() {
           <div style={{ fontSize: 12.5, color: 'var(--ink-500)', marginBottom: 16 }}>Comptes utilisateurs uniquement (franchisés et agents). Aucune donnée métier.</div>
 
           {chargement ? (
-            <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Chargement…</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>Chargement…</div>
           ) : societes.length === 0 ? (
-            <div style={{ fontSize: 13, color: 'var(--ink-400)', textAlign: 'center', padding: '16px 0' }}>Aucune société.</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-500)', textAlign: 'center', padding: '16px 0' }}>Aucune société.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
               {societes.map(s => (
                 <div key={s.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                     <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink-900)' }}>{s.nom_societe || '—'}</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{s.agences.length} agence{s.agences.length > 1 ? 's' : ''} · {s.comptes.length} compte{s.comptes.length > 1 ? 's' : ''}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>{s.agences.length} agence{s.agences.length > 1 ? 's' : ''} · {s.comptes.length} compte{s.comptes.length > 1 ? 's' : ''}</div>
                   </div>
                   {s.comptes.length === 0 ? (
-                    <div style={{ fontSize: 12.5, color: 'var(--ink-400)', paddingLeft: 2 }}>Aucun compte.</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--ink-500)', paddingLeft: 2 }}>Aucun compte.</div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {s.comptes.map(c => {
@@ -243,10 +243,10 @@ export default function SuperAdmin() {
                           <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13, padding: '6px 10px', background: 'var(--surface-2)', borderRadius: 8 }}>
                             <span style={{ fontWeight: 600, color: 'var(--ink-800)' }}>{c.prenom} {c.nom}</span>
                             <span style={{ color: 'var(--ink-500)' }}>{c.email}</span>
-                            <span style={{ padding: '1px 8px', borderRadius: 99, fontSize: 10.5, fontWeight: 700, background: c.role === 'admin' ? 'rgba(15,118,110,0.1)' : 'var(--ink-100)', color: c.role === 'admin' ? 'var(--brand-800)' : 'var(--ink-600)' }}>
+                            <span style={{ padding: '1px 8px', borderRadius: 99, fontSize:11, fontWeight: 700, background: c.role === 'admin' ? 'rgba(0,87,142,0.1)' : 'var(--ink-100)', color: c.role === 'admin' ? 'var(--brand-800)' : 'var(--ink-600)' }}>
                               {c.role === 'admin' ? 'Franchisé' : 'Agent'}
                             </span>
-                            {ag && <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{ag.nom}</span>}
+                            {ag && <span style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>{ag.nom}</span>}
                             {c.actif === false && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-500)' }}>· désactivé</span>}
                             <button className="btn btn-ghost"
                               style={{ marginLeft: 'auto', fontSize: 11.5, padding: '3px 10px', opacity: busyCompte === c.id ? 0.5 : 1,
@@ -266,7 +266,7 @@ export default function SuperAdmin() {
           )}
         </div>
 
-        <div style={{ fontSize: 11.5, color: 'var(--ink-400)', textAlign: 'center' }}>
+        <div style={{ fontSize: 11.5, color: 'var(--ink-500)', textAlign: 'center' }}>
           Cloisonnement : cette page ne voit que les comptes. Jamais les dossiers, les clients, ni les finances.
         </div>
       </div>

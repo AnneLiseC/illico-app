@@ -232,7 +232,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#15803d', flexShrink: 0 }} />
                 {labelDrive}
               </span>
-            : <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Aucun Drive connecté</span>}
+            : <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>Aucun Drive connecté</span>}
         </div>
       </div>
       <p style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>
@@ -282,7 +282,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
                   ))}
                 </div>
 
-                {loadingFolders && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Lecture des dossiers…</div>}
+                {loadingFolders && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Lecture des dossiers…</div>}
                 {reconnect && <div style={{ fontSize: 12.5, color: '#dc2626' }}>Accès {labelDrive} expiré. Déconnecte puis reconnecte ton compte ci-dessus.</div>}
 
                 {!loadingFolders && !reconnect && (
@@ -297,7 +297,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
 
                     {/* Liste des dossiers du niveau courant */}
                     {folders.length === 0
-                      ? <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Aucun sous-dossier ici.</div>
+                      ? <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Aucun sous-dossier ici.</div>
                       : <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
                           {folders.map(f => (
                             <div key={`${f.driveId}:${f.itemId}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, border: '1px solid var(--ink-100)', borderRadius: 8, padding: '8px 10px' }}>
@@ -305,7 +305,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 13, color: 'var(--ink-900)', display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
                                 <span>📁</span>
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-                                {f.source === 'partage' && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: 'var(--ink-100)', color: 'var(--ink-600)' }}>Partagé</span>}
+                                {f.source === 'partage' && <span style={{ fontSize:11, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: 'var(--ink-100)', color: 'var(--ink-600)' }}>Partagé</span>}
                               </button>
                               <button className="btn btn-ghost" style={{ fontSize: 11.5, flexShrink: 0 }} disabled={saving} onClick={() => choisir(f)}>Choisir</button>
                             </div>
@@ -356,7 +356,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 13, color: 'var(--ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📄 {it.name}</div>
-                      {it.parent_path && <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{it.parent_path.replace(/^.*root:/, '')}</div>}
+                      {it.parent_path && <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>{it.parent_path.replace(/^.*root:/, '')}</div>}
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                       <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => { setRattacherId(rattacherId === it.id ? null : it.id); setRForm({ dossier_id: '', categorie: '' }) }}>Rattacher</button>

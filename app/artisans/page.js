@@ -195,7 +195,7 @@ export default function Artisans() {
       {/* Filtres */}
       <div className="card toolbar-row" style={{padding:'14px 16px', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
         <div style={{position:'relative', flex:1, minWidth:200}}>
-          <span style={{position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', pointerEvents:'none'}}>
+          <span style={{position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'var(--ink-500)', pointerEvents:'none'}}>
             <SearchIcon size={16}/>
           </span>
           <input className="input" placeholder="Rechercher entreprise, métier, ville…"
@@ -210,7 +210,7 @@ export default function Artisans() {
 
       {/* Liste vide */}
       {artisansFiltres.length === 0 ? (
-        <div className="card" style={{padding:48, textAlign:'center', color:'var(--ink-400)'}}>
+        <div className="card" style={{padding:48, textAlign:'center', color:'var(--ink-500)'}}>
           <div style={{marginBottom:12}}><HammerIcon size={32}/></div>
           <div>Aucun artisan trouvé</div>
         </div>
@@ -271,17 +271,17 @@ export default function Artisans() {
                 {/* Footer */}
                 <div style={{marginTop:12, paddingTop:12, borderTop:'1px solid var(--ink-100)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:10}}>
                   <div style={{display:'flex', alignItems:'center', gap:6, minWidth:0}}>
-                    <span className="eyebrow" style={{fontSize:10}}>Décennale</span>
+                    <span className="eyebrow" style={{fontSize:11}}>Décennale</span>
                     <DecBadge a={a}/>
                   </div>
                   <div style={{display:'flex', gap:14, alignItems:'center'}}>
                     <div style={{textAlign:'right'}}>
-                      <div className="eyebrow" style={{fontSize:10}}>Devis</div>
+                      <div className="eyebrow" style={{fontSize:11}}>Devis</div>
                       <div className="tnum" style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>{nbDevis}</div>
                     </div>
                     {caHT > 0 && (
                       <div style={{textAlign:'right'}}>
-                        <div className="eyebrow" style={{fontSize:10}}>CA HT</div>
+                        <div className="eyebrow" style={{fontSize:11}}>CA HT</div>
                         <div className="tnum" style={{fontSize:13, fontWeight:700, color:'var(--ink-900)', whiteSpace:'nowrap'}}>{fmtEur(caHT)}</div>
                       </div>
                     )}

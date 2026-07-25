@@ -55,14 +55,14 @@ export default function AppHeader() {
     <header className="app-header">
       {/* Breadcrumb */}
       <div style={{ display:'flex', alignItems:'center', gap:10, fontSize:13.5, color:'var(--ink-500)', flexShrink:0 }}>
-        <span style={{ color:'var(--ink-400)' }}>Batilis</span>
+        <span style={{ color:'var(--ink-500)' }}>Batilis</span>
         <ChevronRight />
         <strong style={{ color:'var(--ink-900)', fontWeight:700 }}>{pageTitle}</strong>
       </div>
 
       {/* Recherche globale */}
       <div style={{ flex:1, maxWidth:480, marginLeft:24, position:'relative' }}>
-        <span style={{ position:'absolute', left:14, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', pointerEvents:'none' }}>
+        <span style={{ position:'absolute', left:14, top:'50%', transform:'translateY(-50%)', color:'var(--ink-500)', pointerEvents:'none' }}>
           <SearchIcon />
         </span>
         <input
@@ -106,7 +106,7 @@ export default function AppHeader() {
             <div style={{ fontSize:12.5, fontWeight:700, color:'var(--ink-900)', lineHeight:1.1 }}>
               {profile.prenom} {profile.nom?.[0]}.
             </div>
-            <div style={{ fontSize:10.5, color:'var(--ink-500)', marginTop:1 }}>{roleLabel}</div>
+            <div style={{ fontSize:11, color:'var(--ink-500)', marginTop:1 }}>{roleLabel}</div>
           </div>
           <ChevronDown />
         </button>

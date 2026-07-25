@@ -160,7 +160,7 @@ export default function Clients() {
       {/* Barre de recherche */}
       <div className="card toolbar-row" style={{padding:'14px 16px', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
         <div style={{position:'relative', flex:1, minWidth:200}}>
-          <span style={{position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', pointerEvents:'none'}}>
+          <span style={{position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'var(--ink-500)', pointerEvents:'none'}}>
             <SearchIcon size={16}/>
           </span>
           <input className="input" placeholder="Rechercher un client (nom, ville, email)…"
@@ -172,7 +172,7 @@ export default function Clients() {
 
       {/* Grille de cartes */}
       {clientsFiltres.length === 0 ? (
-        <div className="card" style={{padding:48, textAlign:'center', color:'var(--ink-400)'}}>
+        <div className="card" style={{padding:48, textAlign:'center', color:'var(--ink-500)'}}>
           <div style={{fontSize:32, marginBottom:12}}>👤</div>
           <div>Aucun client pour le moment</div>
           <button className="btn btn-ghost" style={{marginTop:16}} onClick={() => router.push('/clients/nouveau')}>

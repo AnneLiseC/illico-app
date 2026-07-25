@@ -20,7 +20,7 @@ const COLORS = {
   navy:   '#0B2D5E',
   blue:   '#1A56DB',
   sky:    '#3B82F6',
-  teal:   '#0D9488',
+  teal:   '#007ab0',
   amber:  '#D97706',
   coral:  '#E05252',
   violet: '#7C3AED',
@@ -784,13 +784,13 @@ export default function Planning() {
 
           {/* Recherche */}
           <div style={{position:'relative'}}>
-            <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', fontSize:14, pointerEvents:'none'}}>🔍</span>
+            <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-500)', fontSize:14, pointerEvents:'none'}}>🔍</span>
             <input value={recherche} onChange={e => setRecherche(e.target.value)}
               placeholder="Rechercher client, artisan…"
               className="input" style={{paddingLeft:32, width:'100%'}}/>
             {recherche && (
               <button onClick={() => setRecherche('')}
-                style={{position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-400)', background:'none', border:'none', cursor:'pointer', fontSize:16, lineHeight:1}}>×</button>
+                style={{position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-500)', background:'none', border:'none', cursor:'pointer', fontSize:16, lineHeight:1}}>×</button>
             )}
           </div>
 
@@ -799,7 +799,7 @@ export default function Planning() {
             <div className="eyebrow" style={{marginBottom:12}}>Prochains événements · 30 jours</div>
             <div style={{display:'flex', flexDirection:'column', gap:10, maxHeight:480, overflow:'auto'}}>
               {agendaItems.length === 0 && (
-                <div style={{padding:20, textAlign:'center', color:'var(--ink-400)', fontSize:12}}>
+                <div style={{padding:20, textAlign:'center', color:'var(--ink-500)', fontSize:12}}>
                   {recherche ? 'Aucun résultat' : "Pas d'événement prévu"}
                 </div>
               )}
@@ -814,11 +814,11 @@ export default function Planning() {
                       textAlign:'center', borderLeft:`3px solid ${item.color}`
                     }}>
                       <div className="tnum" style={{fontSize:16, fontWeight:800, color:'var(--ink-900)', lineHeight:1}}>{dt.toLocaleDateString('fr-FR',{day:'2-digit', timeZone:'Europe/Paris'})}</div>
-                      <div style={{fontSize:8.5, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2}}>{dt.toLocaleDateString('fr-FR',{month:'short', timeZone:'Europe/Paris'}).replace('.','')}</div>
+                      <div style={{fontSize:11, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2}}>{dt.toLocaleDateString('fr-FR',{month:'short', timeZone:'Europe/Paris'}).replace('.','')}</div>
                     </div>
                     <div style={{minWidth:0}}>
                       <div className="clip-1" style={{fontSize:12, fontWeight:600, color:'var(--ink-900)'}}>{item.titre}</div>
-                      <div className="clip-1" style={{fontSize:10.5, color:'var(--ink-500)', marginTop:2}}>{item.sous}</div>
+                      <div className="clip-1" style={{fontSize:11, color:'var(--ink-500)', marginTop:2}}>{item.sous}</div>
                     </div>
                   </button>
                 )
@@ -843,7 +843,7 @@ export default function Planning() {
                     }}>
                       <span style={{
                         width:22, height:22, borderRadius:'50%', background:'var(--brand-500)', color:'#fff',
-                        fontSize:10, fontWeight:700, display:'grid', placeItems:'center', flexShrink:0,
+                        fontSize:11, fontWeight:700, display:'grid', placeItems:'center', flexShrink:0,
                       }}>{initials}</span>
                       <span>{a.prenom} {a.nom}</span>
                     </button>
@@ -937,7 +937,7 @@ export default function Planning() {
                 {!elementSelectionne && modalType === 'rdv' && <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:15}}>Nouveau rendez-vous</div>}
                 {!elementSelectionne && modalType === 'intervention' && <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:15}}>Nouvelle intervention artisan</div>}
               </div>
-              <button onClick={fermerModal} style={{width:32, height:32, borderRadius:'50%', display:'grid', placeItems:'center', color:'var(--ink-400)', background:'none', border:'none', cursor:'pointer', fontSize:20, lineHeight:1}}>×</button>
+              <button onClick={fermerModal} style={{width:32, height:32, borderRadius:'50%', display:'grid', placeItems:'center', color:'var(--ink-500)', background:'none', border:'none', cursor:'pointer', fontSize:20, lineHeight:1}}>×</button>
             </div>
 
             <div style={{padding:24, display:'flex', flexDirection:'column', gap:16}}>

@@ -187,7 +187,7 @@ export default function Profil() {
                 </button>
               </div>
               {!objExiste && (
-                <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>
+                <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>
                   Aucun objectif défini pour {new Date().getFullYear()}.
                 </span>
               )}
@@ -222,7 +222,7 @@ export default function Profil() {
                 <div>
                   <div className="eyebrow" style={{ marginBottom: 6 }}>Part de commission (ma part / agence)</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {paliers.length === 0 && <span style={{ fontSize: 13, color: 'var(--ink-400)' }}>—</span>}
+                    {paliers.length === 0 && <span style={{ fontSize: 13, color: 'var(--ink-500)' }}>—</span>}
                     {paliers.map((p, i) => (
                       <span key={i} style={{
                         padding: '4px 10px', borderRadius: 99, fontSize: 13, fontWeight: 600,
@@ -265,7 +265,7 @@ export default function Profil() {
           {/* Kbis (admin-only : voir seulement) */}
           <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 14 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-800)', marginBottom: 8 }}>
-              Kbis <span style={{ fontWeight: 400, color: 'var(--ink-400)', fontSize: 12 }}>· géré par l&apos;administrateur</span>
+              Kbis <span style={{ fontWeight: 400, color: 'var(--ink-500)', fontSize: 12 }}>· géré par l&apos;administrateur</span>
             </div>
             {profile.kbis_url ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
