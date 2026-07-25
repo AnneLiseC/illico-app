@@ -5083,7 +5083,7 @@ export default function FicheChantier({ params }) {
             <div className="card" style={{padding:0, overflow:'hidden'}}>
               <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
                 <h2 className="page" style={{fontSize:15}}>Documents artisans</h2>
-                <div className="eyebrow" style={{marginTop:4}}>Par artisan · attestation de démarrage, avis de virement, PV de réception</div>
+                <div className="subtitle" style={{marginTop:4}}>Par artisan · attestation de démarrage, avis de virement, PV de réception</div>
               </div>
               <div style={{padding:'6px 16px'}}>
                 {artisansChantier.map(a => {
@@ -5910,8 +5910,8 @@ export default function FicheChantier({ params }) {
             <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--ink-200)', gap:8, flexWrap:'wrap'}}>
               <div>
                 <h2 className="page" style={{fontSize:15}}>Rapports de visite</h2>
-                <div className="eyebrow" style={{marginTop:4}}>
-                  {comptesRendus.length} RV · les RV publiés sont visibles dans l&apos;espace client
+                <div className="subtitle" style={{marginTop:4}}>
+ RV · les RV publiés sont visibles dans l&apos;espace client
                 </div>
               </div>
               <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
