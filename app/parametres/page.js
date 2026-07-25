@@ -868,7 +868,7 @@ export default function Parametres() {
                   {DOCS_RGPD.map(d => (
                     <a key={d.fichier} href={d.fichier} target="_blank" rel="noreferrer"
                       style={{display:'block', padding:'12px 14px', border:'1px solid var(--ink-200)', borderRadius:10, textDecoration:'none'}}>
-                      <div style={{fontWeight:700, fontSize:13, color:'var(--ink-900)'}}>{d.titre} <span style={{fontWeight:500, color:'var(--brand-800)'}}>↓ PDF</span></div>
+                      <div style={{fontWeight:700, fontSize:13, color:'var(--ink-900)'}}>{d.titre} <span style={{fontWeight:500, color:'var(--ink-900)'}}>↓ PDF</span></div>
                       <div style={{fontSize:12, color:'var(--ink-500)', marginTop:2}}>{d.desc}</div>
                     </a>
                   ))}

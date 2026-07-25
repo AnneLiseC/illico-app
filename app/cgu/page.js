@@ -16,7 +16,7 @@ export default function CGU() {
     <LegalShell
       title="Conditions générales d’utilisation"
       maj={MAJ_DATE}
-      autreLien={<Link href="/confidentialite" style={{ color: '#0f766e' }}>Politique de confidentialité</Link>}
+      autreLien={<Link href="/confidentialite" style={{ color: 'var(--ink-900)' }}>Politique de confidentialité</Link>}
     >
       <p>Les présentes conditions générales d’utilisation (« CGU ») régissent l’accès et l’utilisation de l’application <strong>Batilis</strong>, accessible à l’adresse <a href={APP_URL}>{APP_URL}</a> (« l’Application »). En créant un compte ou en utilisant l’Application, l’utilisateur accepte sans réserve les présentes CGU.</p>
 

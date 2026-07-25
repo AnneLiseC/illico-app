@@ -32,7 +32,7 @@ const diffJours = (d) => {
 }
 
 const TYPOLOGIES = {
-  courtage:          { label: 'Courtage',           bg: 'rgba(20,184,166,0.1)',   color: 'var(--brand-800)' },
+  courtage:          { label: 'Courtage',           bg: 'rgba(148,163,184,0.18)',   color: '#475569' },
   amo:               { label: 'AMO',                bg: 'rgba(124,58,237,0.1)', color: '#7c3aed' },
   estimo:            { label: 'Estimo',             bg: 'rgba(234,179,8,0.1)',  color: '#a16207' },
   merad:             { label: 'MERAD',              bg: 'rgba(249,115,22,0.1)', color: '#c2410c' },
@@ -418,7 +418,7 @@ function FicheClientInner({ params }) {
                     style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 14, padding: '14px 22px', borderTop: '1px solid var(--ink-100)', alignItems: 'center', cursor: 'pointer' }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--brand-800)', fontWeight: 700 }}>{d.reference}</span>
+                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--ink-900)', fontWeight: 700 }}>{d.reference}</span>
                         {d.typologie && <TypoBadge typo={d.typologie}/>}
                       </div>
                       {d.description && (
@@ -449,7 +449,7 @@ function FicheClientInner({ params }) {
                   { label: 'Email 2',     value: client.email2,     icon: <MailIcon size={14}/> },
                 ].filter(row => row.value).map(row => (
                   <div key={row.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--brand-50)', color: 'var(--brand-800)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--brand-50)', color: 'var(--ink-900)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
                       {row.icon}
                     </div>
                     <div style={{ minWidth: 0 }}>

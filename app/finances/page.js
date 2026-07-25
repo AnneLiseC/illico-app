@@ -110,7 +110,7 @@ function ObjectifBar({ label, reel, objectifMontant, cible, agenteId = null, can
         )}
       </div>
       <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:objectifMontant > 0 ? 10 : 0}}>
-        <span className="tnum" style={{fontSize:22,fontWeight:800,color:'var(--brand-800)'}}>{fmt(reel)}</span>
+        <span className="tnum" style={{fontSize:22,fontWeight:800,color:'var(--ink-900)'}}>{fmt(reel)}</span>
         {objectifMontant > 0 && (
           <span style={{fontSize:12,color:'var(--ink-400)'}}>/ {fmt(objectifMontant)} · {pct}%</span>
         )}
@@ -416,7 +416,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
         {canEdit && !clot && reste > 0.01 && (
           <button onClick={(e) => { e.stopPropagation(); ajouterPaiementFacture(mois, annee, type, reste, todayISO(), total) }}
             title="Enregistrer le paiement du reste (solde en une fois)"
-            style={{fontSize:10.5,fontWeight:600,borderRadius:6,padding:'3px 8px',cursor:'pointer',border:'1px solid var(--brand-500)',background:'#fff',color:'var(--brand-700)'}}>
+            style={{fontSize:10.5,fontWeight:600,borderRadius:6,padding:'3px 8px',cursor:'pointer',border:'1px solid var(--brand-500)',background:'#fff',color:'var(--ink-900)'}}>
             Marquer reçu
           </button>
         )}
@@ -478,7 +478,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
     return (
       <div style={{display:'flex',gap:12,alignItems:'center',marginTop:6}}>
         {f?.facture_path
-          ? <button onClick={() => voir(f.facture_path)} style={{fontSize:11,color:'var(--brand-700)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>
+          ? <button onClick={() => voir(f.facture_path)} style={{fontSize:11,color:'var(--ink-900)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>
           : <span style={{fontSize:11,color:'var(--ink-400)'}}>Pas de PDF</span>}
         <label style={{fontSize:11,color:'var(--ink-600)',cursor:'pointer',border:'1px solid var(--ink-200)',borderRadius:6,padding:'3px 8px',background:'#fff'}}>
           {f?.facture_path ? '📤 Remplacer' : '📤 Déposer un PDF'}
@@ -656,7 +656,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
         </div>
         <div style={{marginTop:14,fontSize:12.5,color:'var(--ink-500)'}}>
           {redevAg.filter(r => r.statut === 'regle').length} mois réglés ·
-          <span style={{fontWeight:700,color:'var(--brand-800)',marginLeft:6,fontVariantNumeric:'tabular-nums'}}>{fmt(totalRedev)}</span> sur l&apos;année
+          <span style={{fontWeight:700,color:'var(--ink-900)',marginLeft:6,fontVariantNumeric:'tabular-nums'}}>{fmt(totalRedev)}</span> sur l&apos;année
         </div>
         <div className="eyebrow" style={{marginTop:8,color:'var(--ink-400)'}}>Redevance due au titre du mois d&apos;activité</div>
       </div>
@@ -1581,7 +1581,7 @@ export default function Finances() {
                           ? <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(22,163,74,0.12)', color:'#15803d'}}>Encaissé</span>
                           : <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(245,158,11,0.13)', color:'#a16207'}}>En attente</span>
                       } else {
-                        badge = <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(20,184,166,0.10)', color:'var(--brand-800)'}}>Engagé</span>
+                        badge = <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(148,163,184,0.18)', color:'#475569'}}>Engagé</span>
                       }
                       return (
                         <tr key={dv.id} style={{borderTop:'1px solid var(--ink-100)'}}>
@@ -1591,7 +1591,7 @@ export default function Finances() {
                           </td>
                           <td className="tnum" style={{padding:'10px 12px', textAlign:'right', color:'var(--ink-700)'}}>{fmt(dv.montant_ht)}</td>
                           <td className="tnum" style={{padding:'10px 12px', textAlign:'right', color:'var(--ink-500)'}}>{pct}%</td>
-                          <td className="tnum" style={{padding:'10px 12px', textAlign:'right', fontWeight:700, color:'var(--brand-800)'}}>{fmt(comHT)}</td>
+                          <td className="tnum" style={{padding:'10px 12px', textAlign:'right', fontWeight:700, color:'var(--ink-900)'}}>{fmt(comHT)}</td>
                           <td style={{padding:'10px 12px', textAlign:'right'}}>{badge}</td>
                         </tr>
                       )
@@ -1707,7 +1707,7 @@ export default function Finances() {
                     className="row-hover">
                     <Td>
                       <div style={{display:'flex',flexDirection:'column',gap:2}}>
-                        <span style={{fontSize:11.5,color:'var(--brand-800)',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{d.reference}</span>
+                        <span style={{fontSize:11.5,color:'var(--ink-900)',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{d.reference}</span>
                         <span style={{fontSize:12,color:'var(--ink-600)'}}>{d.client?.prenom} {d.client?.nom}</span>
                         <span style={{fontSize:10,padding:'1px 6px',borderRadius:99,background:'var(--ink-100)',color:'var(--ink-500)',fontWeight:600,alignSelf:'flex-start'}}>{d.typologie}</span>
                       </div>
@@ -1755,7 +1755,7 @@ export default function Finances() {
               <tr>
                 <td colSpan={3} style={{padding:'12px 16px',fontSize:12,fontWeight:700,color:'var(--ink-600)'}}>Total ({listeDossiers.length})</td>
                 <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.prevu)}</td>
-                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--brand-800)'}}>{fmt(totals.encaisse)}</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-900)'}}>{fmt(totals.encaisse)}</td>
                 <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-400)'}}>{fmt(totals.reste)}</td>
                 <td colSpan={2}/>
               </tr>
@@ -1825,7 +1825,7 @@ export default function Finances() {
                     <tr key={d.id} className="row-hover" style={{borderTop:'1px solid var(--ink-100)'}}>
                       <td style={{padding:'6px 12px',color:'var(--ink-500)'}}>
                         <span style={{color:'var(--ink-300)',marginRight:8}}>└</span>
-                        <span style={{fontWeight:500,color:'var(--brand-800)',fontSize:11}}>{d.reference}</span>
+                        <span style={{fontWeight:500,color:'var(--ink-900)',fontSize:11}}>{d.reference}</span>
                         <span style={{color:'var(--ink-500)',fontSize:11,marginLeft:8}}>— {nomClient}</span>
                       </td>
                       {colonnes.map(col => {
@@ -1914,7 +1914,7 @@ export default function Finances() {
                               <tr key={d.id} style={{borderTop:'1px solid var(--ink-100)'}}>
                                 <td style={{padding:'5px 12px 5px 44px',color:'var(--ink-500)',fontSize:11}}>
                                   <span style={{color:'var(--ink-300)',marginRight:6}}>└</span>
-                                  <span style={{fontWeight:500,color:'var(--brand-800)'}}>{d.reference}</span>
+                                  <span style={{fontWeight:500,color:'var(--ink-900)'}}>{d.reference}</span>
                                   <span style={{marginLeft:8}}>— {formatNomClient(d.client)}</span>
                                 </td>
                                 {cols.map(c => c.total
@@ -2041,7 +2041,7 @@ export default function Finances() {
               </tr>)
             })}
             <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total reversements</td><td style={{...tdR,fontWeight:500,color:'#ef4444'}}>{fmt(x.reelCharges)}</td></tr>
-            <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--brand-800)'}}>{isCTP ? 'Résultat net Société' : 'CA généré'}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:x.reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(x.reelNet)}</td></tr>
+            <tr style={{background:'var(--brand-50)',borderTop:'2px solid #dbeafe'}}><td style={{padding:'8px',fontWeight:700,color:'var(--ink-900)'}}>{isCTP ? 'Résultat net Société' : 'CA généré'}</td><td style={{padding:'8px',textAlign:'right',fontWeight:700,color:x.reelNet >= 0 ? 'var(--brand-800)' : '#dc2626'}}>{fmt(x.reelNet)}</td></tr>
           </tbody>
         </table>
       )
@@ -2070,7 +2070,7 @@ export default function Finances() {
               ? <div style={{fontSize:12,color:'var(--ink-400)'}}>Aucun chantier encaissé ce mois</div>
               : liste.map(({ d, htNet }) => (
                   <div key={d.id} style={{display:'flex',justifyContent:'space-between',gap:8,padding:'4px 0',fontSize:12,borderBottom:'1px solid var(--ink-100)'}}>
-                    <span><span style={{fontWeight:600,color:'var(--brand-800)'}}>{d.reference}</span> <span style={{color:'var(--ink-500)'}}>— {formatNomClient(d.client)}</span></span>
+                    <span><span style={{fontWeight:600,color:'var(--ink-900)'}}>{d.reference}</span> <span style={{color:'var(--ink-500)'}}>— {formatNomClient(d.client)}</span></span>
                     <span style={{color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{fmt(htNet)}</span>
                   </div>
                 ))}
@@ -2375,8 +2375,8 @@ export default function Finances() {
           {isAdmin && (
             <div style={{
               fontSize:12, color:'var(--ink-600)', borderRadius:8, padding:'8px 12px', marginTop:-8,
-              background: suiviMode === 'ctp' ? 'rgba(245,158,11,0.10)' : 'rgba(20,184,166,0.08)',
-              border: `1px solid ${suiviMode === 'ctp' ? 'rgba(245,158,11,0.30)' : 'rgba(20,184,166,0.22)'}`,
+              background: suiviMode === 'ctp' ? 'rgba(245,158,11,0.10)' : 'rgba(0,148,212,0.08)',
+              border: `1px solid ${suiviMode === 'ctp' ? 'rgba(245,158,11,0.30)' : 'rgba(0,148,212,0.22)'}`,
             }}>
               {suiviMode === 'ctp'
                 ? <><strong style={{color:'var(--ink-800)'}}>Société</strong> · résultat net conservé, <strong>après</strong> déduction des parts agents reversées.</>

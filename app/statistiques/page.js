@@ -52,7 +52,7 @@ function BarLineChart({ id, courant, precedent, annee, couleur }) {
 }
 
 function StatKpi({ label, value, sub, tone = 'brand' }) {
-  const color = { brand: 'var(--brand-800)', ok: '#15803d', warn: '#a16207', bad: '#b91c1c' }[tone] || 'var(--brand-800)'
+  const color = { brand: 'var(--ink-900)', ok: '#15803d', warn: '#a16207', bad: '#b91c1c' }[tone] || 'var(--ink-900)'
   return (
     <div className="card kpi">
       <div className="eyebrow" style={{ marginBottom: 8 }}>{label}</div>
@@ -392,7 +392,7 @@ export default function Statistiques() {
         <div className="card" style={{ padding: 20 }}>
           <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>{modeEff === 'societe' ? 'Mon CA par mois' : 'CA généré par mois'}</h2>
           <div className="eyebrow" style={{ marginBottom: 12 }}>Réel encaissé · {annee} vs {annee - 1}</div>
-          <Legende items={[{ color: '#14b8a6', label: `${annee}` }, { color: '#94a3b8', label: `${annee - 1}`, dashed: true }]} />
+          <Legende items={[{ color: 'var(--ink-900)', label: `${annee}` }, { color: '#94a3b8', label: `${annee - 1}`, dashed: true }]} />
           <BarLineChart id="stats_ca" courant={caMois} precedent={caMoisN1} annee={annee} couleur="#14b8a6" />
         </div>
         <div className="card" style={{ padding: 20 }}>
@@ -472,7 +472,7 @@ export default function Statistiques() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, marginBottom: 16 }}>
           {funnel.buckets.map(b => (
             <div key={b.label} style={{ padding: '10px 12px', border: '1px solid var(--ink-100)', borderRadius: 8, textAlign: 'center' }}>
-              <div className="tnum" style={{ fontSize: 22, fontWeight: 800, color: 'var(--brand-800)' }}>{b.n}</div>
+              <div className="tnum" style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink-900)' }}>{b.n}</div>
               <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>{b.label}</div>
             </div>
           ))}

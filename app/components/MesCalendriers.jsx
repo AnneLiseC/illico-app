@@ -341,7 +341,7 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
         <div style={{ border: '1px solid var(--ink-200)', borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>
             Génère un mot de passe d&apos;application sur{' '}
-            <a href="https://appleid.apple.com" target="_blank" rel="noreferrer" style={{ color: 'var(--brand-700)' }}>appleid.apple.com</a>{' '}
+            <a href="https://appleid.apple.com" target="_blank" rel="noreferrer" style={{ color: 'var(--ink-900)' }}>appleid.apple.com</a>{' '}
             (Connexion et sécurité → Mots de passe des apps), puis saisis-le ici.
           </div>
           <input className="input" placeholder="Apple ID (email)" value={appleId}

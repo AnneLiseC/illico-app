@@ -102,7 +102,7 @@ function ChantiersList({ items, selectedId, onSelect, onOpen, aujourdhui, isMobi
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                      <span className="mono" style={{ fontSize: 11.5, color: 'var(--brand-800)', fontWeight: 700, letterSpacing: 0.02 }}>{d.reference}</span>
+                      <span className="mono" style={{ fontSize: 11.5, color: 'var(--ink-900)', fontWeight: 700, letterSpacing: 0.02 }}>{d.reference}</span>
                       <TypoBadge typo={d.typologie} />
                     </div>
                     <div className="clip-1" style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)', letterSpacing: -0.01 }}>
@@ -121,7 +121,7 @@ function ChantiersList({ items, selectedId, onSelect, onOpen, aujourdhui, isMobi
                     <div style={{ marginTop: 10 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                         <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>Avancement</span>
-                        <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: 'var(--brand-800)' }}>{av}%</span>
+                        <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-900)' }}>{av}%</span>
                       </div>
                       <Progress value={av} height={4} />
                     </div>
@@ -203,7 +203,7 @@ function ChantierPreview({ d, onOpen, onBack, isMobile }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-              <span className="mono" style={{ fontSize: 12, color: 'var(--brand-800)', fontWeight: 700 }}>{d.reference}</span>
+              <span className="mono" style={{ fontSize: 12, color: 'var(--ink-900)', fontWeight: 700 }}>{d.reference}</span>
               <TypoBadge typo={d.typologie} />
             </div>
             <h2 className="page" style={{ fontSize: 22, letterSpacing: -0.02 }}>{nomClient(d.client)}</h2>
@@ -264,7 +264,7 @@ function ChantierPreview({ d, onOpen, onBack, isMobile }) {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <div className="eyebrow">Avancement</div>
-              <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--brand-800)' }}>{avancement}%</span>
+              <span className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-900)' }}>{avancement}%</span>
             </div>
             <Progress value={avancement} height={8} />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11.5, color: 'var(--ink-500)' }}>
@@ -284,7 +284,7 @@ function ChantierPreview({ d, onOpen, onBack, isMobile }) {
                   display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 12, alignItems: 'center',
                   padding: '10px 12px', borderRadius: 10, border: '1px solid var(--ink-200)',
                 }}>
-                  <div style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--brand-50)', color: 'var(--brand-800)', display: 'grid', placeItems: 'center' }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--brand-50)', color: 'var(--ink-900)', display: 'grid', placeItems: 'center' }}>
                     <HammerIcon size={16} />
                   </div>
                   <div style={{ minWidth: 0 }}>
@@ -347,7 +347,7 @@ function ChantierPreview({ d, onOpen, onBack, isMobile }) {
               </div>
               <div>
                 <div style={{ fontSize: 11, color: 'var(--ink-500)', marginBottom: 4 }}>Commissions prévues</div>
-                <div className="tnum" style={{ fontSize: 14, fontWeight: 600, color: 'var(--brand-800)' }}>{fmtEur(commissionsHT)} HT</div>
+                <div className="tnum" style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)' }}>{fmtEur(commissionsHT)} HT</div>
               </div>
             </div>
           </div>
@@ -539,7 +539,7 @@ function ChantiersInner() {
             <div key={k.label} className="card" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div className="eyebrow">{k.label}</div>
-                <div className="tnum" style={{ fontSize: 28, fontWeight: 800, color: 'var(--brand-800)', marginTop: 4, letterSpacing: -0.02 }}>{k.value}</div>
+                <div className="tnum" style={{ fontSize: 28, fontWeight: 800, color: 'var(--ink-900)', marginTop: 4, letterSpacing: -0.02 }}>{k.value}</div>
               </div>
               <span style={{ width: 36, height: 36, borderRadius: 10, background: tc.bg, color: tc.color, display: 'grid', placeItems: 'center' }}>
                 <FolderIcon size={18} />

@@ -72,7 +72,7 @@ function DossierRow({ d, onOpen }) {
   return (
     <button onClick={() => onOpen(d.id)} className="row-hover"
       style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '9px 6px', borderTop: '1px solid var(--ink-100)' }}>
-      <span className="mono" style={{ fontSize: 12, color: 'var(--brand-800)', fontWeight: 600 }}>{d.reference || '—'}</span>
+      <span className="mono" style={{ fontSize: 12, color: 'var(--ink-900)', fontWeight: 600 }}>{d.reference || '—'}</span>
       <span style={{ fontSize: 13, color: 'var(--ink-800)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{client || '—'}</span>
       <span style={{ fontSize: 16, color: 'var(--ink-300)' }}>›</span>
     </button>
@@ -377,7 +377,7 @@ export default function Dashboard() {
                       </div>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <span className="mono" style={{ fontSize: 12, color: 'var(--brand-800)', fontWeight: 600 }}>{d.reference}</span>
+                          <span className="mono" style={{ fontSize: 12, color: 'var(--ink-900)', fontWeight: 600 }}>{d.reference}</span>
                           <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nomClient}</span>
                         </div>
                         {d.referente && <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>{d.referente.prenom} {d.referente.nom}</div>}
@@ -388,7 +388,7 @@ export default function Dashboard() {
                           {new Date(d.date_limite_devis).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
                         </div>
                       </div>
-                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--brand-100)', color: 'var(--brand-800)', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, flex: '0 0 28px' }}>
+                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--brand-100)', color: 'var(--ink-900)', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, flex: '0 0 28px' }}>
                         {d.referente ? (d.referente.prenom?.[0] || '') + (d.referente.nom?.[0] || '') : '?'}
                       </div>
                     </button>
@@ -495,13 +495,13 @@ export default function Dashboard() {
                 return (
                   <button key={d.id} onClick={() => router.push(`/chantiers/${d.id}`)}
                     style={{ display: 'flex', gap: 12, alignItems: 'flex-start', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0, width: '100%' }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--brand-50)', color: 'var(--brand-800)', display: 'grid', placeItems: 'center', flex: '0 0 32px', fontSize: 14 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--brand-50)', color: 'var(--ink-900)', display: 'grid', placeItems: 'center', flex: '0 0 32px', fontSize: 14 }}>
                       {cs === 'en_cours_chantier' || cs === 'chantier_a_venir' ? '🔨' : cs === 'termine' ? '✅' : ['en_etude','devis_en_attente','devis_prets','devis_a_modifier','en_attente_signature'].includes(cs) ? '📄' : '📁'}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, color: 'var(--ink-700)', lineHeight: 1.4 }}>
                         <strong style={{ color: 'var(--ink-900)' }}>{nomClient}</strong> — {actionLabel}{' '}
-                        <span className="mono" style={{ color: 'var(--brand-800)' }}>{d.reference}</span>
+                        <span className="mono" style={{ color: 'var(--ink-900)' }}>{d.reference}</span>
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3 }}>{relTime(d.created_at)}</div>
                     </div>
