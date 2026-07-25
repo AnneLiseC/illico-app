@@ -16,7 +16,7 @@ export default function Confidentialite() {
     <LegalShell
       title="Politique de confidentialité"
       maj={MAJ_DATE}
-      autreLien={<Link href="/cgu" style={{ color: '#0f766e' }}>Conditions d’utilisation</Link>}
+      autreLien={<Link href="/cgu" style={{ color: 'var(--ink-900)' }}>Conditions d’utilisation</Link>}
     >
       <p><strong>Éditrice de l’application :</strong> {EDITEUR.nom} — {EDITEUR.formeJuridique}, {EDITEUR.adresse}, SIRET {EDITEUR.siret}.<br />
         <strong>Contact protection des données :</strong> <a href={`mailto:${EDITEUR.contactEmail}`}>{EDITEUR.contactEmail}</a></p>

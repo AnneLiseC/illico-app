@@ -20,7 +20,7 @@ export default function LegalShell({ title, maj, children, autreLien }) {
         </div>
         <div style={{ display: 'flex', gap: 18, justifyContent: 'center', flexWrap: 'wrap', marginTop: 20, fontSize: 13 }}>
           {autreLien}
-          <Link href="/login" style={{ color: '#0f766e' }}>Retour à la connexion</Link>
+          <Link href="/login" style={{ color: 'var(--ink-900)' }}>Retour à la connexion</Link>
         </div>
       </div>
     </div>

@@ -54,7 +54,7 @@ export default function MarkdownCR({ text, variant = 'client' }) {
     ? { width: '100%', borderCollapse: 'collapse', margin: '4px 0 12px', fontSize: 12.5 }
     : undefined
   const thStyle = staff
-    ? { textAlign: 'left', padding: '6px 10px', background: 'var(--brand-50)', color: 'var(--brand-800)', fontWeight: 700, border: '1px solid var(--ink-200)', fontSize: 12 }
+    ? { textAlign: 'left', padding: '6px 10px', background: 'var(--brand-50)', color: 'var(--ink-900)', fontWeight: 700, border: '1px solid var(--ink-200)', fontSize: 12 }
     : undefined
   const tdStyle = staff
     ? { padding: '6px 10px', border: '1px solid var(--ink-100)', color: 'var(--ink-700)', verticalAlign: 'top' }

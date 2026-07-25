@@ -208,7 +208,7 @@ export default function FicheArtisan({ params }) {
 
       {/* ── Hero ── */}
       <div className="card" style={{padding:'20px 24px', display:'flex', alignItems:'center', gap:16, flexWrap:'wrap'}}>
-        <div style={{width:52, height:52, borderRadius:14, background:'var(--brand-50)', color:'var(--brand-800)', display:'grid', placeItems:'center', flexShrink:0}}>
+        <div style={{width:52, height:52, borderRadius:14, background:'var(--brand-50)', color:'var(--ink-900)', display:'grid', placeItems:'center', flexShrink:0}}>
           <HammerIcon size={22}/>
         </div>
         <div style={{flex:1, minWidth:0}}>
@@ -216,12 +216,12 @@ export default function FicheArtisan({ params }) {
           <div style={{color:'var(--ink-500)', fontSize:13, marginTop:2}}>{[artisan.code_postal, artisan.ville].filter(Boolean).join(' ')}</div>
           <div style={{display:'flex', gap:6, marginTop:8, flexWrap:'wrap'}}>
             {artisan.metier && (
-              <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(20,184,166,0.1)', color:'var(--brand-800)'}}>
+              <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(20,184,166,0.1)', color:'var(--ink-900)'}}>
                 {artisan.metier}
               </span>
             )}
             {artisan.kbis_url && (
-              <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'var(--brand-50)', color:'var(--brand-800)'}}>Kbis ✓</span>
+              <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'var(--brand-50)', color:'var(--ink-900)'}}>Kbis ✓</span>
             )}
             {artisan.qualification && (
               <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(22,163,74,0.1)', color:'#15803d'}}>★ {artisan.qualification}</span>
@@ -362,7 +362,7 @@ export default function FicheArtisan({ params }) {
                   {dv.commission_pourcentage > 0 && (
                     <span style={{fontSize:11.5, color:'var(--ink-400)', flexShrink:0}}>{Math.round(dv.commission_pourcentage * 100)}%</span>
                   )}
-                  <span className="tnum" style={{fontSize:13, fontWeight:700, color:'var(--brand-800)', flexShrink:0}}>
+                  <span className="tnum" style={{fontSize:13, fontWeight:700, color:'var(--ink-900)', flexShrink:0}}>
                     {dv.montant_ht ? fmtEur(dv.montant_ht) : '—'}
                   </span>
                   {(dv.devis_signe_path || dv.dossier?.id) && <ArrowIcon size={12}/>}
@@ -423,7 +423,7 @@ export default function FicheArtisan({ params }) {
                   onChange={e => setNouvelleFiche(f => ({ ...f, nom: e.target.value }))} />
                 <input className="input" placeholder="Description" value={nouvelleFiche.description}
                   onChange={e => setNouvelleFiche(f => ({ ...f, description: e.target.value }))} />
-                <label style={{fontSize:12, cursor:'pointer', color:'var(--brand-700)'}}>
+                <label style={{fontSize:12, cursor:'pointer', color:'var(--ink-900)'}}>
                   {nouvelleFiche.fichier ? `✓ ${nouvelleFiche.fichier.name}` : '+ PDF (optionnel)'}
                   <input type="file" accept=".pdf" style={{display:'none'}}
                     onChange={e => setNouvelleFiche(f => ({ ...f, fichier: e.target.files[0] || null }))} />

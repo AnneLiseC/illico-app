@@ -88,7 +88,7 @@ export function Avatar({ name, color, size = 28, ring = false }) {
 
 export function KpiCard({ label, value, sub, tone = 'brand', icon, corner = true, trend, children, onClick }) {
   const cornerColor = {
-    brand: 'rgba(20,184,166,0.10)',
+    brand: 'rgba(100,116,139,0.10)',
     ok:    'rgba(22,163,74,0.10)',
     warn:  'rgba(245,158,11,0.12)',
     bad:   'rgba(220,38,38,0.10)',
@@ -110,7 +110,7 @@ export function KpiCard({ label, value, sub, tone = 'brand', icon, corner = true
         {icon && (
           <div style={{
             width: 36, height: 36, borderRadius: 10,
-            background: 'rgba(15,118,110,0.08)', color: 'var(--brand-800)',
+            background: 'rgba(15,118,110,0.08)', color: 'var(--ink-900)',
             display: 'grid', placeItems: 'center', flex: '0 0 36px',
           }}>
             {icon}
@@ -134,7 +134,7 @@ export function MiniKpi({ label, value, sub, tone = 'brand', progress }) {
   return (
     <div className="card" style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div className="eyebrow">{label}</div>
-      <div className="tnum" style={{ fontSize: 22, fontWeight: 800, color: 'var(--brand-800)', letterSpacing: -0.02, marginTop: 2 }}>{value}</div>
+      <div className="tnum" style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink-900)', letterSpacing: -0.02, marginTop: 2 }}>{value}</div>
       {progress != null && <Progress value={progress} height={4} />}
       {sub && <div style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>{sub}</div>}
     </div>

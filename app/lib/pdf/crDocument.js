@@ -11,7 +11,7 @@ import React from 'react'
 import { Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
 import { formatNomClient } from '../clients.js'
 
-const BLEU = '#0f766e'
+const BLEU = '#00578e'
 
 export function buildCRDocument({ dossier, cr, sections, logo, photos }) {
   const client = dossier.client

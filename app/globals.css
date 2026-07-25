@@ -247,8 +247,8 @@ select.input { padding-right: 32px; }
 .badge-warn  { background: rgba(245,158,11,0.13); color: #a16207; }
 .badge-bad   { background: rgba(220,38,38,0.10); color: #b91c1c; }
 .badge-mute  { background: rgba(148,163,184,0.18); color: #475569; }
-.badge-info  { background: rgba(20,184,166,0.12); color: #0078ad; }
-.badge-brand { background: rgba(15,118,110,0.10); color: var(--brand-800); }
+.badge-info  { background: rgba(0,148,212,0.12); color: #0078ad; }
+.badge-brand { background: var(--ink-100); color: var(--ink-700); }
 
 /* ─────────────────────────────────────────────────────────────────
    Progress
@@ -1330,27 +1330,27 @@ img, svg, video, canvas { max-width: 100%; }
   border: none; background: none; padding: 6px 14px; border-radius: 7px;
   font-size: 12.5px; font-weight: 600; color: var(--ink-500); cursor: pointer; white-space: nowrap;
 }
-.recap-tab.active { background: #fff; color: var(--brand-800); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.recap-tab.active { background: #fff; color: #00578e; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 
-/* Récapitulatif : 3 formules côte à côte */
+/* Récapitulatif : 3 formules côte à côte (couleur métier = bleu illiCO) */
 .recap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 12px; }
 .recap-col {
-  border: 1px solid var(--brand-200); border-radius: 10px; padding: 14px;
-  background: rgba(20,184,166,0.05); display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid #99cdef; border-radius: 10px; padding: 14px;
+  background: rgba(0,148,212,0.05); display: flex; flex-direction: column; gap: 8px;
 }
-.recap-col-remise { background: rgba(20,184,166,0.09); }
+.recap-col-remise { background: rgba(0,148,212,0.09); }
 .recap-col-head {
   display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
-  font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--brand-800);
+  font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: #00578e;
 }
-.recap-col-pct { font-size: 13px; font-weight: 700; color: var(--brand-700); }
+.recap-col-pct { font-size: 13px; font-weight: 700; color: #00578e; }
 .recap-kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--ink-600); }
 .recap-total {
   display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
-  border-top: 2px solid var(--brand-500); margin-top: 4px; padding-top: 8px;
+  border-top: 2px solid #0094d4; margin-top: 4px; padding-top: 8px;
   font-weight: 700; color: var(--ink-900);
 }
-.recap-total-val { font-size: 18px; font-weight: 800; color: var(--brand-800); letter-spacing: -0.01em; }
+.recap-total-val { font-size: 18px; font-weight: 800; color: #00578e; letter-spacing: -0.01em; }
 @media (max-width: 560px) { .recap-grid { grid-template-columns: 1fr; } }
 
 /* ─────────────────────────────────────────────────────────────────

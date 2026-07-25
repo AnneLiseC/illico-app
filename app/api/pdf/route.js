@@ -23,7 +23,7 @@ function getSupabaseAdmin() {
 }
 
 // ── Couleurs ──
-const BLEU = '#0f766e'
+const BLEU = '#00578e'
 const BLEU_CLAIR = '#2f8dcb'
 const GRIS = '#f3f4f6'
 const GRIS_TEXTE = '#6b7280'

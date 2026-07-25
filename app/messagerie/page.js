@@ -234,7 +234,7 @@ export default function MessageriePage() {
               <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)', display:'flex', alignItems:'center', gap:12}}>
                 <div style={{
                   width:38, height:38, borderRadius:12, flexShrink:0,
-                  background:'var(--brand-50)', color:'var(--brand-800)',
+                  background:'var(--brand-50)', color:'var(--ink-900)',
                   display:'grid', placeItems:'center', fontSize:15, fontWeight:800,
                 }}>
                   {(dossierActif ? nomClient(dossierActif) : '').charAt(0).toUpperCase()}
@@ -286,7 +286,7 @@ export default function MessageriePage() {
                                 <button onClick={annulerEdition}
                                   style={{fontSize:11, background:'transparent', border:0, color:'inherit', opacity:0.85, cursor:'pointer'}}>Annuler</button>
                                 <button onClick={() => modifierMessage(msg)} disabled={!editText.trim()}
-                                  style={{fontSize:11, fontWeight:700, background:'#fff', color:'var(--brand-700)', border:0, borderRadius:6, padding:'2px 10px', cursor:'pointer'}}>Valider</button>
+                                  style={{fontSize:11, fontWeight:700, background:'#fff', color:'var(--ink-900)', border:0, borderRadius:6, padding:'2px 10px', cursor:'pointer'}}>Valider</button>
                               </div>
                             </div>
                           ) : (

@@ -235,7 +235,7 @@ export default function Artisans() {
                   {modeSelection && (
                     <input type="checkbox" checked={selected} readOnly style={{accentColor:'#b91c1c', marginTop:4, flexShrink:0}}/>
                   )}
-                  <div style={{width:38, height:38, borderRadius:10, background:'var(--brand-50)', color:'var(--brand-800)', display:'grid', placeItems:'center', flexShrink:0}}>
+                  <div style={{width:38, height:38, borderRadius:10, background:'var(--brand-50)', color:'var(--ink-900)', display:'grid', placeItems:'center', flexShrink:0}}>
                     <HammerIcon size={18}/>
                   </div>
                   <div style={{flex:1, minWidth:0}}>
@@ -282,7 +282,7 @@ export default function Artisans() {
                     {caHT > 0 && (
                       <div style={{textAlign:'right'}}>
                         <div className="eyebrow" style={{fontSize:10}}>CA HT</div>
-                        <div className="tnum" style={{fontSize:13, fontWeight:700, color:'var(--brand-800)', whiteSpace:'nowrap'}}>{fmtEur(caHT)}</div>
+                        <div className="tnum" style={{fontSize:13, fontWeight:700, color:'var(--ink-900)', whiteSpace:'nowrap'}}>{fmtEur(caHT)}</div>
                       </div>
                     )}
                   </div>
@@ -330,7 +330,7 @@ export default function Artisans() {
                         )}
                         <td style={{padding:'14px 16px'}}>
                           <div style={{display:'flex', gap:12, alignItems:'center'}}>
-                            <div style={{width:34, height:34, borderRadius:8, background:'var(--brand-50)', color:'var(--brand-800)', display:'grid', placeItems:'center', flexShrink:0}}>
+                            <div style={{width:34, height:34, borderRadius:8, background:'var(--brand-50)', color:'var(--ink-900)', display:'grid', placeItems:'center', flexShrink:0}}>
                               <HammerIcon size={16}/>
                             </div>
                             <div>
@@ -354,7 +354,7 @@ export default function Artisans() {
                         <td style={{padding:'14px 16px', textAlign:'right', fontWeight:700, color:'var(--ink-900)'}} className="tnum">
                           {nbDevis}
                         </td>
-                        <td style={{padding:'14px 16px', textAlign:'right', fontWeight:700, color:'var(--brand-800)'}} className="tnum">
+                        <td style={{padding:'14px 16px', textAlign:'right', fontWeight:700, color:'var(--ink-900)'}} className="tnum">
                           {caHT > 0 ? fmtEur(caHT) : '—'}
                         </td>
                         <td style={{padding:'14px 16px'}}>

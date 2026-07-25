@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth-context'
 
 const TYPE_CONFIG = {
   deadline_devis:   { label: 'Échéance devis',    bg: 'rgba(245,158,11,0.12)',  color: '#a16207',           emoji: '📋' },
-  cr_depose:        { label: 'Rapport de visite',  bg: 'rgba(20,184,166,0.1)',    color: 'var(--brand-700)',  emoji: '📝' },
+  cr_depose:        { label: 'Rapport de visite',  bg: 'rgba(0,148,212,0.1)',    color: 'var(--ink-900)',  emoji: '📝' },
   acompte_debloque: { label: 'Acompte débloqué',   bg: 'rgba(22,163,74,0.1)',    color: '#15803d',           emoji: '💰' },
   msg_client:       { label: 'Message client',     bg: 'rgba(124,58,237,0.1)',   color: '#7c3aed',           emoji: '💬' },
   devis_signe:      { label: 'Devis signé',        bg: 'rgba(5,150,105,0.1)',    color: '#047857',           emoji: '✅' },
@@ -27,7 +27,7 @@ const relative = (iso) => {
 
 function Chip({ active, onClick, tone, children }) {
   const bg = active ? (tone === 'warn' ? 'rgba(245,158,11,0.13)' : 'var(--brand-50)') : 'transparent'
-  const color = active ? (tone === 'warn' ? '#a16207' : 'var(--brand-800)') : 'var(--ink-500)'
+  const color = active ? (tone === 'warn' ? '#a16207' : 'var(--ink-900)') : 'var(--ink-500)'
   const borderColor = active ? (tone === 'warn' ? 'rgba(245,158,11,0.4)' : 'var(--brand-200)') : 'var(--ink-200)'
   return (
     <button onClick={onClick} style={{padding:'5px 12px', borderRadius:99, fontSize:12, fontWeight:600, border:`1px solid ${borderColor}`, background:bg, color, cursor:'pointer'}}>
