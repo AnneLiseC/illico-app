@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { dateDossier, nomDossierChantier, sousDossiers, nettoyerSegment, cheminSegments } from '../drive/taxonomie.js'
+import { dateDossier, nomDossierChantier, sousDossiers, photoSousDossiers, nettoyerSegment, cheminSegments } from '../drive/taxonomie.js'
 
 describe('drive/taxonomie', () => {
   it('dateDossier — formate created_at (T ou espace) en AAAA.MM.JJ', () => {
@@ -18,9 +18,23 @@ describe('drive/taxonomie', () => {
     expect(sousDossiers('compte_rendu')).toEqual(['Comptes rendus'])
     expect(sousDossiers('avis_virement', 'SARL Toiture')).toEqual(['Documents artisans', 'SARL Toiture'])
     expect(sousDossiers('pv_reception', null)).toEqual(['Documents artisans', 'Sans artisan'])
-    expect(sousDossiers('facture_honoraire')).toEqual(['Autres'])
+    // Documents artisans : factures + « Autre » par artisan.
+    expect(sousDossiers('facture_artisan', 'SARL Toiture')).toEqual(['Documents artisans', 'SARL Toiture', 'Factures'])
+    expect(sousDossiers('autre_artisan', 'SARL Toiture')).toEqual(['Documents artisans', 'SARL Toiture', 'Autre'])
+    // Autres : sous-dossiers dédiés.
+    expect(sousDossiers('plans')).toEqual(['Autres', 'Plans'])
+    expect(sousDossiers('facture_honoraire')).toEqual(['Autres', 'Factures honoraires'])
+    expect(sousDossiers('administratif')).toEqual(['Autres', 'Administratif'])
     expect(sousDossiers(null)).toEqual(['Autres'])
     expect(sousDossiers('inconnue')).toEqual(['Autres'])
+  })
+
+  it('photoSousDossiers — Photos/<catégorie de prise de vue>', () => {
+    expect(photoSousDossiers('avant')).toEqual(['Photos', 'Avant'])
+    expect(photoSousDossiers('pendant')).toEqual(['Photos', 'Pendant'])
+    expect(photoSousDossiers('apres')).toEqual(['Photos', 'Après'])
+    expect(photoSousDossiers('maquette')).toEqual(['Photos', 'Maquette'])
+    expect(photoSousDossiers(null)).toEqual(['Photos', 'Autres'])
   })
 
   it('nettoyerSegment — retire les caractères interdits OneDrive', () => {
