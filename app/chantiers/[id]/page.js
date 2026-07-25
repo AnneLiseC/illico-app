@@ -4395,12 +4395,16 @@ export default function FicheChantier({ params }) {
         )
 
         // Bouton qui ouvre le formulaire d'ajout PRÉ-REMPLI (acompte / solde / autre).
-        const boutonFacturer = (dv, libelle, montant, texte) => (
+        // `primary` = action forte (Facturer le solde) : bouton plein bleu, dominant.
+        // Sinon = ajout secondaire : lien discret, pour ne pas concurrencer l'action.
+        const boutonFacturer = (dv, libelle, montant, texte, primary = false) => (
           <button onClick={() => {
             setAjouterFacture(dv.id)
             setNouvelleFacture({ montant_ttc: montant > 0 ? montant.toFixed(2) : '', date_paiement: '', statut: 'en_attente', fichier: null, libelle, libelle_autre: '' })
           }}
-            style={{fontSize:'var(--text-xs)', color:'var(--ok-strong)', border:'1px solid var(--ok-border)', padding:'var(--space-1) var(--space-5)', borderRadius:6, background:'transparent', cursor:'pointer', alignSelf:'flex-start'}}>
+            style={primary
+              ? {fontSize:'var(--text-xs)', fontWeight:700, color:'#fff', border:'1px solid #00578e', padding:'var(--space-2) var(--space-6)', borderRadius:6, background:'#00578e', cursor:'pointer', alignSelf:'flex-start'}
+              : {fontSize:'var(--text-xs)', color:'var(--ink-600)', border:'none', padding:'var(--space-1) var(--space-2)', borderRadius:6, background:'transparent', cursor:'pointer', alignSelf:'flex-start', textDecoration:'underline'}}>
             {texte}
           </button>
         )
@@ -4570,14 +4574,16 @@ export default function FicheChantier({ params }) {
                         <div style={{gridColumn:'1 / -1', display:'flex', flexDirection:'column', gap:'var(--space-3)', borderTop:'1px solid var(--ink-100)', paddingTop:'var(--space-4)'}}>
                           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:'var(--space-3)', flexWrap:'wrap'}}>
                             <span style={{fontSize:'var(--text-xs)', fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', letterSpacing:'0.04em'}}>Autres factures</span>
-                            <span className="tnum" style={{fontSize:'var(--text-xs)', fontWeight:600, color: resteAFacturer > 0 ? 'var(--warn-strong)' : 'var(--ok-strong)'}}>
+                            <span className="tnum" style={resteAFacturer > 0
+                              ? {fontSize:'var(--text-xs)', fontWeight:800, color:'var(--warn-strong)', background:'rgba(194,65,12,0.09)', padding:'2px 10px', borderRadius:99}
+                              : {fontSize:'var(--text-xs)', fontWeight:600, color:'var(--ok-strong)'}}>
                               {resteAFacturer > 0 ? `Reste à facturer : ${fmt(resteAFacturer)}` : '✓ Entièrement facturé'}
                             </span>
                           </div>
                           {factsAutres.map(ligneFacture)}
                           {formOuvert ? renderFormFacture(dv, finDv) : (
                             <div style={{display:'flex', gap:'var(--space-3)', flexWrap:'wrap'}}>
-                              {resteAFacturer > 0 && boutonFacturer(dv, 'Facture solde', resteAFacturer, 'Facturer le solde')}
+                              {resteAFacturer > 0 && boutonFacturer(dv, 'Facture solde', resteAFacturer, 'Facturer le solde', true)}
                               {boutonFacturer(dv, 'Facture de situation', 0, '+ Ajouter une facture')}
                             </div>
                           )}
