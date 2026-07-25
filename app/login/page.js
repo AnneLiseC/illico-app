@@ -197,6 +197,13 @@ export default function Login() {
         )}
 
       </div>
+
+      {/* Liens légaux publics (aussi requis par Google pour l'accès OAuth). */}
+      <div style={{position:'fixed', bottom:12, left:'50%', transform:'translateX(-50%)', zIndex:10000, background:'rgba(255,255,255,0.92)', borderRadius:99, padding:'5px 14px', fontSize:12, color:'#4b5563', boxShadow:'0 1px 4px rgba(0,0,0,0.12)'}}>
+        <a href="/confidentialite" style={{color:'#374151'}}>Confidentialité</a>
+        <span style={{margin:'0 8px', color:'#9ca3af'}}>·</span>
+        <a href="/cgu" style={{color:'#374151'}}>Conditions d’utilisation</a>
+      </div>
     </div>
   )
 }

@@ -1481,3 +1481,16 @@ img, svg, video, canvas { max-width: 100%; }
   .suivi-amo-form { flex-direction: column; align-items: stretch; }
   .suivi-amo-form .input { max-width: none; }
 }
+
+/* ── Pages légales publiques (/confidentialite, /cgu) ─────────────────────── */
+.legal-content { color: #374151; font-size: 14px; line-height: 1.7; }
+.legal-content h2 { font-size: 16px; font-weight: 800; color: #111827; margin: 28px 0 8px; }
+.legal-content h3 { font-size: 14px; font-weight: 700; color: #1f2937; margin: 18px 0 6px; }
+.legal-content p { margin: 0 0 10px; }
+.legal-content ul { margin: 0 0 12px; padding-left: 20px; }
+.legal-content li { margin: 0 0 6px; }
+.legal-content a { color: #00578e; }
+.legal-content table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 13px; }
+.legal-content th, .legal-content td { border: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; vertical-align: top; }
+.legal-content th { background: #f6f8fa; font-weight: 700; color: #111827; }
+.legal-content .maj-note { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 14px; font-size: 12.5px; color: #9a3412; margin: 0 0 20px; }
