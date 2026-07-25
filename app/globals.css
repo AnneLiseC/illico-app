@@ -1374,15 +1374,17 @@ img, svg, video, canvas { max-width: 100%; }
 .suivi-bloc { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .suivi-bloc-title {
   font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
-  color: var(--brand-800); padding-bottom: 6px; border-bottom: 1px solid var(--ink-200);
+  color: #00578e; padding-bottom: 6px; border-bottom: 1px solid var(--ink-200);
 }
 
 /* BLOC A — DEUX entreprises côte à côte (grille auto-fit) ; empilées sur écran étroit.
    Chaque carte devis empile son contenu (nom, acompte, débloqué, factures) verticalement. */
 .suivi-table {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px; align-items: start; overflow-x: visible;
 }
+/* Toujours 2 entreprises max côte à côte (jamais 3 : illisible) ; empilées sur écran étroit. */
+@media (max-width: 720px) { .suivi-table { grid-template-columns: 1fr; } }
 .suivi-devis-row {
   display: flex; flex-direction: column; gap: 10px; min-width: 0;
   border: 1px solid var(--ink-200); border-radius: 12px; padding: 12px; background: var(--surface);
@@ -1450,7 +1452,7 @@ img, svg, video, canvas { max-width: 100%; }
    pour montrer qu'il agit sur CETTE échéance et non sur le bloc entier. */
 .suivi-amo-add-link {
   align-self: flex-start; border: none; background: none; cursor: pointer;
-  font-size: 12px; font-weight: 600; color: var(--brand-700);
+  font-size: 12px; font-weight: 600; color: #00578e;
   padding: 2px 4px; margin-left: 46px; margin-top: -2px;
 }
 .suivi-amo-add-link:hover { text-decoration: underline; }
