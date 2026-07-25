@@ -94,11 +94,14 @@ export default function EspaceClient() {
   const chargerPhotos = async (dossierId) => {
     const { data } = await supabase
       .from('photos').select('*').eq('dossier_id', dossierId).order('created_at', { ascending: false })
-    const withUrls = await Promise.all((data || []).map(async (p) => {
-      const { data: u } = await supabase.storage.from('photos').createSignedUrl(p.url, 3600)
-      return { ...p, url_signee: u?.signedUrl }
-    }))
-    setPhotos(withUrls)
+    const rows = data || []
+    if (!rows.length) { setPhotos([]); return }
+    // Signature des URLs en UN SEUL appel batch (createSignedUrls) au lieu de N requêtes
+    // individuelles — c'était le goulot (159 photos = 159 allers-retours → ~10 s de blocage).
+    const { data: signed } = await supabase.storage.from('photos')
+      .createSignedUrls(rows.map(p => p.url), 3600)
+    const byPath = new Map((signed || []).map(s => [s.path, s.signedUrl]))
+    setPhotos(rows.map(p => ({ ...p, url_signee: byPath.get(p.url) || null })))
   }
 
   // Devis acceptés du dossier, lus via la vue scopée client_devis_acceptes
@@ -214,13 +217,18 @@ export default function EspaceClient() {
 
       if (dossierData) {
         setDossier(dossierData)
+        // On n'attend QUE les données légères pour afficher la page (chantier, devis, CR,
+        // agenda, messages). Les photos (potentiellement 100+) se chargent en ARRIÈRE-PLAN
+        // après le rendu → plus de « Chargement… » interminable côté client.
         await Promise.all([
-          chargerPhotos(dossierData.id),
           chargerDevis(dossierData.id),
           chargerComptesRendus(dossierData.id),
           chargerMessages(dossierData.id, user.id),
           chargerAgenda(dossierData.id),
         ])
+        setLoading(false)
+        chargerPhotos(dossierData.id) // non bloquant : les photos apparaissent juste après
+        return
       }
       setLoading(false)
     }
