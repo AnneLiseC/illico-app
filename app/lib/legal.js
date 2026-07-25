@@ -8,14 +8,14 @@
 
 export const EDITEUR = {
   nom: 'Anne-Lise Caillet',
-  formeJuridique: '[À COMPLÉTER — ex. entreprise individuelle]',
-  siret: '[À COMPLÉTER — SIRET]',
-  adresse: '[À COMPLÉTER — adresse professionnelle]',
+  formeJuridique: 'Entreprise individuelle',
+  siret: '99040978100020',
+  adresse: '22 rue ramade, 13500 Martigues',
   contactEmail: 'anne-lise.caillet@outlook.com',
 }
 
 // Date de dernière mise à jour affichée en tête des pages légales.
-export const MAJ_DATE = '[À COMPLÉTER — date de mise en ligne]'
+export const MAJ_DATE = '26/07/2026 — date de mise en ligne'
 
 // Durées de conservation (valeurs par défaut recommandées — modifiables).
 export const DUREES = {
