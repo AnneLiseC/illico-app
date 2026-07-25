@@ -15,7 +15,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
 import { getValidAccessToken, ensureFolderPath, uploadSmallFile } from '../../../lib/drive/microsoft'
-import { cheminSegments, nomDossierChantier, nettoyerSegment } from '../../../lib/drive/taxonomie'
+import { cheminSegments, nomDossierChantier, nettoyerSegment, photoSousDossiers } from '../../../lib/drive/taxonomie'
 
 let _admin
 function admin() {
@@ -46,12 +46,12 @@ export async function POST(request) {
     const { data: idx } = await db.from('doc_index').select('id').eq('photo_id', body.photo_id).maybeSingle()
     if (idx) return NextResponse.json({ ok: true, already: true })
     const { data: ph } = await db.from('photos')
-      .select('id, dossier_id, url, type_media').eq('id', body.photo_id).maybeSingle()
+      .select('id, dossier_id, url, type_media, categorie').eq('id', body.photo_id).maybeSingle()
     if (!ph) return NextResponse.json({ error: 'Photo introuvable' }, { status: 404 })
     if (ph.type_media === 'video') return NextResponse.json({ skipped: true, reason: 'video_later' })
     src = { kind: 'photo', indexCol: 'photo_id', indexVal: ph.id, dossierId: ph.dossier_id,
       bucket: 'photos', storagePath: ph.url, fileName: (ph.url || '').split('/').pop() || `${ph.id}.jpg`,
-      mime: null, categorie: null, artisanId: null }
+      mime: null, categorie: ph.categorie || null, artisanId: null }
   } else {
     return NextResponse.json({ error: 'document_id ou photo_id requis' }, { status: 400 })
   }
@@ -82,7 +82,7 @@ export async function POST(request) {
   const { data: client } = await db.from('clients').select('nom').eq('id', dossier.client_id).maybeSingle()
   let segments
   if (src.kind === 'photo') {
-    segments = [nomDossierChantier(dossier.created_at, client?.nom), 'Photos & vidéos'].map(nettoyerSegment)
+    segments = [nomDossierChantier(dossier.created_at, client?.nom), ...photoSousDossiers(src.categorie)].map(nettoyerSegment)
   } else {
     let artisanNom = null
     if (src.artisanId) {
