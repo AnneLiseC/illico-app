@@ -32,7 +32,7 @@ const diffJours = (d) => {
 }
 
 const TYPOLOGIES = {
-  courtage:          { label: 'Courtage',           bg: 'rgba(0,148,212,0.1)',   color: 'var(--brand-800)' },
+  courtage:          { label: 'Courtage',           bg: 'rgba(20,184,166,0.1)',   color: 'var(--brand-800)' },
   amo:               { label: 'AMO',                bg: 'rgba(124,58,237,0.1)', color: '#7c3aed' },
   estimo:            { label: 'Estimo',             bg: 'rgba(234,179,8,0.1)',  color: '#a16207' },
   merad:             { label: 'MERAD',              bg: 'rgba(249,115,22,0.1)', color: '#c2410c' },
@@ -313,7 +313,7 @@ function FicheClientInner({ params }) {
                 <span style={{
                   display: 'inline-flex', alignItems: 'center', padding: '2px 10px',
                   borderRadius: 99, fontSize: 11.5, fontWeight: 700,
-                  background: isPro ? 'rgba(124,58,237,0.1)' : 'rgba(0,148,212,0.1)',
+                  background: isPro ? 'rgba(124,58,237,0.1)' : 'rgba(20,184,166,0.1)',
                   color: isPro ? '#7c3aed' : 'var(--brand-800)',
                 }}>{isPro ? 'Pro' : 'Particulier'}</span>
                 {clientActif && (

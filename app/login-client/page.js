@@ -79,11 +79,11 @@ export default function LoginClient() {
       {/* ── Colonne gauche — panel brand ── */}
       <div className="login-brand" style={{
         position:'relative', overflow:'hidden',
-        background:'linear-gradient(135deg, var(--brand-800) 0%, var(--brand-900) 60%, #001e3c 100%)',
+        background:'linear-gradient(135deg, var(--brand-800) 0%, var(--brand-900) 60%, #0a3d38 100%)',
         color:'#fff', padding:'60px 64px', display:'flex', flexDirection:'column', justifyContent:'space-between'
       }}>
         <div style={{position:'absolute', top:-100, right:-80, width:340, height:340, borderRadius:'50%', background:'rgba(255,255,255,0.04)'}}/>
-        <div style={{position:'absolute', bottom:-120, left:-60, width:280, height:280, borderRadius:'50%', background:'rgba(0,148,212,0.10)'}}/>
+        <div style={{position:'absolute', bottom:-120, left:-60, width:280, height:280, borderRadius:'50%', background:'rgba(20,184,166,0.10)'}}/>
 
         {/* Logo */}
         <div style={{position:'relative', display:'flex', alignItems:'center', gap:12}}>

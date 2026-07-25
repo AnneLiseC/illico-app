@@ -208,7 +208,7 @@ export default function Clients() {
                       <span style={{
                         display:'inline-flex', alignItems:'center', padding:'2px 10px',
                         borderRadius:99, fontSize:11.5, fontWeight:700,
-                        background: isPro ? 'rgba(124,58,237,0.1)' : 'rgba(0,148,212,0.1)',
+                        background: isPro ? 'rgba(124,58,237,0.1)' : 'rgba(20,184,166,0.1)',
                         color: isPro ? '#7c3aed' : 'var(--brand-800)',
                       }}>
                         {isPro ? 'Pro' : 'Particulier'}

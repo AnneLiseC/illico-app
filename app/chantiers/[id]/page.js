@@ -1402,7 +1402,7 @@ export default function FicheChantier({ params }) {
       const page = pdf.addPage([595.28, 841.89]) // A4 portrait
       const font  = await pdf.embedFont(StandardFonts.Helvetica)
       const fontB = await pdf.embedFont(StandardFonts.HelveticaBold)
-      const brand = rgb(0, 0.34, 0.557)   // #00578e
+      const brand = rgb(0, 0.34, 0.557)   // #0f766e
       const ink   = rgb(0.13, 0.15, 0.18)
       const grey  = rgb(0.42, 0.45, 0.5)
       const line  = rgb(0.85, 0.87, 0.9)
@@ -2670,7 +2670,7 @@ export default function FicheChantier({ params }) {
     a_modifier: { label: 'À modifier', tone: 'warn' },
   }
   // Couleurs tone → classes badge (pour les boutons quick statut)
-  const TONE_BG = { ok: 'rgba(22,163,74,0.12)', warn: 'rgba(245,158,11,0.13)', bad: 'rgba(220,38,38,0.10)', info: 'rgba(0,148,212,0.12)', mute: 'rgba(148,163,184,0.15)' }
+  const TONE_BG = { ok: 'rgba(22,163,74,0.12)', warn: 'rgba(245,158,11,0.13)', bad: 'rgba(220,38,38,0.10)', info: 'rgba(20,184,166,0.12)', mute: 'rgba(148,163,184,0.15)' }
   const TONE_FG = { ok: '#15803d', warn: '#a16207', bad: '#b91c1c', info: '#0078ad', mute: '#475569' }
 
   const devisSignes = getSignedDevis({ ...dossier, devis_artisans: devis })
@@ -3111,7 +3111,7 @@ export default function FicheChantier({ params }) {
       {/* Hero card */}
       <div className="card" style={{padding:0,overflow:'hidden',position:'relative'}}>
         <div style={{position:'absolute',inset:0,pointerEvents:'none',
-          background:'radial-gradient(circle at 100% 0%, rgba(0,148,212,0.10), transparent 50%), radial-gradient(circle at 0% 0%, rgba(0,87,142,0.04), transparent 40%)'}}/>
+          background:'radial-gradient(circle at 100% 0%, rgba(20,184,166,0.10), transparent 50%), radial-gradient(circle at 0% 0%, rgba(15,118,110,0.04), transparent 40%)'}}/>
         <div style={{padding:'24px 28px',display:'flex',justifyContent:'space-between',
           gap:16,alignItems:'flex-start',position:'relative'}}>
           <div style={{minWidth:0,flex:1}}>
@@ -3474,7 +3474,7 @@ export default function FicheChantier({ params }) {
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
                 {comptesRendus.slice(0, 3).map(c => {
-                  const typeColor = { r1:'#0094d4', r2:'#16a34a', r3:'#f59e0b', suivi:'#94a3b8', reception:'#16a34a' }[c.type_visite] || '#94a3b8'
+                  const typeColor = { r1:'#14b8a6', r2:'#16a34a', r3:'#f59e0b', suivi:'#94a3b8', reception:'#16a34a' }[c.type_visite] || '#94a3b8'
                   const typeLabel = { r1:'R1', r2:'R2', r3:'R3', suivi:'Suivi', reception:'Réception' }[c.type_visite] || (c.type_visite || 'RV')
                   return (
                     <button key={c.id} onClick={() => setOnglet('cr')} className="row-hover"
@@ -3561,7 +3561,7 @@ export default function FicheChantier({ params }) {
                     const month = dt.toLocaleDateString('fr-FR', { month:'short' }).replace('.','')
                     const time = dt.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })
                     const typeColor = {
-                      visite_technique_client: '#0094d4',
+                      visite_technique_client: '#14b8a6',
                       visite_technique_artisan: '#16a34a',
                       presentation_devis: '#f59e0b',
                       suivi: '#7c3aed',
@@ -4145,12 +4145,12 @@ export default function FicheChantier({ params }) {
                         <div style={{display:'flex', flexDirection:'column', gap:6}}>
                           {versionsDevis[d.id].map(v => (
                             <div key={v.id} style={{display:'flex', alignItems:'center', gap:10, fontSize:12, padding:'6px 8px', borderRadius:6,
-                              background: v.est_courante ? 'rgba(0,148,212,0.08)' : 'transparent',
-                              border: v.est_courante ? '1px solid rgba(0,148,212,0.25)' : '1px solid transparent'}}>
+                              background: v.est_courante ? 'rgba(20,184,166,0.08)' : 'transparent',
+                              border: v.est_courante ? '1px solid rgba(20,184,166,0.25)' : '1px solid transparent'}}>
                               <span style={{fontWeight:700, color:'var(--ink-700)', minWidth:26}}>v{v.version_num}</span>
                               <span className="tnum" style={{fontWeight:600, color:'var(--ink-800)', minWidth:92}}>{fmt(v.montant_ttc || 0)} TTC</span>
                               <span style={{color:'var(--ink-400)', fontSize:11}}>{v.created_at ? new Date(v.created_at).toLocaleDateString('fr-FR', {day:'2-digit', month:'short', year:'2-digit'}) : ''}</span>
-                              {v.est_courante && <span style={{fontSize:10, fontWeight:600, color:'var(--brand-700)', background:'rgba(0,148,212,0.12)', padding:'1px 7px', borderRadius:99}}>Courante</span>}
+                              {v.est_courante && <span style={{fontSize:10, fontWeight:600, color:'var(--brand-700)', background:'rgba(20,184,166,0.12)', padding:'1px 7px', borderRadius:99}}>Courante</span>}
                               <div style={{marginLeft:'auto', display:'flex', gap:8, alignItems:'center'}}>
                                 {v.devis_pdf_path && (
                                   <button onClick={() => ouvrirDocument(v.devis_pdf_path, `Devis v${v.version_num} ${d.artisan?.entreprise || ''}.pdf`)}
@@ -5030,7 +5030,7 @@ export default function FicheChantier({ params }) {
         const typeMeta = {
           image: { color: '#7c3aed', label: 'image' },
           pdf:   { color: '#dc2626', label: 'pdf' },
-          word:  { color: '#0094d4', label: 'word' },
+          word:  { color: '#14b8a6', label: 'word' },
           sheet: { color: '#16a34a', label: 'tableur' },
           autre: { color: '#94a3b8', label: 'fichier' },
         }
@@ -5171,7 +5171,7 @@ export default function FicheChantier({ params }) {
                         <div style={{display:'flex', alignItems:'center', gap:6, marginTop:2}}>
                           <span style={{fontSize:11, color:'var(--ink-500)', textTransform:'uppercase', letterSpacing:0.04}}>{meta.label}</span>
                           {doc.categorie === 'compte_rendu' && (
-                            <span style={{fontSize:10, fontWeight:800, letterSpacing:0.04, padding:'1px 6px', borderRadius:5, background:'rgba(0,148,212,0.12)', color:'#0094d4'}}>Rapport de visite</span>
+                            <span style={{fontSize:10, fontWeight:800, letterSpacing:0.04, padding:'1px 6px', borderRadius:5, background:'rgba(20,184,166,0.12)', color:'#14b8a6'}}>Rapport de visite</span>
                           )}
                           {doc.categorie === 'facture_honoraire' && (
                             <span style={{fontSize:10, fontWeight:800, background:'rgba(234,88,12,0.12)', color:'#ea580c', borderRadius:4, padding:'1px 5px'}}>FACT</span>
@@ -5195,7 +5195,7 @@ export default function FicheChantier({ params }) {
                         {doc.categorie !== 'facture_honoraire' && (
                           <button onClick={() => toggleCategorieCR(doc.id, doc.categorie !== 'compte_rendu')}
                             className="btn btn-ghost"
-                            style={{padding:'4px 8px', fontSize:11, fontWeight:700, color: doc.categorie === 'compte_rendu' ? '#0094d4' : 'var(--ink-400)'}}
+                            style={{padding:'4px 8px', fontSize:11, fontWeight:700, color: doc.categorie === 'compte_rendu' ? '#14b8a6' : 'var(--ink-400)'}}
                             title={doc.categorie === 'compte_rendu' ? 'Retirer de la catégorie Rapport de visite' : 'Marquer comme rapport de visite'}>
                             {doc.categorie === 'compte_rendu' ? '✓ RV' : 'RV'}
                           </button>
@@ -5291,7 +5291,7 @@ export default function FicheChantier({ params }) {
                     {colonnes.map(sim => {
                       const histo = estBaseHisto(sim), courante = estBaseCourante(sim)
                       return (
-                      <th key={sim.id} style={{...thStyle, minWidth:170, background: courante ? 'rgba(0,148,212,0.06)' : histo ? 'var(--surface-2)' : undefined}}>
+                      <th key={sim.id} style={{...thStyle, minWidth:170, background: courante ? 'rgba(20,184,166,0.06)' : histo ? 'var(--surface-2)' : undefined}}>
                         <div style={{display:'flex', flexDirection:'column', gap:4, alignItems:'center'}}>
                           <span style={{fontWeight: histo ? 500 : 700, color: histo ? 'var(--ink-500)' : 'var(--ink-900)', fontSize: histo ? 11.5 : 12.5}}>{sim.nom}</span>
                           {(courante || histo) && (
@@ -5344,7 +5344,7 @@ export default function FicheChantier({ params }) {
                               ) : (
                                 <button onClick={() => setEditingMontant(l.id)} className="tnum"
                                   title="Modifier le montant pour cette simulation"
-                                  style={{border:'none', background:'none', cursor:'pointer', color: l.montant_ttc_override != null ? '#0094d4' : 'var(--ink-700)', fontWeight: l.montant_ttc_override != null ? 700 : 400}}>
+                                  style={{border:'none', background:'none', cursor:'pointer', color: l.montant_ttc_override != null ? '#14b8a6' : 'var(--ink-700)', fontWeight: l.montant_ttc_override != null ? 700 : 400}}>
                                   {fmt(montantLigne(l))}
                                 </button>
                               )}
@@ -5445,7 +5445,7 @@ export default function FicheChantier({ params }) {
                 const month = dt.toLocaleDateString('fr-FR', { month:'short' }).replace('.','')
                 const time = dt.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' })
                 const cfg = {
-                  visite_technique_client:  { label:'R1 — Visite client',         color:'#0094d4' },
+                  visite_technique_client:  { label:'R1 — Visite client',         color:'#14b8a6' },
                   visite_technique_artisan: { label:'R2 — Visite artisan',        color:'#16a34a' },
                   presentation_devis:       { label:'R3 — Présentation devis',    color:'#f59e0b' },
                   suivi:                    { label:'Suivi de chantier',          color:'#7c3aed' },
@@ -5561,7 +5561,7 @@ export default function FicheChantier({ params }) {
             return [...m.values()]
           })()
           const types = [
-            { k: 'visite_technique_client',  l: 'R1',       sub: 'Visite client',        color: '#0094d4' },
+            { k: 'visite_technique_client',  l: 'R1',       sub: 'Visite client',        color: '#14b8a6' },
             { k: 'visite_technique_artisan', l: 'R2',       sub: 'Visite artisan',       color: '#16a34a' },
             { k: 'presentation_devis',       l: 'R3',       sub: 'Présentation devis',   color: '#f59e0b' },
             { k: 'suivi',                    l: 'Suivi',    sub: 'Suivi de chantier',    color: '#7c3aed' },
@@ -5868,7 +5868,7 @@ export default function FicheChantier({ params }) {
       {/* ── COMPTES-RENDUS (maquette : 2 cols liste + sidebar IA) ── */}
       {onglet === 'cr' && (() => {
         const typeMeta = {
-          r1:        { color: '#0094d4', label: 'R1', long: 'R1 — Visite technique' },
+          r1:        { color: '#14b8a6', label: 'R1', long: 'R1 — Visite technique' },
           r2:        { color: '#16a34a', label: 'R2', long: 'R2 — Visite artisans' },
           r3:        { color: '#f59e0b', label: 'R3', long: 'R3 — Présentation devis' },
           suivi:     { color: '#94a3b8', label: 'Suivi', long: 'Suivi de chantier' },
@@ -5996,7 +5996,7 @@ export default function FicheChantier({ params }) {
                     <div key={doc.id} className="row-hover" style={{
                       display:'flex', alignItems:'center', gap:12, padding:'10px 6px', borderBottom:'1px solid var(--ink-100)',
                     }}>
-                      <div style={{width:32, height:32, borderRadius:8, background:'rgba(0,148,212,0.12)', color:'#0094d4', display:'grid', placeItems:'center', flex:'0 0 32px'}}>
+                      <div style={{width:32, height:32, borderRadius:8, background:'rgba(20,184,166,0.12)', color:'#14b8a6', display:'grid', placeItems:'center', flex:'0 0 32px'}}>
                         <DocIcon />
                       </div>
                       <button onClick={() => ouvrirDocument(doc.path, doc.nom)} className="clip-1" style={{
@@ -6010,7 +6010,7 @@ export default function FicheChantier({ params }) {
                         <EyeIcon />
                       </button>
                       <button onClick={() => toggleCategorieCR(doc.id, false)} className="btn btn-ghost"
-                        style={{padding:'4px 8px', fontSize:11, fontWeight:700, color:'#0094d4'}}
+                        style={{padding:'4px 8px', fontSize:11, fontWeight:700, color:'#14b8a6'}}
                         title="Retirer de la catégorie Rapport de visite">
                         ✓ RV
                       </button>
@@ -6023,7 +6023,7 @@ export default function FicheChantier({ params }) {
 
           {/* Sidebar IA */}
           <div style={{display:'flex', flexDirection:'column', gap:14}}>
-            <div className="card" style={{padding:18, background:'linear-gradient(135deg, rgba(0,148,212,0.06), rgba(0,87,142,0.02))'}}>
+            <div className="card" style={{padding:18, background:'linear-gradient(135deg, rgba(20,184,166,0.06), rgba(15,118,110,0.02))'}}>
               <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10}}>
                 <div style={{
                   width:32, height:32, borderRadius:8, background:'var(--brand-500)', color:'#fff',
@@ -6646,7 +6646,7 @@ export default function FicheChantier({ params }) {
                 && estDansDelaiEdition(msg.created_at)
               return (
                 <div key={msg.id} style={{display:'flex', gap:10, justifyContent: isClient ? 'flex-start' : 'flex-end'}}>
-                  {isClient && <Avatar name={who} color="#0094d4" size={28} />}
+                  {isClient && <Avatar name={who} color="#14b8a6" size={28} />}
                   <div style={{maxWidth:'min(70%, 420px)', minWidth:0}}>
                     <div style={{
                       background: isClient ? '#fff' : 'var(--brand-500)',
@@ -6680,7 +6680,7 @@ export default function FicheChantier({ params }) {
                       )}
                     </div>
                   </div>
-                  {!isClient && <Avatar name={who} color="#00578e" size={28} />}
+                  {!isClient && <Avatar name={who} color="#0f766e" size={28} />}
                 </div>
               )
             })

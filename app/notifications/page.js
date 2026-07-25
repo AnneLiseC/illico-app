@@ -6,7 +6,7 @@ import { useAuth } from '../lib/auth-context'
 
 const TYPE_CONFIG = {
   deadline_devis:   { label: 'Échéance devis',    bg: 'rgba(245,158,11,0.12)',  color: '#a16207',           emoji: '📋' },
-  cr_depose:        { label: 'Rapport de visite',  bg: 'rgba(0,148,212,0.1)',    color: 'var(--brand-700)',  emoji: '📝' },
+  cr_depose:        { label: 'Rapport de visite',  bg: 'rgba(20,184,166,0.1)',    color: 'var(--brand-700)',  emoji: '📝' },
   acompte_debloque: { label: 'Acompte débloqué',   bg: 'rgba(22,163,74,0.1)',    color: '#15803d',           emoji: '💰' },
   msg_client:       { label: 'Message client',     bg: 'rgba(124,58,237,0.1)',   color: '#7c3aed',           emoji: '💬' },
   devis_signe:      { label: 'Devis signé',        bg: 'rgba(5,150,105,0.1)',    color: '#047857',           emoji: '✅' },
@@ -149,7 +149,7 @@ export default function Notifications() {
                     display:'grid', gridTemplateColumns:'auto 1fr auto', gap:14, alignItems:'flex-start',
                     padding:'16px 20px', width:'100%', textAlign:'left', position:'relative',
                     borderBottom:'1px solid var(--ink-100)', border:0,
-                    background: n.lu ? '#fff' : 'rgba(0,148,212,0.04)',
+                    background: n.lu ? '#fff' : 'rgba(20,184,166,0.04)',
                     cursor: n.dossier_id ? 'pointer' : 'default',
                   }}
                 >

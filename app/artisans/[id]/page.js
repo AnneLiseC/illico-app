@@ -216,7 +216,7 @@ export default function FicheArtisan({ params }) {
           <div style={{color:'var(--ink-500)', fontSize:13, marginTop:2}}>{[artisan.code_postal, artisan.ville].filter(Boolean).join(' ')}</div>
           <div style={{display:'flex', gap:6, marginTop:8, flexWrap:'wrap'}}>
             {artisan.metier && (
-              <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(0,148,212,0.1)', color:'var(--brand-800)'}}>
+              <span style={{padding:'2px 10px', borderRadius:99, fontSize:11.5, fontWeight:700, background:'rgba(20,184,166,0.1)', color:'var(--brand-800)'}}>
                 {artisan.metier}
               </span>
             )}
