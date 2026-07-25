@@ -1,10 +1,9 @@
 // app/api/drive/import/route.js
 // POST { inbox_id, dossier_id, categorie } — rattache un fichier DÉPOSÉ dans OneDrive
 // (drive_inbox) à un chantier : on télécharge une COPIE dans Supabase (magasin app), on
-// crée la ligne chantier_documents, et on indexe avec origine='onedrive' — marqueur
-// générique « né dans le drive externe » (OneDrive OU Google Drive ; contrainte CHECK
-// limitée à 'app'/'onedrive', pas de migration). Le drive reste le MAÎTRE du fichier.
-// Rattachement MANUEL — l'utilisateur choisit le dossier + catégorie.
+// crée la ligne chantier_documents, et on indexe avec origine = 'onedrive' | 'googledrive'
+// selon le fournisseur (le drive reste le MAÎTRE du fichier ; la suppression app ne fait
+// que détacher l'index). Rattachement MANUEL — l'utilisateur choisit le dossier + catégorie.
 //
 // L'entrée d'index (item_id) neutralise aussi l'écho : le poller ne re-listera plus ce
 // fichier (il est désormais connu de doc_index).
@@ -74,9 +73,10 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Enregistrement impossible' }, { status: 500 })
     }
 
+    const origine = compte.fournisseur === 'googledrive' ? 'googledrive' : 'onedrive'
     await db.from('doc_index').insert({
       document_id: doc.id, dossier_id, user_id: inbox.user_id,
-      origine: 'onedrive', drive_id: inbox.drive_id, item_id: inbox.item_id, path,
+      origine, drive_id: inbox.drive_id, item_id: inbox.item_id, path,
     })
     await db.from('drive_inbox').update({ statut: 'rattache' }).eq('id', inbox.id)
 
