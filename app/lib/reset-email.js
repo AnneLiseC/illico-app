@@ -13,7 +13,7 @@ export function buildResetEmail({ actionLink }) {
   const html = `
   <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:520px;margin:0 auto;color:#1f2937">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-      <div style="width:34px;height:34px;border-radius:8px;background:${BRAND};color:#fff;display:inline-grid;place-items:center;font-weight:800">B</div>
+      <div style="width:34px;height:34px;border-radius:8px;background:${BRAND};color:#fff;display:inline-grid;place-items:center;font-weight:800">Ba</div>
       <div style="font-size:16px;font-weight:800;color:#111827">Batilis</div>
     </div>
     <p style="font-size:14px;line-height:1.6">Bonjour,</p>
