@@ -10,7 +10,7 @@ export default function LegalShell({ title, maj, children, autreLien }) {
     <div style={{ minHeight: '100vh', background: '#f6f8fa', padding: '40px 20px' }}>
       <div style={{ maxWidth: 820, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 8, background: '#00578e', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800 }}>Ba</div>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: '#0f766e', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800 }}>Ba</div>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#111827' }}>Batilis</div>
         </div>
         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14, padding: '32px 34px' }}>
@@ -20,7 +20,7 @@ export default function LegalShell({ title, maj, children, autreLien }) {
         </div>
         <div style={{ display: 'flex', gap: 18, justifyContent: 'center', flexWrap: 'wrap', marginTop: 20, fontSize: 13 }}>
           {autreLien}
-          <Link href="/login" style={{ color: '#00578e' }}>Retour à la connexion</Link>
+          <Link href="/login" style={{ color: '#0f766e' }}>Retour à la connexion</Link>
         </div>
       </div>
     </div>

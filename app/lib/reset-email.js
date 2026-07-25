@@ -4,7 +4,7 @@
 // lien d'action Supabase (generateLink type recovery) : l'auth reste 100 % Supabase,
 // on ne change QUE le facteur d'envoi (même expéditeur que les invitations agentes).
 
-const BRAND = '#00578e'
+const BRAND = '#0f766e'
 
 // Construit { subject, html } pour un email de réinitialisation.
 export function buildResetEmail({ actionLink }) {

@@ -19,7 +19,7 @@ import { SEP_KBIS }         from '../../lib/sep_kbis.js'
 import { SEP_QUALIFICATION } from '../../lib/sep_qualification.js'
 
 // ── Couleurs ──
-const BLEU  = '#00578e'
+const BLEU  = '#0f766e'
 const BLEU2 = '#2f8dcb'
 const GRIS  = '#6b7280'
 const BLANC = '#ffffff'
@@ -78,10 +78,10 @@ const CS = StyleSheet.create({
   footerSlogan:{ fontSize: 7, color: BLEU2, fontFamily: 'Roboto-Italic' },
   // Cover
   coverPage:   { padding: 0, backgroundColor: '#ffffff' },
-  coverTopBand:{ height: 8, backgroundColor: '#00578e' },
+  coverTopBand:{ height: 8, backgroundColor: '#0f766e' },
   coverLogoArea:{ padding: 30, paddingBottom: 0 },
   coverLogo:   { width: 140, height: 56 },
-  coverBlueBand:{ backgroundColor: '#00578e', paddingVertical: 40, paddingLeft: 32, marginTop: 50 },
+  coverBlueBand:{ backgroundColor: '#0f766e', paddingVertical: 40, paddingLeft: 32, marginTop: 50 },
   coverTitle:  { color: BLANC, fontSize: 38, fontFamily: 'Roboto-Bold', lineHeight: 1.2 },
   coverOrangeBand:{ backgroundColor: '#f37f2b', height: 14, marginRight: 80 },
   coverBottom: { position: 'absolute', bottom: 56, left: 0, right: 0, alignItems: 'center' },
@@ -195,7 +195,7 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
       const totalHono = honoLignes.reduce((s, l) => s + l.montant, 0)
       const totalPaye = honoLignes.filter(l => l.paye).reduce((s, l) => s + l.montant, 0)
       const reste = totalHono - totalPaye
-      const resteColor = reste > 0 ? '#d97706' : '#00578e'
+      const resteColor = reste > 0 ? '#d97706' : '#0f766e'
       const children = [
         React.createElement(View, { key: 'head', style: CS.paiementHeader },
           React.createElement(Text, { style: CS.paiementHeaderTitle }, 'illiCO travaux — Honoraires'),
@@ -302,7 +302,7 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
     }
 
     // Ligne total
-    const resteColor = reste > 0 ? '#d97706' : reste < 0 ? '#dc2626' : '#00578e'
+    const resteColor = reste > 0 ? '#d97706' : reste < 0 ? '#dc2626' : '#0f766e'
     const resteLabel = reste < 0 ? `Trop-perçu : ${fmt(Math.abs(reste))}` : `Reste : ${fmt(reste)}`
     children.push(
       React.createElement(View, { key: 'total', style: CS.paiementTotal },
@@ -340,7 +340,7 @@ async function makeCoverPage({ nomRef, telRef, agence }) {
   const fontBold   = await finalCover.embedFont(StandardFonts.HelveticaBold)
 
   const pageW = page.getWidth() // 595
-  const bleu  = rgb(0/255, 87/255, 142/255)   // #00578e
+  const bleu  = rgb(0/255, 87/255, 142/255)   // #0f766e
   const gris  = rgb(55/255, 65/255, 81/255)    // #374151
 
   // Lignes de contact — centrées, au-dessus du slogan (y=29)

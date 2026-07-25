@@ -88,7 +88,7 @@ export function Avatar({ name, color, size = 28, ring = false }) {
 
 export function KpiCard({ label, value, sub, tone = 'brand', icon, corner = true, trend, children, onClick }) {
   const cornerColor = {
-    brand: 'rgba(0,148,212,0.10)',
+    brand: 'rgba(20,184,166,0.10)',
     ok:    'rgba(22,163,74,0.10)',
     warn:  'rgba(245,158,11,0.12)',
     bad:   'rgba(220,38,38,0.10)',
@@ -110,7 +110,7 @@ export function KpiCard({ label, value, sub, tone = 'brand', icon, corner = true
         {icon && (
           <div style={{
             width: 36, height: 36, borderRadius: 10,
-            background: 'rgba(0,87,142,0.08)', color: 'var(--brand-800)',
+            background: 'rgba(15,118,110,0.08)', color: 'var(--brand-800)',
             display: 'grid', placeItems: 'center', flex: '0 0 36px',
           }}>
             {icon}

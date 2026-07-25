@@ -48,10 +48,10 @@ function CABarChart({ data }) {
             <g key={i}>
               <rect x={x} y={H - padY - hObj} width={w} height={hObj} rx="3" fill="#e2e8f0" />
               <rect x={x + w + 4} y={H - padY - hReel} width={w} height={hReel} rx="3"
-                fill={d.inProgress ? '#7ccdef' : '#0094d4'} style={{ transition: 'all 400ms ease' }} />
+                fill={d.inProgress ? '#7ccdef' : '#14b8a6'} style={{ transition: 'all 400ms ease' }} />
               {d.reel > 0 && (
                 <text x={x + w + w / 2 + 4} y={H - padY - hReel - 5}
-                  textAnchor="middle" fontSize="10" fontWeight="700" fill="#00578e">
+                  textAnchor="middle" fontSize="10" fontWeight="700" fill="#0f766e">
                   {Math.round(d.reel / 1000)}k
                 </text>
               )}
@@ -82,7 +82,7 @@ function DossierRow({ d, onOpen }) {
 function Pipeline({ dossiers, onOpen }) {
   const [open, setOpen] = useState(null)
   const buckets = [
-    { key: 'a_traiter', label: 'À traiter',            tone: '#0094d4', match: s => ['a_contacter','a_relancer'].includes(s) },
+    { key: 'a_traiter', label: 'À traiter',            tone: '#14b8a6', match: s => ['a_contacter','a_relancer'].includes(s) },
     { key: 'etude',     label: 'En étude',             tone: '#8b5cf6', match: s => ['en_etude','devis_en_attente','devis_prets','devis_a_modifier'].includes(s) },
     { key: 'signature', label: 'En attente signature', tone: '#f59e0b', match: s => s === 'en_attente_signature' },
     { key: 'a_venir',   label: 'Chantier à venir',     tone: '#6366f1', match: s => s === 'chantier_a_venir' },
@@ -445,7 +445,7 @@ export default function Dashboard() {
                 {rdvAujourdhuiScoped.map((a, i) => {
                   const heure = new Date(a.date_heure).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
                   const tone = a.type_rdv === 'visite_technique_client' ? 'info' : a.type_rdv === 'visite_technique_artisan' ? 'ok' : a.type_rdv === 'presentation_devis' ? 'warn' : 'mute'
-                  const dotColor = tone === 'info' ? '#0094d4' : tone === 'ok' ? '#16a34a' : tone === 'warn' ? '#f59e0b' : '#94a3b8'
+                  const dotColor = tone === 'info' ? '#14b8a6' : tone === 'ok' ? '#16a34a' : tone === 'warn' ? '#f59e0b' : '#94a3b8'
                   const nomClient = a.dossier?.client ? `${a.dossier.client.prenom || ''} ${a.dossier.client.nom || ''}`.trim() : ''
                   const label = a.titre || (a.type_rdv === 'visite_technique_client' ? 'Visite client' : a.type_rdv === 'visite_technique_artisan' ? 'Visite artisan' : a.type_rdv === 'presentation_devis' ? 'Présentation devis' : 'Rendez-vous')
                   const sub = [a.dossier?.reference, nomClient].filter(Boolean).join(' · ')
@@ -456,7 +456,7 @@ export default function Dashboard() {
                         {a.duree_minutes && <div style={{ fontSize: 10, color: 'var(--ink-400)', fontWeight: 500, marginTop: 2 }}>{a.duree_minutes}min</div>}
                       </div>
                       <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
-                        <span style={{ width: 10, height: 10, borderRadius: 99, background: dotColor, marginTop: 6, boxShadow: '0 0 0 3px #fff, 0 0 0 4px rgba(0,148,212,0.18)', flexShrink: 0 }} />
+                        <span style={{ width: 10, height: 10, borderRadius: 99, background: dotColor, marginTop: 6, boxShadow: '0 0 0 3px #fff, 0 0 0 4px rgba(20,184,166,0.18)', flexShrink: 0 }} />
                         {i < rdvAujourdhuiScoped.length - 1 && <span style={{ position: 'absolute', top: 18, bottom: -4, width: 1, background: 'var(--ink-200)' }} />}
                       </div>
                       <div style={{ paddingBottom: 10 }}>

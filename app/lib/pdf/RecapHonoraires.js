@@ -15,7 +15,7 @@ import {
 
 const h = React.createElement
 
-const BLEU = '#00578e'
+const BLEU = '#0f766e'
 const BLEU_CLAIR = '#2f8dcb'
 const ORANGE = '#f97316'
 const ORANGE_FONCE = '#c2410c'

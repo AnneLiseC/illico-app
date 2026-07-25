@@ -3,7 +3,7 @@
 // Supabase). Le lien `actionLink` est le lien d'action Supabase (generateLink),
 // qui reste 100 % Supabase pour l'auth — on ne change QUE le facteur.
 
-const BRAND = '#00578e'
+const BRAND = '#0f766e'
 
 // Construit { subject, html } selon le rôle ('agente' | 'admin').
 export function buildInvitationEmail({ prenom, nom, actionLink, role }) {

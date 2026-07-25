@@ -229,7 +229,7 @@ function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKe
   }
   const donutDataset = (d) => ({
     labels: ['Commissions illiCO', 'Frais de consultation', 'Honoraires'],
-    datasets: [{ data: [d.com, d.frais, d.hon], backgroundColor: ['#00578e','#0094d4','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
+    datasets: [{ data: [d.com, d.frais, d.hon], backgroundColor: ['#0f766e','#14b8a6','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
   })
 
   useEffect(() => {
@@ -263,8 +263,8 @@ function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKe
           <canvas id={donutReelId} role="img" aria-label="Répartition réel" />
         </div>
         <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
-          <LegendRow color="#00578e" label="Commissions illiCO"    value={fmt(donutReel.com)}   pct={totalReel>0?Math.round(donutReel.com/totalReel*100):0} />
-          <LegendRow color="#0094d4" label="Frais de consultation" value={fmt(donutReel.frais)} pct={totalReel>0?Math.round(donutReel.frais/totalReel*100):0} />
+          <LegendRow color="#0f766e" label="Commissions illiCO"    value={fmt(donutReel.com)}   pct={totalReel>0?Math.round(donutReel.com/totalReel*100):0} />
+          <LegendRow color="#14b8a6" label="Frais de consultation" value={fmt(donutReel.frais)} pct={totalReel>0?Math.round(donutReel.frais/totalReel*100):0} />
           <LegendRow color="#94a3b8" label="Honoraires"            value={fmt(donutReel.hon)}   pct={totalReel>0?Math.round(donutReel.hon/totalReel*100):0} />
         </div>
       </div>
@@ -274,8 +274,8 @@ function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKe
           <canvas id={donutPreviId} role="img" aria-label="Répartition prévisionnel" />
         </div>
         <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
-          <LegendRow color="#00578e" label="Commissions illiCO"    value={fmt(donutPrevi.com)}   pct={totalPrevi>0?Math.round(donutPrevi.com/totalPrevi*100):0} />
-          <LegendRow color="#0094d4" label="Frais de consultation" value={fmt(donutPrevi.frais)} pct={totalPrevi>0?Math.round(donutPrevi.frais/totalPrevi*100):0} />
+          <LegendRow color="#0f766e" label="Commissions illiCO"    value={fmt(donutPrevi.com)}   pct={totalPrevi>0?Math.round(donutPrevi.com/totalPrevi*100):0} />
+          <LegendRow color="#14b8a6" label="Frais de consultation" value={fmt(donutPrevi.frais)} pct={totalPrevi>0?Math.round(donutPrevi.frais/totalPrevi*100):0} />
           <LegendRow color="#94a3b8" label="Honoraires"            value={fmt(donutPrevi.hon)}   pct={totalPrevi>0?Math.round(donutPrevi.hon/totalPrevi*100):0} />
         </div>
       </div>
@@ -1581,7 +1581,7 @@ export default function Finances() {
                           ? <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(22,163,74,0.12)', color:'#15803d'}}>Encaissé</span>
                           : <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(245,158,11,0.13)', color:'#a16207'}}>En attente</span>
                       } else {
-                        badge = <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(0,148,212,0.10)', color:'var(--brand-800)'}}>Engagé</span>
+                        badge = <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(20,184,166,0.10)', color:'var(--brand-800)'}}>Engagé</span>
                       }
                       return (
                         <tr key={dv.id} style={{borderTop:'1px solid var(--ink-100)'}}>
@@ -1720,7 +1720,7 @@ export default function Finances() {
                     </Td>
                     <Td>
                       <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,
-                        background:cs==='annule'?'rgba(220,38,38,0.1)':cs==='termine'?'rgba(22,163,74,0.1)':'rgba(0,87,142,0.1)',
+                        background:cs==='annule'?'rgba(220,38,38,0.1)':cs==='termine'?'rgba(22,163,74,0.1)':'rgba(15,118,110,0.1)',
                         color:cs==='annule'?'#b91c1c':cs==='termine'?'#15803d':'var(--brand-700)'}}>
                         {cs === 'annule' ? 'Annulé' : cs === 'termine' ? 'Terminé' : 'En cours'}
                       </span>
@@ -2375,8 +2375,8 @@ export default function Finances() {
           {isAdmin && (
             <div style={{
               fontSize:12, color:'var(--ink-600)', borderRadius:8, padding:'8px 12px', marginTop:-8,
-              background: suiviMode === 'ctp' ? 'rgba(245,158,11,0.10)' : 'rgba(0,148,212,0.08)',
-              border: `1px solid ${suiviMode === 'ctp' ? 'rgba(245,158,11,0.30)' : 'rgba(0,148,212,0.22)'}`,
+              background: suiviMode === 'ctp' ? 'rgba(245,158,11,0.10)' : 'rgba(20,184,166,0.08)',
+              border: `1px solid ${suiviMode === 'ctp' ? 'rgba(245,158,11,0.30)' : 'rgba(20,184,166,0.22)'}`,
             }}>
               {suiviMode === 'ctp'
                 ? <><strong style={{color:'var(--ink-800)'}}>Société</strong> · résultat net conservé, <strong>après</strong> déduction des parts agents reversées.</>

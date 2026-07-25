@@ -243,7 +243,7 @@ export default function SuperAdmin() {
                           <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13, padding: '6px 10px', background: 'var(--surface-2)', borderRadius: 8 }}>
                             <span style={{ fontWeight: 600, color: 'var(--ink-800)' }}>{c.prenom} {c.nom}</span>
                             <span style={{ color: 'var(--ink-500)' }}>{c.email}</span>
-                            <span style={{ padding: '1px 8px', borderRadius: 99, fontSize: 10.5, fontWeight: 700, background: c.role === 'admin' ? 'rgba(0,87,142,0.1)' : 'var(--ink-100)', color: c.role === 'admin' ? 'var(--brand-800)' : 'var(--ink-600)' }}>
+                            <span style={{ padding: '1px 8px', borderRadius: 99, fontSize: 10.5, fontWeight: 700, background: c.role === 'admin' ? 'rgba(15,118,110,0.1)' : 'var(--ink-100)', color: c.role === 'admin' ? 'var(--brand-800)' : 'var(--ink-600)' }}>
                               {c.role === 'admin' ? 'Franchisé' : 'Agent'}
                             </span>
                             {ag && <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{ag.nom}</span>}
