@@ -138,7 +138,7 @@ export default function SuperAdmin() {
         {/* En-tête */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 38, height: 38, borderRadius: 9, background: 'var(--brand-800)', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800 }}>Co</div>
+            <div style={{ width: 38, height: 38, borderRadius: 9, background: 'var(--brand-800)', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800 }}>Ba</div>
             <div>
               <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--ink-900)' }}>Espace créatrice</div>
               <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>{user.email}</div>
