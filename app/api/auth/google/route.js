@@ -16,12 +16,21 @@ const oauth2Client = new google.auth.OAuth2(
 
 // State signé HMAC-SHA256 pour empêcher la CSRF.
 // Format : base64url(payload).base64url(signature)
-// payload = { uid, nonce, exp }
-function buildSignedState(userId) {
+// payload = { uid, kind, nonce, exp }
+// Deux usages du compte Google, distingués par `kind` (relu par le callback) :
+// 'calendar' (défaut) → agenda, fournisseur='google' ; 'drive' → Google Drive,
+// fournisseur='googledrive'. Scopes séparés → tokens indépendants (comme Outlook).
+const SCOPE_BY_KIND = {
+  calendar: ['https://www.googleapis.com/auth/calendar'],
+  drive:    ['https://www.googleapis.com/auth/drive'],
+}
+
+function buildSignedState(userId, kind) {
   const secret = process.env.OAUTH_STATE_SECRET
   if (!secret) throw new Error('OAUTH_STATE_SECRET non configuré')
   const payload = JSON.stringify({
     uid: userId,
+    kind,
     nonce: crypto.randomBytes(16).toString('hex'),
     exp: Date.now() + 10 * 60 * 1000, // 10 minutes
   })
@@ -34,16 +43,23 @@ export async function POST(request) {
   const auth = await requireRole(request, ['admin', 'agente'])
   if (auth.error) return auth.error
 
+  // kind facultatif dans le body ; 'calendar' par défaut (rétro-compat agenda).
+  let kind = 'calendar'
+  try {
+    const body = await request.json()
+    if (body?.kind === 'drive') kind = 'drive'
+  } catch { /* pas de body → calendar */ }
+
   let state
   try {
-    state = buildSignedState(auth.user.id)
+    state = buildSignedState(auth.user.id, kind)
   } catch {
     return NextResponse.json({ error: 'Configuration serveur manquante' }, { status: 500 })
   }
 
   const url = oauth2Client.generateAuthUrl({
     access_type: 'offline',
-    scope: ['https://www.googleapis.com/auth/calendar'],
+    scope: SCOPE_BY_KIND[kind],
     prompt: 'consent',
     state,
   })
