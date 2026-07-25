@@ -2,9 +2,9 @@
 // Aiguillage du drive par fournisseur (modèle « alternative » : chaque utilisateur a
 // AU PLUS un drive connecté — OneDrive 'microsoft' OU Google Drive 'googledrive').
 // microsoft.js et google-drive.js exposent la MÊME interface (getValidAccessToken,
-// getMyDriveId, listFolders, listSharedFolders, createFolder, et — étapes 2/3 —
-// ensureFolderPath, uploadSmallFile, deleteItem, downloadItemContent), donc les routes
-// drive appellent mod.<fn>(…) sans se soucier du fournisseur.
+// getMyDriveId, listFolders, listSharedFolders, createFolder, ensureChildFolder,
+// ensureFolderPath, uploadSmallFile, moveItem, deleteItem, downloadItemContent), donc
+// les routes drive appellent mod.<fn>(…) sans se soucier du fournisseur.
 
 import * as microsoft from './microsoft'
 import * as googledrive from './google-drive'

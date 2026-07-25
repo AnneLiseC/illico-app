@@ -15,8 +15,8 @@ import '../../../lib/pdf/fonts.js'
 import { requireRole } from '../../../lib/api-auth'
 import { buildCRDocument } from '../../../lib/pdf/crDocument.js'
 import { stripEmojiPdf } from '../../../lib/pdf/stripEmoji.js'
-import { getValidAccessToken, ensureFolderPath, uploadSmallFile, deleteItem } from '../../../lib/drive/microsoft'
-import { nomDossierChantier, nettoyerSegment, dateDossier } from '../../../lib/drive/taxonomie'
+import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
+import { cheminChantier, nettoyerSegment, dateDossier } from '../../../lib/drive/taxonomie'
 
 let _admin
 function admin() {
@@ -55,20 +55,20 @@ export async function POST(request) {
   if (!dossier) return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
   if (!dossier.referente_id) return NextResponse.json({ skipped: true, reason: 'no_referente' })
 
-  const { data: compte } = await db.from('comptes_oauth')
-    .select('id, access_token, refresh_token, expiry_date, drive_root_drive_id, drive_root_id')
-    .eq('user_id', dossier.referente_id).eq('fournisseur', 'microsoft').maybeSingle()
+  const compte = await loadDriveCompte(db, dossier.referente_id)
   if (!compte || !compte.drive_root_drive_id || !compte.drive_root_id) {
     return NextResponse.json({ skipped: true, reason: 'no_root' })
   }
+  const mod = driveModule(compte.fournisseur)
+  if (!mod) return NextResponse.json({ skipped: true, reason: 'fournisseur' })
 
   let token
   try {
-    token = await getValidAccessToken(compte)
+    token = await mod.getValidAccessToken(compte)
   } catch (e) {
     if (e.reconnect) return NextResponse.json({ skipped: true, reason: 'reconnect' })
     console.error('[drive/push-cr] token', e)
-    return NextResponse.json({ error: 'Erreur OneDrive' }, { status: 500 })
+    return NextResponse.json({ error: 'Erreur Drive' }, { status: 500 })
   }
 
   try {
@@ -99,14 +99,14 @@ export async function POST(request) {
     const clientNom = dossier.client?.nom || 'CLIENT'
     const crDots = dateDossier(cr.date_visite || cr.created_at)
     const fileName = `${nettoyerSegment(`CR ${crDots} ${clientNom}`)}.pdf`
-    const segments = [nomDossierChantier(dossier.created_at, clientNom), 'Comptes rendus'].map(nettoyerSegment)
+    const segments = cheminChantier(dossier.statut, dossier.created_at, clientNom, 'compte_rendu', null)
 
     // Déjà miroité → on supprime l'ancien item (le nom a pu changer) avant de remplacer.
     const { data: dejaIdx } = await db.from('doc_index').select('id, item_id, drive_id').eq('cr_id', crId).maybeSingle()
-    if (dejaIdx) { try { await deleteItem(token, dejaIdx.drive_id, dejaIdx.item_id) } catch { /* best effort */ } }
+    if (dejaIdx) { try { await mod.deleteItem(token, dejaIdx.drive_id, dejaIdx.item_id) } catch { /* best effort */ } }
 
-    const leafId = await ensureFolderPath(token, compte.drive_root_drive_id, compte.drive_root_id, segments)
-    const up = await uploadSmallFile(token, compte.drive_root_drive_id, leafId, fileName, pdfBuffer, 'application/pdf', 'replace')
+    const leafId = await mod.ensureFolderPath(token, compte.drive_root_drive_id, compte.drive_root_id, segments)
+    const up = await mod.uploadSmallFile(token, compte.drive_root_drive_id, leafId, fileName, pdfBuffer, 'application/pdf', 'replace')
 
     const cheminLogique = [...segments, up.name].join('/')
     await db.from('doc_index').upsert({

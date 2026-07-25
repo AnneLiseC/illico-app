@@ -9,7 +9,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
-import { getValidAccessToken, deleteItem } from '../../../lib/drive/microsoft'
+import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
 
 let _admin
 function admin() {
@@ -43,11 +43,10 @@ export async function POST(request) {
     return NextResponse.json({ ok: true, detached: true })
   }
 
-  // Compte Drive de la référente propriétaire du miroir.
-  const { data: compte } = await db.from('comptes_oauth')
-    .select('id, access_token, refresh_token, expiry_date')
-    .eq('user_id', idx.user_id).eq('fournisseur', 'microsoft').maybeSingle()
-  if (!compte) {
+  // Compte Drive de la référente propriétaire du miroir (OneDrive OU Google Drive).
+  const compte = await loadDriveCompte(db, idx.user_id)
+  const mod = compte ? driveModule(compte.fournisseur) : null
+  if (!compte || !mod) {
     // Plus de compte : on retire au moins l'index (la copie Drive, s'il en reste une, est
     // hors de notre portée).
     await db.from('doc_index').delete().eq('id', idx.id)
@@ -56,15 +55,15 @@ export async function POST(request) {
 
   let token
   try {
-    token = await getValidAccessToken(compte)
+    token = await mod.getValidAccessToken(compte)
   } catch (e) {
     if (e.reconnect) return NextResponse.json({ ok: false, reconnect: true })
     console.error('[drive/delete] token', e)
-    return NextResponse.json({ error: 'Erreur OneDrive' }, { status: 500 })
+    return NextResponse.json({ error: 'Erreur Drive' }, { status: 500 })
   }
 
   try {
-    await deleteItem(token, idx.drive_id, idx.item_id)
+    await mod.deleteItem(token, idx.drive_id, idx.item_id)
   } catch (e) {
     console.error('[drive/delete] graph', e)
     return NextResponse.json({ error: 'Suppression OneDrive échouée' }, { status: 502 })

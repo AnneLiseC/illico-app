@@ -1556,6 +1556,11 @@ export default function FicheChantier({ params }) {
     if (error) { setErreur('Erreur : ' + error.message); set('statut', ancien); return }
     setDossier(d => ({ ...d, ...payload }))
     setSucces(valeur === 'termine' ? 'Dossier marqué terminé ✓' : valeur === 'annule' ? 'Dossier annulé ✓' : 'Dossier ré-ouvert (statut automatique) ✓')
+    // Miroir Drive : déplace le dossier chantier vers le bucket du nouveau statut
+    // (Clients/En cours|Terminés|Annulés). Non bloquant.
+    apiFetch('/api/drive/move-chantier', {
+      method: 'POST', body: JSON.stringify({ dossier_id: id }),
+    }).catch(() => {})
   }
 
 

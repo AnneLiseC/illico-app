@@ -167,6 +167,19 @@ export async function ensureFolderPath(accessToken, rootDriveId, rootItemId, seg
   return parent
 }
 
+// Déplace un item (driveId, itemId) sous newParentId (même drive). oldParentId ignoré
+// (Graph remplace le parent). Renvoie { id }.
+export async function moveItem(accessToken, driveId, itemId, newParentId, _oldParentId) {
+  const res = await graphFetch(accessToken, `/drives/${driveId}/items/${itemId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parentReference: { id: newParentId } }),
+  })
+  if (!res.ok) throw new Error(`move_failed_${res.status}`)
+  const d = await res.json()
+  return { id: d.id }
+}
+
 // Delta query sur le sous-arbre de (driveId, itemId). Suit la pagination (@odata.nextLink)
 // et renvoie { items, deltaLink }. deltaLink=null en entrée → INIT avec token=latest :
 // Graph renvoie un curseur SANS énumérer l'existant (invariant n°2 : pas d'avalanche).

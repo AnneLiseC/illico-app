@@ -109,5 +109,116 @@ export async function createFolder(accessToken, _parentDriveId, parentItemId, na
   return { driveId: GDRIVE_SENTINEL, itemId: d.id, name: d.name || name }
 }
 
-// ── Étapes 2/3 (push / pull) : à implémenter (ensureFolderPath, uploadSmallFile,
-//    deleteItem, downloadItemContent, changes/delta). Non requis pour l'étape 1. ──
+// ── Étape 2 (push / move) ────────────────────────────────────────────────────────
+// Google Drive AUTORISE les doublons de nom sous un même parent → toutes les fonctions
+// « ensure/upload » cherchent d'abord un existant pour rester IDEMPOTENTES (sinon on
+// empilerait des dossiers/fichiers homonymes à chaque sync).
+
+// Échappe une valeur pour une requête q Google Drive (apostrophes → \').
+function escQ(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'") }
+
+// Cherche un enfant `name` sous `parentId`. folderOnly → uniquement les dossiers.
+// Renvoie l'id du 1er match, ou null.
+async function findChild(accessToken, parentId, name, folderOnly = false) {
+  const parent = parentId === 'root' || !parentId ? 'root' : parentId
+  let q = `'${parent}' in parents and name = '${escQ(name)}' and trashed = false`
+  if (folderOnly) q += " and mimeType = 'application/vnd.google-apps.folder'"
+  const params = new URLSearchParams({
+    q, fields: 'files(id,name)', pageSize: '1', spaces: 'drive',
+    supportsAllDrives: 'true', includeItemsFromAllDrives: 'true',
+  })
+  const res = await driveFetch(accessToken, `/files?${params.toString()}`)
+  if (res.status === 401) throw new DriveReconnectError()
+  if (!res.ok) throw new Error(`gdrive_find_failed_${res.status}`)
+  const d = await res.json()
+  return d.files && d.files[0] ? d.files[0].id : null
+}
+
+// IDEMPOTENT : id du sous-dossier `name` sous `parentId`, créé s'il n'existe pas.
+export async function ensureChildFolder(accessToken, _driveId, parentId, name) {
+  const existing = await findChild(accessToken, parentId, name, true)
+  if (existing) return existing
+  const created = await createFolder(accessToken, GDRIVE_SENTINEL, parentId, name)
+  return created.itemId
+}
+
+// Crée/retrouve toute la chaîne de sous-dossiers sous rootItemId. Renvoie l'id de la feuille.
+export async function ensureFolderPath(accessToken, _rootDriveId, rootItemId, segments) {
+  let parent = rootItemId === 'root' || !rootItemId ? 'root' : rootItemId
+  for (const seg of segments) parent = await ensureChildFolder(accessToken, GDRIVE_SENTINEL, parent, seg)
+  return parent
+}
+
+// Upload SIMPLE d'un fichier sous parentItemId. Google autorisant les doublons, un fichier
+// homonyme déjà présent est MIS À JOUR (PATCH media) plutôt que dupliqué (≈ conflictBehavior
+// 'replace' de OneDrive). Renvoie { id, name, webUrl }.
+export async function uploadSmallFile(accessToken, _driveId, parentItemId, fileName, body, contentType) {
+  const parent = parentItemId === 'root' || !parentItemId ? 'root' : parentItemId
+  const ct = contentType || 'application/octet-stream'
+  const buf = Buffer.isBuffer(body) ? body : Buffer.from(body)
+
+  const existingId = await findChild(accessToken, parent, fileName, false)
+  if (existingId) {
+    const res = await fetch(`${UPLOAD}/files/${existingId}?uploadType=media&supportsAllDrives=true&fields=id,name,webViewLink`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': ct },
+      body: buf,
+    })
+    if (!res.ok) throw new Error(`gdrive_upload_update_${res.status}`)
+    const d = await res.json()
+    return { id: d.id, name: d.name || fileName, webUrl: d.webViewLink || null }
+  }
+
+  // Nouveau fichier : multipart/related (métadonnées JSON + média binaire).
+  const boundary = 'batilis_boundary_9f3c1a7e2d4b'
+  const meta = JSON.stringify({ name: fileName, parents: [parent] })
+  const pre = Buffer.from(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n` +
+    `--${boundary}\r\nContent-Type: ${ct}\r\n\r\n`
+  )
+  const post = Buffer.from(`\r\n--${boundary}--`)
+  const multipart = Buffer.concat([pre, buf, post])
+  const res = await fetch(`${UPLOAD}/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body: multipart,
+  })
+  if (!res.ok) throw new Error(`gdrive_upload_failed_${res.status}`)
+  const d = await res.json()
+  return { id: d.id, name: d.name || fileName, webUrl: d.webViewLink || null }
+}
+
+// Déplace un item vers newParentId (Drive v3 : addParents/removeParents). oldParentId
+// requis pour retirer l'ancien lien (un fichier Google peut avoir plusieurs parents).
+export async function moveItem(accessToken, _driveId, itemId, newParentId, oldParentId) {
+  const params = new URLSearchParams({ addParents: newParentId, supportsAllDrives: 'true', fields: 'id,parents' })
+  if (oldParentId) params.set('removeParents', oldParentId)
+  const res = await driveFetch(accessToken, `/files/${itemId}?${params.toString()}`, { method: 'PATCH' })
+  if (!res.ok) throw new Error(`gdrive_move_failed_${res.status}`)
+  const d = await res.json()
+  return { id: d.id }
+}
+
+// Supprime un item : mise à la CORBEILLE (trashed=true), récupérable — comme la corbeille
+// OneDrive. 404 (déjà parti) = succès idempotent.
+export async function deleteItem(accessToken, _driveId, itemId) {
+  const res = await driveFetch(accessToken, `/files/${itemId}?supportsAllDrives=true`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trashed: true }),
+  })
+  if (res.ok || res.status === 404) return true
+  throw new Error(`gdrive_delete_failed_${res.status}`)
+}
+
+// Télécharge le contenu d'un item. Renvoie { buffer, contentType }.
+export async function downloadItemContent(accessToken, _driveId, itemId) {
+  const res = await driveFetch(accessToken, `/files/${itemId}?alt=media&supportsAllDrives=true`)
+  if (res.status === 401) throw new DriveReconnectError()
+  if (!res.ok) throw new Error(`gdrive_download_failed_${res.status}`)
+  const contentType = res.headers.get('content-type') || 'application/octet-stream'
+  return { buffer: Buffer.from(await res.arrayBuffer()), contentType }
+}
+
+// ── Étape 3 (pull entrant) : changes API Google (agnostique du dossier, niveau compte).
+//    Non requise pour le push. À implémenter au lot pull. ──
