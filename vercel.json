@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/pull-google-recurrents",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/pull-onedrive",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

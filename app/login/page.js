@@ -42,18 +42,22 @@ export default function Login() {
     }
   }
 
-  // Mot de passe oublié : envoie un lien de réinitialisation vers /auth/set-password.
-  // Anti-énumération : message générique quel que soit le résultat (on ne révèle
-  // jamais si un compte existe ; Supabase renvoie succès dans tous les cas).
-  // Le ?type=recovery (notre query string) pilote le wording de set-password.
+  // Mot de passe oublié : le lien de réinitialisation part de NOTRE boîte d'envoi
+  // (route /api/reset-password → Graph), plus de Supabase. Anti-énumération : la route
+  // répond toujours { ok:true } et n'envoie que si le compte existe → message générique.
+  // Le ?type=recovery (query string posée par la route) pilote le wording de set-password.
   const handleForgot = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     setInfo('')
-    await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/set-password?type=recovery`,
-    })
+    try {
+      await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+    } catch { /* message générique quoi qu'il arrive */ }
     setInfo("Si un compte existe avec cet email, un lien de réinitialisation vient d'être envoyé. Pensez à vérifier vos spams.")
     setLoading(false)
   }
