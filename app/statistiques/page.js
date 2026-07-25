@@ -86,9 +86,9 @@ function LigneCompta({ label, value, bold, neg, accent }) {
 }
 
 // Barres horizontales : label · montant · barre proportionnelle.
-function BarList({ items, couleur = '#14b8a6' }) {
+function BarList({ items, couleur = '#0094d4' }) {
   const max = Math.max(...items.map(i => i.value), 1)
-  if (items.length === 0) return <div style={{ fontSize: 12.5, color: 'var(--ink-400)' }}>Aucune donnée sur la période.</div>
+  if (items.length === 0) return <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>Aucune donnée sur la période.</div>
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
       {items.map((it, i) => (
@@ -316,7 +316,7 @@ export default function Statistiques() {
   if (!initialized || loading) {
     return (
       <div className="page-enter page-pad">
-        <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--ink-400)', fontSize: 13 }}>Chargement des statistiques…</div>
+        <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--ink-500)', fontSize: 13 }}>Chargement des statistiques…</div>
       </div>
     )
   }
@@ -393,7 +393,7 @@ export default function Statistiques() {
           <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>{modeEff === 'societe' ? 'Mon CA par mois' : 'CA généré par mois'}</h2>
           <div className="eyebrow" style={{ marginBottom: 12 }}>Réel encaissé · {annee} vs {annee - 1}</div>
           <Legende items={[{ color: 'var(--ink-900)', label: `${annee}` }, { color: '#94a3b8', label: `${annee - 1}`, dashed: true }]} />
-          <BarLineChart id="stats_ca" courant={caMois} precedent={caMoisN1} annee={annee} couleur="#14b8a6" />
+          <BarLineChart id="stats_ca" courant={caMois} precedent={caMoisN1} annee={annee} couleur="#0094d4" />
         </div>
         <div className="card" style={{ padding: 20 }}>
           <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>Royalties franchiseur par mois</h2>
@@ -408,7 +408,7 @@ export default function Statistiques() {
         <div className="card" style={{ padding: 20 }}>
           <h2 className="page" style={{ fontSize: 15, marginBottom: 4 }}>CA par typologie</h2>
           <div className="eyebrow" style={{ marginBottom: 14 }}>D&apos;où vient le chiffre d&apos;affaires · {annee}</div>
-          <BarList items={repartition.typo.map(t => ({ label: t.label, value: t.ca, right: fmtEur(t.ca) }))} couleur="#14b8a6" />
+          <BarList items={repartition.typo.map(t => ({ label: t.label, value: t.ca, right: fmtEur(t.ca) }))} couleur="#0094d4" />
         </div>
         {showAgentes && (
           <div className="card" style={{ padding: 20 }}>

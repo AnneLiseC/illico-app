@@ -192,7 +192,7 @@ function EcheanceRow({ label, sub, statut, date, variant, onSetPaid, onUnsetPaid
           </div>
           <div className="tnum" onClick={dateEditable ? () => setEditing(true) : undefined}
             title={dateEditable ? 'Modifier la date' : undefined}
-            style={{fontSize:11.5, color:'var(--ink-400)', minWidth:60, textAlign:'right',
+            style={{fontSize:11.5, color:'var(--ink-500)', minWidth:60, textAlign:'right',
               cursor: dateEditable ? 'pointer' : 'default', textDecoration: dateEditable ? 'underline dotted' : 'none'}}>
             {date ? (fmtDateFn ? fmtDateFn(date) : new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' })) : '—'}
           </div>
@@ -408,7 +408,7 @@ function FichesTechPanel({ artisanId, dossierId, fichesCochees, onToggle, onCrea
     <>
       {viewer && <DocViewer url={viewer.url} nom={viewer.nom} onClose={() => setViewer(null)} />}
       {fiches.length === 0 ? (
-        <p style={{fontSize:11.5, color:'var(--ink-400)', marginTop:8}}>Aucune fiche technique pour cet artisan</p>
+        <p style={{fontSize:11.5, color:'var(--ink-500)', marginTop:8}}>Aucune fiche technique pour cet artisan</p>
       ) : (
       <div style={{marginTop:8, padding:12, background:'var(--surface-2)', border:'1px solid var(--ink-200)', borderRadius:10, display:'flex', flexDirection:'column', gap:6}}>
         {fiches.map(fiche => {
@@ -419,7 +419,7 @@ function FichesTechPanel({ artisanId, dossierId, fichesCochees, onToggle, onCrea
                 <input type="checkbox" checked={cochee} onChange={() => onToggle(fiche.id, artisanId)}
                   style={{width:16, height:16, accentColor:'#0094d4', flexShrink:0}} />
                 <span className="clip-1" style={{fontSize:11.5, color:'var(--ink-700)'}}>{fiche.nom}</span>
-                {fiche.description && <span className="clip-1" style={{fontSize:11.5, color:'var(--ink-400)'}}>— {fiche.description}</span>}
+                {fiche.description && <span className="clip-1" style={{fontSize:11.5, color:'var(--ink-500)'}}>— {fiche.description}</span>}
               </label>
               {fiche.url && (
                 <button
@@ -547,7 +547,7 @@ function DevisModal({ open, devis, onClose, onSave, artisans }) {
                 style={{height:40, width:'100%'}} />
             </div>
             <div>
-              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Montant TTC (€) <span style={{color:'var(--ink-400)', fontWeight:400, textTransform:'none'}}>{form.ttc_manuel ? 'figé / manuel' : 'auto +10%'}</span></label>
+              <label className="eyebrow" style={{display:'block', marginBottom:6}}>Montant TTC (€) <span style={{color:'var(--ink-500)', fontWeight:400, textTransform:'none'}}>{form.ttc_manuel ? 'figé / manuel' : 'auto +10%'}</span></label>
               <input type="number" step="0.01" min="0" className="input"
                 value={form.montant_ttc}
                 onChange={e => setForm(f => ({ ...f, montant_ttc: e.target.value, ttc_manuel: true }))}
@@ -650,9 +650,9 @@ function TauxEditor({ sim, onSave, onCancel }) {
   return (
     <div style={{display:'flex', gap:4, alignItems:'center', flexWrap:'wrap', justifyContent:'center'}}>
       <input type="number" value={tc} onChange={e => setTc(e.target.value)} style={inp} title="Courtage %" />
-      <span style={{fontSize:10, color:'var(--ink-400)'}}>C</span>
+      <span style={{fontSize:11, color:'var(--ink-500)'}}>C</span>
       <input type="number" value={ta} onChange={e => setTa(e.target.value)} style={inp} title="AMO %" />
-      <span style={{fontSize:10, color:'var(--ink-400)'}}>A</span>
+      <span style={{fontSize:11, color:'var(--ink-500)'}}>A</span>
       <button onClick={() => onSave(sim.id, tc, ta)} style={{border:'none', background:'none', cursor:'pointer', color:'#15803d', fontSize:13}} title="Valider">✓</button>
       <button onClick={onCancel} style={{border:'none', background:'none', cursor:'pointer', color:'#b91c1c', fontSize:13}} title="Annuler">✗</button>
     </div>
@@ -2981,7 +2981,7 @@ export default function FicheChantier({ params }) {
   }
 
   if (loading) return <div className="page-loading" />
-  if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-400)'}}>Chantier introuvable</div>
+  if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-500)'}}>Chantier introuvable</div>
 
   const nomComplet = formatNomClient(client, { civilite: true })
 
@@ -3306,7 +3306,7 @@ export default function FicheChantier({ params }) {
                 <span style={{
                   background: onglet === t.key ? '#00578e' : 'var(--ink-200)',
                   color:      onglet === t.key ? '#fff' : 'var(--ink-600)',
-                  fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:99
+                  fontSize:11, fontWeight:700, padding:'1px 6px', borderRadius:99
                 }}>{t.count}</span>
               )}
             </span>
@@ -3482,11 +3482,11 @@ export default function FicheChantier({ params }) {
                         padding:'10px 12px', borderRadius:10, border:'1px solid var(--ink-200)',
                         background:'none', textAlign:'left', cursor:'pointer', width:'100%'}}>
                       <div style={{width:36, padding:'4px 0', borderRadius:6, background:typeColor, color:'#fff',
-                        textAlign:'center', fontSize:10, fontWeight:800, letterSpacing:0.05}}>{typeLabel}</div>
+                        textAlign:'center', fontSize:11, fontWeight:800, letterSpacing:0.05}}>{typeLabel}</div>
                       <div style={{minWidth:0}}>
                         <div style={{display:'flex',justifyContent:'space-between',gap:8}}>
                           <div className="clip-1" style={{fontSize:13, fontWeight:700, color:'var(--ink-900)'}}>{c.titre || 'Rapport de visite'}</div>
-                          <span className="tnum" style={{fontSize:11, color:'var(--ink-400)', flexShrink:0}}>
+                          <span className="tnum" style={{fontSize:11, color:'var(--ink-500)', flexShrink:0}}>
                             {c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR') : ''}
                           </span>
                         </div>
@@ -3511,7 +3511,7 @@ export default function FicheChantier({ params }) {
           <div className="card" style={{padding:22}}>
             <h2 className="page" style={{fontSize:15, marginBottom:12}}>Artisans · {devisSignes.length} signés</h2>
             {devisSignes.length === 0 ? (
-              <div style={{textAlign:'center', padding:24, color:'var(--ink-400)', fontSize:13}}>Aucun devis signé</div>
+              <div style={{textAlign:'center', padding:24, color:'var(--ink-500)', fontSize:13}}>Aucun devis signé</div>
             ) : (
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
                 {devisSignes.map(dv => (
@@ -3529,7 +3529,7 @@ export default function FicheChantier({ params }) {
                     <div style={{textAlign:'right'}}>
                       {dv.montant_ttc > 0 && <div className="tnum" style={{fontSize:12, fontWeight:700, color:'var(--ink-900)'}}>{fmt(dv.montant_ttc)}</div>}
                       {dv.commission_pourcentage > 0 && (
-                        <div style={{fontSize:10, color:'#00578e', fontWeight:600, marginTop:1}}>
+                        <div style={{fontSize:11, color:'#00578e', fontWeight:600, marginTop:1}}>
                           {Math.round(dv.commission_pourcentage * 100)}% com.
                         </div>
                       )}
@@ -3552,7 +3552,7 @@ export default function FicheChantier({ params }) {
               const next = (rdvsDossier || []).filter(r => new Date(r.date_heure) >= now)
                 .sort((a,b) => new Date(a.date_heure) - new Date(b.date_heure))
                 .slice(0, 3)
-              if (next.length === 0) return <div style={{textAlign:'center', padding:18, color:'var(--ink-400)', fontSize:13}}>Aucun RDV à venir</div>
+              if (next.length === 0) return <div style={{textAlign:'center', padding:18, color:'var(--ink-500)', fontSize:13}}>Aucun RDV à venir</div>
               return (
                 <div style={{display:'flex',flexDirection:'column',gap:10}}>
                   {next.map(r => {
@@ -3572,7 +3572,7 @@ export default function FicheChantier({ params }) {
                       <div key={r.id} style={{display:'grid', gridTemplateColumns:'44px 4px 1fr', gap:10, alignItems:'center', padding:'8px 0'}}>
                         <div style={{textAlign:'center'}}>
                           <div className="tnum" style={{fontSize:16, fontWeight:800, color:'var(--ink-900)', lineHeight:1}}>{day}</div>
-                          <div style={{fontSize:9, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2}}>{month}</div>
+                          <div style={{fontSize:11, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2}}>{month}</div>
                         </div>
                         <div style={{width:4, alignSelf:'stretch', borderRadius:99, background: typeColor}}/>
                         <div style={{minWidth:0}}>
@@ -3595,7 +3595,7 @@ export default function FicheChantier({ params }) {
               <ContactRow icon={<MailIcon/>} label="Email" value={client?.email} action={client?.email ? `mailto:${client.email}` : null} />
               <ContactRow icon={<PinIcon/>} label="Adresse" value={client?.adresse} />
               {!client?.telephone && !client?.email && !client?.adresse && (
-                <div style={{fontSize:13, color:'var(--ink-400)'}}>Aucun contact renseigné</div>
+                <div style={{fontSize:13, color:'var(--ink-500)'}}>Aucun contact renseigné</div>
               )}
             </div>
           </div>
@@ -3644,7 +3644,7 @@ export default function FicheChantier({ params }) {
               </div>
             ))}
             {conflitsPhotos.clean.length > 0 && (
-              <div style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>{conflitsPhotos.clean.length} autre(s) fichier(s) sans doublon seront ajoutés directement.</div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>{conflitsPhotos.clean.length} autre(s) fichier(s) sans doublon seront ajoutés directement.</div>
             )}
           </div>
         </ModalShell>
@@ -3737,7 +3737,7 @@ export default function FicheChantier({ params }) {
               <option value="audit_energetique">Audit énergétique</option>
               <option value="studio_jardin">Studio de jardin</option>
             </select>
-            <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:6}}>Dates et frais de consultation se modifient via « Modifier » sur la carte « Informations clés ».</div>
+            <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:6}}>Dates et frais de consultation se modifient via « Modifier » sur la carte « Informations clés ».</div>
           </div>
 
           <div>
@@ -3791,7 +3791,7 @@ export default function FicheChantier({ params }) {
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12, flexWrap:'wrap'}}>
               <div style={{minWidth:0}}>
                 <h2 className="page" style={{fontSize:15, marginBottom:4}}>
-                  Apporteur{client.apporteur_nom ? ` · ${client.apporteur_nom}` : ''} <span style={{color:'var(--ink-400)', fontWeight:400, fontSize:13}}>(coût)</span>
+                  Apporteur{client.apporteur_nom ? ` · ${client.apporteur_nom}` : ''} <span style={{color:'var(--ink-500)', fontWeight:400, fontSize:13}}>(coût)</span>
                 </h2>
                 <div style={{fontSize:12, color:'var(--ink-500)'}}>
                   {client.apporteur_pourcentage != null && client.apporteur_pourcentage !== ''
@@ -3873,7 +3873,7 @@ export default function FicheChantier({ params }) {
 
 
           {devis.length === 0 ? (
-            <div style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucun devis pour le moment</div>
+            <div style={{padding:40, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>Aucun devis pour le moment</div>
           ) : (
             <div style={{display:'flex', flexDirection:'column'}}>
               {devis.map((d, idx) => {
@@ -3918,7 +3918,7 @@ export default function FicheChantier({ params }) {
                       </div>
                       <button onClick={(e) => { e.stopPropagation(); toggleDevisExpand(d.id) }}
                         className="btn btn-ghost devis-chevron" title={expanded ? 'Masquer les détails' : 'Voir les détails'}>
-                        <span style={{display:'inline-block', fontSize:10, lineHeight:1, transition:'transform 200ms', transform: expanded ? 'rotate(180deg)' : 'none'}}>▼</span>
+                        <span style={{display:'inline-block', fontSize:11, lineHeight:1, transition:'transform 200ms', transform: expanded ? 'rotate(180deg)' : 'none'}}>▼</span>
                       </button>
                     </div>
 
@@ -3951,7 +3951,7 @@ export default function FicheChantier({ params }) {
                             {i.type_intervention === 'periode'
                               ? `${new Date(i.date_debut).toLocaleDateString('fr-FR')} → ${new Date(i.date_fin).toLocaleDateString('fr-FR')}`
                               : `${i.jours_specifiques?.length} jour(s)`}
-                            {i.notes && <span style={{color:'var(--ink-400)'}}>— {i.notes}</span>}
+                            {i.notes && <span style={{color:'var(--ink-500)'}}>— {i.notes}</span>}
                           </div>
                         ))}
                       </div>
@@ -4149,8 +4149,8 @@ export default function FicheChantier({ params }) {
                               border: v.est_courante ? '1px solid rgba(0,148,212,0.25)' : '1px solid transparent'}}>
                               <span style={{fontWeight:700, color:'var(--ink-700)', minWidth:26}}>v{v.version_num}</span>
                               <span className="tnum" style={{fontWeight:600, color:'var(--ink-800)', minWidth:92}}>{fmt(v.montant_ttc || 0)} TTC</span>
-                              <span style={{color:'var(--ink-400)', fontSize:11}}>{v.created_at ? new Date(v.created_at).toLocaleDateString('fr-FR', {day:'2-digit', month:'short', year:'2-digit'}) : ''}</span>
-                              {v.est_courante && <span style={{fontSize:10, fontWeight:600, color:'#00578e', background:'rgba(0,148,212,0.12)', padding:'1px 7px', borderRadius:99}}>Courante</span>}
+                              <span style={{color:'var(--ink-500)', fontSize:11}}>{v.created_at ? new Date(v.created_at).toLocaleDateString('fr-FR', {day:'2-digit', month:'short', year:'2-digit'}) : ''}</span>
+                              {v.est_courante && <span style={{fontSize:11, fontWeight:600, color:'#00578e', background:'rgba(0,148,212,0.12)', padding:'1px 7px', borderRadius:99}}>Courante</span>}
                               <div style={{marginLeft:'auto', display:'flex', gap:8, alignItems:'center'}}>
                                 {v.devis_pdf_path && (
                                   <button onClick={() => ouvrirDocument(v.devis_pdf_path, `Devis v${v.version_num} ${d.artisan?.entreprise || ''}.pdf`)}
@@ -4207,7 +4207,7 @@ export default function FicheChantier({ params }) {
                   className="input"
                   style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
                 />
-                <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
+                <span style={{fontSize:11, color:'var(--ink-500)'}}>%</span>
               </div>
               {dossier.typologie === 'amo' && (
                 <div className="hono-taux">
@@ -4222,7 +4222,7 @@ export default function FicheChantier({ params }) {
                     className="input"
                     style={{width:78, height:32, fontSize:12, textAlign:'center', padding:'0 8px'}}
                   />
-                  <span style={{fontSize:11, color:'var(--ink-400)'}}>%</span>
+                  <span style={{fontSize:11, color:'var(--ink-500)'}}>%</span>
                 </div>
               )}
             </div>
@@ -4369,7 +4369,7 @@ export default function FicheChantier({ params }) {
                   {f.statut === 'paye' ? '✓ Payé' : '⏳ En attente'}
                 </button>
                 <button onClick={() => supprimerFactureArtisan(f.id, f.pdf_path)}
-                  style={{fontSize:'var(--text-md)', color:'var(--ink-400)', background:'none', border:'none', cursor:'pointer', padding:'0 4px'}}
+                  style={{fontSize:'var(--text-md)', color:'var(--ink-500)', background:'none', border:'none', cursor:'pointer', padding:'0 4px'}}
                   onMouseEnter={e => { e.currentTarget.style.color = 'var(--bad-strong)' }}
                   onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-400)' }}>✕</button>
               </div>
@@ -4395,12 +4395,16 @@ export default function FicheChantier({ params }) {
         )
 
         // Bouton qui ouvre le formulaire d'ajout PRÉ-REMPLI (acompte / solde / autre).
-        const boutonFacturer = (dv, libelle, montant, texte) => (
+        // `primary` = action forte (Facturer le solde) : bouton plein bleu, dominant.
+        // Sinon = ajout secondaire : lien discret, pour ne pas concurrencer l'action.
+        const boutonFacturer = (dv, libelle, montant, texte, primary = false) => (
           <button onClick={() => {
             setAjouterFacture(dv.id)
             setNouvelleFacture({ montant_ttc: montant > 0 ? montant.toFixed(2) : '', date_paiement: '', statut: 'en_attente', fichier: null, libelle, libelle_autre: '' })
           }}
-            style={{fontSize:'var(--text-xs)', color:'var(--ok-strong)', border:'1px solid var(--ok-border)', padding:'var(--space-1) var(--space-5)', borderRadius:6, background:'transparent', cursor:'pointer', alignSelf:'flex-start'}}>
+            style={primary
+              ? {fontSize:'var(--text-xs)', fontWeight:700, color:'#fff', border:'1px solid #00578e', padding:'var(--space-2) var(--space-6)', borderRadius:6, background:'#00578e', cursor:'pointer', alignSelf:'flex-start'}
+              : {fontSize:'var(--text-xs)', color:'var(--ink-600)', border:'none', padding:'var(--space-1) var(--space-2)', borderRadius:6, background:'transparent', cursor:'pointer', alignSelf:'flex-start', textDecoration:'underline'}}>
             {texte}
           </button>
         )
@@ -4570,14 +4574,16 @@ export default function FicheChantier({ params }) {
                         <div style={{gridColumn:'1 / -1', display:'flex', flexDirection:'column', gap:'var(--space-3)', borderTop:'1px solid var(--ink-100)', paddingTop:'var(--space-4)'}}>
                           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:'var(--space-3)', flexWrap:'wrap'}}>
                             <span style={{fontSize:'var(--text-xs)', fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', letterSpacing:'0.04em'}}>Autres factures</span>
-                            <span className="tnum" style={{fontSize:'var(--text-xs)', fontWeight:600, color: resteAFacturer > 0 ? 'var(--warn-strong)' : 'var(--ok-strong)'}}>
+                            <span className="tnum" style={resteAFacturer > 0
+                              ? {fontSize:'var(--text-xs)', fontWeight:800, color:'var(--warn-strong)', background:'rgba(194,65,12,0.09)', padding:'2px 10px', borderRadius:99}
+                              : {fontSize:'var(--text-xs)', fontWeight:600, color:'var(--ok-strong)'}}>
                               {resteAFacturer > 0 ? `Reste à facturer : ${fmt(resteAFacturer)}` : '✓ Entièrement facturé'}
                             </span>
                           </div>
                           {factsAutres.map(ligneFacture)}
                           {formOuvert ? renderFormFacture(dv, finDv) : (
                             <div style={{display:'flex', gap:'var(--space-3)', flexWrap:'wrap'}}>
-                              {resteAFacturer > 0 && boutonFacturer(dv, 'Facture solde', resteAFacturer, 'Facturer le solde')}
+                              {resteAFacturer > 0 && boutonFacturer(dv, 'Facture solde', resteAFacturer, 'Facturer le solde', true)}
                               {boutonFacturer(dv, 'Facture de situation', 0, '+ Ajouter une facture')}
                             </div>
                           )}
@@ -4717,7 +4723,7 @@ export default function FicheChantier({ params }) {
                           </div>
                         ))}
                         {!hasTranches && (
-                          <div style={{fontSize:12, color:'var(--ink-400)'}}>Aucun paiement enregistré pour l’instant.</div>
+                          <div style={{fontSize:12, color:'var(--ink-500)'}}>Aucun paiement enregistré pour l’instant.</div>
                         )}
                         <div className="suivi-amo-form">
                           <input className="input" type="number" step="0.01" min="0" inputMode="decimal"
@@ -4766,7 +4772,7 @@ export default function FicheChantier({ params }) {
                         </div>
                       </div>
                       <div style={{textAlign:'right'}}>
-                        <div style={{fontSize:11, color:'var(--ink-400)'}}>
+                        <div style={{fontSize:11, color:'var(--ink-500)'}}>
                           Total dû <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(totalDu)}</span>
                         </div>
                         <div style={{fontSize:11, color: reste > 0 ? 'var(--warn-strong)' : 'var(--ok-strong)', marginTop:2, fontWeight:600}}>
@@ -4809,7 +4815,7 @@ export default function FicheChantier({ params }) {
             </div>
 
             {devisSignes.length === 0 && (dossier.frais_consultation || 0) === 0 && (
-              <div style={{padding:'24px 0', textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+              <div style={{padding:'24px 0', textAlign:'center', color:'var(--ink-500)', fontSize:13}}>
                 Aucune échéance pour le moment
               </div>
             )}
@@ -4896,14 +4902,14 @@ export default function FicheChantier({ params }) {
               <div style={{fontSize:12.5, fontWeight:600, color: dragPhotos ? '#00578e' : 'var(--ink-600)'}}>
                 {dragPhotos ? 'Déposez pour ajouter dans « ' + (CATS.find(c => c.k === categorie)?.l || '') + ' »' : 'Glissez-déposez vos photos / vidéos ici'}
               </div>
-              <div style={{fontSize:11, color:'var(--ink-400)', marginTop:4}}>
+              <div style={{fontSize:11, color:'var(--ink-500)', marginTop:4}}>
                 ou utilisez « Ajouter » ci-dessus · vidéo max {MAX_VIDEO_MO} Mo · les .mov iPhone peuvent ne pas se lire sur Chrome/Android.
               </div>
             </div>
           )}
 
           {filtered.length === 0 ? (
-            <div className="card" style={{padding:60, textAlign:'center', color:'var(--ink-400)'}}>
+            <div className="card" style={{padding:60, textAlign:'center', color:'var(--ink-500)'}}>
               <div style={{display:'grid', placeItems:'center', marginBottom:10}}><CamIcon /></div>
               <div style={{fontSize:13}}>Aucune photo dans cette catégorie</div>
             </div>
@@ -4931,7 +4937,7 @@ export default function FicheChantier({ params }) {
                     )}
                     <span style={{
                       position:'absolute', top:8, right:8,
-                      background:'rgba(0,0,0,0.55)', color:'#fff', fontSize:9.5, padding:'3px 8px',
+                      background:'rgba(0,0,0,0.55)', color:'#fff', fontSize:11, padding:'3px 8px',
                       borderRadius:99, fontWeight:700, textTransform:'uppercase', letterSpacing:0.05,
                       backdropFilter:'blur(4px)',
                     }}>{photo.categorie}</span>
@@ -5099,7 +5105,7 @@ export default function FicheChantier({ params }) {
                       )}
                       {facturesA.length > 0 && (
                         <div style={{marginTop:8, display:'flex', flexDirection:'column', gap:5}}>
-                          <div style={{fontSize:11, color:'var(--ink-400)', fontWeight:700}}>🧾 Factures <span style={{fontWeight:500}}>(gestion dans l&apos;onglet Suivi financier)</span></div>
+                          <div style={{fontSize:11, color:'var(--ink-500)', fontWeight:700}}>🧾 Factures <span style={{fontWeight:500}}>(gestion dans l&apos;onglet Suivi financier)</span></div>
                           {facturesA.map(f => (
                             <button key={f.id} onClick={() => ouvrirDocument(f.pdf_path, `Facture ${a.entreprise}.pdf`)} className="clip-1"
                               style={{background:'none', border:'none', color:'var(--ink-700)', cursor:'pointer', textAlign:'left', padding:0, fontSize:12}}>
@@ -5140,7 +5146,7 @@ export default function FicheChantier({ params }) {
               </div>
             </div>
             {docsGeneraux.length === 0 ? (
-              <div style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+              <div style={{padding:40, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>
                 Aucun document — plans, courriers, notes…
               </div>
             ) : (
@@ -5171,10 +5177,10 @@ export default function FicheChantier({ params }) {
                         <div style={{display:'flex', alignItems:'center', gap:6, marginTop:2}}>
                           <span style={{fontSize:11, color:'var(--ink-500)', textTransform:'uppercase', letterSpacing:0.04}}>{meta.label}</span>
                           {doc.categorie === 'compte_rendu' && (
-                            <span style={{fontSize:10, fontWeight:800, letterSpacing:0.04, padding:'1px 6px', borderRadius:5, background:'rgba(0,148,212,0.12)', color:'#0094d4'}}>Rapport de visite</span>
+                            <span style={{fontSize:11, fontWeight:800, letterSpacing:0.04, padding:'1px 6px', borderRadius:5, background:'rgba(0,148,212,0.12)', color:'#0094d4'}}>Rapport de visite</span>
                           )}
                           {doc.categorie === 'facture_honoraire' && (
-                            <span style={{fontSize:10, fontWeight:800, background:'rgba(234,88,12,0.12)', color:'#ea580c', borderRadius:4, padding:'1px 5px'}}>FACT</span>
+                            <span style={{fontSize:11, fontWeight:800, background:'rgba(234,88,12,0.12)', color:'#ea580c', borderRadius:4, padding:'1px 5px'}}>FACT</span>
                           )}
                         </div>
                       </div>
@@ -5276,11 +5282,11 @@ export default function FicheChantier({ params }) {
           </div>
 
           {loadingComparateur ? (
-            <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Chargement…</div>
+            <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>Chargement…</div>
           ) : devis.length === 0 ? (
-            <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucun devis à comparer — ajoute des devis dans l&apos;onglet « Devis & artisans ».</div>
+            <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>Aucun devis à comparer — ajoute des devis dans l&apos;onglet « Devis & artisans ».</div>
           ) : simulations.length === 0 ? (
-            <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucune simulation — clique « Nouvelle simulation ».</div>
+            <div className="card" style={{padding:40, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>Aucune simulation — clique « Nouvelle simulation ».</div>
           ) : (
             <div className="card" style={{padding:0, overflowX:'auto'}}>
               <table style={{width:'100%', borderCollapse:'collapse', fontSize:12.5, minWidth: 320 + colonnes.length * 180}}>
@@ -5295,7 +5301,7 @@ export default function FicheChantier({ params }) {
                         <div style={{display:'flex', flexDirection:'column', gap:4, alignItems:'center'}}>
                           <span style={{fontWeight: histo ? 500 : 700, color: histo ? 'var(--ink-500)' : 'var(--ink-900)', fontSize: histo ? 11.5 : 12.5}}>{sim.nom}</span>
                           {(courante || histo) && (
-                            <span style={{fontSize:9.5, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.04em', color: courante ? '#00578e' : 'var(--ink-400)'}}>
+                            <span style={{fontSize:11, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.04em', color: courante ? '#00578e' : 'var(--ink-400)'}}>
                               {courante ? '● Base courante' : 'Base · historique'}
                             </span>
                           )}
@@ -5326,7 +5332,7 @@ export default function FicheChantier({ params }) {
                       <td style={{...tdStyle, fontWeight:600}} className="tnum">{fmt(d.montant_ttc || 0)}</td>
                       {colonnes.map(sim => {
                         const l = ligneFor(sim, d.id)
-                        if (!l) return <td key={sim.id} style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                        if (!l) return <td key={sim.id} style={{...tdStyle, color:'var(--ink-500)'}}>—</td>
                         return (
                           <td key={sim.id} style={{...tdStyle, opacity: l.inclus ? 1 : 0.45}}>
                             <div style={{display:'flex', alignItems:'center', justifyContent:'center', gap:6}}>
@@ -5352,14 +5358,14 @@ export default function FicheChantier({ params }) {
                             {/* Sélecteur de version (4b) — si le devis a plusieurs versions. */}
                             {versionsDevis[d.id]?.length > 1 && (
                               sim.type === 'base' ? (
-                                <div style={{fontSize:9.5, color:'var(--ink-400)', marginTop:3}}>
+                                <div style={{fontSize:11, color:'var(--ink-500)', marginTop:3}}>
                                   {l.devis_version_id ? `v${versionById[l.devis_version_id]?.version_num ?? '?'}` : 'actuelle'}
                                 </div>
                               ) : (
                                 <select value={l.devis_version_id || ''}
                                   onChange={e => saveVersionLigne(sim.id, l.id, e.target.value)}
                                   title="Version du devis utilisée pour cette simulation"
-                                  style={{marginTop:3, fontSize:10, padding:'1px 3px', border:'1px solid var(--ink-200)', borderRadius:4, color:'var(--ink-600)', maxWidth:130}}>
+                                  style={{marginTop:3, fontSize:11, padding:'1px 3px', border:'1px solid var(--ink-200)', borderRadius:4, color:'var(--ink-600)', maxWidth:130}}>
                                   <option value="">Actuelle</option>
                                   {versionsDevis[d.id].map(v => (
                                     <option key={v.id} value={v.id}>v{v.version_num} · {fmt(v.montant_ttc || 0)}</option>
@@ -5380,22 +5386,22 @@ export default function FicheChantier({ params }) {
                   </tr>
                   <tr style={{borderTop:'1px solid var(--ink-100)'}}>
                     <td style={{...tdStyle, textAlign:'left'}}>Honoraires courtage</td>
-                    <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                    <td style={{...tdStyle, color:'var(--ink-500)'}}>—</td>
                     {colonnes.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honCourtage)}</td>)}
                   </tr>
                   <tr>
                     <td style={{...tdStyle, textAlign:'left'}}>Honoraires AMO</td>
-                    <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                    <td style={{...tdStyle, color:'var(--ink-500)'}}>—</td>
                     {colonnes.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honAMO)}</td>)}
                   </tr>
                   <tr style={{borderTop:'1px solid var(--ink-200)'}}>
                     <td style={{...tdStyle, textAlign:'left', fontWeight:700, color:'#00578e'}}>Total chantier courtage</td>
-                    <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                    <td style={{...tdStyle, color:'var(--ink-500)'}}>—</td>
                     {colonnes.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'#00578e'}} className="tnum">{fmt(totauxSim(sim).totalCourtage)}</td>)}
                   </tr>
                   <tr>
                     <td style={{...tdStyle, textAlign:'left', fontWeight:700, color:'#00578e'}}>Total chantier AMO</td>
-                    <td style={{...tdStyle, color:'var(--ink-400)'}}>—</td>
+                    <td style={{...tdStyle, color:'var(--ink-500)'}}>—</td>
                     {colonnes.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'#00578e'}} className="tnum">{fmt(totauxSim(sim).totalAMO)}</td>)}
                   </tr>
                   <tr style={{borderTop:'1px solid var(--ink-100)'}}>
@@ -5437,7 +5443,7 @@ export default function FicheChantier({ params }) {
             </div>
             <div style={{padding:'4px 16px'}}>
               {rdvsDossier.length === 0 ? (
-                <div style={{padding:30, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucun rendez-vous</div>
+                <div style={{padding:30, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>Aucun rendez-vous</div>
               ) : rdvsDossier.map(r => {
                 const dt = new Date(r.date_heure)
                 const isPast = dt < new Date()
@@ -5461,7 +5467,7 @@ export default function FicheChantier({ params }) {
                   }}>
                     <div style={{textAlign:'center'}}>
                       <div className="tnum" style={{fontSize:18, fontWeight:800, color:'var(--ink-900)', lineHeight:1}}>{day}</div>
-                      <div style={{fontSize:9.5, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2, letterSpacing:0.04}}>{month}</div>
+                      <div style={{fontSize:11, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2, letterSpacing:0.04}}>{month}</div>
                     </div>
                     <div style={{width:4, alignSelf:'stretch', borderRadius:99, background: cfg.color}}/>
                     <div style={{minWidth:0}}>
@@ -5501,7 +5507,7 @@ export default function FicheChantier({ params }) {
             </div>
             <div style={{padding:'4px 16px'}}>
               {interventionsDossier.length === 0 ? (
-                <div style={{padding:30, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>Aucune intervention planifiée</div>
+                <div style={{padding:30, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>Aucune intervention planifiée</div>
               ) : interventionsDossier.map(i => {
                 const fmtDate = (d) => new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' })
                 const sub = i.type_intervention === 'periode'
@@ -5610,7 +5616,7 @@ export default function FicheChantier({ params }) {
                             transition:'all 150ms',
                           }}>
                           <span>{t.l}</span>
-                          <span style={{fontSize:10, fontWeight:600, opacity:0.85}}>{t.sub}</span>
+                          <span style={{fontSize:11, fontWeight:600, opacity:0.85}}>{t.sub}</span>
                         </button>
                       )
                     })}
@@ -5755,7 +5761,7 @@ export default function FicheChantier({ params }) {
                           display:'flex', flexDirection:'column', gap:2, alignItems:'flex-start',
                         }}>
                         <span>{o.l}</span>
-                        <span style={{fontSize:10.5, fontWeight:500, opacity:0.8}}>{o.sub}</span>
+                        <span style={{fontSize:11, fontWeight:500, opacity:0.8}}>{o.sub}</span>
                       </button>
                     )
                   })}
@@ -5898,7 +5904,7 @@ export default function FicheChantier({ params }) {
 
             <div style={{padding:'14px 22px', display:'flex', flexDirection:'column', gap:14}}>
               {comptesRendus.length === 0 && (
-                <div style={{padding:30, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+                <div style={{padding:30, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>
                   Aucun rapport de visite pour le moment
                 </div>
               )}
@@ -5927,7 +5933,7 @@ export default function FicheChantier({ params }) {
                         {cr.valide ? '✓ Visible client' : 'Brouillon'}
                       </button>
                       {fmtD && (
-                        <span className="tnum" style={{fontSize:11.5, color:'var(--ink-400)'}}>{fmtD}</span>
+                        <span className="tnum" style={{fontSize:11.5, color:'var(--ink-500)'}}>{fmtD}</span>
                       )}
                     </div>
                     {cr.contenu_final && (crOuvert === cr.id ? (
@@ -5940,7 +5946,7 @@ export default function FicheChantier({ params }) {
                     ) : (
                       <p className="clip-2" onClick={() => setCrOuvert(cr.id)} title="Voir le CR complet"
                         style={{fontSize:13, color:'var(--ink-700)', lineHeight:1.55, margin:0, cursor:'pointer'}}>
-                        {apercu.slice(0, 200)}{apercu.length > 200 ? '…' : ''} <span style={{color:'var(--ink-400)'}}>▼</span>
+                        {apercu.slice(0, 200)}{apercu.length > 200 ? '…' : ''} <span style={{color:'var(--ink-500)'}}>▼</span>
                       </p>
                     ))}
                     <div style={{
@@ -5989,7 +5995,7 @@ export default function FicheChantier({ params }) {
                     Fichiers uploadés dans l&apos;onglet Documents et tagués RV ({docsCR.length})
                   </div>
                   {docsCR.length === 0 ? (
-                    <div style={{fontSize:12.5, color:'var(--ink-400)'}}>
+                    <div style={{fontSize:12.5, color:'var(--ink-500)'}}>
                       Aucun document marqué rapport de visite — taguez un fichier depuis l&apos;onglet Documents (bouton « RV »).
                     </div>
                   ) : docsCR.map(doc => (
@@ -6044,7 +6050,7 @@ export default function FicheChantier({ params }) {
             <div className="card" style={{padding:18}}>
               <div className="eyebrow" style={{marginBottom:10}}>Documents joignables au CR</div>
               {documents.length === 0 ? (
-                <div style={{fontSize:12, color:'var(--ink-400)'}}>Aucun document — ajoute des fichiers dans l&apos;onglet Documents.</div>
+                <div style={{fontSize:12, color:'var(--ink-500)'}}>Aucun document — ajoute des fichiers dans l&apos;onglet Documents.</div>
               ) : (
                 <div style={{display:'flex', flexDirection:'column', gap:8, fontSize:12.5, color:'var(--ink-700)'}}>
                   {documents.slice(0, 6).map(doc => (
@@ -6137,7 +6143,7 @@ export default function FicheChantier({ params }) {
         const intervenantsDispo = devis.filter(d => ['recu', 'accepte'].includes(d.statut))
         return (
           <ModalShell
-            title={<>✨ Nouveau CR avec IA <span style={{fontSize:12, color:'var(--ink-400)', fontWeight:400, marginLeft:8}}>· Étape {crEtape}/3</span></>}
+            title={<>✨ Nouveau CR avec IA <span style={{fontSize:12, color:'var(--ink-500)', fontWeight:400, marginLeft:8}}>· Étape {crEtape}/3</span></>}
             subtitle={(
               <div style={{display:'flex', gap:6, marginTop:6}}>
                 {[1,2,3].map(n => (
@@ -6221,9 +6227,9 @@ export default function FicheChantier({ params }) {
                                   }}
                                   style={{accentColor:'#0094d4'}} />
                                 <span style={{fontSize:13, color:'var(--ink-700)'}}>{d.artisan?.entreprise}</span>
-                                <span style={{fontSize:11, color:'var(--ink-400)'}}>{d.artisan?.metier}</span>
+                                <span style={{fontSize:11, color:'var(--ink-500)'}}>{d.artisan?.metier}</span>
                                 <span style={{
-                                  fontSize:10.5, padding:'2px 8px', borderRadius:99, marginLeft:'auto', fontWeight:700,
+                                  fontSize:11, padding:'2px 8px', borderRadius:99, marginLeft:'auto', fontWeight:700,
                                   background: d.statut === 'accepte' ? TONE_BG.ok : TONE_BG.info,
                                   color: d.statut === 'accepte' ? TONE_FG.ok : TONE_FG.info,
                                 }}>
@@ -6256,7 +6262,7 @@ export default function FicheChantier({ params }) {
                 <div style={{display:'flex', flexDirection:'column', gap:14}}>
                   <div>
                     <div style={{fontSize:13.5, fontWeight:600, color:'var(--ink-700)'}}>Saisie des notes brutes</div>
-                    <div style={{fontSize:11.5, color:'var(--ink-400)', marginTop:2}}>Combinez plusieurs sources — l&apos;IA synthétise tout</div>
+                    <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>Combinez plusieurs sources — l&apos;IA synthétise tout</div>
                   </div>
 
                   {/* 2 colonnes sur large écran (auto-fit → 1 colonne sur mobile) :
@@ -6313,7 +6319,7 @@ export default function FicheChantier({ params }) {
                       </label>
                       {crTranscribing && <span style={{fontSize:12, color:'var(--ink-500)'}}>Transcription en cours…</span>}
                     </div>
-                    <div style={{fontSize:11, color:'var(--ink-400)', marginTop:6}}>
+                    <div style={{fontSize:11, color:'var(--ink-500)', marginTop:6}}>
                       ⚠️ Prévenez les participants que la visite est enregistrée.
                     </div>
                     {crAudioTexte && (
@@ -6341,7 +6347,7 @@ export default function FicheChantier({ params }) {
                               position:'absolute', top:-6, right:-6,
                               width:18, height:18, borderRadius:'50%',
                               background:'#dc2626', color:'#fff', border:'none', cursor:'pointer',
-                              fontSize:10, display:'grid', placeItems:'center',
+                              fontSize:11, display:'grid', placeItems:'center',
                             }}>✕</button>
                           <button title="Annoter" onClick={() => setAnnot({ src: img.url_signee, titre: 'Annoter la photo', onSave: async (blob) => {
                               const path = `chantiers/${id}/cr/${Date.now()}_annot_${Math.random().toString(36).slice(2)}.jpg`
@@ -6356,7 +6362,7 @@ export default function FicheChantier({ params }) {
                               position:'absolute', bottom:-6, right:-6,
                               width:20, height:20, borderRadius:'50%',
                               background:'#2563eb', color:'#fff', border:'none', cursor:'pointer',
-                              fontSize:10, display:'grid', placeItems:'center',
+                              fontSize:11, display:'grid', placeItems:'center',
                             }}>✏️</button>
                         </div>
                       ))}
@@ -6476,7 +6482,7 @@ export default function FicheChantier({ params }) {
                         </button>
                       )}
                       {crPhotosDossier.length > 0 && (
-                        <div style={{fontSize:11, color:'var(--ink-400)', marginTop:6}}>
+                        <div style={{fontSize:11, color:'var(--ink-500)', marginTop:6}}>
                           {crPhotosDossier.length} photo{crPhotosDossier.length > 1 ? 's' : ''} du chantier jointe{crPhotosDossier.length > 1 ? 's' : ''}
                         </div>
                       )}
@@ -6507,7 +6513,7 @@ export default function FicheChantier({ params }) {
                                 }}
                                 style={{accentColor:'#0094d4'}} />
                               <span className="clip-1" style={{fontSize:12, color:'var(--ink-700)', flex:1, minWidth:0}}>{doc.nom}</span>
-                              {!supported && <span style={{fontSize:10.5, color:'var(--ink-400)'}}>non supporté</span>}
+                              {!supported && <span style={{fontSize:11, color:'var(--ink-500)'}}>non supporté</span>}
                             </label>
                           )
                         })}
@@ -6631,7 +6637,7 @@ export default function FicheChantier({ params }) {
           maxHeight:'min(70vh, 640px)',
         }}>
           {messages.length === 0 ? (
-            <div style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, paddingTop:32}}>
+            <div style={{textAlign:'center', color:'var(--ink-500)', fontSize:13, paddingTop:32}}>
               Aucun message pour le moment — démarre la conversation.
             </div>
           ) : (
@@ -6672,11 +6678,11 @@ export default function FicheChantier({ params }) {
                         msg.contenu
                       )}
                     </div>
-                    <div style={{fontSize:10.5, color:'var(--ink-400)', marginTop:4, textAlign: isClient ? 'left' : 'right'}}>
+                    <div style={{fontSize:11, color:'var(--ink-500)', marginTop:4, textAlign: isClient ? 'left' : 'right'}}>
                       {who} · {when}{msg.edited_at ? ' (modifié)' : ''}
                       {editable && editingMsgId !== msg.id && (
                         <button onClick={() => { setEditingMsgId(msg.id); setEditMsgText(msg.contenu); setEditMsgError('') }}
-                          style={{marginLeft:8, fontSize:10.5, background:'transparent', border:0, color:'#007ab0', cursor:'pointer', textDecoration:'underline', padding:0}}>modifier</button>
+                          style={{marginLeft:8, fontSize:11, background:'transparent', border:0, color:'#007ab0', cursor:'pointer', textDecoration:'underline', padding:0}}>modifier</button>
                       )}
                     </div>
                   </div>
@@ -6789,7 +6795,7 @@ export default function FicheChantier({ params }) {
                           display:'flex', flexDirection:'column', gap:2, alignItems:'flex-start',
                         }}>
                         <span>{o.l}</span>
-                        <span style={{fontSize:10.5, fontWeight:500, opacity:0.8}}>{o.sub}</span>
+                        <span style={{fontSize:11, fontWeight:500, opacity:0.8}}>{o.sub}</span>
                       </button>
                     )
                   })}

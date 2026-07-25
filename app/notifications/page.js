@@ -87,7 +87,7 @@ export default function Notifications() {
     if (n.dossier_id) router.push(`/chantiers/${n.dossier_id}`)
   }
 
-  if (loading) return <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-400)'}}>Chargement…</div>
+  if (loading) return <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-500)'}}>Chargement…</div>
 
   const nbUnread = notifications.filter(n => !n.lu).length
   const types = [...new Set(notifications.map(n => n.type))]
@@ -132,7 +132,7 @@ export default function Notifications() {
 
           {/* Lignes */}
           {items.length === 0 ? (
-            <div style={{padding:48, textAlign:'center', color:'var(--ink-400)', fontSize:13}}>
+            <div style={{padding:48, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>
               {notifications.length === 0 ? (
                 <><div style={{fontSize:32, marginBottom:12}}>🔔</div><div>Aucune notification</div></>
               ) : 'Aucune notification dans ce filtre'}
@@ -149,7 +149,7 @@ export default function Notifications() {
                     display:'grid', gridTemplateColumns:'auto 1fr auto', gap:14, alignItems:'flex-start',
                     padding:'16px 20px', width:'100%', textAlign:'left', position:'relative',
                     borderBottom:'1px solid var(--ink-100)', border:0,
-                    background: n.lu ? '#fff' : 'rgba(20,184,166,0.04)',
+                    background: n.lu ? '#fff' : 'rgba(0,148,212,0.04)',
                     cursor: n.dossier_id ? 'pointer' : 'default',
                   }}
                 >
@@ -160,12 +160,12 @@ export default function Notifications() {
                   <div style={{minWidth:0}}>
                     <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
                       <span style={{fontSize:13.5, fontWeight: n.lu ? 600 : 700, color:'var(--ink-900)'}}>{n.titre}</span>
-                      {n.dossier_id && <span className="eyebrow" style={{fontSize:10}}>→ dossier</span>}
+                      {n.dossier_id && <span className="eyebrow" style={{fontSize:11}}>→ dossier</span>}
                     </div>
                     <div style={{fontSize:13, color:'var(--ink-500)', marginTop:3}}>{n.message}</div>
                   </div>
                   <div style={{textAlign:'right', whiteSpace:'nowrap', flexShrink:0}}>
-                    <div style={{fontSize:11, color:'var(--ink-400)'}}>{relative(n.created_at)}</div>
+                    <div style={{fontSize:11, color:'var(--ink-500)'}}>{relative(n.created_at)}</div>
                   </div>
                 </button>
               )

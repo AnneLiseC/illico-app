@@ -65,9 +65,9 @@ export default function ModaleChoixClient({ open, onClose }) {
 
       <div style={{padding:'12px 24px'}}>
         {loading ? (
-          <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, padding:24}}>Chargement…</p>
+          <p style={{textAlign:'center', color:'var(--ink-500)', fontSize:13, padding:24}}>Chargement…</p>
         ) : filtres.length === 0 ? (
-          <p style={{textAlign:'center', color:'var(--ink-400)', fontSize:13, padding:24}}>
+          <p style={{textAlign:'center', color:'var(--ink-500)', fontSize:13, padding:24}}>
             {clients.length === 0 ? 'Aucun client en base' : 'Aucun client ne correspond'}
           </p>
         ) : (

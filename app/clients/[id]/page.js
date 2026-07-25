@@ -57,7 +57,7 @@ function MiniKpi({ label, value, sub, tone = 'brand' }) {
     <div className="card" style={{ padding: '16px 20px' }}>
       <div className="eyebrow" style={{ marginBottom: 6 }}>{label}</div>
       <div className="tnum" style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1.1 }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: 'var(--ink-400)', marginTop: 4 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 4 }}>{sub}</div>}
     </div>
   )
 }
@@ -217,7 +217,7 @@ function FicheClientInner({ params }) {
   if (loading) return <div className="page-loading" />
 
   if (!client) return (
-    <div style={{ paddingTop: 96, textAlign: 'center', color: 'var(--ink-400)' }}>Client introuvable</div>
+    <div style={{ paddingTop: 96, textAlign: 'center', color: 'var(--ink-500)' }}>Client introuvable</div>
   )
 
   const isPro = client.type_client === 'professionnel'
@@ -313,7 +313,7 @@ function FicheClientInner({ params }) {
                 <span style={{
                   display: 'inline-flex', alignItems: 'center', padding: '2px 10px',
                   borderRadius: 99, fontSize: 11.5, fontWeight: 700,
-                  background: isPro ? 'rgba(124,58,237,0.1)' : 'rgba(20,184,166,0.1)',
+                  background: isPro ? 'rgba(124,58,237,0.1)' : 'rgba(0,148,212,0.1)',
                   color: isPro ? '#7c3aed' : 'var(--brand-800)',
                 }}>{isPro ? 'Pro' : 'Particulier'}</span>
                 {clientActif && (
@@ -405,7 +405,7 @@ function FicheClientInner({ params }) {
               </button>
             </div>
             {dossiers.length === 0 ? (
-              <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-400)', fontSize: 13 }}>
+              <div style={{ padding: 32, textAlign: 'center', color: 'var(--ink-500)', fontSize: 13 }}>
                 Aucun dossier pour ce client
               </div>
             ) : (
@@ -459,7 +459,7 @@ function FicheClientInner({ params }) {
                   </div>
                 ))}
                 {!client.telephone && !client.email && (
-                  <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Aucun contact renseigné</div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>Aucun contact renseigné</div>
                 )}
               </div>
             </div>
@@ -468,14 +468,14 @@ function FicheClientInner({ params }) {
             <div className="card" style={{ padding: 22 }}>
               <h2 className="page" style={{ fontSize: 15, marginBottom: 12 }}>Historique</h2>
               {historiqueRaw.length === 0 ? (
-                <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Aucun événement enregistré</div>
+                <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>Aucun événement enregistré</div>
               ) : (
                 <div style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {historiqueItems.map((e, i) => (
                     <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      <CalIcon size={13} style={{ color: 'var(--ink-400)', flexShrink: 0 }}/>
+                      <CalIcon size={13} style={{ color: 'var(--ink-500)', flexShrink: 0 }}/>
                       <span style={{ flex: 1, color: 'var(--ink-700)' }}>{e.text}</span>
-                      <span className="tnum" style={{ color: 'var(--ink-400)', whiteSpace: 'nowrap' }}>{fmtDate(e.date)}</span>
+                      <span className="tnum" style={{ color: 'var(--ink-500)', whiteSpace: 'nowrap' }}>{fmtDate(e.date)}</span>
                     </div>
                   ))}
                 </div>
@@ -528,7 +528,7 @@ function FicheClientInner({ params }) {
           <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
-                <label style={labelStyle}>Forme juridique <span style={{ color: 'var(--ink-400)', fontWeight: 400 }}>(optionnel)</span></label>
+                <label style={labelStyle}>Forme juridique <span style={{ color: 'var(--ink-500)', fontWeight: 400 }}>(optionnel)</span></label>
                 <select {...inputProps} value={client.forme_juridique || ''} onChange={e => set('forme_juridique', e.target.value)}>
                   <option value="">— Choisir —</option>
                   {FORMES_JURIDIQUES.map(f => <option key={f} value={f}>{f}</option>)}
@@ -550,17 +550,17 @@ function FicheClientInner({ params }) {
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>Prénom représentant <span style={{ color: 'var(--ink-400)', fontWeight: 400 }}>(optionnel)</span></label>
+                <label style={labelStyle}>Prénom représentant <span style={{ color: 'var(--ink-500)', fontWeight: 400 }}>(optionnel)</span></label>
                 <input {...inputProps} type="text" value={client.representant_prenom || ''} onChange={e => set('representant_prenom', e.target.value)}/>
               </div>
               <div>
-                <label style={labelStyle}>Nom représentant <span style={{ color: 'var(--ink-400)', fontWeight: 400 }}>(optionnel)</span></label>
+                <label style={labelStyle}>Nom représentant <span style={{ color: 'var(--ink-500)', fontWeight: 400 }}>(optionnel)</span></label>
                 <input {...inputProps} type="text" value={client.representant_nom || ''} onChange={e => set('representant_nom', e.target.value)}/>
               </div>
             </div>
 
             <div>
-              <label style={labelStyle}>SIRET <span style={{ color: 'var(--ink-400)', fontWeight: 400 }}>(optionnel)</span></label>
+              <label style={labelStyle}>SIRET <span style={{ color: 'var(--ink-500)', fontWeight: 400 }}>(optionnel)</span></label>
               <input {...inputProps} type="text" value={client.siret || ''} onChange={e => set('siret', e.target.value)} placeholder="123 456 789 00012"/>
             </div>
           </>
@@ -609,7 +609,7 @@ function FicheClientInner({ params }) {
             <input {...inputProps} type="email" value={client.email || ''} onChange={e => set('email', e.target.value)}/>
           </div>
           <div>
-            <label style={labelStyle}>Email 2 <span style={{ color: 'var(--ink-400)', fontWeight: 400 }}>(optionnel)</span></label>
+            <label style={labelStyle}>Email 2 <span style={{ color: 'var(--ink-500)', fontWeight: 400 }}>(optionnel)</span></label>
             <input {...inputProps} type="email" value={client.email2 || ''} onChange={e => set('email2', e.target.value)}/>
           </div>
         </div>
@@ -620,7 +620,7 @@ function FicheClientInner({ params }) {
             <input {...inputProps} type="tel" value={client.telephone || ''} onChange={e => set('telephone', e.target.value)}/>
           </div>
           <div>
-            <label style={labelStyle}>Téléphone 2 <span style={{ color: 'var(--ink-400)', fontWeight: 400 }}>(optionnel)</span></label>
+            <label style={labelStyle}>Téléphone 2 <span style={{ color: 'var(--ink-500)', fontWeight: 400 }}>(optionnel)</span></label>
             <input {...inputProps} type="tel" value={client.telephone2 || ''} onChange={e => set('telephone2', e.target.value)}/>
           </div>
         </div>
@@ -680,7 +680,7 @@ function FicheClientInner({ params }) {
             </div>
           </div>
         ) : (
-          <div style={{ fontSize: 13, color: 'var(--ink-400)' }}>Aucun apporteur d&apos;affaires</div>
+          <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>Aucun apporteur d&apos;affaires</div>
         )}
       </div>
 

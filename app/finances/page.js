@@ -57,7 +57,7 @@ function Row({ label, value, bold, dim, accent }) {
   return <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8}}><span style={{fontSize:12,color:dim?'var(--ink-400)':'var(--ink-600)'}}>{label}</span><span style={{fontSize:13,fontWeight:bold?700:500,color:accent?'var(--brand-800)':'var(--ink-800)',fontVariantNumeric:'tabular-nums'}}>{value}</span></div>
 }
 function LegendRow({ color, label, value, pct }) {
-  return <div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:10,height:10,borderRadius:2,background:color,flexShrink:0}}/><span style={{fontSize:12,color:'var(--ink-600)',flex:1}}>{label}</span><span style={{fontSize:12,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{value}</span>{pct!==undefined&&<span style={{fontSize:11,color:'var(--ink-400)',minWidth:34,textAlign:'right'}}>{pct}%</span>}</div>
+  return <div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:10,height:10,borderRadius:2,background:color,flexShrink:0}}/><span style={{fontSize:12,color:'var(--ink-600)',flex:1}}>{label}</span><span style={{fontSize:12,color:'var(--ink-700)',fontVariantNumeric:'tabular-nums'}}>{value}</span>{pct!==undefined&&<span style={{fontSize:11,color:'var(--ink-500)',minWidth:34,textAlign:'right'}}>{pct}%</span>}</div>
 }
 
 // ─── COMPOSANTS VISUELS ────────────────────────────────────────────────────────
@@ -112,7 +112,7 @@ function ObjectifBar({ label, reel, objectifMontant, cible, agenteId = null, can
       <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:objectifMontant > 0 ? 10 : 0}}>
         <span className="tnum" style={{fontSize:22,fontWeight:800,color:'var(--ink-900)'}}>{fmt(reel)}</span>
         {objectifMontant > 0 && (
-          <span style={{fontSize:12,color:'var(--ink-400)'}}>/ {fmt(objectifMontant)} · {pct}%</span>
+          <span style={{fontSize:12,color:'var(--ink-500)'}}>/ {fmt(objectifMontant)} · {pct}%</span>
         )}
       </div>
       {objectifMontant > 0 && (
@@ -131,7 +131,7 @@ function ObjectifBar({ label, reel, objectifMontant, cible, agenteId = null, can
             className="btn btn-dark" style={{fontSize:12,padding:'5px 12px'}}>
             OK
           </button>
-          <button onClick={() => setEditing(false)} style={{fontSize:13,color:'var(--ink-400)',cursor:'pointer'}}>✕</button>
+          <button onClick={() => setEditing(false)} style={{fontSize:13,color:'var(--ink-500)',cursor:'pointer'}}>✕</button>
         </div>
       )}
     </div>
@@ -229,7 +229,7 @@ function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKe
   }
   const donutDataset = (d) => ({
     labels: ['Commissions illiCO', 'Frais de consultation', 'Honoraires'],
-    datasets: [{ data: [d.com, d.frais, d.hon], backgroundColor: ['#0f766e','#14b8a6','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
+    datasets: [{ data: [d.com, d.frais, d.hon], backgroundColor: ['#00578e','#0094d4','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
   })
 
   useEffect(() => {
@@ -263,8 +263,8 @@ function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKe
           <canvas id={donutReelId} role="img" aria-label="Répartition réel" />
         </div>
         <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
-          <LegendRow color="#0f766e" label="Commissions illiCO"    value={fmt(donutReel.com)}   pct={totalReel>0?Math.round(donutReel.com/totalReel*100):0} />
-          <LegendRow color="#14b8a6" label="Frais de consultation" value={fmt(donutReel.frais)} pct={totalReel>0?Math.round(donutReel.frais/totalReel*100):0} />
+          <LegendRow color="#00578e" label="Commissions illiCO"    value={fmt(donutReel.com)}   pct={totalReel>0?Math.round(donutReel.com/totalReel*100):0} />
+          <LegendRow color="#0094d4" label="Frais de consultation" value={fmt(donutReel.frais)} pct={totalReel>0?Math.round(donutReel.frais/totalReel*100):0} />
           <LegendRow color="#94a3b8" label="Honoraires"            value={fmt(donutReel.hon)}   pct={totalReel>0?Math.round(donutReel.hon/totalReel*100):0} />
         </div>
       </div>
@@ -274,8 +274,8 @@ function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKe
           <canvas id={donutPreviId} role="img" aria-label="Répartition prévisionnel" />
         </div>
         <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
-          <LegendRow color="#0f766e" label="Commissions illiCO"    value={fmt(donutPrevi.com)}   pct={totalPrevi>0?Math.round(donutPrevi.com/totalPrevi*100):0} />
-          <LegendRow color="#14b8a6" label="Frais de consultation" value={fmt(donutPrevi.frais)} pct={totalPrevi>0?Math.round(donutPrevi.frais/totalPrevi*100):0} />
+          <LegendRow color="#00578e" label="Commissions illiCO"    value={fmt(donutPrevi.com)}   pct={totalPrevi>0?Math.round(donutPrevi.com/totalPrevi*100):0} />
+          <LegendRow color="#0094d4" label="Frais de consultation" value={fmt(donutPrevi.frais)} pct={totalPrevi>0?Math.round(donutPrevi.frais/totalPrevi*100):0} />
           <LegendRow color="#94a3b8" label="Honoraires"            value={fmt(donutPrevi.hon)}   pct={totalPrevi>0?Math.round(donutPrevi.hon/totalPrevi*100):0} />
         </div>
       </div>
@@ -403,7 +403,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
     const estF1 = type === 'agente_vers_ctp'   // le report (trop-perçu ↩) et la clôture ne concernent que le F1
     const clot  = !!(f && f.cloture)
     const moisPasse = (annee * 12 + (mois - 1)) < moisCourantIndex
-    if (total <= 0 && cumul <= 0 && !clot) return <span style={{color:'var(--ink-400)'}}>—</span>
+    if (total <= 0 && cumul <= 0 && !clot) return <span style={{color:'var(--ink-500)'}}>—</span>
     let bg, col, txt
     if (clot) { txt = reste > 0.01 ? `🔒 Reporté ${fmt(reste)}` : '🔒 Clôturé'; bg = 'rgba(100,116,139,0.14)'; col = '#475569' }
     else if (estF1 && reste < -0.01) { txt = `↩ Trop-perçu ${fmt(-reste)}`; bg = 'rgba(217,119,6,0.12)'; col = '#a16207' }
@@ -416,21 +416,21 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
         {canEdit && !clot && reste > 0.01 && (
           <button onClick={(e) => { e.stopPropagation(); ajouterPaiementFacture(mois, annee, type, reste, todayISO(), total) }}
             title="Enregistrer le paiement du reste (solde en une fois)"
-            style={{fontSize:10.5,fontWeight:600,borderRadius:6,padding:'3px 8px',cursor:'pointer',border:'1px solid var(--brand-500)',background:'#fff',color:'var(--ink-900)'}}>
+            style={{fontSize:11,fontWeight:600,borderRadius:6,padding:'3px 8px',cursor:'pointer',border:'1px solid var(--brand-500)',background:'#fff',color:'var(--ink-900)'}}>
             Marquer reçu
           </button>
         )}
         {canEdit && estF1 && moisPasse && !clot && reste > 0.01 && (
           <button onClick={(e) => { e.stopPropagation(); upsertFactureMoisType(mois, annee, 0, type, { cloture: true }) }}
             title="Aucun encaissement attendu ce mois — le reste est reporté sur le mois suivant. Enlève le bouton « Marquer reçu »."
-            style={{fontSize:10.5,fontWeight:600,borderRadius:6,padding:'3px 8px',cursor:'pointer',border:'1px solid var(--ink-300)',background:'#fff',color:'var(--ink-600)'}}>
+            style={{fontSize:11,fontWeight:600,borderRadius:6,padding:'3px 8px',cursor:'pointer',border:'1px solid var(--ink-300)',background:'#fff',color:'var(--ink-600)'}}>
             Clôturer
           </button>
         )}
         {canEdit && estF1 && clot && (
           <button onClick={(e) => { e.stopPropagation(); upsertFactureMoisType(mois, annee, 0, type, { cloture: false }) }}
             title="Rouvrir ce mois (réaffiche « Marquer reçu »)."
-            style={{fontSize:10,fontWeight:600,borderRadius:6,padding:'2px 8px',cursor:'pointer',border:'1px solid var(--ink-200)',background:'#fff',color:'var(--ink-400)'}}>
+            style={{fontSize:11,fontWeight:600,borderRadius:6,padding:'2px 8px',cursor:'pointer',border:'1px solid var(--ink-200)',background:'#fff',color:'var(--ink-500)'}}>
             Rouvrir
           </button>
         )}
@@ -479,7 +479,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
       <div style={{display:'flex',gap:12,alignItems:'center',marginTop:6}}>
         {f?.facture_path
           ? <button onClick={() => voir(f.facture_path)} style={{fontSize:11,color:'var(--ink-900)',background:'none',border:'none',cursor:'pointer',padding:0}}>📄 Voir le PDF</button>
-          : <span style={{fontSize:11,color:'var(--ink-400)'}}>Pas de PDF</span>}
+          : <span style={{fontSize:11,color:'var(--ink-500)'}}>Pas de PDF</span>}
         <label style={{fontSize:11,color:'var(--ink-600)',cursor:'pointer',border:'1px solid var(--ink-200)',borderRadius:6,padding:'3px 8px',background:'#fff'}}>
           {f?.facture_path ? '📤 Remplacer' : '📤 Déposer un PDF'}
           <input type="file" accept=".pdf" style={{display:'none'}} onChange={e => e.target.files[0] && uploadPdf(cible, e.target.files[0])}/>
@@ -539,9 +539,9 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
           <thead style={{background:'var(--surface-2)'}}>
             <tr>
               {thL('Mois')}
-              <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Agente → Société<div style={{fontSize:9,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>facture F1</div></th>
+              <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Agente → Société<div style={{fontSize:11,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>facture F1</div></th>
               <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut</th>
-              <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em',borderLeft:'2px solid var(--ink-200)'}}>Société → Agente<div style={{fontSize:9,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>facture F2</div></th>
+              <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em',borderLeft:'2px solid var(--ink-200)'}}>Société → Agente<div style={{fontSize:11,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>facture F2</div></th>
               <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut</th>
             </tr>
           </thead>
@@ -562,8 +562,8 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                 <React.Fragment key={key}>
                 <tr style={{borderTop:'1px solid var(--ink-100)',cursor:'pointer'}} className="row-hover" onClick={() => setMoisDeplie(isOpen ? null : key)}>
                   <td style={{padding:'14px 16px',fontWeight:700,color:'var(--ink-900)'}}>
-                    <span style={{display:'inline-block',width:14,color:'var(--ink-400)'}}>{isOpen ? '▾' : '▸'}</span>{MOIS[fMois]} {fAnnee}
-                    <div style={{fontSize:11,fontWeight:500,color:'var(--ink-400)',marginLeft:14}}>activité de {MOIS[mois]} {annee}</div>
+                    <span style={{display:'inline-block',width:14,color:'var(--ink-500)'}}>{isOpen ? '▾' : '▸'}</span>{MOIS[fMois]} {fAnnee}
+                    <div style={{fontSize:11,fontWeight:500,color:'var(--ink-500)',marginLeft:14}}>activité de {MOIS[mois]} {annee}</div>
                   </td>
                   <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f1m>0.005?'#15803d':f1m<-0.005?'#a16207':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
                     {Math.abs(f1m) > 0.005 ? fmt(f1m) : '—'}
@@ -588,7 +588,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                           {d.comN   > 0 && <Row label="Commissions artisans"   value={fmt(d.comN)} />}
                           {d.honN   > 0 && <Row label="Honoraires" value={fmt(d.honN)} />}
                           {d.partN  > 0 && <Row label="Part partenaire"         value={fmt(d.partN)} />}
-                          {(d.montantF1 === 0 && rep.carryIn === 0) && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucun gain encaissé ce mois</span>}
+                          {(d.montantF1 === 0 && rep.carryIn === 0) && <span style={{fontSize:12,color:'var(--ink-500)'}}>Aucun gain encaissé ce mois</span>}
                           {Math.abs(rep.carryIn) > 0.01 && rep.fromKey && (() => {
                             const [cy, cm] = rep.fromKey.split('-')
                             const src = `${MOIS[parseInt(cm)]} ${cy}`
@@ -602,7 +602,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                           <div className="eyebrow" style={{color:'#b91c1c'}}>F2 — La Société facture l&apos;agent</div>
                           {d.redev     > 0 && <Row label="Redevance mensuelle (HT)" value={fmt(d.redev)} />}
                           {d.apporteur > 0 && <Row label="Apporteur remboursé"      value={fmt(d.apporteur)} />}
-                          {f2m === 0 && <span style={{fontSize:12,color:'var(--ink-400)'}}>Aucune charge ce mois</span>}
+                          {f2m === 0 && <span style={{fontSize:12,color:'var(--ink-500)'}}>Aucune charge ce mois</span>}
                           <Row label="Total F2" value={fmt(f2m)} bold accent />
                           {f2m > 0 && renderVersements(f2, 'ctp_vers_agente', annee, mois, f2m, isAdmin)}
                           {renderPdfControl(f2, annee, mois, 'ctp_vers_agente')}
@@ -615,7 +615,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
               )
             })}
             {months.length === 0 && (
-              <tr><td colSpan={5} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-400)'}}>Aucune facturation à afficher</td></tr>
+              <tr><td colSpan={5} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-500)'}}>Aucune facturation à afficher</td></tr>
             )}
           </tbody>
           {months.length > 0 && (
@@ -623,9 +623,9 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
               <tr style={{borderTop:'2px solid var(--ink-200)',background:'var(--surface-2)'}}>
                 <td style={{padding:'14px 16px',fontWeight:800,color:'var(--ink-900)'}}>Total</td>
                 <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#15803d',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF1)}</td>
-                <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF1Paye)} reçu</td>
+                <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-500)'}}>{fmt(totalF1Paye)} reçu</td>
                 <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#b91c1c',fontVariantNumeric:'tabular-nums',borderLeft:'2px solid var(--ink-200)'}}>{fmt(totalF2)}</td>
-                <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-400)'}}>{fmt(totalF2Paye)} reçu</td>
+                <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-500)'}}>{fmt(totalF2Paye)} reçu</td>
               </tr>
             </tfoot>
           )}
@@ -646,7 +646,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                 background:  r?.statut === 'regle' ? 'rgba(22,163,74,0.10)' : isPast ? 'rgba(245,158,11,0.13)' : 'var(--ink-50)',
                 border:'1px solid',borderColor: r?.statut === 'regle' ? 'rgba(22,163,74,0.2)' : isPast ? 'rgba(245,158,11,0.3)' : 'var(--ink-200)',
               }}>
-                <div style={{fontSize:10,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>{mLabel.slice(0,3)}</div>
+                <div style={{fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>{mLabel.slice(0,3)}</div>
                 <div style={{marginTop:6,fontSize:11.5,fontWeight:700,color:r?.statut==='regle'?'#15803d':isPast?'#a16207':'var(--ink-300)'}}>
                   {r?.statut === 'regle' ? '✓' : isPast ? '⌛' : '—'}
                 </div>
@@ -658,7 +658,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
           {redevAg.filter(r => r.statut === 'regle').length} mois réglés ·
           <span style={{fontWeight:700,color:'var(--ink-900)',marginLeft:6,fontVariantNumeric:'tabular-nums'}}>{fmt(totalRedev)}</span> sur l&apos;année
         </div>
-        <div className="eyebrow" style={{marginTop:8,color:'var(--ink-400)'}}>Redevance due au titre du mois d&apos;activité</div>
+        <div className="eyebrow" style={{marginTop:8,color:'var(--ink-500)'}}>Redevance due au titre du mois d&apos;activité</div>
       </div>
     </div>
   )
@@ -1550,14 +1550,14 @@ export default function Finances() {
           <div>
             <div className="eyebrow" style={{marginBottom:10}}>Détail des devis acceptés</div>
             {devisAcc.length === 0 ? (
-              <div style={{padding:'14px 12px', background:'#fff', borderRadius:10, border:'1px solid var(--ink-200)', fontSize:12.5, color:'var(--ink-400)', textAlign:'center'}}>
+              <div style={{padding:'14px 12px', background:'#fff', borderRadius:10, border:'1px solid var(--ink-200)', fontSize:12.5, color:'var(--ink-500)', textAlign:'center'}}>
                 Aucun devis signé
               </div>
             ) : (
               <div className="table-scroll" style={{background:'#fff', borderRadius:10, border:'1px solid var(--ink-200)', overflow:'hidden'}}>
                 <table style={{width:'100%', borderCollapse:'collapse', fontSize:12.5}}>
                   <thead>
-                    <tr style={{color:'var(--ink-400)', fontWeight:600, background:'var(--surface-2)'}}>
+                    <tr style={{color:'var(--ink-500)', fontWeight:600, background:'var(--surface-2)'}}>
                       <td style={{padding:'8px 12px'}}>Artisan</td>
                       <td style={{padding:'8px 12px', textAlign:'right'}}>HT</td>
                       <td style={{padding:'8px 12px', textAlign:'right'}}>%</td>
@@ -1578,16 +1578,16 @@ export default function Finances() {
                       if (isReel) {
                         const debloque = estPaiementDirect ? true : (sf?.statut_illico === 'recu')
                         badge = debloque
-                          ? <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(22,163,74,0.12)', color:'#15803d'}}>Encaissé</span>
-                          : <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(245,158,11,0.13)', color:'#a16207'}}>En attente</span>
+                          ? <span style={{fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(22,163,74,0.12)', color:'#15803d'}}>Encaissé</span>
+                          : <span style={{fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(245,158,11,0.13)', color:'#a16207'}}>En attente</span>
                       } else {
-                        badge = <span style={{fontSize:10.5, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(148,163,184,0.18)', color:'#475569'}}>Engagé</span>
+                        badge = <span style={{fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:99, background:'rgba(148,163,184,0.18)', color:'#475569'}}>Engagé</span>
                       }
                       return (
                         <tr key={dv.id} style={{borderTop:'1px solid var(--ink-100)'}}>
                           <td style={{padding:'10px 12px', fontWeight:600, color:'var(--ink-800)'}}>
                             🔨 {dv.artisan?.entreprise || '—'}
-                            {estPartenaire && <span style={{marginLeft:6, fontSize:10, padding:'1px 6px', borderRadius:99, background:'rgba(245,158,11,0.15)', color:'#b45309'}}>Partenaire</span>}
+                            {estPartenaire && <span style={{marginLeft:6, fontSize:11, padding:'1px 6px', borderRadius:99, background:'rgba(245,158,11,0.15)', color:'#b45309'}}>Partenaire</span>}
                           </td>
                           <td className="tnum" style={{padding:'10px 12px', textAlign:'right', color:'var(--ink-700)'}}>{fmt(dv.montant_ht)}</td>
                           <td className="tnum" style={{padding:'10px 12px', textAlign:'right', color:'var(--ink-500)'}}>{pct}%</td>
@@ -1709,7 +1709,7 @@ export default function Finances() {
                       <div style={{display:'flex',flexDirection:'column',gap:2}}>
                         <span style={{fontSize:11.5,color:'var(--ink-900)',fontWeight:700,fontVariantNumeric:'tabular-nums'}}>{d.reference}</span>
                         <span style={{fontSize:12,color:'var(--ink-600)'}}>{d.client?.prenom} {d.client?.nom}</span>
-                        <span style={{fontSize:10,padding:'1px 6px',borderRadius:99,background:'var(--ink-100)',color:'var(--ink-500)',fontWeight:600,alignSelf:'flex-start'}}>{d.typologie}</span>
+                        <span style={{fontSize:11,padding:'1px 6px',borderRadius:99,background:'var(--ink-100)',color:'var(--ink-500)',fontWeight:600,alignSelf:'flex-start'}}>{d.typologie}</span>
                       </div>
                     </Td>
                     <Td>
@@ -1720,7 +1720,7 @@ export default function Finances() {
                     </Td>
                     <Td>
                       <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,
-                        background:cs==='annule'?'rgba(220,38,38,0.1)':cs==='termine'?'rgba(22,163,74,0.1)':'rgba(15,118,110,0.1)',
+                        background:cs==='annule'?'rgba(220,38,38,0.1)':cs==='termine'?'rgba(22,163,74,0.1)':'rgba(0,87,142,0.1)',
                         color:cs==='annule'?'#b91c1c':cs==='termine'?'#15803d':'var(--brand-700)'}}>
                         {cs === 'annule' ? 'Annulé' : cs === 'termine' ? 'Terminé' : 'En cours'}
                       </span>
@@ -1733,7 +1733,7 @@ export default function Finances() {
                         <div style={{width:60,height:4,borderRadius:2,background:'var(--ink-100)',overflow:'hidden'}}>
                           <div style={{height:'100%',borderRadius:2,background:'var(--brand-500)',width:`${avancement}%`}}/>
                         </div>
-                        <span style={{fontSize:11,color:'var(--ink-400)',minWidth:28}}>{avancement}%</span>
+                        <span style={{fontSize:11,color:'var(--ink-500)',minWidth:28}}>{avancement}%</span>
                       </div>
                     </Td>
                     <Td right><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></Td>
@@ -1747,7 +1747,7 @@ export default function Finances() {
               )
             })}
             {listeDossiers.length === 0 && (
-              <tr><td colSpan={8} style={{textAlign:'center',color:'var(--ink-400)',fontSize:13,padding:'32px 0'}}>Aucun chantier</td></tr>
+              <tr><td colSpan={8} style={{textAlign:'center',color:'var(--ink-500)',fontSize:13,padding:'32px 0'}}>Aucun chantier</td></tr>
             )}
           </tbody>
           {listeDossiers.length > 0 && (
@@ -1756,7 +1756,7 @@ export default function Finances() {
                 <td colSpan={3} style={{padding:'12px 16px',fontSize:12,fontWeight:700,color:'var(--ink-600)'}}>Total ({listeDossiers.length})</td>
                 <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-700)'}}>{fmt(totals.prevu)}</td>
                 <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-900)'}}>{fmt(totals.encaisse)}</td>
-                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-400)'}}>{fmt(totals.reste)}</td>
+                <td style={{padding:'12px 16px',textAlign:'right',fontSize:13,fontWeight:700,fontVariantNumeric:'tabular-nums',color:'var(--ink-500)'}}>{fmt(totals.reste)}</td>
                 <td colSpan={2}/>
               </tr>
             </tfoot>
@@ -1808,7 +1808,7 @@ export default function Finances() {
                 <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-200)',cursor:'pointer'}}
                   onClick={() => setPeriodeOuverte(isOpen ? null : key)}>
                   <td style={{padding:'8px 12px',fontWeight:700,color:'var(--ink-800)'}}>
-                    <span style={{display:'inline-block',width:14,color:'var(--ink-400)'}}>{isOpen ? '▾' : '▸'}</span>{label}
+                    <span style={{display:'inline-block',width:14,color:'var(--ink-500)'}}>{isOpen ? '▾' : '▸'}</span>{label}
                   </td>
                   {colonnes.map(col => {
                     const val = getMontant(agg, col.key)
@@ -1838,7 +1838,7 @@ export default function Finances() {
               </React.Fragment>
             )
           })}
-          {rows.length === 0 && <tr><td colSpan={colonnes.length + 1} style={{padding:'32px 12px',textAlign:'center',color:'var(--ink-400)'}}>Aucune donnée</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={colonnes.length + 1} style={{padding:'32px 12px',textAlign:'center',color:'var(--ink-500)'}}>Aucune donnée</td></tr>}
         </tbody>
         <tfoot style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-300)',fontWeight:700}}>
           <tr>
@@ -1890,7 +1890,7 @@ export default function Finances() {
                     <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-200)',cursor:'pointer'}}
                       onClick={() => setPeriodeOuverte(isYOpen ? null : `ry_${y}`)}>
                       <td style={{padding:'8px 12px',fontWeight:700,color:'var(--ink-800)'}}>
-                        <span style={{display:'inline-block',width:14,color:'var(--ink-400)'}}>{isYOpen ? '▾' : '▸'}</span>{y}
+                        <span style={{display:'inline-block',width:14,color:'var(--ink-500)'}}>{isYOpen ? '▾' : '▸'}</span>{y}
                       </td>
                       {cols.map(c => <td key={c.key} style={{padding:'8px 12px',textAlign:'right',fontSize:13,fontWeight:700,color:c.total ? '#15803d' : 'var(--ink-700)'}}>{fmt(cell(aggY, c))}</td>)}
                     </tr>
@@ -1904,7 +1904,7 @@ export default function Finances() {
                           <tr style={{borderTop:'1px solid var(--ink-100)',cursor:'pointer'}} className="row-hover"
                             onClick={() => setMoisOuvert(isMOpen ? null : `rm_${cle}`)}>
                             <td style={{padding:'6px 12px 6px 28px',fontWeight:600,color:'var(--ink-700)',fontSize:12}}>
-                              <span style={{display:'inline-block',width:12,color:'var(--ink-400)'}}>{isMOpen ? '▾' : '▸'}</span>{moisLabel}
+                              <span style={{display:'inline-block',width:12,color:'var(--ink-500)'}}>{isMOpen ? '▾' : '▸'}</span>{moisLabel}
                             </td>
                             {cols.map(c => <td key={c.key} style={{padding:'6px 12px',textAlign:'right',fontSize:12,fontWeight:600,color:c.total ? '#15803d' : 'var(--ink-600)'}}>{fmt(cell(aggM, c))}</td>)}
                           </tr>
@@ -1929,7 +1929,7 @@ export default function Finances() {
                   </React.Fragment>
                 )
               })}
-              {rows.length === 0 && <tr><td colSpan={cols.length + 1} style={{padding:'32px 12px',textAlign:'center',color:'var(--ink-400)'}}>Aucune donnée</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={cols.length + 1} style={{padding:'32px 12px',textAlign:'center',color:'var(--ink-500)'}}>Aucune donnée</td></tr>}
             </tbody>
           </table>
           </div>
@@ -2024,15 +2024,15 @@ export default function Finances() {
       return (
         <table style={{width:'100%',fontSize:11}}>
           <thead><tr style={{borderBottom:'1px solid var(--ink-100)'}}>
-            <th style={{textAlign:'left',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase',width:'70%'}}>Ligne</th>
-            <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-400)',textTransform:'uppercase'}}>Réel</th>
+            <th style={{textAlign:'left',padding:'4px 8px',color:'var(--ink-500)',textTransform:'uppercase',width:'70%'}}>Ligne</th>
+            <th style={{textAlign:'right',padding:'4px 8px',color:'var(--ink-500)',textTransform:'uppercase'}}>Réel</th>
           </tr></thead>
           <tbody>
-            <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Produits (brut)</td></tr>
+            <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase'}}>Produits (brut)</td></tr>
             {lignesProduits.map(l => (<tr key={l.label}><td style={tdL}>{l.label}</td><td style={{...tdR,color:'#15803d',fontWeight:500}}>{fmt(l.r)}</td></tr>))}
             <tr><td style={tdL}>Royalties illiCO</td><td style={{...tdR,color:'#ef4444',fontWeight:500}}>{`-${fmt(x.r.royaltyBucket||0)}`}</td></tr>
             <tr style={{background:'var(--surface-2)',borderTop:'1px solid var(--ink-200)'}}><td style={{...tdL,fontWeight:500,color:'var(--ink-700)'}}>Total produits (net)</td><td style={{...tdR,fontWeight:500,color:'#15803d'}}>{fmt(x.reelProduits)}</td></tr>
-            <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-400)',textTransform:'uppercase'}}>Reversements</td></tr>
+            <tr style={{background:'var(--surface-2)'}}><td colSpan={2} style={{padding:'4px 8px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase'}}>Reversements</td></tr>
             {lignesReversements.map(l => {
               const isParts = l.label === 'Parts agents'   // ce que le mode Société retire → mis en évidence
               return (<tr key={l.label} style={isParts ? {background:'rgba(245,158,11,0.12)'} : undefined}>
@@ -2067,7 +2067,7 @@ export default function Finances() {
           <div>
             <div className="eyebrow" style={{marginBottom:8}}>Chantiers du mois</div>
             {liste.length === 0
-              ? <div style={{fontSize:12,color:'var(--ink-400)'}}>Aucun chantier encaissé ce mois</div>
+              ? <div style={{fontSize:12,color:'var(--ink-500)'}}>Aucun chantier encaissé ce mois</div>
               : liste.map(({ d, htNet }) => (
                   <div key={d.id} style={{display:'flex',justifyContent:'space-between',gap:8,padding:'4px 0',fontSize:12,borderBottom:'1px solid var(--ink-100)'}}>
                     <span><span style={{fontWeight:600,color:'var(--ink-900)'}}>{d.reference}</span> <span style={{color:'var(--ink-500)'}}>— {formatNomClient(d.client)}</span></span>
@@ -2098,7 +2098,7 @@ export default function Finances() {
             onClick={() => setMoisOuvert(isOpen ? null : `${mode}_${cle}`)}>
             <td style={{padding:'10px 16px',fontWeight:500,color:'var(--ink-700)',display:'flex',alignItems:'center',gap:8}}><span>{label}</span><span style={{color:'var(--ink-300)',fontSize:11}}>{isOpen ? '▲' : '▼'}</span></td>
             <td style={{padding:'10px 12px',textAlign:'right',fontWeight:500,color:x.reelNet >= 0 ? '#15803d' : '#dc2626'}}>{fmt(x.reelNet)}</td>
-            <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{objectifMensuel > 0 ? fmt(objectifMensuel) : '—'}</td>
+            <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-500)'}}>{objectifMensuel > 0 ? fmt(objectifMensuel) : '—'}</td>
             <td style={{padding:'10px 16px',textAlign:'right',fontWeight:500,color:objectifMensuel > 0 ? (ecartObj >= 0 ? '#16a34a' : '#ef4444') : 'var(--ink-400)'}}>{objectifMensuel > 0 ? `${ecartObj >= 0 ? '+' : ''}${fmt(ecartObj)}` : '—'}</td>
           </tr>
           {isOpen && (<tr style={{background:bg}}><td colSpan={4} style={{padding:'0 16px 12px'}}>{renderMoisDetail(cle)}</td></tr>)}
@@ -2169,7 +2169,7 @@ export default function Finances() {
                     {isOpen && (
                       <tr style={{background:bg}}><td colSpan={4} style={{padding:'0 12px 12px'}}>
                         {cs.length === 0
-                          ? <div style={{fontSize:12,color:'var(--ink-400)',padding:'8px 4px'}}>Aucune activité cette année</div>
+                          ? <div style={{fontSize:12,color:'var(--ink-500)',padding:'8px 4px'}}>Aucune activité cette année</div>
                           : <table style={{width:'100%',fontSize:11}}><tbody>{cs.map((c, j) => renderMoisRow(c, j % 2 === 0 ? 'transparent' : 'var(--surface-2)'))}</tbody></table>}
                       </td></tr>
                     )}
@@ -2206,7 +2206,7 @@ export default function Finances() {
                   <tr style={{background:'var(--surface-2)',borderTop:'2px solid var(--ink-300)',fontWeight:700,fontSize:11}}>
                     <td style={{padding:'10px 16px',color:'var(--ink-700)'}}>Total</td>
                     <td style={{padding:'10px 12px',textAlign:'right',color:totalReelMois >= 0 ? '#15803d' : '#dc2626'}}>{fmt(totalReelMois)}</td>
-                    <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-400)'}}>{objectifMensuel > 0 ? fmt(objectifMensuel * cles.length) : '—'}</td>
+                    <td style={{padding:'10px 12px',textAlign:'right',color:'var(--ink-500)'}}>{objectifMensuel > 0 ? fmt(objectifMensuel * cles.length) : '—'}</td>
                     <td style={{padding:'10px 16px',textAlign:'right',color:'var(--ink-500)'}}>—</td>
                   </tr>
                 </tbody>
@@ -2242,7 +2242,7 @@ export default function Finances() {
   // données déjà présentes) restent gérées par le bandeau de section existant.
   if (erreur && !dossiers.length) return (
     <div className="page-pad" style={{maxWidth:1400,margin:'0 auto'}}>
-      <button onClick={() => router.push('/dashboard')} style={{fontSize:12,color:'var(--ink-400)',marginBottom:12,cursor:'pointer',display:'flex',alignItems:'center',gap:4,background:'none',border:0}}>← Retour</button>
+      <button onClick={() => router.push('/dashboard')} style={{fontSize:12,color:'var(--ink-500)',marginBottom:12,cursor:'pointer',display:'flex',alignItems:'center',gap:4,background:'none',border:0}}>← Retour</button>
       <div style={{background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:10,padding:'16px 20px',fontSize:14,color:'#b91c1c'}}>⚠️ {erreur}</div>
     </div>
   )
@@ -2253,12 +2253,12 @@ export default function Finances() {
       {/* En-tête page */}
       <div className="header-row" style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:16,flexWrap:'wrap'}}>
         <div>
-          <button onClick={() => router.push('/dashboard')} style={{fontSize:12,color:'var(--ink-400)',marginBottom:6,cursor:'pointer',display:'flex',alignItems:'center',gap:4,background:'none',border:0}}>← Retour</button>
+          <button onClick={() => router.push('/dashboard')} style={{fontSize:12,color:'var(--ink-500)',marginBottom:6,cursor:'pointer',display:'flex',alignItems:'center',gap:4,background:'none',border:0}}>← Retour</button>
           <div className="eyebrow" style={{marginBottom:4}}>Pilotage financier</div>
           <h1 className="page">Finances</h1>
           <div style={{color:'var(--ink-500)',fontSize:13,marginTop:6}}>
             Année <strong style={{color:'var(--ink-700)'}}>{anneeEnCours}</strong> · {dossiers.length} dossiers actifs
-            {saving && <span style={{marginLeft:12,color:'var(--ink-400)',fontSize:12}}>Enregistrement…</span>}
+            {saving && <span style={{marginLeft:12,color:'var(--ink-500)',fontSize:12}}>Enregistrement…</span>}
           </div>
         </div>
       </div>

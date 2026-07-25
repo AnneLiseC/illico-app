@@ -48,10 +48,10 @@ function CABarChart({ data }) {
             <g key={i}>
               <rect x={x} y={H - padY - hObj} width={w} height={hObj} rx="3" fill="#e2e8f0" />
               <rect x={x + w + 4} y={H - padY - hReel} width={w} height={hReel} rx="3"
-                fill={d.inProgress ? '#7ccdef' : '#14b8a6'} style={{ transition: 'all 400ms ease' }} />
+                fill={d.inProgress ? '#7ccdef' : '#0094d4'} style={{ transition: 'all 400ms ease' }} />
               {d.reel > 0 && (
                 <text x={x + w + w / 2 + 4} y={H - padY - hReel - 5}
-                  textAnchor="middle" fontSize="10" fontWeight="700" fill="#0f766e">
+                  textAnchor="middle" fontSize="10" fontWeight="700" fill="#00578e">
                   {Math.round(d.reel / 1000)}k
                 </text>
               )}
@@ -82,7 +82,7 @@ function DossierRow({ d, onOpen }) {
 function Pipeline({ dossiers, onOpen }) {
   const [open, setOpen] = useState(null)
   const buckets = [
-    { key: 'a_traiter', label: 'À traiter',            tone: '#14b8a6', match: s => ['a_contacter','a_relancer'].includes(s) },
+    { key: 'a_traiter', label: 'À traiter',            tone: '#0094d4', match: s => ['a_contacter','a_relancer'].includes(s) },
     { key: 'etude',     label: 'En étude',             tone: '#8b5cf6', match: s => ['en_etude','devis_en_attente','devis_prets','devis_a_modifier'].includes(s) },
     { key: 'signature', label: 'En attente signature', tone: '#f59e0b', match: s => s === 'en_attente_signature' },
     { key: 'a_venir',   label: 'Chantier à venir',     tone: '#6366f1', match: s => s === 'chantier_a_venir' },
@@ -115,7 +115,7 @@ function Pipeline({ dossiers, onOpen }) {
         <div style={{ marginTop: 14, borderTop: '1px solid var(--ink-200)', paddingTop: 8 }}>
           <div className="eyebrow" style={{ marginBottom: 4 }}>{bucketOuvert.label} — {dossiersOuverts.length} dossier(s)</div>
           {dossiersOuverts.length === 0
-            ? <div style={{ fontSize: 12.5, color: 'var(--ink-400)', padding: '10px 0' }}>Aucun dossier</div>
+            ? <div style={{ fontSize: 12.5, color: 'var(--ink-500)', padding: '10px 0' }}>Aucun dossier</div>
             : dossiersOuverts.map(d => <DossierRow key={d.id} d={d} onOpen={onOpen} />)}
         </div>
       )}
@@ -337,7 +337,7 @@ export default function Dashboard() {
         <div className="card" style={{ padding: 16, marginBottom: 20 }}>
           <div className="eyebrow" style={{ marginBottom: 6 }}>Chantiers en cours — {enCours.length}</div>
           {enCours.length === 0
-            ? <div style={{ fontSize: 12.5, color: 'var(--ink-400)', padding: '10px 0' }}>Aucun chantier en cours</div>
+            ? <div style={{ fontSize: 12.5, color: 'var(--ink-500)', padding: '10px 0' }}>Aucun chantier en cours</div>
             : enCours.map(d => <DossierRow key={d.id} d={d} onOpen={openDossier} />)}
         </div>
       )}
@@ -360,7 +360,7 @@ export default function Dashboard() {
             {loading ? (
               <div style={{ padding: '20px 0', textAlign: 'center' }}><span className="eyebrow">Chargement…</span></div>
             ) : aRelancer.length === 0 ? (
-              <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--ink-400)', fontSize: 13 }}>
+              <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--ink-500)', fontSize: 13 }}>
                 Aucun devis à relancer cette semaine
               </div>
             ) : (
@@ -383,7 +383,7 @@ export default function Dashboard() {
                         {d.referente && <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>{d.referente.prenom} {d.referente.nom}</div>}
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>Limite</div>
+                        <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>Limite</div>
                         <div className="tnum" style={{ fontSize: 13, fontWeight: 600, color: enRetard ? '#b91c1c' : 'var(--ink-700)' }}>
                           {new Date(d.date_limite_devis).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
                         </div>
@@ -437,7 +437,7 @@ export default function Dashboard() {
             {loading ? (
               <div style={{ padding: '16px 0', textAlign: 'center' }}><span className="eyebrow">Chargement…</span></div>
             ) : rdvAujourdhuiScoped.length === 0 ? (
-              <div style={{ padding: '16px 0', textAlign: 'center', color: 'var(--ink-400)', fontSize: 13 }}>
+              <div style={{ padding: '16px 0', textAlign: 'center', color: 'var(--ink-500)', fontSize: 13 }}>
                 Aucun rendez-vous programmé aujourd&apos;hui
               </div>
             ) : (
@@ -445,7 +445,7 @@ export default function Dashboard() {
                 {rdvAujourdhuiScoped.map((a, i) => {
                   const heure = new Date(a.date_heure).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
                   const tone = a.type_rdv === 'visite_technique_client' ? 'info' : a.type_rdv === 'visite_technique_artisan' ? 'ok' : a.type_rdv === 'presentation_devis' ? 'warn' : 'mute'
-                  const dotColor = tone === 'info' ? '#14b8a6' : tone === 'ok' ? '#16a34a' : tone === 'warn' ? '#f59e0b' : '#94a3b8'
+                  const dotColor = tone === 'info' ? '#0094d4' : tone === 'ok' ? '#16a34a' : tone === 'warn' ? '#f59e0b' : '#94a3b8'
                   const nomClient = a.dossier?.client ? `${a.dossier.client.prenom || ''} ${a.dossier.client.nom || ''}`.trim() : ''
                   const label = a.titre || (a.type_rdv === 'visite_technique_client' ? 'Visite client' : a.type_rdv === 'visite_technique_artisan' ? 'Visite artisan' : a.type_rdv === 'presentation_devis' ? 'Présentation devis' : 'Rendez-vous')
                   const sub = [a.dossier?.reference, nomClient].filter(Boolean).join(' · ')
@@ -453,10 +453,10 @@ export default function Dashboard() {
                     <div key={a.id} style={{ display: 'grid', gridTemplateColumns: '60px 12px 1fr', gap: 14, alignItems: 'flex-start', paddingBottom: 14, position: 'relative' }}>
                       <div className="mono tnum" style={{ fontSize: 12, color: 'var(--ink-500)', fontWeight: 600, paddingTop: 2 }}>
                         {heure}
-                        {a.duree_minutes && <div style={{ fontSize: 10, color: 'var(--ink-400)', fontWeight: 500, marginTop: 2 }}>{a.duree_minutes}min</div>}
+                        {a.duree_minutes && <div style={{ fontSize:11, color: 'var(--ink-500)', fontWeight: 500, marginTop: 2 }}>{a.duree_minutes}min</div>}
                       </div>
                       <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
-                        <span style={{ width: 10, height: 10, borderRadius: 99, background: dotColor, marginTop: 6, boxShadow: '0 0 0 3px #fff, 0 0 0 4px rgba(20,184,166,0.18)', flexShrink: 0 }} />
+                        <span style={{ width: 10, height: 10, borderRadius: 99, background: dotColor, marginTop: 6, boxShadow: '0 0 0 3px #fff, 0 0 0 4px rgba(0,148,212,0.18)', flexShrink: 0 }} />
                         {i < rdvAujourdhuiScoped.length - 1 && <span style={{ position: 'absolute', top: 18, bottom: -4, width: 1, background: 'var(--ink-200)' }} />}
                       </div>
                       <div style={{ paddingBottom: 10 }}>
@@ -503,7 +503,7 @@ export default function Dashboard() {
                         <strong style={{ color: 'var(--ink-900)' }}>{nomClient}</strong> — {actionLabel}{' '}
                         <span className="mono" style={{ color: 'var(--ink-900)' }}>{d.reference}</span>
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 3 }}>{relTime(d.created_at)}</div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 3 }}>{relTime(d.created_at)}</div>
                     </div>
                   </button>
                 )

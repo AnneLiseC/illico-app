@@ -280,7 +280,7 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
         {/* Badge multi-fournisseur (présence du compte, pas l'expiry) */}
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           {fournisseursConnectes.length === 0
-            ? <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Aucun calendrier connecté</span>
+            ? <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>Aucun calendrier connecté</span>
             : fournisseursConnectes.map(f => (
                 <span key={f} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 600, color: 'var(--ink-700)' }}>
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#15803d', flexShrink: 0 }} />
@@ -310,10 +310,10 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
                     <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => deconnecterCompte(c)}>Déconnecter</button>
                   </div>
                 </div>
-                {a.loading && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Chargement des agendas…</div>}
+                {a.loading && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Chargement des agendas…</div>}
                 {a.reconnect && <div style={{ fontSize: 12, color: '#dc2626' }}>Compte à reconnecter.</div>}
                 {a.error && !a.reconnect && <div style={{ fontSize: 12, color: '#b91c1c' }}>{a.error}</div>}
-                {a.items && a.items.length === 0 && <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Aucun agenda.</div>}
+                {a.items && a.items.length === 0 && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Aucun agenda.</div>}
                 {a.items && a.items.length > 0 && (
                   <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {a.items.map(cal => (
@@ -372,7 +372,7 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
             onClick={() => { setCibleOpen(o => !o); setErreurCible('') }}>+ Ajouter un calendrier cible</button>
         </div>
         {comptesCal.length === 0 && (
-          <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Connecte d&apos;abord un compte ci-dessus.</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Connecte d&apos;abord un compte ci-dessus.</div>
         )}
 
         {cibles.length > 0 && (
@@ -388,9 +388,9 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
                     ) : (
                       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-900)' }}>
                         {c.libelle}
-                        <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--ink-100)', color: 'var(--ink-600)' }}>{labelPerimetre(c)}</span>
-                        {cibleDefautId === c.id && <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: '#b45309' }}>★ par défaut</span>}
-                        {!c.actif && <span style={{ marginLeft: 6, fontSize: 10.5, color: '#a16207' }}>· inactive</span>}
+                        <span style={{ marginLeft: 8, fontSize:11, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--ink-100)', color: 'var(--ink-600)' }}>{labelPerimetre(c)}</span>
+                        {cibleDefautId === c.id && <span style={{ marginLeft: 6, fontSize:11, fontWeight: 700, color: '#b45309' }}>★ par défaut</span>}
+                        {!c.actif && <span style={{ marginLeft: 6, fontSize:11, color: '#a16207' }}>· inactive</span>}
                       </div>
                     )}
                     <div style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>
@@ -437,7 +437,7 @@ export default function MesCalendriers({ profile, onError, onSucces, onDefautCha
               {agendasSel.map(a => <option key={a.externalId} value={a.externalId}>{a.label}{a.primary ? ' · principal' : ''}</option>)}
             </select>
             {cibleCompteId && agendasSel.length === 0 && (
-              <div style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>Aucun agenda (compte à reconnecter ?).</div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>Aucun agenda (compte à reconnecter ?).</div>
             )}
             <input className="input" placeholder="Libellé (ex. Agenda Martigues)" value={cibleLibelle}
               onChange={e => setCibleLibelle(e.target.value)} style={{ height: 40 }} />
