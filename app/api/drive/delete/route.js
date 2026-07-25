@@ -36,9 +36,10 @@ export async function POST(request) {
   const { data: idx } = await q.maybeSingle()
   if (!idx) return NextResponse.json({ ok: true, nothing: true }) // jamais miroité → rien à faire
 
-  // Fichier NÉ dans OneDrive (origine='onedrive') : OneDrive en est le MAÎTRE. On ne
-  // supprime JAMAIS le master depuis l'app — on retire seulement le pointeur d'index.
-  if (idx.origine === 'onedrive') {
+  // Fichier NÉ dans le drive externe (origine='onedrive' = OneDrive OU Google Drive) :
+  // le drive en est le MAÎTRE. On ne supprime JAMAIS le master depuis l'app — on retire
+  // seulement le pointeur d'index.
+  if (idx.origine !== 'app') {
     await db.from('doc_index').delete().eq('id', idx.id)
     return NextResponse.json({ ok: true, detached: true })
   }

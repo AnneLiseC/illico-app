@@ -203,6 +203,21 @@ export async function deltaQuery(accessToken, driveId, itemId, deltaLink) {
   return { items, deltaLink: finalDelta }
 }
 
+// Détection ENTRANTE (inbox). Interface commune avec google-drive.pullInbox :
+//   (accessToken, driveId, rootItemId, cursor) → { files, cursor, init }
+//   - cursor absent → INIT : delta token=latest → curseur SANS énumérer l'existant
+//     (invariant n°2), files=[].
+//   - sinon → changements depuis le curseur, filtrés aux FICHIERS (hors dossiers/suppr.).
+//   files = [{ itemId, name, parentPath, webUrl }] ; cursor = deltaLink à persister.
+export async function pullInbox(accessToken, driveId, rootItemId, cursor) {
+  const { items, deltaLink } = await deltaQuery(accessToken, driveId, rootItemId, cursor)
+  const init = !cursor
+  const files = init ? [] : items
+    .filter(it => !it.deleted && !it.folder && it.file)
+    .map(it => ({ itemId: it.id, name: it.name || null, parentPath: it.parentReference?.path || null, webUrl: it.webUrl || null }))
+  return { files, cursor: deltaLink || cursor || null, init }
+}
+
 // Télécharge le contenu d'un item (driveId, itemId). Renvoie { buffer, contentType }.
 export async function downloadItemContent(accessToken, driveId, itemId) {
   const res = await graphFetch(accessToken, `/drives/${driveId}/items/${itemId}/content`)

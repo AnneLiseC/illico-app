@@ -220,5 +220,85 @@ export async function downloadItemContent(accessToken, _driveId, itemId) {
   return { buffer: Buffer.from(await res.arrayBuffer()), contentType }
 }
 
-// ── Étape 3 (pull entrant) : changes API Google (agnostique du dossier, niveau compte).
-//    Non requise pour le push. À implémenter au lot pull. ──
+// ── Étape 3 (pull entrant) ───────────────────────────────────────────────────────
+// Google n'a pas de delta SCOPÉ à un dossier (comme OneDrive) : la changes API est au
+// niveau COMPTE. On filtre donc les changements aux fichiers descendants de la racine
+// choisie, via une remontée d'ascendance mémoïsée.
+
+// Parents directs d'un fichier (mémoïsés). [] si introuvable.
+async function getParents(accessToken, fileId, memo) {
+  if (memo.has(fileId)) return memo.get(fileId)
+  const res = await driveFetch(accessToken, `/files/${fileId}?fields=id,parents&supportsAllDrives=true`)
+  let parents = []
+  if (res.status === 401) throw new DriveReconnectError()
+  if (res.ok) { const d = await res.json(); parents = d.parents || [] }
+  memo.set(fileId, parents)
+  return parents
+}
+
+// fileId est-il un descendant de rootId ? Remonte l'ascendance (borne de profondeur).
+async function isUnderRoot(accessToken, fileId, rootId, memo, depth = 0) {
+  if (fileId === rootId) return true
+  if (depth > 25) return false
+  const parents = await getParents(accessToken, fileId, memo)
+  for (const p of parents) {
+    if (p === rootId) return true
+    if (await isUnderRoot(accessToken, p, rootId, memo, depth + 1)) return true
+  }
+  return false
+}
+
+// Détection ENTRANTE (inbox). Interface commune avec microsoft.pullInbox :
+//   (accessToken, driveId, rootItemId, cursor) → { files, cursor, init }
+//   - cursor absent → INIT : on mémorise juste le startPageToken (pas d'énumération de
+//     l'existant → invariant n°2 anti-avalanche), files=[].
+//   - sinon → changes depuis le curseur, filtrées aux FICHIERS (hors dossiers, hors
+//     Google Docs natifs non téléchargeables, hors corbeille) DESCENDANTS de la racine.
+//   files = [{ itemId, name, parentPath, webUrl }].
+export async function pullInbox(accessToken, _driveId, rootItemId, cursor) {
+  if (!cursor) {
+    const res = await driveFetch(accessToken, '/changes/startPageToken?supportsAllDrives=true')
+    if (res.status === 401) throw new DriveReconnectError()
+    if (!res.ok) throw new Error(`gdrive_startpagetoken_${res.status}`)
+    const d = await res.json()
+    return { files: [], cursor: d.startPageToken || null, init: true }
+  }
+
+  const memo = new Map()
+  const files = []
+  let pageToken = cursor
+  let newCursor = cursor
+  let guard = 0
+  const scoped = rootItemId && rootItemId !== 'root'
+
+  while (pageToken && guard++ < 200) {
+    const params = new URLSearchParams({
+      pageToken,
+      spaces: 'drive',
+      supportsAllDrives: 'true',
+      includeItemsFromAllDrives: 'true',
+      pageSize: '200',
+      fields: 'nextPageToken,newStartPageToken,changes(removed,fileId,file(id,name,parents,trashed,mimeType,webViewLink))',
+    })
+    const res = await driveFetch(accessToken, `/changes?${params.toString()}`)
+    if (res.status === 401) throw new DriveReconnectError()
+    if (!res.ok) throw new Error(`gdrive_changes_failed_${res.status}`)
+    const data = await res.json()
+
+    for (const ch of (data.changes || [])) {
+      const f = ch.file
+      if (ch.removed || !f || f.trashed) continue
+      // Dossiers ET fichiers Google natifs (Docs/Sheets/…) écartés : non pertinents et
+      // non téléchargeables en binaire brut.
+      if (f.mimeType && f.mimeType.startsWith('application/vnd.google-apps.')) continue
+      if (scoped && !(await isUnderRoot(accessToken, f.id, rootItemId, memo))) continue
+      files.push({ itemId: f.id, name: f.name || null, parentPath: null, webUrl: f.webViewLink || null })
+    }
+
+    if (data.nextPageToken) { pageToken = data.nextPageToken; continue }
+    newCursor = data.newStartPageToken || newCursor
+    pageToken = null
+  }
+
+  return { files, cursor: newCursor, init: false }
+}
