@@ -15,7 +15,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 // perdraient le focus à chaque frappe.
 function Shell({ children }) {
   return (
-    <div style={{position:'fixed', inset:0, display:'grid', placeItems:'center', padding:20, background:'linear-gradient(135deg, var(--brand-800) 0%, var(--brand-900) 60%, #001e3c 100%)'}}>
+    <div style={{position:'fixed', inset:0, display:'grid', placeItems:'center', padding:20, background:'linear-gradient(135deg, var(--brand-800) 0%, var(--brand-900) 60%, #312e81 100%)'}}>
       <div className="card" style={{maxWidth:440, width:'100%', padding:'32px 30px', display:'flex', flexDirection:'column', gap:16}}>
         <div style={{display:'flex', alignItems:'center', gap:12}}>
           <div style={{width:38, height:38, borderRadius:9, background:'var(--brand-800)', color:'#fff', display:'grid', placeItems:'center', fontWeight:800, fontSize:14}}>Ba</div>

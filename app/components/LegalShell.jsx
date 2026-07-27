@@ -10,7 +10,7 @@ export default function LegalShell({ title, maj, children, autreLien }) {
     <div style={{ minHeight: '100vh', background: '#f6f8fa', padding: '40px 20px' }}>
       <div style={{ maxWidth: 820, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 8, background: '#00578e', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800 }}>Ba</div>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: '#4f46e5', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800 }}>Ba</div>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#111827' }}>Batilis</div>
         </div>
         <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14, padding: '32px 34px' }}>

@@ -110,7 +110,7 @@ export function KpiCard({ label, value, sub, tone = 'brand', icon, corner = true
         {icon && (
           <div style={{
             width: 36, height: 36, borderRadius: 10,
-            background: 'rgba(0,87,142,0.08)', color: 'var(--ink-900)',
+            background: 'rgba(79,70,229,0.08)', color: 'var(--ink-900)',
             display: 'grid', placeItems: 'center', flex: '0 0 36px',
           }}>
             {icon}

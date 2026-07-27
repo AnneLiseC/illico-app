@@ -14,7 +14,7 @@ import { apiFetch } from '../lib/api-auth-client'
 function Shell({ children, maxWidth = 480 }) {
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', padding: 20, overflowY: 'auto',
-      background: 'linear-gradient(135deg, var(--brand-800) 0%, var(--brand-900) 60%, #001e3c 100%)' }}>
+      background: 'linear-gradient(135deg, var(--brand-800) 0%, var(--brand-900) 60%, #312e81 100%)' }}>
       <div className="card" style={{ maxWidth, width: '100%', padding: '32px 30px', display: 'flex', flexDirection: 'column', gap: 16, margin: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 38, height: 38, borderRadius: 9, background: 'var(--brand-800)', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14 }}>Ba</div>

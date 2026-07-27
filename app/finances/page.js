@@ -64,7 +64,7 @@ function LegendRow({ color, label, value, pct }) {
 
 function FinKpiCard({ label, value, sub, tone, children }) {
   const toneColor = {
-    brand: 'var(--brand-800)', ok: '#15803d',
+    brand: 'var(--ink-900)', ok: '#15803d',
     warn: '#a16207', bad: '#b91c1c', mute: 'var(--ink-500)'
   }[tone] || 'var(--brand-800)'
   return (
@@ -229,7 +229,7 @@ function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKe
   }
   const donutDataset = (d) => ({
     labels: ['Commissions illiCO', 'Frais de consultation', 'Honoraires'],
-    datasets: [{ data: [d.com, d.frais, d.hon], backgroundColor: ['#00578e','#0094d4','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
+    datasets: [{ data: [d.com, d.frais, d.hon], backgroundColor: ['#4f46e5','#6366f1','#94a3b8'], borderWidth: 0, hoverOffset: 4 }]
   })
 
   useEffect(() => {
@@ -263,8 +263,8 @@ function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKe
           <canvas id={donutReelId} role="img" aria-label="Répartition réel" />
         </div>
         <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
-          <LegendRow color="#00578e" label="Commissions illiCO"    value={fmt(donutReel.com)}   pct={totalReel>0?Math.round(donutReel.com/totalReel*100):0} />
-          <LegendRow color="#0094d4" label="Frais de consultation" value={fmt(donutReel.frais)} pct={totalReel>0?Math.round(donutReel.frais/totalReel*100):0} />
+          <LegendRow color="#4f46e5" label="Commissions illiCO"    value={fmt(donutReel.com)}   pct={totalReel>0?Math.round(donutReel.com/totalReel*100):0} />
+          <LegendRow color="#6366f1" label="Frais de consultation" value={fmt(donutReel.frais)} pct={totalReel>0?Math.round(donutReel.frais/totalReel*100):0} />
           <LegendRow color="#94a3b8" label="Honoraires"            value={fmt(donutReel.hon)}   pct={totalReel>0?Math.round(donutReel.hon/totalReel*100):0} />
         </div>
       </div>
@@ -274,8 +274,8 @@ function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKe
           <canvas id={donutPreviId} role="img" aria-label="Répartition prévisionnel" />
         </div>
         <div style={{marginTop:12,display:'flex',flexDirection:'column',gap:6}}>
-          <LegendRow color="#00578e" label="Commissions illiCO"    value={fmt(donutPrevi.com)}   pct={totalPrevi>0?Math.round(donutPrevi.com/totalPrevi*100):0} />
-          <LegendRow color="#0094d4" label="Frais de consultation" value={fmt(donutPrevi.frais)} pct={totalPrevi>0?Math.round(donutPrevi.frais/totalPrevi*100):0} />
+          <LegendRow color="#4f46e5" label="Commissions illiCO"    value={fmt(donutPrevi.com)}   pct={totalPrevi>0?Math.round(donutPrevi.com/totalPrevi*100):0} />
+          <LegendRow color="#6366f1" label="Frais de consultation" value={fmt(donutPrevi.frais)} pct={totalPrevi>0?Math.round(donutPrevi.frais/totalPrevi*100):0} />
           <LegendRow color="#94a3b8" label="Honoraires"            value={fmt(donutPrevi.hon)}   pct={totalPrevi>0?Math.round(donutPrevi.hon/totalPrevi*100):0} />
         </div>
       </div>
@@ -1720,7 +1720,7 @@ export default function Finances() {
                     </Td>
                     <Td>
                       <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,fontWeight:600,
-                        background:cs==='annule'?'rgba(220,38,38,0.1)':cs==='termine'?'rgba(22,163,74,0.1)':'rgba(0,87,142,0.1)',
+                        background:cs==='annule'?'rgba(220,38,38,0.1)':cs==='termine'?'rgba(22,163,74,0.1)':'rgba(79,70,229,0.1)',
                         color:cs==='annule'?'#b91c1c':cs==='termine'?'#15803d':'var(--brand-700)'}}>
                         {cs === 'annule' ? 'Annulé' : cs === 'termine' ? 'Terminé' : 'En cours'}
                       </span>
@@ -2375,8 +2375,8 @@ export default function Finances() {
           {isAdmin && (
             <div style={{
               fontSize:12, color:'var(--ink-600)', borderRadius:8, padding:'8px 12px', marginTop:-8,
-              background: suiviMode === 'ctp' ? 'rgba(245,158,11,0.10)' : 'rgba(0,148,212,0.08)',
-              border: `1px solid ${suiviMode === 'ctp' ? 'rgba(245,158,11,0.30)' : 'rgba(0,148,212,0.22)'}`,
+              background: suiviMode === 'ctp' ? 'rgba(245,158,11,0.10)' : 'rgba(99,102,241,0.08)',
+              border: `1px solid ${suiviMode === 'ctp' ? 'rgba(245,158,11,0.30)' : 'rgba(99,102,241,0.22)'}`,
             }}>
               {suiviMode === 'ctp'
                 ? <><strong style={{color:'var(--ink-800)'}}>Société</strong> · résultat net conservé, <strong>après</strong> déduction des parts agents reversées.</>
