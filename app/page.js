@@ -1,14 +1,14 @@
 // app/page.js
 // Page d'accueil PUBLIQUE (racine /). Rendue côté serveur, sans authentification,
 // donc crawlable par les robots (dont la validation OAuth de Google). Elle explique
-// l'objet de l'application et affiche le nom exact « Batilis » — deux exigences de
+// l'objet de l'application et affiche le nom exact « Batilis » - deux exigences de
 // l'écran de consentement Google. La navbar est masquée sur '/' (cf. navbar.js) et la
 // route est exemptée du guard onboarding (cf. onboarding-guard.js).
 import Link from 'next/link'
 import { EDITEUR } from './lib/legal'
 
 export const metadata = {
-  title: 'Batilis — Gestion pour courtiers et AMO en travaux',
+  title: 'Batilis - Gestion pour courtiers et AMO en travaux',
   description:
     "Batilis est la plateforme de gestion pour les courtiers et assistants à maîtrise d'ouvrage en travaux : suivi des chantiers, artisans, devis, planning, finances et espace client.",
 }
@@ -18,7 +18,7 @@ const FEATURES = [
   { t: 'Artisans & clients', d: 'Gérez vos contacts, vos artisans partenaires et le suivi de chaque particulier accompagné.' },
   { t: 'Devis & documents', d: "Générez récapitulatifs, suivis de règlement et dossiers de chantier en PDF, prêts à envoyer." },
   { t: 'Planning', d: 'Organisez visites techniques, rendez-vous et jalons de chantier dans un agenda unifié.' },
-  { t: 'Finances', d: 'Suivez commissions, redevances et facturation, avec un compte de résultat toujours à jour.' },
+  { t: 'Finances', d: 'Suivez vos facturations, avec un compte de résultat toujours à jour.' },
   { t: 'Espace client', d: 'Offrez à chaque client un espace sécurisé pour suivre son projet, ses documents et échanger avec vous.' },
 ]
 
@@ -43,11 +43,11 @@ export default function Home() {
           Espace pilotage agence
         </div>
         <h1 style={{ fontSize: 42, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.12, margin: 0, maxWidth: 760 }}>
-          Batilis — pilotez votre activité de courtage et d&apos;assistance à maîtrise d&apos;ouvrage en travaux.
+          Batilis - pilotez votre activité de courtage et d&apos;assistance à maîtrise d&apos;ouvrage en travaux.
         </h1>
         <p style={{ fontSize: 17, lineHeight: 1.6, color: 'var(--ink-600)', marginTop: 20, maxWidth: 680 }}>
           Batilis réunit le suivi de vos chantiers, la gestion de vos artisans et clients, les devis,
-          le planning, les finances et un espace client dédié — dans une seule application web, pensée
+          le planning, les finances et un espace client dédié - dans une seule application web, pensée
           pour les courtières et courtiers en travaux et les assistants à maîtrise d&apos;ouvrage (AMO).
         </p>
         <div style={{ marginTop: 28 }}>
@@ -78,7 +78,7 @@ export default function Home() {
           <p style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--ink-700)', maxWidth: 760, margin: 0 }}>
             Avec votre autorisation, Batilis se connecte à votre <strong>Google Drive</strong> ou à votre
             <strong> Microsoft OneDrive</strong> pour classer automatiquement les documents de chantier —
-            devis, rapports de visite et photos — dans une arborescence de dossiers dédiée à chaque client
+            devis, rapports de visite et photos - dans une arborescence de dossiers dédiée à chaque client
             et chaque chantier. Vos fichiers restent chez vous, dans votre propre espace de stockage ;
             Batilis n&apos;y accède que pour y déposer et organiser les documents que vous générez dans
             l&apos;application. Vous pouvez révoquer cet accès à tout moment.
