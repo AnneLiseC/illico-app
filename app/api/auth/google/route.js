@@ -20,9 +20,15 @@ const oauth2Client = new google.auth.OAuth2(
 // Deux usages du compte Google, distingués par `kind` (relu par le callback) :
 // 'calendar' (défaut) → agenda, fournisseur='google' ; 'drive' → Google Drive,
 // fournisseur='googledrive'. Scopes séparés → tokens indépendants (comme Outlook).
+// ⚠️ NE PAS repasser 'drive' en 'auth/drive' (accès total) : c'est un scope RESTREINT
+// qui impose une évaluation de sécurité CASA payante et annuelle avant publication.
+// 'drive.file' est NON restreint : l'app n'accède qu'aux fichiers/dossiers QU'ELLE crée
+// (ou que l'utilisateur sélectionne via le Google Picker). Suffit pour push / arborescence /
+// déplacement. Conséquence assumée : le pull « entrant » (fichiers déposés à la main par
+// l'utilisateur) n'est PAS visible côté Google Drive — OneDrive/Microsoft n'est pas concerné.
 const SCOPE_BY_KIND = {
   calendar: ['https://www.googleapis.com/auth/calendar'],
-  drive:    ['https://www.googleapis.com/auth/drive'],
+  drive:    ['https://www.googleapis.com/auth/drive.file'],
 }
 
 function buildSignedState(userId, kind) {
