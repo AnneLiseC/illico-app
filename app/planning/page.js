@@ -20,7 +20,7 @@ const COLORS = {
   navy:   '#0B2D5E',
   blue:   '#1A56DB',
   sky:    '#3B82F6',
-  teal:   '#007ab0',
+  teal:   '#4f46e5',
   amber:  '#D97706',
   coral:  '#E05252',
   violet: '#7C3AED',

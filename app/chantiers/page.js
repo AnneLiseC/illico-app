@@ -96,7 +96,7 @@ function ChantiersList({ items, selectedId, onSelect, onOpen, aujourdhui, isMobi
                   textAlign: 'left', padding: '14px 14px', borderRadius: 12, userSelect: 'none',
                   border: '1px solid', borderColor: isSel ? 'var(--brand-500)' : 'transparent',
                   background: isSel ? 'var(--brand-50)' : 'transparent',
-                  boxShadow: isSel ? '0 0 0 3px rgba(0,148,212,0.10)' : 'none',
+                  boxShadow: isSel ? '0 0 0 3px rgba(99,102,241,0.10)' : 'none',
                   transition: 'all 150ms ease', position: 'relative',
                 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
@@ -199,7 +199,7 @@ function ChantierPreview({ d, onOpen, onBack, isMobile }) {
 
       {/* Header */}
       <div style={{ padding: '18px 22px 16px', borderBottom: '1px solid var(--ink-200)', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
-        <div style={{ position: 'absolute', top: 0, right: 0, width: 160, height: 80, background: 'linear-gradient(135deg, rgba(0,148,212,0.10), rgba(0,148,212,0))', pointerEvents: 'none', borderRadius: '0 var(--radius) 0 100%' }} />
+        <div style={{ position: 'absolute', top: 0, right: 0, width: 160, height: 80, background: 'linear-gradient(135deg, rgba(99,102,241,0.10), rgba(99,102,241,0))', pointerEvents: 'none', borderRadius: '0 var(--radius) 0 100%' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
@@ -530,7 +530,7 @@ function ChantiersInner() {
           { label: 'Terminés',    value: compteurs.termines,   tone: 'mute' },
         ].map(k => {
           const tc = {
-            info: { bg: 'rgba(0,148,212,0.12)',   color: '#0078ad' },
+            info: { bg: 'rgba(99,102,241,0.12)',   color: '#4338ca' },
             warn: { bg: 'rgba(245,158,11,0.13)',  color: '#a16207' },
             ok:   { bg: 'rgba(22,163,74,0.10)',   color: '#15803d' },
             mute: { bg: 'rgba(148,163,184,0.15)', color: '#475569' },
