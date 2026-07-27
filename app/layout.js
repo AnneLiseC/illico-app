@@ -24,6 +24,10 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata = {
   title: "Batilis",
   description: "Gestion des dossiers chantiers",
+  icons: {
+    icon: "/logo_VF.png",
+    apple: "/logo_VF.png",
+  },
 }
 
 export const viewport = {
