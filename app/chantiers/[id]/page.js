@@ -1094,13 +1094,22 @@ export default function FicheChantier({ params }) {
     const { data } = await supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier, partenaire, paiement_direct)').eq('dossier_id', id).order('ordre').order('created_at')
     setDevis(data || [])
     // Historique des versions (Phase 3) — groupé par devis, plus récent d'abord.
-    const ids = (data || []).map(d => d.id)
-    if (ids.length) {
-      const { data: vs } = await supabase.from('devis_versions').select('*').in('devis_artisan_id', ids).order('version_num', { ascending: false })
-      const map = {}
-      for (const v of (vs || [])) (map[v.devis_artisan_id] ||= []).push(v)
-      setVersionsDevis(map)
-    } else setVersionsDevis({})
+    await chargerVersionsDevis(data || [])
+  }
+
+  // Charge l'historique des versions des devis (groupé par devis, plus récent d'abord).
+  // Extrait de chargerDevis car le comparateur en dépend : ses BASES sont figées sur
+  // une version précise (devis_version_id) et le montant affiché se lit dans versionsDevis.
+  // La requête de montage initiale ne charge PAS les versions ; sans cet appel, ouvrir
+  // l'onglet Comparateur sans passer par l'onglet Devis laissait versionsDevis vide →
+  // toutes les lignes de base tombaient à 0,00 €.
+  const chargerVersionsDevis = async (listeDevis = devis) => {
+    const ids = (listeDevis || []).map(d => d.id)
+    if (!ids.length) { setVersionsDevis({}); return }
+    const { data: vs } = await supabase.from('devis_versions').select('*').in('devis_artisan_id', ids).order('version_num', { ascending: false })
+    const map = {}
+    for (const v of (vs || [])) (map[v.devis_artisan_id] ||= []).push(v)
+    setVersionsDevis(map)
   }
 
   // ── Comparateur de devis : chargement + CRUD (sauvegarde auto, erreurs silencieuses) ──
@@ -2258,7 +2267,12 @@ export default function FicheChantier({ params }) {
 
   // Chargement paresseux du comparateur à l'ouverture de l'onglet
   useEffect(() => {
-    if (onglet === 'comparateur') chargerComparateur()
+    if (onglet === 'comparateur') {
+      // Les versions ne sont pas dans la requête de montage : on les charge ici pour
+      // que les bases (figées sur devis_version_id) affichent leur montant, pas 0,00 €.
+      chargerVersionsDevis()
+      chargerComparateur()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onglet, id])
 
