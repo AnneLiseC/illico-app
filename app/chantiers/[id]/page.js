@@ -1094,13 +1094,22 @@ export default function FicheChantier({ params }) {
     const { data } = await supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise, metier, partenaire, paiement_direct)').eq('dossier_id', id).order('ordre').order('created_at')
     setDevis(data || [])
     // Historique des versions (Phase 3) — groupé par devis, plus récent d'abord.
-    const ids = (data || []).map(d => d.id)
-    if (ids.length) {
-      const { data: vs } = await supabase.from('devis_versions').select('*').in('devis_artisan_id', ids).order('version_num', { ascending: false })
-      const map = {}
-      for (const v of (vs || [])) (map[v.devis_artisan_id] ||= []).push(v)
-      setVersionsDevis(map)
-    } else setVersionsDevis({})
+    await chargerVersionsDevis(data || [])
+  }
+
+  // Charge l'historique des versions des devis (groupé par devis, plus récent d'abord).
+  // Extrait de chargerDevis car le comparateur en dépend : ses BASES sont figées sur
+  // une version précise (devis_version_id) et le montant affiché se lit dans versionsDevis.
+  // La requête de montage initiale ne charge PAS les versions ; sans cet appel, ouvrir
+  // l'onglet Comparateur sans passer par l'onglet Devis laissait versionsDevis vide →
+  // toutes les lignes de base tombaient à 0,00 €.
+  const chargerVersionsDevis = async (listeDevis = devis) => {
+    const ids = (listeDevis || []).map(d => d.id)
+    if (!ids.length) { setVersionsDevis({}); return }
+    const { data: vs } = await supabase.from('devis_versions').select('*').in('devis_artisan_id', ids).order('version_num', { ascending: false })
+    const map = {}
+    for (const v of (vs || [])) (map[v.devis_artisan_id] ||= []).push(v)
+    setVersionsDevis(map)
   }
 
   // ── Comparateur de devis : chargement + CRUD (sauvegarde auto, erreurs silencieuses) ──
@@ -1126,6 +1135,10 @@ export default function FicheChantier({ params }) {
     if (!skipSync && (data || []).length > 0 && devis.length > 0) {
       const aInserer = []
       for (const sim of data) {
+        // Une BASE est figée sur les versions courantes au moment de sa création :
+        // on ne lui ajoute JAMAIS les devis créés après coup (sinon la base n'est
+        // plus un instantané). Seules les simulations « actuelles » se synchronisent.
+        if (sim.type === 'base') continue
         const devisManquants = devis.filter(d => !(sim.lignes || []).some(l => l.devis_artisan_id === d.id))
         for (const d of devisManquants) {
           aInserer.push({ simulation_id: sim.id, devis_artisan_id: d.id, inclus: true, montant_ttc_override: null })
@@ -1158,7 +1171,7 @@ export default function FicheChantier({ params }) {
       await supabase.from('comparateur_simulations').update({ est_base_courante: false })
         .eq('dossier_id', id).eq('est_base_courante', true)
       const { data: base } = await supabase.from('comparateur_simulations')
-        .insert({ dossier_id: id, nom: `Base ${num}`, type: 'base', est_base_courante: true, taux_courtage: 6, taux_amo: 9 })
+        .insert({ dossier_id: id, nom: `Base ${num}`, type: 'base', est_base_courante: true, taux_courtage: COURTAGE_STANDARD * 100, taux_amo: AMO_STANDARD * 100 })
         .select().single()
       if (!base) return
       const lignes = (vs || []).map(v => ({
@@ -1182,9 +1195,9 @@ export default function FicheChantier({ params }) {
     const nom = `Simul ${simulations.length + 1}`
     const { data: sim, error } = await supabase
       .from('comparateur_simulations')
-      .insert({ dossier_id: id, nom, taux_courtage: 6, taux_amo: 9 })
+      .insert({ dossier_id: id, nom, taux_courtage: COURTAGE_STANDARD * 100, taux_amo: AMO_STANDARD * 100 })
       .select().single()
-    if (error || !sim) { console.error('ajouterSimulation :', error?.message); return }
+    if (error || !sim) { console.error('ajouterSimulation :', error?.message); setErreur('Impossible d\'ajouter la simulation : ' + (error?.message || 'erreur inconnue')); return }
     if (devis.length > 0) {
       const lignes = devis.map(d => ({ simulation_id: sim.id, devis_artisan_id: d.id, inclus: true, montant_ttc_override: null }))
       const { error: errL } = await supabase.from('comparateur_lignes').insert(lignes)
@@ -1199,14 +1212,14 @@ export default function FicheChantier({ params }) {
     setSimulations(prev => prev.map(s => s.id === simId ? { ...s, ...payload } : s))
     setEditingTaux(null)
     const { error } = await supabase.from('comparateur_simulations').update(payload).eq('id', simId)
-    if (error) console.error('saveTaux :', error.message)
+    if (error) { console.error('saveTaux :', error.message); setErreur('Taux non enregistré : ' + error.message); await chargerComparateur() }
   }
 
   const toggleInclus = async (simId, ligneId, valeur) => {
     setSimulations(prev => prev.map(s => s.id === simId
       ? { ...s, lignes: (s.lignes || []).map(l => l.id === ligneId ? { ...l, inclus: valeur } : l) } : s))
     const { error } = await supabase.from('comparateur_lignes').update({ inclus: valeur }).eq('id', ligneId)
-    if (error) console.error('toggleInclus :', error.message)
+    if (error) { console.error('toggleInclus :', error.message); setErreur('Modification non enregistrée : ' + error.message); await chargerComparateur() }
   }
 
   const saveMontant = async (simId, ligneId, valeur) => {
@@ -1216,7 +1229,7 @@ export default function FicheChantier({ params }) {
       ? { ...s, lignes: (s.lignes || []).map(l => l.id === ligneId ? { ...l, montant_ttc_override: override } : l) } : s))
     setEditingMontant(null)
     const { error } = await supabase.from('comparateur_lignes').update({ montant_ttc_override: override }).eq('id', ligneId)
-    if (error) console.error('saveMontant :', error.message)
+    if (error) { console.error('saveMontant :', error.message); setErreur('Montant non enregistré : ' + error.message); await chargerComparateur() }
   }
 
   // Récap financier d'UNE simulation → PDF téléchargeable. Généré côté client
@@ -1344,14 +1357,14 @@ export default function FicheChantier({ params }) {
           ? { ...l, devis_version_id: vid, montant_ttc_override: vid ? null : l.montant_ttc_override } : l) } : s))
     const payload = vid ? { devis_version_id: vid, montant_ttc_override: null } : { devis_version_id: null }
     const { error } = await supabase.from('comparateur_lignes').update(payload).eq('id', ligneId)
-    if (error) console.error('saveVersionLigne :', error.message)
+    if (error) { console.error('saveVersionLigne :', error.message); setErreur('Version non enregistrée : ' + error.message); await chargerComparateur() }
   }
 
   const supprimerSimulation = async (simId) => {
     if (!confirm('Supprimer cette simulation ?')) return
     setSimulations(prev => prev.filter(s => s.id !== simId))   // optimiste (CASCADE supprime les lignes)
     const { error } = await supabase.from('comparateur_simulations').delete().eq('id', simId)
-    if (error) { console.error('supprimerSimulation :', error.message); await chargerComparateur() }
+    if (error) { console.error('supprimerSimulation :', error.message); setErreur('Suppression échouée : ' + error.message); await chargerComparateur() }
   }
 
   const deplacerDevis = async (devisId, direction) => {
@@ -2254,7 +2267,12 @@ export default function FicheChantier({ params }) {
 
   // Chargement paresseux du comparateur à l'ouverture de l'onglet
   useEffect(() => {
-    if (onglet === 'comparateur') chargerComparateur()
+    if (onglet === 'comparateur') {
+      // Les versions ne sont pas dans la requête de montage : on les charge ici pour
+      // que les bases (figées sur devis_version_id) affichent leur montant, pas 0,00 €.
+      chargerVersionsDevis()
+      chargerComparateur()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onglet, id])
 
