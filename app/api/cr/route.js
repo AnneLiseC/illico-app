@@ -237,7 +237,7 @@ export async function POST(request) {
   const auth = await requireRole(request, ['admin', 'agente'])
   if (auth.error) return auth.error
   try {
-    const { dossierId, typeVisite, dateVisite, intervenants, notesBrutes, docsPaths, photosPaths } = await request.json()
+    const { dossierId, typeVisite, dateVisite, intervenants, notesBrutes, docsPaths, photosPaths, crsIds } = await request.json()
 
     // Au moins une source de contenu : notes OU photos Storage OU documents. Cas réel :
     // photographier ses notes manuscrites et laisser Claude les lire, sans rien saisir
@@ -304,6 +304,20 @@ export async function POST(request) {
       }
     }
 
+    // CR précédents fournis en contexte : jamais de confiance sur les ids du body.
+    // On ne charge QUE des comptes rendus rattachés à CE dossier (le filtre dossier_id
+    // est le garde-fou tenant) ; tout id étranger est simplement ignoré (pas de fail loud
+    // ici : c'est du contexte optionnel, pas une pièce jointe).
+    let crsPrecedents = []
+    if (crsIds?.length) {
+      const { data: crsData } = await getSupabaseAdmin()
+        .from('comptes_rendus')
+        .select('id, type_visite, date_visite, contenu_final, created_at')
+        .eq('dossier_id', dossierId)
+        .in('id', crsIds)
+      crsPrecedents = crsData || []
+    }
+
     const { data: devis } = await getSupabaseAdmin()
       .from('devis_artisans')
       .select('*, artisan:artisans(id, entreprise)')
@@ -345,13 +359,30 @@ export async function POST(request) {
       } catch (e) { console.error('CR: échec traitement photo', path, e.message) }
     }
 
+    // Comptes rendus précédents en contexte (continuité entre visites). Fournis comme
+    // référence : l'IA s'en sert pour la cohérence (rappel de décisions, points ouverts),
+    // mais ne doit PAS les recopier — le nouveau CR porte sur la visite en cours.
+    let crsContexte = ''
+    if (crsPrecedents.length) {
+      const blocs = crsPrecedents
+        .slice()
+        .sort((a, b) => new Date(a.date_visite || a.created_at) - new Date(b.date_visite || b.created_at))
+        .map(cr => {
+          const d = cr.date_visite || cr.created_at
+          const dateStr = d ? new Date(d).toLocaleDateString('fr-FR') : ''
+          return `--- CR ${cr.type_visite || ''}${dateStr ? ` du ${dateStr}` : ''} ---\n${cr.contenu_final || ''}`
+        })
+        .join('\n\n')
+      crsContexte = `\n\nCOMPTES RENDUS PRÉCÉDENTS DE CE CHANTIER (contexte pour la continuité — ne pas les recopier, s'en servir pour rester cohérent avec ce qui a déjà été acté) :\n${blocs}`
+    }
+
     // Texte
     const hasMedia = (docsPaths || []).length > 0 || (photosPaths || []).length > 0
     userContent.push({
       type: 'text',
-      text: hasMedia
+      text: (hasMedia
         ? userText + '\n\nNote : les documents et images ci-dessus sont des pièces du chantier — extraire et intégrer leur contenu dans le CR si pertinent.'
-        : userText,
+        : userText) + crsContexte,
     })
 
     // Appel Claude API
