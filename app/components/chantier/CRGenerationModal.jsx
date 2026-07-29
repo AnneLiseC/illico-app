@@ -21,6 +21,9 @@ function ModalField({ label, children, required }) {
   )
 }
 
+const TONE_BG = { ok: 'rgba(22,163,74,0.12)', warn: 'rgba(245,158,11,0.13)', bad: 'rgba(220,38,38,0.10)', info: 'rgba(99,102,241,0.12)', mute: 'rgba(148,163,184,0.15)' }
+const TONE_FG = { ok: '#15803d', warn: '#a16207', bad: '#b91c1c', info: '#4338ca', mute: '#475569' }
+
 export default function CRGenerationModal({ id, dossier, devis, artisans, documents, comptesRendus, photos, categorie, setErreur, setSucces, setComptesRendus, setCrModal, setAnnot }) {
   const [crEtape, setCrEtape] = useState(1) // 1=config, 2=notes, 3=relecture
   const [crForm, setCrForm] = useState({ type_visite: '', date_visite: '', intervenants: '' })
