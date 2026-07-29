@@ -853,7 +853,6 @@ export default function FicheChantier({ params }) {
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role),
           client:clients(*),
           devis_artisans(*, artisan:artisans(id, entreprise, metier, partenaire, paiement_direct)),
-          photos(*),
           rendez_vous(*, artisan:artisans(id, entreprise)),
           interventions_artisans(*, artisan:artisans(id, entreprise)),
           suivi_financier(*),
@@ -862,7 +861,6 @@ export default function FicheChantier({ params }) {
           .eq('id', id)
           .order('ordre',      { referencedTable: 'devis_artisans' })
           .order('created_at', { referencedTable: 'devis_artisans' })
-          .order('created_at', { referencedTable: 'photos', ascending: false })
           .order('date_heure', { referencedTable: 'rendez_vous' })
           .order('date_debut', { referencedTable: 'interventions_artisans' })
           .single(),
@@ -892,8 +890,10 @@ export default function FicheChantier({ params }) {
 
       setLoading(false)
 
-      // Hors chemin critique (après affichage) : signatures photos + prénom admin.
-      signerPhotos(d?.photos).then(setPhotos)
+      // Hors chemin critique (après affichage) : photos sorties de la requête critique
+      // (payload lourd, absentes du premier écran) → chargées + signées en arrière-plan.
+      supabase.from('photos').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
+        .then(({ data }) => signerPhotos(data).then(setPhotos))
       if (profData?.role === 'admin') {
         supabase.from('profiles').select('prenom, nom').eq('role', 'admin').order('prenom').limit(1).maybeSingle()
           .then(({ data }) => { if (data) setPrenomAdmin(data.prenom || '—') })
