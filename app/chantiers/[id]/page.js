@@ -244,6 +244,35 @@ function AcompteClientPill({ acomptePaye, dateAcompte, onSetPaid, onUnsetPaid, t
   )
 }
 
+// Date d'une facture (suivi financier) : MÊME visuel que la date des EcheanceRow
+// (« Acompte client » / « Acompte débloqué ») — date grise pointillée cliquable qui
+// ouvre un DateConfirm (✓/✕), et un « ＋ date » quand rien n'est posé. Composant à part
+// (état `editing`, hooks interdits dans le .map des factures).
+function FactureDatePill({ date, onSet, fmtDateFn }) {
+  const [editing, setEditing] = useState(false)
+  const today = new Date().toISOString().slice(0, 10)
+  if (editing) {
+    return (
+      <DateConfirm
+        initial={date ? String(date).slice(0, 10) : today}
+        onConfirm={d => { setEditing(false); onSet(d) }}
+        onCancel={() => setEditing(false)}
+      />
+    )
+  }
+  return date ? (
+    <span onClick={() => setEditing(true)} title="Modifier la date" className="tnum"
+      style={{fontSize:'var(--text-xs)', color:'var(--ink-500)', cursor:'pointer', textDecoration:'underline dotted'}}>
+      {fmtDateFn ? fmtDateFn(date) : new Date(date).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' })}
+    </span>
+  ) : (
+    <button type="button" onClick={() => setEditing(true)} title="Dater le paiement"
+      style={{fontSize:'var(--text-xs)', padding:'2px 8px', border:'1px dashed var(--ink-300)', borderRadius:6, color:'var(--ink-500)', background:'transparent', cursor:'pointer'}}>
+      ＋ date
+    </button>
+  )
+}
+
 function RecapRow({ label, value, strong, large, tone }) {
   const color = tone === 'brand' ? '#4f46e5' : 'var(--ink-700)'
   return (
@@ -2811,6 +2840,22 @@ export default function FicheChantier({ params }) {
       ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'acompte_artisan', artisan_id: artisanId, devis_id: devisId, ...payload }))
     }
     if (error) { setErreur('Erreur : ' + error.message); return }
+
+    // Synchro demandée : dater l'« Acompte débloqué » remplit la date de paiement des
+    // « Facture acompte » de CE devis qui n'en ont pas encore (on ne clobbe jamais une
+    // date saisie à la main). Décocher (recu=false) ne touche pas les factures.
+    if (recu && dateEffective) {
+      const facturesADater = factures.filter(f =>
+        f.devis_id === devisId && (f.libelle || '').toLowerCase().includes('acompte') && !f.date_paiement
+      )
+      if (facturesADater.length) {
+        const ids = facturesADater.map(f => f.id)
+        const { error: factErr } = await supabase.from('factures_artisans').update({ date_paiement: dateEffective }).in('id', ids)
+        if (factErr) { setErreur('Erreur : ' + factErr.message); return }
+        setFactures(prev => prev.map(f => ids.includes(f.id) ? { ...f, date_paiement: dateEffective } : f))
+      }
+    }
+
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -4374,19 +4419,9 @@ export default function FicheChantier({ params }) {
                 {f.libelle || 'Facture'} — <span className="tnum">{fmt(f.montant_ttc || 0)}</span> TTC
               </span>
               <div style={{display:'flex', alignItems:'center', gap:'var(--space-3)'}}>
-                {/* Date de paiement : input éditable si datée ; sinon simple « + date » discret
-                    (évite le bruit des « jj/mm/aaaa » vides répétés). Le clic date à aujourd'hui. */}
-                {f.date_paiement ? (
-                  <input type="date" value={f.date_paiement} onChange={e => majDateFacture(f.id, e.target.value)}
-                    title="Date de paiement (modifiable)"
-                    style={{fontSize:'var(--text-xs)', padding:'2px 6px', border:'1px solid var(--ink-200)', borderRadius:6, color:'var(--ink-700)', background:'var(--surface)'}} />
-                ) : (
-                  <button onClick={() => majDateFacture(f.id, new Date().toISOString().slice(0, 10))}
-                    title="Dater le paiement (aujourd'hui, modifiable ensuite)"
-                    style={{fontSize:'var(--text-xs)', padding:'2px 8px', border:'1px dashed var(--ink-300)', borderRadius:6, color:'var(--ink-500)', background:'transparent', cursor:'pointer'}}>
-                    ＋ date
-                  </button>
-                )}
+                {/* Date de paiement : même visuel que les EcheanceRow (date pointillée
+                    cliquable → DateConfirm ✓/✕, « ＋ date » si rien). */}
+                <FactureDatePill date={f.date_paiement} onSet={d => majDateFacture(f.id, d)} fmtDateFn={fmtD} />
                 <button onClick={() => toggleStatutFacture(f.id, f.statut)}
                   style={{
                     fontSize:'var(--text-xs)', padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
