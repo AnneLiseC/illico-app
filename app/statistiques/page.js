@@ -5,11 +5,16 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth-context'
 import { computeCAMensuel, computeRoyalties, computeCABreakdown, computeFactureClient } from '../lib/ca-reel'
 import { calcStatut } from '../lib/dossiers'
-import {
-  Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement,
-  BarController, LineController, Tooltip, Legend,
-} from 'chart.js'
-Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, Tooltip, Legend)
+// chart.js (~150 Ko) chargé À LA DEMANDE : hors bundle initial de /statistiques,
+// téléchargé seulement au premier dessin du graphique (après le premier affichage).
+let _ChartLib = null
+async function getChart() {
+  if (_ChartLib) return _ChartLib
+  const m = await import('chart.js')
+  m.Chart.register(m.CategoryScale, m.LinearScale, m.BarElement, m.LineElement, m.PointElement, m.BarController, m.LineController, m.Tooltip, m.Legend)
+  _ChartLib = m.Chart
+  return _ChartLib
+}
 
 const MOIS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc']
 const TYPO_LABEL = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
@@ -25,8 +30,11 @@ function BarLineChart({ id, courant, precedent, annee, couleur }) {
     if (typeof window === 'undefined') return
     const el = document.getElementById(id)
     if (!el) return
-    if (el._chartInstance) el._chartInstance.destroy()
-    el._chartInstance = new Chart(el, {
+    let cancelled = false
+    getChart().then(Chart => {
+      if (cancelled || !el) return
+      if (el._chartInstance) el._chartInstance.destroy()
+      el._chartInstance = new Chart(el, {
       data: {
         labels: MOIS,
         datasets: [
@@ -45,8 +53,9 @@ function BarLineChart({ id, courant, precedent, annee, couleur }) {
           y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 10 }, color: '#888', callback: v => Math.round(v).toLocaleString('fr-FR') } },
         },
       },
+      })
     })
-    return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+    return () => { cancelled = true; if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
   }, [id, courant, precedent, annee, couleur])
   return <div style={{ position: 'relative', width: '100%', height: 240 }}><canvas id={id} /></div>
 }

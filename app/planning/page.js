@@ -1,16 +1,15 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import dynamic from 'next/dynamic'
+// Calendrier (FullCalendar, lourd) chargé à la demande → hors bundle initial de /planning.
+const PlanningCalendar = dynamic(() => import('../components/PlanningCalendar'), {
+  ssr: false,
+  loading: () => <div style={{ height: 'calc(100vh - 180px)' }} />,
+})
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { apiFetch } from '../lib/api-auth-client'
-import FullCalendar from '@fullcalendar/react'
-import dayGridPlugin from '@fullcalendar/daygrid'
-import timeGridPlugin from '@fullcalendar/timegrid'
-import listPlugin from '@fullcalendar/list'
-import interactionPlugin from '@fullcalendar/interaction'
-import luxonPlugin from '@fullcalendar/luxon3'
-import frLocale from '@fullcalendar/core/locales/fr'
 import { parisLocalToInstant, instantToParisLocal } from '../lib/dates'
 import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../lib/cibles'
 import ModalShell from '../components/ModalShell'
@@ -753,28 +752,11 @@ export default function Planning() {
               .fc-timegrid-axis { min-height: 64px !important; }
               .fc .fc-timegrid-axis-cushion { font-weight: 700 !important; }
             `}</style>
-            <FullCalendar
-              plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin, luxonPlugin]}
-              initialView={calendarView}
-              locale={frLocale}
-              timeZone="Europe/Paris"
-              headerToolbar={{
-                left: 'prev,next today',
-                center: 'title',
-                right: 'dayGridMonth,timeGridWeek,listWeek'
-              }}
-              buttonText={{ today: "Auj.", month: 'Mois', week: 'Sem.', list: 'Liste' }}
+            <PlanningCalendar
+              calendarView={calendarView}
               events={tousEvenements}
-              dateClick={handleDateClick}
-              eventClick={handleEventClick}
-              height="calc(100vh - 180px)"
-              slotMinTime="06:00:00"
-              slotMaxTime="23:00:00"
-              slotDuration="00:30:00"
-              allDayText="Journée"
-              nowIndicator={true}
-              dayMaxEvents={3}
-              eventTimeFormat={{ hour: '2-digit', minute: '2-digit', meridiem: false }}
+              onDateClick={handleDateClick}
+              onEventClick={handleEventClick}
             />
           </div>
         </div>
