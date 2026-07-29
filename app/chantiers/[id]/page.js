@@ -769,6 +769,8 @@ export default function FicheChantier({ params }) {
   const [crSectionsEditees, setCrSectionsEditees] = useState([])
   const [crSavingFinal, setCrSavingFinal] = useState(false)
   const [crDocsSelectionnes, setCrDocsSelectionnes] = useState([])
+  // CR déjà générés, cochés pour être fournis en contexte à l'IA (continuité entre visites).
+  const [crCrsSelectionnes, setCrCrsSelectionnes] = useState([])
   const [nbMsgNonLus, setNbMsgNonLus] = useState(0)
   const [photoOuverte, setPhotoOuverte] = useState(null)
   const [rdvsDossier, setRdvsDossier] = useState([])
@@ -2311,6 +2313,8 @@ export default function FicheChantier({ params }) {
           // Photos ordi (uploadées) + photos existantes du dossier sélectionnées.
           photosPaths: [...crImages.map(im => im.path), ...crPhotosDossier],
           docsPaths: crDocsSelectionnes.map(d => ({ path: d.path, type_mime: d.type_mime, nom: d.nom })),
+          // CR précédents sélectionnés : fournis en contexte (continuité), l'API relit leur contenu.
+          crsIds: crCrsSelectionnes.map(c => c.id),
         }),
       })
       // Vérifier res.ok AVANT res.json() : une erreur serveur peut renvoyer du texte/HTML,
@@ -2364,6 +2368,7 @@ export default function FicheChantier({ params }) {
     setCrSavingFinal(false)
     setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
     setCrDocsSelectionnes([])
+    setCrCrsSelectionnes([])
   }
 
   const demarrerVocal = () => {
@@ -6536,6 +6541,36 @@ export default function FicheChantier({ params }) {
                                 style={{accentColor:'#6366f1'}} />
                               <span className="clip-1" style={{fontSize:12, color:'var(--ink-700)', flex:1, minWidth:0}}>{doc.nom}</span>
                               {!supported && <span style={{fontSize:11, color:'var(--ink-500)'}}>non supporté</span>}
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </ModalField>
+                  )}
+
+                  {comptesRendus.length > 0 && (
+                    <ModalField label="📄 Comptes rendus précédents (contexte IA)">
+                      <div style={{border:'1px solid var(--ink-200)', borderRadius:10, padding:6, display:'flex', flexDirection:'column', gap:2, maxHeight:144, overflowY:'auto'}}>
+                        {comptesRendus.map(cr => {
+                          const selected = crCrsSelectionnes.some(c => c.id === cr.id)
+                          const dateStr = cr.date_visite
+                            ? new Date(cr.date_visite).toLocaleDateString('fr-FR')
+                            : (cr.created_at ? new Date(cr.created_at).toLocaleDateString('fr-FR') : '')
+                          return (
+                            <label key={cr.id} style={{
+                              display:'flex', alignItems:'center', gap:8,
+                              padding:'4px 8px', borderRadius:6, cursor:'pointer', transition:'background 150ms',
+                            }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-2)' }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+                              <input type="checkbox" checked={selected}
+                                onChange={() => setCrCrsSelectionnes(prev =>
+                                  selected ? prev.filter(c => c.id !== cr.id) : [...prev, cr]
+                                )}
+                                style={{accentColor:'#6366f1'}} />
+                              <span className="clip-1" style={{fontSize:12, color:'var(--ink-700)', flex:1, minWidth:0}}>
+                                CR {cr.type_visite || ''}{dateStr ? ` — ${dateStr}` : ''}
+                              </span>
                             </label>
                           )
                         })}
