@@ -1,8 +1,17 @@
 // app/finances/page.js
 'use client'
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import { Chart, CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, ArcElement, DoughnutController, Tooltip, Legend, Filler } from 'chart.js'
-Chart.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, BarController, LineController, ArcElement, DoughnutController, Tooltip, Legend, Filler)
+// chart.js (~150 Ko) chargé À LA DEMANDE : hors bundle initial de /finances, téléchargé
+// seulement au premier dessin de graphique (après le premier affichage). getChart()
+// importe + enregistre les modules une seule fois (mémoïsé).
+let _ChartLib = null
+async function getChart() {
+  if (_ChartLib) return _ChartLib
+  const m = await import('chart.js')
+  m.Chart.register(m.CategoryScale, m.LinearScale, m.BarElement, m.LineElement, m.PointElement, m.BarController, m.LineController, m.ArcElement, m.DoughnutController, m.Tooltip, m.Legend, m.Filler)
+  _ChartLib = m.Chart
+  return _ChartLib
+}
 import { supabase } from '../lib/supabase'
 import { formatNomClient } from '../lib/clients'
 import { useRouter } from 'next/navigation'
@@ -145,11 +154,14 @@ function ObjectifBar({ label, reel, objectifMontant, cible, agenteId = null, can
 
 function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) {
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof Chart === 'undefined') return
+    if (typeof window === 'undefined') return
     const el = document.getElementById(chartId)
     if (!el) return
-    if (el._chartInstance) el._chartInstance.destroy()
-    el._chartInstance = new Chart(el, {
+    let cancelled = false
+    getChart().then(Chart => {
+      if (cancelled || !el) return
+      if (el._chartInstance) el._chartInstance.destroy()
+      el._chartInstance = new Chart(el, {
       data: {
         labels,
         datasets: [
@@ -169,8 +181,9 @@ function SuiviCTPChart({ labels, produitsData, chargesData, netData, chartId }) 
           y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 }, color: '#888', callback: v => Math.abs(v).toLocaleString('fr-FR') + ' €' } }
         }
       }
+      })
     })
-    return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+    return () => { cancelled = true; if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
   }, [labels, produitsData, chargesData, netData, chartId])
 
   return (
@@ -236,9 +249,13 @@ function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKe
     if (typeof window === 'undefined') return
     const el = document.getElementById(donutReelId)
     if (!el) return
-    if (el._chartInstance) el._chartInstance.destroy()
-    el._chartInstance = new Chart(el, { ...donutBase, data: donutDataset(donutReel) })
-    return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+    let cancelled = false
+    getChart().then(Chart => {
+      if (cancelled || !el) return
+      if (el._chartInstance) el._chartInstance.destroy()
+      el._chartInstance = new Chart(el, { ...donutBase, data: donutDataset(donutReel) })
+    })
+    return () => { cancelled = true; if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [donutReel])
 
@@ -246,9 +263,13 @@ function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKe
     if (typeof window === 'undefined') return
     const el = document.getElementById(donutPreviId)
     if (!el) return
-    if (el._chartInstance) el._chartInstance.destroy()
-    el._chartInstance = new Chart(el, { ...donutBase, data: donutDataset(donutPrevi) })
-    return () => { if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
+    let cancelled = false
+    getChart().then(Chart => {
+      if (cancelled || !el) return
+      if (el._chartInstance) el._chartInstance.destroy()
+      el._chartInstance = new Chart(el, { ...donutBase, data: donutDataset(donutPrevi) })
+    })
+    return () => { cancelled = true; if (el._chartInstance) { el._chartInstance.destroy(); el._chartInstance = null } }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [donutPrevi])
 
