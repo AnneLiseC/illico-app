@@ -217,14 +217,15 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
         ligne(`h${i}`, l.libelle, l.date, fmt(l.montant), l.paye ? 'Payé' : 'En attente', l.paye ? '#16a34a' : '#d97706')
       ))
       if (soldeAmoInfo) {
-        // Ligne solde : montant = ATTENDU ; statut = encaissé/attendu (jamais « payé » tant que < attendu).
+        // Ligne solde : montant = ATTENDU ; statut = mot clair (jamais « payé » tant que < attendu).
         const soldeReste = soldeAmoInfo.attendu - soldeAmoInfo.encaisse
-        children.push(ligne('solde', 'Solde AMO — attendu', '—', fmt(soldeAmoInfo.attendu),
-          `${fmt(soldeAmoInfo.encaisse)} encaissé`, soldeReste <= 0.01 ? '#16a34a' : '#00578e'))
+        const soldeStatut = soldeAmoInfo.encaisse <= 0.01 ? 'En attente' : soldeReste <= 0.01 ? 'Payé' : 'Partiel'
+        const soldeColor  = soldeStatut === 'Payé' ? '#16a34a' : soldeStatut === 'Partiel' ? '#00578e' : '#d97706'
+        children.push(ligne('solde', 'Solde AMO — attendu', '—', fmt(soldeAmoInfo.attendu), soldeStatut, soldeColor))
+        // Détail des versements (paiements vers le solde), en sous-lignes.
         soldeAmoInfo.versements.forEach((v, i) => children.push(
-          ligne(`v${i}`, `${v.libelle}`, v.date, fmt(v.montant), v.paye ? 'Payé' : 'En attente', v.paye ? '#16a34a' : '#d97706', { sub: true })
+          ligne(`v${i}`, `· ${v.libelle}`, v.date, fmt(v.montant), v.paye ? 'Payé' : 'En attente', v.paye ? '#16a34a' : '#d97706', { sub: true })
         ))
-        if (soldeAmoInfo.enAttente > 0) children.push(ligne('att', 'dont en attente', '', fmt(soldeAmoInfo.enAttente), '', null, { sub: true }))
       }
       children.push(
         React.createElement(View, { key: 'total', style: CS.paiementTotal },
