@@ -100,8 +100,14 @@ export async function POST(request) {
     }
     const buffer = Buffer.from(await blob.arrayBuffer())
 
+    // Move-aware : si déjà miroité (la catégorie/statut a pu changer → dossier cible
+    // différent), on retire l'ancien item avant de reposer → le fichier se DÉPLACE au
+    // lieu de se dupliquer (même patron que push-devis).
+    const { data: existing } = await db.from('doc_index').select('id, drive_id, item_id').eq(src.indexCol, src.indexVal).maybeSingle()
+    if (existing) { try { await mod.deleteItem(token, existing.drive_id, existing.item_id) } catch { /* best effort */ } }
+
     const leafId = await mod.ensureFolderPath(token, compte.drive_root_drive_id, compte.drive_root_id, segments)
-    const up = await mod.uploadSmallFile(token, compte.drive_root_drive_id, leafId, src.fileName, buffer, src.mime)
+    const up = await mod.uploadSmallFile(token, compte.drive_root_drive_id, leafId, src.fileName, buffer, src.mime, 'replace')
 
     const cheminLogique = [...segments, up.name].join('/')
     await db.from('doc_index').upsert({

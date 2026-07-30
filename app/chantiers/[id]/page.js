@@ -1550,7 +1550,11 @@ export default function FicheChantier({ params }) {
     if (error) {
       setDocuments(prev => prev.map(d => d.id === docId ? { ...d, categorie: estCR ? null : 'compte_rendu' } : d))
       setErreur('Erreur : ' + error.message)
+      return
     }
+    // La catégorie change le dossier cible → on re-pousse : la route push est move-aware
+    // et déplace la copie Drive dans le bon dossier.
+    apiFetch('/api/drive/push', { method: 'POST', body: JSON.stringify({ document_id: docId }) }).catch(() => {})
   }
 
   const chargerFactures = async () => {
