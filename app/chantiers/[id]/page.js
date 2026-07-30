@@ -569,7 +569,6 @@ export default function FicheChantier({ params }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [generatingPDF, setGeneratingPDF] = useState(null) // 'recapitulatif' | 'dossier_fin'
-  const [exportOpen, setExportOpen] = useState(false) // menu déroulant « Exporter » (en-tête)
   const [erreur, setErreur] = useState('')
   const [succes, setSucces] = useState('')
   const [modalModif, setModalModif] = useState(false)
@@ -2951,30 +2950,18 @@ export default function FicheChantier({ params }) {
             </>
           )}
           <div style={{flex:1}}/>
-          {/* Exports secondaires regroupés dans un menu déroulant (allège l'en-tête). */}
-          <div style={{position:'relative'}}>
-            <button onClick={() => setExportOpen(o => !o)} disabled={!!generatingPDF}
-              className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
-              <DlIcon /> {generatingPDF ? '...' : 'Exporter'} <span style={{fontSize:10, opacity:0.7}}>▾</span>
-            </button>
-            {exportOpen && (
-              <>
-                <div onClick={() => setExportOpen(false)} style={{position:'fixed', inset:0, zIndex:40}}/>
-                <div style={{position:'absolute', right:0, top:'calc(100% + 4px)', zIndex:41, background:'#fff', border:'1px solid var(--ink-200)', borderRadius:10, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', minWidth:210, padding:6, display:'flex', flexDirection:'column', gap:2}}>
-                  {[
-                    { k:'recapitulatif_prev', l:'Récap. financier' },
-                    { k:'recapitulatif',      l:'Suivi financier' },
-                    { k:'dossier_suivi',      l:'Dossier de suivi' },
-                  ].map(o => (
-                    <button key={o.k} onClick={() => { setExportOpen(false); generatePDF(o.k) }} disabled={!!generatingPDF}
-                      className="row-hover" style={{textAlign:'left', border:0, background:'transparent', cursor:'pointer', padding:'8px 10px', borderRadius:7, fontSize:12.5, color:'var(--ink-800)'}}>
-                      {generatingPDF === o.k ? '…' : o.l}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+          <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
+            className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+            <DlIcon /> {generatingPDF === 'recapitulatif_prev' ? '...' : 'Récap. financier'}
+          </button>
+          <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
+            className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+            <DlIcon /> {generatingPDF === 'recapitulatif' ? '...' : 'Suivi financier'}
+          </button>
+          <button onClick={() => generatePDF('dossier_suivi')} disabled={!!generatingPDF}
+            className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+            <DocIcon /> {generatingPDF === 'dossier_suivi' ? '...' : 'Dossier de suivi'}
+          </button>
         </div>
       </div>
 
