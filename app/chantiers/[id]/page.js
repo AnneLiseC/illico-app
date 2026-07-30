@@ -644,7 +644,7 @@ export default function FicheChantier({ params }) {
   const [suiviFinancier, setSuiviFinancier] = useState([])
   // Solde AMO échelonné (UI) : panneau déplié + mini-formulaire d'ajout de tranche.
   const [soldeAmoDeplie, setSoldeAmoDeplie] = useState(false)
-  const [soldeAmoForm, setSoldeAmoForm] = useState({ montant: '', date: '' })
+  const [soldeAmoForm, setSoldeAmoForm] = useState({ montant: '', date: '', statut: 'regle' })
   const router = useRouter()
 
   useEffect(() => {
@@ -2671,20 +2671,43 @@ export default function FicheChantier({ params }) {
   // À la 1ʳᵉ tranche (c2), neutralise le conteneur solde_amo resté éventuellement
   // 'regle' → une suppression ultérieure de toutes les tranches ne repasserait pas
   // le solde à « payé d'un coup ». RPC lot 1 ; rafraîchissement = pattern existant.
-  const addSoldeAmoPaiement = async (montant, date) => {
+  const addSoldeAmoPaiement = async (montant, date, regle = true) => {
     const m = parseFloat(String(montant).replace(',', '.'))
     if (!Number.isFinite(m) || m <= 0) { setErreur('Montant invalide'); return }
     const dejaDesTranches = suiviFinancier.some(s => s.type_echeance === 'solde_amo_paiement')
-    const { error } = await supabase.rpc('solde_amo_paiement_add', {
+    // La RPC insère toujours la tranche « réglée » ; si on la veut « en attente »,
+    // on bascule son statut juste après (update direct autorisé par la RLS ALL).
+    const { data: newId, error } = await supabase.rpc('solde_amo_paiement_add', {
       p_dossier_id: id, p_montant: m, p_date: date || new Date().toISOString().slice(0, 10),
     })
     if (error) { setErreur('Erreur : ' + error.message); return }
+    if (!regle && newId) {
+      const { error: upErr } = await supabase.from('suivi_financier')
+        .update({ statut_client: 'en_attente', date_paiement: null })
+        .eq('id', newId).eq('type_echeance', 'solde_amo_paiement')
+      if (upErr) { setErreur('Erreur : ' + upErr.message) }
+    }
     if (!dejaDesTranches) {
       await majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'en_attente')
     }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
-    setSoldeAmoForm({ montant: '', date: '' })
+    setSoldeAmoForm({ montant: '', date: '', statut: 'regle' })
+  }
+
+  // Solde AMO échelonné — bascule le statut d'une tranche Payé ↔ En attente
+  // (comme une facture artisan). Update direct sous la RLS de l'appelant.
+  const toggleTrancheAmoStatut = async (tranche) => {
+    const regle = tranche.statut_client === 'regle'
+    const { error } = await supabase.from('suivi_financier')
+      .update({
+        statut_client: regle ? 'en_attente' : 'regle',
+        date_paiement: regle ? null : (tranche.date_paiement || new Date().toISOString().slice(0, 10)),
+      })
+      .eq('id', tranche.id).eq('type_echeance', 'solde_amo_paiement')
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(data || [])
   }
 
   // Solde AMO échelonné — supprime une tranche par id (RPC lot 1).
@@ -4439,7 +4462,10 @@ export default function FicheChantier({ params }) {
                   .sort((a, b) => new Date(a.date_paiement || 0) - new Date(b.date_paiement || 0))
                 const hasTranches   = tranchesAmo.length > 0
                 const soldeTotalTtc = fin.honoraires.soldeAmo.ttc   // réel/signés (décision a)
-                const encaisse      = tranchesAmo.reduce((s, t) => s + Number(t.montant_ttc || 0), 0)
+                // « Encaissé » = uniquement les tranches réglées (les tranches « en attente »
+                // ne comptent pas tant qu'elles ne sont pas payées — parité factures artisans).
+                const encaisse      = tranchesAmo.filter(t => t.statut_client === 'regle').reduce((s, t) => s + Number(t.montant_ttc || 0), 0)
+                const enAttente     = tranchesAmo.filter(t => t.statut_client !== 'regle').reduce((s, t) => s + Number(t.montant_ttc || 0), 0)
                 const reste         = soldeTotalTtc - encaisse
                 const soldeState    = Math.abs(reste) < 0.01 ? 'solde' : reste > 0 ? 'reste' : 'trop'
                 const soldeColor    = soldeState === 'solde' ? 'var(--ok-strong)' : soldeState === 'trop' ? 'var(--bad-strong)' : 'var(--warn-strong)'
@@ -4456,7 +4482,7 @@ export default function FicheChantier({ params }) {
                         </div>
                         <div style={{display:'flex', alignItems:'center', gap:10}}>
                           <span className="tnum" style={{fontSize:12, fontWeight:700, color: soldeColor}}>
-                            {fmt(encaisse)} encaissés · {soldeState === 'trop' ? `trop-perçu ${fmt(-reste)}` : soldeState === 'solde' ? 'soldé' : `reste ${fmt(reste)}`}
+                            {fmt(encaisse)} encaissés{enAttente > 0 ? ` · ${fmt(enAttente)} en attente` : ''} · {soldeState === 'trop' ? `trop-perçu ${fmt(-reste)}` : soldeState === 'solde' ? 'soldé' : `reste ${fmt(reste)}`}
                           </span>
                           <button type="button" className="suivi-amo-chevron" onClick={() => setSoldeAmoDeplie(v => !v)}>
                             {soldeAmoDeplie ? '▲' : '▼'}
@@ -4482,14 +4508,22 @@ export default function FicheChantier({ params }) {
 
                     {soldeAmoDeplie && (
                       <div className="suivi-amo-panel">
-                        {tranchesAmo.map(t => (
+                        {tranchesAmo.map(t => {
+                          const paye = t.statut_client === 'regle'
+                          return (
                           <div key={t.id} className="suivi-amo-tranche">
                             <span className="tnum" style={{fontWeight:600}}>{fmt(Number(t.montant_ttc || 0))} TTC</span>
                             <span style={{fontSize:12, color:'var(--ink-500)'}}>{t.date_paiement ? fmtD(t.date_paiement) : '—'}</span>
+                            <button type="button" onClick={() => toggleTrancheAmoStatut(t)}
+                              title={paye ? 'Marquer en attente' : 'Marquer payé'}
+                              style={{fontSize:11, fontWeight:700, padding:'2px 9px', borderRadius:99, cursor:'pointer', border:'1px solid', borderColor: paye ? '#bbf7d0' : '#fed7aa', background: paye ? '#f0fdf4' : '#fff7ed', color: paye ? '#16a34a' : '#d97706'}}>
+                              {paye ? 'Payé' : 'En attente'}
+                            </button>
                             <button type="button" className="suivi-amo-del" title="Supprimer cette tranche"
                               onClick={() => deleteSoldeAmoPaiement(t.id)}>✕</button>
                           </div>
-                        ))}
+                          )
+                        })}
                         {!hasTranches && (
                           <div style={{fontSize:12, color:'var(--ink-500)'}}>Aucun paiement enregistré pour l’instant.</div>
                         )}
@@ -4500,9 +4534,15 @@ export default function FicheChantier({ params }) {
                             onChange={e => setSoldeAmoForm(f => ({ ...f, montant: e.target.value }))} />
                           <input className="input" type="date"
                             value={soldeAmoForm.date || today}
+                            disabled={soldeAmoForm.statut !== 'regle'}
                             onChange={e => setSoldeAmoForm(f => ({ ...f, date: e.target.value }))} />
+                          <select className="input" value={soldeAmoForm.statut}
+                            onChange={e => setSoldeAmoForm(f => ({ ...f, statut: e.target.value }))}>
+                            <option value="regle">Payé</option>
+                            <option value="en_attente">En attente</option>
+                          </select>
                           <button type="button" className="btn btn-primary"
-                            onClick={() => addSoldeAmoPaiement(soldeAmoForm.montant, soldeAmoForm.date || today)}>
+                            onClick={() => addSoldeAmoPaiement(soldeAmoForm.montant, soldeAmoForm.date || today, soldeAmoForm.statut === 'regle')}>
                             Ajouter
                           </button>
                         </div>
