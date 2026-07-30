@@ -198,12 +198,14 @@ export function buildCRDocument({ dossier, cr, sections, logo, photos }) {
         React.createElement(View, { style: CRS.titleBlock },
           React.createElement(Text, { style: CRS.mainTitle }, 'Photos'),
         ),
-        React.createElement(View, { style: { flexDirection: 'column', flex: 1, justifyContent: 'flex-start', paddingBottom: 40 } },
+        React.createElement(View, { style: { flexDirection: 'column', justifyContent: 'flex-start' } },
           ...chunk.map(ph =>
-            // Hauteur BORNÉE (pas de height:'100%' → sinon la 1re image déborde et
-            // repousse la 2e sur une autre page). ~2 photos par page A4.
-            React.createElement(View, { key: ph.path, style: { marginVertical: 4, alignItems: 'center' } },
-              React.createElement(PdfImage, { src: ph.base64, style: { maxWidth: '100%', maxHeight: 300, objectFit: 'contain' } }),
+            // Boîte à HAUTEUR FIXE + wrap:false : @react-pdf ne respecte pas
+            // toujours maxHeight sur une Image → elle débordait et poussait une
+            // page blanche entre chaque photo. Hauteur fixe (objectFit:contain
+            // conserve le ratio) → 2 photos par page A4, sans page vide.
+            React.createElement(View, { key: ph.path, style: { marginVertical: 6, alignItems: 'center' }, wrap: false },
+              React.createElement(PdfImage, { src: ph.base64, style: { width: '100%', height: 300, objectFit: 'contain' } }),
             )
           ),
         ),
