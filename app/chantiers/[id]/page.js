@@ -618,7 +618,7 @@ export default function FicheChantier({ params }) {
   const [crOuvert, setCrOuvert] = useState(null) // id du CR déplié dans la liste
   const [crModal, setCrModal] = useState(false)
   const [crManuelModal, setCrManuelModal] = useState(false)
-  const [crManuelForm, setCrManuelForm] = useState({ type_visite: '', date_visite: '', contenu: '' })
+  const [crManuelForm, setCrManuelForm] = useState({ type_visite: '', date_visite: '', contenu: '', intervenants: '', photos: [] })
   const [crManuelSaving, setCrManuelSaving] = useState(false)
   const [crEditId, setCrEditId] = useState(null) // null = création ; sinon id du CR édité
   const [nbMsgNonLus, setNbMsgNonLus] = useState(0)
@@ -2128,6 +2128,8 @@ export default function FicheChantier({ params }) {
       type_visite: cr.type_visite || '',
       date_visite: cr.date_visite || '',
       contenu: cr.contenu_final || '',
+      intervenants: '',                       // déjà présents dans le contenu (bloc identification), pas de re-saisie
+      photos: cr.photos_jointes || [],        // photos déjà jointes au CR → pré-cochées
     })
     setCrManuelModal(true)
   }
@@ -2135,25 +2137,55 @@ export default function FicheChantier({ params }) {
   const fermerCRManuel = () => {
     setCrManuelModal(false)
     setCrEditId(null)
-    setCrManuelForm({ type_visite: '', date_visite: '', contenu: '' })
+    setCrManuelForm({ type_visite: '', date_visite: '', contenu: '', intervenants: '', photos: [] })
+  }
+
+  // Bloc « Identification du chantier » (référence, client, adresse, type, date,
+  // intervenants) composé depuis les données du dossier. Comme comptes_rendus n'a
+  // pas de colonne intervenants, on écrit ces infos dans le contenu (comme le CR IA).
+  // Idempotent : on ne l'ajoute pas si le contenu contient déjà une identification.
+  const composerContenuCRManuel = () => {
+    const contenu = crManuelForm.contenu
+    if (/identification du chantier/i.test(contenu)) return contenu
+    const LABELS = { r1: 'R1 — Visite technique', r2: 'R2 — Visite artisans', r3: 'R3 — Présentation devis', suivi: 'Suivi de chantier', reception: 'Réception' }
+    const nomClient = formatNomClient(client, { civilite: true, withRepresentant: true }) || '—'
+    const dateStr = crManuelForm.date_visite ? new Date(crManuelForm.date_visite).toLocaleDateString('fr-FR') : '—'
+    const lignes = [
+      '## 1. Identification du chantier',
+      '',
+      `**Référence :** ${dossier.reference || '—'}`,
+      `**Client :** ${nomClient}`,
+      `**Adresse :** ${client?.adresse || '—'}`,
+      `**Type de visite :** ${LABELS[crManuelForm.type_visite] || '—'}`,
+      `**Date de visite :** ${dateStr}`,
+      `**Intervenants :** ${crManuelForm.intervenants.trim() || '—'}`,
+      '',
+    ].join('\n')
+    return lignes + '\n' + contenu
   }
 
   const sauvegarderCRManuel = async (publier = false) => {
     if (!crManuelForm.contenu.trim()) return
     setCrManuelSaving(true)
+    const contenuFinal = composerContenuCRManuel()
+    const photos = crManuelForm.photos || []
     // Édition : on met à jour le CR existant. Création : on insère.
     const { error: saveErr } = crEditId
       ? await supabase.from('comptes_rendus').update({
           type_visite: crManuelForm.type_visite || null,
           date_visite: crManuelForm.date_visite || null,
-          contenu_final: crManuelForm.contenu,
+          contenu_final: contenuFinal,
+          photos_jointes: photos,
+          photos_paths: photos,
           valide: publier,
         }).eq('id', crEditId)
       : await supabase.from('comptes_rendus').insert({
           dossier_id: id,
           type_visite: crManuelForm.type_visite || null,
           date_visite: crManuelForm.date_visite || null,
-          contenu_final: crManuelForm.contenu,
+          contenu_final: contenuFinal,
+          photos_jointes: photos,
+          photos_paths: photos,
           valide: publier,
         })
     // Échec : on garde la saisie (modale ouverte) pour réessayer.
@@ -2163,7 +2195,7 @@ export default function FicheChantier({ params }) {
     setComptesRendus(data || [])
     setCrManuelModal(false)
     setCrEditId(null)
-    setCrManuelForm({ type_visite: '', date_visite: '', contenu: '' })
+    setCrManuelForm({ type_visite: '', date_visite: '', contenu: '', intervenants: '', photos: [] })
     setCrManuelSaving(false)
     setSucces(publier ? 'CR publié au client ✓' : 'CR sauvegardé ✓')
   }
@@ -5621,7 +5653,7 @@ export default function FicheChantier({ params }) {
                 </div>
               </div>
               <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-                <button onClick={() => { setCrEditId(null); setCrManuelForm({ type_visite: '', date_visite: '', contenu: '' }); setCrManuelModal(true) }} className="btn btn-ghost" style={{fontSize:12.5}}>
+                <button onClick={() => { setCrEditId(null); setCrManuelForm({ type_visite: '', date_visite: '', contenu: '', intervenants: '', photos: [] }); setCrManuelModal(true) }} className="btn btn-ghost" style={{fontSize:12.5}}>
                   <PlusIcon /> CR manuel
                 </button>
                 <button onClick={() => { setCrModal(true) }} className="btn btn-primary" style={{fontSize:12.5}}>
@@ -5843,6 +5875,65 @@ export default function FicheChantier({ params }) {
                   className="input" style={{height:38, padding:'0 12px', fontSize:13}} />
               </ModalField>
             </div>
+
+            <ModalField label="Intervenants">
+              {(() => {
+                const dispo = [...new Set((devis || []).filter(d => ['recu', 'accepte'].includes(d.statut)).map(d => d.artisan?.entreprise).filter(Boolean))]
+                const sel = crManuelForm.intervenants.split(',').map(s => s.trim()).filter(Boolean)
+                const toggle = (nom) => setCrManuelForm(f => {
+                  const cur = f.intervenants.split(',').map(s => s.trim()).filter(Boolean)
+                  const next = cur.includes(nom) ? cur.filter(x => x !== nom) : [...cur, nom]
+                  return { ...f, intervenants: next.join(', ') }
+                })
+                return (
+                  <>
+                    {dispo.length > 0 && (
+                      <div style={{display:'flex', flexWrap:'wrap', gap:6, marginBottom:8}}>
+                        {dispo.map(nom => {
+                          const on = sel.includes(nom)
+                          return (
+                            <button key={nom} type="button" onClick={() => toggle(nom)}
+                              style={{fontSize:12, padding:'4px 10px', borderRadius:99, cursor:'pointer', border:'1px solid', borderColor: on ? '#4f46e5' : 'var(--ink-200)', background: on ? 'rgba(79,70,229,0.08)' : '#fff', color: on ? 'var(--ink-900)' : 'var(--ink-600)', fontWeight: on ? 600 : 400}}>
+                              {on ? '✓ ' : ''}{nom}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                    <input type="text" value={crManuelForm.intervenants}
+                      onChange={e => setCrManuelForm(f => ({ ...f, intervenants: e.target.value }))}
+                      placeholder="Noms séparés par des virgules"
+                      className="input" style={{height:38, padding:'0 12px', fontSize:13, width:'100%'}} />
+                  </>
+                )
+              })()}
+            </ModalField>
+
+            <ModalField label="Photos du chantier à joindre au CR">
+              {photos.length === 0 ? (
+                <div style={{fontSize:12, color:'var(--ink-500)'}}>Aucune photo sur ce chantier.</div>
+              ) : (
+                <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(92px, 1fr))', gap:8, maxHeight:220, overflowY:'auto'}}>
+                  {photos.map(ph => {
+                    const on = (crManuelForm.photos || []).includes(ph.url)
+                    return (
+                      <button key={ph.id || ph.url} type="button"
+                        onClick={() => setCrManuelForm(f => {
+                          const cur = f.photos || []
+                          return { ...f, photos: cur.includes(ph.url) ? cur.filter(u => u !== ph.url) : [...cur, ph.url] }
+                        })}
+                        style={{position:'relative', padding:0, border:'2px solid', borderColor: on ? '#4f46e5' : 'transparent', borderRadius:8, cursor:'pointer', overflow:'hidden', aspectRatio:'1', background:'var(--ink-100)'}}>
+                        <img src={ph.url_thumb || ph.url_signee} alt="" loading="lazy" style={{width:'100%', height:'100%', objectFit:'cover', display:'block', opacity: on ? 1 : 0.82}} />
+                        {on && <span style={{position:'absolute', top:4, right:4, background:'#4f46e5', color:'#fff', borderRadius:99, width:18, height:18, fontSize:11, display:'flex', alignItems:'center', justifyContent:'center'}}>✓</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {(crManuelForm.photos || []).length > 0 && (
+                <div style={{fontSize:11, color:'var(--ink-500)', marginTop:6}}>{crManuelForm.photos.length} photo(s) jointe(s) — affichées dans le PDF du CR.</div>
+              )}
+            </ModalField>
 
             <ModalField label="Contenu du CR" required>
               <textarea value={crManuelForm.contenu}
