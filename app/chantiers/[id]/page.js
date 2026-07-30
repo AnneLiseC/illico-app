@@ -620,6 +620,8 @@ export default function FicheChantier({ params }) {
   const [crManuelModal, setCrManuelModal] = useState(false)
   const [crManuelForm, setCrManuelForm] = useState({ type_visite: '', date_visite: '', contenu: '', intervenants: '', photos: [] })
   const [crManuelSaving, setCrManuelSaving] = useState(false)
+  const [crManuelPhotoCat, setCrManuelPhotoCat] = useState('all')   // filtre catégorie du sélecteur photos (CR manuel)
+  const [crManuelPhotosAff, setCrManuelPhotosAff] = useState(24)    // pagination du sélecteur photos (CR manuel)
   const [crEditId, setCrEditId] = useState(null) // null = création ; sinon id du CR édité
   const [nbMsgNonLus, setNbMsgNonLus] = useState(0)
   const [photoOuverte, setPhotoOuverte] = useState(null)
@@ -5882,7 +5884,7 @@ export default function FicheChantier({ params }) {
           title={crEditId ? '✎ Modifier le CR' : '📝 Nouveau CR sans IA'}
           subtitle={`${dossier.reference} · ${crEditId ? 'édition' : 'saisie manuelle'}`}
           onClose={fermerCRManuel}
-          width={640}
+          width="min(1000px, 96vw)"
           footer={(<>
             <button onClick={fermerCRManuel} className="btn btn-ghost">Annuler</button>
             <button onClick={() => sauvegarderCRManuel(false)} disabled={crManuelSaving || !crManuelForm.contenu.trim()}
@@ -5950,29 +5952,63 @@ export default function FicheChantier({ params }) {
             </ModalField>
 
             <ModalField label="Photos du chantier à joindre au CR">
-              {photos.length === 0 ? (
-                <div style={{fontSize:12, color:'var(--ink-500)'}}>Aucune photo sur ce chantier.</div>
-              ) : (
-                <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(92px, 1fr))', gap:8, maxHeight:220, overflowY:'auto'}}>
-                  {photos.map(ph => {
-                    const on = (crManuelForm.photos || []).includes(ph.url)
-                    return (
-                      <button key={ph.id || ph.url} type="button"
-                        onClick={() => setCrManuelForm(f => {
-                          const cur = f.photos || []
-                          return { ...f, photos: cur.includes(ph.url) ? cur.filter(u => u !== ph.url) : [...cur, ph.url] }
-                        })}
-                        style={{position:'relative', padding:0, border:'2px solid', borderColor: on ? '#4f46e5' : 'transparent', borderRadius:8, cursor:'pointer', overflow:'hidden', aspectRatio:'1', background:'var(--ink-100)'}}>
-                        <img src={ph.url_thumb || ph.url_signee} alt="" loading="lazy" style={{width:'100%', height:'100%', objectFit:'cover', display:'block', opacity: on ? 1 : 0.82}} />
-                        {on && <span style={{position:'absolute', top:4, right:4, background:'#4f46e5', color:'#fff', borderRadius:99, width:18, height:18, fontSize:11, display:'flex', alignItems:'center', justifyContent:'center'}}>✓</span>}
+              {(() => {
+                const dispo = (photos || []).filter(p => p.type_media !== 'video')
+                if (dispo.length === 0) return <div style={{fontSize:12, color:'var(--ink-500)'}}>Aucune photo sur ce chantier.</div>
+                const CATS = [
+                  { k: 'all', l: 'Toutes' },
+                  { k: 'avant', l: 'Avant' },
+                  { k: 'pendant', l: 'Pendant' },
+                  { k: 'apres', l: 'Après' },
+                  { k: 'maquette', l: 'Maquette' },
+                ]
+                const filtrees = crManuelPhotoCat === 'all' ? dispo : dispo.filter(p => p.categorie === crManuelPhotoCat)
+                const visibles = filtrees.slice(0, crManuelPhotosAff)
+                return (
+                  <>
+                    <div style={{display:'flex', gap:6, flexWrap:'wrap', marginBottom:8}}>
+                      {CATS.map(c => {
+                        const n = c.k === 'all' ? dispo.length : dispo.filter(p => p.categorie === c.k).length
+                        if (n === 0 && c.k !== 'all') return null
+                        const active = crManuelPhotoCat === c.k
+                        return (
+                          <button key={c.k} type="button"
+                            onClick={() => { setCrManuelPhotoCat(c.k); setCrManuelPhotosAff(24) }}
+                            style={{padding:'4px 10px', borderRadius:99, fontSize:11, fontWeight:600, cursor:'pointer', border:'1px solid', borderColor: active ? '#6366f1' : 'var(--ink-200)', background: active ? '#eef2ff' : '#fff', color: active ? 'var(--ink-900)' : 'var(--ink-600)'}}>
+                            {c.l} <span style={{opacity:0.6}}>· {n}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(84px, 1fr))', gap:8, border:'1px solid var(--ink-200)', borderRadius:10, padding:8, maxHeight:320, overflowY:'auto'}}>
+                      {visibles.map(ph => {
+                        const on = (crManuelForm.photos || []).includes(ph.url)
+                        return (
+                          <button key={ph.id || ph.url} type="button"
+                            onClick={() => setCrManuelForm(f => {
+                              const cur = f.photos || []
+                              return { ...f, photos: cur.includes(ph.url) ? cur.filter(u => u !== ph.url) : [...cur, ph.url] }
+                            })}
+                            style={{position:'relative', padding:0, border:'none', background:'none', cursor:'pointer', aspectRatio:'1', borderRadius:8, overflow:'hidden'}}>
+                            <img src={ph.url_thumb || ph.url_signee} alt="" loading="lazy" decoding="async"
+                              onError={e => { if (ph.url_signee && e.currentTarget.src !== ph.url_signee) e.currentTarget.src = ph.url_signee }}
+                              style={{width:'100%', height:'100%', objectFit:'cover', display:'block', borderRadius:8, border: on ? '2px solid #4f46e5' : '1px solid var(--ink-200)', opacity: on ? 1 : 0.85}} />
+                            {on && <span style={{position:'absolute', top:4, right:4, width:18, height:18, borderRadius:'50%', background:'#4f46e5', color:'#fff', fontSize:11, display:'grid', placeItems:'center'}}>✓</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {filtrees.length > visibles.length && (
+                      <button type="button" onClick={() => setCrManuelPhotosAff(n => n + 24)} className="btn btn-ghost" style={{fontSize:12, marginTop:8}}>
+                        Voir plus ({filtrees.length - visibles.length})
                       </button>
-                    )
-                  })}
-                </div>
-              )}
-              {(crManuelForm.photos || []).length > 0 && (
-                <div style={{fontSize:11, color:'var(--ink-500)', marginTop:6}}>{crManuelForm.photos.length} photo(s) jointe(s) — affichées dans le PDF du CR.</div>
-              )}
+                    )}
+                    {(crManuelForm.photos || []).length > 0 && (
+                      <div style={{fontSize:11, color:'var(--ink-500)', marginTop:6}}>{crManuelForm.photos.length} photo(s) jointe(s) — affichées dans le PDF du CR.</div>
+                    )}
+                  </>
+                )
+              })()}
             </ModalField>
 
             <ModalField label="Contenu du CR" required>
