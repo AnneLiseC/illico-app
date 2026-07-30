@@ -1160,9 +1160,12 @@ export default function FicheChantier({ params }) {
   // (b) à chaque changement de MONTANT d'un devis. Non bloquant.
   const creerBaseComparateur = async () => {
     try {
-      const { data: das } = await supabase.from('devis_artisans').select('id').eq('dossier_id', id)
+      const { data: das } = await supabase.from('devis_artisans').select('id, statut').eq('dossier_id', id)
       const devisIds = (das || []).map(d => d.id)
       if (!devisIds.length) return
+      // Un devis refusé reste visible dans la base mais EXCLU du total (inclus:false) :
+      // la base courante reflète ainsi les devis retenus, pas les abandonnés.
+      const refuses = new Set((das || []).filter(d => d.statut === 'refuse').map(d => d.id))
       const { data: vs } = await supabase.from('devis_versions')
         .select('id, devis_artisan_id').in('devis_artisan_id', devisIds).eq('est_courante', true)
       const { data: bases } = await supabase.from('comparateur_simulations')
@@ -1176,7 +1179,7 @@ export default function FicheChantier({ params }) {
       if (!base) return
       const lignes = (vs || []).map(v => ({
         simulation_id: base.id, devis_artisan_id: v.devis_artisan_id,
-        devis_version_id: v.id, inclus: true, montant_ttc_override: null,
+        devis_version_id: v.id, inclus: !refuses.has(v.devis_artisan_id), montant_ttc_override: null,
       }))
       if (lignes.length) await supabase.from('comparateur_lignes').insert(lignes)
     } catch (e) { console.error('creerBaseComparateur :', e?.message) }
@@ -1986,6 +1989,7 @@ export default function FicheChantier({ params }) {
   }
 
   const changerStatutDevis = async (devisId, statut) => {
+    const statutPrecedent = devis.find(d => d.id === devisId)?.statut
     let error
     if (statut === 'accepte') {
       const aujourd_hui = new Date().toISOString().slice(0, 10)
@@ -2008,6 +2012,9 @@ export default function FicheChantier({ params }) {
     pousserDevisDrive(devisId)  // statut changé → le PDF se déplace (Reçus/Signés/Refusés)
     // TS-2 : une signature (statut 'accepte' + date_signature) peut créer un TS courtage.
     if (statut === 'accepte') await declencherCourtageTS()
+    // Un refus (ou son retrait) change le périmètre des devis retenus → nouvelle base
+    // courante figée, qui exclut le devis refusé du total (comme un ajout/une modif).
+    if (statut === 'refuse' || statutPrecedent === 'refuse') await majBaseSurChangementMontant()
   }
 
   const supprimerDevis = async (devisId) => {
@@ -2028,6 +2035,9 @@ export default function FicheChantier({ params }) {
       return
     }
     await chargerDevis()
+    // Suppression d'un devis → le périmètre change : nouvelle base courante figée
+    // (sinon la base garderait une ligne fantôme pour un devis qui n'existe plus).
+    await majBaseSurChangementMontant()
   }
 
   // ── UPLOAD DEVIS SIGNÉ ──
@@ -4985,7 +4995,6 @@ export default function FicheChantier({ params }) {
           const honAMO      = totalTTC * (Number(sim.taux_amo) || 0) / 100
           return { totalTTC, honCourtage, honAMO, totalCourtage: totalTTC + honCourtage, totalAMO: totalTTC + honAMO }
         }
-        const totalBaseTTC = devis.reduce((s, d) => s + (Number(d.montant_ttc) || 0), 0)
 
         // Frise : bases figées (chronologiques) + simulations manuelles. La dernière
         // base = base courante (mise en avant) ; les précédentes = historique repliable.
@@ -5032,7 +5041,6 @@ export default function FicheChantier({ params }) {
                 <thead>
                   <tr>
                     <th style={{...thStyle, textAlign:'left', minWidth:190}}>Devis / artisan</th>
-                    <th style={{...thStyle, minWidth:110}}>Actuel</th>
                     {colonnes.map(sim => {
                       const histo = estBaseHisto(sim), courante = estBaseCourante(sim)
                       return (
@@ -5067,8 +5075,8 @@ export default function FicheChantier({ params }) {
                       <td style={{...tdStyle, textAlign:'left', whiteSpace:'normal'}}>
                         <div style={{fontWeight:600, color:'var(--ink-900)'}}>{d.artisan?.entreprise || '—'}</div>
                         {d.artisan?.metier && <div style={{fontSize:11, color:'var(--ink-500)'}}>{d.artisan.metier}</div>}
+                        {d.statut === 'refuse' && <div style={{marginTop:4}}><Badge tone="bad">Refusé · hors total</Badge></div>}
                       </td>
-                      <td style={{...tdStyle, fontWeight:600}} className="tnum">{fmt(d.montant_ttc || 0)}</td>
                       {colonnes.map(sim => {
                         const l = ligneFor(sim, d.id)
                         if (!l) return <td key={sim.id} style={{...tdStyle, color:'var(--ink-500)'}}>—</td>
@@ -5088,8 +5096,8 @@ export default function FicheChantier({ params }) {
                                   style={{width:90, fontSize:12, padding:'2px 4px', border:'1px solid var(--ink-200)', borderRadius:6, textAlign:'right'}} />
                               ) : (
                                 <button onClick={() => setEditingMontant(l.id)} className="tnum"
-                                  title="Modifier le montant pour cette simulation"
-                                  style={{border:'none', background:'none', cursor:'pointer', color: l.montant_ttc_override != null ? 'var(--ink-900)' : 'var(--ink-700)', fontWeight: l.montant_ttc_override != null ? 700 : 400}}>
+                                  title={l.inclus ? 'Modifier le montant pour cette simulation' : 'Exclu — non compté dans le total'}
+                                  style={{border:'none', background:'none', cursor:'pointer', color: l.montant_ttc_override != null ? 'var(--ink-900)' : 'var(--ink-700)', fontWeight: l.montant_ttc_override != null ? 700 : 400, textDecoration: l.inclus ? 'none' : 'line-through'}}>
                                   {fmt(montantLigne(l))}
                                 </button>
                               )}
@@ -5120,31 +5128,25 @@ export default function FicheChantier({ params }) {
 
                   <tr style={{borderTop:'2px solid var(--ink-300)', background:'var(--surface-2)'}}>
                     <td style={{...tdStyle, textAlign:'left', fontWeight:700}}>Total TTC</td>
-                    <td style={{...tdStyle, fontWeight:700}} className="tnum">{fmt(totalBaseTTC)}</td>
                     {colonnes.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700}} className="tnum">{fmt(totauxSim(sim).totalTTC)}</td>)}
                   </tr>
                   <tr style={{borderTop:'1px solid var(--ink-100)'}}>
                     <td style={{...tdStyle, textAlign:'left'}}>Honoraires courtage</td>
-                    <td style={{...tdStyle, color:'var(--ink-500)'}}>—</td>
                     {colonnes.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honCourtage)}</td>)}
                   </tr>
                   <tr>
                     <td style={{...tdStyle, textAlign:'left'}}>Honoraires AMO</td>
-                    <td style={{...tdStyle, color:'var(--ink-500)'}}>—</td>
                     {colonnes.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honAMO)}</td>)}
                   </tr>
                   <tr style={{borderTop:'1px solid var(--ink-200)'}}>
                     <td style={{...tdStyle, textAlign:'left', fontWeight:700, color:'var(--ink-900)'}}>Total chantier courtage</td>
-                    <td style={{...tdStyle, color:'var(--ink-500)'}}>—</td>
                     {colonnes.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--ink-900)'}} className="tnum">{fmt(totauxSim(sim).totalCourtage)}</td>)}
                   </tr>
                   <tr>
                     <td style={{...tdStyle, textAlign:'left', fontWeight:700, color:'var(--ink-900)'}}>Total chantier AMO</td>
-                    <td style={{...tdStyle, color:'var(--ink-500)'}}>—</td>
                     {colonnes.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--ink-900)'}} className="tnum">{fmt(totauxSim(sim).totalAMO)}</td>)}
                   </tr>
                   <tr style={{borderTop:'1px solid var(--ink-100)'}}>
-                    <td style={tdStyle}></td>
                     <td style={tdStyle}></td>
                     {colonnes.map(sim => (
                       <td key={sim.id} style={tdStyle}>
