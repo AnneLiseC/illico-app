@@ -34,8 +34,6 @@ export async function POST(request) {
   // ── Résout la source (document ou photo) en un descripteur commun ──
   let src
   if (body.document_id) {
-    const { data: idx } = await db.from('doc_index').select('id').eq('document_id', body.document_id).maybeSingle()
-    if (idx) return NextResponse.json({ ok: true, already: true })
     const { data: doc } = await db.from('chantier_documents')
       .select('id, dossier_id, path, nom, categorie, artisan_id, type_mime').eq('id', body.document_id).maybeSingle()
     if (!doc) return NextResponse.json({ error: 'Document introuvable' }, { status: 404 })
@@ -43,8 +41,6 @@ export async function POST(request) {
       bucket: 'documents', storagePath: doc.path, fileName: doc.nom, mime: doc.type_mime,
       categorie: doc.categorie, artisanId: doc.artisan_id }
   } else if (body.photo_id) {
-    const { data: idx } = await db.from('doc_index').select('id').eq('photo_id', body.photo_id).maybeSingle()
-    if (idx) return NextResponse.json({ ok: true, already: true })
     const { data: ph } = await db.from('photos')
       .select('id, dossier_id, url, type_media, categorie').eq('id', body.photo_id).maybeSingle()
     if (!ph) return NextResponse.json({ error: 'Photo introuvable' }, { status: 404 })
@@ -93,6 +89,20 @@ export async function POST(request) {
   }
 
   try {
+    // Idempotence PATH-AWARE : on compare le dossier cible au dossier déjà miroité.
+    //   - inchangé (ré-appel du rattrapage, re-push identique) → on saute, PAS de ré-upload
+    //     (l'ancien guard « idx existe → already » ne comparait pas le chemin : il court-
+    //     circuitait AUSSI le move-aware, si bien qu'un changement de catégorie ne
+    //     déplaçait jamais le fichier).
+    //   - différent (catégorie/statut changé) → on DÉPLACE : retire l'ancien item puis
+    //     repose dans le nouveau dossier (même patron que push-devis).
+    // Comparaison sur le DOSSIER (pas le nom de fichier) : uploadSmallFile peut suffixer
+    // le nom en cas de collision → comparer le path complet ferait re-uploader à tort.
+    const { data: existing } = await db.from('doc_index').select('id, drive_id, item_id, path').eq(src.indexCol, src.indexVal).maybeSingle()
+    const targetDir = segments.join('/')
+    const existingDir = existing?.path ? existing.path.split('/').slice(0, -1).join('/') : null
+    if (existing && existingDir === targetDir) return NextResponse.json({ ok: true, already: true })
+
     const { data: blob, error: dlErr } = await db.storage.from(src.bucket).download(src.storagePath)
     if (dlErr || !blob) {
       console.error('[drive/push] download', dlErr?.message)
@@ -100,10 +110,6 @@ export async function POST(request) {
     }
     const buffer = Buffer.from(await blob.arrayBuffer())
 
-    // Move-aware : si déjà miroité (la catégorie/statut a pu changer → dossier cible
-    // différent), on retire l'ancien item avant de reposer → le fichier se DÉPLACE au
-    // lieu de se dupliquer (même patron que push-devis).
-    const { data: existing } = await db.from('doc_index').select('id, drive_id, item_id').eq(src.indexCol, src.indexVal).maybeSingle()
     if (existing) { try { await mod.deleteItem(token, existing.drive_id, existing.item_id) } catch { /* best effort */ } }
 
     const leafId = await mod.ensureFolderPath(token, compte.drive_root_drive_id, compte.drive_root_id, segments)
