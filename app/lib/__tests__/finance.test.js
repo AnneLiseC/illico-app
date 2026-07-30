@@ -200,6 +200,18 @@ describe('calculateSoldeAmoReel', () => {
     expect(r.recognizedNet).toBe(855)
     expect(r.parts.agente + r.parts.admin).toBeCloseTo(r.recognizedNet, 2)
   })
+  it('tranche « en attente » -> exclue du CA réel (reconnaissance à l\'encaissement)', () => {
+    const d = dossier({
+      typologie: 'amo', honoraires_amo_taux: 9,
+      suivi_financier: [
+        { type_echeance: 'solde_amo_paiement', montant_ttc: 990, date_paiement: '2025-02-01', statut_client: 'regle' },
+        { type_echeance: 'solde_amo_paiement', montant_ttc: 990, date_paiement: null, statut_client: 'en_attente' },
+      ],
+    })
+    const r = calculateSoldeAmoReel(d)
+    expect(r.hasTranches).toBe(true)
+    expect(r.recognizedHt).toBe(900)   // seule la tranche réglée est reconnue (pas les 1980)
+  })
 })
 
 // ── Apporteur client ──────────────────────────────────────────────────────────

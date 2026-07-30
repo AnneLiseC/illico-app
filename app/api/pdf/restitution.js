@@ -181,7 +181,7 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
         .sort((a, b) => new Date(a.date_paiement || a.created_at || 0) - new Date(b.date_paiement || b.created_at || 0))
       if (tranches.length > 0) {
         tranches.forEach((s, i) => honoLignes.push({
-          libelle: `Solde AMO — versement ${i + 1}`, date: dateDe(s), montant: toNum(s.montant_ttc), paye: true,
+          libelle: `Solde AMO — versement ${i + 1}`, date: dateDe(s), montant: toNum(s.montant_ttc), paye: estPaye(s),
         }))
       } else {
         const solde = findSuivi('solde_amo')

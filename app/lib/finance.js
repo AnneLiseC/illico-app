@@ -365,7 +365,9 @@ export function calculateHonorairesFinance(dossier) {
 // ─────────────────────────────────────────────────────────────────────────────
 export function calculateSoldeAmoReel(dossier) {
   const suivi  = Array.isArray(dossier?.suivi_financier) ? dossier.suivi_financier : []
-  const lignes = suivi.filter(s => s?.type_echeance === 'solde_amo_paiement')
+  // Reconnaissance à l'encaissement : une tranche « en attente » n'est pas encore
+  // perçue → jamais comptée en CA réel (elle le sera quand elle passera « payée »).
+  const lignes = suivi.filter(s => s?.type_echeance === 'solde_amo_paiement' && s?.statut_client !== 'en_attente')
   if (lignes.length === 0) return { hasTranches: false }
 
   // Ratio HT/TTC du composant solde AMO (base × taux). ttc=0 (pas d'AMO) → ratio 0.
