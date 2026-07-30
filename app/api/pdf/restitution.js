@@ -6,7 +6,7 @@ import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleShe
 import '../../lib/pdf/fonts.js'
 import RecapHonoraires from '../../lib/pdf/RecapHonoraires.js'
 import { formatNomClient } from '../../lib/clients.js'
-import { TVA_FRAIS } from '../../lib/finance.js'
+import { TVA_FRAIS, calculateHonorairesFinance } from '../../lib/finance.js'
 import { PDFDocument, degrees, rgb, StandardFonts } from 'pdf-lib'
 import { SEP_PAGE_GARDE } from '../../lib/sep_page_garde.js'
 import { SEP_DESCRIPTIF }    from '../../lib/sep_descriptif.js'
@@ -156,6 +156,10 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
     const estPaye = (s) => s?.statut_client === 'regle'
     const dateDe = (s) => s?.date_paiement ? new Date(s.date_paiement).toLocaleDateString('fr-FR') : '—'
     const honoLignes = []
+    // Solde AMO : porté à part car son total est le montant ATTENDU (base × taux),
+    // pas la somme des versements enregistrés. Les tranches sont des PAIEMENTS vers
+    // ce solde. Reste = attendu − encaissé (cohérent avec l'écran suivi financier).
+    let soldeAmoInfo = null
 
     if (typo === 'courtage') {
       const courtage = findSuivi('honoraires_courtage')
@@ -174,28 +178,35 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
       if (acompte && toNum(acompte.montant_ttc) > 0) {
         honoLignes.push({ libelle: 'Acompte AMO', date: dateDe(acompte), montant: toNum(acompte.montant_ttc), paye: estPaye(acompte) })
       }
-      // Solde AMO : tranches encaissées si elles existent (une ligne = un versement reçu),
-      // sinon la ligne solde_amo globale.
+      // Solde AMO attendu = base × taux (mêmes règles que l'écran, remise incluse).
+      let soldeAttendu = 0
+      try { soldeAttendu = toNum(calculateHonorairesFinance({ ...dossier, devis_artisans: devisList, suivi_financier: suiviFinancier })?.soldeAmo?.ttc) } catch { soldeAttendu = 0 }
       const tranches = (suiviFinancier || [])
         .filter(s => s.type_echeance === 'solde_amo_paiement' && toNum(s.montant_ttc) > 0)
         .sort((a, b) => new Date(a.date_paiement || a.created_at || 0) - new Date(b.date_paiement || b.created_at || 0))
-      if (tranches.length > 0) {
-        tranches.forEach((s, i) => honoLignes.push({
-          libelle: `Solde AMO — versement ${i + 1}`, date: dateDe(s), montant: toNum(s.montant_ttc), paye: estPaye(s),
-        }))
-      } else {
-        const solde = findSuivi('solde_amo')
-        if (solde && toNum(solde.montant_ttc) > 0) {
-          honoLignes.push({ libelle: 'Solde AMO', date: dateDe(solde), montant: toNum(solde.montant_ttc), paye: estPaye(solde) })
+      if (soldeAttendu > 0 || tranches.length > 0) {
+        const encaisse  = tranches.filter(estPaye).reduce((s, t) => s + toNum(t.montant_ttc), 0)
+        const enAttente = tranches.filter(t => !estPaye(t)).reduce((s, t) => s + toNum(t.montant_ttc), 0)
+        soldeAmoInfo = {
+          attendu: soldeAttendu > 0 ? soldeAttendu : (encaisse + enAttente),
+          encaisse, enAttente,
+          versements: tranches.map((s, i) => ({ libelle: `Versement ${i + 1}`, date: dateDe(s), montant: toNum(s.montant_ttc), paye: estPaye(s) })),
         }
       }
     }
 
-    if (honoLignes.length > 0) {
-      const totalHono = honoLignes.reduce((s, l) => s + l.montant, 0)
-      const totalPaye = honoLignes.filter(l => l.paye).reduce((s, l) => s + l.montant, 0)
+    if (honoLignes.length > 0 || soldeAmoInfo) {
+      const totalHono = honoLignes.reduce((s, l) => s + l.montant, 0) + (soldeAmoInfo ? soldeAmoInfo.attendu : 0)
+      const totalPaye = honoLignes.filter(l => l.paye).reduce((s, l) => s + l.montant, 0) + (soldeAmoInfo ? soldeAmoInfo.encaisse : 0)
       const reste = totalHono - totalPaye
       const resteColor = reste > 0 ? '#d97706' : '#00578e'
+      const ligne = (key, libelle, date, montant, statutTxt, statutColor, opts = {}) =>
+        React.createElement(View, { key, style: CS.paiementLigne },
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 2.5, color: opts.sub ? '#9ca3af' : GRIS, paddingLeft: opts.sub ? 10 : 0 }] }, libelle),
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, date),
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, montant),
+          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: statutColor, fontFamily: statutColor ? 'Roboto-Bold' : 'Roboto' }] }, statutTxt || ''),
+        )
       const children = [
         React.createElement(View, { key: 'head', style: CS.paiementHeader },
           React.createElement(Text, { style: CS.paiementHeaderTitle }, 'illiCO travaux — Honoraires'),
@@ -203,14 +214,18 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
         ),
       ]
       honoLignes.forEach((l, i) => children.push(
-        React.createElement(View, { key: `h${i}`, style: CS.paiementLigne },
-          React.createElement(Text, { style: [CS.paiementCol, { flex: 2.5, color: GRIS }] }, l.libelle),
-          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, l.date),
-          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, fmt(l.montant)),
-          React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: l.paye ? '#16a34a' : '#d97706', fontFamily: 'Roboto-Bold' }] },
-            l.paye ? 'Payé' : 'En attente'),
-        )
+        ligne(`h${i}`, l.libelle, l.date, fmt(l.montant), l.paye ? 'Payé' : 'En attente', l.paye ? '#16a34a' : '#d97706')
       ))
+      if (soldeAmoInfo) {
+        // Ligne solde : montant = ATTENDU ; statut = encaissé/attendu (jamais « payé » tant que < attendu).
+        const soldeReste = soldeAmoInfo.attendu - soldeAmoInfo.encaisse
+        children.push(ligne('solde', 'Solde AMO — attendu', '—', fmt(soldeAmoInfo.attendu),
+          `${fmt(soldeAmoInfo.encaisse)} encaissé`, soldeReste <= 0.01 ? '#16a34a' : '#00578e'))
+        soldeAmoInfo.versements.forEach((v, i) => children.push(
+          ligne(`v${i}`, `${v.libelle}`, v.date, fmt(v.montant), v.paye ? 'Payé' : 'En attente', v.paye ? '#16a34a' : '#d97706', { sub: true })
+        ))
+        if (soldeAmoInfo.enAttente > 0) children.push(ligne('att', 'dont en attente', '', fmt(soldeAmoInfo.enAttente), '', null, { sub: true }))
+      }
       children.push(
         React.createElement(View, { key: 'total', style: CS.paiementTotal },
           React.createElement(Text, { style: [CS.paiementCol, { flex: 2.5, fontFamily: 'Roboto-Bold' }] }, 'Total payé'),
