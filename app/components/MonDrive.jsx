@@ -157,20 +157,31 @@ export default function MonDrive({ profile, onError, onSucces }) {
   // sautent ce qui est déjà dans doc_index) → re-cliquer reprend là où ça s'était arrêté.
   const lancerRattrapage = async () => {
     onError?.(''); onSucces?.(''); setRattrapage({ done: 0, total: 0 })
-    const { data: doss } = await supabase.from('dossiers').select('id').eq('referente_id', profile.id)
+    const { data: doss } = await supabase.from('dossiers').select('id, contrat_url').eq('referente_id', profile.id)
     const ids = (doss || []).map(d => d.id)
-    if (!ids.length) { setRattrapage(null); onSucces?.('Aucun chantier à synchroniser.'); return }
-    const [{ data: docs }, { data: phts }, { data: crs }, { data: dvs }] = await Promise.all([
-      supabase.from('chantier_documents').select('id').in('dossier_id', ids),
-      supabase.from('photos').select('id, type_media').in('dossier_id', ids),
-      supabase.from('comptes_rendus').select('id, valide').in('dossier_id', ids),
-      supabase.from('devis_artisans').select('id, devis_pdf_path, devis_signe_path').in('dossier_id', ids),
+    // Artisans visibles (RLS société) : leurs fiches + docs admin partent aussi (Artisans/…).
+    const { data: arts } = await supabase.from('artisans').select('id, kbis_url, decennale_url, qualification_url, rib_url')
+    const artIds = (arts || []).map(a => a.id)
+    if (!ids.length && !artIds.length) { setRattrapage(null); onSucces?.('Aucun chantier à synchroniser.'); return }
+    const [{ data: docs }, { data: phts }, { data: crs }, { data: dvs }, { data: facs }, { data: fiches }] = await Promise.all([
+      ids.length ? supabase.from('chantier_documents').select('id').in('dossier_id', ids) : { data: [] },
+      ids.length ? supabase.from('photos').select('id, type_media').in('dossier_id', ids) : { data: [] },
+      ids.length ? supabase.from('comptes_rendus').select('id, valide').in('dossier_id', ids) : { data: [] },
+      ids.length ? supabase.from('devis_artisans').select('id, devis_pdf_path, devis_signe_path, pv_path').in('dossier_id', ids) : { data: [] },
+      ids.length ? supabase.from('factures_artisans').select('id, pdf_path').in('dossier_id', ids) : { data: [] },
+      artIds.length ? supabase.from('fiches_techniques').select('id, url').in('artisan_id', artIds) : { data: [] },
     ])
+    const DOCS_ARTISAN = ['kbis', 'decennale', 'qualification', 'rib']
     const jobs = [
       ...(docs || []).map(d => ['/api/drive/push', { document_id: d.id }]),
       ...(phts || []).filter(p => p.type_media === 'photo').map(p => ['/api/drive/push', { photo_id: p.id }]),
       ...(crs || []).filter(c => c.valide).map(c => ['/api/drive/push-cr', { cr_id: c.id }]),
       ...(dvs || []).filter(d => d.devis_pdf_path || d.devis_signe_path).map(d => ['/api/drive/push-devis', { devis_id: d.id }]),
+      ...(dvs || []).filter(d => d.pv_path).map(d => ['/api/drive/push-pv', { devis_id: d.id }]),
+      ...(facs || []).filter(f => f.pdf_path).map(f => ['/api/drive/push-facture', { facture_id: f.id }]),
+      ...(doss || []).filter(d => d.contrat_url).map(d => ['/api/drive/push-contrat', { dossier_id: d.id }]),
+      ...(fiches || []).filter(f => f.url).map(f => ['/api/drive/push-fiche', { fiche_id: f.id }]),
+      ...(arts || []).flatMap(a => DOCS_ARTISAN.filter(t => a[`${t}_url`]).map(t => ['/api/drive/push-artisan-doc', { artisan_id: a.id, type: t }])),
     ]
     const total = jobs.length
     setRattrapage({ done: 0, total })

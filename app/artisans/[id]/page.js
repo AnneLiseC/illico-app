@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, use } from 'react'
 import { supabase } from '../../lib/supabase'
+import { apiFetch } from '../../lib/api-auth-client'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../lib/auth-context'
 
@@ -113,6 +114,8 @@ export default function FicheArtisan({ params }) {
     const champ = type === 'kbis' ? 'kbis_url' : type === 'decennale' ? 'decennale_url' : type === 'qualification' ? 'qualification_url' : 'rib_url'
     const { error } = await supabase.from('artisans').update({ [champ]: chemin }).eq('id', id)
     if (error) { setErreur('Erreur : ' + error.message); setUploadEnCours(u => ({ ...u, [type]: false })); return }
+    // Miroir OneDrive → Artisans/<Artisan>/Documents administratif
+    apiFetch('/api/drive/push-artisan-doc', { method: 'POST', body: JSON.stringify({ artisan_id: id, type }) }).catch(() => {})
     setArtisan(a => ({ ...a, [champ]: chemin }))
     setSucces(`${type} uploadé ✓`)
     setUploadEnCours(u => ({ ...u, [type]: false }))
@@ -130,14 +133,18 @@ export default function FicheArtisan({ params }) {
       if (uploadError) uploadFicheOk = false
       else url = chemin
     }
-    const { error } = await supabase.from('fiches_techniques').insert({ artisan_id: id, nom: nouvelleFiche.nom, description: nouvelleFiche.description || null, url })
+    const { data: nf, error } = await supabase.from('fiches_techniques').insert({ artisan_id: id, nom: nouvelleFiche.nom, description: nouvelleFiche.description || null, url }).select().single()
     if (error) { setErreur('Erreur : ' + error.message) }
-    else { await chargerFiches(); setAjouterFiche(false); setNouvelleFiche({ nom: '', description: '', fichier: null }); if (uploadFicheOk) setSucces('Fiche ajoutée ✓'); else setErreur('Fiche ajoutée, mais échec de l\'upload du fichier — réessayez.') }
+    else {
+      if (url && nf) apiFetch('/api/drive/push-fiche', { method: 'POST', body: JSON.stringify({ fiche_id: nf.id }) }).catch(() => {})  // miroir OneDrive
+      await chargerFiches(); setAjouterFiche(false); setNouvelleFiche({ nom: '', description: '', fichier: null }); if (uploadFicheOk) setSucces('Fiche ajoutée ✓'); else setErreur('Fiche ajoutée, mais échec de l\'upload du fichier — réessayez.')
+    }
     setSavingFiche(false)
   }
 
   const supprimerFiche = async (ficheId) => {
     if (!confirm('Supprimer cette fiche technique ?')) return
+    await apiFetch('/api/drive/delete', { method: 'POST', body: JSON.stringify({ fiche_id: ficheId }) }).catch(() => {})  // retire le miroir OneDrive avant le delete
     const { error } = await supabase.from('fiches_techniques').delete().eq('id', ficheId)
     if (error) {
       const contrainteFK = error.code === '23503' || /foreign key/i.test(error.message || '')
