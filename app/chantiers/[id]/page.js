@@ -614,6 +614,9 @@ export default function FicheChantier({ params }) {
     libelle_autre: ''
   })
   const [uploadingFacturePdf, setUploadingFacturePdf] = useState(null)
+  // Factures d'honoraires (1 PDF par ligne du suivi : 'courtage' + une par tranche solde AMO).
+  const [honorairesFactures, setHonorairesFactures] = useState([])
+  const [uploadingHonoFacture, setUploadingHonoFacture] = useState(null)
 
   // CR avec IA
   const [crOuvert, setCrOuvert] = useState(null) // id du CR déplié dans la liste
@@ -730,6 +733,7 @@ export default function FicheChantier({ params }) {
       supabase.from('dossiers').select(`
         chantier_documents(*),
         factures_artisans(*),
+        honoraires_factures(*),
         comptes_rendus(*),
         messages(*, auteur:profiles(prenom, nom, role))
       `)
@@ -743,6 +747,7 @@ export default function FicheChantier({ params }) {
           if (!sec) return
           setDocuments(sec.chantier_documents || [])
           setFactures(sec.factures_artisans || [])
+          setHonorairesFactures(sec.honoraires_factures || [])
           setComptesRendus(sec.comptes_rendus || [])
           setMessages(sec.messages || [])
           setNbMsgNonLus((sec.messages || []).filter(m => m.auteur_role === 'client' && !m.lu_agence).length)
@@ -1848,6 +1853,55 @@ export default function FicheChantier({ params }) {
       method: 'POST', body: JSON.stringify({ facture_id: factureId }),
     }).catch(() => {})
   }
+
+  // ── Factures d'honoraires (suivi financier) — 1 PDF par ligne ──
+  // Table dédiée honoraires_factures, découplée du toggle réglé/en attente (la ligne
+  // courtage/acompte AMO est éphémère → un pdf_path porté par elle serait perdu à la
+  // décoche). Clé = 'courtage' (ligne courtage/acompte AMO) | id de tranche solde AMO.
+  const chargerHonorairesFactures = async () => {
+    const { data } = await supabase.from('honoraires_factures').select('*').eq('dossier_id', id)
+    setHonorairesFactures(data || [])
+  }
+  const pousserHonoFactureDrive = (hfId) => {
+    if (!hfId) return
+    apiFetch('/api/drive/push-honoraire-facture', {
+      method: 'POST', body: JSON.stringify({ honoraire_facture_id: hfId }),
+    }).catch(() => {})
+  }
+  const retirerHonoFactureDrive = (hfId) => {
+    if (!hfId) return Promise.resolve()
+    return apiFetch('/api/drive/delete', {
+      method: 'POST', body: JSON.stringify({ honoraire_facture_id: hfId }),
+    }).catch(() => {})
+  }
+  // Upload/remplacement du PDF de facture d'honoraire pour une clé (upsert dossier+clé).
+  const uploadHonoFacture = async (cle, fichier) => {
+    if (!fichier) return
+    setUploadingHonoFacture(cle)
+    const ext = fichier.name.split('.').pop()
+    const chemin = `chantiers/${id}/honoraires/${cle}.${ext}`
+    const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+    if (error) { setErreur('Erreur upload : ' + error.message); setUploadingHonoFacture(null); return }
+    const { data: row, error: upErr } = await supabase.from('honoraires_factures')
+      .upsert({ dossier_id: id, cle, pdf_path: chemin, nom: fichier.name, updated_at: new Date().toISOString() }, { onConflict: 'dossier_id,cle' })
+      .select().single()
+    if (upErr) { setErreur('Erreur : ' + upErr.message); setUploadingHonoFacture(null); return }
+    if (row?.id) pousserHonoFactureDrive(row.id)   // miroir OneDrive
+    await chargerHonorairesFactures()
+    setUploadingHonoFacture(null)
+    setSucces('Facture honoraire ajoutée ✓')
+  }
+  const supprimerHonoFacture = async (hf) => {
+    if (!confirm('Retirer cette facture d\'honoraire ?')) return
+    await retirerHonoFactureDrive(hf.id)   // miroir : retirer AVANT le delete (item_id)
+    if (hf.pdf_path) {
+      const { error: rmErr } = await supabase.storage.from('documents').remove([hf.pdf_path])
+      if (rmErr) console.error('Suppression PDF honoraire (non bloquant) :', rmErr.message)
+    }
+    const { error } = await supabase.from('honoraires_factures').delete().eq('id', hf.id)
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    await chargerHonorairesFactures()
+  }
   // Miroir OneDrive : contrat signé (→ Autres/Administratif), PV de réception
   // (→ Documents artisans/<Artisan>), fiche technique (→ Artisans/<Artisan>/Fiches techniques).
   const pousserContratDrive = () => {
@@ -2767,8 +2821,19 @@ export default function FicheChantier({ params }) {
   const deleteSoldeAmoPaiement = async (rowId) => {
     const { error } = await supabase.rpc('solde_amo_paiement_delete', { p_id: rowId })
     if (error) { setErreur('Erreur : ' + error.message); return }
+    // Facture d'honoraire éventuellement attachée à cette tranche (clé = id de tranche) :
+    // on la retire aussi (Drive + storage + ligne) pour ne pas laisser d'orphelin.
+    const hfOrphan = honorairesFactures.find(h => h.cle === rowId)
+    if (hfOrphan) await supprimerHonoFactureSilencieux(hfOrphan)
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
+    await chargerHonorairesFactures()
+  }
+  // Variante sans confirm ni reload (appelée en cascade depuis la suppression de tranche).
+  const supprimerHonoFactureSilencieux = async (hf) => {
+    await retirerHonoFactureDrive(hf.id)
+    if (hf.pdf_path) { try { await supabase.storage.from('documents').remove([hf.pdf_path]) } catch { /* best effort */ } }
+    await supabase.from('honoraires_factures').delete().eq('id', hf.id)
   }
 
   const convertirEnAMO = async () => {
@@ -4238,6 +4303,38 @@ export default function FicheChantier({ params }) {
           </div>
         )
 
+        // Emplacement PDF d'une facture d'honoraire (1 par ligne), même visuel « Voir PDF /
+        // + PDF » que les factures artisans. `cle` = 'courtage' | id de tranche solde AMO.
+        const honoPdfSlot = (cle) => {
+          const hf = honorairesFactures.find(h => h.cle === cle)
+          return (
+            <div style={{display:'flex', alignItems:'center', gap:'var(--space-3)', padding:'2px 14px 4px'}}>
+              {hf?.pdf_path ? (
+                <>
+                  <button onClick={() => ouvrirDocument(hf.pdf_path, hf.nom || 'Facture honoraire.pdf')}
+                    style={{fontSize:'var(--text-xs)', color:'var(--ink-900)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>📄 Voir facture</button>
+                  <button onClick={() => supprimerHonoFacture(hf)}
+                    title="Retirer le PDF"
+                    style={{fontSize:'var(--text-md)', color:'var(--ink-500)', background:'none', border:'none', cursor:'pointer', padding:'0 4px'}}
+                    onMouseEnter={e => { e.currentTarget.style.color = 'var(--bad-strong)' }}
+                    onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-500)' }}>✕</button>
+                </>
+              ) : (
+                <label style={{
+                  fontSize:'var(--text-xs)', cursor: uploadingHonoFacture === cle ? 'wait' : 'pointer',
+                  padding:'2px 8px', borderRadius:6, border:'1px solid',
+                  color: uploadingHonoFacture === cle ? 'var(--ink-400)' : 'var(--ink-900)',
+                  borderColor: uploadingHonoFacture === cle ? 'var(--ink-200)' : '#c7d2fe',
+                }}>
+                  {uploadingHonoFacture === cle ? 'Upload…' : '+ Facture PDF'}
+                  <input type="file" accept=".pdf" style={{display:'none'}} disabled={uploadingHonoFacture === cle}
+                    onChange={e => e.target.files[0] && uploadHonoFacture(cle, e.target.files[0])} />
+                </label>
+              )}
+            </div>
+          )
+        }
+
         // Bouton qui ouvre le formulaire d'ajout PRÉ-REMPLI (acompte / solde / autre).
         // `primary` = action forte (Facturer le solde) : bouton plein bleu, dominant.
         // Sinon = ajout secondaire : lien discret, pour ne pas concurrencer l'action.
@@ -4461,15 +4558,18 @@ export default function FicheChantier({ params }) {
 
               {/* Honoraires courtage — AMO, ou courtage SANS travaux supplémentaires (inchangé) */}
               {(dossier.typologie === 'amo' || (dossier.typologie === 'courtage' && suiviCourtageTS.length === 0)) && (
-                <EcheanceRow
-                  label="Honoraires courtage"
-                  sub={`${tauxCourtagePct}% travaux HT · ${fmt(honorairesCourtagePrev)}`}
-                  statut={suiviCourtage?.statut_client || 'en_attente'}
-                  date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || null}
-                  onSetPaid={d => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'regle', d)}
-                  onUnsetPaid={() => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'en_attente')}
-                  fmtDateFn={fmtD}
-                />
+                <>
+                  <EcheanceRow
+                    label="Honoraires courtage"
+                    sub={`${tauxCourtagePct}% travaux HT · ${fmt(honorairesCourtagePrev)}`}
+                    statut={suiviCourtage?.statut_client || 'en_attente'}
+                    date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || null}
+                    onSetPaid={d => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'regle', d)}
+                    onUnsetPaid={() => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'en_attente')}
+                    fmtDateFn={fmtD}
+                  />
+                  {honoPdfSlot('courtage')}
+                </>
               )}
 
               {/* Courtage AVEC travaux supplémentaires : initial (hors TS) + 1 ligne par TS + total.
@@ -4564,23 +4664,26 @@ export default function FicheChantier({ params }) {
                         {tranchesAmo.map(t => {
                           const paye = t.statut_client === 'regle'
                           return (
-                          <div key={t.id} style={{background:'var(--surface-2)', borderRadius:8, padding:'var(--space-3)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:'var(--space-3)', flexWrap:'wrap'}}>
-                            <span style={{fontSize:'var(--text-xs)', fontWeight:600, color:'var(--ink-700)'}}>
-                              Solde AMO — <span className="tnum">{fmt(Number(t.montant_ttc || 0))}</span> TTC
-                            </span>
-                            <div style={{display:'flex', alignItems:'center', gap:'var(--space-3)'}}>
-                              <FactureDatePill date={t.date_paiement} onSet={d => majDateTrancheAmo(t.id, d)} fmtDateFn={fmtD} />
-                              <button type="button" onClick={() => toggleTrancheAmoStatut(t)}
-                                title={paye ? 'Marquer en attente' : 'Marquer payé'}
-                                style={{fontSize:'var(--text-xs)', padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer', background: paye ? TONE_BG.ok : TONE_BG.warn, color: paye ? TONE_FG.ok : TONE_FG.warn}}>
-                                {paye ? '✓ Payé' : '⏳ En attente'}
-                              </button>
-                              <button type="button" onClick={() => deleteSoldeAmoPaiement(t.id)}
-                                title="Supprimer cette tranche"
-                                style={{fontSize:'var(--text-md)', color:'var(--ink-500)', background:'none', border:'none', cursor:'pointer', padding:'0 4px'}}
-                                onMouseEnter={e => { e.currentTarget.style.color = 'var(--bad-strong)' }}
-                                onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-500)' }}>✕</button>
+                          <div key={t.id} style={{background:'var(--surface-2)', borderRadius:8, padding:'var(--space-3)', display:'flex', flexDirection:'column', gap:'var(--space-2)'}}>
+                            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:'var(--space-3)', flexWrap:'wrap'}}>
+                              <span style={{fontSize:'var(--text-xs)', fontWeight:600, color:'var(--ink-700)'}}>
+                                Solde AMO — <span className="tnum">{fmt(Number(t.montant_ttc || 0))}</span> TTC
+                              </span>
+                              <div style={{display:'flex', alignItems:'center', gap:'var(--space-3)'}}>
+                                <FactureDatePill date={t.date_paiement} onSet={d => majDateTrancheAmo(t.id, d)} fmtDateFn={fmtD} />
+                                <button type="button" onClick={() => toggleTrancheAmoStatut(t)}
+                                  title={paye ? 'Marquer en attente' : 'Marquer payé'}
+                                  style={{fontSize:'var(--text-xs)', padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer', background: paye ? TONE_BG.ok : TONE_BG.warn, color: paye ? TONE_FG.ok : TONE_FG.warn}}>
+                                  {paye ? '✓ Payé' : '⏳ En attente'}
+                                </button>
+                                <button type="button" onClick={() => deleteSoldeAmoPaiement(t.id)}
+                                  title="Supprimer cette tranche"
+                                  style={{fontSize:'var(--text-md)', color:'var(--ink-500)', background:'none', border:'none', cursor:'pointer', padding:'0 4px'}}
+                                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--bad-strong)' }}
+                                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-500)' }}>✕</button>
+                              </div>
                             </div>
+                            {honoPdfSlot(t.id)}
                           </div>
                           )
                         })}

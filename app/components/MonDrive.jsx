@@ -163,12 +163,13 @@ export default function MonDrive({ profile, onError, onSucces }) {
     const { data: arts } = await supabase.from('artisans').select('id, kbis_url, decennale_url, qualification_url, rib_url')
     const artIds = (arts || []).map(a => a.id)
     if (!ids.length && !artIds.length) { setRattrapage(null); onSucces?.('Aucun chantier à synchroniser.'); return }
-    const [{ data: docs }, { data: phts }, { data: crs }, { data: dvs }, { data: facs }, { data: fiches }] = await Promise.all([
+    const [{ data: docs }, { data: phts }, { data: crs }, { data: dvs }, { data: facs }, { data: honos }, { data: fiches }] = await Promise.all([
       ids.length ? supabase.from('chantier_documents').select('id').in('dossier_id', ids) : { data: [] },
       ids.length ? supabase.from('photos').select('id, type_media').in('dossier_id', ids) : { data: [] },
       ids.length ? supabase.from('comptes_rendus').select('id, valide').in('dossier_id', ids) : { data: [] },
       ids.length ? supabase.from('devis_artisans').select('id, devis_pdf_path, devis_signe_path, pv_path').in('dossier_id', ids) : { data: [] },
       ids.length ? supabase.from('factures_artisans').select('id, pdf_path').in('dossier_id', ids) : { data: [] },
+      ids.length ? supabase.from('honoraires_factures').select('id, pdf_path').in('dossier_id', ids) : { data: [] },
       artIds.length ? supabase.from('fiches_techniques').select('id, url').in('artisan_id', artIds) : { data: [] },
     ])
     const DOCS_ARTISAN = ['kbis', 'decennale', 'qualification', 'rib']
@@ -179,6 +180,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
       ...(dvs || []).filter(d => d.devis_pdf_path || d.devis_signe_path).map(d => ['/api/drive/push-devis', { devis_id: d.id }]),
       ...(dvs || []).filter(d => d.pv_path).map(d => ['/api/drive/push-pv', { devis_id: d.id }]),
       ...(facs || []).filter(f => f.pdf_path).map(f => ['/api/drive/push-facture', { facture_id: f.id }]),
+      ...(honos || []).filter(h => h.pdf_path).map(h => ['/api/drive/push-honoraire-facture', { honoraire_facture_id: h.id }]),
       ...(doss || []).filter(d => d.contrat_url).map(d => ['/api/drive/push-contrat', { dossier_id: d.id }]),
       ...(fiches || []).filter(f => f.url).map(f => ['/api/drive/push-fiche', { fiche_id: f.id }]),
       ...(arts || []).flatMap(a => DOCS_ARTISAN.filter(t => a[`${t}_url`]).map(t => ['/api/drive/push-artisan-doc', { artisan_id: a.id, type: t }])),

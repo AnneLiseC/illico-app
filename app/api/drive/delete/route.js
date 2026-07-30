@@ -32,6 +32,7 @@ export async function POST(request) {
   else if (body.cr_id) q = q.eq('cr_id', body.cr_id)
   else if (body.devis_id) q = q.eq('devis_id', body.devis_id)
   else if (body.facture_id) q = q.eq('facture_id', body.facture_id)
+  else if (body.honoraire_facture_id) q = q.eq('honoraire_facture_id', body.honoraire_facture_id)
   else if (body.contrat_dossier_id) q = q.eq('contrat_dossier_id', body.contrat_dossier_id)
   else if (body.pv_devis_id) q = q.eq('pv_devis_id', body.pv_devis_id)
   else if (body.fiche_id) q = q.eq('fiche_id', body.fiche_id)
