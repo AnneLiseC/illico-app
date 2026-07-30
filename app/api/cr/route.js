@@ -7,6 +7,22 @@ import heicConvert from 'heic-convert'
 import { requireRole } from '../../lib/api-auth'
 import { formatNomClient } from '../../lib/clients'
 
+// Le traitement des images + l'appel Claude peuvent être longs : on autorise
+// jusqu'à 120 s (l'API route transcribe monte déjà à 300 s sur ce plan Vercel).
+export const maxDuration = 120
+
+// ── Garde-fous génération CR ──────────────────────────────────────────────
+// Bornent le payload envoyé à Claude : sans ça, une grosse série de photos fait
+// exploser la mémoire de la fonction (tout est chargé en base64) ET dépasse la
+// limite de requête de l'API (~32 Mo). Au-delà, les médias en trop sont IGNORÉS
+// et signalés à l'utilisateur (jamais tronqué en silence).
+const CR_MAX_MEDIAS = 20                      // nb max d'images + PDF joints
+const CR_MAX_MEDIA_BYTES = 18 * 1024 * 1024   // budget cumulé (longueur base64), marge sous la limite API
+// Appel Claude : timeout par tentative + retries sur erreurs transitoires (surcharge, réseau).
+const CR_CLAUDE_TIMEOUT_MS = 90_000
+const CR_CLAUDE_RETRIES = 2                    // 3 tentatives au total
+const CR_RETRIABLE_STATUS = new Set([408, 429, 500, 502, 503, 504, 529])
+
 let _supabaseAdmin
 function getSupabaseAdmin() {
   if (!_supabaseAdmin) _supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -330,6 +346,22 @@ export async function POST(request) {
 
     const userContent = []
 
+    // Budget médias : borne le nombre ET la taille cumulée (base64) des pièces
+    // jointes. Dès qu'une limite est atteinte, les médias suivants sont ignorés
+    // et listés dans mediasIgnores pour être signalés à l'utilisateur.
+    let mediaCount = 0
+    let mediaBytes = 0
+    const mediasIgnores = []
+    const budgetMediaOk = (donneesBase64, nom) => {
+      if (mediaCount >= CR_MAX_MEDIAS || mediaBytes + donneesBase64.length > CR_MAX_MEDIA_BYTES) {
+        mediasIgnores.push(nom)
+        return false
+      }
+      mediaCount += 1
+      mediaBytes += donneesBase64.length
+      return true
+    }
+
     // Documents du chantier sélectionnés
     for (const doc of (docsPaths || [])) {
       try {
@@ -337,10 +369,11 @@ export async function POST(request) {
         if (!fileData) { console.error('CR: download document vide', doc.path); continue }
         const buf = Buffer.from(await fileData.arrayBuffer())
         if (doc.type_mime?.includes('pdf')) {
-          userContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buf.toString('base64') } })
+          const data = buf.toString('base64')
+          if (budgetMediaOk(data, doc.path)) userContent.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } })
         } else {
           const img = await bufferToClaudeImage(buf, doc.type_mime || doc.path)
-          if (img) userContent.push({ type: 'image', source: { type: 'base64', ...img } })
+          if (img) { if (budgetMediaOk(img.data, doc.path)) userContent.push({ type: 'image', source: { type: 'base64', ...img } }) }
           else console.error('CR: type de document non supporté (ignoré) :', doc.type_mime, doc.path)
         }
       } catch (e) { console.error('CR: échec traitement document', doc.path, e.message) }
@@ -355,9 +388,11 @@ export async function POST(request) {
         const buf = Buffer.from(await fileData.arrayBuffer())
         const img = await bufferToClaudeImage(buf, path)   // HEIC (iPhone) converti en JPEG
         if (!img) { console.error('CR: format photo non supporté (ignoré) :', path); continue }
-        userContent.push({ type: 'image', source: { type: 'base64', ...img } })
+        if (budgetMediaOk(img.data, path)) userContent.push({ type: 'image', source: { type: 'base64', ...img } })
       } catch (e) { console.error('CR: échec traitement photo', path, e.message) }
     }
+
+    if (mediasIgnores.length) console.warn(`CR: ${mediasIgnores.length} média(s) ignoré(s) (limite ${CR_MAX_MEDIAS} / ${Math.round(CR_MAX_MEDIA_BYTES / 1024 / 1024)} Mo) :`, mediasIgnores)
 
     // Comptes rendus précédents en contexte (continuité entre visites). Fournis comme
     // référence : l'IA s'en sert pour la cohérence (rappel de décisions, points ouverts),
@@ -385,25 +420,56 @@ export async function POST(request) {
         : userText) + crsContexte,
     })
 
-    // Appel Claude API
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 8000,
-        temperature: 0.3,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userContent }],
-      }),
+    // Appel Claude API — timeout par tentative (AbortController) + retries sur
+    // erreurs transitoires (429 rate limit, 529 surcharge, 5xx, réseau/timeout).
+    // Sans ça, un pic de charge côté API faisait échouer la génération sans 2e chance,
+    // et un appel qui pend bloquait la fonction jusqu'au kill de la plateforme.
+    const claudeBody = JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 8000,
+      temperature: 0.3,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userContent }],
     })
 
+    let claudeRes = null
+    let derniereErreur = null
+    for (let tentative = 0; tentative <= CR_CLAUDE_RETRIES; tentative++) {
+      if (tentative > 0) await new Promise(r => setTimeout(r, 800 * 2 ** (tentative - 1)))   // backoff 0,8s puis 1,6s
+      const ctrl = new AbortController()
+      const minuteur = setTimeout(() => ctrl.abort(), CR_CLAUDE_TIMEOUT_MS)
+      try {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': process.env.ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+          },
+          body: claudeBody,
+          signal: ctrl.signal,
+        })
+        clearTimeout(minuteur)
+        if (res.ok) { claudeRes = res; break }
+        if (CR_RETRIABLE_STATUS.has(res.status) && tentative < CR_CLAUDE_RETRIES) {
+          derniereErreur = new Error(`Claude API ${res.status}`)
+          console.warn(`CR: Claude ${res.status}, nouvelle tentative (${tentative + 1}/${CR_CLAUDE_RETRIES})`)
+          continue
+        }
+        claudeRes = res   // erreur non-retriable (ex: 400) → on laisse l'appelant lire le message
+        break
+      } catch (e) {   // abort (timeout) ou erreur réseau → retriable
+        clearTimeout(minuteur)
+        derniereErreur = e
+        console.warn(`CR: échec appel Claude (${e.name === 'AbortError' ? 'timeout' : e.message}), tentative ${tentative + 1}`)
+      }
+    }
+
+    if (!claudeRes) {
+      return NextResponse.json({ error: `Service IA indisponible (${derniereErreur?.message || 'timeout'}). Réessaie dans un instant.` }, { status: 503 })
+    }
     if (!claudeRes.ok) {
-      const err = await claudeRes.json()
+      const err = await claudeRes.json().catch(() => ({}))
       return NextResponse.json({ error: err.error?.message || 'Erreur Claude API' }, { status: 500 })
     }
 
@@ -415,7 +481,12 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Réponse IA invalide', raw: rawText }, { status: 500 })
     }
 
-    return NextResponse.json({ cr: crJSON })
+    // Signale à l'utilisateur si des médias ont été écartés (CR possiblement incomplet).
+    const avertissement = mediasIgnores.length
+      ? `${mediasIgnores.length} image(s)/document(s) non transmis à l'IA (limite de ${CR_MAX_MEDIAS} pièces ou taille dépassée) — le CR peut être incomplet.`
+      : undefined
+
+    return NextResponse.json({ cr: crJSON, avertissement })
   } catch (err) {
     console.error('CR AI error DETAIL:', err.message, err.stack)
     return NextResponse.json({ error: err.message || 'Erreur serveur' }, { status: 500 })

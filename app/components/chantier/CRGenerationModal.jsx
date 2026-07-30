@@ -79,6 +79,9 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
       }
       const data = await res.json()
       if (data.error) { setErreur('Erreur IA : ' + data.error); return }
+      // Avertissement non bloquant : des images/documents ont été écartés (limite
+      // atteinte) → le CR peut être incomplet. On le signale sans bloquer la suite.
+      if (data.avertissement) setErreur('⚠️ ' + data.avertissement)
       setCrGenere(data.cr)
       setCrSectionsEditees(data.cr.sections.map(s => ({ ...s })))
       setCrEtape(3)
