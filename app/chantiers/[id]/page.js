@@ -425,6 +425,7 @@ function FichesTechPanel({ artisanId, dossierId, fichesCochees, onToggle, onCrea
       .insert({ artisan_id: artisanId, nom: nouvelleFiche.nom.trim(), description: nouvelleFiche.description || null, url })
       .select().single()
     if (error || !nouvelle) { setSavingFiche(false); return }
+    if (url) apiFetch('/api/drive/push-fiche', { method: 'POST', body: JSON.stringify({ fiche_id: nouvelle.id }) }).catch(() => {})  // miroir OneDrive
     await supabase.from('chantier_fiches_techniques')
       .insert({ dossier_id: dossierId, fiche_technique_id: nouvelle.id, artisan_id: artisanId })
     const { data } = await supabase.from('fiches_techniques').select('*').eq('artisan_id', artisanId).order('nom')
@@ -1456,6 +1457,7 @@ export default function FicheChantier({ params }) {
       : { contrat_url: chemin, contrat_signe: true, date_signature_contrat: today }
     const { error: updErr } = await supabase.from('dossiers').update(payload).eq('id', id)
     if (updErr) { setErreur('Erreur : ' + updErr.message); setUploadingContrat(false); return }
+    pousserContratDrive()   // miroir OneDrive → Autres/Administratif
     setDossier(d => ({ ...d, ...payload }))
     setSucces('Contrat ajouté ✓')
     setUploadingContrat(false)
@@ -1582,7 +1584,7 @@ export default function FicheChantier({ params }) {
         const chemin = `chantiers/${id}/factures/${factureInseree.id}.${ext}`
         const { error: uploadErr } = await supabase.storage.from('documents').upload(chemin, nouvelleFacture.fichier)
         if (uploadErr) uploadFactureOk = false
-        else await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureInseree.id)
+        else { await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureInseree.id); pousserFactureDrive(factureInseree.id) }
       }
       // E5 — synchro suivi_financier si payé à la création
       if (nouvelleFacture.statut === 'paye') {
@@ -1613,6 +1615,8 @@ export default function FicheChantier({ params }) {
 
   const supprimerFactureArtisan = async (factureId, pdfPath) => {
     if (!confirm('Supprimer cette facture ?')) return
+    // Miroir OneDrive : retirer la copie AVANT le cascade FK (sinon on perd l'item_id).
+    await retirerFactureDrive(factureId)
     // Storage best-effort : un fichier qui résiste ne doit pas bloquer la suppression
     // de la ligne (l'orphelin éventuel est sans gravité), mais on le signale.
     if (pdfPath) {
@@ -1674,6 +1678,7 @@ export default function FicheChantier({ params }) {
     if (!error) {
       const { error: updErr } = await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureId)
       if (updErr) { setErreur('Erreur : ' + updErr.message); setUploadingFacturePdf(null); return }
+      pousserFactureDrive(factureId)   // miroir OneDrive
       await chargerFactures()
       setSucces('PDF facture uploadé ✓')
     } else { setErreur('Erreur upload : ' + error.message) }
@@ -1824,6 +1829,33 @@ export default function FicheChantier({ params }) {
     return apiFetch('/api/drive/delete', {
       method: 'POST', body: JSON.stringify({ devis_id: devisId }),
     }).catch(() => {})
+  }
+  // Miroir OneDrive des factures artisan (suivi financier) → Documents artisans/<Artisan>/Factures/.
+  // Sortant, non bloquant : si pas de Drive, la route saute proprement.
+  const pousserFactureDrive = (factureId) => {
+    if (!factureId) return
+    apiFetch('/api/drive/push-facture', {
+      method: 'POST', body: JSON.stringify({ facture_id: factureId }),
+    }).catch(() => {})
+  }
+  const retirerFactureDrive = (factureId) => {
+    if (!factureId) return Promise.resolve()
+    return apiFetch('/api/drive/delete', {
+      method: 'POST', body: JSON.stringify({ facture_id: factureId }),
+    }).catch(() => {})
+  }
+  // Miroir OneDrive : contrat signé (→ Autres/Administratif), PV de réception
+  // (→ Documents artisans/<Artisan>), fiche technique (→ Artisans/<Artisan>/Fiches techniques).
+  const pousserContratDrive = () => {
+    apiFetch('/api/drive/push-contrat', { method: 'POST', body: JSON.stringify({ dossier_id: id }) }).catch(() => {})
+  }
+  const pousserPVDrive = (devisId) => {
+    if (!devisId) return
+    apiFetch('/api/drive/push-pv', { method: 'POST', body: JSON.stringify({ devis_id: devisId }) }).catch(() => {})
+  }
+  const retirerPVDrive = (devisId) => {
+    if (!devisId) return Promise.resolve()
+    return apiFetch('/api/drive/delete', { method: 'POST', body: JSON.stringify({ pv_devis_id: devisId }) }).catch(() => {})
   }
 
   const uploadDevisPdf = async (devisId, fichier) => {
@@ -2099,6 +2131,7 @@ export default function FicheChantier({ params }) {
     if (!error) {
       const { error: pathErr } = await supabase.from('devis_artisans').update({ pv_path: chemin }).eq('id', devisId)
       if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
+      pousserPVDrive(devisId)   // miroir OneDrive → Documents artisans/<Artisan>
       await chargerDevis()
       setSucces('PV uploadé ✓')
     } else { setErreur('Erreur upload PV : ' + error.message) }
@@ -2106,6 +2139,7 @@ export default function FicheChantier({ params }) {
   }
   const supprimerPV = async (devisId, path) => {
     if (!confirm('Supprimer le PV de réception ?')) return
+    await retirerPVDrive(devisId)   // retire le miroir OneDrive avant de vider pv_path
     const { error: rmErr } = await supabase.storage.from('documents').remove([path])
     if (rmErr) console.error('Suppression PDF PV (non bloquant) :', rmErr.message)
     const { error } = await supabase.from('devis_artisans').update({ pv_path: null }).eq('id', devisId)

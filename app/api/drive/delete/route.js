@@ -31,7 +31,12 @@ export async function POST(request) {
   else if (body.photo_id) q = q.eq('photo_id', body.photo_id)
   else if (body.cr_id) q = q.eq('cr_id', body.cr_id)
   else if (body.devis_id) q = q.eq('devis_id', body.devis_id)
-  else return NextResponse.json({ error: 'document_id, photo_id, cr_id ou devis_id requis' }, { status: 400 })
+  else if (body.facture_id) q = q.eq('facture_id', body.facture_id)
+  else if (body.contrat_dossier_id) q = q.eq('contrat_dossier_id', body.contrat_dossier_id)
+  else if (body.pv_devis_id) q = q.eq('pv_devis_id', body.pv_devis_id)
+  else if (body.fiche_id) q = q.eq('fiche_id', body.fiche_id)
+  else if (body.artisan_id && body.artisan_doc_type) q = q.eq('artisan_id', body.artisan_id).eq('artisan_doc_type', body.artisan_doc_type)
+  else return NextResponse.json({ error: 'clé de suppression requise' }, { status: 400 })
 
   const { data: idx } = await q.maybeSingle()
   if (!idx) return NextResponse.json({ ok: true, nothing: true }) // jamais miroité → rien à faire
