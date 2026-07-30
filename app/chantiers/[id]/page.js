@@ -2700,13 +2700,26 @@ export default function FicheChantier({ params }) {
   // Solde AMO échelonné — bascule le statut d'une tranche Payé ↔ En attente
   // (comme une facture artisan). Update direct sous la RLS de l'appelant.
   const toggleTrancheAmoStatut = async (tranche) => {
-    const regle = tranche.statut_client === 'regle'
+    const versPaye = tranche.statut_client !== 'regle'
+    // Statut et date indépendants (comme les factures artisans) : on ne perd pas la
+    // date en repassant « en attente » ; si on paie sans date, on met aujourd'hui.
     const { error } = await supabase.from('suivi_financier')
       .update({
-        statut_client: regle ? 'en_attente' : 'regle',
-        date_paiement: regle ? null : (tranche.date_paiement || new Date().toISOString().slice(0, 10)),
+        statut_client: versPaye ? 'regle' : 'en_attente',
+        date_paiement: versPaye ? (tranche.date_paiement || new Date().toISOString().slice(0, 10)) : (tranche.date_paiement || null),
       })
       .eq('id', tranche.id).eq('type_echeance', 'solde_amo_paiement')
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(data || [])
+  }
+
+  // Solde AMO échelonné — pose/modifie la date de paiement d'une tranche (pastille
+  // « ＋ date » comme les factures artisans). Indépendant du statut.
+  const majDateTrancheAmo = async (trancheId, date) => {
+    const { error } = await supabase.from('suivi_financier')
+      .update({ date_paiement: date || null })
+      .eq('id', trancheId).eq('type_echeance', 'solde_amo_paiement')
     if (error) { setErreur('Erreur : ' + error.message); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
@@ -4513,16 +4526,23 @@ export default function FicheChantier({ params }) {
                         {tranchesAmo.map(t => {
                           const paye = t.statut_client === 'regle'
                           return (
-                          <div key={t.id} className="suivi-amo-tranche">
-                            <span className="tnum" style={{fontWeight:600}}>{fmt(Number(t.montant_ttc || 0))} TTC</span>
-                            <span style={{fontSize:12, color:'var(--ink-500)'}}>{t.date_paiement ? fmtD(t.date_paiement) : '—'}</span>
-                            <button type="button" onClick={() => toggleTrancheAmoStatut(t)}
-                              title={paye ? 'Marquer en attente' : 'Marquer payé'}
-                              style={{fontSize:11, fontWeight:700, padding:'2px 9px', borderRadius:99, cursor:'pointer', border:'1px solid', borderColor: paye ? '#bbf7d0' : '#fed7aa', background: paye ? '#f0fdf4' : '#fff7ed', color: paye ? '#16a34a' : '#d97706'}}>
-                              {paye ? 'Payé' : 'En attente'}
-                            </button>
-                            <button type="button" className="suivi-amo-del" title="Supprimer cette tranche"
-                              onClick={() => deleteSoldeAmoPaiement(t.id)}>✕</button>
+                          <div key={t.id} style={{background:'var(--surface-2)', borderRadius:8, padding:'var(--space-3)', display:'flex', justifyContent:'space-between', alignItems:'center', gap:'var(--space-3)', flexWrap:'wrap'}}>
+                            <span style={{fontSize:'var(--text-xs)', fontWeight:600, color:'var(--ink-700)'}}>
+                              Solde AMO — <span className="tnum">{fmt(Number(t.montant_ttc || 0))}</span> TTC
+                            </span>
+                            <div style={{display:'flex', alignItems:'center', gap:'var(--space-3)'}}>
+                              <FactureDatePill date={t.date_paiement} onSet={d => majDateTrancheAmo(t.id, d)} fmtDateFn={fmtD} />
+                              <button type="button" onClick={() => toggleTrancheAmoStatut(t)}
+                                title={paye ? 'Marquer en attente' : 'Marquer payé'}
+                                style={{fontSize:'var(--text-xs)', padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer', background: paye ? TONE_BG.ok : TONE_BG.warn, color: paye ? TONE_FG.ok : TONE_FG.warn}}>
+                                {paye ? '✓ Payé' : '⏳ En attente'}
+                              </button>
+                              <button type="button" onClick={() => deleteSoldeAmoPaiement(t.id)}
+                                title="Supprimer cette tranche"
+                                style={{fontSize:'var(--text-md)', color:'var(--ink-500)', background:'none', border:'none', cursor:'pointer', padding:'0 4px'}}
+                                onMouseEnter={e => { e.currentTarget.style.color = 'var(--bad-strong)' }}
+                                onMouseLeave={e => { e.currentTarget.style.color = 'var(--ink-500)' }}>✕</button>
+                            </div>
                           </div>
                           )
                         })}
