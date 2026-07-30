@@ -4587,17 +4587,20 @@ export default function FicheChantier({ params }) {
                     lock={suiviCourtage?.statut_client === 'regle' && suiviCourtageTS.length > 0}
                     lockMsg="Le courtage initial ne peut pas être décoché tant qu'il existe des travaux supplémentaires (cela supprimerait la date de référence des TS). Supprimez d'abord les lignes TS."
                   />
+                  {honoPdfSlot('courtage')}
                   {suiviCourtageTS.map((l, i) => (
-                    <EcheanceRow
-                      key={l.id}
-                      label={`Courtage — travaux supplémentaires${suiviCourtageTS.length > 1 ? ` (TS ${i + 1})` : ''}`}
-                      sub={`${tauxCourtagePct}% travaux HT · ${fmt(Number(l.montant_ttc || 0))}`}
-                      statut={l.statut_client === 'regle' ? 'regle' : 'en_attente'}
-                      date={(l.statut_client === 'regle' && l.date_paiement) || null}
-                      onSetPaid={d => setCourtageTSPaye(l, true, d)}
-                      onUnsetPaid={() => setCourtageTSPaye(l, false)}
-                      fmtDateFn={fmtD}
-                    />
+                    <div key={l.id}>
+                      <EcheanceRow
+                        label={`Courtage — travaux supplémentaires${suiviCourtageTS.length > 1 ? ` (TS ${i + 1})` : ''}`}
+                        sub={`${tauxCourtagePct}% travaux HT · ${fmt(Number(l.montant_ttc || 0))}`}
+                        statut={l.statut_client === 'regle' ? 'regle' : 'en_attente'}
+                        date={(l.statut_client === 'regle' && l.date_paiement) || null}
+                        onSetPaid={d => setCourtageTSPaye(l, true, d)}
+                        onUnsetPaid={() => setCourtageTSPaye(l, false)}
+                        fmtDateFn={fmtD}
+                      />
+                      {honoPdfSlot(l.id)}
+                    </div>
                   ))}
                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'baseline', padding:'6px 14px', fontSize:12.5}}>
                     <span style={{color:'var(--ink-500)', fontWeight:600}}>Total courtage (initial + TS)</span>
