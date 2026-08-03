@@ -2923,6 +2923,44 @@ export default function FicheChantier({ params }) {
     setSaving(false)
   }
 
+  // Bascule d'un ESTIMO en chantier (Courtage ou AMO). RPC atomique : attribue une
+  // NOUVELLE référence CT/AM (prochain numéro libre de l'agence), marque
+  // frais_origine_estimo, conserve le montant ESTIMO comme frais de consultation.
+  const convertirEstimoEnChantier = async (cible) => {
+    const cibleLabel = cible === 'amo' ? 'AMO' : 'Courtage'
+    const ok = confirm(
+      `Basculer cet ESTIMO en chantier ${cibleLabel} ?\n\n` +
+      `• Le dossier reçoit une nouvelle référence ${cible === 'amo' ? 'AM' : 'CT'}.\n` +
+      `• Le montant ESTIMO devient le frais de consultation du dossier (tracé « ESTIMO »).\n` +
+      `• Déductible ou non des honoraires selon le statut des frais (réglages du dossier).\n` +
+      `• Le document d'estimation reste dans les documents du dossier.\n\n` +
+      `Cette action ne peut pas être annulée facilement.`
+    )
+    if (!ok) return
+    setSaving(true)
+    const { data: newRef, error } = await supabase.rpc('convertir_dossier_estimo_en_chantier', {
+      p_dossier_id: id,
+      p_cible: cible,
+      p_taux_amo: cible === 'amo' ? AMO_STANDARD * 100 : null,
+    })
+    if (error) {
+      setErreur('Erreur lors de la bascule : ' + error.message)
+      setSaving(false)
+      return
+    }
+    setDossier(d => ({
+      ...d,
+      typologie: cible,
+      reference: newRef || d.reference,
+      frais_origine_estimo: true,
+      honoraires_amo_taux: cible === 'amo' ? (d.honoraires_amo_taux ?? AMO_STANDARD * 100) : d.honoraires_amo_taux,
+    }))
+    const { data: newSuivi } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(newSuivi || [])
+    setSucces(`ESTIMO basculé en ${cibleLabel} ✓${newRef ? ` (réf ${newRef})` : ''}`)
+    setSaving(false)
+  }
+
   if (loading) return <div className="page-loading" />
   if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-500)'}}>Chantier introuvable</div>
 
@@ -3773,7 +3811,7 @@ export default function FicheChantier({ params }) {
           </div>
         )}
 
-        {/* Convertir typologie */}
+        {/* Convertir typologie (courtage ↔ amo) */}
         {(dossier.typologie === 'courtage' || dossier.typologie === 'amo') && (
           <div className="card" style={{padding:24}}>
             <h2 className="page" style={{fontSize:15, marginBottom:8}}>Convertir la typologie</h2>
@@ -3787,6 +3825,28 @@ export default function FicheChantier({ params }) {
               style={{fontSize:12.5, borderColor:'var(--warn)', color:'#a16207'}}>
               {dossier.typologie === 'courtage' ? '→ Convertir en AMO' : '→ Convertir en Courtage'}
             </button>
+          </div>
+        )}
+
+        {/* Bascule ESTIMO → chantier (Courtage ou AMO) */}
+        {dossier.typologie === 'estimo' && (
+          <div className="card" style={{padding:24}}>
+            <h2 className="page" style={{fontSize:15, marginBottom:8}}>Basculer en chantier</h2>
+            <p style={{fontSize:12, color:'var(--ink-500)', marginTop:0, marginBottom:14, lineHeight:1.5}}>
+              Transformer cet ESTIMO en chantier. Le dossier reçoit une nouvelle référence CT/AM, le montant ESTIMO
+              devient le frais de consultation du dossier (tracé « ESTIMO », déductible ou non des honoraires
+              selon les réglages), et le document d’estimation reste dans les documents.
+            </p>
+            <div style={{display:'flex', gap:10, flexWrap:'wrap'}}>
+              <button onClick={() => convertirEstimoEnChantier('courtage')} disabled={saving} className="btn btn-ghost"
+                style={{fontSize:12.5, borderColor:'var(--warn)', color:'#a16207'}}>
+                → Basculer en Courtage
+              </button>
+              <button onClick={() => convertirEstimoEnChantier('amo')} disabled={saving} className="btn btn-ghost"
+                style={{fontSize:12.5, borderColor:'var(--warn)', color:'#a16207'}}>
+                → Basculer en AMO
+              </button>
+            </div>
           </div>
         )}
 
