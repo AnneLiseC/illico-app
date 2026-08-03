@@ -231,13 +231,31 @@ export function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, interv
 
   const intervenantsStr = intervenants?.length ? intervenants : artisansChantier.length ? artisansChantier : ['Non précisé']
 
+  // Périmètre réel des travaux, par artisan, depuis les devis REÇUS (recu/accepté/à
+  // modifier — jamais en_attente ni refusé). Injecté dans TOUS les types de CR : c'est un
+  // ancrage factuel qui empêche Claude d'inventer des travaux ou des intervenants. Les
+  // MONTANTS ne sont donnés qu'en R3 (présentation des devis) — le R2 interdit les montants.
+  const STATUTS_RECUS = new Set(['recu', 'accepte', 'a_modifier'])
+  const avecMontant = typeVisite === 'r3'
+  const devisRecus = (devis || []).filter(d => STATUTS_RECUS.has(d.statut))
+  const blocDevis = devisRecus.length
+    ? `\n\n    DEVIS DU CHANTIER (périmètre réel des travaux — t'appuyer STRICTEMENT sur cette liste, ne PAS inventer de travaux ni d'artisans qui n'y figurent pas) :\n`
+      + devisRecus.map(d => {
+          const nom = d.artisan?.entreprise || 'Artisan'
+          const metier = d.artisan?.metier ? ` (${d.artisan.metier})` : ''
+          const montant = (avecMontant && d.montant_ttc != null) ? ` — ${Number(d.montant_ttc).toLocaleString('fr-FR')} € TTC` : ''
+          const desc = (d.notes && d.notes.trim()) ? d.notes.trim() : 'périmètre non précisé'
+          return `    - ${nom}${metier}${montant} : ${desc}`
+        }).join('\n')
+    : ''
+
   return `CONTEXTE DU DOSSIER :
     - Référence : ${dossier.reference}
     - Maître d'ouvrage : ${nomClient}
     - Adresse : ${client?.adresse || 'Non renseignée'}
     - Type de prestation : ${dossier.typologie?.toUpperCase() || ''}
     - Référente illiCO : ${dossier.referente ? `${dossier.referente.prenom} ${dossier.referente.nom}` : ''}
-    - Artisans du chantier : ${artisansChantier.join(', ') || 'Aucun devis accepté'}
+    - Artisans du chantier : ${artisansChantier.join(', ') || 'Aucun devis accepté'}${blocDevis}
 
     VISITE :
     - Date : ${dateVisite ? new Date(dateVisite).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Non précisée'}
@@ -336,7 +354,7 @@ export async function POST(request) {
 
     const { data: devis } = await getSupabaseAdmin()
       .from('devis_artisans')
-      .select('*, artisan:artisans(id, entreprise)')
+      .select('*, artisan:artisans(id, entreprise, metier)')
       .eq('dossier_id', dossierId)
 
     // Construire les messages Claude
