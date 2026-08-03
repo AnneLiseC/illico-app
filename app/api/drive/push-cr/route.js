@@ -80,17 +80,22 @@ export async function POST(request) {
       return t ? { numero: '', titre: '', contenu: t } : null
     }).filter(Boolean).filter(s => s.contenu)
 
+    // Map chemin → id de photo : le repère [[photo:ID]] du texte référence l'id stable.
+    const { data: photosDossier } = await db.from('photos').select('id, url').eq('dossier_id', cr.dossier_id)
+    const idParChemin = new Map((photosDossier || []).map(p => [p.url, p.id]))
+
     const photosJointes = await Promise.all((cr.photos_jointes || []).map(async (ph) => {
+      const id = idParChemin.get(ph) ?? null
       try {
         const { data: fileData } = await db.storage.from('photos').download(ph)
         if (fileData) {
           const buf = Buffer.from(await fileData.arrayBuffer())
           const ext = (ph || '').split('.').pop().toLowerCase()
           const mime = ext === 'png' ? 'image/png' : 'image/jpeg'
-          return { path: ph, base64: `data:${mime};base64,${buf.toString('base64')}` }
+          return { id, path: ph, base64: `data:${mime};base64,${buf.toString('base64')}` }
         }
       } catch { /* ignore */ }
-      return { path: ph }
+      return { id, path: ph }
     }))
 
     const pdfBuffer = await renderToBuffer(buildCRDocument({ dossier, cr, sections, logo: getLogoBase64(), photos: photosJointes }))

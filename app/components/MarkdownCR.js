@@ -20,9 +20,17 @@ const STYLES = {
   },
 }
 
+const CHIP = { display: 'inline-flex', alignItems: 'center', padding: '0 6px', margin: '0 2px', borderRadius: 99, background: '#eef2ff', color: '#3730a3', fontSize: '0.85em', fontWeight: 600, verticalAlign: 'baseline' }
+
 const renderInline = (text) => {
-  const parts = text.split(/\*\*(.+?)\*\*/g)
-  return parts.map((part, i) => i % 2 === 1 ? <strong key={i}>{part}</strong> : part)
+  // Repères photo [[photo:ID]] → pastille « 📷 Photo » (la vraie image est dans le PDF ;
+  // l'ID étant un uuid, on n'affiche pas de numéro à l'écran).
+  const segs = String(text).split(/(\[\[photo:[\w-]+\]\])/g)
+  return segs.map((seg, i) => {
+    if (/^\[\[photo:[\w-]+\]\]$/.test(seg)) return <span key={i} style={CHIP}>📷 Photo</span>
+    const parts = seg.split(/\*\*(.+?)\*\*/g)
+    return parts.map((part, j) => j % 2 === 1 ? <strong key={`${i}-${j}`}>{part}</strong> : part)
+  })
 }
 
 // Une ligne de tableau markdown : « | a | b | » → ['a', 'b'] (bords vides retirés).

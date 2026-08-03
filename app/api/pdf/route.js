@@ -429,17 +429,24 @@ export async function POST(request) {
       // Photos jointes au CR (photos du chantier UNIQUEMENT — jamais les photos ordi,
       // qui restent dans photos_paths comme contexte IA). Même patron que
       // photosWithBase64 (:526), mais source = cr.photos_jointes, sans toucher la maquette.
+      // Map chemin → id de photo (photos.id) : le repère [[photo:ID]] du texte référence
+      // l'id STABLE, mais photos_jointes stocke les chemins → on résout ici.
+      const { data: photosDossier } = await getSupabaseAdmin()
+        .from('photos').select('id, url').eq('dossier_id', dossierId)
+      const idParChemin = new Map((photosDossier || []).map(p => [p.url, p.id]))
+
       const photosJointes = await Promise.all((crData.photos_jointes || []).map(async (path) => {
+        const id = idParChemin.get(path) ?? null
         try {
           const { data: fileData } = await getSupabaseAdmin().storage.from('photos').download(path)
           if (fileData) {
             const buf = Buffer.from(await fileData.arrayBuffer())
             const ext = (path || '').split('.').pop().toLowerCase()
             const mime = ext === 'png' ? 'image/png' : 'image/jpeg'
-            return { path, base64: `data:${mime};base64,${buf.toString('base64')}` }
+            return { id, path, base64: `data:${mime};base64,${buf.toString('base64')}` }
           }
         } catch {}
-        return { path }
+        return { id, path }
       }))
 
       const doc = buildCRDocument({ dossier, cr, sections, logo: getLogoBase64(), photos: photosJointes })
