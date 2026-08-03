@@ -10,6 +10,7 @@
 import React from 'react'
 import { Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
 import { formatNomClient } from '../clients.js'
+import { extraireMarqueursPhoto } from '../cr-photos.js'
 
 const BLEU = '#00578e'
 
@@ -94,6 +95,20 @@ export function buildCRDocument({ dossier, cr, sections, logo, photos }) {
     )
   }
 
+  // Photos posées INLINE via un repère [[photo:ID]] dans le texte (ID = photos.id stable).
+  // Les ids posés sont suivis ici pour les exclure des pages « Photos » de fin. Style
+  // « dans le flux » (plus petit que les pages pleines), centré.
+  const placedPhotos = new Set()
+  const inlinePhoto = { width: '55%', height: 190, objectFit: 'contain', alignSelf: 'center', marginTop: 6, marginBottom: 8 }
+  const blocPhotoInline = (id, key) => {
+    const ph = (photos || []).find(p => p.id != null && String(p.id) === String(id))
+    if (!ph || !ph.base64 || placedPhotos.has(String(id))) return null
+    placedPhotos.add(String(id))
+    return React.createElement(View, { key, style: { alignItems: 'center' }, wrap: false },
+      React.createElement(PdfImage, { src: ph.base64, style: inlinePhoto }),
+    )
+  }
+
   const renderContent = (contenu, secTitre) => {
     if (!contenu) return { blocks: [], firstGroupable: true }
     const lines = contenu.split('\n').filter(l => l !== undefined)
@@ -135,6 +150,18 @@ export function buildCRDocument({ dossier, cr, sections, logo, photos }) {
         }
         blocks.push(renderMdTable(header, rows, 'tbl' + i))
         i = j - 1
+        continue
+      }
+      // Repère(s) photo [[photo:ID]] : on rend le texte restant (s'il y en a) puis
+      // l'image inline à cet endroit du flux. Photo introuvable / déjà posée → ignorée.
+      if (/\[\[photo:[\w-]+\]\]/.test(line)) {
+        flushList()
+        const { texte, ids } = extraireMarqueursPhoto(line)
+        if (texte) blocks.push(React.createElement(Text, { key: 'pt' + i, style: CRS.para }, inlineEl(texte)))
+        ids.forEach((pid, k) => {
+          const el = blocPhotoInline(pid, `ph-${i}-${k}`)
+          if (el) blocks.push(el)
+        })
         continue
       }
       const bullet = line.match(/^[-–]\s+(.+)/)
@@ -188,7 +215,9 @@ export function buildCRDocument({ dossier, cr, sections, logo, photos }) {
       mkFooter(),
     )
 
-  const photosOk = (photos || []).filter(p => p.base64)
+  // Pages « Photos » de fin : seulement les photos NON posées inline (repère [[photo:ID]]).
+  // Si toutes sont placées dans le texte → aucune page de fin.
+  const photosOk = (photos || []).filter(p => p.base64 && !(p.id != null && placedPhotos.has(String(p.id))))
   const photoPages = []
   for (let i = 0; i < photosOk.length; i += 2) {
     const chunk = photosOk.slice(i, i + 2)

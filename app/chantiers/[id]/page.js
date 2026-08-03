@@ -32,6 +32,7 @@ const ENTITES_CHANTIER = 'devis, factures, photos, rapports de visite, documents
 // Aperçu texte nu d'un CR : retire la syntaxe markdown (## titres, **gras**, puces).
 function stripMarkdown(text) {
   return (text || '')
+    .replace(/\[\[photo:[\w-]+\]\]/g, '')       // repères photo → invisibles en aperçu
     .replace(/\*\*(.+?)\*\*/g, '$1')
     .replace(/## +(?:\d+\.\s*)?/g, ' ')
     .replace(/^[-–] /gm, '')
@@ -628,6 +629,25 @@ export default function FicheChantier({ params }) {
   const [crManuelPhotoCat, setCrManuelPhotoCat] = useState('all')   // filtre catégorie du sélecteur photos (CR manuel)
   const [crManuelPhotosAff, setCrManuelPhotosAff] = useState(24)    // pagination du sélecteur photos (CR manuel)
   const [crEditId, setCrEditId] = useState(null) // null = création ; sinon id du CR édité
+  const crContenuRef = useRef(null)              // textarea contenu CR → insertion de repères photo au curseur
+  // Insère « [[photo:ID]] » (ID = photos.id STABLE) à la position du curseur dans le
+  // contenu du CR → la photo s'affichera à cet endroit dans le PDF au lieu d'être empilée
+  // à la fin. Un id stable survit au retrait/ajout d'autres photos jointes.
+  const insererMarqueurPhoto = (photoId) => {
+    if (!photoId) return
+    const marqueur = `[[photo:${photoId}]]`
+    const ta = crContenuRef.current
+    setCrManuelForm(f => {
+      const texte = f.contenu || ''
+      if (!ta) return { ...f, contenu: (texte ? texte + '\n' : '') + marqueur }
+      const start = ta.selectionStart ?? texte.length
+      const end = ta.selectionEnd ?? texte.length
+      const next = texte.slice(0, start) + marqueur + texte.slice(end)
+      const pos = start + marqueur.length
+      requestAnimationFrame(() => { try { ta.focus(); ta.setSelectionRange(pos, pos) } catch { /* ignore */ } })
+      return { ...f, contenu: next }
+    })
+  }
   const [nbMsgNonLus, setNbMsgNonLus] = useState(0)
   const [photoOuverte, setPhotoOuverte] = useState(null)
   const [rdvsDossier, setRdvsDossier] = useState([])
@@ -6181,7 +6201,28 @@ export default function FicheChantier({ params }) {
                       </button>
                     )}
                     {(crManuelForm.photos || []).length > 0 && (
-                      <div style={{fontSize:11, color:'var(--ink-500)', marginTop:6}}>{crManuelForm.photos.length} photo(s) jointe(s) — affichées dans le PDF du CR.</div>
+                      <div style={{marginTop:8}}>
+                        <div style={{fontSize:11, color:'var(--ink-500)', marginBottom:6}}>
+                          {crManuelForm.photos.length} photo(s) jointe(s). « ↳ insérer » place la photo à l’endroit du curseur dans le texte ; les non-insérées restent à la fin du PDF.
+                        </div>
+                        <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                          {crManuelForm.photos.map((url, i) => {
+                            const ph = (photos || []).find(p => p.url === url)
+                            return (
+                              <div key={url} style={{display:'flex', flexDirection:'column', alignItems:'center', gap:3, width:64}}>
+                                <div style={{position:'relative', width:56, height:56, borderRadius:8, overflow:'hidden', border:'1px solid var(--ink-200)'}}>
+                                  {ph && <img src={ph.url_thumb || ph.url_signee} alt="" style={{width:'100%', height:'100%', objectFit:'cover'}} />}
+                                  <span style={{position:'absolute', top:2, left:2, minWidth:16, height:16, padding:'0 3px', borderRadius:8, background:'#4f46e5', color:'#fff', fontSize:10, display:'grid', placeItems:'center', fontWeight:700}}>{i + 1}</span>
+                                </div>
+                                <button type="button" onClick={() => insererMarqueurPhoto(ph?.id)} disabled={!ph?.id}
+                                  style={{fontSize:10, padding:'2px 6px', borderRadius:6, border:'1px solid #c7d2fe', background:'#eef2ff', color:'var(--ink-900)', cursor: ph?.id ? 'pointer' : 'not-allowed', opacity: ph?.id ? 1 : 0.5}}>
+                                  ↳ insérer
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
                     )}
                   </>
                 )
@@ -6189,7 +6230,7 @@ export default function FicheChantier({ params }) {
             </ModalField>
 
             <ModalField label="Contenu du CR" required>
-              <textarea value={crManuelForm.contenu}
+              <textarea ref={crContenuRef} value={crManuelForm.contenu}
                 onChange={e => setCrManuelForm(f => ({ ...f, contenu: e.target.value }))}
                 rows={10} placeholder="Rédigez ou collez le contenu du rapport de visite…"
                 className="input" style={{minHeight:200, padding:12, fontSize:13, lineHeight:1.5, resize:'vertical'}} />
