@@ -1583,6 +1583,21 @@ export default function FicheChantier({ params }) {
     apiFetch('/api/drive/push', { method: 'POST', body: JSON.stringify({ document_id: docId }) }).catch(() => {})
   }
 
+  // Marque / retire un document comme « estimation » (le livrable ESTIMO). Même patron
+  // que toggleCategorieCR : maj optimiste + re-push Drive move-aware (→ Autres/Estimations).
+  const toggleCategorieEstimation = async (docId, estEstimation) => {
+    const prevCat = documents.find(d => d.id === docId)?.categorie ?? null
+    const categorie = estEstimation ? 'estimation' : null
+    setDocuments(prev => prev.map(d => d.id === docId ? { ...d, categorie } : d))
+    const { error } = await supabase.from('chantier_documents').update({ categorie }).eq('id', docId)
+    if (error) {
+      setDocuments(prev => prev.map(d => d.id === docId ? { ...d, categorie: prevCat } : d))
+      setErreur('Erreur : ' + error.message)
+      return
+    }
+    apiFetch('/api/drive/push', { method: 'POST', body: JSON.stringify({ document_id: docId }) }).catch(() => {})
+  }
+
   const chargerFactures = async () => {
     const { data } = await supabase.from('factures_artisans').select('*').eq('dossier_id', id).order('created_at')
     setFactures(data || [])
@@ -2923,6 +2938,44 @@ export default function FicheChantier({ params }) {
     setSaving(false)
   }
 
+  // Bascule d'un ESTIMO en chantier (Courtage ou AMO). RPC atomique : attribue une
+  // NOUVELLE référence CT/AM (prochain numéro libre de l'agence), marque
+  // frais_origine_estimo, conserve le montant ESTIMO comme frais de consultation.
+  const convertirEstimoEnChantier = async (cible) => {
+    const cibleLabel = cible === 'amo' ? 'AMO' : 'Courtage'
+    const ok = confirm(
+      `Basculer cet ESTIMO en chantier ${cibleLabel} ?\n\n` +
+      `• Le dossier reçoit une nouvelle référence ${cible === 'amo' ? 'AM' : 'CT'}.\n` +
+      `• Le montant ESTIMO devient le frais de consultation du dossier (tracé « ESTIMO »).\n` +
+      `• Déductible ou non des honoraires selon le statut des frais (réglages du dossier).\n` +
+      `• Le document d'estimation reste dans les documents du dossier.\n\n` +
+      `Cette action ne peut pas être annulée facilement.`
+    )
+    if (!ok) return
+    setSaving(true)
+    const { data: newRef, error } = await supabase.rpc('convertir_dossier_estimo_en_chantier', {
+      p_dossier_id: id,
+      p_cible: cible,
+      p_taux_amo: cible === 'amo' ? AMO_STANDARD * 100 : null,
+    })
+    if (error) {
+      setErreur('Erreur lors de la bascule : ' + error.message)
+      setSaving(false)
+      return
+    }
+    setDossier(d => ({
+      ...d,
+      typologie: cible,
+      reference: newRef || d.reference,
+      frais_origine_estimo: true,
+      honoraires_amo_taux: cible === 'amo' ? (d.honoraires_amo_taux ?? AMO_STANDARD * 100) : d.honoraires_amo_taux,
+    }))
+    const { data: newSuivi } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
+    setSuiviFinancier(newSuivi || [])
+    setSucces(`ESTIMO basculé en ${cibleLabel} ✓${newRef ? ` (réf ${newRef})` : ''}`)
+    setSaving(false)
+  }
+
   if (loading) return <div className="page-loading" />
   if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-500)'}}>Chantier introuvable</div>
 
@@ -3369,17 +3422,26 @@ export default function FicheChantier({ params }) {
             </div>
           </div>
 
-          {/* Card 3 — Frais de consultation (déplacé depuis onglet Devis) */}
+          {/* Card 3 — Frais de consultation / Montant ESTIMO (déplacé depuis onglet Devis).
+              ESTIMO = frais de consultation à montant variable ; offert reste TRACÉ avec
+              le montant qu'il aurait coûté (stats payés vs offerts). */}
           <div className="card" style={{padding:22}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-              <h2 className="page" style={{fontSize:15}}>Frais de consultation</h2>
+              <h2 className="page" style={{fontSize:15}}>{dossier.typologie === 'estimo' ? 'ESTIMO' : 'Frais de consultation'}</h2>
               {dossier.frais_statut === 'regle' && <Badge tone="ok">Réglés</Badge>}
-              {dossier.frais_statut === 'offerts' && <Badge tone="mute">Offerts</Badge>}
+              {dossier.frais_statut === 'offerts' && <Badge tone="mute">Offert</Badge>}
               {dossier.frais_statut === 'factures' && <Badge tone="warn">Facturés</Badge>}
               {dossier.frais_statut === 'rembourse' && <Badge tone="info">À rembourser</Badge>}
             </div>
             {dossier.frais_statut === 'offerts' ? (
-              <div style={{fontSize:13, color:'var(--ink-500)'}}>Frais offerts — 0 €</div>
+              dossier.typologie === 'estimo' && (dossier.frais_consultation || 0) > 0 ? (
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+                  <Fact label="Offert — montant estimé" value={fmt(dossier.frais_consultation || 0)} />
+                  <Fact label="Montant HT" value={fmt((dossier.frais_consultation || 0) / TVA_FRAIS)} />
+                </div>
+              ) : (
+                <div style={{fontSize:13, color:'var(--ink-500)'}}>{dossier.typologie === 'estimo' ? 'ESTIMO offert' : 'Frais offerts'} — 0 €</div>
+              )
             ) : (
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
                 <Fact label="Montant TTC" value={fmt(dossier.frais_consultation || 0)} highlight />
@@ -3624,20 +3686,23 @@ export default function FicheChantier({ params }) {
               </div>
             </div>
             <div style={{paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
-              <label className="eyebrow" style={{display:'block', marginBottom:8}}>Frais de consultation</label>
+              <label className="eyebrow" style={{display:'block', marginBottom:8}}>{dossier.typologie === 'estimo' ? 'Montant ESTIMO' : 'Frais de consultation'}</label>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
                 <div>
                   <label style={{display:'block', fontSize:12, color:'var(--ink-500)', marginBottom:4}}>Statut</label>
                   <select className="input" value={dossier.frais_statut || 'offerts'} onChange={e => set('frais_statut', e.target.value)} style={{height:40, width:'100%'}}>
-                    <option value="offerts">Offerts</option>
-                    <option value="rembourse">Remboursé après signature</option>
-                    <option value="factures">Facturés (à régler)</option>
-                    <option value="regle">Facturés et réglés</option>
+                    <option value="offerts">Offert{dossier.typologie === 'estimo' ? '' : 's'}</option>
+                    {dossier.typologie !== 'estimo' && <option value="rembourse">Remboursé après signature</option>}
+                    <option value="factures">Facturé{dossier.typologie === 'estimo' ? '' : 's'} (à régler)</option>
+                    <option value="regle">Facturé{dossier.typologie === 'estimo' ? ' et réglé' : 's et réglés'}</option>
                   </select>
                 </div>
-                {dossier.frais_statut !== 'offerts' && (
+                {/* ESTIMO : le montant reste saisi même « offert » (montant qu'il aurait coûté). */}
+                {(dossier.frais_statut !== 'offerts' || dossier.typologie === 'estimo') && (
                   <div>
-                    <label style={{display:'block', fontSize:12, color:'var(--ink-500)', marginBottom:4}}>Montant TTC (€)</label>
+                    <label style={{display:'block', fontSize:12, color:'var(--ink-500)', marginBottom:4}}>
+                      {dossier.typologie === 'estimo' && dossier.frais_statut === 'offerts' ? 'Montant estimé (€)' : 'Montant TTC (€)'}
+                    </label>
                     <input type="number" step="0.01" min="0" className="input"
                       value={dossier.frais_consultation || ''}
                       onChange={e => set('frais_consultation', e.target.value === '' ? '' : parseFloat(e.target.value))}
@@ -3761,7 +3826,7 @@ export default function FicheChantier({ params }) {
           </div>
         )}
 
-        {/* Convertir typologie */}
+        {/* Convertir typologie (courtage ↔ amo) */}
         {(dossier.typologie === 'courtage' || dossier.typologie === 'amo') && (
           <div className="card" style={{padding:24}}>
             <h2 className="page" style={{fontSize:15, marginBottom:8}}>Convertir la typologie</h2>
@@ -3775,6 +3840,28 @@ export default function FicheChantier({ params }) {
               style={{fontSize:12.5, borderColor:'var(--warn)', color:'#a16207'}}>
               {dossier.typologie === 'courtage' ? '→ Convertir en AMO' : '→ Convertir en Courtage'}
             </button>
+          </div>
+        )}
+
+        {/* Bascule ESTIMO → chantier (Courtage ou AMO) */}
+        {dossier.typologie === 'estimo' && (
+          <div className="card" style={{padding:24}}>
+            <h2 className="page" style={{fontSize:15, marginBottom:8}}>Basculer en chantier</h2>
+            <p style={{fontSize:12, color:'var(--ink-500)', marginTop:0, marginBottom:14, lineHeight:1.5}}>
+              Transformer cet ESTIMO en chantier. Le dossier reçoit une nouvelle référence CT/AM, le montant ESTIMO
+              devient le frais de consultation du dossier (tracé « ESTIMO », déductible ou non des honoraires
+              selon les réglages), et le document d’estimation reste dans les documents.
+            </p>
+            <div style={{display:'flex', gap:10, flexWrap:'wrap'}}>
+              <button onClick={() => convertirEstimoEnChantier('courtage')} disabled={saving} className="btn btn-ghost"
+                style={{fontSize:12.5, borderColor:'var(--warn)', color:'#a16207'}}>
+                → Basculer en Courtage
+              </button>
+              <button onClick={() => convertirEstimoEnChantier('amo')} disabled={saving} className="btn btn-ghost"
+                style={{fontSize:12.5, borderColor:'var(--warn)', color:'#a16207'}}>
+                → Basculer en AMO
+              </button>
+            </div>
           </div>
         )}
 
@@ -4577,7 +4664,7 @@ export default function FicheChantier({ params }) {
                   Verrouillé si le statut du dossier est déjà « réglé » (géré au dropdown). */}
               {(dossier.frais_consultation || 0) > 0 && dossier.frais_statut !== 'offerts' && (
                 <EcheanceRow
-                  label="Frais de consultation"
+                  label={dossier.typologie === 'estimo' ? 'Montant ESTIMO' : (dossier.frais_origine_estimo ? 'Frais de consultation (ESTIMO)' : 'Frais de consultation')}
                   sub={`${fmt(dossier.frais_consultation)} TTC`}
                   statut={fraisRecu ? 'regle' : 'en_attente'}
                   date={suiviFrais?.date_paiement || null}
@@ -5189,6 +5276,9 @@ export default function FicheChantier({ params }) {
                           {doc.categorie === 'facture_honoraire' && (
                             <span style={{fontSize:11, fontWeight:800, background:'rgba(234,88,12,0.12)', color:'#ea580c', borderRadius:4, padding:'1px 5px'}}>FACT</span>
                           )}
+                          {doc.categorie === 'estimation' && (
+                            <span style={{fontSize:11, fontWeight:800, background:'rgba(202,138,4,0.14)', color:'#a16207', borderRadius:4, padding:'1px 5px'}}>ESTIMATION</span>
+                          )}
                         </div>
                       </div>
                       {doc.categorie !== 'facture_honoraire' ? (
@@ -5211,6 +5301,15 @@ export default function FicheChantier({ params }) {
                             style={{padding:'4px 8px', fontSize:11, fontWeight:700, color: doc.categorie === 'compte_rendu' ? 'var(--ink-900)' : 'var(--ink-400)'}}
                             title={doc.categorie === 'compte_rendu' ? 'Retirer de la catégorie Rapport de visite' : 'Marquer comme rapport de visite'}>
                             {doc.categorie === 'compte_rendu' ? '✓ RV' : 'RV'}
+                          </button>
+                        )}
+                        {/* Marquer comme « estimation » (livrable ESTIMO) — pour un dossier estimo ou issu d'un estimo. */}
+                        {(dossier.typologie === 'estimo' || dossier.frais_origine_estimo) && doc.categorie !== 'facture_honoraire' && (
+                          <button onClick={() => toggleCategorieEstimation(doc.id, doc.categorie !== 'estimation')}
+                            className="btn btn-ghost"
+                            style={{padding:'4px 8px', fontSize:11, fontWeight:700, color: doc.categorie === 'estimation' ? '#a16207' : 'var(--ink-400)'}}
+                            title={doc.categorie === 'estimation' ? 'Retirer de la catégorie Estimation' : 'Marquer comme estimation (livrable ESTIMO)'}>
+                            {doc.categorie === 'estimation' ? '✓ EST' : 'EST'}
                           </button>
                         )}
                         <button onClick={() => ouvrirDocument(doc.path, doc.nom)}

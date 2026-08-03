@@ -206,7 +206,8 @@ export function detecterCategorie(nom) {
     /compte[\s_-]?rendus?/.test(base) ||
     /(^|[^a-z])c\.?r(?![a-z])/.test(base)
   const estFactureHonoraire = /facture/.test(base) && /honorai/.test(base)
-  return estCR ? 'compte_rendu' : estFactureHonoraire ? 'facture_honoraire' : null
+  const estEstimation = /estimation|chiffrage|estimo|batichiffrage/.test(base)
+  return estCR ? 'compte_rendu' : estFactureHonoraire ? 'facture_honoraire' : estEstimation ? 'estimation' : null
 }
 
 // 🔹 Compteurs
