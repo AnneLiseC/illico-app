@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from './supabase'
 import { isSuperAdminEmail } from './super-admin'
+import { estErreurAuth } from './auth-errors'
 
 const AuthContext = createContext(null)
 
@@ -118,11 +119,31 @@ export function AuthProvider({ children }) {
     setProfileStatus('loading')
     try {
       // maybeSingle : 0 ligne => data null sans erreur (≠ .single() qui lèverait).
-      const { data, error } = await supabase.from('profiles').select('*, societe:societes(id, nom_societe)').eq('id', uid).maybeSingle()
+      const SELECT = '*, societe:societes(id, nom_societe)'
+      let { data, error } = await supabase.from('profiles').select(SELECT).eq('id', uid).maybeSingle()
       if (error) {
-        // Erreur réseau : NE PAS conclure « absent ». On reste 'loading' ; le retry
-        // par page (filet existant) rejouera fetchProfile.
-        return
+        if (estErreurAuth(error)) {
+          // Jeton périmé/invalide (401) : le client peut avoir un access token expiré
+          // que PostgREST rejette sans qu'onAuthStateChange ne le voie. On tente UN
+          // refresh puis on rejoue ; si le refresh token est mort aussi → déconnexion
+          // propre (onAuthStateChange renverra au login) au lieu d'un spinner infini.
+          const { error: refreshErr } = await supabase.auth.refreshSession()
+          if (!refreshErr) {
+            const retry = await supabase.from('profiles').select(SELECT).eq('id', uid).maybeSingle()
+            data = retry.data; error = retry.error
+          }
+          if (error) {
+            await supabase.auth.signOut()
+            setProfile(null)
+            setDisplayAgenceName(null)
+            setProfileStatus('absent')
+            return
+          }
+        } else {
+          // Vraie erreur réseau transitoire : NE PAS conclure « absent ». On reste
+          // 'loading' ; le retry par page (filet existant) rejouera fetchProfile.
+          return
+        }
       }
       if (data && data.actif === false) {
         // Compte DÉSACTIVÉ (soft delete agente) : le ban Auth bloque les NOUVELLES
