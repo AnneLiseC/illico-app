@@ -15,7 +15,9 @@ export default function DevisModal({ open, devis, onClose, onSave, onAutofill, a
     montant_ttc: devis?.montant_ttc ?? '',
     ttc_manuel: devis?.ttc_manuel ?? false,
     commission_pourcentage: devis?.commission_pourcentage != null ? (devis.commission_pourcentage * 100).toFixed(1) : '',
-    sans_commission: devis?.commission_pourcentage === 0,
+    // Ne JAMAIS cocher « sans commission » en création : uniquement en édition d'un
+    // devis dont la commission a été explicitement mise à 0.
+    sans_commission: !!devis && devis.commission_pourcentage === 0,
     date_reception: devis?.date_reception || '',
     date_limite: devis?.date_limite || '',
     notes: devis?.notes || '',
@@ -93,6 +95,44 @@ export default function DevisModal({ open, devis, onClose, onSave, onAutofill, a
       </>}
     >
         <div style={{padding:24, overflow:'auto', display:'flex', flexDirection:'column', gap:14}}>
+          {!isEdit && (
+            <div style={{background:'var(--surface-2)', border:'1px solid var(--ink-100)', borderRadius:10, padding:14}}>
+              <label className="eyebrow" style={{display:'block', marginBottom:8}}>PDF du devis (optionnel)</label>
+              <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+                <label className="btn btn-ghost" style={{cursor:'pointer', borderStyle:'dashed', padding:'8px 14px', flex:'1 1 170px', justifyContent:'center'}}>
+                  {form.fichier ? `✓ ${form.fichier.name}` : '📎 Choisir un PDF'}
+                  <input type="file" accept=".pdf" style={{display:'none'}}
+                    onChange={e => { set('fichier', e.target.files[0] || null); setAutofillInfo(null) }} />
+                </label>
+                {onAutofill && (
+                  <button onClick={remplirDepuisPdf} disabled={!form.fichier || autofilling}
+                    title={form.fichier ? 'Lire le devis et pré-remplir le formulaire' : 'Choisis d’abord un PDF de devis'}
+                    className="btn btn-primary" style={{padding:'8px 12px', background:'#4f46e5', borderColor:'#4f46e5', opacity:(!form.fichier || autofilling) ? 0.55 : 1}}>
+                    {autofilling ? 'Lecture du PDF…' : '✨ Pré-remplir depuis le PDF'}
+                  </button>
+                )}
+                {form.fichier && (
+                  <button onClick={() => { set('fichier', null); setAutofillInfo(null) }} className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px', color:'#b91c1c'}}>
+                    Retirer
+                  </button>
+                )}
+              </div>
+              <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:6}}>
+                L’IA lit le PDF et remplit montants, dates et description — tu vérifies avant d’enregistrer.
+              </div>
+              {autofillInfo && (
+                <div style={{
+                  marginTop:8, borderRadius:8, padding:'8px 12px', fontSize:12.5, fontWeight:500,
+                  background: autofillInfo.tone === 'bad' ? '#fef2f2' : autofillInfo.tone === 'warn' ? '#fffbeb' : '#f0fdf4',
+                  border: `1px solid ${autofillInfo.tone === 'bad' ? '#fecaca' : autofillInfo.tone === 'warn' ? '#fde68a' : '#bbf7d0'}`,
+                  color: autofillInfo.tone === 'bad' ? '#b91c1c' : autofillInfo.tone === 'warn' ? '#92400e' : '#166534',
+                }}>
+                  {autofillInfo.texte}
+                </div>
+              )}
+            </div>
+          )}
+
           {!isEdit && (
             <div>
               <label className="eyebrow" style={{display:'block', marginBottom:6}}>Artisan *</label>
@@ -187,40 +227,6 @@ export default function DevisModal({ open, devis, onClose, onSave, onAutofill, a
               rows={3} placeholder="Description des travaux…"
               style={{width:'100%', padding:'10px 12px', lineHeight:1.5, resize:'vertical'}} />
           </div>
-
-          {!isEdit && (
-            <div>
-              <label className="eyebrow" style={{display:'block', marginBottom:6}}>PDF du devis (optionnel)</label>
-              <label className="btn btn-ghost" style={{cursor:'pointer', justifyContent:'center', borderStyle:'dashed', padding:'10px 14px'}}>
-                {form.fichier ? `✓ ${form.fichier.name}` : '📎 Choisir un PDF'}
-                <input type="file" accept=".pdf" style={{display:'none'}}
-                  onChange={e => { set('fichier', e.target.files[0] || null); setAutofillInfo(null) }} />
-              </label>
-              {form.fichier && (
-                <div style={{display:'flex', gap:8, alignItems:'center', marginTop:8, flexWrap:'wrap'}}>
-                  {onAutofill && (
-                    <button onClick={remplirDepuisPdf} disabled={autofilling}
-                      className="btn btn-primary" style={{fontSize:12, padding:'6px 12px', background:'#4f46e5', borderColor:'#4f46e5'}}>
-                      {autofilling ? 'Lecture du PDF…' : '✨ Pré-remplir depuis le PDF'}
-                    </button>
-                  )}
-                  <button onClick={() => { set('fichier', null); setAutofillInfo(null) }} className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px', color:'#b91c1c'}}>
-                    Supprimer le fichier
-                  </button>
-                </div>
-              )}
-              {autofillInfo && (
-                <div style={{
-                  marginTop:8, borderRadius:8, padding:'8px 12px', fontSize:12.5, fontWeight:500,
-                  background: autofillInfo.tone === 'bad' ? '#fef2f2' : autofillInfo.tone === 'warn' ? '#fffbeb' : '#f0fdf4',
-                  border: `1px solid ${autofillInfo.tone === 'bad' ? '#fecaca' : autofillInfo.tone === 'warn' ? '#fde68a' : '#bbf7d0'}`,
-                  color: autofillInfo.tone === 'bad' ? '#b91c1c' : autofillInfo.tone === 'warn' ? '#92400e' : '#166534',
-                }}>
-                  {autofillInfo.texte}
-                </div>
-              )}
-            </div>
-          )}
         </div>
     </ModalShell>
   )
