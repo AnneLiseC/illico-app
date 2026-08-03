@@ -244,6 +244,26 @@ describe('calculateApporteurFinance', () => {
   })
 })
 
+// ── ESTIMO : verrou de non-régression ─────────────────────────────────────────
+// ESTIMO se comporte comme un frais de consultation à montant variable : AUCUN
+// honoraire courtage/AMO. On fige ce comportement pour éviter qu'un futur branchement
+// ne fasse fuiter des honoraires sur un dossier estimo.
+describe('calculateHonorairesFinance — estimo (aucun honoraire)', () => {
+  const h = calculateHonorairesFinance(dossier({ typologie: 'estimo', frais_consultation: 500, frais_statut: 'regle' }))
+  it('estimo → courtage et solde AMO à zéro', () => {
+    expect(h.courtage.brut).toBe(0)
+    expect(h.courtage.ttc).toBe(0)
+    expect(h.courtage.ht).toBe(0)
+    expect(h.courtage.parts).toEqual({ agente: 0, admin: 0 })
+    expect(h.soldeAmo.ttc).toBe(0)
+    expect(h.soldeAmo.parts).toEqual({ agente: 0, admin: 0 })
+  })
+  it('estimo → les frais de consultation (montant estimo) restent calculés normalement', () => {
+    const f = calculateFraisFinance(dossier({ typologie: 'estimo', frais_consultation: 600 }))
+    expect(f.fraisHT).toBe(500)   // 600 / 1.2
+  })
+})
+
 // ── Agrégat dossier ───────────────────────────────────────────────────────────
 describe('calculateDossierFinance', () => {
   it('ne jette pas sur un dossier vide et renvoie des zéros cohérents', () => {

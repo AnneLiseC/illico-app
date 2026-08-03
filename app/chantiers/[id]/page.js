@@ -3369,17 +3369,26 @@ export default function FicheChantier({ params }) {
             </div>
           </div>
 
-          {/* Card 3 — Frais de consultation (déplacé depuis onglet Devis) */}
+          {/* Card 3 — Frais de consultation / Montant ESTIMO (déplacé depuis onglet Devis).
+              ESTIMO = frais de consultation à montant variable ; offert reste TRACÉ avec
+              le montant qu'il aurait coûté (stats payés vs offerts). */}
           <div className="card" style={{padding:22}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-              <h2 className="page" style={{fontSize:15}}>Frais de consultation</h2>
+              <h2 className="page" style={{fontSize:15}}>{dossier.typologie === 'estimo' ? 'ESTIMO' : 'Frais de consultation'}</h2>
               {dossier.frais_statut === 'regle' && <Badge tone="ok">Réglés</Badge>}
-              {dossier.frais_statut === 'offerts' && <Badge tone="mute">Offerts</Badge>}
+              {dossier.frais_statut === 'offerts' && <Badge tone="mute">Offert</Badge>}
               {dossier.frais_statut === 'factures' && <Badge tone="warn">Facturés</Badge>}
               {dossier.frais_statut === 'rembourse' && <Badge tone="info">À rembourser</Badge>}
             </div>
             {dossier.frais_statut === 'offerts' ? (
-              <div style={{fontSize:13, color:'var(--ink-500)'}}>Frais offerts — 0 €</div>
+              dossier.typologie === 'estimo' && (dossier.frais_consultation || 0) > 0 ? (
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
+                  <Fact label="Offert — montant estimé" value={fmt(dossier.frais_consultation || 0)} />
+                  <Fact label="Montant HT" value={fmt((dossier.frais_consultation || 0) / TVA_FRAIS)} />
+                </div>
+              ) : (
+                <div style={{fontSize:13, color:'var(--ink-500)'}}>{dossier.typologie === 'estimo' ? 'ESTIMO offert' : 'Frais offerts'} — 0 €</div>
+              )
             ) : (
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
                 <Fact label="Montant TTC" value={fmt(dossier.frais_consultation || 0)} highlight />
@@ -3624,20 +3633,23 @@ export default function FicheChantier({ params }) {
               </div>
             </div>
             <div style={{paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
-              <label className="eyebrow" style={{display:'block', marginBottom:8}}>Frais de consultation</label>
+              <label className="eyebrow" style={{display:'block', marginBottom:8}}>{dossier.typologie === 'estimo' ? 'Montant ESTIMO' : 'Frais de consultation'}</label>
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
                 <div>
                   <label style={{display:'block', fontSize:12, color:'var(--ink-500)', marginBottom:4}}>Statut</label>
                   <select className="input" value={dossier.frais_statut || 'offerts'} onChange={e => set('frais_statut', e.target.value)} style={{height:40, width:'100%'}}>
-                    <option value="offerts">Offerts</option>
-                    <option value="rembourse">Remboursé après signature</option>
-                    <option value="factures">Facturés (à régler)</option>
-                    <option value="regle">Facturés et réglés</option>
+                    <option value="offerts">Offert{dossier.typologie === 'estimo' ? '' : 's'}</option>
+                    {dossier.typologie !== 'estimo' && <option value="rembourse">Remboursé après signature</option>}
+                    <option value="factures">Facturé{dossier.typologie === 'estimo' ? '' : 's'} (à régler)</option>
+                    <option value="regle">Facturé{dossier.typologie === 'estimo' ? ' et réglé' : 's et réglés'}</option>
                   </select>
                 </div>
-                {dossier.frais_statut !== 'offerts' && (
+                {/* ESTIMO : le montant reste saisi même « offert » (montant qu'il aurait coûté). */}
+                {(dossier.frais_statut !== 'offerts' || dossier.typologie === 'estimo') && (
                   <div>
-                    <label style={{display:'block', fontSize:12, color:'var(--ink-500)', marginBottom:4}}>Montant TTC (€)</label>
+                    <label style={{display:'block', fontSize:12, color:'var(--ink-500)', marginBottom:4}}>
+                      {dossier.typologie === 'estimo' && dossier.frais_statut === 'offerts' ? 'Montant estimé (€)' : 'Montant TTC (€)'}
+                    </label>
                     <input type="number" step="0.01" min="0" className="input"
                       value={dossier.frais_consultation || ''}
                       onChange={e => set('frais_consultation', e.target.value === '' ? '' : parseFloat(e.target.value))}
@@ -4577,7 +4589,7 @@ export default function FicheChantier({ params }) {
                   Verrouillé si le statut du dossier est déjà « réglé » (géré au dropdown). */}
               {(dossier.frais_consultation || 0) > 0 && dossier.frais_statut !== 'offerts' && (
                 <EcheanceRow
-                  label="Frais de consultation"
+                  label={dossier.typologie === 'estimo' ? 'Montant ESTIMO' : (dossier.frais_origine_estimo ? 'Frais de consultation (ESTIMO)' : 'Frais de consultation')}
                   sub={`${fmt(dossier.frais_consultation)} TTC`}
                   statut={fraisRecu ? 'regle' : 'en_attente'}
                   date={suiviFrais?.date_paiement || null}
