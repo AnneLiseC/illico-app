@@ -1583,6 +1583,21 @@ export default function FicheChantier({ params }) {
     apiFetch('/api/drive/push', { method: 'POST', body: JSON.stringify({ document_id: docId }) }).catch(() => {})
   }
 
+  // Marque / retire un document comme « estimation » (le livrable ESTIMO). Même patron
+  // que toggleCategorieCR : maj optimiste + re-push Drive move-aware (→ Autres/Estimations).
+  const toggleCategorieEstimation = async (docId, estEstimation) => {
+    const prevCat = documents.find(d => d.id === docId)?.categorie ?? null
+    const categorie = estEstimation ? 'estimation' : null
+    setDocuments(prev => prev.map(d => d.id === docId ? { ...d, categorie } : d))
+    const { error } = await supabase.from('chantier_documents').update({ categorie }).eq('id', docId)
+    if (error) {
+      setDocuments(prev => prev.map(d => d.id === docId ? { ...d, categorie: prevCat } : d))
+      setErreur('Erreur : ' + error.message)
+      return
+    }
+    apiFetch('/api/drive/push', { method: 'POST', body: JSON.stringify({ document_id: docId }) }).catch(() => {})
+  }
+
   const chargerFactures = async () => {
     const { data } = await supabase.from('factures_artisans').select('*').eq('dossier_id', id).order('created_at')
     setFactures(data || [])
@@ -5261,6 +5276,9 @@ export default function FicheChantier({ params }) {
                           {doc.categorie === 'facture_honoraire' && (
                             <span style={{fontSize:11, fontWeight:800, background:'rgba(234,88,12,0.12)', color:'#ea580c', borderRadius:4, padding:'1px 5px'}}>FACT</span>
                           )}
+                          {doc.categorie === 'estimation' && (
+                            <span style={{fontSize:11, fontWeight:800, background:'rgba(202,138,4,0.14)', color:'#a16207', borderRadius:4, padding:'1px 5px'}}>ESTIMATION</span>
+                          )}
                         </div>
                       </div>
                       {doc.categorie !== 'facture_honoraire' ? (
@@ -5283,6 +5301,15 @@ export default function FicheChantier({ params }) {
                             style={{padding:'4px 8px', fontSize:11, fontWeight:700, color: doc.categorie === 'compte_rendu' ? 'var(--ink-900)' : 'var(--ink-400)'}}
                             title={doc.categorie === 'compte_rendu' ? 'Retirer de la catégorie Rapport de visite' : 'Marquer comme rapport de visite'}>
                             {doc.categorie === 'compte_rendu' ? '✓ RV' : 'RV'}
+                          </button>
+                        )}
+                        {/* Marquer comme « estimation » (livrable ESTIMO) — pour un dossier estimo ou issu d'un estimo. */}
+                        {(dossier.typologie === 'estimo' || dossier.frais_origine_estimo) && doc.categorie !== 'facture_honoraire' && (
+                          <button onClick={() => toggleCategorieEstimation(doc.id, doc.categorie !== 'estimation')}
+                            className="btn btn-ghost"
+                            style={{padding:'4px 8px', fontSize:11, fontWeight:700, color: doc.categorie === 'estimation' ? '#a16207' : 'var(--ink-400)'}}
+                            title={doc.categorie === 'estimation' ? 'Retirer de la catégorie Estimation' : 'Marquer comme estimation (livrable ESTIMO)'}>
+                            {doc.categorie === 'estimation' ? '✓ EST' : 'EST'}
                           </button>
                         )}
                         <button onClick={() => ouvrirDocument(doc.path, doc.nom)}

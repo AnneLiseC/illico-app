@@ -61,6 +61,8 @@ export function sousDossiers(categorie, artisanNom) {
     // Autres, avec sous-dossiers dédiés.
     case 'plans':
       return ['Autres', 'Plans']
+    case 'estimation':
+      return ['Autres', 'Estimations']
     case 'facture_honoraire':
       return ['Autres', 'Factures honoraires']
     case 'administratif':
