@@ -10,6 +10,7 @@ import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../
 import { calculerAvancement, calculerEtapes, ETAPES_LABELS, detecterCategorie } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
 import { apiFetch } from '../../lib/api-auth-client'
+import { buildDevisPayload } from '../../lib/devis'
 import MarkdownCR from '../../components/MarkdownCR'
 import ModalShell from '../../components/ModalShell'
 // Éditeur d'annotation chargé à la demande (canvas + logique lourde) : hors bundle initial.
@@ -1973,41 +1974,27 @@ export default function FicheChantier({ params }) {
     setSucces(`Version v${version.version_num} supprimée ✓`)
   }
 
+  // Renvoie true si le devis a été enregistré (modale à fermer), false sur erreur
+  // (modale gardée ouverte + réactive son bouton → anti double-submit côté modale).
   const saveDevisFromModal = async (form) => {
     // Avertissement doux (non bloquant) : acompte 0 + commission > 0 sur un
     // artisan non partenaire → la commission ne pourra pas être prélevée.
     const commissionPct = form.sans_commission ? 0 : (parseFloat(form.commission_pourcentage) || 0)
     const artisanSel    = artisans.find(a => a.id === form.artisan_id)
     if (form.acompte_pourcentage === 0 && commissionPct > 0 && artisanSel?.partenaire !== true) {
-      if (!window.confirm('Attention, acompte 0 : la commission ne sera pas prélevée. Confirmer ?')) return
+      if (!window.confirm('Attention, acompte 0 : la commission ne sera pas prélevée. Confirmer ?')) return false
     }
-    const acomptePct = form.acompte_pourcentage === -1 || form.acompte_pourcentage === 0
-      ? form.acompte_pourcentage
-      : parseFloat(form.acompte_pourcentage)
-    const acompteMontant = form.acompte_pourcentage === -1
-      ? (form.acompte_montant_fixe !== '' && Number.isFinite(parseFloat(form.acompte_montant_fixe)) ? parseFloat(form.acompte_montant_fixe) : null)
-      : null
-    const payload = {
-      montant_ht: form.montant_ht !== '' ? parseFloat(form.montant_ht) : null,
-      montant_ttc: form.montant_ttc !== '' ? parseFloat(form.montant_ttc) : null,
-      ttc_manuel: form.ttc_manuel ?? false,
-      commission_pourcentage: form.sans_commission ? 0 : (form.commission_pourcentage ? parseFloat(form.commission_pourcentage) / 100 : null),
-      date_reception: form.date_reception || null,
-      date_limite: form.date_limite || null,
-      notes: form.notes || null,
-      acompte_pourcentage: acomptePct,
-      acompte_montant_fixe: acompteMontant,
-    }
+    const payload = buildDevisPayload(form)
     if (devisModal.devis) {
       // Edit — sur erreur, la modale reste ouverte avec la saisie (return avant fermeture).
       const { error } = await supabase.from('devis_artisans').update(payload).eq('id', devisModal.devis.id)
-      if (error) { setErreur('Erreur : ' + error.message); return }
+      if (error) { setErreur('Erreur : ' + error.message); return false }
       await archiverVersionDevis(devisModal.devis.id)   // snapshot version (no-op si inchangé)
       await chargerDevis()
       setSucces('Devis modifié ✓')
     } else {
       // Create
-      if (!form.artisan_id) return
+      if (!form.artisan_id) return false
       const prochainOrdre = devis.length > 0 ? Math.max(...devis.map(d => d.ordre ?? 0)) + 1 : 1
       const { data: devisInsere, error } = await supabase.from('devis_artisans').insert({
         ...payload,
@@ -2016,7 +2003,7 @@ export default function FicheChantier({ params }) {
         statut: (form.date_reception || form.fichier) ? 'recu' : 'en_attente',
         ordre: prochainOrdre,
       }).select()
-      if (error) { setErreur('Erreur : ' + error.message); return }
+      if (error) { setErreur('Erreur : ' + error.message); return false }
       let uploadDevisOk = true
       if (form.fichier && devisInsere?.[0]) {
         const ext = form.fichier.name.split('.').pop()
@@ -2042,6 +2029,32 @@ export default function FicheChantier({ params }) {
       else setErreur('Devis ajouté, mais échec de l\'upload du PDF — réessayez via la fiche devis.')
     }
     setDevisModal({ open: false, devis: null })
+    return true
+  }
+
+  // Pré-remplissage IA : lit le PDF sélectionné (pas encore en storage), l'envoie à Claude
+  // via /api/devis/extract, renvoie l'extraction normalisée (ou null si échec). La modale
+  // relit toujours — on ne fait qu'aider la saisie.
+  const extraireDevisPdf = async (file) => {
+    if (!file) return null
+    try {
+      const b64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result).replace(/^data:.*;base64,/, ''))
+        reader.onerror = () => reject(new Error('Lecture du PDF impossible'))
+        reader.readAsDataURL(file)
+      })
+      const res = await apiFetch('/api/devis/extract', {
+        method: 'POST', body: JSON.stringify({ pdf_base64: b64, filename: file.name }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setErreur(data.error || 'Extraction IA impossible'); return null }
+      if (data.avertissement) setSucces('')  // laisse la modale afficher l'avertissement
+      return data
+    } catch (e) {
+      setErreur(e.message || 'Extraction IA impossible')
+      return null
+    }
   }
 
   const parseDateFR = (str) => {
@@ -6501,6 +6514,7 @@ export default function FicheChantier({ params }) {
         devis={devisModal.devis}
         onClose={() => setDevisModal({ open: false, devis: null })}
         onSave={saveDevisFromModal}
+        onAutofill={extraireDevisPdf}
         artisans={artisans}
       />
     </div>

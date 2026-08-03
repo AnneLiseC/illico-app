@@ -5,8 +5,9 @@
 import { useState, useEffect } from 'react'
 import ModalShell from '../ModalShell'
 import { TVA_TRAVAUX } from '../../lib/finance'
+import { matchArtisanParNom } from '../../lib/devis'
 
-export default function DevisModal({ open, devis, onClose, onSave, artisans }) {
+export default function DevisModal({ open, devis, onClose, onSave, onAutofill, artisans }) {
   const isEdit = !!devis
   const initForm = () => ({
     artisan_id: devis?.artisan_id || '',
@@ -23,13 +24,48 @@ export default function DevisModal({ open, devis, onClose, onSave, artisans }) {
     fichier: null,
   })
   const [form, setForm] = useState(initForm)
+  const [saving, setSaving] = useState(false)          // anti double-submit
+  const [autofilling, setAutofilling] = useState(false) // extraction IA en cours
+  const [autofillInfo, setAutofillInfo] = useState(null) // { tone, texte } sous le PDF
 
   useEffect(() => {
-    if (open) setForm(initForm())
+    if (open) { setForm(initForm()); setSaving(false); setAutofilling(false); setAutofillInfo(null) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, devis?.id])
 
   const set = (champ, val) => setForm(f => ({ ...f, [champ]: val }))
+
+  // Pré-remplissage IA : envoie le PDF sélectionné, applique l'extraction au formulaire.
+  // On préserve le TTC réel du devis (ttc_manuel=true) au lieu du calcul auto HT×1.10.
+  const remplirDepuisPdf = async () => {
+    if (!form.fichier || !onAutofill) return
+    setAutofilling(true); setAutofillInfo(null)
+    const data = await onAutofill(form.fichier)
+    setAutofilling(false)
+    if (!data?.extraction) { setAutofillInfo({ tone: 'bad', texte: 'Extraction impossible — saisis à la main.' }); return }
+    const ex = data.extraction
+    let artisanNote = null
+    setForm(f => {
+      const next = { ...f }
+      if (ex.montant_ht != null) next.montant_ht = String(ex.montant_ht)
+      if (ex.montant_ttc != null) { next.montant_ttc = String(ex.montant_ttc); next.ttc_manuel = true }
+      if (ex.date_reception) next.date_reception = ex.date_reception
+      if (ex.date_limite) next.date_limite = ex.date_limite
+      if (ex.description) next.notes = ex.description
+      // Artisan : suggestion par nom (l'humaine confirme). Ne force pas si déjà choisi.
+      if (!f.artisan_id && ex.entreprise) {
+        const m = matchArtisanParNom(ex.entreprise, artisans || [])
+        if (m.id) { next.artisan_id = m.id; artisanNote = `Artisan pré-sélectionné : ${(artisans || []).find(a => a.id === m.id)?.entreprise || ''}${m.exact ? '' : ' (à vérifier)'}` }
+        else artisanNote = `Artisan « ${ex.entreprise} » non trouvé — sélectionne-le.`
+      }
+      return next
+    })
+    const parts = []
+    if (data.avertissement) parts.push(data.avertissement)
+    if (artisanNote) parts.push(artisanNote)
+    setAutofillInfo({ tone: data.avertissement ? 'warn' : 'ok', texte: parts.join(' · ') || 'Champs pré-remplis — vérifie avant d\'enregistrer.' })
+  }
+
   if (!open) return null
 
   const htNum  = parseFloat(form.montant_ht)
@@ -43,9 +79,16 @@ export default function DevisModal({ open, devis, onClose, onSave, artisans }) {
       onClose={onClose}
       width={600}
       footer={<>
-        <button onClick={onClose} className="btn btn-ghost">Annuler</button>
-        <button onClick={() => onSave(form)} className="btn btn-primary" disabled={!canSave}>
-          {isEdit ? 'Enregistrer' : 'Créer le devis'}
+        <button onClick={onClose} className="btn btn-ghost" disabled={saving}>Annuler</button>
+        <button
+          onClick={async () => {
+            if (saving) return
+            setSaving(true)
+            const ok = await onSave(form)   // true = enregistré (modale se ferme) ; false = erreur
+            if (!ok) setSaving(false)       // erreur → on réactive le bouton
+          }}
+          className="btn btn-primary" disabled={!canSave || saving}>
+          {saving ? 'Enregistrement…' : isEdit ? 'Enregistrer' : 'Créer le devis'}
         </button>
       </>}
     >
@@ -151,12 +194,30 @@ export default function DevisModal({ open, devis, onClose, onSave, artisans }) {
               <label className="btn btn-ghost" style={{cursor:'pointer', justifyContent:'center', borderStyle:'dashed', padding:'10px 14px'}}>
                 {form.fichier ? `✓ ${form.fichier.name}` : '📎 Choisir un PDF'}
                 <input type="file" accept=".pdf" style={{display:'none'}}
-                  onChange={e => set('fichier', e.target.files[0] || null)} />
+                  onChange={e => { set('fichier', e.target.files[0] || null); setAutofillInfo(null) }} />
               </label>
               {form.fichier && (
-                <button onClick={() => set('fichier', null)} className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px', marginTop:6, color:'#b91c1c'}}>
-                  Supprimer le fichier
-                </button>
+                <div style={{display:'flex', gap:8, alignItems:'center', marginTop:8, flexWrap:'wrap'}}>
+                  {onAutofill && (
+                    <button onClick={remplirDepuisPdf} disabled={autofilling}
+                      className="btn btn-primary" style={{fontSize:12, padding:'6px 12px', background:'#4f46e5', borderColor:'#4f46e5'}}>
+                      {autofilling ? 'Lecture du PDF…' : '✨ Pré-remplir depuis le PDF'}
+                    </button>
+                  )}
+                  <button onClick={() => { set('fichier', null); setAutofillInfo(null) }} className="btn btn-ghost" style={{fontSize:11, padding:'4px 10px', color:'#b91c1c'}}>
+                    Supprimer le fichier
+                  </button>
+                </div>
+              )}
+              {autofillInfo && (
+                <div style={{
+                  marginTop:8, borderRadius:8, padding:'8px 12px', fontSize:12.5, fontWeight:500,
+                  background: autofillInfo.tone === 'bad' ? '#fef2f2' : autofillInfo.tone === 'warn' ? '#fffbeb' : '#f0fdf4',
+                  border: `1px solid ${autofillInfo.tone === 'bad' ? '#fecaca' : autofillInfo.tone === 'warn' ? '#fde68a' : '#bbf7d0'}`,
+                  color: autofillInfo.tone === 'bad' ? '#b91c1c' : autofillInfo.tone === 'warn' ? '#92400e' : '#166534',
+                }}>
+                  {autofillInfo.texte}
+                </div>
               )}
             </div>
           )}
