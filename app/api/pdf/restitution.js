@@ -396,7 +396,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
   const client = dossier.client
   const ref = dossier.referente
   const nomClient = formatNomClient(client, { civilite: true, withRepresentant: true })
-  const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
+  const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
   const nomRef = getNomRef(ref)
   const dateAuj = new Date().toLocaleDateString('fr-FR')
 
@@ -636,7 +636,7 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
   const client = dossier.client
   const ref = dossier.referente
   const nomClient = formatNomClient(client, { civilite: true, withRepresentant: true })
-  const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
+  const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
   const nomRef = getNomRef(ref)
   const dateAuj = new Date().toLocaleDateString('fr-FR')
 

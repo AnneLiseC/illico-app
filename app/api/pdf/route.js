@@ -101,7 +101,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
     ? `${dossier.referente.prenom || ''} ${dossier.referente.nom || ''}`.trim()
     : '—'
   const typologieLabel = {
-    courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo',
+    courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', merad: 'MERAD',
     audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin',
   }[dossier.typologie] || dossier.typologie || '—'
 

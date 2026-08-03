@@ -215,13 +215,19 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
     await transcrireAudioBlob(file, (file.name.split('.').pop() || 'm4a').toLowerCase())
   }
 
-        const TYPES_CR = [
+        const TOUS_TYPES_CR = [
           { value: 'r1',        label: 'R1 — Visite technique',  emoji: '🔍' },
           { value: 'r2',        label: 'R2 — Visite artisans',    emoji: '🔨' },
           { value: 'r3',        label: 'R3 — Présentation devis', emoji: '📋' },
           { value: 'suivi',     label: 'Suivi de chantier',       emoji: '📊' },
           { value: 'reception', label: 'Réception',               emoji: '✓' },
         ]
+        // MERAD = courtage à distance : centré sur le R3 (présentation devis). Pas de R2
+        // (visite artisans). On laisse R1 disponible « au cas où » (première visite
+        // possible), + Réception (fin de chantier).
+        const TYPES_CR = dossier?.typologie === 'merad'
+          ? TOUS_TYPES_CR.filter(t => ['r1', 'r3', 'reception'].includes(t.value))
+          : TOUS_TYPES_CR
         const intervenantsDispo = devis.filter(d => ['recu', 'accepte'].includes(d.statut))
         return (
           <ModalShell
