@@ -87,4 +87,41 @@ describe('buildUserPrompt', () => {
     expect(p).toContain('AM-2026-001')
     expect(p).toContain('compteur au sous-sol')
   })
+
+  const dossierBase = { reference: 'AM-1', client: { nom: 'X' }, typologie: 'amo', referente: null }
+  const devisEx = [
+    { statut: 'recu', montant_ttc: 5000, notes: 'Plomberie salle de bain', artisan: { entreprise: 'Dupont', metier: 'Plombier' } },
+    { statut: 'accepte', montant_ttc: 8000, notes: 'Peinture séjour', artisan: { entreprise: 'Martin' } },
+    { statut: 'refuse', montant_ttc: 9999, notes: 'Devis refusé', artisan: { entreprise: 'Nope' } },
+    { statut: 'en_attente', montant_ttc: 1234, notes: 'Pas encore reçu', artisan: { entreprise: 'Wait' } },
+  ]
+
+  it('injecte le périmètre des travaux (description) par artisan, dans tous les types', () => {
+    const p = buildUserPrompt({ dossier: dossierBase, devis: devisEx, typeVisite: 'suivi', dateVisite: null, intervenants: [], notesBrutes: '' })
+    expect(p).toContain('DEVIS DU CHANTIER')
+    expect(p).toContain('Plomberie salle de bain')
+    expect(p).toContain('Peinture séjour')
+    expect(p).toContain('ne PAS inventer')       // ancrage anti-hallucination
+  })
+
+  it('exclut les devis refusés et en attente', () => {
+    const p = buildUserPrompt({ dossier: dossierBase, devis: devisEx, typeVisite: 'suivi', dateVisite: null, intervenants: [], notesBrutes: '' })
+    expect(p).not.toContain('Devis refusé')
+    expect(p).not.toContain('Pas encore reçu')
+  })
+
+  it('ne montre PAS les montants hors R3 (R2 interdit les montants)', () => {
+    const p = buildUserPrompt({ dossier: dossierBase, devis: devisEx, typeVisite: 'r2', dateVisite: null, intervenants: [], notesBrutes: '' })
+    expect(p).not.toContain('TTC')
+  })
+
+  it('montre les montants en R3 (présentation des devis)', () => {
+    const p = buildUserPrompt({ dossier: dossierBase, devis: devisEx, typeVisite: 'r3', dateVisite: null, intervenants: [], notesBrutes: '' })
+    expect(p).toContain('TTC')
+  })
+
+  it('devis reçu sans description → « périmètre non précisé » (jamais vide)', () => {
+    const p = buildUserPrompt({ dossier: dossierBase, devis: [{ statut: 'recu', notes: null, artisan: { entreprise: 'Sansdesc' } }], typeVisite: 'r2', dateVisite: null, intervenants: [], notesBrutes: '' })
+    expect(p).toContain('périmètre non précisé')
+  })
 })
