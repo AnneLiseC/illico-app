@@ -26,6 +26,15 @@ const RO = ({ label, value }) => (
   </div>
 )
 
+// Titre de carte : un cran au-dessus de l'eyebrow (sinon carte et sous-labels se
+// confondent). Sépare clairement « bloc » et « champ » dans la hiérarchie visuelle.
+const CardTitle = ({ children, sub }) => (
+  <div>
+    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-900)', letterSpacing: '-0.01em' }}>{children}</div>
+    {sub && <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 2 }}>{sub}</div>}
+  </div>
+)
+
 export default function Profil() {
   const { user, profile, initialized, displayAgenceName, fetchProfile } = useAuth()
   const router = useRouter()
@@ -41,6 +50,7 @@ export default function Profil() {
   // Objectif annuel perso (agente) — '' = aucune ligne (≠ 0). objExiste distingue
   // « pas d'objectif » de « objectif à 0 ».
   const [objMontant, setObjMontant] = useState('')
+  const [objInitial, setObjInitial] = useState('')   // valeur chargée → bouton désactivé tant qu'inchangé
   const [objExiste, setObjExiste] = useState(false)
   const [savingObj, setSavingObj] = useState(false)
 
@@ -58,7 +68,7 @@ export default function Profil() {
   useEffect(() => {
     if (!profile || profile.role !== 'agente' || !profile.agence_id) return
     getObjectifAgente(profile.id)
-      .then(row => { setObjMontant(row?.montant ?? ''); setObjExiste(!!row) })
+      .then(row => { const m = String(row?.montant ?? ''); setObjMontant(m); setObjInitial(m); setObjExiste(!!row) })
       .catch(() => { /* erreur réseau transitoire : on laisse le champ tel quel */ })
   }, [profile?.id])
 
@@ -78,7 +88,7 @@ export default function Profil() {
     try {
       await saveObjectif({ cible: 'agente', agenteId: profile.id, agenceId: profile.agence_id, montant: objMontant })
       const row = await getObjectifAgente(profile.id)
-      setObjMontant(row?.montant ?? ''); setObjExiste(!!row)
+      { const m = String(row?.montant ?? ''); setObjMontant(m); setObjInitial(m); setObjExiste(!!row) }
       setSucces('Objectif enregistré ✓')
     } catch (e) {
       setError('Erreur : ' + e.message)
@@ -148,7 +158,7 @@ export default function Profil() {
 
         {/* ── Informations ── */}
         <div className="card" style={cardStyle}>
-          <div className="eyebrow">Mes informations</div>
+          <CardTitle>Mes informations</CardTitle>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <RO label="Prénom" value={profile.prenom} />
             <RO label="Nom" value={profile.nom} />
@@ -172,17 +182,14 @@ export default function Profil() {
         {/* ── Mon objectif annuel (agente : éditable par elle-même) ── */}
         {profile.role === 'agente' && profile.agence_id && (
           <div className="card" style={cardStyle}>
-            <div className="eyebrow">Mon objectif annuel {new Date().getFullYear()}</div>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>
-              Tu fixes ton objectif de CA généré pour l&apos;année. Visible dans Finances.
-            </div>
+            <CardTitle sub="Tu fixes ton objectif de CA généré pour l'année. Visible dans Finances.">Mon objectif annuel {new Date().getFullYear()}</CardTitle>
             <div>
               <label style={LS}>Objectif de CA (€)</label>
               <div style={{ display: 'flex', gap: 10 }}>
                 <input className="input" type="number" min="0" value={objMontant}
                   onChange={e => setObjMontant(e.target.value)}
                   placeholder="ex. 65000" style={{ height: 40, flex: 1 }} />
-                <button className="btn btn-primary" onClick={enregistrerObjectif} disabled={savingObj}>
+                <button className="btn btn-primary" onClick={enregistrerObjectif} disabled={savingObj || String(objMontant) === objInitial}>
                   {savingObj ? 'Enregistrement…' : 'Enregistrer'}
                 </button>
               </div>
@@ -197,7 +204,7 @@ export default function Profil() {
 
         {/* ── Rémunération (lecture seule — réglée par l'administrateur) ── */}
         <div className="card" style={cardStyle}>
-          <div className="eyebrow">Rémunération · réglée par l&apos;administrateur</div>
+          <CardTitle sub="Réglée par l'administrateur">Rémunération</CardTitle>
 
           {(() => {
             const frais = profile.frais_part_agente_defaut
@@ -244,7 +251,7 @@ export default function Profil() {
 
         {/* ── Mes documents (RIB owner + Kbis lecture seule) ── */}
         <div className="card" style={cardStyle}>
-          <div className="eyebrow">Mes documents</div>
+          <CardTitle>Mes documents</CardTitle>
 
           {/* RIB */}
           <div>
@@ -280,7 +287,7 @@ export default function Profil() {
 
         {/* ── Mot de passe ── */}
         <div className="card" style={cardStyle}>
-          <div className="eyebrow">Mot de passe</div>
+          <CardTitle>Mot de passe</CardTitle>
           <div>
             <label style={LS}>Nouveau mot de passe</label>
             <input className="input" type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)}

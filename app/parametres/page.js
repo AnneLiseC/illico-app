@@ -49,7 +49,18 @@ export default function Parametres() {
   const [uploadingRib, setUploadingRib]   = useState(false)
   const [uploadingKbisFranchise, setUploadingKbisFranchise] = useState(false)
   const [section, setSection]             = useState('profil')
+  // Mode « compact » (mobile) : la sidebar 240px devient une barre d'onglets scrollable.
+  const [compact, setCompact]             = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const mq = window.matchMedia('(max-width: 720px)')
+    const on = () => setCompact(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
   const [savingProfil, setSavingProfil]   = useState(false)
+  const [profilSnap, setProfilSnap]       = useState(null)   // profil chargé → détection « non enregistré »
   const [savingPwd, setSavingPwd]         = useState(false)
   const [newPwd, setNewPwd]               = useState('')
   const [newPwdConfirm, setNewPwdConfirm] = useState('')
@@ -236,6 +247,7 @@ export default function Parametres() {
     if (!authProfile) { router.push('/login'); return }
     if (authProfile.role !== 'admin') { router.push('/dashboard'); return }
     setProfile(authProfile)
+    setProfilSnap({ prenom: authProfile.prenom || '', nom: authProfile.nom || '', telephone: authProfile.telephone || '' })
     chargerAgence(authProfile.societe_id)
     chargerObjectifs()
     // Les calendriers (connexion + état) se gèrent dans /profil (lot 8b) ; plus de
@@ -381,7 +393,10 @@ export default function Parametres() {
       .update({ prenom: profile.prenom, nom: profile.nom, telephone: profile.telephone })
       .eq('id', profile.id)
     if (error) setErreur('Erreur : ' + error.message)
-    else setSucces('Profil enregistré ✓')
+    else {
+      setSucces('Profil enregistré ✓')
+      setProfilSnap({ prenom: profile.prenom || '', nom: profile.nom || '', telephone: profile.telephone || '' })
+    }
     setSavingProfil(false)
   }
 
@@ -417,6 +432,19 @@ export default function Parametres() {
     { k:'legal',        l:'Mentions légales' },
   ]
 
+  // « Non enregistré » du profil franchisé (le formulaire libre le plus édité) : compare
+  // les champs au snapshot chargé. Sert à avertir avant de changer de section.
+  const profilDirty = !!profilSnap && !!profile && (
+    String(profile.prenom || '') !== profilSnap.prenom ||
+    String(profile.nom || '') !== profilSnap.nom ||
+    String(profile.telephone || '') !== profilSnap.telephone
+  )
+  const changerSection = (k) => {
+    if (k === section) return
+    if (profilDirty && !window.confirm('Profil : des modifications ne sont pas enregistrées. Changer de section quand même ?')) return
+    setSection(k)
+  }
+
   return (
     <div className="page-enter page-pad" style={{display:'flex', flexDirection:'column', gap:18}}>
 
@@ -429,21 +457,27 @@ export default function Parametres() {
       {succes && !modal && <div style={{background:'rgba(22,163,74,0.07)', border:'1px solid rgba(22,163,74,0.25)', borderRadius:10, padding:'10px 16px', fontSize:13, color:'#15803d'}}>{succes}</div>}
       {erreur && !modal && <div style={{background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:10, padding:'10px 16px', fontSize:13, color:'#b91c1c'}}>{erreur}</div>}
 
-      <div className="card" style={{padding:0, overflow:'hidden', display:'grid', gridTemplateColumns:'240px 1fr', minHeight:560}}>
+      <div className="card" style={{padding:0, overflow:'hidden', display:'grid', gridTemplateColumns: compact ? '1fr' : '240px 1fr', minHeight: compact ? 0 : 560}}>
 
-        {/* Nav latérale */}
-        <nav style={{padding:'10px 0', borderRight:'1px solid var(--ink-200)'}}>
+        {/* Nav : sidebar (desktop) ↔ barre d'onglets scrollable (mobile). */}
+        <nav style={compact
+          ? {display:'flex', gap:4, overflowX:'auto', padding:'6px 8px', borderBottom:'1px solid var(--ink-200)'}
+          : {padding:'10px 0', borderRight:'1px solid var(--ink-200)'}}>
           {NAV.map(({ k, l, count }) => {
             const active = section === k
             return (
-              <button key={k} onClick={() => setSection(k)} className={active ? '' : 'row-hover'} style={{
-                width:'100%', textAlign:'left', padding:'10px 16px', display:'flex', alignItems:'center', gap:8,
+              <button key={k} onClick={() => changerSection(k)} className={active ? '' : 'row-hover'} style={{
+                textAlign:'left', display:'flex', alignItems:'center', gap:8,
                 border:0, cursor:'pointer', fontWeight: active ? 700 : 500, fontSize:13.5,
                 color: active ? 'var(--brand-800)' : 'var(--ink-700)',
-                borderLeft: `3px solid ${active ? 'var(--brand-500)' : 'transparent'}`,
                 background: active ? 'var(--brand-50)' : 'transparent',
+                ...(compact
+                  ? { padding:'8px 12px', whiteSpace:'nowrap', flex:'0 0 auto', borderRadius:8,
+                      borderBottom:`3px solid ${active ? 'var(--brand-500)' : 'transparent'}` }
+                  : { width:'100%', padding:'10px 16px',
+                      borderLeft:`3px solid ${active ? 'var(--brand-500)' : 'transparent'}` }),
               }}>
-                <span style={{flex:1}}>{l}</span>
+                <span style={compact ? undefined : {flex:1}}>{l}</span>
                 {count != null && <span style={{background:'var(--ink-200)', color:'var(--ink-700)', fontSize:11, fontWeight:700, padding:'1px 6px', borderRadius:99}}>{count}</span>}
               </button>
             )
@@ -451,7 +485,7 @@ export default function Parametres() {
         </nav>
 
         {/* Contenu */}
-        <div style={{padding:28, overflowY:'auto'}}>
+        <div style={{padding: compact ? 18 : 28, overflowY:'auto'}}>
 
           {/* ── Profil franchisé ── */}
           {section === 'profil' && (
@@ -478,10 +512,16 @@ export default function Parametres() {
                   <input className="input" value={profile?.email || ''} disabled style={{opacity:0.6}}/>
                 </div>
               </div>
-              <div>
-                <button className="btn btn-primary" onClick={sauvegarderProfil} disabled={savingProfil}>
+              <div style={{display:'flex', alignItems:'center', gap:12, flexWrap:'wrap'}}>
+                <button className="btn btn-primary" onClick={sauvegarderProfil} disabled={savingProfil || !profilDirty}>
                   {savingProfil ? 'Enregistrement…' : 'Enregistrer'}
                 </button>
+                {profilDirty && !savingProfil && (
+                  <span style={{fontSize:12.5, fontWeight:600, color:'#a16207', display:'inline-flex', alignItems:'center', gap:6}}>
+                    <span style={{width:7, height:7, borderRadius:'50%', background:'#d97706', display:'inline-block'}} />
+                    Modifications non enregistrées
+                  </span>
+                )}
               </div>
             </div>
           )}
