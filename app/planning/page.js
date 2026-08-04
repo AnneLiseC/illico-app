@@ -19,7 +19,7 @@ const COLORS = {
   navy:   '#0B2D5E',
   blue:   '#1A56DB',
   sky:    '#3B82F6',
-  teal:   '#4f46e5',
+  teal:   '#0D9488',
   amber:  '#D97706',
   coral:  '#E05252',
   violet: '#7C3AED',
@@ -76,7 +76,7 @@ export default function Planning() {
   const [demandeSuppr, setDemandeSuppr]       = useState(false) // choix portée suppr. d'une série
   const [demandeModif, setDemandeModif]       = useState(false) // choix portée modif. d'une série
   const [fournisseursConnectes, setFournisseursConnectes] = useState([])
-  const [syncMessage, setSyncMessage]         = useState('')
+  const [syncMessage, setSyncMessage]         = useState(null) // { text, ok }
   const [calendarView, setCalendarView]       = useState('timeGridWeek')
   const [quickMenu, setQuickMenu]             = useState(null) // { date, x, y }
 
@@ -153,12 +153,12 @@ export default function Planning() {
       } catch { setFournisseursConnectes([]); setGoogleConnected(false) }
       const params = new URLSearchParams(window.location.search)
       if (params.get('google') === 'connected') {
-        setSyncMessage('✅ Google Calendar connecté avec succès !')
+        setSyncMessage({ text: 'Google Calendar connecté avec succès', ok: true })
         setFournisseursConnectes(f => f.includes('google') ? f : [...f, 'google'])
         setGoogleConnected(true)
         window.history.replaceState({}, '', '/planning')
       } else if (params.get('google') === 'error') {
-        setSyncMessage('❌ Erreur de connexion Google Calendar')
+        setSyncMessage({ text: 'Erreur de connexion Google Calendar', ok: false })
         window.history.replaceState({}, '', '/planning')
       }
       setLoading(false)
@@ -418,14 +418,6 @@ export default function Planning() {
     setModalOuvert(true)
   }
 
-  const ouvrirSidebar = (item) => {
-    setElementSelectionne({ type: item.type, data: item.data })
-    setModalType(item.type); setModeEdition(false)
-    if (item.type === 'rdv') setFormRdv({ dossier_id: item.data.dossier_id, type_rdv: item.data.type_rdv, date_heure: item.data.date_heure ? instantToParisLocal(item.data.date_heure) : '', duree_minutes: item.data.duree_minutes || 60, artisan_id: item.data.artisan_id || '', notes: item.data.notes || '', titre: item.data.titre || '', agence_id: item.data.agence_id || '', cible_id: item.data.cible_id || '' })
-    else if (item.type === 'intervention') setFormIntervention({ dossier_id: item.data.dossier_id, artisan_id: item.data.artisan_id, type_intervention: item.data.type_intervention, date_debut: item.data.date_debut || '', date_fin: item.data.date_fin || '', jours_specifiques: item.data.jours_specifiques || [], notes: item.data.notes || '', agence_id: item.data.agence_id || '', cible_id: item.data.cible_id || '' })
-    setModalOuvert(true)
-  }
-
   const fermerModal = () => {
     setModalOuvert(false); setElementSelectionne(null); setModeEdition(false); setErreur(''); setDemandeSuppr(false); setDemandeModif(false)
     setFormRdv({ dossier_id: '', type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', agence_id: '', cible_id: '' })
@@ -596,11 +588,6 @@ export default function Planning() {
         <div>
           <div className="eyebrow" style={{marginBottom:4}}>Pilotage</div>
           <h1 className="page" style={{fontSize:28}}>Planning</h1>
-          <div style={{color:'var(--ink-500)', fontSize:13, marginTop:6}}>
-            <strong style={{color:'var(--ink-700)'}}>{rdvCeMois}</strong> RDV ce mois ·{' '}
-            <strong style={{color:'var(--ink-700)'}}>{interventionsScoped.length}</strong> interventions ·{' '}
-            <strong style={{color:'var(--ink-700)'}}>{agendaItems.length}</strong> à venir 30j
-          </div>
         </div>
         <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
           {googleConnected ? (
@@ -622,14 +609,14 @@ export default function Planning() {
                   const res = await apiFetch('/api/auth/google', { method: 'POST' })
                   const data = await res.json()
                   if (res.ok && data.url) window.location.href = data.url
-                  else setSyncMessage(`❌ ${data.error || 'Erreur de connexion Google'}`)
+                  else setSyncMessage({ text: data.error || 'Erreur de connexion Google', ok: false })
                 } catch {
-                  setSyncMessage('❌ Erreur de connexion Google')
+                  setSyncMessage({ text: 'Erreur de connexion Google', ok: false })
                 }
               }}
               className="btn btn-ghost"
               style={{display:'inline-flex', alignItems:'center', gap:6}}>
-              📅 Google Calendar
+              Google Calendar
             </button>
           )}
           <button className="btn btn-ghost"
@@ -648,12 +635,12 @@ export default function Planning() {
         <div style={{
           fontSize:12, padding:'10px 14px', borderRadius:10, border:'1px solid',
           display:'flex', alignItems:'center', justifyContent:'space-between',
-          background: syncMessage.startsWith('✅') ? 'rgba(22,163,74,0.06)' : 'rgba(239,68,68,0.06)',
-          color: syncMessage.startsWith('✅') ? '#15803d' : '#b91c1c',
-          borderColor: syncMessage.startsWith('✅') ? 'rgba(22,163,74,0.15)' : 'rgba(239,68,68,0.15)',
+          background: syncMessage.ok ? 'rgba(22,163,74,0.06)' : 'rgba(239,68,68,0.06)',
+          color: syncMessage.ok ? '#15803d' : '#b91c1c',
+          borderColor: syncMessage.ok ? 'rgba(22,163,74,0.15)' : 'rgba(239,68,68,0.15)',
         }}>
-          <span style={{fontWeight:600}}>{syncMessage}</span>
-          <button onClick={() => setSyncMessage('')} style={{marginLeft:16, opacity:0.5, background:'none', border:'none', cursor:'pointer', fontSize:18, lineHeight:1}}>×</button>
+          <span style={{fontWeight:600}}>{syncMessage.text}</span>
+          <button onClick={() => setSyncMessage(null)} style={{marginLeft:16, opacity:0.5, background:'none', border:'none', cursor:'pointer', fontSize:18, lineHeight:1}}>×</button>
         </div>
       )}
 
@@ -722,17 +709,17 @@ export default function Planning() {
             <style>{`
               .fc { font-family: system-ui, -apple-system, sans-serif; }
               .fc-toolbar { padding: 14px 18px !important; background: white; border-bottom: 1px solid #F1F5F9 !important; }
-              .fc-toolbar-title { font-size: 1rem !important; font-weight: 700 !important; color: ${COLORS.navy} !important; letter-spacing: -0.02em; }
+              .fc-toolbar-title { font-size: 1rem !important; font-weight: 700 !important; color: var(--brand-900) !important; letter-spacing: -0.02em; }
               .fc-button-group .fc-button, .fc-button { background: white !important; border: 1px solid #E2E8F0 !important; color: #475569 !important; border-radius: 8px !important; font-size: 12px !important; font-weight: 600 !important; padding: 5px 12px !important; box-shadow: none !important; transition: all 0.15s !important; margin: 0 1px !important; }
-              .fc-button:hover { background: #F8FAFC !important; color: ${COLORS.navy} !important; border-color: #CBD5E1 !important; }
-              .fc-button-primary:not(:disabled).fc-button-active, .fc-button-primary:not(:disabled):active { background: ${COLORS.navy} !important; color: white !important; border-color: ${COLORS.navy} !important; }
-              .fc-today-button { background: ${COLORS.blue} !important; color: white !important; border-color: ${COLORS.blue} !important; }
-              .fc-today-button:hover { background: #1447C0 !important; border-color: #1447C0 !important; }
+              .fc-button:hover { background: #F8FAFC !important; color: var(--brand-800) !important; border-color: #CBD5E1 !important; }
+              .fc-button-primary:not(:disabled).fc-button-active, .fc-button-primary:not(:disabled):active { background: var(--brand-800) !important; color: white !important; border-color: var(--brand-800) !important; }
+              .fc-today-button { background: var(--brand-600) !important; color: white !important; border-color: var(--brand-600) !important; }
+              .fc-today-button:hover { background: var(--brand-700) !important; border-color: var(--brand-700) !important; }
               .fc-col-header-cell { background: #F8FAFC !important; border-color: #F1F5F9 !important; }
               .fc-col-header-cell-cushion { font-size: 11px !important; font-weight: 700 !important; color: #94A3B8 !important; text-transform: uppercase !important; letter-spacing: 0.08em !important; text-decoration: none !important; padding: 8px 4px !important; }
               .fc-daygrid-day-number { font-size: 12px !important; font-weight: 600 !important; color: #64748B !important; padding: 5px 8px !important; text-decoration: none !important; }
-              .fc-day-today .fc-daygrid-day-number { color: ${COLORS.blue} !important; font-weight: 800 !important; }
-              .fc-day-today { background: #EFF6FF !important; }
+              .fc-day-today .fc-daygrid-day-number { color: var(--brand-600) !important; font-weight: 800 !important; }
+              .fc-day-today { background: var(--brand-50) !important; }
               .fc-event { border-radius: 5px !important; font-size: 11px !important; font-weight: 600 !important; padding: 1px 5px !important; cursor: pointer !important; transition: all 0.12s !important; }
               .fc-event:hover { filter: brightness(1.08) !important; box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important; transform: translateY(-1px) !important; }
               .fc-timegrid-slot-label { font-size: 11px !important; color: #94A3B8 !important; font-weight: 500 !important; }
@@ -745,7 +732,7 @@ export default function Planning() {
               .fc-scrollgrid { border: none !important; }
               .fc-scrollgrid td, .fc-scrollgrid th { border-color: #F1F5F9 !important; }
               .fc-daygrid-day { min-height: 80px !important; }
-              .fc-more-link { font-size: 10px !important; font-weight: 700 !important; color: ${COLORS.blue} !important; }
+              .fc-more-link { font-size: 10px !important; font-weight: 700 !important; color: var(--brand-600) !important; }
               /* Zone "journée entière" (interventions, dates-clés) agrandie et scrollable
                  en vue semaine, pour voir plusieurs marqueurs sans les tronquer. */
               .fc-timegrid .fc-daygrid-body { min-height: 64px !important; }
@@ -764,48 +751,31 @@ export default function Planning() {
         {/* ── SIDEBAR (à droite, style maquette) ─────────────────────── */}
         <aside style={{display:'flex', flexDirection:'column', gap:14, minWidth:0}}>
 
+          {/* KPIs (en haut) — cliquables : raccourcis vue / filtre / navigation */}
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
+            {[
+              { label: 'RDV ce mois', value: rdvCeMois, color: 'var(--brand-600)', title: 'Voir le mois', action: () => setCalendarView('dayGridMonth') },
+              { label: 'Interventions', value: interventionsScoped.length, color: COLORS.violet, title: 'Filtrer sur les artisans', action: () => setVue('artisan') },
+              { label: 'Chantiers actifs', value: dossiersScoped.filter(d => d.date_demarrage_chantier && !d.date_fin_chantier).length, color: COLORS.mint, title: 'Ouvrir les chantiers', action: () => router.push('/chantiers') },
+              { label: 'À venir 30j', value: agendaItems.length, color: COLORS.amber, title: 'Vue liste (agenda)', action: () => setCalendarView('listWeek') },
+            ].map(({ label, value, color, title, action }) => (
+              <button key={label} onClick={action} title={title} className="card row-hover"
+                style={{padding:12, textAlign:'center', cursor:'pointer', font:'inherit', width:'100%'}}>
+                <div className="tnum" style={{fontSize:20, fontWeight:800, color}}>{value}</div>
+                <div className="eyebrow" style={{marginTop:4}}>{label}</div>
+              </button>
+            ))}
+          </div>
+
           {/* Recherche */}
           <div style={{position:'relative'}}>
-            <span style={{position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-500)', fontSize:14, pointerEvents:'none'}}>🔍</span>
             <input value={recherche} onChange={e => setRecherche(e.target.value)}
               placeholder="Rechercher client, artisan…"
-              className="input" style={{paddingLeft:32, width:'100%'}}/>
+              className="input" style={{width:'100%'}}/>
             {recherche && (
               <button onClick={() => setRecherche('')}
                 style={{position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-500)', background:'none', border:'none', cursor:'pointer', fontSize:16, lineHeight:1}}>×</button>
             )}
-          </div>
-
-          {/* Prochains événements · 30 jours */}
-          <div className="card" style={{padding:18}}>
-            <div className="eyebrow" style={{marginBottom:12}}>Prochains événements · 30 jours</div>
-            <div style={{display:'flex', flexDirection:'column', gap:10, maxHeight:480, overflow:'auto'}}>
-              {agendaItems.length === 0 && (
-                <div style={{padding:20, textAlign:'center', color:'var(--ink-500)', fontSize:12}}>
-                  {recherche ? 'Aucun résultat' : "Pas d'événement prévu"}
-                </div>
-              )}
-              {agendaItems.map(item => {
-                const dt = new Date(item.date)
-                return (
-                  <button key={item.id + item.type} onClick={() => ouvrirSidebar(item)}
-                    style={{display:'grid', gridTemplateColumns:'auto 1fr', gap:10, alignItems:'flex-start',
-                      background:'transparent', border:0, padding:0, cursor:'pointer', textAlign:'left'}}>
-                    <div style={{
-                      width:48, padding:'6px 0', background:'var(--surface-2)', borderRadius:8,
-                      textAlign:'center', borderLeft:`3px solid ${item.color}`
-                    }}>
-                      <div className="tnum" style={{fontSize:16, fontWeight:800, color:'var(--ink-900)', lineHeight:1}}>{dt.toLocaleDateString('fr-FR',{day:'2-digit', timeZone:'Europe/Paris'})}</div>
-                      <div style={{fontSize:11, fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', marginTop:2}}>{dt.toLocaleDateString('fr-FR',{month:'short', timeZone:'Europe/Paris'}).replace('.','')}</div>
-                    </div>
-                    <div style={{minWidth:0}}>
-                      <div className="clip-1" style={{fontSize:12, fontWeight:600, color:'var(--ink-900)'}}>{item.titre}</div>
-                      <div className="clip-1" style={{fontSize:11, color:'var(--ink-500)', marginTop:2}}>{item.sous}</div>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
           </div>
 
           {/* Filtres rapides (agentes) — admin seulement */}
@@ -834,21 +804,6 @@ export default function Planning() {
               </div>
             </div>
           )}
-
-          {/* Stats compactes */}
-          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
-            {[
-              { label: 'RDV ce mois', value: rdvCeMois, color: COLORS.blue },
-              { label: 'Interventions', value: interventionsScoped.length, color: COLORS.violet },
-              { label: 'Chantiers actifs', value: dossiersScoped.filter(d => d.date_demarrage_chantier && !d.date_fin_chantier).length, color: COLORS.mint},
-              { label: 'À venir 30j', value: agendaItems.length, color: COLORS.amber },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="card" style={{padding:12, textAlign:'center'}}>
-                <div className="tnum" style={{fontSize:20, fontWeight:800, color}}>{value}</div>
-                <div className="eyebrow" style={{marginTop:4}}>{label}</div>
-              </div>
-            ))}
-          </div>
         </aside>
       </div>
 
@@ -943,7 +898,7 @@ export default function Planning() {
                   <div style={{display:'flex', gap:8, paddingTop:4}}>
                     <button onClick={() => setModeEdition(true)} className="btn btn-ghost" style={{flex:1}}>Modifier</button>
                     <button onClick={() => router.push(`/chantiers/${elementSelectionne.data.dossier_id}`)} className="btn btn-primary" style={{flex:1}}>Voir le chantier →</button>
-                    <button onClick={() => supprimer()} className="btn btn-ghost" style={{color:'#b91c1c', borderColor:'rgba(220,38,38,0.2)'}}>🗑</button>
+                    <button onClick={() => supprimer()} className="btn btn-ghost" style={{color:'#b91c1c', borderColor:'rgba(220,38,38,0.2)'}}>Supprimer</button>
                   </div>
                 </div>
               )}
@@ -962,7 +917,7 @@ export default function Planning() {
                   <div style={{display:'flex', gap:8, paddingTop:4}}>
                     <button onClick={() => setModeEdition(true)} className="btn btn-ghost" style={{flex:1}}>Modifier</button>
                     <button onClick={() => router.push(`/chantiers/${elementSelectionne.data.dossier_id}`)} className="btn btn-primary" style={{flex:1}}>Voir le chantier →</button>
-                    <button onClick={() => supprimer()} className="btn btn-ghost" style={{color:'#b91c1c', borderColor:'rgba(220,38,38,0.2)'}}>🗑</button>
+                    <button onClick={() => supprimer()} className="btn btn-ghost" style={{color:'#b91c1c', borderColor:'rgba(220,38,38,0.2)'}}>Supprimer</button>
                   </div>
                 </div>
               )}
