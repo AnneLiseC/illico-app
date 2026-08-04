@@ -222,7 +222,7 @@ export default function NouveauClient() {
                       required
                       value={form.raison_sociale}
                       onChange={e => set('raison_sociale', e.target.value)}
-                      placeholder="Coucou"
+                      placeholder="Ex. OPTICA"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -239,6 +239,9 @@ export default function NouveauClient() {
                     >
                       <option value="M.">M.</option>
                       <option value="Mme">Mme</option>
+                      <option value="M. et Mme">M. et Mme</option>
+                      <option value="Mme et Mme">Mme et Mme</option>
+                      <option value="M. et M.">M. et M.</option>
                     </select>
                   </div>
                   <div>

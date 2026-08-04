@@ -3000,7 +3000,9 @@ export default function FicheChantier({ params }) {
   if (loading) return <div className="page-loading" />
   if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-500)'}}>Chantier introuvable</div>
 
-  const nomComplet = formatNomClient(client, { civilite: true })
+  // En-tête chantier : pas de civilité (ex. un client « SARL OPTICA » ne doit pas
+  // s'afficher « Mme SARL OPTICA »). La civilité reste utilisée ailleurs (fiche client…).
+  const nomComplet = formatNomClient(client, { civilite: false })
 
   const supprimerChantier = async () => {
     const ok = confirm(
