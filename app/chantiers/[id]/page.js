@@ -40,6 +40,9 @@ function stripMarkdown(text) {
     .trim()
 }
 
+// Onglets pertinents pour un ESTIMO (avant bascule) : une estimation, pas un chantier.
+const ONGLETS_ESTIMO = new Set(['apercu', 'photos', 'finance', 'documents'])
+
 function Svg({ children, size = 14 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -2401,6 +2404,11 @@ export default function FicheChantier({ params }) {
 
   // ── MESSAGES AGENTE → CLIENT (schéma : messages avec auteur_role + lu_agence) ──
   const [onglet, setOnglet] = useState('apercu')
+  // ESTIMO : si l'onglet actif n'est pas dans la vue épurée (ex. arrivée sur un estimo, ou
+  // clic « Voir tout » vers un onglet masqué), on retombe sur Aperçu — pas de corps orphelin.
+  useEffect(() => {
+    if (dossier?.typologie === 'estimo' && !ONGLETS_ESTIMO.has(onglet)) setOnglet('apercu')
+  }, [dossier?.typologie, onglet])
   const [recapMode, setRecapMode] = useState('previsionnel') // Récapitulatif : bascule visuelle prévisionnel/signé
   const [reponseMsg, setReponseMsg] = useState('')
   const [sendingMsg, setSendingMsg] = useState(false)
@@ -2587,6 +2595,9 @@ export default function FicheChantier({ params }) {
   // Honoraires depuis finance.js (source unique de calcul). Modèle frais = finance :
   // le plein montant TTC est déduit du courtage si frais_statut==='rembourse'.
   const finDossier = calculateDossierFinance({ ...dossier, devis_artisans: devis, suivi_financier: suiviFinancier })
+  // Commission prévisionnelle (somme des commissions artisan des devis reçus/signés) —
+  // rémunération BATILIS sur un MERAD, affichée dans le bandeau KPI à la place des honoraires.
+  const comPrevHT = calculateCommissionsFinance({ ...dossier, devis_artisans: devis }).comHT
   // Finance par devis mémoïsée (évite N recalculs à chaque rendu de l'onglet Suivi
   // financier — code-review #2). Recalcule seulement si les devis/dossier changent.
   const finByDevis = useMemo(
@@ -3244,10 +3255,11 @@ export default function FicheChantier({ params }) {
           tone="info"
         />
         <MiniKpi
-          label="Honoraires prévus"
+          label={dossier.typologie === 'merad' ? 'Commission prévue' : 'Honoraires prévus'}
           value={
             dossier.typologie === 'amo'      ? fmt(honorairesAMOPrev) :
             dossier.typologie === 'courtage' ? fmt(honorairesCourtagePrev) :
+            dossier.typologie === 'merad'    ? fmt(comPrevHT) :
             '—'
           }
           sub={
@@ -3255,6 +3267,8 @@ export default function FicheChantier({ params }) {
               ? `Acompte ${tauxCourtagePct}% + Solde ${tauxAmoPct}%`
               : dossier.typologie === 'courtage'
               ? `${tauxCourtagePct}% du chantier TTC`
+              : dossier.typologie === 'merad'
+              ? 'Commission artisan, sur l’acompte'
               : ''
           }
           tone="ok"
@@ -3281,7 +3295,9 @@ export default function FicheChantier({ params }) {
         </p>
       )}
 
-      {/* 8-tab bar */}
+      {/* Barre d'onglets. ESTIMO (avant bascule) = vue épurée : une estimation, pas un
+          chantier → seulement Aperçu / Photos / Suivi financier / Documents. Après bascule
+          la typologie devient courtage/amo → tous les onglets reviennent. */}
       <div className="tabs" style={{overflowX:'auto'}}>
         {[
           { key:'apercu',    label:'Aperçu',           icon:<EyeIcon /> },
@@ -3293,7 +3309,7 @@ export default function FicheChantier({ params }) {
           { key:'finance',   label:'Suivi financier',  icon:<WalletIcon /> },
           { key:'documents', label:'Documents',        icon:<FolderIcon />, count: documents.length },
           ...(dossier.typologie === 'amo' ? [{ key:'messages', label:'Messages', icon:<MsgIcon />, count: nbMsgNonLus > 0 ? nbMsgNonLus : undefined }] : []),
-        ].map(t => (
+        ].filter(t => dossier.typologie !== 'estimo' || ONGLETS_ESTIMO.has(t.key)).map(t => (
           <button key={t.key} className={`tab ${onglet === t.key ? 'active' : ''}`}
             onClick={() => { setOnglet(t.key); setAjouterFacture(null) }}>
             <span style={{display:'inline-flex',alignItems:'center',gap:6}}>
@@ -3326,7 +3342,7 @@ export default function FicheChantier({ params }) {
             </div>
             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', rowGap:14, columnGap:18}}>
               <Fact label="Montant chantier" value={totalDevisTTCSignes > 0 ? fmt(totalDevisTTCSignes) : '—'} highlight />
-              <Fact label="Commission prévue HT" value={fmt(calculateCommissionsFinance({ ...dossier, devis_artisans: devis }).comHT)} highlight />
+              <Fact label="Commission prévue HT" value={fmt(comPrevHT)} highlight />
               <Fact label="Démarrage" value={dossier.date_demarrage_chantier ? new Date(dossier.date_demarrage_chantier).toLocaleDateString('fr-FR') : '—'} />
               <Fact label="Fin prévue" value={dossier.date_fin_chantier ? new Date(dossier.date_fin_chantier).toLocaleDateString('fr-FR') : '—'} />
               <Fact label="Limite devis" value={dossier.date_limite_devis ? new Date(dossier.date_limite_devis).toLocaleDateString('fr-FR') : '—'} />
