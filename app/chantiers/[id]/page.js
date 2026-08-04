@@ -4260,7 +4260,10 @@ export default function FicheChantier({ params }) {
         )}
 
         {/* Récapitulatif chantier (restylé tokens, déplacé depuis Finance) */}
-        {devis.length > 0 && (
+        {/* Récapitulatif des FORMULES d'honoraires (Courtage seul / +AMO) : seulement pour
+            courtage/amo. MERAD n'a pas d'honoraires (sa rémunération = la commission artisan,
+            visible dans les KPI « Commissions HT » et les lignes d'acompte débloqué). */}
+        {devis.length > 0 && ['courtage', 'amo'].includes(dossier?.typologie) && (
           <div className="card" style={{padding:0, overflow:'hidden'}}>
             <div style={{padding:'14px 22px', borderBottom:'1px solid var(--ink-200)'}}>
               <h2 className="page" style={{fontSize:16}}>Récapitulatif chantier</h2>

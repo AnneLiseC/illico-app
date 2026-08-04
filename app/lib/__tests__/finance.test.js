@@ -264,6 +264,26 @@ describe('calculateHonorairesFinance — estimo (aucun honoraire)', () => {
   })
 })
 
+// ── MERAD : verrou de non-régression ──────────────────────────────────────────
+// MERAD = courtage allégé : PAS d'honoraires courtage/AMO ; la rémunération BATILIS
+// est la COMMISSION artisan (commission_pourcentage du devis), déjà calculée par
+// calculateCommissionsFinance et récupérée via l'acompte débloqué. On fige les deux.
+describe('finance — merad', () => {
+  it('merad → aucun honoraire courtage ni solde AMO (comme estimo)', () => {
+    const h = calculateHonorairesFinance(dossier({ typologie: 'merad' }))
+    expect(h.courtage.ttc).toBe(0)
+    expect(h.courtage.parts).toEqual({ agente: 0, admin: 0 })
+    expect(h.soldeAmo.ttc).toBe(0)
+  })
+  it('merad → la commission artisan (commission_pourcentage) est bien calculée', () => {
+    const c = calculateCommissionsFinance(dossier({
+      typologie: 'merad',
+      devis_artisans: [devis({ montant_ht: 10000, commission_pourcentage: 15, statut: 'accepte' })],
+    }))
+    expect(c.comHT).toBe(1500)   // 10000 × 15%
+  })
+})
+
 // ── Agrégat dossier ───────────────────────────────────────────────────────────
 describe('calculateDossierFinance', () => {
   it('ne jette pas sur un dossier vide et renvoie des zéros cohérents', () => {
