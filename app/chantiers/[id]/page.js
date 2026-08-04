@@ -4960,6 +4960,15 @@ export default function FicheChantier({ params }) {
             if (files.length) uploadPhotos(files)
           }}>
 
+          {/* Bandeau de chargement bien visible pendant l'envoi (glisser-déposer ou bouton) :
+              l'upload peut être long (conversion HEIC + compression + réseau) → feedback clair. */}
+          {uploadingPhoto && (
+            <div style={{position:'sticky', top:8, zIndex:6, display:'flex', alignItems:'center', gap:10, padding:'11px 16px', borderRadius:10, background:'#eef2ff', border:'1px solid #c7d2fe', color:'var(--ink-900)', fontSize:13, fontWeight:600, boxShadow:'0 2px 10px rgba(0,0,0,0.06)'}}>
+              <span style={{width:16, height:16, borderRadius:'50%', border:'2px solid #c7d2fe', borderTopColor:'#4f46e5', animation:'spin 0.65s linear infinite', display:'inline-block', flexShrink:0}} />
+              Envoi des photos en cours{uploadProgress ? ` — ${uploadProgress.done}/${uploadProgress.total}` : ''}… merci de patienter.
+            </div>
+          )}
+
           {/* Header : pills filtres + bouton upload */}
           <div className="card" style={{padding:'14px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap'}}>
             <div style={{display:'flex', gap:6, alignItems:'center', flexWrap:'wrap'}}>

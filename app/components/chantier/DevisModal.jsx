@@ -224,8 +224,8 @@ export default function DevisModal({ open, devis, onClose, onSave, onAutofill, a
           <div>
             <label className="eyebrow" style={{display:'block', marginBottom:6}}>Description</label>
             <textarea className="input" value={form.notes} onChange={e => set('notes', e.target.value)}
-              rows={3} placeholder="Description des travaux…"
-              style={{width:'100%', padding:'10px 12px', lineHeight:1.5, resize:'vertical'}} />
+              rows={9} placeholder="Description des travaux…"
+              style={{width:'100%', minHeight:200, padding:'10px 12px', fontSize:13, lineHeight:1.55, resize:'vertical'}} />
           </div>
         </div>
     </ModalShell>
