@@ -203,7 +203,7 @@ export default function NouveauClient() {
             {form.type_client === 'professionnel' ? (
               <>
                 {/* Entreprise */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Forme juridique <span className="text-gray-400 font-normal">(optionnel)</span></label>
                     <select
@@ -229,7 +229,7 @@ export default function NouveauClient() {
                 </div>
 
                 {/* Représentant / gérant — optionnel. La civilité saisie est celle du représentant. */}
-                <div className="grid grid-cols-3 gap-4 pt-3 border-t border-gray-100">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-gray-100">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Civilité représentant</label>
                     <select
@@ -293,7 +293,7 @@ export default function NouveauClient() {
                 </div>
 
                 {/* Personne 1 */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Prénom {estCouple ? '1' : ''} *
@@ -322,7 +322,7 @@ export default function NouveauClient() {
 
                 {/* Personne 2 — couple uniquement */}
                 {estCouple && (
-                  <div className="grid grid-cols-2 gap-4 pt-3 border-t border-gray-100">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-gray-100">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Prénom 2 <span className="text-gray-400 font-normal">(optionnel)</span></label>
                       <input
@@ -347,7 +347,7 @@ export default function NouveauClient() {
             )}
 
             {/* Contact */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email 1</label>
                 <input
@@ -367,7 +367,7 @@ export default function NouveauClient() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tél 1</label>
                 <input
@@ -398,7 +398,7 @@ export default function NouveauClient() {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Référente</label>
                 {profile?.role === 'admin' ? (
@@ -467,7 +467,7 @@ export default function NouveauClient() {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Commission (%)</label>
                     <input

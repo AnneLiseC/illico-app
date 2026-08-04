@@ -114,7 +114,7 @@ export default function NouvelArtisan() {
 
   return (
     <div className="page-enter min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+      <header className="bg-white border-b border-gray-200 px-6 py-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <button onClick={() => router.push('/artisans')} className="text-gray-400 hover:text-gray-600 text-sm">
             ← Retour
@@ -147,7 +147,7 @@ export default function NouvelArtisan() {
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Prénom contact</label>
               <input type="text" value={form.prenom} onChange={e => set('prenom', e.target.value)}
@@ -160,7 +160,7 @@ export default function NouvelArtisan() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
               <input type="email" value={form.email} onChange={e => set('email', e.target.value)}
@@ -173,7 +173,7 @@ export default function NouvelArtisan() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Métier</label>
               <input type="text" value={form.metier} onChange={e => set('metier', e.target.value)}
