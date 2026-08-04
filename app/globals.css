@@ -973,15 +973,21 @@ img, svg, video, canvas { max-width: 100%; }
   [style*="grid-template-columns: 1fr 1fr"]:not([style*="1fr 1fr 1fr"]):not([style*="1fr 1fr auto"]):not([style*="1fr 1fr 320px"]) {
     grid-template-columns: 1fr !important;
   }
-  /* Weighted 2-column (1.4fr 1fr, 2fr 1fr, 1.6fr 1fr…) */
+  /* Weighted 2-column (1.4fr 1fr, 1.5fr 1fr, 2fr 1fr, 3fr 2fr…) */
   [style*="grid-template-columns:1.4fr 1fr"],
   [style*="grid-template-columns: 1.4fr 1fr"],
+  [style*="grid-template-columns:1.5fr 1fr"],
+  [style*="grid-template-columns: 1.5fr 1fr"],
   [style*="grid-template-columns:1.6fr 1fr"],
   [style*="grid-template-columns: 1.6fr 1fr"],
   [style*="grid-template-columns:2fr 1fr"],
   [style*="grid-template-columns: 2fr 1fr"],
   [style*="grid-template-columns:1fr 2fr"],
-  [style*="grid-template-columns: 1fr 2fr"] {
+  [style*="grid-template-columns: 1fr 2fr"],
+  [style*="grid-template-columns:3fr 2fr"],
+  [style*="grid-template-columns: 3fr 2fr"],
+  [style*="grid-template-columns:2fr 3fr"],
+  [style*="grid-template-columns: 2fr 3fr"] {
     grid-template-columns: 1fr !important;
   }
   /* 3 columns → 1 column */
@@ -1034,6 +1040,14 @@ img, svg, video, canvas { max-width: 100%; }
   /* Login page (1fr 1fr fixed-screen) — let form column take over */
   [style*="grid-template-columns:1fr 1fr"][style*="position:fixed"],
   [style*="grid-template-columns: 1fr 1fr"][style*="position:fixed"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* 5-track document rows (icône + nom + 3 actions) : sinon les pistes
+     `auto` s'additionnent (~330px) et débordent < 375px → clip du bouton
+     de suppression. On empile en 1 colonne sur mobile. */
+  [style*="grid-template-columns:auto 1fr auto auto auto"],
+  [style*="grid-template-columns: auto 1fr auto auto auto"] {
     grid-template-columns: 1fr !important;
   }
 }
@@ -1135,8 +1149,10 @@ img, svg, video, canvas { max-width: 100%; }
   [style*="position: fixed"][style*="width:"][style*="px"] {
     max-width: calc(100vw - 24px);
   }
-  /* Common modal sizing */
-  [style*="maxWidth"][style*="px"] { max-width: 100% !important; }
+  /* NB : pas de catch-all sur maxWidth inline — React sérialise `max-width:…px`
+     (kebab), donc `[style*="maxWidth"]` ne matchait jamais. Inutile de toute
+     façon : un bloc en flux normal est déjà borné à la largeur du parent, et
+     les modales `position:fixed` sont couvertes par la règle ci-dessus. */
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -1150,11 +1166,9 @@ img, svg, video, canvas { max-width: 100%; }
    ───────────────────────────────────────────────────────────────── */
 @media (max-width: 767px) {
   .btn { white-space: nowrap; }
-  /* When a flex row contains a title + button group, allow wrap */
-  [style*="justify-content:space-between"][style*="display:flex"],
-  [style*="justifyContent:'space-between'"][style*="display:'flex'"] {
-    flex-wrap: wrap;
-  }
+  /* (Ancien catch-all flex-wrap retiré : ses deux sélecteurs étaient morts —
+     `justifyContent` en camelCase, et `justify-content:` sans l'espace que React
+     sérialise. Le wrap des en-têtes se fait au cas par cas via flex-wrap inline.) */
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -1391,8 +1405,10 @@ img, svg, video, canvas { max-width: 100%; }
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px; align-items: start; overflow-x: visible;
 }
-/* Toujours 2 entreprises max côte à côte (jamais 3 : illisible) ; empilées sur écran étroit. */
-@media (max-width: 720px) { .suivi-table { grid-template-columns: 1fr; } }
+/* Toujours 2 entreprises max côte à côte (jamais 3 : illisible) ; empilées sur écran étroit.
+   Breakpoint aligné sur 767px (comme le reste du responsive) : évite la zone morte
+   721–767px où la page passait en mode mobile mais cette table restait en 2 colonnes. */
+@media (max-width: 767px) { .suivi-table { grid-template-columns: 1fr; } }
 .suivi-devis-row {
   display: flex; flex-direction: column; gap: 10px; min-width: 0;
   border: 1px solid var(--ink-200); border-radius: 12px; padding: 12px; background: var(--surface);
