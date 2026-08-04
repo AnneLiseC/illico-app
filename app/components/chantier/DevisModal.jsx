@@ -24,6 +24,7 @@ export default function DevisModal({ open, devis, onClose, onSave, onAutofill, a
     acompte_pourcentage: devis?.acompte_pourcentage ?? 30,
     acompte_montant_fixe: devis?.acompte_montant_fixe ?? '',
     fichier: null,
+    pdf_type: 'devis',   // 'devis' = PDF du devis · 'signe' = devis SIGNÉ (→ marque le devis signé)
   })
   const [form, setForm] = useState(initForm)
   const [saving, setSaving] = useState(false)          // anti double-submit
@@ -120,6 +121,33 @@ export default function DevisModal({ open, devis, onClose, onSave, onAutofill, a
               <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:6}}>
                 L’IA lit le PDF et remplit montants, dates et description — tu vérifies avant d’enregistrer.
               </div>
+              {/* Nature du PDF : un devis simple, ou le devis SIGNÉ (rangé dans « Devis signé »
+                  et le devis passe en signé/accepté). L'IA lit les deux de la même façon. */}
+              {form.fichier && (
+                <div style={{marginTop:10, display:'flex', gap:8, flexWrap:'wrap'}}>
+                  {[
+                    { v: 'devis', l: 'Devis' },
+                    { v: 'signe', l: 'Devis signé' },
+                  ].map(o => {
+                    const on = form.pdf_type === o.v
+                    return (
+                      <button key={o.v} type="button" onClick={() => set('pdf_type', o.v)}
+                        style={{
+                          fontSize:12, fontWeight:700, padding:'6px 14px', borderRadius:99, cursor:'pointer',
+                          border:'1px solid', borderColor: on ? '#4f46e5' : 'var(--ink-200)',
+                          background: on ? '#eef2ff' : '#fff', color: on ? 'var(--ink-900)' : 'var(--ink-600)',
+                        }}>
+                        {on ? '● ' : ''}{o.l}
+                      </button>
+                    )
+                  })}
+                  {form.pdf_type === 'signe' && (
+                    <span style={{fontSize:11.5, color:'var(--ink-500)', alignSelf:'center'}}>
+                      → rangé dans « Devis signé », le devis passe en signé (date du jour).
+                    </span>
+                  )}
+                </div>
+              )}
               {autofillInfo && (
                 <div style={{
                   marginTop:8, borderRadius:8, padding:'8px 12px', fontSize:12.5, fontWeight:500,
@@ -224,8 +252,8 @@ export default function DevisModal({ open, devis, onClose, onSave, onAutofill, a
           <div>
             <label className="eyebrow" style={{display:'block', marginBottom:6}}>Description</label>
             <textarea className="input" value={form.notes} onChange={e => set('notes', e.target.value)}
-              rows={3} placeholder="Description des travaux…"
-              style={{width:'100%', padding:'10px 12px', lineHeight:1.5, resize:'vertical'}} />
+              rows={9} placeholder="Description des travaux…"
+              style={{width:'100%', minHeight:200, padding:'10px 12px', fontSize:13, lineHeight:1.55, resize:'vertical'}} />
           </div>
         </div>
     </ModalShell>

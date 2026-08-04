@@ -2033,37 +2033,47 @@ export default function FicheChantier({ params }) {
     } else {
       // Create
       if (!form.artisan_id) return false
+      const today = new Date().toISOString().slice(0, 10)
+      // Le PDF fourni est-il le devis SIGNÉ ? (choix dans la modale.) Si oui → rangé dans
+      // « Devis signé » (devis_signe_path) et le devis passe en signé/accepté (date du jour).
+      const estSigne = !!form.fichier && form.pdf_type === 'signe'
       const prochainOrdre = devis.length > 0 ? Math.max(...devis.map(d => d.ordre ?? 0)) + 1 : 1
       const { data: devisInsere, error } = await supabase.from('devis_artisans').insert({
         ...payload,
         dossier_id: id,
         artisan_id: form.artisan_id,
-        statut: (form.date_reception || form.fichier) ? 'recu' : 'en_attente',
+        statut: estSigne ? 'accepte' : ((form.date_reception || form.fichier) ? 'recu' : 'en_attente'),
+        date_signature: estSigne ? today : null,
         ordre: prochainOrdre,
       }).select()
       if (error) { setErreur('Erreur : ' + error.message); return false }
       let uploadDevisOk = true
       if (form.fichier && devisInsere?.[0]) {
         const ext = form.fichier.name.split('.').pop()
-        // Chemin versionné (jamais écrasé) : chaque PDF vit à sa propre URL.
-        const cheminDevis = `chantiers/${id}/devis/${devisInsere[0].id}/${Date.now()}.${ext}`
-        // Gate : on n'écrit le chemin que si l'upload réussit (sinon référence pendante).
-        const { error: uploadError } = await supabase.storage.from('documents').upload(cheminDevis, form.fichier)
+        // Devis signé → « devis_signes/<id> » + colonne devis_signe_path ; sinon chemin
+        // versionné du devis + devis_pdf_path.
+        const cheminDevis = estSigne
+          ? `chantiers/${id}/devis_signes/${devisInsere[0].id}.${ext}`
+          : `chantiers/${id}/devis/${devisInsere[0].id}/${Date.now()}.${ext}`
+        const { error: uploadError } = await supabase.storage.from('documents').upload(cheminDevis, form.fichier, estSigne ? { upsert: true } : undefined)
         if (uploadError) uploadDevisOk = false
         else {
-          const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_pdf_path: cheminDevis }).eq('id', devisInsere[0].id)
+          const champ = estSigne ? 'devis_signe_path' : 'devis_pdf_path'
+          const { error: pathErr } = await supabase.from('devis_artisans').update({ [champ]: cheminDevis }).eq('id', devisInsere[0].id)
           if (pathErr) uploadDevisOk = false
         }
       }
       if (!dossier.contrat_signe) {
-        const today = new Date().toISOString().slice(0, 10)
         const { error: contratErr } = await supabase.from('dossiers').update({ contrat_signe: true, date_signature_contrat: today }).eq('id', id)
         if (!contratErr) setDossier(d => ({ ...d, contrat_signe: true, date_signature_contrat: today }))
       }
       await archiverVersionDevis(devisInsere[0].id)   // crée la v1 (capture l'état final + PDF)
       await chargerDevis()
-      if (form.fichier && uploadDevisOk) pousserDevisDrive(devisInsere[0].id)  // devis créé avec PDF → OneDrive
-      if (uploadDevisOk) setSucces('Devis ajouté ✓')
+      // Devis signé sur un courtage → recompute des travaux supplémentaires (parité avec
+      // la signature via changerStatutDevis / uploadDevisSigne). No-op hors courtage.
+      if (estSigne) await declencherCourtageTS()
+      if (form.fichier && uploadDevisOk) pousserDevisDrive(devisInsere[0].id)  // devis créé avec PDF → OneDrive (rangé Signés/Reçus selon statut)
+      if (uploadDevisOk) setSucces(estSigne ? 'Devis signé ajouté ✓' : 'Devis ajouté ✓')
       else setErreur('Devis ajouté, mais échec de l\'upload du PDF — réessayez via la fiche devis.')
     }
     setDevisModal({ open: false, devis: null })
@@ -2990,7 +3000,9 @@ export default function FicheChantier({ params }) {
   if (loading) return <div className="page-loading" />
   if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-500)'}}>Chantier introuvable</div>
 
-  const nomComplet = formatNomClient(client, { civilite: true })
+  // En-tête chantier : pas de civilité (ex. un client « SARL OPTICA » ne doit pas
+  // s'afficher « Mme SARL OPTICA »). La civilité reste utilisée ailleurs (fiche client…).
+  const nomComplet = formatNomClient(client, { civilite: false })
 
   const supprimerChantier = async () => {
     const ok = confirm(
@@ -4959,6 +4971,15 @@ export default function FicheChantier({ params }) {
             const files = Array.from(e.dataTransfer?.files || [])
             if (files.length) uploadPhotos(files)
           }}>
+
+          {/* Bandeau de chargement bien visible pendant l'envoi (glisser-déposer ou bouton) :
+              l'upload peut être long (conversion HEIC + compression + réseau) → feedback clair. */}
+          {uploadingPhoto && (
+            <div style={{position:'sticky', top:8, zIndex:6, display:'flex', alignItems:'center', gap:10, padding:'11px 16px', borderRadius:10, background:'#eef2ff', border:'1px solid #c7d2fe', color:'var(--ink-900)', fontSize:13, fontWeight:600, boxShadow:'0 2px 10px rgba(0,0,0,0.06)'}}>
+              <span style={{width:16, height:16, borderRadius:'50%', border:'2px solid #c7d2fe', borderTopColor:'#4f46e5', animation:'spin 0.65s linear infinite', display:'inline-block', flexShrink:0}} />
+              Envoi des photos en cours{uploadProgress ? ` — ${uploadProgress.done}/${uploadProgress.total}` : ''}… merci de patienter.
+            </div>
+          )}
 
           {/* Header : pills filtres + bouton upload */}
           <div className="card" style={{padding:'14px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap'}}>

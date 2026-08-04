@@ -96,18 +96,32 @@ describe('buildUserPrompt', () => {
     { statut: 'en_attente', montant_ttc: 1234, notes: 'Pas encore reçu', artisan: { entreprise: 'Wait' } },
   ]
 
-  it('injecte le périmètre des travaux (description) par artisan, dans tous les types', () => {
-    const p = buildUserPrompt({ dossier: dossierBase, devis: devisEx, typeVisite: 'suivi', dateVisite: null, intervenants: [], notesBrutes: '' })
+  it('R1/R2/R3 : injecte le périmètre de TOUS les devis reçus (reçu + accepté)', () => {
+    const p = buildUserPrompt({ dossier: dossierBase, devis: devisEx, typeVisite: 'r2', dateVisite: null, intervenants: [], notesBrutes: '' })
     expect(p).toContain('DEVIS DU CHANTIER')
-    expect(p).toContain('Plomberie salle de bain')
+    expect(p).toContain('Plomberie salle de bain')  // reçu → inclus en R2
     expect(p).toContain('Peinture séjour')
     expect(p).toContain('ne PAS inventer')       // ancrage anti-hallucination
   })
 
   it('exclut les devis refusés et en attente', () => {
-    const p = buildUserPrompt({ dossier: dossierBase, devis: devisEx, typeVisite: 'suivi', dateVisite: null, intervenants: [], notesBrutes: '' })
+    const p = buildUserPrompt({ dossier: dossierBase, devis: devisEx, typeVisite: 'r2', dateVisite: null, intervenants: [], notesBrutes: '' })
     expect(p).not.toContain('Devis refusé')
     expect(p).not.toContain('Pas encore reçu')
+  })
+
+  it('suivi & réception : ne se basent QUE sur les devis SIGNÉS', () => {
+    for (const tv of ['suivi', 'reception']) {
+      const p = buildUserPrompt({ dossier: dossierBase, devis: devisEx, typeVisite: tv, dateVisite: null, intervenants: [], notesBrutes: '' })
+      expect(p).toContain('DEVIS SIGNÉS')
+      expect(p).toContain('Peinture séjour')              // accepté = signé → inclus
+      expect(p).not.toContain('Plomberie salle de bain')  // reçu non signé → exclu
+    }
+  })
+
+  it('suivi : un devis « reçu » AVEC date de signature compte comme signé', () => {
+    const p = buildUserPrompt({ dossier: dossierBase, devis: [{ statut: 'recu', date_signature: '2026-01-10', notes: 'Élec signée', artisan: { entreprise: 'E' } }], typeVisite: 'suivi', dateVisite: null, intervenants: [], notesBrutes: '' })
+    expect(p).toContain('Élec signée')
   })
 
   it('ne montre PAS les montants hors R3 (R2 interdit les montants)', () => {

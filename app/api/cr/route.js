@@ -237,10 +237,16 @@ export function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, interv
   // MONTANTS ne sont donnés qu'en R3 (présentation des devis) — le R2 interdit les montants.
   const STATUTS_RECUS = new Set(['recu', 'accepte', 'a_modifier'])
   const avecMontant = typeVisite === 'r3'
-  const devisRecus = (devis || []).filter(d => STATUTS_RECUS.has(d.statut))
-  const blocDevis = devisRecus.length
-    ? `\n\n    DEVIS DU CHANTIER (périmètre réel des travaux — t'appuyer STRICTEMENT sur cette liste, ne PAS inventer de travaux ni d'artisans qui n'y figurent pas) :\n`
-      + devisRecus.map(d => {
+  // Suivi & réception = travaux réellement ENGAGÉS → on ne se base que sur les devis
+  // SIGNÉS (accepté ou date de signature). Les autres CR (R1/R2/R3) s'appuient sur tous
+  // les devis reçus. Même notion de « signé » que getSignedDevis (finance).
+  const surSignes = typeVisite === 'suivi' || typeVisite === 'reception'
+  const estSigne = (d) => d.statut !== 'a_modifier' && d.statut !== 'refuse'
+    && (d.statut === 'accepte' || (d.date_signature != null && String(d.date_signature).trim() !== ''))
+  const devisRetenus = (devis || []).filter(d => surSignes ? estSigne(d) : STATUTS_RECUS.has(d.statut))
+  const blocDevis = devisRetenus.length
+    ? `\n\n    DEVIS ${surSignes ? 'SIGNÉS' : 'DU CHANTIER'} (périmètre réel des travaux — t'appuyer STRICTEMENT sur cette liste, ne PAS inventer de travaux ni d'artisans qui n'y figurent pas) :\n`
+      + devisRetenus.map(d => {
           const nom = d.artisan?.entreprise || 'Artisan'
           const metier = d.artisan?.metier ? ` (${d.artisan.metier})` : ''
           const montant = (avecMontant && d.montant_ttc != null) ? ` — ${Number(d.montant_ttc).toLocaleString('fr-FR')} € TTC` : ''

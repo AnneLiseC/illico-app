@@ -536,7 +536,7 @@ function FicheClientInner({ params }) {
               </div>
               <div>
                 <label style={labelStyle}>Raison sociale *</label>
-                <input {...inputProps} type="text" value={client.raison_sociale || ''} onChange={e => set('raison_sociale', e.target.value)} placeholder="Coucou"/>
+                <input {...inputProps} type="text" value={client.raison_sociale || ''} onChange={e => set('raison_sociale', e.target.value)} placeholder="Ex. OPTICA"/>
               </div>
             </div>
 
@@ -544,9 +544,12 @@ function FicheClientInner({ params }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, paddingTop: 12, borderTop: '1px solid var(--ink-100)' }}>
               <div>
                 <label style={labelStyle}>Civilité représentant</label>
-                <select {...inputProps} value={client.civilite === 'Mme' ? 'Mme' : 'M.'} onChange={e => set('civilite', e.target.value)}>
+                <select {...inputProps} value={client.civilite || 'M.'} onChange={e => set('civilite', e.target.value)}>
                   <option value="M.">M.</option>
                   <option value="Mme">Mme</option>
+                  <option value="M. et Mme">M. et Mme</option>
+                  <option value="Mme et Mme">Mme et Mme</option>
+                  <option value="M. et M.">M. et M.</option>
                 </select>
               </div>
               <div>
