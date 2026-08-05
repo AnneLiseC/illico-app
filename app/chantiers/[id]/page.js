@@ -321,6 +321,13 @@ function DocViewer({ url, nom, onClose }) {
   if (!url) return null
   const nomFichier = nom || url.split('/').pop() || 'Document'
   const estImage = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(nomFichier)
+  // L'attribut HTML `download` est IGNORÉ en cross-origin (URL signée Supabase =
+  // autre domaine) → le fichier repartait avec le nom de stockage (UUID). On force
+  // le nom côté serveur via le paramètre `download` de Supabase (Content-Disposition),
+  // honoré indépendamment du token. Les blob URLs (même origine) gardent l'attribut.
+  const urlTelechargement = url.startsWith('blob:')
+    ? url
+    : `${url}${url.includes('?') ? '&' : '?'}download=${encodeURIComponent(nomFichier)}`
 
   return (
     <div style={{
@@ -339,7 +346,7 @@ function DocViewer({ url, nom, onClose }) {
         <span className="clip-1" style={{color:'#fff', fontSize:13, fontWeight:600}}>{nomFichier}</span>
         <div style={{display:'flex', alignItems:'center', gap:8, flexShrink:0}}>
           <a
-            href={url}
+            href={urlTelechargement}
             download={nomFichier}
             target="_blank"
             rel="noreferrer"
@@ -5108,7 +5115,16 @@ export default function FicheChantier({ params }) {
           )}
 
           {/* Lightbox */}
-          {photoOuverte !== null && (
+          {photoOuverte !== null && (() => {
+            const p = filtered[photoOuverte]
+            const ext = (p?.url || 'jpg').split('.').pop()
+            const nomPhoto = p?.nom || `${dossier.reference}_${p?.categorie || 'photo'}_${photoOuverte + 1}.${ext}`
+            // Nom de téléchargement forcé côté serveur (cf. DocViewer) : sans ça la
+            // photo repartait avec le nom de stockage (UUID) en cross-origin.
+            const urlDl = p?.url_signee
+              ? `${p.url_signee}${p.url_signee.includes('?') ? '&' : '?'}download=${encodeURIComponent(nomPhoto)}`
+              : null
+            return (
             <div style={{
               position:'fixed', inset:0, background:'rgba(0,0,0,0.92)', zIndex:300,
               display:'flex', alignItems:'center', justifyContent:'center',
@@ -5121,16 +5137,16 @@ export default function FicheChantier({ params }) {
                   fontSize:24, fontWeight:300,
                 }}>‹</button>
               <div onClick={e => e.stopPropagation()} style={{maxWidth:'90vw', maxHeight:'90vh', padding:20}}>
-                {filtered[photoOuverte]?.type_media === 'video' ? (
-                  <video src={filtered[photoOuverte]?.url_signee} controls autoPlay playsInline
+                {p?.type_media === 'video' ? (
+                  <video src={p?.url_signee} controls autoPlay playsInline
                     style={{maxHeight:'80vh', maxWidth:'90vw', borderRadius:10, display:'block'}} />
                 ) : (
                   /* eslint-disable-next-line @next/next/no-img-element */
-                  <img src={filtered[photoOuverte]?.url_signee} alt=""
+                  <img src={p?.url_signee} alt=""
                     style={{maxHeight:'80vh', maxWidth:'100%', objectFit:'contain', borderRadius:10, display:'block'}} />
                 )}
                 <div style={{color:'rgba(255,255,255,0.7)', fontSize:12, textAlign:'center', marginTop:10}}>
-                  {photoOuverte + 1} / {filtered.length} · {filtered[photoOuverte]?.categorie} · clic en dehors pour fermer
+                  {photoOuverte + 1} / {filtered.length} · {p?.categorie} · clic en dehors pour fermer
                 </div>
               </div>
               <button onClick={e => { e.stopPropagation(); setPhotoOuverte(i => i < filtered.length - 1 ? i + 1 : 0) }}
@@ -5140,6 +5156,18 @@ export default function FicheChantier({ params }) {
                   background:'rgba(255,255,255,0.10)', color:'#fff', cursor:'pointer',
                   fontSize:24, fontWeight:300,
                 }}>›</button>
+              {urlDl && (
+                <a href={urlDl} download={nomPhoto} target="_blank" rel="noreferrer"
+                  onClick={e => e.stopPropagation()} title={`Télécharger — ${nomPhoto}`}
+                  style={{
+                    position:'absolute', top:16, right:64,
+                    width:40, height:40, borderRadius:'50%',
+                    background:'rgba(255,255,255,0.10)', color:'#fff',
+                    display:'grid', placeItems:'center', textDecoration:'none',
+                  }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </a>
+              )}
               <button onClick={e => { e.stopPropagation(); setPhotoOuverte(null) }}
                 style={{
                   position:'absolute', top:16, right:16,
@@ -5148,7 +5176,8 @@ export default function FicheChantier({ params }) {
                   fontSize:18,
                 }}>×</button>
             </div>
-          )}
+            )
+          })()}
 
         </div>
         )
