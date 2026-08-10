@@ -15,7 +15,6 @@ const PinIcon    = ({ size=16 }) => <Svg size={size}><path d="M21 10c0 7-9 13-9 
 const PhoneIcon  = ({ size=16 }) => <Svg size={size}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.38 2 2 0 0 1 3.58 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.54a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></Svg>
 const MailIcon   = ({ size=16 }) => <Svg size={size}><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></Svg>
 const MoreIcon   = ({ size=16 }) => <Svg size={size}><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></Svg>
-const FilterIcon = ({ size=16 }) => <Svg size={size}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></Svg>
 
 /* ── Helpers ── */
 const fmtEur = (n) => Math.round(n || 0).toLocaleString('fr-FR') + ' €'
@@ -33,6 +32,7 @@ export default function Clients() {
   const [onglet, setOnglet] = useState('moi')
   const [menuOuvert, setMenuOuvert] = useState(null)
   const [vueArchives, setVueArchives] = useState(false)
+  const [tri, setTri] = useState('alpha')  // alpha | recent | ville | type
   const router = useRouter()
   const { user, profile, initialized, agenceActive } = useAuth()
 
@@ -112,10 +112,15 @@ export default function Clients() {
     return c.referente?.id === onglet
   })
 
-  const clientsFiltres = clientsFiltresOnglet.filter(c =>
-    `${c.nom} ${c.prenom} ${c.email} ${c.adresse} ${c.raison_sociale || ''}`.toLowerCase()
-      .includes(recherche.toLowerCase())
-  )
+  const clientsFiltres = clientsFiltresOnglet
+    .filter(c => `${c.nom} ${c.prenom} ${c.email} ${c.adresse} ${c.raison_sociale || ''}`.toLowerCase()
+      .includes(recherche.toLowerCase()))
+    .sort((a, b) => {
+      if (tri === 'recent') return new Date(b.created_at || 0) - new Date(a.created_at || 0)
+      if (tri === 'ville')  return (villeFromAddr(a.adresse) || '').localeCompare(villeFromAddr(b.adresse) || '', 'fr', { sensitivity: 'base' })
+      if (tri === 'type')   return (a.type_client || '').localeCompare(b.type_client || '')
+      return `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, 'fr', { sensitivity: 'base' })  // alpha
+    })
 
   const ongletsList = isAdmin ? [
     { key: 'moi', label: 'Mes clients' },
@@ -167,7 +172,13 @@ export default function Clients() {
             value={recherche} onChange={e => setRecherche(e.target.value)}
             style={{paddingLeft:36, width:'100%', height:40}}/>
         </div>
-        <button className="btn btn-ghost" style={{height:40}}><FilterIcon size={14}/> Filtres</button>
+        <select className="input" value={tri} onChange={e => setTri(e.target.value)} title="Trier par"
+          style={{height:40, minWidth:170}}>
+          <option value="alpha">Trier : Alphabétique</option>
+          <option value="recent">Trier : Plus récent</option>
+          <option value="ville">Trier : Ville</option>
+          <option value="type">Trier : Type de client</option>
+        </select>
       </div>
 
       {/* Grille de cartes */}
