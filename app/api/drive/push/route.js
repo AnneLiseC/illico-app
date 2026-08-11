@@ -15,7 +15,8 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
 import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
-import { cheminChantier, cheminChantierPhoto } from '../../../lib/drive/taxonomie'
+import { cheminChantier, cheminChantierPhoto, slugNom } from '../../../lib/drive/taxonomie'
+import { formatNomClient } from '../../../lib/clients'
 
 let _admin
 function admin() {
@@ -46,15 +47,15 @@ export async function POST(request) {
     if (!ph) return NextResponse.json({ error: 'Photo introuvable' }, { status: 404 })
     if (ph.type_media === 'video') return NextResponse.json({ skipped: true, reason: 'video_later' })
     src = { kind: 'photo', indexCol: 'photo_id', indexVal: ph.id, dossierId: ph.dossier_id,
-      bucket: 'photos', storagePath: ph.url, fileName: (ph.url || '').split('/').pop() || `${ph.id}.jpg`,
-      mime: null, categorie: ph.categorie || null, artisanId: null }
+      bucket: 'photos', storagePath: ph.url, fileName: null, // calculé plus bas : <client>_<catégorie>_<n>.<ext>
+      mime: null, categorie: ph.categorie || null, artisanId: null, photoId: ph.id }
   } else {
     return NextResponse.json({ error: 'document_id ou photo_id requis' }, { status: 400 })
   }
 
   // ── Dossier + référente + son Drive ──
   const { data: dossier } = await db.from('dossiers')
-    .select('id, created_at, client_id, referente_id, statut').eq('id', src.dossierId).maybeSingle()
+    .select('id, created_at, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', src.dossierId).maybeSingle()
   if (!dossier) return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
   if (!dossier.referente_id) return NextResponse.json({ skipped: true, reason: 'no_referente' })
 
@@ -75,17 +76,31 @@ export async function POST(request) {
   }
 
   // ── Chemin cible (avec bucket de statut) ──
-  const { data: client } = await db.from('clients').select('nom').eq('id', dossier.client_id).maybeSingle()
+  const { data: client } = await db.from('clients').select('*').eq('id', dossier.client_id).maybeSingle()
+  const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
   let segments
   if (src.kind === 'photo') {
-    segments = cheminChantierPhoto(dossier.statut, dossier.created_at, client?.nom, src.categorie)
+    segments = cheminChantierPhoto(dossier.statut, dossier.created_at, client?.nom, src.categorie, { dateFin })
+    // Nom déterministe : <client>_<catégorie>_<n>.<ext>. n = rang de la photo dans sa catégorie
+    // (ordre de création stable) → renommage propre, fini l'UUID.
+    const clientSlug = slugNom(formatNomClient(client, { civilite: false }))
+    const catSlug = slugNom(src.categorie || 'photo')
+    const ext = ((src.storagePath || '').split('.').pop() || 'jpg').toLowerCase()
+    let n = 1
+    const q = db.from('photos').select('id, created_at').eq('dossier_id', dossier.id).eq('type_media', 'photo')
+    const { data: memeCat } = src.categorie
+      ? await q.eq('categorie', src.categorie).order('created_at').order('id')
+      : await q.is('categorie', null).order('created_at').order('id')
+    const idx = (memeCat || []).findIndex(p => p.id === src.photoId)
+    if (idx >= 0) n = idx + 1
+    src.fileName = `${clientSlug}_${catSlug}_${n}.${ext}`
   } else {
     let artisanNom = null
     if (src.artisanId) {
       const { data: a } = await db.from('artisans').select('entreprise').eq('id', src.artisanId).maybeSingle()
       artisanNom = a?.entreprise || null
     }
-    segments = cheminChantier(dossier.statut, dossier.created_at, client?.nom, src.categorie, artisanNom)
+    segments = cheminChantier(dossier.statut, dossier.created_at, client?.nom, src.categorie, artisanNom, { dateFin })
   }
 
   try {

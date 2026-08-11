@@ -470,7 +470,7 @@ function FichesTechPanel({ artisanId, dossierId, fichesCochees, onToggle, onCrea
       .insert({ artisan_id: artisanId, nom: nouvelleFiche.nom.trim(), description: nouvelleFiche.description || null, url })
       .select().single()
     if (error || !nouvelle) { setSavingFiche(false); return }
-    if (url) apiFetch('/api/drive/push-fiche', { method: 'POST', body: JSON.stringify({ fiche_id: nouvelle.id }) }).catch(() => {})  // miroir OneDrive
+    if (url) apiFetch('/api/drive/push-fiche', { method: 'POST', body: JSON.stringify({ fiche_id: nouvelle.id, dossier_id: dossierId }) }).catch(() => {})  // miroir OneDrive (catalogue artisan + copie client « 5. Plans & techniques »)
     await supabase.from('chantier_fiches_techniques')
       .insert({ dossier_id: dossierId, fiche_technique_id: nouvelle.id, artisan_id: artisanId })
     const { data } = await supabase.from('fiches_techniques').select('*').eq('artisan_id', artisanId).order('nom')

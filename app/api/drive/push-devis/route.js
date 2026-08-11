@@ -11,9 +11,8 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
 import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
-import { chantierBaseSegments, nettoyerSegment } from '../../../lib/drive/taxonomie'
-
-const SOUS_DOSSIER = { accepte: 'Signés', refuse: 'Refusés', recu: 'Reçus' }
+import { chantierBaseSegments, devisSousDossier, nettoyerSegment, slugNom } from '../../../lib/drive/taxonomie'
+import { formatNomClient } from '../../../lib/clients'
 
 let _admin
 function admin() {
@@ -37,15 +36,16 @@ export async function POST(request) {
   if (!devis) return NextResponse.json({ error: 'Devis introuvable' }, { status: 404 })
 
   const statut = devis.statut || 'recu'
-  const sousDossier = SOUS_DOSSIER[statut] || 'Reçus'
+  const sousDossier = devisSousDossier(statut)
+  const estSigne = statut === 'accepte' || statut === 'signe'
   // Signé → on privilégie le PDF signé ; sinon le devis reçu.
-  const filePath = statut === 'accepte' ? (devis.devis_signe_path || devis.devis_pdf_path) : devis.devis_pdf_path
+  const filePath = estSigne ? (devis.devis_signe_path || devis.devis_pdf_path) : devis.devis_pdf_path
 
   const { data: existing } = await db.from('doc_index').select('id, drive_id, item_id').eq('devis_id', devisId).maybeSingle()
 
   // Dossier + référente + Drive
   const { data: dossier } = await db.from('dossiers')
-    .select('id, created_at, client_id, referente_id, statut').eq('id', devis.dossier_id).maybeSingle()
+    .select('id, created_at, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', devis.dossier_id).maybeSingle()
   if (!dossier?.referente_id) return NextResponse.json({ skipped: true, reason: 'no_referente' })
 
   const compte = await loadDriveCompte(db, dossier.referente_id)
@@ -75,14 +75,19 @@ export async function POST(request) {
   }
 
   try {
-    const { data: client } = await db.from('clients').select('nom').eq('id', dossier.client_id).maybeSingle()
+    const { data: client } = await db.from('clients').select('*').eq('id', dossier.client_id).maybeSingle()
     let artisanNom = 'artisan'
     if (devis.artisan_id) {
       const { data: a } = await db.from('artisans').select('entreprise').eq('id', devis.artisan_id).maybeSingle()
       artisanNom = a?.entreprise || 'artisan'
     }
-    const fileName = `${nettoyerSegment(`Devis ${artisanNom} ${devis.id.slice(0, 8)}`)}.pdf`
-    const segments = [...chantierBaseSegments(dossier.statut, dossier.created_at, client?.nom), 'Devis', sousDossier].map(nettoyerSegment)
+    // « Devis_<client>_<artisan>.pdf » (signé → « Devis_signe_… »).
+    const clientSlug = slugNom(formatNomClient(client, { civilite: false }))
+    const artisanSlug = slugNom(artisanNom)
+    const base = estSigne ? 'Devis_signe' : 'Devis'
+    const fileName = `${nettoyerSegment(`${base}_${clientSlug}_${artisanSlug}`)}.pdf`
+    const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+    const segments = [...chantierBaseSegments(dossier.statut, dossier.created_at, client?.nom, { dateFin }), '3. Devis', sousDossier].map(nettoyerSegment)
 
     // Déjà miroité → on supprime l'ancien item (le statut/dossier a pu changer) avant de reposer.
     if (existing) { try { await mod.deleteItem(token, existing.drive_id, existing.item_id) } catch { /* best effort */ } }
