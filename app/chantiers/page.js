@@ -27,12 +27,10 @@ const MoreIcon     = ({ size = 16 }) => <Svg size={size}><circle cx="12" cy="5" 
 const ClockIcon    = ({ size = 16 }) => <Svg size={size}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></Svg>
 const CalendarIcon = ({ size = 16 }) => <Svg size={size}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></Svg>
 const EuroIcon     = ({ size = 16 }) => <Svg size={size}><path d="M14 2H10a8 8 0 0 0 0 16h4"/><line x1="3" y1="9" x2="15" y2="9"/><line x1="3" y1="15" x2="15" y2="15"/></Svg>
-const FilterIcon   = ({ size = 16 }) => <Svg size={size}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></Svg>
 const CheckIcon    = ({ size = 16 }) => <Svg size={size}><polyline points="20 6 9 17 4 12"/></Svg>
 const HammerIcon   = ({ size = 16 }) => <Svg size={size}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></Svg>
 const DocIcon      = ({ size = 16 }) => <Svg size={size}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></Svg>
 const PlusIcon     = ({ size = 16 }) => <Svg size={size}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></Svg>
-const ChevronDown  = ({ size = 16 }) => <Svg size={size}><polyline points="6 9 12 15 18 9"/></Svg>
 const PinIcon      = ({ size = 16 }) => <Svg size={size}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></Svg>
 
 /* ── Helpers ── */
@@ -72,10 +70,6 @@ function ChantiersList({ items, selectedId, onSelect, onOpen, aujourdhui, isMobi
     <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: isMobile ? 'auto' : '100%' }}>
       <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--ink-200)', flexShrink: 0 }}>
         <div className="eyebrow">{items.length} résultats</div>
-        <div style={{ display: 'flex', gap: 6, fontSize: 11, color: 'var(--ink-500)', alignItems: 'center' }}>
-          Tri : <strong style={{ color: 'var(--ink-700)' }}>Plus récent</strong>
-          <ChevronDown size={12} />
-        </div>
       </div>
       <div style={{ overflowY: isMobile ? 'visible' : 'auto', flex: 1, padding: '8px 12px' }}>
         {items.length === 0 && (
@@ -160,8 +154,58 @@ function ChantiersList({ items, selectedId, onSelect, onOpen, aujourdhui, isMobi
   )
 }
 
+/* ── Carte chantier (vue « Cartes », façon page clients) ── */
+function ChantierCard({ d, aujourdhui, onClick, onOpen }) {
+  const s   = calcStatut(d)
+  const dl  = badgeDeadlineDevis(d, aujourdhui)
+  const av  = calculerAvancement(d)
+  const ttc = (d.devis_artisans || []).filter(dv => dv.statut === 'accepte').reduce((a, dv) => a + (dv.montant_ttc || 0), 0)
+  return (
+    <button onClick={onClick} onDoubleClick={onOpen}
+      className="card" style={{ padding: 18, border: 0, textAlign: 'left', cursor: 'pointer', width: '100%', minWidth: 0, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+            <span className="mono" style={{ fontSize: 11.5, color: 'var(--ink-900)', fontWeight: 700 }}>{d.reference}</span>
+            <TypoBadge typo={d.typologie} />
+          </div>
+          <div className="clip-1" style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink-900)' }}>{nomClient(d.client)}</div>
+          <div style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+            <PinIcon size={12} /><span className="clip-1" style={{ minWidth: 0 }}>{villeFromAddr(d.client?.adresse)}</span>
+          </div>
+        </div>
+        <StatutBadge statut={s} />
+      </div>
+      {s === 'en_cours_chantier' && av > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>Avancement</span>
+            <span className="tnum" style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-900)' }}>{av}%</span>
+          </div>
+          <Progress value={av} height={4} />
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--ink-100)', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center', minWidth: 0, flexWrap: 'wrap' }}>
+          {dl ? (
+            <MiniMeta icon={<ClockIcon size={12} />} mute={dl.ton === 'normal'}>
+              <span style={{ color: dl.ton === 'retard' ? '#b91c1c' : dl.ton === 'urgent' ? '#a16207' : undefined, fontWeight: dl.ton !== 'normal' ? 700 : 500 }}>{dl.texte || fmtDate(d.date_limite_devis)}</span>
+            </MiniMeta>
+          ) : d.date_fin_chantier ? (
+            <MiniMeta icon={<CalendarIcon size={12} />}>Fin {fmtDate(d.date_fin_chantier)}</MiniMeta>
+          ) : null}
+          {ttc > 0 && (
+            <MiniMeta icon={<EuroIcon size={12} />}><span className="tnum" style={{ fontWeight: 600, color: 'var(--ink-700)' }}>{fmtEur(ttc)}</span></MiniMeta>
+          )}
+        </div>
+        {d.referente && <Avatar name={`${d.referente.prenom} ${d.referente.nom}`} size={24} />}
+      </div>
+    </button>
+  )
+}
+
 /* ── Aperçu latéral ── */
-function ChantierPreview({ d, onOpen, onBack, isMobile }) {
+function ChantierPreview({ d, onOpen, onBack, backLabel, isMobile }) {
   if (!d) return (
     <div className="card" style={{ display: 'grid', placeItems: 'center', textAlign: 'center', color: 'var(--ink-500)' }}>
       <div>
@@ -193,7 +237,7 @@ function ChantierPreview({ d, onOpen, onBack, isMobile }) {
     <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: isMobile ? 'auto' : '100%' }}>
       {onBack && (
         <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--ink-200)', flexShrink: 0 }}>
-          <button className="btn btn-ghost" onClick={onBack} style={{ fontSize: 12, padding: '4px 10px' }}>← Retour à la liste</button>
+          <button className="btn btn-ghost" onClick={onBack} style={{ fontSize: 12, padding: '4px 10px' }}>{backLabel || '← Retour à la liste'}</button>
         </div>
       )}
 
@@ -391,12 +435,24 @@ function ChantiersInner() {
   const [recherche,    setRecherche]    = useState('')
   const [filtreStatut, setFiltreStatut] = useState('tous')
   const [filtreTypo,   setFiltreTypo]   = useState('tous')
+  const [tri,          setTri]          = useState('recent')  // recent | alpha | ville | statut | type
   const [onglet,       setOnglet]       = useState('moi')
   const [vueArchives,  setVueArchives]  = useState(false)  // Actifs vs Archivés (terminé/annulé)
   const [selectedId,   setSelectedId]   = useState(null)
   const [isMobile,     setIsMobile]     = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches)
   const [showPreview,  setShowPreview]  = useState(false)
   const [modaleClient, setModaleClient] = useState(false)
+  // Vue Liste (maître-détail) vs Cartes (grille façon clients). Préférence mémorisée.
+  // Initialiseur paresseux (comme isMobile) → pas de setState dans un effet.
+  const [vueCartes,    setVueCartes]    = useState(() => {
+    try { return typeof window !== 'undefined' && localStorage.getItem('chantiers_vue') === 'cartes' } catch { return false }
+  })
+  const [apercuModal,  setApercuModal]  = useState(false)  // aperçu chantier en modale (mode Cartes)
+  const changerVue = (cartes) => {
+    setVueCartes(cartes)
+    setApercuModal(false)  // ne pas laisser l'aperçu ouvert en changeant de vue
+    try { localStorage.setItem('chantiers_vue', cartes ? 'cartes' : 'liste') } catch { /* ignore */ }
+  }
   const router        = useRouter()
   const searchParams  = useSearchParams()
   const { user, profile, initialized, agenceActive } = useAuth()
@@ -422,7 +478,7 @@ function ChantiersInner() {
 
     let query = supabase
       .from('dossiers')
-      .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse, telephone, email), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, artisan_id, artisan:artisans(id, entreprise, metier, ville)), comptes_rendus(id, type_visite), rendez_vous(type_rdv, date_heure), suivi_financier(type_echeance, montant_ttc, statut_illico, statut_client, artisan_id)')
+      .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse, telephone, email, type_client), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, artisan_id, artisan:artisans(id, entreprise, metier, ville)), comptes_rendus(id, type_visite), rendez_vous(type_rdv, date_heure), suivi_financier(type_echeance, montant_ttc, statut_illico, statut_client, artisan_id)')
       .eq('archive', false)
       .order('created_at', { ascending: false })
     if (profile.role === 'agente') query = query.eq('referente_id', profile.id)
@@ -455,7 +511,16 @@ function ChantiersInner() {
   // Vue Actifs / Archivés : un chantier terminé ou annulé bascule en "Archivés"
   // (statut uniquement — le client n'est JAMAIS archivé par cette bascule).
   const estChantierArchive = (d) => ['termine', 'annule'].includes(calcStatut(d))
-  const dossiersFiltres       = dossiersFiltresBase.filter(d => vueArchives ? estChantierArchive(d) : !estChantierArchive(d))
+  const ordreStatut = Object.keys(STATUT_CONFIG)
+  const dossiersFiltres = dossiersFiltresBase
+    .filter(d => vueArchives ? estChantierArchive(d) : !estChantierArchive(d))
+    .sort((a, b) => {
+      if (tri === 'alpha')  return nomClient(a.client).localeCompare(nomClient(b.client), 'fr', { sensitivity: 'base' })
+      if (tri === 'ville')  return (villeFromAddr(a.client?.adresse) || '').localeCompare(villeFromAddr(b.client?.adresse) || '', 'fr', { sensitivity: 'base' })
+      if (tri === 'statut') return ordreStatut.indexOf(calcStatut(a)) - ordreStatut.indexOf(calcStatut(b))
+      if (tri === 'type')   return (a.client?.type_client || '').localeCompare(b.client?.type_client || '')
+      return new Date(b.created_at || 0) - new Date(a.created_at || 0)  // recent
+    })
   const compteurs             = getCompteurs(dossiersFiltresOnglet)
   const aujourdhui            = new Date()
 
@@ -484,7 +549,7 @@ function ChantiersInner() {
   const panelHeight = 'calc(100vh - 340px)' /* desktop only — mobile uses natural page flow */
 
   return (
-    <div className="page-enter page-pad" style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 1400, margin: '0 auto' }}>
+    <div className="page-enter page-pad" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
       {/* Header row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
@@ -515,10 +580,22 @@ function ChantiersInner() {
         </div>
       )}
 
-      {/* Toggle Actifs / Archivés (tous rôles). Archivés = chantiers terminés ou annulés. */}
-      <div className="tabs">
-        <button className={`tab ${!vueArchives ? 'active' : ''}`} onClick={() => setVueArchives(false)}>Actifs</button>
-        <button className={`tab ${vueArchives ? 'active' : ''}`} onClick={() => setVueArchives(true)}>Archivés</button>
+      {/* Actifs / Archivés + bascule Liste / Cartes (vue) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div className="tabs">
+          <button className={`tab ${!vueArchives ? 'active' : ''}`} onClick={() => setVueArchives(false)}>Actifs</button>
+          <button className={`tab ${vueArchives ? 'active' : ''}`} onClick={() => setVueArchives(true)}>Archivés</button>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, background: 'var(--ink-100)', padding: 3, borderRadius: 9 }}>
+          {[{ k: false, l: 'Liste' }, { k: true, l: 'Cartes' }].map(o => (
+            <button key={o.l} onClick={() => changerVue(o.k)} style={{
+              padding: '6px 16px', fontSize: 12.5, fontWeight: 600, borderRadius: 7, cursor: 'pointer', border: 0,
+              background: vueCartes === o.k ? '#fff' : 'transparent',
+              color: vueCartes === o.k ? 'var(--brand-800)' : 'var(--ink-500)',
+              boxShadow: vueCartes === o.k ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+            }}>{o.l}</button>
+          ))}
+        </div>
       </div>
 
       {/* KPI strip */}
@@ -569,11 +646,30 @@ function ChantiersInner() {
           <option value="tous">Toutes typologies</option>
           {Object.entries(TYPOLOGIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <button className="btn btn-ghost" style={{ height: 40 }}><FilterIcon size={14} /> Plus de filtres</button>
+        <select className="input" value={tri} onChange={e => setTri(e.target.value)} title="Trier par"
+          style={{ height: 40, minWidth: 170 }}>
+          <option value="recent">Trier : Plus récent</option>
+          <option value="alpha">Trier : Alphabétique</option>
+          <option value="ville">Trier : Ville</option>
+          <option value="statut">Trier : Statut devis</option>
+          <option value="type">Trier : Type de client</option>
+        </select>
       </div>
 
-      {/* Grille liste + aperçu */}
-      {isMobile ? (
+      {/* Vue Cartes (grille façon clients) OU vue Liste (maître-détail) */}
+      {vueCartes ? (
+        dossiersFiltres.length === 0 ? (
+          <div className="card" style={{ padding: 48, textAlign: 'center', color: 'var(--ink-500)' }}>Aucun chantier</div>
+        ) : (
+          <div className="grid-cards">
+            {dossiersFiltres.map(d => (
+              <ChantierCard key={d.id} d={d} aujourdhui={aujourdhui}
+                onClick={() => { setSelectedId(d.id); setApercuModal(true) }}
+                onOpen={() => router.push(`/chantiers/${d.id}`)} />
+            ))}
+          </div>
+        )
+      ) : isMobile ? (
         <div>
           {!showPreview
             ? <ChantiersList items={dossiersFiltres} selectedId={selected?.id} onSelect={handleSelect} onOpen={(id) => router.push(`/chantiers/${id}`)} aujourdhui={aujourdhui} isMobile />
@@ -584,6 +680,16 @@ function ChantiersInner() {
         <div className="grid-list" style={{ height: panelHeight }}>
           <ChantiersList items={dossiersFiltres} selectedId={selected?.id} onSelect={handleSelect} onOpen={(id) => router.push(`/chantiers/${id}`)} aujourdhui={aujourdhui} />
           <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} />
+        </div>
+      )}
+
+      {/* Aperçu chantier en modale (déclenché par un clic sur une carte) */}
+      {vueCartes && apercuModal && selected && (
+        <div onClick={() => setApercuModal(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 200, display: 'grid', placeItems: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 560, maxHeight: '88vh', overflow: 'auto', borderRadius: 16 }}>
+            <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} onBack={() => setApercuModal(false)} backLabel="Fermer" isMobile />
+          </div>
         </div>
       )}
 
