@@ -10,6 +10,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { encrypt, decrypt } from '../calendar/crypto'
+import { fetchRetry } from './http'
 
 const API = 'https://www.googleapis.com/drive/v3'
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3'
@@ -60,9 +61,11 @@ export async function getValidAccessToken(compte) {
   return tok.access_token
 }
 
+// Toutes les requêtes Drive passent par fetchRetry (isGoogle → détecte aussi le throttling
+// signalé par un 403 + corps « rateLimitExceeded »).
 async function driveFetch(accessToken, path, opts = {}) {
   const url = path.startsWith('http') ? path : `${API}${path}`
-  return fetch(url, { ...opts, headers: { Authorization: `Bearer ${accessToken}`, ...(opts.headers || {}) } })
+  return fetchRetry(url, { ...opts, headers: { Authorization: `Bearer ${accessToken}`, ...(opts.headers || {}) } }, { isGoogle: true })
 }
 
 // Pas de driveId pour le perso Google → sentinelle. (Signature alignée sur microsoft.js.)
@@ -159,11 +162,11 @@ export async function uploadSmallFile(accessToken, _driveId, parentItemId, fileN
 
   const existingId = await findChild(accessToken, parent, fileName, false)
   if (existingId) {
-    const res = await fetch(`${UPLOAD}/files/${existingId}?uploadType=media&supportsAllDrives=true&fields=id,name,webViewLink`, {
+    const res = await fetchRetry(`${UPLOAD}/files/${existingId}?uploadType=media&supportsAllDrives=true&fields=id,name,webViewLink`, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': ct },
       body: buf,
-    })
+    }, { isGoogle: true })
     if (!res.ok) throw new Error(`gdrive_upload_update_${res.status}`)
     const d = await res.json()
     return { id: d.id, name: d.name || fileName, webUrl: d.webViewLink || null }
@@ -178,11 +181,11 @@ export async function uploadSmallFile(accessToken, _driveId, parentItemId, fileN
   )
   const post = Buffer.from(`\r\n--${boundary}--`)
   const multipart = Buffer.concat([pre, buf, post])
-  const res = await fetch(`${UPLOAD}/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink`, {
+  const res = await fetchRetry(`${UPLOAD}/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
     body: multipart,
-  })
+  }, { isGoogle: true })
   if (!res.ok) throw new Error(`gdrive_upload_failed_${res.status}`)
   const d = await res.json()
   return { id: d.id, name: d.name || fileName, webUrl: d.webViewLink || null }
