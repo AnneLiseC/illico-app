@@ -691,7 +691,7 @@ export default function EspaceClient() {
                                 const url = URL.createObjectURL(blob)
                                 const a = document.createElement('a')
                                 a.href = url
-                                a.download = `CR_${dossier.reference}.pdf`
+                                a.download = `${(cr.date_visite || cr.created_at) ? new Date(cr.date_visite || cr.created_at).toISOString().slice(0, 10) + '_' : ''}CR_${(profile?.client?.nom || profile?.client?.prenom || dossier.reference || 'client').normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[^\w-]+/g, '_')}.pdf`
                                 a.click()
                                 URL.revokeObjectURL(url)
                               } catch (err) {
