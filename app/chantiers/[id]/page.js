@@ -409,6 +409,35 @@ function FichesTechPanel({ artisanId, dossierId, fichesCochees, onToggle, onCrea
   const [nouvelleFiche, setNouvelleFiche] = useState({ nom: '', description: '' })
   const [fichierFiche, setFichierFiche] = useState(null)
   const [savingFiche, setSavingFiche] = useState(false)
+  const [analysing, setAnalysing] = useState(false)
+  const [analyseErr, setAnalyseErr] = useState('')
+
+  // Analyse IA de la fiche dès l'upload : Claude lit le PDF et pré-remplit nom +
+  // description (toujours en français, même fiche en langue étrangère). Ne remplit
+  // que les champs vides → ne clobbe pas une saisie manuelle.
+  const analyserFiche = async (file) => {
+    if (!file) return
+    setAnalysing(true); setAnalyseErr('')
+    try {
+      const b64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result).replace(/^data:.*;base64,/, ''))
+        reader.onerror = () => reject(new Error('Lecture du PDF impossible'))
+        reader.readAsDataURL(file)
+      })
+      const res = await apiFetch('/api/fiches/extract', { method: 'POST', body: JSON.stringify({ pdf_base64: b64, filename: file.name }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setAnalyseErr(data.error || 'Analyse IA impossible'); return }
+      setNouvelleFiche(p => ({
+        nom: p.nom?.trim() ? p.nom : (data.nom || ''),
+        description: p.description?.trim() ? p.description : (data.description || ''),
+      }))
+    } catch (e) {
+      setAnalyseErr(e.message || 'Analyse IA impossible')
+    } finally {
+      setAnalysing(false)
+    }
+  }
 
   useEffect(() => {
     const charger = async () => {
@@ -507,17 +536,24 @@ function FichesTechPanel({ artisanId, dossierId, fichesCochees, onToggle, onCrea
             rows={2}
             style={{fontSize:12, padding:'5px 8px', borderRadius:6, border:'1px solid var(--ink-200)', resize:'vertical', outline:'none'}} />
           <label style={{fontSize:11, color:'var(--ink-500)', cursor:'pointer'}}>
-            📎 {fichierFiche ? fichierFiche.name : 'Joindre un PDF (optionnel)'}
+            📎 {fichierFiche ? fichierFiche.name : 'Joindre un PDF (analysé par l\'IA)'}
             <input type="file" accept=".pdf" style={{display:'none'}}
-              onChange={e => setFichierFiche(e.target.files[0] || null)} />
+              onChange={e => { const f = e.target.files[0] || null; setFichierFiche(f); if (f) analyserFiche(f) }} />
           </label>
+          {analysing && (
+            <div style={{display:'flex', alignItems:'center', gap:8, fontSize:11.5, fontWeight:600, color:'var(--brand-800)', background:'var(--brand-50)', border:'1px solid var(--brand-200)', borderRadius:8, padding:'8px 10px'}}>
+              <span style={{width:14, height:14, borderRadius:'50%', border:'2px solid var(--brand-200)', borderTopColor:'var(--brand-700)', display:'inline-block', flexShrink:0, animation:'spin 0.65s linear infinite'}} />
+              L&apos;IA analyse la fiche et remplit les champs…
+            </div>
+          )}
+          {analyseErr && <span style={{fontSize:11, color:'#b91c1c'}}>{analyseErr}</span>}
           <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
             <button onClick={() => { setShowForm(false); setNouvelleFiche({nom:'',description:''}); setFichierFiche(null) }}
               className="btn btn-ghost" style={{fontSize:11}}>Annuler</button>
             <button onClick={creerFiche}
-              disabled={!nouvelleFiche.nom.trim() || savingFiche}
+              disabled={!nouvelleFiche.nom.trim() || savingFiche || analysing}
               className="btn btn-primary" style={{fontSize:11}}>
-              {savingFiche ? 'Création…' : 'Créer et lier'}
+              {savingFiche ? 'Création…' : analysing ? 'Analyse…' : 'Créer et lier'}
             </button>
           </div>
         </div>
