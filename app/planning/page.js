@@ -102,7 +102,7 @@ export default function Planning() {
   // Mémorise la dernière cible auto-résolue, pour ne pas écraser un choix manuel.
   const lastAutoCibleRdv = useRef('')
   const lastAutoCibleInt = useRef('')
-  const [formDateCle, setFormDateCle] = useState({ date_demarrage_chantier: '', date_fin_chantier: '' })
+  const [formDateCle, setFormDateCle] = useState({ date_demarrage_chantier_manuel: '', date_fin_chantier: '' })
 
   const router = useRouter()
   const { user, profile, initialized, agenceActive } = useAuth()
@@ -111,7 +111,7 @@ export default function Planning() {
     const [rdvRes, intRes, dosRes, artRes, devRes, agRes, agencesRes, ciblesRes] = await Promise.all([
       supabase.from('rendez_vous').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_heure'),
       supabase.from('interventions_artisans').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_debut'),
-      supabase.from('dossiers').select('id, reference, referente_id, agence_id, date_demarrage_chantier, date_fin_chantier, client:clients(civilite, prenom, nom)').order('reference'),
+      supabase.from('dossiers').select('id, reference, referente_id, agence_id, date_demarrage_chantier, date_demarrage_chantier_manuel, date_fin_chantier, client:clients(civilite, prenom, nom)').order('reference'),
       supabase.from('artisans').select('id, entreprise').order('entreprise'),
       supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise)'),
       supabase.from('profiles').select('id, prenom, nom, role').in('role', ['admin', 'agente']).order('prenom'),
@@ -414,7 +414,7 @@ export default function Planning() {
     setElementSelectionne({ type, data, cfg }); setModalType(type); setModeEdition(false)
     if (type === 'rdv') setFormRdv({ dossier_id: data.dossier_id, type_rdv: data.type_rdv, date_heure: data.date_heure ? instantToParisLocal(data.date_heure) : '', duree_minutes: data.duree_minutes || 60, artisan_id: data.artisan_id || '', notes: data.notes || '', titre: data.titre || '', agence_id: data.agence_id || '', cible_id: data.cible_id || '' })
     else if (type === 'intervention') setFormIntervention({ dossier_id: data.dossier_id, artisan_id: data.artisan_id, type_intervention: data.type_intervention, date_debut: data.date_debut || '', date_fin: data.date_fin || '', jours_specifiques: data.jours_specifiques || [], notes: data.notes || '', agence_id: data.agence_id || '', cible_id: data.cible_id || '' })
-    else if (type === 'date_cle') setFormDateCle({ date_demarrage_chantier: data.date_demarrage_chantier || '', date_fin_chantier: data.date_fin_chantier || '' })
+    else if (type === 'date_cle') setFormDateCle({ date_demarrage_chantier_manuel: data.date_demarrage_chantier_manuel || '', date_fin_chantier: data.date_fin_chantier || '' })
     setModalOuvert(true)
   }
 
@@ -513,10 +513,17 @@ export default function Planning() {
   const sauvegarderDateCle = async () => {
     if (!elementSelectionne?.data?.id) return
     setSaving(true); setErreur('')
-    const { error } = await supabase.from('dossiers').update({ date_demarrage_chantier: formDateCle.date_demarrage_chantier || null, date_fin_chantier: formDateCle.date_fin_chantier || null }).eq('id', elementSelectionne.data.id)
+    const { error } = await supabase.from('dossiers').update({ date_demarrage_chantier_manuel: formDateCle.date_demarrage_chantier_manuel || null, date_fin_chantier: formDateCle.date_fin_chantier || null }).eq('id', elementSelectionne.data.id)
     if (error) { setErreur(error.message); setSaving(false); return }
     pushToGoogle('dossier', elementSelectionne.data.id)
-    setDossiers(prev => prev.map(d => d.id === elementSelectionne.data.id ? { ...d, ...formDateCle } : d))
+    setDossiers(prev => prev.map(d => d.id === elementSelectionne.data.id ? {
+      ...d,
+      date_demarrage_chantier_manuel: formDateCle.date_demarrage_chantier_manuel || null,
+      date_fin_chantier: formDateCle.date_fin_chantier || null,
+      // valeur effective : manuel prioritaire ; sinon on garde l'existant (le trigger
+      // recalcule l'auto côté serveur, rafraîchi au prochain chargement).
+      date_demarrage_chantier: formDateCle.date_demarrage_chantier_manuel || d.date_demarrage_chantier,
+    } : d))
     fermerModal(); setSaving(false)
   }
 
@@ -1111,7 +1118,7 @@ export default function Planning() {
               {elementSelectionne?.type === 'date_cle' && (
                 <div style={{display:'flex', flexDirection:'column', gap:16}}>
                   <div style={{fontSize:13, color:'var(--ink-500)'}}>{elementSelectionne.data.client?.prenom} {elementSelectionne.data.client?.nom}</div>
-                  <div><label className={labelCls}>🏗 Démarrage</label><input type="date" value={formDateCle.date_demarrage_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_demarrage_chantier: e.target.value }))} className={inputCls} style={{marginTop:6}}/></div>
+                  <div><label className={labelCls}>Démarrage <span style={{fontWeight:400, color:'var(--ink-500)'}}>(auto si vide)</span></label><input type="date" value={formDateCle.date_demarrage_chantier_manuel} onChange={e => setFormDateCle(f => ({ ...f, date_demarrage_chantier_manuel: e.target.value }))} className={inputCls} style={{marginTop:6}}/></div>
                   <div><label className={labelCls}>🏁 Fin</label><input type="date" value={formDateCle.date_fin_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_fin_chantier: e.target.value }))} className={inputCls} style={{marginTop:6}}/></div>
                   <div style={{display:'flex', gap:8, paddingTop:4}}>
                     <button onClick={fermerModal} className="btn btn-ghost" style={{flex:1}}>Annuler</button>

@@ -1746,7 +1746,7 @@ export default function FicheChantier({ params }) {
     setSaving(true); setErreur(''); setSucces('')
     const { error } = await supabase.from('dossiers').update({
       date_limite_devis: dossier.date_limite_devis || null,
-      date_demarrage_chantier: dossier.date_demarrage_chantier || null,
+      date_demarrage_chantier_manuel: dossier.date_demarrage_chantier_manuel || null,
       date_fin_chantier: dossier.date_fin_chantier || null,
       frais_statut: dossier.frais_statut,
       frais_consultation: dossier.frais_consultation === '' ? null : dossier.frais_consultation,
@@ -1778,7 +1778,7 @@ export default function FicheChantier({ params }) {
       typologie: dossier.typologie, statut: dossier.statut,
       frais_consultation: dossier.frais_consultation, frais_statut: dossier.frais_statut,
       date_limite_devis: dossier.date_limite_devis, contrat_signe: dossier.contrat_signe,
-      date_signature_contrat: dossier.date_signature_contrat, date_demarrage_chantier: dossier.date_demarrage_chantier,
+      date_signature_contrat: dossier.date_signature_contrat, date_demarrage_chantier_manuel: dossier.date_demarrage_chantier_manuel || null,
       date_fin_chantier: dossier.date_fin_chantier, taux_courtage: dossier.taux_courtage, honoraires_amo_taux: dossier.honoraires_amo_taux,
       resume_projet: dossier.resume_projet || null,
       adresse_chantier: dossier.adresse_chantier || null,
@@ -3708,8 +3708,8 @@ export default function FicheChantier({ params }) {
           <div style={{display:'flex',flexDirection:'column',gap:16, padding:24}}>
             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14}}>
               <div>
-                <label className="eyebrow" style={{display:'block', marginBottom:6}}>Démarrage chantier</label>
-                <input type="date" className="input" value={dossier.date_demarrage_chantier || ''} onChange={e => set('date_demarrage_chantier', e.target.value)} style={{height:40, width:'100%'}}/>
+                <label className="eyebrow" style={{display:'block', marginBottom:6}}>Démarrage chantier <span style={{textTransform:'none', letterSpacing:0, fontWeight:400}}>(auto = 1re intervention si vide)</span></label>
+                <input type="date" className="input" value={dossier.date_demarrage_chantier_manuel || ''} onChange={e => set('date_demarrage_chantier_manuel', e.target.value)} style={{height:40, width:'100%'}}/>
               </div>
               <div>
                 <label className="eyebrow" style={{display:'block', marginBottom:6}}>Fin de chantier</label>
