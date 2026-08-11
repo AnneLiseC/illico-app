@@ -315,6 +315,19 @@ function ContactRow({ icon, label, value, action }) {
 const nomFichierClient = (dossier) => (formatNomClient(dossier?.client, { civilite: false }) || dossier?.reference || 'client')
   .normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '')
 
+// Cause d'échec d'un push → message actionnable affiché dans le bandeau de synchronisation.
+const SYNC_CAUSE_MSG = {
+  file_missing: 'fichier source manquant — ré-uploade-le dans l’app, puis réessaie.',
+  reconnect: 'OneDrive déconnecté — reconnecte le compte de la référente, puis réessaie.',
+  drive_error: 'OneDrive a refusé l’envoi — réessaie ; si ça persiste, reconnecte le compte.',
+}
+const SYNC_DRIVE_MSG = {
+  reconnect: '⚠ OneDrive déconnecté — reconnecte le compte de la référente, puis relance.',
+  no_root: '⚠ Aucun dossier racine Drive configuré pour la référente.',
+  no_referente: '⚠ Aucune référente sur ce dossier.',
+  fournisseur: '⚠ Fournisseur Drive non reconnu pour la référente.',
+}
+
 // ─── Visionneuse de document (PDF / image) ────────────────────────────────────
 function DocViewer({ url, nom, onClose }) {
   // Libère les blob URLs quand la visionneuse se ferme
@@ -624,6 +637,58 @@ export default function FicheChantier({ params }) {
   const [generatingPDF, setGeneratingPDF] = useState(null) // 'recapitulatif' | 'dossier_fin'
   const [erreur, setErreur] = useState('')
   const [succes, setSucces] = useState('')
+  const [syncing, setSyncing] = useState(false)
+  const [syncProgress, setSyncProgress] = useState(null)   // { done, total }
+  const [syncResult, setSyncResult] = useState(null)
+
+  // Re-synchronise tout le Drive du dossier PAR LOTS (le serveur en traite un paquet par appel ;
+  // on boucle jusqu'à done → aucun timeout même sur un gros dossier, sans 2e clic manuel).
+  const synchroniserDrive = async () => {
+    setSyncing(true); setSyncResult(null); setSyncProgress({ done: 0, total: 0 })
+    let offset = 0, ok = 0, skipped = 0, drive = null
+    const failed = []
+    try {
+      for (let garde = 0; garde < 1000; garde++) {
+        let j = null
+        // Sur coupure réseau/timeout, on retente le MÊME lot (idempotent) avant d'abandonner.
+        for (let essai = 0; essai < 3; essai++) {
+          try {
+            const res = await apiFetch('/api/drive/sync-dossier', { method: 'POST', body: JSON.stringify({ dossier_id: id, offset }) })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) { setSyncResult({ type: 'error', text: data.error || 'Synchronisation impossible.' }); return }
+            j = data; break
+          } catch { if (essai === 2) throw new Error('réseau') }
+        }
+        ok += j.ok; skipped += j.skipped; failed.push(...(j.failed || [])); drive = drive || j.drive
+        setSyncProgress({ done: j.to, total: j.total })
+        if (j.drive) break                 // condition Drive globale → inutile de continuer
+        if (j.done) break
+        offset = j.nextOffset
+      }
+      setSyncResult({ type: (failed.length || drive) ? 'warn' : 'ok', ok, skipped, failed, drive })
+    } catch {
+      setSyncResult({ type: 'error', text: 'Erreur réseau pendant la synchronisation.' })
+    } finally {
+      setSyncing(false); setSyncProgress(null)
+    }
+  }
+
+  // Repousse UN fichier en échec (bouton « Réessayer » du bandeau). Retire la ligne si OK.
+  const retryUnFichier = async (idx) => {
+    const f = syncResult?.failed?.[idx]
+    if (!f) return
+    try {
+      const res = await apiFetch(f.endpoint, { method: 'POST', body: JSON.stringify(f.body) })
+      const j = await res.json().catch(() => ({}))
+      const reussi = res.ok && !j.error && !(j.skipped && ['no_root', 'reconnect', 'no_referente', 'fournisseur'].includes(j.reason))
+      setSyncResult(prev => {
+        if (!prev) return prev
+        const rest = prev.failed.filter((_, i) => i !== idx)
+        if (reussi) return { ...prev, ok: prev.ok + 1, failed: rest, type: (rest.length ? 'warn' : 'ok') }
+        return { ...prev, failed: prev.failed.map((x, i) => i === idx ? { ...x, error: j.error || 'échec' } : x) }
+      })
+    } catch { /* on laisse la ligne telle quelle */ }
+  }
   const [modalModif, setModalModif] = useState(false)
   const [modalInfos, setModalInfos] = useState(false)   // mini-édition des « Informations clés »
   const [devis, setDevis] = useState([])
@@ -3296,6 +3361,41 @@ export default function FicheChantier({ params }) {
             className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
             <DocIcon /> {generatingPDF === 'dossier_suivi' ? '...' : 'Dossier de suivi'}
           </button>
+          <button onClick={synchroniserDrive} disabled={syncing}
+            className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+            <DlIcon /> {syncing
+              ? `Synchronisation… ${syncProgress?.total ? `${syncProgress.done}/${syncProgress.total}` : ''}`.trim()
+              : 'Synchroniser le Drive'}
+          </button>
+          {syncResult && (
+            <div style={{width:'100%',fontSize:12.5,marginTop:6,padding:'8px 12px',borderRadius:8,lineHeight:1.5,
+              background: syncResult.type === 'ok' ? 'rgba(22,163,74,0.08)' : syncResult.type === 'warn' ? 'rgba(234,179,8,0.10)' : 'rgba(239,68,68,0.08)',
+              color: syncResult.type === 'ok' ? '#15803d' : syncResult.type === 'warn' ? '#92600a' : '#b91c1c',
+              border: `1px solid ${syncResult.type === 'ok' ? 'rgba(22,163,74,0.25)' : syncResult.type === 'warn' ? 'rgba(234,179,8,0.3)' : 'rgba(239,68,68,0.25)'}`}}>
+              {syncResult.text ? syncResult.text : (
+                <>
+                  {syncResult.drive && <div style={{fontWeight:700,marginBottom:4}}>{SYNC_DRIVE_MSG[syncResult.drive] || '⚠ Problème de Drive.'}</div>}
+                  <div>{syncResult.ok} synchronisé(s){syncResult.skipped ? ` · ${syncResult.skipped} sans fichier` : ''}{syncResult.failed?.length ? ` · ${syncResult.failed.length} en échec` : ''}.</div>
+                  {syncResult.failed?.length > 0 && (
+                    <ul style={{margin:'6px 0 0',paddingLeft:2,listStyle:'none'}}>
+                      {syncResult.failed.map((f, i) => (
+                        <li key={i} style={{display:'flex',gap:8,alignItems:'baseline',marginBottom:4,flexWrap:'wrap'}}>
+                          <span style={{flex:1,minWidth:180}}>
+                            <b>{f.type} — {f.label}</b> : {SYNC_CAUSE_MSG[f.cause] || f.error}
+                          </span>
+                          <button onClick={() => retryUnFichier(i)}
+                            className="btn btn-ghost" style={{fontSize:11.5,padding:'2px 8px'}}>
+                            Réessayer
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {!syncResult.failed?.length && !syncResult.drive && syncResult.type === 'ok' && <span> Tout est à jour ✓</span>}
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
