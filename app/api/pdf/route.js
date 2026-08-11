@@ -8,6 +8,12 @@ import { TVA_FRAIS } from '../../lib/finance.js'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
+
+// Nom de fichier basé sur le client (accents/espaces nettoyés). Fallback : référence.
+function nomFichierClient(dossier) {
+  return (formatNomClient(dossier?.client, { civilite: false }) || dossier?.reference || 'Client')
+    .normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '')
+}
 import '../../lib/pdf/fonts.js'
 import path from 'path'
 import fs from 'fs'
@@ -485,7 +491,7 @@ export async function POST(request) {
         : (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg'
         : ext === 'png' ? 'image/png'
         : 'application/octet-stream'
-      const devisNom = `Devis_${dossier.reference}_${devisCible.artisan?.entreprise || 'artisan'}.${ext || 'pdf'}`
+      const devisNom = `Devis_${nomFichierClient(dossier)}_${devisCible.artisan?.entreprise || 'artisan'}.${ext || 'pdf'}`
       const devisAscii = devisNom.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '')
       // inline : le client ouvre le document dans un onglet (carte « voir le devis »).
       return new Response(fileBuf, {
@@ -503,15 +509,13 @@ export async function POST(request) {
     // Nom de famille uniquement (sans prénom) ; couple à deux noms → « Nom1 & Nom2 ».
     const crDate = cr?.date_visite || cr?.created_at
     const crDateStr = crDate ? new Date(crDate).toISOString().slice(0, 10) : ''
-    const nomClient = dossier.client
-      ? [dossier.client.nom, dossier.client.nom2].filter(Boolean).join(' & ') || 'Client'
-      : 'Client'
+    const nomFich = nomFichierClient(dossier)
     const filename =
-      type === 'recapitulatif_prev' ? `Recap_Financier_${dossier.reference}.pdf`
-      : type === 'recapitulatif' ? `Suivi_Financier_${dossier.reference}.pdf`
-      : type === 'dossier_suivi' ? `DossierSuivi_${dossier.reference}.pdf`
-      : type === 'cr' ? `${crDateStr ? crDateStr + '_' : ''}CR_${nomClient}.pdf`
-      : `Dossier_${dossier.reference}.pdf`
+      type === 'recapitulatif_prev' ? `Recap_Financier_${nomFich}.pdf`
+      : type === 'recapitulatif' ? `Suivi_Financier_${nomFich}.pdf`
+      : type === 'dossier_suivi' ? `DossierSuivi_${nomFich}.pdf`
+      : type === 'cr' ? `${crDateStr ? crDateStr + '_' : ''}CR_${nomFich}.pdf`
+      : `Dossier_${nomFich}.pdf`
 
     // En-tête robuste aux accents/espaces : fallback ASCII + version UTF-8 (RFC 5987).
     const asciiName = filename.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '')

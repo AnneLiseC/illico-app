@@ -311,6 +311,10 @@ function ContactRow({ icon, label, value, action }) {
   return action ? <a href={action} style={{...style, color:'inherit', textDecoration:'none'}}>{Inner}</a> : <div style={style}>{Inner}</div>
 }
 
+// Nom de fichier basé sur le client (accents/espaces nettoyés). Fallback : référence.
+const nomFichierClient = (dossier) => (formatNomClient(dossier?.client, { civilite: false }) || dossier?.reference || 'client')
+  .normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '')
+
 // ─── Visionneuse de document (PDF / image) ────────────────────────────────────
 function DocViewer({ url, nom, onClose }) {
   // Libère les blob URLs quand la visionneuse se ferme
@@ -405,6 +409,35 @@ function FichesTechPanel({ artisanId, dossierId, fichesCochees, onToggle, onCrea
   const [nouvelleFiche, setNouvelleFiche] = useState({ nom: '', description: '' })
   const [fichierFiche, setFichierFiche] = useState(null)
   const [savingFiche, setSavingFiche] = useState(false)
+  const [analysing, setAnalysing] = useState(false)
+  const [analyseErr, setAnalyseErr] = useState('')
+
+  // Analyse IA de la fiche dès l'upload : Claude lit le PDF et pré-remplit nom +
+  // description (toujours en français, même fiche en langue étrangère). Ne remplit
+  // que les champs vides → ne clobbe pas une saisie manuelle.
+  const analyserFiche = async (file) => {
+    if (!file) return
+    setAnalysing(true); setAnalyseErr('')
+    try {
+      const b64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result).replace(/^data:.*;base64,/, ''))
+        reader.onerror = () => reject(new Error('Lecture du PDF impossible'))
+        reader.readAsDataURL(file)
+      })
+      const res = await apiFetch('/api/fiches/extract', { method: 'POST', body: JSON.stringify({ pdf_base64: b64, filename: file.name }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setAnalyseErr(data.error || 'Analyse IA impossible'); return }
+      setNouvelleFiche(p => ({
+        nom: p.nom?.trim() ? p.nom : (data.nom || ''),
+        description: p.description?.trim() ? p.description : (data.description || ''),
+      }))
+    } catch (e) {
+      setAnalyseErr(e.message || 'Analyse IA impossible')
+    } finally {
+      setAnalysing(false)
+    }
+  }
 
   useEffect(() => {
     const charger = async () => {
@@ -503,17 +536,24 @@ function FichesTechPanel({ artisanId, dossierId, fichesCochees, onToggle, onCrea
             rows={2}
             style={{fontSize:12, padding:'5px 8px', borderRadius:6, border:'1px solid var(--ink-200)', resize:'vertical', outline:'none'}} />
           <label style={{fontSize:11, color:'var(--ink-500)', cursor:'pointer'}}>
-            📎 {fichierFiche ? fichierFiche.name : 'Joindre un PDF (optionnel)'}
+            📎 {fichierFiche ? fichierFiche.name : 'Joindre un PDF (analysé par l\'IA)'}
             <input type="file" accept=".pdf" style={{display:'none'}}
-              onChange={e => setFichierFiche(e.target.files[0] || null)} />
+              onChange={e => { const f = e.target.files[0] || null; setFichierFiche(f); if (f) analyserFiche(f) }} />
           </label>
+          {analysing && (
+            <div style={{display:'flex', alignItems:'center', gap:8, fontSize:11.5, fontWeight:600, color:'var(--brand-800)', background:'var(--brand-50)', border:'1px solid var(--brand-200)', borderRadius:8, padding:'8px 10px'}}>
+              <span style={{width:14, height:14, borderRadius:'50%', border:'2px solid var(--brand-200)', borderTopColor:'var(--brand-700)', display:'inline-block', flexShrink:0, animation:'spin 0.65s linear infinite'}} />
+              L&apos;IA analyse la fiche et remplit les champs…
+            </div>
+          )}
+          {analyseErr && <span style={{fontSize:11, color:'#b91c1c'}}>{analyseErr}</span>}
           <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
             <button onClick={() => { setShowForm(false); setNouvelleFiche({nom:'',description:''}); setFichierFiche(null) }}
               className="btn btn-ghost" style={{fontSize:11}}>Annuler</button>
             <button onClick={creerFiche}
-              disabled={!nouvelleFiche.nom.trim() || savingFiche}
+              disabled={!nouvelleFiche.nom.trim() || savingFiche || analysing}
               className="btn btn-primary" style={{fontSize:11}}>
-              {savingFiche ? 'Création…' : 'Créer et lier'}
+              {savingFiche ? 'Création…' : analysing ? 'Analyse…' : 'Créer et lier'}
             </button>
           </div>
         </div>
@@ -815,7 +855,7 @@ export default function FicheChantier({ params }) {
       const href = URL.createObjectURL(zipBlob)
       const a = document.createElement('a')
       a.href = href
-      a.download = categorie === 'all' ? `Photos_${dossier.reference}.zip` : `Photos_${dossier.reference}_${categorie}.zip`
+      a.download = categorie === 'all' ? `Photos_${nomFichierClient(dossier)}.zip` : `Photos_${nomFichierClient(dossier)}_${categorie}.zip`
       a.click()
       URL.revokeObjectURL(href)
     } catch (e) {
@@ -1378,7 +1418,7 @@ export default function FicheChantier({ params }) {
       const href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
       const a = document.createElement('a')
       a.href = href
-      a.download = `Recap_${dossier?.reference || 'simulation'}_${(sim.nom || 'sim').replace(/[^\w-]+/g, '_')}.pdf`
+      a.download = `Recap_${nomFichierClient(dossier)}_${(sim.nom || 'sim').replace(/[^\w-]+/g, '_')}.pdf`
       a.click()
       URL.revokeObjectURL(href)
     } catch (e) {
@@ -1502,7 +1542,7 @@ export default function FicheChantier({ params }) {
   const ouvrirContrat = async () => {
     if (!dossier?.contrat_url) return
     const { data } = await supabase.storage.from('documents').createSignedUrl(dossier.contrat_url, 3600)
-    if (data?.signedUrl) setDocViewer({ url: data.signedUrl, nom: dossier.contrat_url.split('/').pop() })
+    if (data?.signedUrl) setDocViewer({ url: data.signedUrl, nom: `Contrat_${nomFichierClient(dossier)}.${dossier.contrat_url.split('.').pop()}` })
   }
 
   const supprimerContrat = async () => {
@@ -2402,15 +2442,20 @@ export default function FicheChantier({ params }) {
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
+      const nomFich = nomFichierClient(dossier)
+      // CR : préfixe date de visite (sinon date d'émission) → <date>_CR_<client>.pdf
+      const crForFile = crId ? comptesRendus.find(c => c.id === crId) : null
+      const crDate = crForFile?.date_visite || crForFile?.created_at
+      const crDateStr = crDate ? new Date(crDate).toISOString().slice(0, 10) : ''
       const filename = type === 'recapitulatif_prev'
-        ? `Recap_Financier_${dossier.reference}.pdf`
+        ? `Recap_Financier_${nomFich}.pdf`
         : type === 'recapitulatif'
-        ? `Suivi_Financier_${dossier.reference}.pdf`
+        ? `Suivi_Financier_${nomFich}.pdf`
         : type === 'dossier_suivi'
-        ? `DossierSuivi_${dossier.reference}.pdf`
+        ? `DossierSuivi_${nomFich}.pdf`
         : type === 'cr'
-        ? `CR_${dossier.reference}.pdf`
-        : `Dossier_${dossier.reference}.pdf`
+        ? `${crDateStr ? crDateStr + '_' : ''}CR_${nomFich}.pdf`
+        : `Dossier_${nomFich}.pdf`
       setDocViewer({ url, nom: filename })
     } catch (err) {
       setErreur('Erreur lors de la génération : ' + err.message)
@@ -4141,7 +4186,7 @@ export default function FicheChantier({ params }) {
                         <div className="devis-doc-act">
                           {d.devis_pdf_path ? (
                             <>
-                              <button onClick={() => ouvrirDocument(d.devis_pdf_path, `Devis ${d.artisan?.entreprise || ''}.pdf`)}
+                              <button onClick={() => ouvrirDocument(d.devis_pdf_path, `Devis_${nomFichierClient(dossier)}_${d.artisan?.entreprise || 'artisan'}.pdf`)}
                                 style={{fontSize:11, color:'var(--ink-900)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>Voir PDF</button>
                               <label style={{fontSize:11, cursor: uploadingDoc === d.id + '_devis' ? 'wait' : 'pointer', color: uploadingDoc === d.id + '_devis' ? 'var(--ink-400)' : 'var(--ink-900)'}}>
                                 {uploadingDoc === d.id + '_devis' ? 'Upload…' : 'Remplacer'}
@@ -4173,7 +4218,7 @@ export default function FicheChantier({ params }) {
                         <div className="devis-doc-act">
                           {d.devis_signe_path ? (
                             <>
-                              <button onClick={() => ouvrirDocument(d.devis_signe_path, `Devis signé ${d.artisan?.entreprise || ''}.pdf`)}
+                              <button onClick={() => ouvrirDocument(d.devis_signe_path, `Devis_signe_${nomFichierClient(dossier)}_${d.artisan?.entreprise || 'artisan'}.pdf`)}
                                 style={{fontSize:11, color:'var(--ink-900)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>Voir PDF</button>
                               <button onClick={() => supprimerDevisSigne(d.id, d.devis_signe_path)}
                                 style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
@@ -4218,7 +4263,7 @@ export default function FicheChantier({ params }) {
                               {v.est_courante && <span style={{fontSize:11, fontWeight:600, color:'var(--ink-900)', background:'rgba(99,102,241,0.12)', padding:'1px 7px', borderRadius:99}}>Courante</span>}
                               <div style={{marginLeft:'auto', display:'flex', gap:8, alignItems:'center'}}>
                                 {v.devis_pdf_path && (
-                                  <button onClick={() => ouvrirDocument(v.devis_pdf_path, `Devis v${v.version_num} ${d.artisan?.entreprise || ''}.pdf`)}
+                                  <button onClick={() => ouvrirDocument(v.devis_pdf_path, `Devis_v${v.version_num}_${nomFichierClient(dossier)}_${d.artisan?.entreprise || 'artisan'}.pdf`)}
                                     style={{fontSize:11, color:'var(--ink-900)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>PDF</button>
                                 )}
                                 {!v.est_courante && (
@@ -4443,7 +4488,7 @@ export default function FicheChantier({ params }) {
             </div>
             <div style={{display:'flex', alignItems:'center', gap:'var(--space-3)'}}>
               {f.pdf_path ? (
-                <button onClick={() => ouvrirDocument(f.pdf_path, `Facture ${f.libelle || ''}.pdf`)}
+                <button onClick={() => ouvrirDocument(f.pdf_path, `Facture_${nomFichierClient(dossier)}_${(f.libelle || '').replace(/[^\w-]+/g, '_')}.pdf`)}
                   style={{fontSize:'var(--text-xs)', color:'var(--ink-900)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>📄 Voir PDF</button>
               ) : (
                 <label style={{
@@ -4469,7 +4514,7 @@ export default function FicheChantier({ params }) {
             <div style={{display:'flex', alignItems:'center', gap:'var(--space-3)', padding:'2px 14px 4px'}}>
               {hf?.pdf_path ? (
                 <>
-                  <button onClick={() => ouvrirDocument(hf.pdf_path, hf.nom || 'Facture honoraire.pdf')}
+                  <button onClick={() => ouvrirDocument(hf.pdf_path, hf.nom || `Facture_honoraires_${nomFichierClient(dossier)}.pdf`)}
                     style={{fontSize:'var(--text-xs)', color:'var(--ink-900)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline'}}>📄 Voir facture</button>
                   <button onClick={() => supprimerHonoFacture(hf)}
                     title="Retirer le PDF"
@@ -5118,7 +5163,7 @@ export default function FicheChantier({ params }) {
           {photoOuverte !== null && (() => {
             const p = filtered[photoOuverte]
             const ext = (p?.url || 'jpg').split('.').pop()
-            const nomPhoto = p?.nom || `${dossier.reference}_${p?.categorie || 'photo'}_${photoOuverte + 1}.${ext}`
+            const nomPhoto = p?.nom || `${nomFichierClient(dossier)}_${p?.categorie || 'photo'}_${photoOuverte + 1}.${ext}`
             // Nom de téléchargement forcé côté serveur (cf. DocViewer) : sans ça la
             // photo repartait avec le nom de stockage (UUID) en cross-origin.
             const urlDl = p?.url_signee
@@ -5270,7 +5315,7 @@ export default function FicheChantier({ params }) {
                         <div style={{marginTop:8, display:'flex', flexDirection:'column', gap:5}}>
                           <div style={{fontSize:11, color:'var(--ink-500)', fontWeight:700}}>🧾 Factures <span style={{fontWeight:500}}>(gestion dans l&apos;onglet Suivi financier)</span></div>
                           {facturesA.map(f => (
-                            <button key={f.id} onClick={() => ouvrirDocument(f.pdf_path, `Facture ${a.entreprise}.pdf`)} className="clip-1"
+                            <button key={f.id} onClick={() => ouvrirDocument(f.pdf_path, `Facture_${nomFichierClient(dossier)}_${a.entreprise}.pdf`)} className="clip-1"
                               style={{background:'none', border:'none', color:'var(--ink-700)', cursor:'pointer', textAlign:'left', padding:0, fontSize:12}}>
                               {f.libelle || 'Facture'} — voir le PDF
                             </button>
