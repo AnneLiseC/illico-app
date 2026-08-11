@@ -16,7 +16,8 @@ import { requireRole } from '../../../lib/api-auth'
 import { buildCRDocument } from '../../../lib/pdf/crDocument.js'
 import { stripEmojiPdf } from '../../../lib/pdf/stripEmoji.js'
 import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
-import { cheminChantier, nettoyerSegment, dateDossier } from '../../../lib/drive/taxonomie'
+import { cheminChantier, nettoyerSegment, dateDossier, slugNom } from '../../../lib/drive/taxonomie'
+import { formatNomClient } from '../../../lib/clients'
 
 let _admin
 function admin() {
@@ -100,11 +101,13 @@ export async function POST(request) {
 
     const pdfBuffer = await renderToBuffer(buildCRDocument({ dossier, cr, sections, logo: getLogoBase64(), photos: photosJointes }))
 
-    // ── Nom + chemin ──
+    // ── Nom + chemin ── « AAAA-MM-JJ_CR_<client>.pdf »
     const clientNom = dossier.client?.nom || 'CLIENT'
-    const crDots = dateDossier(cr.date_visite || cr.created_at)
-    const fileName = `${nettoyerSegment(`CR ${crDots} ${clientNom}`)}.pdf`
-    const segments = cheminChantier(dossier.statut, dossier.created_at, clientNom, 'compte_rendu', null)
+    const clientSlug = slugNom(formatNomClient(dossier.client, { civilite: false }))
+    const crDate = dateDossier(cr.date_visite || cr.created_at)
+    const fileName = `${nettoyerSegment(`${crDate}_CR_${clientSlug}`)}.pdf`
+    const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+    const segments = cheminChantier(dossier.statut, dossier.created_at, clientNom, 'compte_rendu', null, { dateFin })
 
     // Déjà miroité → on supprime l'ancien item (le nom a pu changer) avant de remplacer.
     const { data: dejaIdx } = await db.from('doc_index').select('id, item_id, drive_id').eq('cr_id', crId).maybeSingle()

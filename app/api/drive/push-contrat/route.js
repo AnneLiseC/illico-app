@@ -5,7 +5,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
-import { chantierBaseSegments, nettoyerSegment } from '../../../lib/drive/taxonomie'
+import { chantierBaseSegments, sousDossiers, nettoyerSegment, slugNom } from '../../../lib/drive/taxonomie'
+import { formatNomClient } from '../../../lib/clients'
 import { pushMirror, mimeFromExt } from '../../../lib/drive/mirror'
 
 let _admin
@@ -23,11 +24,13 @@ export async function POST(request) {
 
   const db = admin()
   const { data: dossier } = await db.from('dossiers')
-    .select('id, created_at, client_id, referente_id, statut, contrat_url').eq('id', dossierId).maybeSingle()
+    .select('id, created_at, client_id, referente_id, statut, contrat_url, date_fin_chantier, date_cloture').eq('id', dossierId).maybeSingle()
   if (!dossier) return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
-  const { data: client } = await db.from('clients').select('nom').eq('id', dossier.client_id).maybeSingle()
+  const { data: client } = await db.from('clients').select('*').eq('id', dossier.client_id).maybeSingle()
   const ext = (dossier.contrat_url?.split('.').pop() || 'pdf')
-  const segments = [...chantierBaseSegments(dossier.statut, dossier.created_at, client?.nom), 'Autres', 'Administratif'].map(nettoyerSegment)
+  const clientSlug = slugNom(formatNomClient(client, { civilite: false }))
+  const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+  const segments = [...chantierBaseSegments(dossier.statut, dossier.created_at, client?.nom, { dateFin }), ...sousDossiers('administratif')].map(nettoyerSegment)
 
   const r = await pushMirror(db, {
     ownerUserId: dossier.referente_id,
@@ -35,7 +38,7 @@ export async function POST(request) {
     indexFields: { dossier_id: dossier.id },
     filePath: dossier.contrat_url,
     segments,
-    fileName: `${nettoyerSegment('Contrat signé')}.${ext}`,
+    fileName: `${nettoyerSegment(`Contrat_${clientSlug}`)}.${ext}`,
     mime: mimeFromExt(ext),
   })
   if (r.error) return NextResponse.json({ error: r.error }, { status: r.status || 502 })

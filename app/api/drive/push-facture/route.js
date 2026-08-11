@@ -5,7 +5,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
-import { chantierBaseSegments, nettoyerSegment } from '../../../lib/drive/taxonomie'
+import { chantierBaseSegments, sousDossiers, nettoyerSegment, slugNom } from '../../../lib/drive/taxonomie'
+import { formatNomClient } from '../../../lib/clients'
 import { pushMirror, mimeFromExt } from '../../../lib/drive/mirror'
 
 let _admin
@@ -26,16 +27,19 @@ export async function POST(request) {
     .select('id, dossier_id, artisan_id, libelle, pdf_path').eq('id', factureId).maybeSingle()
   if (!facture) return NextResponse.json({ error: 'Facture introuvable' }, { status: 404 })
   const { data: dossier } = await db.from('dossiers')
-    .select('id, created_at, client_id, referente_id, statut').eq('id', facture.dossier_id).maybeSingle()
+    .select('id, created_at, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', facture.dossier_id).maybeSingle()
   if (!dossier) return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
-  const { data: client } = await db.from('clients').select('nom').eq('id', dossier.client_id).maybeSingle()
+  const { data: client } = await db.from('clients').select('*').eq('id', dossier.client_id).maybeSingle()
   let artisanNom = 'artisan'
   if (facture.artisan_id) {
     const { data: a } = await db.from('artisans').select('entreprise').eq('id', facture.artisan_id).maybeSingle()
     artisanNom = a?.entreprise || 'artisan'
   }
   const ext = (facture.pdf_path?.split('.').pop() || 'pdf')
-  const segments = [...chantierBaseSegments(dossier.statut, dossier.created_at, client?.nom), 'Documents artisans', artisanNom, 'Factures'].map(nettoyerSegment)
+  const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+  const segments = [...chantierBaseSegments(dossier.statut, dossier.created_at, client?.nom, { dateFin }), ...sousDossiers('facture_artisan', artisanNom)].map(nettoyerSegment)
+  const clientSlug = slugNom(formatNomClient(client, { civilite: false }))
+  const artisanSlug = slugNom(artisanNom)
 
   const r = await pushMirror(db, {
     ownerUserId: dossier.referente_id,
@@ -43,7 +47,7 @@ export async function POST(request) {
     indexFields: { dossier_id: dossier.id },
     filePath: facture.pdf_path,
     segments,
-    fileName: `${nettoyerSegment(`${facture.libelle || 'Facture'} ${facture.id.slice(0, 8)}`)}.${ext}`,
+    fileName: `${nettoyerSegment(`Facture_${clientSlug}_${artisanSlug}`)}.${ext}`,
     mime: mimeFromExt(ext),
   })
   if (r.error) return NextResponse.json({ error: r.error }, { status: r.status || 502 })

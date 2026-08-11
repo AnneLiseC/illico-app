@@ -24,9 +24,14 @@ export function mimeFromExt(ext) {
 }
 
 export async function pushMirror(db, opts) {
-  const { ownerUserId, match, onConflict, indexFields = {}, filePath, segments, fileName, mime } = opts
+  const { ownerUserId, match, onConflict, indexFields = {}, filePath, segments, fileName, mime, skipIndex = false } = opts
 
-  const { data: existing } = await db.from('doc_index').select('id, drive_id, item_id').match(match).maybeSingle()
+  // skipIndex : copie « best effort » NON indexée dans doc_index (ex. copie client d'une fiche
+  // technique, dont l'original est déjà indexé côté 02_ARTISANS). Idempotence assurée par le
+  // nom déterministe + conflictBehavior 'replace' (ré-upload = remplacement au même endroit).
+  const { data: existing } = skipIndex
+    ? { data: null }
+    : await db.from('doc_index').select('id, drive_id, item_id').match(match).maybeSingle()
 
   if (!ownerUserId) return { skipped: true, reason: 'no_owner' }
   const compte = await loadDriveCompte(db, ownerUserId)
@@ -58,16 +63,18 @@ export async function pushMirror(db, opts) {
   const up = await mod.uploadSmallFile(token, compte.drive_root_drive_id, leafId, fileName, buffer, mime, 'replace')
 
   const cheminLogique = [...segments, up.name].join('/')
-  await db.from('doc_index').upsert({
-    ...match,
-    ...indexFields,
-    user_id: ownerUserId,
-    origine: 'app',
-    drive_id: compte.drive_root_drive_id,
-    item_id: up.id,
-    path: cheminLogique,
-    updated_at: new Date().toISOString(),
-  }, { onConflict })
+  if (!skipIndex) {
+    await db.from('doc_index').upsert({
+      ...match,
+      ...indexFields,
+      user_id: ownerUserId,
+      origine: 'app',
+      drive_id: compte.drive_root_drive_id,
+      item_id: up.id,
+      path: cheminLogique,
+      updated_at: new Date().toISOString(),
+    }, { onConflict })
+  }
 
   return { ok: true, path: cheminLogique }
 }

@@ -1,22 +1,23 @@
 // app/api/drive/move-chantier/route.js
 // POST { dossier_id } — DÉPLACE le dossier chantier entre buckets de statut quand le statut
-// change (En cours ↔ Terminés ↔ Annulés). Appelé (best effort) après une bascule de statut.
+// change (1. En cours ↔ 2. Terminés/<année> ↔ 3. Sans suite). Appelé (best effort) après une
+// bascule de statut.
 //
 // Le statut Batilis fait FOI : on relit dossier.statut → bucket cible, on localise le dossier
-// chantier « AAAA.MM.JJ NOM » sous Clients/<n'importe quel bucket>/ et on le déplace vers le
-// bucket cible. item_ids inchangés par le move (les copies Drive restent connues de doc_index) ;
-// on réécrit juste le préfixe logique des chemins (cosmétique). Provider-agnostique (dispatch).
+// chantier « AAAA-MM-JJ NOM » sous 01_CLIENTS/<n'importe quel bucket>[/<année>]/ et on le déplace
+// vers le bucket cible. item_ids inchangés par le move (les copies Drive restent connues de
+// doc_index) ; on réécrit juste le préfixe logique des chemins (cosmétique). Provider-agnostique.
 //
-// Rien à déplacer (jamais poussé, ou déjà dans le bon bucket) → skip silencieux. Les dossiers
-// poussés AVANT cette arbo (sans Clients/<bucket>/) ne sont pas retrouvés → ils restent en place.
+// Rien à déplacer (jamais poussé, ou déjà au bon endroit) → skip silencieux. Les dossiers poussés
+// AVANT cette arbo (sans 01_CLIENTS/<bucket>/) ne sont pas retrouvés → ils restent en place.
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
 import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
-import { bucketStatut, nomDossierChantier, nettoyerSegment } from '../../../lib/drive/taxonomie'
+import { RACINE_CLIENTS, bucketSegments, nomDossierChantier, nettoyerSegment } from '../../../lib/drive/taxonomie'
 
-const BUCKETS = ['En cours', 'Terminés', 'Annulés']
+const BUCKETS = ['1. En cours', '2. Terminés', '3. Sans suite']
 
 let _admin
 function admin() {
@@ -36,7 +37,7 @@ export async function POST(request) {
   const db = admin()
 
   const { data: dossier } = await db.from('dossiers')
-    .select('id, created_at, client_id, referente_id, statut').eq('id', dossierId).maybeSingle()
+    .select('id, created_at, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', dossierId).maybeSingle()
   if (!dossier) return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
   if (!dossier.referente_id) return NextResponse.json({ skipped: true, reason: 'no_referente' })
 
@@ -57,34 +58,46 @@ export async function POST(request) {
   }
 
   const { data: client } = await db.from('clients').select('nom').eq('id', dossier.client_id).maybeSingle()
-  const targetBucket = bucketStatut(dossier.statut)
   const folderName = nettoyerSegment(nomDossierChantier(dossier.created_at, client?.nom))
+  // Segments cibles depuis la racine 01_CLIENTS (ex. ['1. En cours'] ou ['2. Terminés','2026']).
+  const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+  const targetBucketSegs = bucketSegments(dossier.statut, { dateFin, createdAt: dossier.created_at }).map(nettoyerSegment)
+  const targetPathSegs = targetBucketSegs.join('/')
 
   try {
-    // 1. Localise « Clients » sous la racine. Absent → rien n'a jamais été poussé.
+    // 1. Localise « 01_CLIENTS » sous la racine. Absent → rien n'a jamais été poussé.
     const racineEnfants = await mod.listFolders(token, compte.drive_root_drive_id, compte.drive_root_id)
-    const clients = racineEnfants.find(f => f.name === 'Clients')
+    const clients = racineEnfants.find(f => f.name === RACINE_CLIENTS)
     if (!clients) return NextResponse.json({ skipped: true, reason: 'no_clients_folder' })
 
-    // 2. Cherche le dossier chantier dans chaque bucket existant.
-    const bucketEntries = (await mod.listFolders(token, clients.driveId, clients.itemId))
+    // 2. Cherche le dossier chantier dans chaque bucket (Terminés = 1 niveau plus profond, par année).
+    const topBuckets = (await mod.listFolders(token, clients.driveId, clients.itemId))
       .filter(b => BUCKETS.includes(b.name))
     let found = null
-    for (const b of bucketEntries) {
+    for (const b of topBuckets) {
       const kids = await mod.listFolders(token, b.driveId, b.itemId)
       const ch = kids.find(k => k.name === folderName)
-      if (ch) { found = { bucketName: b.name, bucketItemId: b.itemId, itemId: ch.itemId, driveId: ch.driveId }; break }
+      if (ch) { found = { segs: [b.name], parentItemId: b.itemId, itemId: ch.itemId }; break }
+      // '2. Terminés' → parcourt les sous-dossiers d'année.
+      if (b.name === '2. Terminés') {
+        for (const y of kids) {
+          const gkids = await mod.listFolders(token, y.driveId, y.itemId)
+          const gch = gkids.find(k => k.name === folderName)
+          if (gch) { found = { segs: [b.name, y.name], parentItemId: y.itemId, itemId: gch.itemId }; break }
+        }
+        if (found) break
+      }
     }
     if (!found) return NextResponse.json({ skipped: true, reason: 'not_pushed' })
-    if (found.bucketName === targetBucket) return NextResponse.json({ ok: true, already: true })
+    if (found.segs.join('/') === targetPathSegs) return NextResponse.json({ ok: true, already: true })
 
-    // 3. Assure le bucket cible et déplace le dossier chantier.
-    const targetBucketId = await mod.ensureChildFolder(token, clients.driveId, clients.itemId, targetBucket)
-    await mod.moveItem(token, compte.drive_root_drive_id, found.itemId, targetBucketId, found.bucketItemId)
+    // 3. Assure le dossier cible (bucket + éventuelle année) et déplace le dossier chantier.
+    const targetParentId = await mod.ensureFolderPath(token, compte.drive_root_drive_id, compte.drive_root_id, [RACINE_CLIENTS, ...targetBucketSegs])
+    await mod.moveItem(token, compte.drive_root_drive_id, found.itemId, targetParentId, found.parentItemId)
 
     // 4. Réécrit le préfixe logique des chemins doc_index (item_ids inchangés).
-    const oldPrefix = `Clients/${found.bucketName}/${folderName}/`
-    const newPrefix = `Clients/${targetBucket}/${folderName}/`
+    const oldPrefix = `${RACINE_CLIENTS}/${found.segs.join('/')}/${folderName}/`
+    const newPrefix = `${RACINE_CLIENTS}/${targetPathSegs}/${folderName}/`
     const { data: rows } = await db.from('doc_index').select('id, path').eq('dossier_id', dossierId)
     for (const row of (rows || [])) {
       if (row.path && row.path.startsWith(oldPrefix)) {
@@ -94,7 +107,7 @@ export async function POST(request) {
       }
     }
 
-    return NextResponse.json({ ok: true, moved: true, from: found.bucketName, to: targetBucket })
+    return NextResponse.json({ ok: true, moved: true, from: found.segs.join('/'), to: targetPathSegs })
   } catch (e) {
     console.error('[drive/move-chantier] move', e)
     return NextResponse.json({ error: 'Déplacement Drive échoué' }, { status: 502 })

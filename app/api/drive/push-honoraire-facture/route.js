@@ -6,7 +6,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
-import { cheminChantier, nettoyerSegment } from '../../../lib/drive/taxonomie'
+import { cheminChantier, nettoyerSegment, slugNom } from '../../../lib/drive/taxonomie'
+import { formatNomClient } from '../../../lib/clients'
 import { pushMirror, mimeFromExt } from '../../../lib/drive/mirror'
 
 let _admin
@@ -27,13 +28,17 @@ export async function POST(request) {
     .select('id, dossier_id, cle, pdf_path, nom').eq('id', hfId).maybeSingle()
   if (!hf) return NextResponse.json({ error: 'Facture honoraire introuvable' }, { status: 404 })
   const { data: dossier } = await db.from('dossiers')
-    .select('id, created_at, client_id, referente_id, statut').eq('id', hf.dossier_id).maybeSingle()
+    .select('id, created_at, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', hf.dossier_id).maybeSingle()
   if (!dossier) return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
-  const { data: client } = await db.from('clients').select('nom').eq('id', dossier.client_id).maybeSingle()
+  const { data: client } = await db.from('clients').select('*').eq('id', dossier.client_id).maybeSingle()
 
   const ext = (hf.pdf_path?.split('.').pop() || 'pdf')
-  const base = (hf.nom || (hf.cle === 'courtage' ? 'Facture honoraire courtage' : 'Facture solde AMO')).replace(/\.[^.]+$/, '')
-  const segments = cheminChantier(dossier.statut, dossier.created_at, client?.nom, 'facture_honoraire', null)
+  // « Facture_honoraires_<client>_<courtage|solde>.<ext> » : le suffixe distingue les 2 factures
+  // honoraires (elles partagent le dossier « 1. Administratif » → nom déterministe unique requis).
+  const clientSlug = slugNom(formatNomClient(client, { civilite: false }))
+  const cleSlug = hf.cle === 'courtage' ? 'courtage' : 'solde'
+  const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+  const segments = cheminChantier(dossier.statut, dossier.created_at, client?.nom, 'facture_honoraire', null, { dateFin })
 
   const r = await pushMirror(db, {
     ownerUserId: dossier.referente_id,
@@ -41,7 +46,7 @@ export async function POST(request) {
     indexFields: { dossier_id: dossier.id },
     filePath: hf.pdf_path,
     segments,
-    fileName: `${nettoyerSegment(base)}.${ext}`,
+    fileName: `${nettoyerSegment(`Facture_honoraires_${clientSlug}_${cleSlug}`)}.${ext}`,
     mime: mimeFromExt(ext),
   })
   if (r.error) return NextResponse.json({ error: r.error }, { status: r.status || 502 })

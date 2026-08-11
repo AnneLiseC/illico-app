@@ -1,12 +1,15 @@
 // app/api/drive/push-fiche/route.js
-// POST { fiche_id } — miroir OneDrive d'une fiche technique artisan (globale, hors chantier)
-// dans Artisans/<Artisan>/Fiches techniques/. Idempotent via doc_index.fiche_id.
-// Owner = l'uploadeur (auth) : une fiche artisan n'est pas rattachée à une référente précise.
+// POST { fiche_id, dossier_id? } — miroir OneDrive d'une fiche technique artisan.
+//   1. TOUJOURS dans 02_ARTISANS/<Artisan>/Fiches techniques/ (catalogue complet de l'artisan).
+//      Idempotent via doc_index.fiche_id. Owner = l'uploadeur (auth).
+//   2. Si dossier_id fourni (fiche créée DEPUIS un chantier → liée à ce chantier), copie AUSSI
+//      dans 01_CLIENTS/<bucket>/AAAA-MM-JJ NOM/5. Plans & techniques/. Copie « best effort »
+//      NON indexée (skipIndex) : nom déterministe + 'replace' évitent les doublons.
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
-import { cheminArtisanGlobal, nettoyerSegment } from '../../../lib/drive/taxonomie'
+import { cheminArtisanGlobal, cheminChantier, nettoyerSegment } from '../../../lib/drive/taxonomie'
 import { pushMirror, mimeFromExt } from '../../../lib/drive/mirror'
 
 let _admin
@@ -34,15 +37,42 @@ export async function POST(request) {
   const ext = (fiche.url?.split('.').pop() || 'pdf')
   const segments = cheminArtisanGlobal(artisanNom, 'Fiches techniques')
 
+  const fileName = `${nettoyerSegment(fiche.nom || 'Fiche technique')}.${ext}`
+
+  // 1. Catalogue artisan (indexé).
   const r = await pushMirror(db, {
     ownerUserId: auth.profile?.id,
     match: { fiche_id: ficheId }, onConflict: 'fiche_id',
     indexFields: { artisan_id: fiche.artisan_id || null },
     filePath: fiche.url,
     segments,
-    fileName: `${nettoyerSegment(fiche.nom || 'Fiche technique')}.${ext}`,
+    fileName,
     mime: mimeFromExt(ext),
   })
   if (r.error) return NextResponse.json({ error: r.error }, { status: r.status || 502 })
-  return NextResponse.json(r)
+
+  // 2. Copie client si la fiche est liée à un chantier (best effort, non indexée).
+  let clientCopy = null
+  if (body.dossier_id && fiche.url) {
+    const { data: dossier } = await db.from('dossiers')
+      .select('id, created_at, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', body.dossier_id).maybeSingle()
+    if (dossier?.referente_id) {
+      const { data: client } = await db.from('clients').select('nom').eq('id', dossier.client_id).maybeSingle()
+      const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+      const cSeg = cheminChantier(dossier.statut, dossier.created_at, client?.nom, 'fiche_technique', null, { dateFin })
+      try {
+        const cr = await pushMirror(db, {
+          ownerUserId: dossier.referente_id,
+          skipIndex: true,
+          filePath: fiche.url,
+          segments: cSeg,
+          fileName,
+          mime: mimeFromExt(ext),
+        })
+        clientCopy = cr.path || cr.reason || null
+      } catch { /* best effort : la copie client n'empêche jamais le catalogue */ }
+    }
+  }
+
+  return NextResponse.json({ ...r, clientCopy })
 }

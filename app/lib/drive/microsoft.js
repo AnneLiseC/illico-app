@@ -11,6 +11,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { encrypt, decrypt } from '../calendar/crypto'
+import { fetchRetry } from './http'
 
 const GRAPH = 'https://graph.microsoft.com/v1.0'
 const SCOPE = 'offline_access User.Read Files.ReadWrite'
@@ -66,9 +67,10 @@ export async function getValidAccessToken(compte) {
   return tok.access_token
 }
 
+// Toutes les requêtes Graph passent par fetchRetry → résilience au throttling (429/5xx).
 export async function graphFetch(accessToken, path, opts = {}) {
   const url = path.startsWith('http') ? path : `${GRAPH}${path}`
-  return fetch(url, { ...opts, headers: { Authorization: `Bearer ${accessToken}`, ...(opts.headers || {}) } })
+  return fetchRetry(url, { ...opts, headers: { Authorization: `Bearer ${accessToken}`, ...(opts.headers || {}) } })
 }
 
 // Normalise un enfant Graph en entrée dossier { driveId, itemId, name } ou null si ce
