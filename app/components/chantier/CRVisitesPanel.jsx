@@ -5,6 +5,7 @@
 // Photos + checklist = 1c-2 ; aide IA = 1c-3 ; report d'une visite à l'autre = Lot 2.
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
+import { compressImageToBlob } from '../../lib/images'
 
 // 16 statuts figés (clés = CHECK de la table `actions`), 4 familles couleur + libellé daté.
 export const STATUTS = [
@@ -30,7 +31,7 @@ const CLOTURANTS = new Set(['cloture', 'quitus_transmis']) // ferment le report
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-FR') : ''
 
-export default function CRVisitesPanel({ id, setErreur, setSucces }) {
+export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
   const [visites, setVisites] = useState([])
   const [lots, setLots] = useState([])
   const [selected, setSelected] = useState(null)   // id de la visite ouverte
@@ -69,7 +70,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces }) {
 
   if (selected) {
     const visite = visites.find(v => v.id === selected)
-    return <VisitePage visite={visite} dossierId={id} lots={lots} setErreur={setErreur} setSucces={setSucces}
+    return <VisitePage visite={visite} dossierId={id} lots={lots} setErreur={setErreur} setSucces={setSucces} setAnnot={setAnnot}
              onRetour={() => { setSelected(null); rechargerVisites() }} onMajVisite={rechargerVisites} />
   }
 
@@ -105,7 +106,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces }) {
 }
 
 // ── Page d'une visite : ses actions (générales + par lot) ──
-function VisitePage({ visite, dossierId, lots, setErreur, setSucces, onRetour, onMajVisite }) {
+function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, onRetour, onMajVisite }) {
   const [actions, setActions] = useState([])
   const [chargement, setChargement] = useState(true)
   const visiteId = visite?.id
@@ -179,15 +180,16 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, onRetour, o
         <>
           <Section titre="Remarques générales" onAjouter={() => ajouterAction('generale')}>
             {generales.map(a => (
-              <ActionCard key={a.id} action={a} lots={lots} onMaj={majAction} onSupprimer={supprimerAction} />
+              <ActionCard key={a.id} action={a} lots={lots} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur}
+                onMaj={majAction} onSupprimer={supprimerAction} />
             ))}
             {generales.length === 0 && <Vide />}
           </Section>
 
           <Section titre="Par lot / artisan" onAjouter={() => ajouterAction('lot')}>
             {parLot.map(a => (
-              <ActionCard key={a.id} action={a} lots={lots} withLot onMaj={majAction}
-                onSupprimer={supprimerAction} onSetLot={(lotId) => setCibleLot(a, lotId)} />
+              <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur}
+                onMaj={majAction} onSupprimer={supprimerAction} onSetLot={(lotId) => setCibleLot(a, lotId)} />
             ))}
             {parLot.length === 0 && <Vide />}
           </Section>
@@ -211,8 +213,8 @@ function Section({ titre, onAjouter, children }) {
 
 const Vide = () => <div style={{ fontSize: 12, color: 'var(--ink-400)', fontStyle: 'italic' }}>Aucune action.</div>
 
-// ── Carte d'une action éditable ──
-function ActionCard({ action, lots, withLot, onMaj, onSupprimer, onSetLot }) {
+// ── Carte d'une action éditable (statut, texte, photos annotées, checklist vivante) ──
+function ActionCard({ action, lots, withLot, dossierId, setAnnot, setErreur, onMaj, onSupprimer, onSetLot }) {
   const st = STATUT_MAP[action.statut] || STATUTS[0]
   const cibleLot = action.cibles?.find(c => c.lot_id)?.lot_id || ''
 
@@ -254,7 +256,139 @@ function ActionCard({ action, lots, withLot, onMaj, onSupprimer, onSetLot }) {
         onBlur={e => e.target.value !== (action.texte || '') && onMaj(action.id, { texte: e.target.value })}
         className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical', minHeight: 52 }} />
 
+      <ActionPhotos action={action} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} />
+      <ActionChecklist action={action} setErreur={setErreur} />
+
       <div style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>{st.libelle} {fmtDate(action.statut_date)}</div>
+    </div>
+  )
+}
+
+// ── Photos d'une action (upload compressé + annotation + suppression) ──
+function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
+  const [photos, setPhotos] = useState([])
+  const [up, setUp] = useState(false)
+
+  const recharger = useCallback(async () => {
+    const { data } = await supabase.from('action_photos').select('id, path, annotations, ordre').eq('action_id', action.id).order('ordre')
+    const rows = data || []
+    if (!rows.length) { setPhotos([]); return }
+    const { data: signed } = await supabase.storage.from('photos').createSignedUrls(rows.map(r => r.path), 3600)
+    const urlByPath = Object.fromEntries((signed || []).map(s => [s.path, s.signedUrl]))
+    setPhotos(rows.map(r => ({ ...r, url: urlByPath[r.path] || '' })))
+  }, [action.id])
+
+  useEffect(() => { (async () => { await recharger() })() }, [recharger])
+
+  const onFiles = async (files) => {
+    if (!files.length) return
+    setUp(true)
+    let ordre = photos.length
+    for (const file of files) {
+      try {
+        const blob = await compressImageToBlob(file)
+        const path = `chantiers/${dossierId}/actions/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
+        const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' })
+        if (error) { setErreur?.('Envoi photo : ' + error.message); continue }
+        await supabase.from('action_photos').insert({ action_id: action.id, path, ordre: ordre++ })
+      } catch { setErreur?.('Photo non traitée (format ?).') }
+    }
+    setUp(false)
+    recharger()
+  }
+
+  const supprimer = async (ph) => {
+    try { await supabase.storage.from('photos').remove([ph.path]) } catch { /* best effort */ }
+    await supabase.from('action_photos').delete().eq('id', ph.id)
+    recharger()
+  }
+
+  const annoter = (ph) => setAnnot?.({
+    src: ph.url, titre: 'Annoter la photo',
+    onSave: async (blob) => {
+      const path = `chantiers/${dossierId}/actions/${Date.now()}_annot_${Math.random().toString(36).slice(2)}.jpg`
+      const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' })
+      if (error) { setErreur?.('Annotation : ' + error.message); setAnnot?.(null); return }
+      await supabase.from('action_photos').update({ path }).eq('id', ph.id)
+      try { await supabase.storage.from('photos').remove([ph.path]) } catch { /* best effort */ }
+      setAnnot?.(null); recharger()
+    },
+  })
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      {photos.map(ph => (
+        <div key={ph.id} style={{ position: 'relative' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={ph.url} alt="" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--ink-200)' }} />
+          <button onClick={() => supprimer(ph)} title="Supprimer"
+            style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, display: 'grid', placeItems: 'center' }}>✕</button>
+          {ph.url && (
+            <button onClick={() => annoter(ph)} title="Annoter"
+              style={{ position: 'absolute', bottom: -6, right: -6, width: 22, height: 22, borderRadius: '50%', background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, display: 'grid', placeItems: 'center' }}>✎</button>
+          )}
+        </div>
+      ))}
+      <label style={{ width: 72, height: 72, borderRadius: 8, border: '2px dashed var(--ink-300)', display: 'grid', placeItems: 'center', cursor: up ? 'wait' : 'pointer' }}>
+        <span style={{ fontSize: 22, color: 'var(--ink-300)' }}>{up ? '…' : '+'}</span>
+        <input type="file" accept="image/*" multiple disabled={up} style={{ display: 'none' }}
+          onChange={e => { const fs = Array.from(e.target.files || []); e.target.value = ''; onFiles(fs) }} />
+      </label>
+    </div>
+  )
+}
+
+// ── Checklist vivante d'une action (points de contrôle : cocher + ajouter) ──
+function ActionChecklist({ action, setErreur }) {
+  const [items, setItems] = useState([])
+  const [label, setLabel] = useState('')
+
+  const recharger = useCallback(async () => {
+    const { data } = await supabase.from('action_checklist').select('*').eq('action_id', action.id).order('ordre')
+    setItems(data || [])
+  }, [action.id])
+
+  useEffect(() => { (async () => { await recharger() })() }, [recharger])
+
+  const ajouter = async () => {
+    const l = label.trim(); if (!l) return
+    setLabel('')
+    const { error } = await supabase.from('action_checklist').insert({ action_id: action.id, label: l, ordre: items.length })
+    if (error) { setErreur?.('Checklist : ' + error.message); return }
+    recharger()
+  }
+
+  const cocher = async (item) => {
+    const checked = !item.checked
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, checked } : i))
+    await supabase.from('action_checklist').update({ checked, checked_at: checked ? new Date().toISOString() : null }).eq('id', item.id)
+  }
+
+  const supprimer = async (item) => {
+    setItems(prev => prev.filter(i => i.id !== item.id))
+    await supabase.from('action_checklist').delete().eq('id', item.id)
+  }
+
+  const done = items.filter(i => i.checked).length
+  const pct = items.length ? Math.round((done / items.length) * 100) : 0
+
+  return (
+    <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-500)' }}>
+        Points de contrôle{items.length ? ` · ${pct}% (${done}/${items.length})` : ''}
+      </div>
+      {items.map(item => (
+        <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={!!item.checked} onChange={() => cocher(item)} style={{ accentColor: '#16a34a' }} />
+          <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-700)', textDecoration: item.checked ? 'line-through' : 'none' }}>{item.label}</span>
+          <button onClick={() => supprimer(item)} className="btn btn-ghost" style={{ fontSize: 11, padding: '1px 6px', color: '#b91c1c' }}>✕</button>
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input value={label} onChange={e => setLabel(e.target.value)} onKeyDown={e => e.key === 'Enter' && ajouter()}
+          placeholder="Ajouter un point de contrôle…" className="input" style={{ flex: 1, height: 30, fontSize: 12 }} />
+        <button onClick={ajouter} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 9px' }}>+</button>
+      </div>
     </div>
   )
 }
