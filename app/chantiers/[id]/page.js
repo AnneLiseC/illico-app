@@ -19,6 +19,7 @@ const ImageAnnotator = dynamic(() => import('../../components/ImageAnnotator'), 
 const DevisModal = dynamic(() => import('../../components/chantier/DevisModal'), { ssr: false })
 // Modale génération CR (IA) : ~510 lignes + état + handlers → hors bundle initial.
 const CRGenerationModal = dynamic(() => import('../../components/chantier/CRGenerationModal'), { ssr: false })
+const LotsPanel = dynamic(() => import('../../components/chantier/LotsPanel'), { ssr: false })
 import { compressImageToBlob, heicToJpegFile } from '../../lib/images'
 import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
 import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../../lib/cibles'
@@ -3468,6 +3469,7 @@ export default function FicheChantier({ params }) {
           { key:'devis',     label:'Devis & artisans', icon:<HammerIcon />, count: devis.length },
           { key:'comparateur', label:'Comparateur',    icon:<ChartIcon /> },
           { key:'planning',  label:'Planning',         icon:<CalIcon />,    count: rdvsDossier.length + interventionsDossier.length },
+          { key:'lots',      label:'Lots',             icon:<HammerIcon /> },
           { key:'photos',    label:'Photos',           icon:<CamIcon />,    count: photos.length },
           { key:'cr',        label:'Rapports de visite',   icon:<DocIcon />,    count: comptesRendus.length },
           { key:'finance',   label:'Suivi financier',  icon:<WalletIcon /> },
@@ -6182,6 +6184,13 @@ export default function FicheChantier({ params }) {
           </ModalShell>
         )
       })()}
+
+      {/* ── LOTS / SOUS-LOTS (référentiel partagé Gantt + CR) ── */}
+      {onglet === 'lots' && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          <LotsPanel id={id} devis={devis} interventionsDossier={interventionsDossier} setErreur={setErreur} />
+        </div>
+      )}
 
       {/* ── COMPTES-RENDUS (maquette : 2 cols liste + sidebar IA) ── */}
       {onglet === 'cr' && (() => {
