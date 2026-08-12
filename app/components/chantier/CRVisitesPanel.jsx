@@ -6,6 +6,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { compressImageToBlob } from '../../lib/images'
+import { apiFetch } from '../../lib/api-auth-client'
 
 // 16 statuts figés (clés = CHECK de la table `actions`), 4 familles couleur + libellé daté.
 export const STATUTS = [
@@ -160,6 +161,53 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
     onMajVisite?.()
   }
 
+  // ── Aide IA (optionnelle) : notes → actions candidates → validation → insertion ──
+  const [iaOuvert, setIaOuvert] = useState(false)
+  const [iaNotes, setIaNotes] = useState('')
+  const [iaLoading, setIaLoading] = useState(false)
+  const [iaCandidats, setIaCandidats] = useState(null) // [{...action, sel}]
+
+  const analyserIA = async () => {
+    if (!iaNotes.trim()) return
+    setIaLoading(true); setIaCandidats(null)
+    try {
+      const res = await apiFetch('/api/actions/suggest', {
+        method: 'POST',
+        body: JSON.stringify({ notes: iaNotes, lots: lots.map(l => ({ id: l.id, nom: l.nom })) }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) { setErreur?.(j.error || 'Analyse IA impossible.'); return }
+      setIaCandidats((j.actions || []).map(a => ({ ...a, sel: true })))
+    } catch {
+      setErreur?.('Erreur réseau IA.')
+    } finally {
+      setIaLoading(false)
+    }
+  }
+
+  const importerIA = async () => {
+    const choisies = (iaCandidats || []).filter(c => c.sel)
+    if (!choisies.length) return
+    let ordre = actions.length
+    for (const c of choisies) {
+      const numero = `${visite?.numero_visite || 1}.${ordre + 1}`
+      const { data, error } = await supabase.from('actions')
+        .insert({ dossier_id: dossierId, cr_origine_id: visiteId, portee: c.portee, numero,
+                  titre: c.titre || null, texte: c.texte || null, statut: c.statut,
+                  statut_date: c.statut_date || new Date().toISOString().slice(0, 10), ordre })
+        .select().single()
+      if (error) { setErreur?.('Import action : ' + error.message); continue }
+      ordre++
+      if (c.portee === 'lot' && c.lot_nom) {
+        const lot = lots.find(l => (l.nom || '').toLowerCase() === c.lot_nom.toLowerCase())
+        if (lot) await supabase.from('action_cibles').insert({ action_id: data.id, lot_id: lot.id })
+      }
+    }
+    setSucces?.(`${choisies.length} action(s) ajoutée(s) ✓`)
+    setIaOuvert(false); setIaNotes(''); setIaCandidats(null)
+    recharger()
+  }
+
   const generales = actions.filter(a => a.portee === 'generale')
   const parLot = actions.filter(a => a.portee === 'lot')
 
@@ -173,8 +221,46 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
         <input type="date" defaultValue={visite?.date_visite || ''} className="input" style={{ height: 34, fontSize: 12.5 }}
           onBlur={e => e.target.value !== visite?.date_visite && supabase.from('comptes_rendus').update({ date_visite: e.target.value || null }).eq('id', visiteId).then(onMajVisite)} />
         <div style={{ flex: 1 }} />
+        <button onClick={() => setIaOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>✨ Aide IA</button>
         {!visite?.valide && <button onClick={publier} className="btn btn-primary" style={{ fontSize: 12.5, background: '#15803d', borderColor: '#15803d' }}>Publier</button>}
       </div>
+
+      {iaOuvert && (
+        <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderColor: 'rgba(99,102,241,0.35)' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Aide IA — colle tes notes de visite, l&apos;IA propose des actions (tu valides).</div>
+          <textarea value={iaNotes} onChange={e => setIaNotes(e.target.value)} rows={4}
+            placeholder="Notes brutes : bullet points, phrases incomplètes… (ex. « muret entrée à refaire avant le 12/02 ; peinture RAS »)"
+            className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical', minHeight: 80 }} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={analyserIA} disabled={iaLoading || !iaNotes.trim()} className="btn btn-primary" style={{ fontSize: 12.5 }}>
+              {iaLoading ? 'Analyse…' : 'Analyser'}
+            </button>
+            {iaCandidats && iaCandidats.length > 0 && (
+              <button onClick={importerIA} className="btn btn-ghost" style={{ fontSize: 12.5 }}>
+                Ajouter les {iaCandidats.filter(c => c.sel).length} cochée(s)
+              </button>
+            )}
+          </div>
+
+          {iaCandidats && iaCandidats.length === 0 && (
+            <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Aucune action détectée dans ces notes.</div>
+          )}
+          {iaCandidats && iaCandidats.map((c, i) => {
+            const s = STATUT_MAP[c.statut] || STATUTS[0]
+            return (
+              <label key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, padding: '4px 0', borderTop: '1px solid var(--ink-100)' }}>
+                <input type="checkbox" checked={c.sel} onChange={() => setIaCandidats(prev => prev.map((x, j) => j === i ? { ...x, sel: !x.sel } : x))} style={{ marginTop: 3 }} />
+                <span style={{ flex: 1 }}>
+                  <b>{c.titre || c.texte.slice(0, 40)}</b>{c.texte && c.titre ? ` — ${c.texte}` : ''}
+                  <span style={{ marginLeft: 6, color: s.c, fontWeight: 700 }}>· {s.l}</span>
+                  {c.portee === 'lot' && c.lot_nom && <span style={{ color: 'var(--ink-500)' }}> · {c.lot_nom}</span>}
+                  {c.statut_date && <span style={{ color: 'var(--ink-500)' }}> · {fmtDate(c.statut_date)}</span>}
+                </span>
+              </label>
+            )
+          })}
+        </div>
+      )}
 
       {chargement ? <div style={{ color: 'var(--ink-500)' }}>Chargement des actions…</div> : (
         <>
