@@ -20,6 +20,12 @@ const DevisModal = dynamic(() => import('../../components/chantier/DevisModal'),
 // Modale génération CR (IA) : ~510 lignes + état + handlers → hors bundle initial.
 const CRGenerationModal = dynamic(() => import('../../components/chantier/CRGenerationModal'), { ssr: false })
 const LotsPanel = dynamic(() => import('../../components/chantier/LotsPanel'), { ssr: false })
+const CRVisitesPanel = dynamic(() => import('../../components/chantier/CRVisitesPanel'), { ssr: false })
+
+// Nouveau système CR (liste de visites → page par visite). L'ANCIEN panneau CR + ses
+// modales (wizard IA, CR manuel) sont CONSERVÉS mais masqués (flag ci-dessous) : on y
+// puisera des fonctions pour 1c-2/1c-3, on supprimera une fois le nouveau prouvé.
+const CR_LEGACY_VISIBLE = false
 import { compressImageToBlob, heicToJpegFile } from '../../lib/images'
 import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
 import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../../lib/cibles'
@@ -6192,8 +6198,13 @@ export default function FicheChantier({ params }) {
         </div>
       )}
 
-      {/* ── COMPTES-RENDUS (maquette : 2 cols liste + sidebar IA) ── */}
-      {onglet === 'cr' && (() => {
+      {/* ── RAPPORTS DE VISITE — NOUVEAU système (liste de visites → page par visite) ── */}
+      {onglet === 'cr' && !CR_LEGACY_VISIBLE && (
+        <CRVisitesPanel id={id} setErreur={setErreur} setSucces={setSucces} />
+      )}
+
+      {/* ── COMPTES-RENDUS (ANCIEN — conservé mais masqué via CR_LEGACY_VISIBLE) ── */}
+      {CR_LEGACY_VISIBLE && onglet === 'cr' && (() => {
         const typeMeta = {
           r1:        { color: 'var(--ink-900)', label: 'R1', long: 'R1 — Visite technique' },
           r2:        { color: '#16a34a', label: 'R2', long: 'R2 — Visite artisans' },
