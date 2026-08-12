@@ -3400,7 +3400,7 @@ export default function FicheChantier({ params }) {
       </div>
 
       {/* KPI strip */}
-      <div className="kpi-grid">
+      <div className="kpi-grid kpi-sm">
         <MiniKpi
           label="Montant prévu"
           value={totalDevisTTCRecus > 0 ? fmt(totalDevisTTCRecus) : '—'}
@@ -4719,7 +4719,7 @@ export default function FicheChantier({ params }) {
         <div style={{display:'flex',flexDirection:'column',gap:18}}>
 
           {/* KPI grid : récap gains */}
-          <div className="kpi-grid">
+          <div className="kpi-grid kpi-sm">
             <MiniKpi
               label="Frais consult. HT"
               value={fraisOfferts ? 'Offert' : fmt(fraisHTReal)}

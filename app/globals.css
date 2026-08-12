@@ -720,6 +720,13 @@ select.input { padding-right: 32px; }
    vertical space on Finances/Chantiers (which have 4 KPIs each). */
 @media (max-width: 380px)  { .kpi-grid { grid-template-columns: 1fr; } }
 
+/* KPIs COMPACTS (page chantier /chantiers/[id]) — réduit la taille sans toucher
+   le composant partagé MiniKpi (inline styles → !important requis). */
+.kpi-sm { gap: 10px; }
+.kpi-sm .card { padding: 10px 12px !important; gap: 2px !important; }
+.kpi-sm .tnum { font-size: 16px !important; margin-top: 0 !important; }
+.kpi-sm .eyebrow { font-size: 10px; }
+
 .grid-list {
   display: grid;
   grid-template-columns: 1fr 420px;
