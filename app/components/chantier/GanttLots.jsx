@@ -115,7 +115,7 @@ export default function GanttLots({
     try {
       g = new Gantt(el, taches, {
         view_mode: mode, date_format: 'YYYY-MM-DD', language: 'fr',
-        bar_height: BAR, padding: PAD, container_height: 'auto',
+        bar_height: BAR, padding: PAD, container_height: 'auto', scroll_to: 'today',
         readonly_progress: true, today_button: false, view_mode_select: false, popup_on: 'hover',
         on_date_change: (task, start, end) => {
           if (!task?.id) return
@@ -158,12 +158,12 @@ export default function GanttLots({
         </div>
       ) : null}
 
-      {/* Arbre (gauche, figé) + timeline (droite). UN SEUL conteneur scrolle (H + V) : la colonne
-          de gauche est « sticky left » et son en-tête « sticky top » → alignement conservé au scroll.
-          Le scroll interne de frappe-gantt est neutralisé (voir globals.css .gantt-lots). */}
-      <div style={{ display: 'flex', maxHeight: 560, overflow: 'auto', position: 'relative' }}>
-        <div style={{ flex: '0 0 300px', borderRight: '1px solid var(--ink-200)', position: 'sticky', left: 0, zIndex: 5, background: 'var(--surface, #fff)' }}>
-          <div ref={headRef} style={{ display: 'flex', alignItems: 'center', padding: '0 12px', fontWeight: 700, fontSize: 13, color: 'var(--ink-700)', borderBottom: '1px solid var(--ink-200)', boxSizing: 'border-box', position: 'sticky', top: 0, zIndex: 6, background: 'var(--surface, #fff)' }}>
+      {/* Arbre (gauche) + timeline (droite), alignés ligne par ligne. Le SCROLL HORIZONTAL du temps
+          est géré en interne par frappe-gantt (overflow-x, voir globals.css) — il s'ouvre sur
+          aujourd'hui (scroll_to). Pas de scroll vertical : tout est affiché, l'arbre suit. */}
+      <div style={{ display: 'flex' }}>
+        <div style={{ flex: '0 0 300px', borderRight: '1px solid var(--ink-200)' }}>
+          <div ref={headRef} style={{ display: 'flex', alignItems: 'center', padding: '0 12px', fontWeight: 700, fontSize: 13, color: 'var(--ink-700)', borderBottom: '1px solid var(--ink-200)', boxSizing: 'border-box' }}>
             Lots / Sous-lots
           </div>
           {rows.map(r => (
@@ -202,7 +202,7 @@ export default function GanttLots({
             </div>
           ))}
         </div>
-        <div ref={conteneurRef} className="gantt-lots" style={{ flex: '0 0 auto' }} />
+        <div ref={conteneurRef} className="gantt-lots" style={{ flex: 1, minWidth: 0 }} />
       </div>
     </div>
   )

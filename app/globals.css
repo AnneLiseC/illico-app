@@ -1547,4 +1547,4 @@ img, svg, video, canvas { max-width: 100%; }
 
 /* Gantt intégré : on neutralise le scroll interne de frappe-gantt. Le scroll (H + V) est géré
    par le conteneur parent ; la colonne des lots est figée en sticky (voir GanttLots.jsx). */
-.gantt-lots .gantt-container{overflow:visible!important;height:auto!important}
+.gantt-lots .gantt-container{overflow-x:auto;overflow-y:visible;height:auto!important}
