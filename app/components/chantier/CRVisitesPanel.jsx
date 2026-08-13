@@ -42,15 +42,19 @@ function titreVisite(v) {
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-FR') : ''
 
-export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
+// Types gérés par l'ancien système prose (générateur IA + CR manuel), pas par les actions.
+const TYPES_ANCIENS = new Set(['r1', 'r2', 'r3'])
+
+export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onCreerAncien, onEditerAncien }) {
   const [visites, setVisites] = useState([])
   const [lots, setLots] = useState([])
   const [selected, setSelected] = useState(null)   // id de la visite ouverte
   const [chargement, setChargement] = useState(true)
+  const [menuNouv, setMenuNouv] = useState(false)   // menu de choix du type à la création
 
   const rechargerVisites = useCallback(async () => {
     const { data, error } = await supabase.from('comptes_rendus')
-      .select('id, numero_visite, date_visite, type_visite, prochaine_reunion_at, valide, created_at')
+      .select('id, numero_visite, date_visite, type_visite, contenu_final, photos_jointes, prochaine_reunion_at, valide, created_at')
       .eq('dossier_id', id)
       .order('numero_visite', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
@@ -86,11 +90,13 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
     })()
   }, [id, rechargerVisites])
 
-  const nouvelleVisite = async () => {
-    // Numérotation PAR TYPE (nouvelle visite = 'suivi' par défaut) : cohérent avec le backfill SQL.
-    const maxNum = visites.filter(v => (v.type_visite || 'suivi') === 'suivi').reduce((m, v) => Math.max(m, v.numero_visite || 0), 0)
+  // Nouvelle visite STRUCTURÉE (suivi / réception uniquement — R1/R2/R3 passent par l'ancien).
+  const nouvelleVisite = async (type = 'suivi') => {
+    setMenuNouv(false)
+    // Numérotation PAR TYPE : cohérent avec le backfill SQL.
+    const maxNum = visites.filter(v => (v.type_visite || 'suivi') === type).reduce((m, v) => Math.max(m, v.numero_visite || 0), 0)
     const { data, error } = await supabase.from('comptes_rendus')
-      .insert({ dossier_id: id, numero_visite: maxNum + 1, date_visite: new Date().toISOString().slice(0, 10), type_visite: 'suivi', valide: false })
+      .insert({ dossier_id: id, numero_visite: maxNum + 1, date_visite: new Date().toISOString().slice(0, 10), type_visite: type, valide: false })
       .select().single()
     if (error) { setErreur?.('Nouvelle visite : ' + error.message); return }
     // Report : on reprend toutes les actions NON clôturées du dossier dans la nouvelle visite.
@@ -128,8 +134,16 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button onClick={nouvelleVisite} className="btn btn-primary" style={{ fontSize: 12.5 }}>+ Nouvelle visite</button>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', position: 'relative' }}>
+        <button onClick={() => setMenuNouv(m => !m)} className="btn btn-primary" style={{ fontSize: 12.5 }}>+ Nouvelle visite</button>
+        {menuNouv && (
+          <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 20, background: 'var(--surface, #fff)', border: '1px solid var(--ink-200)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', padding: 6, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 240 }}>
+            <button onClick={() => nouvelleVisite('suivi')} className="btn btn-ghost" style={{ fontSize: 12.5, justifyContent: 'flex-start' }}>Suivi de chantier <span style={{ color: 'var(--ink-400)', marginLeft: 4 }}>· actions</span></button>
+            <button onClick={() => nouvelleVisite('reception')} className="btn btn-ghost" style={{ fontSize: 12.5, justifyContent: 'flex-start' }}>Réception <span style={{ color: 'var(--ink-400)', marginLeft: 4 }}>· actions</span></button>
+            <div style={{ borderTop: '1px solid var(--ink-100)', margin: '2px 0' }} />
+            <button onClick={() => { setMenuNouv(false); onCreerAncien?.() }} className="btn btn-ghost" style={{ fontSize: 12.5, justifyContent: 'flex-start' }}>R1 / R2 / R3 <span style={{ color: 'var(--ink-400)', marginLeft: 4 }}>· ancien format prose</span></button>
+          </div>
+        )}
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>{visites.length} visite{visites.length > 1 ? 's' : ''}</span>
       </div>
@@ -143,7 +157,8 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
       {visites.map(v => (
         <div key={v.id} className="card"
           style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div onClick={() => setSelected(v.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, cursor: 'pointer' }}>
+          <div onClick={() => TYPES_ANCIENS.has(v.type_visite) ? onEditerAncien?.(v) : setSelected(v.id)}
+            style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, cursor: 'pointer' }}>
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink-900)' }}>
               {titreVisite(v)}
             </div>
