@@ -808,8 +808,8 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
           )}
         </div>
       ))}
-      <label title="Ajouter depuis l'ordinateur" style={{ width: 72, height: 72, borderRadius: 8, border: '2px dashed var(--ink-300)', display: 'grid', placeItems: 'center', cursor: up ? 'wait' : 'pointer' }}>
-        <span style={{ fontSize: 22, color: 'var(--ink-300)' }}>{up ? '…' : '+'}</span>
+      <label title="Ajouter depuis l'ordinateur" style={{ width: 72, height: 72, borderRadius: 8, border: '2px dashed var(--ink-300)', display: 'grid', placeItems: 'center', textAlign: 'center', cursor: up ? 'wait' : 'pointer', color: 'var(--ink-400)', fontSize: 10.5, lineHeight: 1.2, padding: 4 }}>
+        {up ? 'Envoi…' : 'Depuis l’ordinateur'}
         <input type="file" accept="image/*" multiple disabled={up} style={{ display: 'none' }}
           onChange={e => { const fs = Array.from(e.target.files || []); e.target.value = ''; onFiles(fs) }} />
       </label>
