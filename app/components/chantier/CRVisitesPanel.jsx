@@ -81,7 +81,8 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
   }, [id, rechargerVisites])
 
   const nouvelleVisite = async () => {
-    const maxNum = visites.reduce((m, v) => Math.max(m, v.numero_visite || 0), 0)
+    // Numérotation PAR TYPE (nouvelle visite = 'suivi' par défaut) : cohérent avec le backfill SQL.
+    const maxNum = visites.filter(v => (v.type_visite || 'suivi') === 'suivi').reduce((m, v) => Math.max(m, v.numero_visite || 0), 0)
     const { data, error } = await supabase.from('comptes_rendus')
       .insert({ dossier_id: id, numero_visite: maxNum + 1, date_visite: new Date().toISOString().slice(0, 10), type_visite: 'suivi', valide: false })
       .select().single()
