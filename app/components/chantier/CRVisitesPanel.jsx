@@ -332,6 +332,8 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
   const repriseRef = useRef(null)
   const iaEnCoursRef = useRef(false)      // gardes anti-double-clic (appels IA facturés)
   const datesEnCoursRef = useRef(false)
+  const importEnCoursRef = useRef(false)  // garde anti-double-clic sur l'INSERTION des actions
+  const [importing, setImporting] = useState(false)
 
   const analyserIA = async (notesArg, source) => {
     const notes = (typeof notesArg === 'string' ? notesArg : iaNotes).trim()
@@ -355,28 +357,37 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
   }
 
   const importerIA = async () => {
+    // Verrou synchrone : le bouton est lent (N insertions), un double-clic ré-insérait tout
+    // → doublons. La garde bloque le 2e appel AVANT tout await, le bouton est aussi désactivé.
+    if (importEnCoursRef.current) return
     const choisies = (iaCandidats || []).filter(c => c.sel)
     if (!choisies.length) return
-    let ordre = actions.length
-    for (const c of choisies) {
-      const numero = `${visite?.numero_visite || 1}.${ordre + 1}`
-      const { data, error } = await supabase.from('actions')
-        .insert({ dossier_id: dossierId, cr_origine_id: visiteId, portee: c.portee, numero,
-                  titre: c.titre || null, texte: c.texte || null, statut: c.statut,
-                  statut_date: c.statut_date || new Date().toISOString().slice(0, 10), ordre })
-        .select().single()
-      if (error) { setErreur?.('Import action : ' + error.message); continue }
-      ordre++
-      await supabase.from('cr_actions').insert({ cr_id: visiteId, action_id: data.id, statut_au_cr: data.statut, texte_au_cr: data.texte, inclus: true })
-      if (c.portee === 'lot' && c.lot_nom) {
-        const lot = lots.find(l => (l.nom || '').toLowerCase() === c.lot_nom.toLowerCase())
-        if (lot) await supabase.from('action_cibles').insert({ action_id: data.id, lot_id: lot.id })
+    importEnCoursRef.current = true
+    setImporting(true)
+    try {
+      let ordre = actions.length
+      for (const c of choisies) {
+        const numero = `${visite?.numero_visite || 1}.${ordre + 1}`
+        const { data, error } = await supabase.from('actions')
+          .insert({ dossier_id: dossierId, cr_origine_id: visiteId, portee: c.portee, numero,
+                    titre: c.titre || null, texte: c.texte || null, statut: c.statut,
+                    statut_date: c.statut_date || new Date().toISOString().slice(0, 10), ordre })
+          .select().single()
+        if (error) { setErreur?.('Import action : ' + error.message); continue }
+        ordre++
+        await supabase.from('cr_actions').insert({ cr_id: visiteId, action_id: data.id, statut_au_cr: data.statut, texte_au_cr: data.texte, inclus: true })
+        if (c.portee === 'lot' && c.lot_nom) {
+          const lot = lots.find(l => (l.nom || '').toLowerCase() === c.lot_nom.toLowerCase())
+          if (lot) await supabase.from('action_cibles').insert({ action_id: data.id, lot_id: lot.id })
+        }
       }
+      setSucces?.(`${choisies.length} action(s) ajoutée(s) ✓`)
+      if (!datesCandidats?.length) { setIaOuvert(false); setIaNotes('') }  // rien à valider côté dates → on ferme
+      setIaCandidats(null)
+      await recharger()
+    } finally {
+      setImporting(false); importEnCoursRef.current = false
     }
-    setSucces?.(`${choisies.length} action(s) ajoutée(s) ✓`)
-    if (!datesCandidats?.length) { setIaOuvert(false); setIaNotes('') }  // rien à valider côté dates → on ferme
-    setIaCandidats(null)
-    recharger()
   }
 
   // ── Extraction des DATES depuis un texte (reprise d'un ancien rapport → planning/Gantt) ──
@@ -529,8 +540,8 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
               {iaLoading ? 'Analyse…' : 'Analyser avec l’IA'}
             </button>
             {iaCandidats && iaCandidats.length > 0 && (
-              <button onClick={importerIA} className="btn btn-ghost" style={{ fontSize: 12.5 }}>
-                Ajouter les {iaCandidats.filter(c => c.sel).length} cochée(s)
+              <button onClick={importerIA} disabled={importing} className="btn btn-ghost" style={{ fontSize: 12.5, opacity: importing ? 0.55 : 1 }}>
+                {importing ? 'Ajout…' : `Ajouter les ${iaCandidats.filter(c => c.sel).length} cochée(s)`}
               </button>
             )}
           </div>
