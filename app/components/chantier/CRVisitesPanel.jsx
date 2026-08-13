@@ -128,7 +128,10 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
 
   if (selected) {
     const visite = visites.find(v => v.id === selected)
+    // Nombre de rapports PROSE (ancien système) du dossier → conditionne le bouton « Consolider ».
+    const anciensProse = visites.filter(v => (v.contenu_final || '').trim()).length
     return <VisitePage visite={visite} dossierId={id} lots={lots} setErreur={setErreur} setSucces={setSucces} setAnnot={setAnnot}
+             anciensProse={anciensProse}
              onRetour={() => { setSelected(null); rechargerVisites() }} onMajVisite={rechargerVisites} />
   }
 
@@ -187,7 +190,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
 }
 
 // ── Page d'une visite : ses actions (générales + par lot) ──
-function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, onRetour, onMajVisite }) {
+function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, anciensProse = 0, onRetour, onMajVisite }) {
   const [actions, setActions] = useState([])
   const [chargement, setChargement] = useState(true)
   const [ancien, setAncien] = useState(null) // { contenu_final } — rapport ANCIEN format (prose), lecture seule
@@ -424,13 +427,35 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
     setSucces?.(`${choisies.length} date(s) appliquée(s) au planning ✓`)
   }
 
-  // Reprise complète d'un ancien rapport (prose) : actions + dates, à valider. N'altère jamais l'original.
-  const reecrireDepuisAncien = () => {
-    const notes = ancien?.contenu_final
-    if (!notes) return
+  // CONSOLIDATION des anciens rapports prose → UNE liste d'actions dédoublonnée (Claude lit
+  // les 6 rapports d'un coup, cf. /api/actions/consolider), + dates du DERNIER rapport (planning
+  // courant). Remplace l'ancienne reprise « par rapport » qui ré-extrayait les mêmes points N fois.
+  // N'altère jamais les originaux : ne fait qu'ouvrir un panneau de candidats à cocher.
+  const consoliderAnciens = async () => {
+    if (iaEnCoursRef.current) return
+    iaEnCoursRef.current = true
     setRepriseOuvert(true)
-    analyserIA(notes, 'ancien_rapport')
-    extraireDates(notes)
+    setIaLoading(true); setIaCandidats(null); setDatesCandidats(null)
+    try {
+      const res = await apiFetch('/api/actions/consolider', {
+        method: 'POST',
+        body: JSON.stringify({ dossier_id: dossierId, lots: lots.map(l => ({ id: l.id, nom: l.nom })) }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) { setErreur?.(j.error || 'Consolidation impossible.'); return }
+      setIaCandidats((j.actions || []).map(a => ({ ...a, sel: true })))
+      if (!j.actions?.length) setErreur?.('Aucun ancien rapport prose à consolider.')
+    } catch {
+      setErreur?.('Erreur réseau IA.')
+    } finally {
+      setIaLoading(false); iaEnCoursRef.current = false
+    }
+    // Dates → Gantt : depuis le DERNIER rapport prose (l'état de planning le plus récent).
+    const { data: dernier } = await supabase.from('comptes_rendus')
+      .select('contenu_final').eq('dossier_id', dossierId).not('contenu_final', 'is', null)
+      .order('date_visite', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false })
+      .limit(1).maybeSingle()
+    if (dernier?.contenu_final) extraireDates(dernier.contenu_final)
     setTimeout(() => repriseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250)
   }
 
@@ -460,6 +485,14 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
         <input type="date" defaultValue={visite?.date_visite || ''} className="input" style={{ height: 34, fontSize: 12.5 }}
           onBlur={e => e.target.value !== visite?.date_visite && supabase.from('comptes_rendus').update({ date_visite: e.target.value || null }).eq('id', visiteId).then(onMajVisite)} />
         <div style={{ flex: 1 }} />
+        {/* Migration : visible seulement dans un brouillon VIDE quand il existe des rapports prose.
+            Dès qu'une action existe (consolidation importée, ou report d'un chantier déjà migré),
+            actions.length > 0 → le bouton disparaît de lui-même. Jamais sur un chantier 100 % neuf. */}
+        {visite?.valide === false && !ancien?.contenu_final && anciensProse > 0 && actions.length === 0 && (
+          <button onClick={consoliderAnciens} disabled={iaLoading} className="btn btn-primary" style={{ fontSize: 12.5, background: '#4338ca', borderColor: '#4338ca' }}>
+            {iaLoading ? 'Consolidation…' : 'Consolider les anciens rapports'}
+          </button>
+        )}
         <button onClick={() => setIaOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Aide IA</button>
         <button onClick={() => setPdfPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Exporter PDF</button>
         <button onClick={() => setDiffPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Diffuser</button>
@@ -572,17 +605,14 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
             Ancien format · lecture seule
           </div>
           <RenderProse text={ancien.contenu_final} />
-          <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>Ce rapport a été rédigé avec l&apos;ancien système. L&apos;original reste intact (il a pu être envoyé au client) — la réécriture ne fait qu&apos;en <b>extraire</b> des actions et des dates, à valider.</div>
-          <button onClick={reecrireDepuisAncien} disabled={iaLoading || datesLoading} className="btn btn-primary" style={{ fontSize: 12.5, alignSelf: 'flex-start' }}>
-            {(iaLoading || datesLoading) ? 'Analyse…' : 'Réécrire au nouveau format'}
-          </button>
+          <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>Ce rapport a été rédigé avec l&apos;ancien système et reste en lecture seule (il a pu être envoyé au client). Pour repartir sur le nouveau format, ouvre un <b>brouillon</b> et utilise <b>« Consolider les anciens rapports »</b> — l&apos;IA lit tous les anciens rapports d&apos;un coup et en sort une liste d&apos;actions <b>sans doublon</b>.</div>
         </div>
       )}
 
       {repriseOuvert && (
         <div ref={repriseRef} className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14, borderColor: 'rgba(99,102,241,0.35)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>Reprise du rapport au nouveau format</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>Consolidation des anciens rapports</span>
             <div style={{ flex: 1 }} />
             <button onClick={() => { setRepriseOuvert(false); setIaCandidats(null); setDatesCandidats(null) }} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px' }}>Fermer</button>
           </div>
@@ -609,7 +639,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
             })}
             {iaCandidats && iaCandidats.length > 0 && (
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button onClick={importerIA} className="btn btn-primary" style={{ fontSize: 11.5, padding: '4px 12px' }}>Créer les {iaCandidats.filter(c => c.sel).length} action(s)</button>
+                <button onClick={importerIA} disabled={importing} className="btn btn-primary" style={{ fontSize: 11.5, padding: '4px 12px', opacity: importing ? 0.55 : 1 }}>{importing ? 'Création…' : `Créer les ${iaCandidats.filter(c => c.sel).length} action(s)`}</button>
               </div>
             )}
           </div>
