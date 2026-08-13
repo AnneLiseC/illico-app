@@ -613,7 +613,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
             <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>1 · Actions à créer</div>
             {iaLoading && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Lecture et fusion des anciens rapports… {analyseSecs}s <span style={{ color: 'var(--ink-400)' }}>(jusqu&apos;à ~1 min, ne ferme pas)</span></div>
+                <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Lecture et fusion des anciens rapports… {analyseSecs}s <span style={{ color: 'var(--ink-400)' }}>(gros historique = jusqu&apos;à 2-3 min, ne ferme pas)</span></div>
                 <div className="barre-indet" />
               </div>
             )}

@@ -14,9 +14,9 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 
-export const maxDuration = 120     // Vercel Pro : on peut dépasser 60 s pour cette génération lourde
+export const maxDuration = 300     // Vercel Pro : consolidation EXHAUSTIVE de 6+ rapports = génération très longue
 
-const CLAUDE_TIMEOUT_MS = 100_000  // 6 rapports d'un coup = génération longue ; marge sous maxDuration=120
+const CLAUDE_TIMEOUT_MS = 240_000  // sortie exhaustive (tous les points + clôturés + dates) = 1 à 3 min ; large marge sous maxDuration=300
 const CLAUDE_RETRIES = 1           // retry seulement sur statut HTTP retriable (429/5xx), PAS sur un timeout
 const RETRIABLE_STATUS = new Set([408, 429, 500, 502, 503, 504, 529])
 const MAX_RAPPORTS = 40           // borne de sécurité
