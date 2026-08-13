@@ -73,13 +73,13 @@ export async function POST(request) {
   const enTete = typeVisite ? `Type de visite : ${TYPES_VISITE[typeVisite]}\n\n` : ''
   // Reprise d'un ANCIEN rapport rédigé (prose) → cadrage différent des notes brutes.
   const bloc = body.source === 'ancien_rapport'
-    ? `ANCIEN COMPTE-RENDU DÉJÀ RÉDIGÉ (à convertir en actions) :\n${notes}\n\nExtrais CHAQUE remarque, réserve, décision, travail à réaliser ou point à suivre en une action distincte. Ignore les rubriques purement descriptives d'identification (référence dossier, adresse, intervenants présents, dates d'en-tête).`
+    ? `ANCIEN COMPTE-RENDU DÉJÀ RÉDIGÉ (à convertir en actions) :\n${notes}\n\nSois EXHAUSTIF : parcours TOUT le rapport et extrais CHAQUE élément actionnable en une action distincte — chaque travail réalisé, chaque point à suivre, chaque réserve, chaque décision, validation, arbitrage, demande, relance ou point de vigilance. Vise plutôt trop que pas assez (mieux vaut une action de trop, décochable, qu'un oubli). Une puce ou une phrase du rapport = souvent une action. Ignore UNIQUEMENT les rubriques purement descriptives d'identification (référence dossier, adresse, intervenants présents, dates d'en-tête) et les phrases de liaison sans contenu.`
     : `Notes de visite :\n${notes}`
   const userText = `${enTete}${bloc}\n\nLots disponibles (pour "lot_nom") : ${lots.length ? lots.join(', ') : 'aucun'}\n\nRenvoie les actions au format JSON demandé, en français.`
 
   const claudeBody = JSON.stringify({
     model: 'claude-sonnet-4-6',
-    max_tokens: 2500,
+    max_tokens: 4000,
     temperature: 0,
     system,
     messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
