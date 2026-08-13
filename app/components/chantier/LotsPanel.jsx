@@ -3,7 +3,7 @@
 // Référentiel lot/sous-lot partagé Gantt + CR : CRUD + pré-remplissage depuis les devis.
 // Table `lots` (socle Lot 0). Hiérarchie via parent_lot_id. Sauvegarde directe Supabase
 // (RLS staff). Aucune dépendance IA.
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api-auth-client'
@@ -33,6 +33,8 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
   const [actionsParLot, setActionsParLot] = useState({})  // lot_id -> { total, cloturees } (lien CR↔planning)
   const [chargement, setChargement] = useState(true)
   const [ia, setIa] = useState(false)                 // appel IA en cours (pré-remplissage)
+  const iaEnCoursRef = useRef(false)                  // garde anti-double-clic (facturation)
+  const datesEnCoursRef = useRef(false)
   const [iaPropos, setIaPropos] = useState(null)      // propositions IA à relire (ou null)
   const [datesOuvert, setDatesOuvert] = useState(false)  // panneau « dates par IA »
   const [datesNotes, setDatesNotes] = useState('')
@@ -140,7 +142,11 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
   }
 
   // ── Pré-remplissage IA depuis les devis : lit les PDF → propose lots + sous-lots (relus avant insertion) ──
+  // Garde anti-réentrance (ref synchrone) : un double-clic rapide ne relance JAMAIS un appel
+  // facturé avant que le bouton ne soit désactivé au re-render.
   const suggererIA = async () => {
+    if (iaEnCoursRef.current) return
+    iaEnCoursRef.current = true
     setIa(true)
     try {
       const res = await apiFetch('/api/lots/suggest', {
@@ -160,7 +166,7 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
       setIaPropos(props)
     } catch (e) {
       setErreur?.('Aide IA : ' + (e?.message || 'erreur'))
-    } finally { setIa(false) }
+    } finally { setIa(false); iaEnCoursRef.current = false }
   }
 
   // Applique la sélection : 1 proposition cochée → 1 lot + ses sous-lots cochés.
@@ -194,6 +200,8 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
   // ── Dates par IA (Lot 4-6) : extrait des périodes depuis des notes → à valider avant application ──
   const suggererDates = async () => {
     if (!datesNotes.trim()) { setErreur?.('Colle des notes à analyser.'); return }
+    if (datesEnCoursRef.current) return
+    datesEnCoursRef.current = true
     setDatesIa(true)
     try {
       const lotsPayload = lots.map(l => ({ id: l.id, nom: l.nom, artisan: artisans.find(a => a.id === l.artisan_id)?.entreprise || '' }))
@@ -209,7 +217,7 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
       setDatesPropos(props)
     } catch (e) {
       setErreur?.('Dates IA : ' + (e?.message || 'erreur'))
-    } finally { setDatesIa(false) }
+    } finally { setDatesIa(false); datesEnCoursRef.current = false }
   }
 
   const appliquerDates = async () => {

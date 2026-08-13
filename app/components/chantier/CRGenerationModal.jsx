@@ -40,6 +40,7 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
   const [crTranscribing, setCrTranscribing] = useState(false)
   const crMediaRec = useRef(null)
   const crAudioChunks = useRef([])
+  const crGenEnCoursRef = useRef(false)   // garde anti-double-clic génération CR (facturé)
   const [crGenerating, setCrGenerating] = useState(false)
   const [crGenere, setCrGenere] = useState(null) // { titre, sections[] }
   const [crSectionsEditees, setCrSectionsEditees] = useState([])
@@ -52,6 +53,8 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
     if (!crForm.type_visite) return
     const notesCombinees = [crNotes, crVocalTexte, crAudioTexte].filter(Boolean).join('\n\n')
     if (!notesCombinees.trim() && crImages.length === 0 && crPhotosDossier.length === 0) return
+    if (crGenEnCoursRef.current) return    // garde anti-double-clic (appel /api/cr facturé)
+    crGenEnCoursRef.current = true
     setCrGenerating(true)
     setErreur('')
     try {
@@ -88,6 +91,7 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
     } catch (e) {
       setErreur('Erreur réseau lors de la génération du CR : ' + (e?.message || 'réessayez'))
     } finally {
+      crGenEnCoursRef.current = false
       setCrGenerating(false)
     }
   }

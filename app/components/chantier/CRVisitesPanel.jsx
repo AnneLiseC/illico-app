@@ -330,10 +330,14 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
   const [datesLoading, setDatesLoading] = useState(false)
   const [repriseOuvert, setRepriseOuvert] = useState(false) // panneau dédié de reprise d'un ancien rapport
   const repriseRef = useRef(null)
+  const iaEnCoursRef = useRef(false)      // gardes anti-double-clic (appels IA facturés)
+  const datesEnCoursRef = useRef(false)
 
   const analyserIA = async (notesArg, source) => {
     const notes = (typeof notesArg === 'string' ? notesArg : iaNotes).trim()
     if (!notes) return
+    if (iaEnCoursRef.current) return
+    iaEnCoursRef.current = true
     setIaLoading(true); setIaCandidats(null)
     try {
       const res = await apiFetch('/api/actions/suggest', {
@@ -346,7 +350,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
     } catch {
       setErreur?.('Erreur réseau IA.')
     } finally {
-      setIaLoading(false)
+      setIaLoading(false); iaEnCoursRef.current = false
     }
   }
 
@@ -379,6 +383,8 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
   const extraireDates = async (notesArg) => {
     const notes = (typeof notesArg === 'string' ? notesArg : '').trim()
     if (!notes || !lots.length) return
+    if (datesEnCoursRef.current) return
+    datesEnCoursRef.current = true
     setDatesLoading(true); setDatesCandidats(null)
     try {
       const today = new Date().toISOString().slice(0, 10)
@@ -391,7 +397,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
       setDatesCandidats((j.propositions || []).map(p => ({ ...p, sel: true })))
     } catch {
       setErreur?.('Erreur réseau IA (dates).')
-    } finally { setDatesLoading(false) }
+    } finally { setDatesLoading(false); datesEnCoursRef.current = false }
   }
 
   // Applique les dates retenues aux LOTS → elles apparaissent dans le Gantt (onglet Planning).
