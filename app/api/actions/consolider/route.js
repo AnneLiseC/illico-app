@@ -14,10 +14,10 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 
-export const maxDuration = 60
+export const maxDuration = 120     // Vercel Pro : on peut dépasser 60 s pour cette génération lourde
 
-const CLAUDE_TIMEOUT_MS = 45_000
-const CLAUDE_RETRIES = 2
+const CLAUDE_TIMEOUT_MS = 100_000  // 6 rapports d'un coup = génération longue ; marge sous maxDuration=120
+const CLAUDE_RETRIES = 1           // retry seulement sur statut HTTP retriable (429/5xx), PAS sur un timeout
 const RETRIABLE_STATUS = new Set([408, 429, 500, 502, 503, 504, 529])
 const MAX_RAPPORTS = 40           // borne de sécurité
 const MAX_TOTAL_CHARS = 120_000   // garde-fou taille d'entrée
@@ -40,7 +40,7 @@ Réponds STRICTEMENT par un objet JSON (aucun texte autour, pas de markdown) :
   "actions": [
     {
       "titre": chaîne,        // titre court (~60 caractères), optionnel ("" si rien)
-      "texte": chaîne,        // le point rédigé clairement, 1 à 3 phrases, à jour
+      "texte": chaîne,        // le point rédigé en UNE seule phrase concise (≤ 200 caractères), à jour
       "portee": "generale" | "lot",
       "lot_nom": chaîne,      // si portee="lot" : nom du lot, choisi PARMI la liste fournie si possible ; sinon ""
       "statut": une des valeurs EXACTES: ${STATUTS.join(', ')},
@@ -59,7 +59,9 @@ RÈGLES DE CONSOLIDATION (le cœur du travail) :
 - statut_date : la date d'échéance/statut la plus récente et pertinente si une date est donnée, sinon "".
 - Rattache à un lot (portee="lot") seulement si c'est clair, en choisissant "lot_nom" dans la liste fournie quand elle correspond.
 
-OBJECTIF : la liste finale doit être ce qu'une AMO garderait sous les yeux aujourd'hui — chaque point ouvert UNE fois, à jour, sans redite d'un rapport à l'autre.`
+OBJECTIF : la liste finale doit être ce qu'une AMO garderait sous les yeux aujourd'hui — chaque point ouvert UNE fois, à jour, sans redite d'un rapport à l'autre.
+
+CONCISION (important pour la rapidité) : sois ÉCONOME. UNE phrase courte par action, pas de paragraphe. Regroupe finement : vise une liste resserrée (idéalement ≤ 50 actions), pas un catalogue.`
 
 function parseJsonSafe(text) {
   if (!text) return null
@@ -113,7 +115,7 @@ export async function POST(request) {
 
   const claudeBody = JSON.stringify({
     model: 'claude-sonnet-4-6',
-    max_tokens: 8000,
+    max_tokens: 6000,
     temperature: 0,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
@@ -134,7 +136,10 @@ export async function POST(request) {
       if (res.ok) { claudeRes = res; break }
       if (RETRIABLE_STATUS.has(res.status) && t < CLAUDE_RETRIES) { derniereErreur = new Error(`Claude API ${res.status}`); continue }
       claudeRes = res; break
-    } catch (e) { clearTimeout(minuteur); derniereErreur = e }
+    } catch (e) {
+      clearTimeout(minuteur); derniereErreur = e
+      if (e?.name === 'AbortError') break  // timeout : inutile (et trop long) de relancer une passe complète
+    }
   }
 
   if (!claudeRes) return NextResponse.json({ error: `Service IA indisponible (${derniereErreur?.message || 'timeout'}). Réessaie.` }, { status: 503 })

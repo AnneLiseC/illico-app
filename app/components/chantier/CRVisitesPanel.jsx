@@ -84,7 +84,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
   useEffect(() => {
     (async () => {
       await rechargerVisites()
-      const { data: l } = await supabase.from('lots').select('id, nom, parent_lot_id, artisan:artisans(id, entreprise, metier)').eq('dossier_id', id).order('ordre')
+      const { data: l } = await supabase.from('lots').select('id, nom, parent_lot_id, date_debut, date_fin, artisan:artisans(id, entreprise, metier)').eq('dossier_id', id).order('ordre')
       setLots(l || [])
       setChargement(false)
     })()
@@ -332,11 +332,19 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
   const [datesCandidats, setDatesCandidats] = useState(null) // [{lot_id, date_debut, date_fin, sel}] (reprise ancien → planning)
   const [datesLoading, setDatesLoading] = useState(false)
   const [repriseOuvert, setRepriseOuvert] = useState(false) // panneau dédié de reprise d'un ancien rapport
+  const [analyseSecs, setAnalyseSecs] = useState(0)          // compteur affiché pendant l'analyse IA (longue)
   const repriseRef = useRef(null)
   const iaEnCoursRef = useRef(false)      // gardes anti-double-clic (appels IA facturés)
   const datesEnCoursRef = useRef(false)
   const importEnCoursRef = useRef(false)  // garde anti-double-clic sur l'INSERTION des actions
   const [importing, setImporting] = useState(false)
+
+  // Compteur de secondes pendant l'analyse IA (rassure : l'analyse consolidée est longue).
+  useEffect(() => {
+    if (!iaLoading) { setAnalyseSecs(0); return }
+    const t = setInterval(() => setAnalyseSecs(s => s + 1), 1000)
+    return () => clearInterval(t)
+  }, [iaLoading])
 
   const analyserIA = async (notesArg, source) => {
     const notes = (typeof notesArg === 'string' ? notesArg : iaNotes).trim()
@@ -408,7 +416,13 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) { setErreur?.(j.error || 'Extraction des dates impossible.'); return }
-      setDatesCandidats((j.propositions || []).map(p => ({ ...p, sel: true })))
+      // Ne PAS écraser un lot déjà planifié : on marque ceux qui ont déjà des dates et on les
+      // laisse DÉCOCHÉS par défaut. L'utilisatrice coche seulement si elle veut remplacer.
+      setDatesCandidats((j.propositions || []).map(p => {
+        const lot = lots.find(l => l.id === p.lot_id)
+        const dejaPlanifie = !!(lot && (lot.date_debut || lot.date_fin))
+        return { ...p, dejaPlanifie, dateDebutActuelle: lot?.date_debut || null, dateFinActuelle: lot?.date_fin || null, sel: !dejaPlanifie }
+      }))
     } catch {
       setErreur?.('Erreur réseau IA (dates).')
     } finally { setDatesLoading(false); datesEnCoursRef.current = false }
@@ -435,7 +449,19 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     if (iaEnCoursRef.current) return
     iaEnCoursRef.current = true
     setRepriseOuvert(true)
-    setIaLoading(true); setIaCandidats(null); setDatesCandidats(null)
+    // Les DEUX sections passent en « Analyse en cours » tout de suite (évite le faux « Dates traitées »).
+    setIaLoading(true); setDatesLoading(true); setIaCandidats(null); setDatesCandidats(null)
+    setTimeout(() => repriseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250)
+    // Dates → Gantt : en PARALLÈLE, depuis le DERNIER rapport prose (état de planning le plus récent).
+    ;(async () => {
+      const { data: dernier } = await supabase.from('comptes_rendus')
+        .select('contenu_final').eq('dossier_id', dossierId).not('contenu_final', 'is', null)
+        .order('date_visite', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false })
+        .limit(1).maybeSingle()
+      if (dernier?.contenu_final && lots.length) extraireDates(dernier.contenu_final)  // gère lui-même datesLoading
+      else setDatesLoading(false)  // rien à analyser → on éteint le voyant
+    })()
+    // Actions consolidées (les 6 rapports d'un coup, dédoublonnées).
     try {
       const res = await apiFetch('/api/actions/consolider', {
         method: 'POST',
@@ -450,13 +476,6 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     } finally {
       setIaLoading(false); iaEnCoursRef.current = false
     }
-    // Dates → Gantt : depuis le DERNIER rapport prose (l'état de planning le plus récent).
-    const { data: dernier } = await supabase.from('comptes_rendus')
-      .select('contenu_final').eq('dossier_id', dossierId).not('contenu_final', 'is', null)
-      .order('date_visite', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false })
-      .limit(1).maybeSingle()
-    if (dernier?.contenu_final) extraireDates(dernier.contenu_final)
-    setTimeout(() => repriseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250)
   }
 
   const nomLot = (lid) => lots.find(l => l.id === lid)?.nom || '—'
@@ -620,7 +639,12 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
           {/* Étape 1 — Actions */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>1 · Actions à créer</div>
-            {iaLoading && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Analyse en cours…</div>}
+            {iaLoading && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Lecture et fusion des anciens rapports… {analyseSecs}s <span style={{ color: 'var(--ink-400)' }}>(jusqu&apos;à ~1 min, ne ferme pas)</span></div>
+                <div className="barre-indet" />
+              </div>
+            )}
             {!iaLoading && iaCandidats && iaCandidats.length === 0 && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Aucune action détectée.</div>}
             {!iaLoading && !iaCandidats && <div style={{ fontSize: 12, color: '#15803d' }}>Actions traitées.</div>}
             {iaCandidats && iaCandidats.map((c, i) => {
@@ -647,13 +671,21 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
           {/* Étape 2 — Dates */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid var(--ink-100)', paddingTop: 12 }}>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>2 · Dates à placer dans le planning</div>
-            {datesLoading && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Analyse en cours…</div>}
+            {datesLoading && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Analyse des dates en cours…</div>
+                <div className="barre-indet" />
+              </div>
+            )}
             {!datesLoading && datesCandidats && datesCandidats.length === 0 && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Aucune date de lot exploitable.</div>}
-            {!datesLoading && !datesCandidats && <div style={{ fontSize: 12, color: '#15803d' }}>Dates traitées.</div>}
+            {!datesLoading && datesCandidats && datesCandidats.some(c => c.dejaPlanifie) && (
+              <div style={{ fontSize: 11.5, color: '#b45309' }}>Les lots <b>déjà planifiés</b> sont décochés : coche-les seulement si tu veux <b>remplacer</b> leurs dates actuelles.</div>
+            )}
             {datesCandidats && datesCandidats.map((c, i) => (
               <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, flexWrap: 'wrap', opacity: c.sel ? 1 : 0.5 }}>
                 <input type="checkbox" checked={c.sel} onChange={() => setDatesCandidats(prev => prev.map((x, j) => j === i ? { ...x, sel: !x.sel } : x))} />
                 <b style={{ flex: '0 1 150px' }}>{nomLot(c.lot_id)}</b>
+                {c.dejaPlanifie && <span style={{ fontSize: 10, fontWeight: 700, color: '#b45309', background: 'rgba(180,83,9,0.10)', padding: '1px 6px', borderRadius: 99 }} title={`Déjà au planning : ${c.dateDebutActuelle ? fmtDate(c.dateDebutActuelle) : '—'} → ${c.dateFinActuelle ? fmtDate(c.dateFinActuelle) : '—'}`}>déjà planifié</span>}
                 <input type="date" value={c.date_debut} onChange={e => setDatesCandidats(prev => prev.map((x, j) => j === i ? { ...x, date_debut: e.target.value } : x))} className="input" style={{ height: 30, fontSize: 12 }} />
                 <input type="date" value={c.date_fin} onChange={e => setDatesCandidats(prev => prev.map((x, j) => j === i ? { ...x, date_fin: e.target.value } : x))} className="input" style={{ height: 30, fontSize: 12 }} />
               </label>

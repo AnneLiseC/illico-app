@@ -832,6 +832,30 @@ select.input { padding-right: 32px; }
   border-radius: 6px;
 }
 
+/* Barre de progression INDÉTERMINÉE (analyse IA longue : on ne connaît pas le %, on montre
+   que ça travaille pour ne pas donner l'impression que c'est planté). */
+@keyframes barre-indet {
+  0%   { left: -40%; width: 40%; }
+  50%  { left: 25%;  width: 55%; }
+  100% { left: 100%; width: 40%; }
+}
+.barre-indet {
+  position: relative;
+  height: 6px;
+  background: rgba(67, 56, 202, 0.14);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.barre-indet::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: #4338ca;
+  border-radius: 99px;
+  animation: barre-indet 1.3s ease-in-out infinite;
+}
+
 /* ─────────────────────────────────────────────────────────────────
    Page content
    ───────────────────────────────────────────────────────────────── */
