@@ -19,6 +19,13 @@ const ImageAnnotator = dynamic(() => import('../../components/ImageAnnotator'), 
 const DevisModal = dynamic(() => import('../../components/chantier/DevisModal'), { ssr: false })
 // Modale génération CR (IA) : ~510 lignes + état + handlers → hors bundle initial.
 const CRGenerationModal = dynamic(() => import('../../components/chantier/CRGenerationModal'), { ssr: false })
+const LotsPanel = dynamic(() => import('../../components/chantier/LotsPanel'), { ssr: false })
+const CRVisitesPanel = dynamic(() => import('../../components/chantier/CRVisitesPanel'), { ssr: false })
+
+// Nouveau système CR (liste de visites → page par visite). L'ANCIEN panneau CR + ses
+// modales (wizard IA, CR manuel) sont CONSERVÉS mais masqués (flag ci-dessous) : on y
+// puisera des fonctions pour 1c-2/1c-3, on supprimera une fois le nouveau prouvé.
+const CR_LEGACY_VISIBLE = false
 import { compressImageToBlob, heicToJpegFile } from '../../lib/images'
 import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
 import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../../lib/cibles'
@@ -719,6 +726,10 @@ export default function FicheChantier({ params }) {
   const [photosAffichees, setPhotosAffichees] = useState(3)
   const [uploadingDoc, setUploadingDoc] = useState(null) // devisId en cours d'upload
   const [comptesRendus, setComptesRendus] = useState([])
+  // Signal de rafraîchissement du nouvel onglet CR après création/édition d'un R1/R2/R3 via
+  // l'ancien modal (les deux systèmes ont des sources séparées).
+  const [crVersion, setCrVersion] = useState(0)
+  useEffect(() => { setCrVersion(v => v + 1) }, [comptesRendus])
   const [messages, setMessages] = useState([])
   const [factures, setFactures] = useState([])
   const [ajouterFacture, setAjouterFacture] = useState(null) // devisId en cours
@@ -817,7 +828,7 @@ export default function FicheChantier({ params }) {
           client:clients(*),
           devis_artisans(*, artisan:artisans(id, entreprise, metier, partenaire, paiement_direct)),
           rendez_vous(*, artisan:artisans(id, entreprise)),
-          interventions_artisans(*, artisan:artisans(id, entreprise)),
+          interventions_artisans(*, artisan:artisans(id, entreprise, metier)),
           suivi_financier(*),
           chantier_fiches_techniques(*, fiche:fiches_techniques(id, nom, description))
         `)
@@ -1054,7 +1065,7 @@ export default function FicheChantier({ params }) {
   const chargerRdvsDossier = async () => {
     const { data } = await supabase.from('rendez_vous').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_heure')
     setRdvsDossier(data || [])
-    const { data: intData } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
+    const { data: intData } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise, metier)').eq('dossier_id', id).order('date_debut')
     setInterventionsDossier(intData || [])
   }
 
@@ -1182,13 +1193,25 @@ export default function FicheChantier({ params }) {
     setSucces('Intervention modifiée ✓')
   }
 
+  // Déplacement d'une intervention DEPUIS le Gantt (glisser-déposer). On passe par le même
+  // chemin que l'édition (maj + push Google) pour ne PAS désynchroniser l'agenda. Ne concerne
+  // que les interventions « période » (celles affichées en barre). Optimiste puis rechargement.
+  const majInterventionDates = async (intId, { date_debut, date_fin }) => {
+    setInterventionsDossier(prev => prev.map(i => i.id === intId ? { ...i, date_debut, date_fin } : i))
+    const { error } = await supabase.from('interventions_artisans')
+      .update({ date_debut: date_debut || null, date_fin: date_fin || null }).eq('id', intId)
+    if (error) { setErreur('Erreur : ' + error.message); await chargerRdvsDossier(); return }
+    pushToGoogle('intervention', intId)   // resync agenda (non bloquant)
+    await chargerRdvsDossier()
+  }
+
   const supprimerInterventionDossier = async (intId) => {
     if (!confirm('Supprimer cette intervention ?')) return
     const intervention = interventionsDossier.find(i => i.id === intId)
     const { error } = await supabase.from('interventions_artisans').delete().eq('id', intId)
     if (error) { setErreur('Erreur : ' + error.message); return }
     if (intervention?.google_event_id) await deleteGoogleEvent(intervention.google_event_id, intervention.cible_id)
-    const { data } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
+    const { data } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise, metier)').eq('dossier_id', id).order('date_debut')
     setInterventionsDossier(data || [])
   }
 
@@ -3400,7 +3423,7 @@ export default function FicheChantier({ params }) {
       </div>
 
       {/* KPI strip */}
-      <div className="kpi-grid">
+      <div className="kpi-grid kpi-sm">
         <MiniKpi
           label="Montant prévu"
           value={totalDevisTTCRecus > 0 ? fmt(totalDevisTTCRecus) : '—'}
@@ -4162,6 +4185,10 @@ export default function FicheChantier({ params }) {
                               ? `${new Date(i.date_debut).toLocaleDateString('fr-FR')} → ${new Date(i.date_fin).toLocaleDateString('fr-FR')}`
                               : `${i.jours_specifiques?.length} jour(s)`}
                             {i.notes && <span style={{color:'var(--ink-500)'}}>— {i.notes}</span>}
+                            <button onClick={() => { setInterventionEnEdition(i); setModalInterventionOuvert(true) }}
+                              className="btn btn-ghost" style={{padding:'2px 6px', fontSize:11}} title="Modifier l'intervention">✎</button>
+                            <button onClick={() => supprimerInterventionDossier(i.id)}
+                              className="btn btn-ghost" style={{padding:'2px 6px', fontSize:11, color:'#b91c1c'}} title="Supprimer l'intervention">×</button>
                           </div>
                         ))}
                       </div>
@@ -4719,7 +4746,7 @@ export default function FicheChantier({ params }) {
         <div style={{display:'flex',flexDirection:'column',gap:18}}>
 
           {/* KPI grid : récap gains */}
-          <div className="kpi-grid">
+          <div className="kpi-grid kpi-sm">
             <MiniKpi
               label="Frais consult. HT"
               value={fraisOfferts ? 'Offert' : fmt(fraisHTReal)}
@@ -5739,10 +5766,11 @@ export default function FicheChantier({ params }) {
       {onglet === 'planning' && (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
-        {/* Planning : RDV + Interventions (maquette : 2 cards séparées) */}
-        <div className="grid-2c" style={{gap:18}}>
+        {/* Lots / sous-lots + Gantt (éditeur repliable en haut, puis le visuel). */}
+        <LotsPanel id={id} devis={devis} interventionsDossier={interventionsDossier} onMajIntervention={majInterventionDates} setErreur={setErreur} />
 
-          {/* Card RDV */}
+        {/* Planning : RDV pleine largeur (les interventions vivent désormais dans le Gantt ci-dessus). */}
+        {/* Card RDV */}
           <div className="card" style={{padding:0, overflow:'hidden'}}>
             <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--ink-200)'}}>
               <div>
@@ -5804,62 +5832,6 @@ export default function FicheChantier({ params }) {
               })}
             </div>
           </div>
-
-          {/* Card Interventions artisans */}
-          <div className="card" style={{padding:0, overflow:'hidden'}}>
-            <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--ink-200)'}}>
-              <div>
-                <h2 className="page" style={{fontSize:15}}>Interventions artisans</h2>
-                <div className="eyebrow" style={{marginTop:4}}>{interventionsDossier.length} planifiée{interventionsDossier.length > 1 ? 's' : ''}</div>
-              </div>
-              <button onClick={() => { setNouvIntervArtisanId(null); setModalCreerIntervOuvert(true) }}
-                className="btn btn-primary" style={{fontSize:12.5}}>
-                <PlusIcon /> Planifier
-              </button>
-            </div>
-            <div style={{padding:'4px 16px'}}>
-              {interventionsDossier.length === 0 ? (
-                <div style={{padding:30, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>Aucune intervention planifiée</div>
-              ) : interventionsDossier.map(i => {
-                const fmtDate = (d) => new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'short' })
-                const sub = i.type_intervention === 'periode'
-                  ? (i.date_debut && i.date_fin ? `Du ${fmtDate(i.date_debut)} au ${fmtDate(i.date_fin)}` : 'Période')
-                  : `${(i.jours_specifiques || []).length} jour(s) spécifique(s)`
-                return (
-                  <div key={i.id} style={{
-                    display:'grid', gridTemplateColumns:'auto 1fr auto auto', gap:12,
-                    padding:'12px 0', borderBottom:'1px solid var(--ink-100)', alignItems:'center',
-                  }}>
-                    <div style={{
-                      width:36, height:36, borderRadius:8, background:'#eef2ff',
-                      color:'var(--ink-900)', display:'grid', placeItems:'center',
-                    }}>
-                      <HammerIcon />
-                    </div>
-                    <div style={{minWidth:0}}>
-                      <div className="clip-1" style={{fontSize:13, fontWeight:700, color:'var(--ink-900)'}}>{i.artisan?.entreprise || '—'}</div>
-                      <div className="clip-1" style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>
-                        {sub}{i.notes && ` · ${i.notes}`}
-                      </div>
-                    </div>
-                    <Badge tone="info">Planifié</Badge>
-                    <div style={{display:'flex', gap:4}}>
-                      <button onClick={() => { setInterventionEnEdition(i); setModalInterventionOuvert(true) }}
-                        className="btn btn-ghost" style={{padding:'4px 6px'}} title="Modifier">
-                        <EditIcon />
-                      </button>
-                      <button onClick={() => supprimerInterventionDossier(i.id)}
-                        className="btn btn-ghost" style={{padding:'4px 6px', color:'#b91c1c'}} title="Supprimer">
-                        <span style={{fontSize:14, lineHeight:1}}>×</span>
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-        </div>
 
         {/* Modal RDV (maquette) */}
         {modalRdvOuvert && (() => {
@@ -6183,8 +6155,16 @@ export default function FicheChantier({ params }) {
         )
       })()}
 
-      {/* ── COMPTES-RENDUS (maquette : 2 cols liste + sidebar IA) ── */}
-      {onglet === 'cr' && (() => {
+      {/* Lots / sous-lots + Gantt : désormais intégrés dans l'onglet Planning (plus d'onglet dédié). */}
+
+      {/* ── RAPPORTS DE VISITE — NOUVEAU système (liste de visites → page par visite) ── */}
+      {onglet === 'cr' && !CR_LEGACY_VISIBLE && (
+        <CRVisitesPanel id={id} setErreur={setErreur} setSucces={setSucces} setAnnot={setAnnot}
+          onCreerAncien={() => setCrModal(true)} onEditerAncien={editerCR} refreshKey={crVersion} />
+      )}
+
+      {/* ── COMPTES-RENDUS (ANCIEN — conservé mais masqué via CR_LEGACY_VISIBLE) ── */}
+      {CR_LEGACY_VISIBLE && onglet === 'cr' && (() => {
         const typeMeta = {
           r1:        { color: 'var(--ink-900)', label: 'R1', long: 'R1 — Visite technique' },
           r2:        { color: '#16a34a', label: 'R2', long: 'R2 — Visite artisans' },

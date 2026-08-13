@@ -62,6 +62,27 @@ export async function requireRole(request, roles) {
 }
 
 /**
+ * Contrôle d'APPARTENANCE d'un dossier au tenant de l'appelant. Indispensable dans les routes
+ * qui lisent ensuite en service_role (qui contourne la RLS) : sans ça, n'importe quel staff peut
+ * lire un dossier d'un autre tenant en passant son id. admin = même société, agente = même agence,
+ * client = son propre dossier. 404 uniforme (introuvable OU autre tenant : on ne divulgue pas l'existence).
+ * @returns {Promise<{dossier} | {error: NextResponse}>}
+ */
+export async function assertDossierAccessible(dossierId, profile) {
+  if (!dossierId) return { error: NextResponse.json({ error: 'dossier_id manquant' }, { status: 400 }) }
+  const { data: dossier, error } = await getSupabaseAdmin()
+    .from('dossiers').select('id, societe_id, agence_id, client_id').eq('id', dossierId).maybeSingle()
+  if (error) return { error: NextResponse.json({ error: error.message }, { status: 500 }) }
+  if (!dossier) return { error: NextResponse.json({ error: 'Dossier non trouvé' }, { status: 404 }) }
+  const ok = profile?.role === 'admin' ? dossier.societe_id === profile.societe_id
+    : profile?.role === 'agente' ? dossier.agence_id === profile.agence_id
+    : profile?.role === 'client' ? (!!profile.client_id && dossier.client_id === profile.client_id)
+    : false
+  if (!ok) return { error: NextResponse.json({ error: 'Dossier non trouvé' }, { status: 404 }) }
+  return { dossier }
+}
+
+/**
  * Vérifie que l'appelant est l'ÉDITRICE (super-admin), reconnue par son email
  * dans SUPER_ADMIN_EMAILS (serveur = autorité). Ne requiert PAS de profil : le
  * super-admin n'appartient à aucun tenant. À utiliser en tête des routes
