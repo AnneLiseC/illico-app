@@ -440,8 +440,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
               return (
                 <label key={l.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
                   <input type="checkbox" checked={diffLots.has(l.id)} onChange={() => toggleDiffLot(l.id)} style={{ accentColor: '#4f46e5' }} />
-                  {l.nom}
-                  {art ? <span style={{ color: 'var(--ink-500)' }}>— {art}</span> : <span style={{ color: '#b45309', fontSize: 11 }}>(aucun artisan → pas d’envoi)</span>}
+                  {art ? <b>{art}</b> : <span style={{ color: '#b45309' }}>{l.nom} (aucun artisan → pas d’envoi)</span>}
                 </label>
               )
             })}
