@@ -4,7 +4,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireRole } from '../../../lib/api-auth'
+import { requireUser } from '../../../lib/api-auth'
 import { genererVisitePDF } from '../../../lib/pdf/genererVisite.js'
 import { formatNomClient } from '../../../lib/clients.js'
 
@@ -17,17 +17,32 @@ function admin() {
 }
 
 export async function POST(request) {
-  const auth = await requireRole(request, ['admin', 'agente'])
+  const auth = await requireUser(request)
   if (auth.error) return auth.error
+  const role = auth.profile?.role
+  if (!['admin', 'agente', 'client'].includes(role)) return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
 
   let body; try { body = await request.json() } catch { body = {} }
   const visiteId = body.visite_id
   if (!visiteId) return NextResponse.json({ error: 'visite_id manquant' }, { status: 400 })
-  const options = body.options && typeof body.options === 'object' ? body.options : {}
-  const filtreLotId = body.filtre_lot_id || null
+  let options = body.options && typeof body.options === 'object' ? body.options : {}
+  let filtreLotId = body.filtre_lot_id || null
+
+  const db = admin()
+
+  // Client : PDF COMPLET de ses propres visites PUBLIÉES uniquement (jamais options/filtre).
+  if (role === 'client') {
+    const { data: chk } = await db.from('comptes_rendus')
+      .select('valide, dossier:dossiers(client_id)').eq('id', visiteId).maybeSingle()
+    if (!chk) return NextResponse.json({ error: 'Visite introuvable' }, { status: 404 })
+    if (!chk.valide || chk.dossier?.client_id !== auth.profile.client_id) {
+      return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+    }
+    options = {}; filtreLotId = null
+  }
 
   try {
-    const { buffer, dossier, visite } = await genererVisitePDF(admin(), visiteId, { options, filtreLotId })
+    const { buffer, dossier, visite } = await genererVisitePDF(db, visiteId, { options, filtreLotId })
     const slug = (formatNomClient(dossier.client, { civilite: false }) || 'client').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]+/g, '_')
     const nom = `Visite_${visite.numero_visite || ''}_${slug}.pdf`.replace('__', '_')
     return new NextResponse(buffer, {

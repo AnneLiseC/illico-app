@@ -651,7 +651,7 @@ export default function EspaceClient() {
                       <span className="text-xl">📄</span>
                       <div>
                         <p className="font-medium text-gray-800 text-sm">
-                          {TYPE_VISITE_LABELS[cr.type_visite] || cr.type_visite || 'Rapport de visite'}
+                          {cr.numero_visite ? `Compte-rendu de visite ${cr.numero_visite}` : (TYPE_VISITE_LABELS[cr.type_visite] || cr.type_visite || 'Rapport de visite')}
                         </p>
                         <p className="text-xs text-gray-400">
                           {cr.date_visite
@@ -668,6 +668,26 @@ export default function EspaceClient() {
                       {cr.contenu_final ? (
                         <div className="prose prose-sm max-w-none">
                           <MarkdownCR text={cr.contenu_final} variant="client" />
+                        </div>
+                      ) : cr.numero_visite ? (
+                        <div className="space-y-2">
+                          <p className="text-sm text-gray-600">Compte-rendu de la visite {cr.numero_visite}.</p>
+                          <button
+                            onClick={async () => {
+                              setPdfErreur('')
+                              try {
+                                const res = await apiFetch('/api/cr/visite-pdf', { method: 'POST', body: JSON.stringify({ visite_id: cr.cr_id }) })
+                                if (!res.ok) { const d = await res.json().catch(() => ({})); setPdfErreur('Erreur PDF : ' + (d.error || `code ${res.status}`)); return }
+                                const blob = await res.blob()
+                                const url = URL.createObjectURL(blob)
+                                window.open(url, '_blank')
+                                setTimeout(() => URL.revokeObjectURL(url), 60000)
+                              } catch (err) { setPdfErreur('Erreur PDF : ' + (err.message || 'réseau')) }
+                            }}
+                            className="text-xs text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50">
+                            📄 Voir le PDF
+                          </button>
+                          {pdfErreur && <p className="text-xs text-red-600">{pdfErreur}</p>}
                         </div>
                       ) : (
                         <p className="text-sm text-gray-400 italic">Rapport de visite en cours de rédaction.</p>
