@@ -27,6 +27,7 @@ export async function POST(request) {
   if (!visiteId) return NextResponse.json({ error: 'visite_id manquant' }, { status: 400 })
   let options = body.options && typeof body.options === 'object' ? body.options : {}
   let filtreLotId = body.filtre_lot_id || null
+  let filtreLotIds = Array.isArray(body.filtre_lot_ids) ? body.filtre_lot_ids : null
 
   const db = admin()
 
@@ -38,7 +39,7 @@ export async function POST(request) {
     if (!chk.valide || chk.dossier?.client_id !== auth.profile.client_id) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
     }
-    options = {}; filtreLotId = null
+    options = {}; filtreLotId = null; filtreLotIds = null
   } else {
     // Staff (admin/agente) : contrôle d'appartenance au tenant (service_role contourne la RLS).
     const { data: v } = await db.from('comptes_rendus').select('dossier_id').eq('id', visiteId).maybeSingle()
@@ -48,7 +49,7 @@ export async function POST(request) {
   }
 
   try {
-    const { buffer, dossier, visite } = await genererVisitePDF(db, visiteId, { options, filtreLotId })
+    const { buffer, dossier, visite } = await genererVisitePDF(db, visiteId, { options, filtreLotId, filtreLotIds })
     const slug = (formatNomClient(dossier.client, { civilite: false }) || 'client').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]+/g, '_')
     const nom = `Visite_${visite.numero_visite || ''}_${slug}.pdf`.replace('__', '_')
     return new NextResponse(buffer, {

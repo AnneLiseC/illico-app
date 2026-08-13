@@ -247,13 +247,13 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfPanel, setPdfPanel] = useState(false)
   const [pdfOpts, setPdfOpts] = useState({ generales: true, parLot: true, photos: true, checklist: true, barrerCloturees: false })
-  const [filtreLot, setFiltreLot] = useState('') // '' = tous les lots
+  const [filtreLots, setFiltreLots] = useState(() => new Set()) // vide = toutes les entreprises
   const exporterPDF = async () => {
     setPdfLoading(true)
     try {
       const res = await apiFetch('/api/cr/visite-pdf', {
         method: 'POST',
-        body: JSON.stringify({ visite_id: visiteId, options: pdfOpts, filtre_lot_id: filtreLot || null }),
+        body: JSON.stringify({ visite_id: visiteId, options: pdfOpts, filtre_lot_ids: [...filtreLots] }),
       })
       if (!res.ok) { const j = await res.json().catch(() => ({})); setErreur?.(j.error || 'Export PDF impossible.'); return }
       const blob = await res.blob()
@@ -470,12 +470,20 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
               </label>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <label style={{ fontSize: 12.5, color: 'var(--ink-600)' }}>Destinataire :</label>
-            <select value={filtreLot} onChange={e => setFiltreLot(e.target.value)} className="input" style={{ height: 32, fontSize: 12.5 }}>
-              <option value="">Tout le monde (tous les lots)</option>
-              {lots.map(l => <option key={l.id} value={l.id}>{l.parent_lot_id ? '— ' : ''}{l.nom}{l.artisan?.entreprise ? ' — ' + l.artisan.entreprise : ''}</option>)}
-            </select>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 12, color: 'var(--ink-600)' }}>Limiter aux entreprises (rien de coché = toutes) :</span>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {lots.filter(l => !l.parent_lot_id).map(l => (
+                <label key={l.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5 }}>
+                  <input type="checkbox" checked={filtreLots.has(l.id)}
+                    onChange={() => setFiltreLots(s => { const n = new Set(s); n.has(l.id) ? n.delete(l.id) : n.add(l.id); return n })}
+                    style={{ accentColor: '#4f46e5' }} />
+                  {l.artisan?.entreprise || l.nom}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: 'flex' }}>
             <div style={{ flex: 1 }} />
             <button onClick={exporterPDF} disabled={pdfLoading} className="btn btn-primary" style={{ fontSize: 12.5 }}>{pdfLoading ? 'Génération…' : 'Générer le PDF'}</button>
           </div>
@@ -524,7 +532,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
           <div style={{ fontSize: 11.5, fontWeight: 700, color: '#4338ca', background: 'rgba(99,102,241,0.10)', padding: '4px 10px', borderRadius: 8, alignSelf: 'flex-start' }}>
             Ancien format · lecture seule
           </div>
-          <div style={{ fontSize: 12.5, color: 'var(--ink-700)', whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{ancien.contenu_final}</div>
+          <RenderProse text={ancien.contenu_final} />
           <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>Ce rapport a été rédigé avec l&apos;ancien système. L&apos;original reste intact (il a pu être envoyé au client) — la réécriture ne fait qu&apos;en <b>extraire</b> des actions et des dates, à valider.</div>
           <button onClick={reecrireDepuisAncien} disabled={iaLoading || datesLoading} className="btn btn-primary" style={{ fontSize: 12.5, alignSelf: 'flex-start' }}>
             {(iaLoading || datesLoading) ? 'Analyse…' : '✨ Réécrire au nouveau format'}
@@ -595,6 +603,28 @@ function Section({ titre, onAjouter, children }) {
 }
 
 const Vide = () => <div style={{ fontSize: 12, color: 'var(--ink-400)', fontStyle: 'italic' }}>Aucune action.</div>
+
+// Rendu lisible d'un ancien rapport en prose (markdown léger : titres ##, gras **, listes -).
+// Lecture seule : on n'altère jamais le texte original, on l'affiche juste proprement.
+function inlineFmt(s) {
+  return String(s).split(/(\*\*[^*]+\*\*)/g).map((p, i) =>
+    (p.startsWith('**') && p.endsWith('**')) ? <b key={i}>{p.slice(2, -2)}</b> : <span key={i}>{p}</span>)
+}
+function RenderProse({ text }) {
+  const lignes = String(text || '').split('\n')
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, fontSize: 12.5, color: 'var(--ink-700)', lineHeight: 1.55 }}>
+      {lignes.map((ln, i) => {
+        const h = ln.match(/^\s*#{1,6}\s+(.*)/)
+        if (h) return <div key={i} style={{ fontWeight: 700, color: 'var(--ink-900)', fontSize: 13, marginTop: i ? 9 : 0 }}>{inlineFmt(h[1])}</div>
+        const b = ln.match(/^\s*[-*]\s+(.*)/)
+        if (b) return <div key={i} style={{ paddingLeft: 14 }}>• {inlineFmt(b[1])}</div>
+        if (!ln.trim()) return <div key={i} style={{ height: 5 }} />
+        return <div key={i}>{inlineFmt(ln)}</div>
+      })}
+    </div>
+  )
+}
 
 // ── Carte d'une action éditable (statut, texte, photos annotées, checklist vivante) ──
 function ActionCard({ action, lots, withLot, carried, dossierId, setAnnot, setErreur, onMaj, onSupprimer, onRetirer, onSetLot }) {

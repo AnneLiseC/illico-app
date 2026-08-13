@@ -8,6 +8,7 @@
 import React from 'react'
 import { Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
 import { formatNomClient } from '../clients.js'
+import { TYPES_VISITE } from '../crRegles.js'
 
 const BLEU = '#00578e'
 
@@ -36,7 +37,11 @@ const S = StyleSheet.create({
   page: { padding: 40, paddingBottom: 60, fontFamily: 'Roboto', fontSize: 9, backgroundColor: '#ffffff' },
   logoImg: { width: 120, height: 48, marginBottom: 12 },
   titleBlock: { marginBottom: 16, borderBottomWidth: 2, borderBottomColor: BLEU, paddingBottom: 10 },
-  mainTitle: { fontSize: 16, fontFamily: 'Roboto-Bold', color: BLEU, marginBottom: 3 },
+  mainTitle: { fontSize: 16, fontFamily: 'Roboto-Bold', color: BLEU, marginBottom: 8 },
+  idBlock: { backgroundColor: '#f8fafc', borderRadius: 4, padding: 8 },
+  idRow: { flexDirection: 'row', marginBottom: 2 },
+  idLabel: { fontSize: 8.5, fontFamily: 'Roboto-Bold', color: '#374151', width: 130 },
+  idVal: { fontSize: 8.5, color: '#111827', flex: 1 },
   sub: { fontSize: 9, color: '#374151', marginBottom: 1 },
   emis: { fontSize: 8.5, color: '#6b7280' },
   secHeader: { fontSize: 11, fontFamily: 'Roboto-Bold', color: BLEU, marginTop: 12, marginBottom: 6, borderBottomWidth: 1.2, borderBottomColor: BLEU, paddingBottom: 3 },
@@ -86,22 +91,36 @@ function ActionBlock(action, opts) {
 }
 
 // opts : { generales, parLot, photos, checklist, barrerCloturees } (chapitres à afficher).
-export function buildVisiteDocument({ dossier, visite, generales = [], parLot = [], logo, opts = {} }) {
+export function buildVisiteDocument({ dossier, visite, generales = [], parLot = [], presences = [], logo, opts = {} }) {
   const O = { generales: true, parLot: true, photos: true, checklist: true, barrerCloturees: false, ...opts }
   const client = dossier?.client
   const nomClient = formatNomClient(client, { civilite: true, withRepresentant: true })
   const ref = dossier?.referente
   const agence = dossier?.agence?.nom || ''
   const dateVisite = visite?.date_visite ? new Date(visite.date_visite).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : ''
+  const typeLabel = TYPES_VISITE[visite?.type_visite] || 'Visite de chantier'
+  // Bloc d'identification (en-tête riche, comme l'ancien format). Une ligne par info renseignée.
+  const idLignes = [
+    ['Référence dossier', dossier?.reference],
+    ['Maître d’ouvrage', nomClient],
+    ['Adresse du chantier', client?.adresse],
+    ['Type de visite', typeLabel],
+    ['Référente illiCO travaux', ref ? `${ref.prenom || ''} ${ref.nom || ''}`.trim() : ''],
+    ['Date de visite', dateVisite],
+    ['Intervenants présents', presences.length ? presences.join(', ') : ''],
+  ].filter(([, v]) => v)
 
   return React.createElement(Document, {},
     React.createElement(Page, { size: 'A4', style: S.page },
       logo ? React.createElement(PdfImage, { src: logo, style: S.logoImg }) : null,
       React.createElement(View, { style: S.titleBlock },
-        React.createElement(Text, { style: S.mainTitle }, `COMPTE-RENDU DE VISITE ${visite?.numero_visite || ''}`.trim()),
-        nomClient ? React.createElement(Text, { style: S.sub }, nomClient) : null,
-        client?.adresse ? React.createElement(Text, { style: S.sub }, client.adresse) : null,
-        React.createElement(Text, { style: S.emis }, `${dateVisite ? 'Visite du ' + dateVisite : ''}${ref ? '   ·   ' + ref.prenom + ' ' + ref.nom : ''}`),
+        React.createElement(Text, { style: S.mainTitle }, `RAPPORT DE VISITE${visite?.numero_visite ? ' N°' + visite.numero_visite : ''}`),
+        React.createElement(View, { style: S.idBlock },
+          ...idLignes.map(([k, v], i) => React.createElement(View, { key: i, style: S.idRow },
+            React.createElement(Text, { style: S.idLabel }, k),
+            React.createElement(Text, { style: S.idVal }, String(v)),
+          )),
+        ),
       ),
 
       O.generales ? React.createElement(Text, { style: S.secHeader }, 'Remarques générales') : null,

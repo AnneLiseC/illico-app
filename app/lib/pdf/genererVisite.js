@@ -18,10 +18,13 @@ function getLogoBase64() {
 }
 
 // db : client Supabase (service_role). opts : { options, filtreLotId }.
-export async function genererVisitePDF(db, visiteId, { options = {}, filtreLotId = null } = {}) {
+export async function genererVisitePDF(db, visiteId, { options = {}, filtreLotId = null, filtreLotIds = null } = {}) {
   const { data: visite } = await db.from('comptes_rendus')
-    .select('id, dossier_id, numero_visite, date_visite').eq('id', visiteId).maybeSingle()
+    .select('id, dossier_id, numero_visite, date_visite, type_visite').eq('id', visiteId).maybeSingle()
   if (!visite) throw new Error('Visite introuvable')
+  // Filtre lot : liste (multi) prioritaire, sinon l'ancien filtre unique.
+  const lotFiltre = Array.isArray(filtreLotIds) && filtreLotIds.length ? new Set(filtreLotIds.map(String))
+    : (filtreLotId ? new Set([String(filtreLotId)]) : null)
 
   const { data: dossier } = await db.from('dossiers')
     .select('*, referente:profiles!dossiers_referente_id_fkey(prenom, nom), client:clients(*), agence:agences!dossiers_agence_id_fkey(nom)')
@@ -77,14 +80,18 @@ export async function genererVisitePDF(db, visiteId, { options = {}, filtreLotId
   const parLotMap = new Map()
   for (const a of lotActions) {
     const lid = lotIdForAction(a.id)
-    if (filtreLotId && lid !== filtreLotId) continue
+    if (lotFiltre && !lotFiltre.has(String(lid))) continue
     const key = lid || '_sans'
     if (!parLotMap.has(key)) parLotMap.set(key, { lotNom: lid ? (lotNomById[lid] || 'Sans lot') : 'Sans lot', actions: [] })
     parLotMap.get(key).actions.push(a)
   }
   const parLot = [...parLotMap.values()]
 
-  const doc = buildVisiteDocument({ dossier, visite, generales, parLot, logo: getLogoBase64(), opts: options })
+  // Intervenants présents (pour l'en-tête « identification »).
+  const { data: pres } = await db.from('cr_presences').select('artisan:artisans(entreprise, metier)').eq('cr_id', visiteId)
+  const presences = (pres || []).map(p => p.artisan?.entreprise || p.artisan?.metier).filter(Boolean)
+
+  const doc = buildVisiteDocument({ dossier, visite, generales, parLot, presences, logo: getLogoBase64(), opts: options })
   const buffer = await renderToBuffer(doc)
   return { buffer, dossier, visite }
 }
