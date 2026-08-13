@@ -217,10 +217,16 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
   }
 
   const [pdfLoading, setPdfLoading] = useState(false)
+  const [pdfPanel, setPdfPanel] = useState(false)
+  const [pdfOpts, setPdfOpts] = useState({ generales: true, parLot: true, photos: true, checklist: true, barrerCloturees: false })
+  const [filtreLot, setFiltreLot] = useState('') // '' = tous les lots
   const exporterPDF = async () => {
     setPdfLoading(true)
     try {
-      const res = await apiFetch('/api/cr/visite-pdf', { method: 'POST', body: JSON.stringify({ visite_id: visiteId }) })
+      const res = await apiFetch('/api/cr/visite-pdf', {
+        method: 'POST',
+        body: JSON.stringify({ visite_id: visiteId, options: pdfOpts, filtre_lot_id: filtreLot || null }),
+      })
       if (!res.ok) { const j = await res.json().catch(() => ({})); setErreur?.(j.error || 'Export PDF impossible.'); return }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -232,6 +238,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
       setPdfLoading(false)
     }
   }
+  const togglePdfOpt = (k) => setPdfOpts(o => ({ ...o, [k]: !o[k] }))
 
   // ── Aide IA (optionnelle) : notes → actions candidates → validation → insertion ──
   const [iaOuvert, setIaOuvert] = useState(false)
@@ -301,9 +308,31 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
           onBlur={e => e.target.value !== visite?.date_visite && supabase.from('comptes_rendus').update({ date_visite: e.target.value || null }).eq('id', visiteId).then(onMajVisite)} />
         <div style={{ flex: 1 }} />
         <button onClick={() => setIaOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>✨ Aide IA</button>
-        <button onClick={exporterPDF} disabled={pdfLoading} className="btn btn-ghost" style={{ fontSize: 12.5 }}>{pdfLoading ? 'PDF…' : 'Exporter PDF'}</button>
+        <button onClick={() => setPdfPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Exporter PDF</button>
         {!visite?.valide && <button onClick={publier} className="btn btn-primary" style={{ fontSize: 12.5, background: '#15803d', borderColor: '#15803d' }}>Publier</button>}
       </div>
+
+      {pdfPanel && (
+        <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Export PDF — que veux-tu dedans ?</div>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12.5 }}>
+            {[['generales', 'Remarques générales'], ['parLot', 'Par lot'], ['photos', 'Photos'], ['checklist', 'Checklist'], ['barrerCloturees', 'Barrer les clôturées']].map(([k, lbl]) => (
+              <label key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <input type="checkbox" checked={!!pdfOpts[k]} onChange={() => togglePdfOpt(k)} style={{ accentColor: '#4f46e5' }} /> {lbl}
+              </label>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <label style={{ fontSize: 12.5, color: 'var(--ink-600)' }}>Destinataire :</label>
+            <select value={filtreLot} onChange={e => setFiltreLot(e.target.value)} className="input" style={{ height: 32, fontSize: 12.5 }}>
+              <option value="">Tout le monde (tous les lots)</option>
+              {lots.map(l => <option key={l.id} value={l.id}>{l.parent_lot_id ? '— ' : ''}{l.nom}</option>)}
+            </select>
+            <div style={{ flex: 1 }} />
+            <button onClick={exporterPDF} disabled={pdfLoading} className="btn btn-primary" style={{ fontSize: 12.5 }}>{pdfLoading ? 'Génération…' : 'Générer le PDF'}</button>
+          </div>
+        </div>
+      )}
 
       {iaOuvert && (
         <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderColor: 'rgba(99,102,241,0.35)' }}>

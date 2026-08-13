@@ -58,20 +58,25 @@ const S = StyleSheet.create({
   footerTxt: { fontSize: 7.5, color: '#6b7280' },
 })
 
-function ActionBlock(action) {
+const CLOTURANTS = new Set(['cloture', 'quitus_transmis'])
+
+function ActionBlock(action, opts) {
   const st = STATUTS[action.statut] || STATUTS.en_cours
+  const barre = opts.barrerCloturees && CLOTURANTS.has(action.statut)
+  const txtStyle = barre ? [S.texte, { textDecoration: 'line-through', color: '#9ca3af' }] : S.texte
+  const titreStyle = barre ? [S.titre, { textDecoration: 'line-through', color: '#9ca3af' }] : S.titre
   return React.createElement(View, { style: [S.action, { borderLeftColor: st.c }], wrap: false, key: action.id },
     React.createElement(View, { style: S.actionHead },
       React.createElement(Text, { style: S.num }, action.numero || ''),
       React.createElement(Text, { style: [S.statut, { color: st.c }] }, st.l),
       React.createElement(Text, { style: S.statutDate }, `${st.p} ${fmtDate(action.statut_date)}`),
     ),
-    action.titre ? React.createElement(Text, { style: S.titre }, action.titre) : null,
-    action.texte ? React.createElement(Text, { style: S.texte }, action.texte) : null,
-    (action.photosB64 && action.photosB64.length)
+    action.titre ? React.createElement(Text, { style: titreStyle }, action.titre) : null,
+    action.texte ? React.createElement(Text, { style: txtStyle }, action.texte) : null,
+    (opts.photos && action.photosB64 && action.photosB64.length)
       ? React.createElement(View, { style: S.photosRow }, action.photosB64.map((src, i) => React.createElement(PdfImage, { key: i, src, style: S.photo })))
       : null,
-    (action.checklist && action.checklist.length)
+    (opts.checklist && action.checklist && action.checklist.length)
       ? React.createElement(View, {}, action.checklist.map((it, i) => React.createElement(View, { key: i, style: S.checkRow },
           React.createElement(Text, { style: [S.checkBox, { color: it.checked ? '#16a34a' : '#9ca3af' }] }, it.checked ? '[x]' : '[ ]'),
           React.createElement(Text, { style: S.checkTxt }, it.label),
@@ -80,7 +85,9 @@ function ActionBlock(action) {
   )
 }
 
-export function buildVisiteDocument({ dossier, visite, generales = [], parLot = [], logo }) {
+// opts : { generales, parLot, photos, checklist, barrerCloturees } (chapitres à afficher).
+export function buildVisiteDocument({ dossier, visite, generales = [], parLot = [], logo, opts = {} }) {
+  const O = { generales: true, parLot: true, photos: true, checklist: true, barrerCloturees: false, ...opts }
   const client = dossier?.client
   const nomClient = formatNomClient(client, { civilite: true, withRepresentant: true })
   const ref = dossier?.referente
@@ -97,16 +104,16 @@ export function buildVisiteDocument({ dossier, visite, generales = [], parLot = 
         React.createElement(Text, { style: S.emis }, `${dateVisite ? 'Visite du ' + dateVisite : ''}${ref ? '   ·   ' + ref.prenom + ' ' + ref.nom : ''}`),
       ),
 
-      React.createElement(Text, { style: S.secHeader }, 'Remarques générales'),
-      generales.length ? generales.map(ActionBlock) : React.createElement(Text, { style: S.vide }, 'Aucune remarque générale.'),
+      O.generales ? React.createElement(Text, { style: S.secHeader }, 'Remarques générales') : null,
+      O.generales ? (generales.length ? generales.map(a => ActionBlock(a, O)) : React.createElement(Text, { style: S.vide }, 'Aucune remarque générale.')) : null,
 
-      React.createElement(Text, { style: S.secHeader }, 'Par lot / artisan'),
-      parLot.length
+      O.parLot ? React.createElement(Text, { style: S.secHeader }, 'Par lot / artisan') : null,
+      O.parLot ? (parLot.length
         ? parLot.map((grp, i) => React.createElement(View, { key: i },
             React.createElement(Text, { style: S.lotHeader }, grp.lotNom || 'Sans lot'),
-            grp.actions.map(ActionBlock),
+            grp.actions.map(a => ActionBlock(a, O)),
           ))
-        : React.createElement(Text, { style: S.vide }, 'Aucune remarque par lot.'),
+        : React.createElement(Text, { style: S.vide }, 'Aucune remarque par lot.')) : null,
 
       React.createElement(View, { style: S.footer, fixed: true },
         React.createElement(Text, { style: S.footerTxt }, agence || 'illiCO travaux'),

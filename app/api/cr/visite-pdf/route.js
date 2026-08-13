@@ -37,6 +37,8 @@ export async function POST(request) {
   let body; try { body = await request.json() } catch { body = {} }
   const visiteId = body.visite_id
   if (!visiteId) return NextResponse.json({ error: 'visite_id manquant' }, { status: 400 })
+  const opts = body.options && typeof body.options === 'object' ? body.options : {}
+  const filtreLotId = body.filtre_lot_id || null   // null = tous les lots ; sinon un seul lot destinataire
 
   const db = admin()
 
@@ -76,10 +78,6 @@ export async function POST(request) {
     const { data: lots } = await db.from('lots').select('id, nom').in('id', lotIds)
     lotNomById = Object.fromEntries((lots || []).map(l => [l.id, l.nom]))
   }
-  const lotNomForAction = (aid) => {
-    const c = cibles.find(x => x.action_id === aid && x.lot_id)
-    return c ? (lotNomById[c.lot_id] || 'Sans lot') : 'Sans lot'
-  }
 
   // Photos → base64 (téléchargement Storage). On limite à 6 photos par action (garde-fou).
   const photosB64ByAction = {}
@@ -102,16 +100,19 @@ export async function POST(request) {
   const enrich = (a) => ({ ...a, photosB64: photosB64ByAction[a.id] || [], checklist: checklistByAction[a.id] || [] })
   const generales = actions.filter(a => a.portee === 'generale').map(enrich)
   const lotActions = actions.filter(a => a.portee === 'lot').map(enrich)
-  const parLotMap = new Map()
+  const lotIdForAction = (aid) => (cibles.find(x => x.action_id === aid && x.lot_id)?.lot_id) || null
+  const parLotMap = new Map() // lotId → { lotNom, actions }
   for (const a of lotActions) {
-    const nom = lotNomForAction(a.id)
-    if (!parLotMap.has(nom)) parLotMap.set(nom, [])
-    parLotMap.get(nom).push(a)
+    const lid = lotIdForAction(a.id)
+    if (filtreLotId && lid !== filtreLotId) continue // filtre destinataire : un seul lot
+    const key = lid || '_sans'
+    if (!parLotMap.has(key)) parLotMap.set(key, { lotNom: lid ? (lotNomById[lid] || 'Sans lot') : 'Sans lot', actions: [] })
+    parLotMap.get(key).actions.push(a)
   }
-  const parLot = [...parLotMap.entries()].map(([lotNom, acts]) => ({ lotNom, actions: acts }))
+  const parLot = [...parLotMap.values()]
 
   try {
-    const doc = buildVisiteDocument({ dossier, visite, generales, parLot, logo: getLogoBase64() })
+    const doc = buildVisiteDocument({ dossier, visite, generales, parLot, logo: getLogoBase64(), opts })
     const pdf = await renderToBuffer(doc)
     const slug = (formatNomClient(dossier.client, { civilite: false }) || 'client').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]+/g, '_')
     const nom = `Visite_${visite.numero_visite || ''}_${slug}.pdf`.replace('__', '_')
