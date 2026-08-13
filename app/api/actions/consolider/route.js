@@ -46,6 +46,13 @@ Réponds STRICTEMENT par un objet JSON (aucun texte autour, pas de markdown) :
       "statut": une des valeurs EXACTES: ${STATUTS.join(', ')},
       "statut_date": "AAAA-MM-JJ" | ""
     }
+  ],
+  "dates": [
+    {
+      "lot_nom": chaîne,        // nom du lot concerné, choisi PARMI la liste fournie
+      "date_debut": "AAAA-MM-JJ",
+      "date_fin": "AAAA-MM-JJ"  // = date_debut si une seule date connue
+    }
   ]
 }
 
@@ -58,6 +65,8 @@ RÈGLES DE CONSOLIDATION (le cœur du travail) :
 - Écris TOUJOURS en FRANÇAIS.
 - statut_date : la date d'échéance/statut la plus récente et pertinente si une date est donnée, sinon "".
 - Rattache à un lot (portee="lot") seulement si c'est clair, en choisissant "lot_nom" dans la liste fournie quand elle correspond.
+
+DATES DE PLANNING ("dates") : pour CHAQUE lot dont une période d'intervention est mentionnée dans les rapports, donne UNE seule ligne = la période la PLUS RÉCENTE connue (un lot re-planifié d'un rapport à l'autre → garde la dernière date, pas les anciennes). N'invente aucune date. "lot_nom" doit venir de la liste fournie. Si aucune date n'est donnée pour un lot, ne l'inclus pas dans "dates".
 
 OBJECTIF : la liste finale doit être ce qu'une AMO garderait sous les yeux aujourd'hui — chaque point ouvert UNE fois, à jour, sans redite d'un rapport à l'autre.
 
@@ -167,5 +176,14 @@ export async function POST(request) {
     }
   }).filter(a => a.texte || a.titre)
 
-  return NextResponse.json({ actions, rapports: blocs.length })
+  // Dates de planning consolidées : une période par lot (la plus récente). lot_nom mappé côté client.
+  const dates = (Array.isArray(raw.dates) ? raw.dates : []).slice(0, 80).map(d => {
+    const lot_nom = typeof d?.lot_nom === 'string' ? d.lot_nom.trim().slice(0, 120) : ''
+    let debut = dateOk(d?.date_debut), fin = dateOk(d?.date_fin)
+    if (!lot_nom || !debut) return null
+    if (!fin || fin < debut) fin = debut
+    return { lot_nom, date_debut: debut, date_fin: fin }
+  }).filter(Boolean)
+
+  return NextResponse.json({ actions, dates, rapports: blocs.length })
 }

@@ -334,8 +334,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
   const [repriseOuvert, setRepriseOuvert] = useState(false) // panneau dédié de reprise d'un ancien rapport
   const [analyseSecs, setAnalyseSecs] = useState(0)          // compteur affiché pendant l'analyse IA (longue)
   const repriseRef = useRef(null)
-  const iaEnCoursRef = useRef(false)      // gardes anti-double-clic (appels IA facturés)
-  const datesEnCoursRef = useRef(false)
+  const iaEnCoursRef = useRef(false)      // garde anti-double-clic (appel IA facturé)
   const importEnCoursRef = useRef(false)  // garde anti-double-clic sur l'INSERTION des actions
   const [importing, setImporting] = useState(false)
 
@@ -401,33 +400,6 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     }
   }
 
-  // ── Extraction des DATES depuis un texte (reprise d'un ancien rapport → planning/Gantt) ──
-  const extraireDates = async (notesArg) => {
-    const notes = (typeof notesArg === 'string' ? notesArg : '').trim()
-    if (!notes || !lots.length) return
-    if (datesEnCoursRef.current) return
-    datesEnCoursRef.current = true
-    setDatesLoading(true); setDatesCandidats(null)
-    try {
-      const today = new Date().toISOString().slice(0, 10)
-      const res = await apiFetch('/api/lots/dates', {
-        method: 'POST',
-        body: JSON.stringify({ dossier_id: dossierId, notes, today, lots: lots.map(l => ({ id: l.id, nom: l.nom, artisan: l.artisan?.entreprise || '' })) }),
-      })
-      const j = await res.json().catch(() => ({}))
-      if (!res.ok) { setErreur?.(j.error || 'Extraction des dates impossible.'); return }
-      // Ne PAS écraser un lot déjà planifié : on marque ceux qui ont déjà des dates et on les
-      // laisse DÉCOCHÉS par défaut. L'utilisatrice coche seulement si elle veut remplacer.
-      setDatesCandidats((j.propositions || []).map(p => {
-        const lot = lots.find(l => l.id === p.lot_id)
-        const dejaPlanifie = !!(lot && (lot.date_debut || lot.date_fin))
-        return { ...p, dejaPlanifie, dateDebutActuelle: lot?.date_debut || null, dateFinActuelle: lot?.date_fin || null, sel: !dejaPlanifie }
-      }))
-    } catch {
-      setErreur?.('Erreur réseau IA (dates).')
-    } finally { setDatesLoading(false); datesEnCoursRef.current = false }
-  }
-
   // Applique les dates retenues aux LOTS → elles apparaissent dans le Gantt (onglet Planning).
   const appliquerDatesReprise = async () => {
     const choisies = (datesCandidats || []).filter(c => c.sel && c.lot_id)
@@ -449,19 +421,10 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     if (iaEnCoursRef.current) return
     iaEnCoursRef.current = true
     setRepriseOuvert(true)
-    // Les DEUX sections passent en « Analyse en cours » tout de suite (évite le faux « Dates traitées »).
+    // Actions ET dates sortent de la MÊME passe (les 6 rapports d'un coup) → les deux sections
+    // passent en « analyse en cours » ensemble, et « le plus récent gagne » vaut pour les deux.
     setIaLoading(true); setDatesLoading(true); setIaCandidats(null); setDatesCandidats(null)
     setTimeout(() => repriseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250)
-    // Dates → Gantt : en PARALLÈLE, depuis le DERNIER rapport prose (état de planning le plus récent).
-    ;(async () => {
-      const { data: dernier } = await supabase.from('comptes_rendus')
-        .select('contenu_final').eq('dossier_id', dossierId).not('contenu_final', 'is', null)
-        .order('date_visite', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false })
-        .limit(1).maybeSingle()
-      if (dernier?.contenu_final && lots.length) extraireDates(dernier.contenu_final)  // gère lui-même datesLoading
-      else setDatesLoading(false)  // rien à analyser → on éteint le voyant
-    })()
-    // Actions consolidées (les 6 rapports d'un coup, dédoublonnées).
     try {
       const res = await apiFetch('/api/actions/consolider', {
         method: 'POST',
@@ -471,10 +434,19 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
       if (!res.ok) { setErreur?.(j.error || 'Consolidation impossible.'); return }
       setIaCandidats((j.actions || []).map(a => ({ ...a, sel: true })))
       if (!j.actions?.length) setErreur?.('Aucun ancien rapport prose à consolider.')
+      // Dates de planning consolidées (tous les rapports, période la plus récente par lot).
+      // On mappe lot_nom → lot local, et on décoche les lots DÉJÀ planifiés (pas d'écrasement).
+      const dcands = (j.dates || []).map(d => {
+        const lot = lots.find(l => (l.nom || '').toLowerCase() === (d.lot_nom || '').toLowerCase())
+        if (!lot) return null
+        const dejaPlanifie = !!(lot.date_debut || lot.date_fin)
+        return { lot_id: lot.id, date_debut: d.date_debut, date_fin: d.date_fin, dejaPlanifie, dateDebutActuelle: lot.date_debut || null, dateFinActuelle: lot.date_fin || null, sel: !dejaPlanifie }
+      }).filter(Boolean)
+      setDatesCandidats(dcands)
     } catch {
       setErreur?.('Erreur réseau IA.')
     } finally {
-      setIaLoading(false); iaEnCoursRef.current = false
+      setIaLoading(false); setDatesLoading(false); iaEnCoursRef.current = false
     }
   }
 
