@@ -32,7 +32,6 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
   const [joursArtisan, setJoursArtisan] = useState({})  // artisan_id -> jours_travailles (int[] ISO)
   const [actionsParLot, setActionsParLot] = useState({})  // lot_id -> { total, cloturees } (lien CR↔planning)
   const [chargement, setChargement] = useState(true)
-  const [vueGantt, setVueGantt] = useState('Week')
   const [ia, setIa] = useState(false)                 // appel IA en cours (pré-remplissage)
   const [iaPropos, setIaPropos] = useState(null)      // propositions IA à relire (ou null)
   const [datesOuvert, setDatesOuvert] = useState(false)  // panneau « dates par IA »
@@ -280,11 +279,7 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <details className="card" open style={{ padding: 0, overflow: 'hidden' }}>
-        <summary style={{ cursor: 'pointer', padding: '12px 14px', fontSize: 13, fontWeight: 600, listStyle: 'revert' }}>
-          Gérer les lots <span style={{ fontWeight: 400, color: 'var(--ink-500)' }}>· {lotsRacine.length} lot{lotsRacine.length > 1 ? 's' : ''}</span>
-        </summary>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '0 14px 14px' }}>
+      <div className="card" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={() => ajouterLot(null)} className="btn btn-primary" style={{ fontSize: 12.5 }}>+ Lot</button>
         <button onClick={suggererIA} disabled={ia} className="btn btn-ghost" style={{ fontSize: 12.5 }} title="Lit les PDF de devis et propose lots + sous-lots (dates récupérées des interventions)">
@@ -300,6 +295,8 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
             🔗 Relier les interventions ({interARelier.length})
           </button>
         )}
+        <div style={{ flex: 1 }} />
+        <button onClick={() => setExportOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>⬇ Exporter PDF</button>
       </div>
 
       {/* Repère : ce que chaque colonne représente (source de confusion fréquente). */}
@@ -415,204 +412,45 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
         </div>
       )}
 
-      {lotsRacine.length === 0 && (
-        <div className="card" style={{ padding: 20, textAlign: 'center', color: 'var(--ink-500)', fontSize: 13 }}>
-          Aucun lot. Crée-en un ou pré-remplis depuis les devis.
-        </div>
-      )}
-
-      {lotsRacine.map(lot => (
-        <div key={lot.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <LigneLot lot={lot} artisans={artisans} niveau={0} jours={joursArtisan[lot.artisan_id] || JOURS_DEFAUT} stats={actionsParLot[lot.id]} onMaj={majLot} onSupprimer={supprimerLot} onAjouterSousLot={() => ajouterLot(lot.id)} />
-          <LigneDeps lot={lot} lotsRacine={lotsRacine} deps={deps}
-            jours={joursArtisan[lot.artisan_id] || JOURS_DEFAUT} onMajJours={lot.artisan_id ? (j => majJoursArtisan(lot.artisan_id, j)) : null}
-            onAjouter={ajouterDep} onRetirer={retirerDep} />
-          {sousLots(lot.id).map(sl => (
-            <LigneLot key={sl.id} lot={sl} artisans={artisans} niveau={1} jours={joursArtisan[sl.artisan_id] || joursArtisan[lot.artisan_id] || JOURS_DEFAUT} onMaj={majLot} onSupprimer={supprimerLot} />
-          ))}
-        </div>
-      ))}
-        </div>
-      </details>
-
-      {(lotsRacine.length > 0 || (interventionsDossier || []).some(i => i.date_debut && i.date_fin)) && (
-        <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Planning (Gantt)</span>
-            <div style={{ flex: 1 }} />
-            {['Day', 'Week', 'Month'].map(m => (
-              <button key={m} onClick={() => setVueGantt(m)}
-                className={vueGantt === m ? 'btn btn-primary' : 'btn btn-ghost'}
-                style={{ fontSize: 11.5, padding: '4px 10px' }}>
-                {m === 'Day' ? 'Jour' : m === 'Week' ? 'Semaine' : 'Mois'}
-              </button>
-            ))}
-            <button onClick={() => setExportOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px' }}>⬇ Exporter PDF</button>
-          </div>
-
-          {exportOuvert && (
-            <div style={{ border: '1px solid var(--ink-200)', borderRadius: 8, padding: 12, display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--surface-2)' }}>
-              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>Format :</span>
-                {['A4', 'A3'].map(f => (
-                  <label key={f} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12.5 }}>
-                    <input type="radio" name="expfmt" checked={expFormat === f} onChange={() => setExpFormat(f)} /> {f} paysage
-                  </label>
-                ))}
-              </div>
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>Colonnes :</span>
-                {[['artisan', 'Artisan'], ['debut', 'Début'], ['fin', 'Fin'], ['duree', 'Durée'], ['avancement', '%']].map(([k, lbl]) => (
-                  <label key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12.5 }}>
-                    <input type="checkbox" checked={!!expCols[k]} onChange={e => setExpCols(c => ({ ...c, [k]: e.target.checked }))} /> {lbl}
-                  </label>
-                ))}
-              </div>
-              <label style={{ fontSize: 12, color: 'var(--ink-500)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                Mention légale (pied de page)
-                <textarea value={expMention} onChange={e => setExpMention(e.target.value)} rows={2}
-                  className="input" style={{ fontSize: 12, resize: 'vertical' }} />
+      {exportOuvert && (
+        <div style={{ border: '1px solid var(--ink-200)', borderRadius: 8, padding: 12, display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--surface-2)' }}>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>Format :</span>
+            {['A4', 'A3'].map(f => (
+              <label key={f} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12.5 }}>
+                <input type="radio" name="expfmt" checked={expFormat === f} onChange={() => setExpFormat(f)} /> {f} paysage
               </label>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button onClick={() => setExportOuvert(false)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px' }}>Annuler</button>
-                <button onClick={exporterPlanning} disabled={exporting} className="btn btn-primary" style={{ fontSize: 11.5, padding: '4px 12px' }}>
-                  {exporting ? 'Génération…' : 'Générer le PDF'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          <GanttLots lots={lots} dependances={deps} interventions={interventionsDossier}
-            onDateChange={majLot} onInterventionDateChange={onMajIntervention} viewMode={vueGantt} />
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>Colonnes :</span>
+            {[['artisan', 'Artisan'], ['debut', 'Début'], ['fin', 'Fin'], ['duree', 'Durée'], ['avancement', '%']].map(([k, lbl]) => (
+              <label key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12.5 }}>
+                <input type="checkbox" checked={!!expCols[k]} onChange={e => setExpCols(c => ({ ...c, [k]: e.target.checked }))} /> {lbl}
+              </label>
+            ))}
+          </div>
+          <label style={{ fontSize: 12, color: 'var(--ink-500)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            Mention légale (pied de page)
+            <textarea value={expMention} onChange={e => setExpMention(e.target.value)} rows={2}
+              className="input" style={{ fontSize: 12, resize: 'vertical' }} />
+          </label>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button onClick={() => setExportOuvert(false)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px' }}>Annuler</button>
+            <button onClick={exporterPlanning} disabled={exporting} className="btn btn-primary" style={{ fontSize: 11.5, padding: '4px 12px' }}>
+              {exporting ? 'Génération…' : 'Générer le PDF'}
+            </button>
+          </div>
         </div>
       )}
-    </div>
-  )
-}
-
-// Dépendances d'un lot racine : « Après : [chips] + sélecteur ». L'arête Gantt part du
-// prédécesseur. On ne propose que les AUTRES lots racine (les sous-lots héritent du parent).
-function LigneDeps({ lot, lotsRacine, deps, jours = JOURS_DEFAUT, onMajJours, onAjouter, onRetirer }) {
-  const mesDeps = deps.filter(d => d.lot_id === lot.id)
-  const dejaPred = new Set(mesDeps.map(d => d.depend_de_lot_id))
-  const options = lotsRacine.filter(l => l.id !== lot.id && !dejaPred.has(l.id))
-  const nomDe = (lid) => lotsRacine.find(l => l.id === lid)?.nom || '—'
-  const jset = new Set(jours)
-  const toggleJour = (iso) => {
-    if (!onMajJours) return
-    onMajJours(jset.has(iso) ? jours.filter(j => j !== iso) : [...jours, iso])
-  }
-  return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
-      padding: '6px 14px 8px', paddingLeft: 34, borderTop: '1px solid var(--ink-100)', background: 'var(--surface-2)' }}>
-      <span style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>Après&nbsp;:</span>
-      {mesDeps.length === 0 && <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>aucune</span>}
-      {mesDeps.map(d => (
-        <span key={d.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5,
-          background: 'var(--ink-100)', borderRadius: 12, padding: '2px 6px 2px 8px' }}>
-          {nomDe(d.depend_de_lot_id)}
-          <button onClick={() => onRetirer(d.id)} title="Retirer"
-            style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#b91c1c', fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
-        </span>
-      ))}
-      {options.length > 0 && (
-        <select value="" onChange={e => { if (e.target.value) onAjouter(lot.id, e.target.value) }}
-          className="input" style={{ height: 28, fontSize: 11.5, flex: '0 1 160px' }}>
-          <option value="">+ dépendance…</option>
-          {options.map(l => <option key={l.id} value={l.id}>{l.nom}</option>)}
-        </select>
-      )}
-
-      {onMajJours && (
-        <>
-          <span style={{ fontSize: 11.5, color: 'var(--ink-500)', marginLeft: 10 }} title="Jours travaillés de l'entreprise (sert au calcul de durée). S'applique à toute l'entreprise.">Jours&nbsp;:</span>
-          {LIBELLES_JOURS.map(j => {
-            const actif = jset.has(j.iso)
-            return (
-              <button key={j.iso} onClick={() => toggleJour(j.iso)} title={actif ? 'Travaillé' : 'Non travaillé'}
-                style={{ width: 22, height: 22, borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                  border: '1px solid ' + (actif ? '#4f46e5' : 'var(--ink-200)'),
-                  background: actif ? '#4f46e5' : 'transparent', color: actif ? '#fff' : 'var(--ink-500)' }}>
-                {j.l}
-              </button>
-            )
-          })}
-        </>
-      )}
-    </div>
-  )
-}
-
-// Une ligne éditable (lot ou sous-lot). Nom NON contrôlé (defaultValue + save au blur) :
-// évite de resynchroniser un state local à chaque maj optimiste du parent.
-function LigneLot({ lot, artisans, niveau, jours = JOURS_DEFAUT, stats, onMaj, onSupprimer, onAjouterSousLot }) {
-  const nbOuvres = (lot.date_debut && lot.date_fin) ? dureeOuvree(lot.date_debut, lot.date_fin, jours) : ''
-  // Avancement suggéré depuis les actions de CR clôturées rattachées à ce lot.
-  const pctActions = (stats && stats.total) ? Math.round((stats.cloturees / stats.total) * 100) : null
-  return (
-    <div style={{
-      display: 'flex', gap: 10, alignItems: 'center', padding: '10px 14px', flexWrap: 'wrap',
-      borderTop: niveau ? '1px solid var(--ink-100)' : 'none',
-      background: niveau ? 'var(--surface-2)' : 'transparent',
-      paddingLeft: niveau ? 34 : 14,
-    }}>
-      <span style={{ width: 10, height: 10, borderRadius: '50%', background: lot.couleur || '#94a3b8', flexShrink: 0 }} />
-
-      <input key={lot.id} defaultValue={lot.nom || ''} placeholder={niveau ? 'Nom du sous-lot' : 'Nom du lot (corps d’état)'}
-        onBlur={e => { const v = e.target.value.trim() || 'Lot'; if (v !== lot.nom) onMaj(lot.id, { nom: v }) }}
-        className="input" style={{ flex: '1 1 160px', minWidth: 120, height: 34, fontSize: 13, fontWeight: niveau ? 500 : 600 }} />
-
-      <select value={lot.artisan_id || ''} onChange={e => onMaj(lot.id, { artisan_id: e.target.value || null })}
-        className="input" style={{ height: 34, fontSize: 12.5, flex: '0 1 170px' }}>
-        <option value="">— Artisan —</option>
-        {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise || a.metier}</option>)}
-      </select>
-
-      <input type="date" value={lot.date_debut || ''} onChange={e => onMaj(lot.id, { date_debut: e.target.value || null })}
-        className="input" style={{ height: 34, fontSize: 12.5 }} title="Début" />
-      <input type="date" value={lot.date_fin || ''} onChange={e => onMaj(lot.id, { date_fin: e.target.value || null })}
-        className="input" style={{ height: 34, fontSize: 12.5 }} title="Fin" />
-
-      {/* Durée en jours OUVRÉS de l'artisan : saisir recalcule la date de fin. */}
-      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--ink-500)' }} title="Durée en jours ouvrés (selon les jours travaillés de l'artisan)">
-        <input type="number" min={1} value={nbOuvres}
-          disabled={!lot.date_debut}
-          onChange={e => {
-            const n = Number(e.target.value)
-            if (!lot.date_debut || !n || n < 1) return
-            onMaj(lot.id, { date_fin: finApresOuvres(lot.date_debut, n, jours) })
-          }}
-          className="input" style={{ width: 52, height: 34, fontSize: 12.5 }} /> j.o.
-      </label>
-
-      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--ink-500)' }}>
-        <input type="number" min={0} max={100} value={lot.avancement ?? 0}
-          onChange={e => onMaj(lot.id, { avancement: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
-          className="input" style={{ width: 58, height: 34, fontSize: 12.5 }} /> %
-      </label>
-
-      {/* Lien CR ↔ planning : actions rattachées à ce lot + avancement suggéré (non imposé). */}
-      {stats?.total > 0 && (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--ink-500)' }}
-          title="Actions de compte-rendu rattachées à ce lot">
-          <span style={{ background: 'var(--ink-100)', borderRadius: 10, padding: '2px 7px' }}>
-            {stats.cloturees}/{stats.total} action{stats.total > 1 ? 's' : ''} levée{stats.cloturees > 1 ? 's' : ''}
-          </span>
-          {pctActions != null && pctActions !== (lot.avancement ?? 0) && (
-            <button onClick={() => onMaj(lot.id, { avancement: pctActions })}
-              className="btn btn-ghost" style={{ fontSize: 10.5, padding: '2px 6px' }}
-              title="Reporter cet avancement (déduit des actions clôturées) dans le champ %">→ {pctActions}%</button>
-          )}
-        </span>
-      )}
-
-      <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-        {niveau === 0 && (
-          <button onClick={onAjouterSousLot} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 8px' }}>+ Sous-lot</button>
-        )}
-        <button onClick={() => onSupprimer(lot.id)} className="btn btn-ghost"
-          style={{ fontSize: 11.5, padding: '4px 8px', color: '#b91c1c' }}>Supprimer</button>
       </div>
+
+      <GanttLots lots={lots} dependances={deps} interventions={interventionsDossier}
+        joursArtisan={joursArtisan} artisans={artisans} actionsParLot={actionsParLot}
+        onMajLot={majLot} onAjouterLot={ajouterLot} onSupprimerLot={supprimerLot}
+        onAjouterDep={ajouterDep} onRetirerDep={retirerDep} onMajJoursArtisan={majJoursArtisan}
+        onDateChange={majLot} onInterventionDateChange={onMajIntervention} />
     </div>
   )
 }
+
