@@ -3,7 +3,7 @@
 // Liste de visites → page par visite avec ses ACTIONS (portée générale ou par lot,
 // statut parmi les 16 + date). CRUD direct Supabase (RLS staff). Modèle ArchiReport.
 // Photos + checklist = 1c-2 ; aide IA = 1c-3 ; report d'une visite à l'autre = Lot 2.
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { compressImageToBlob } from '../../lib/images'
 import { apiFetch } from '../../lib/api-auth-client'
@@ -308,14 +308,14 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
   const [datesCandidats, setDatesCandidats] = useState(null) // [{lot_id, date_debut, date_fin, sel}] (reprise ancien → planning)
   const [datesLoading, setDatesLoading] = useState(false)
 
-  const analyserIA = async (notesArg) => {
+  const analyserIA = async (notesArg, source) => {
     const notes = (typeof notesArg === 'string' ? notesArg : iaNotes).trim()
     if (!notes) return
     setIaLoading(true); setIaCandidats(null)
     try {
       const res = await apiFetch('/api/actions/suggest', {
         method: 'POST',
-        body: JSON.stringify({ notes, lots: lots.map(l => ({ id: l.id, nom: l.nom })), type_visite: visite?.type_visite || 'suivi' }),
+        body: JSON.stringify({ notes, lots: lots.map(l => ({ id: l.id, nom: l.nom })), type_visite: visite?.type_visite || 'suivi', source: source || undefined }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) { setErreur?.(j.error || 'Analyse IA impossible.'); return }
@@ -385,12 +385,15 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
   }
 
   // Reprise complète d'un ancien rapport (prose) : actions + dates, à valider. N'altère jamais l'original.
+  const iaPanelRef = useRef(null)
   const reecrireDepuisAncien = () => {
     const notes = ancien?.contenu_final
     if (!notes) return
     setIaOuvert(true); setIaNotes(notes)
-    analyserIA(notes)
+    analyserIA(notes, 'ancien_rapport')
     extraireDates(notes)
+    // Le panneau de résultats est au-dessus du bouton : on l'amène à l'écran.
+    setTimeout(() => iaPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250)
   }
 
   const nomLot = (lid) => lots.find(l => l.id === lid)?.nom || '—'
@@ -480,7 +483,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
       )}
 
       {iaOuvert && (
-        <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderColor: 'rgba(99,102,241,0.35)' }}>
+        <div ref={iaPanelRef} className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderColor: 'rgba(99,102,241,0.35)' }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Aide IA — colle tes notes de visite, l&apos;IA propose des actions (tu valides).</div>
           <textarea value={iaNotes} onChange={e => setIaNotes(e.target.value)} rows={4}
             placeholder="Notes brutes : bullet points, phrases incomplètes… (ex. « muret entrée à refaire avant le 12/02 ; peinture RAS »)"

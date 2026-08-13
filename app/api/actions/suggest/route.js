@@ -71,7 +71,11 @@ export async function POST(request) {
   // Les règles du CR (consignes générales + contexte du type) sont injectées dans le prompt système.
   const system = `${SYSTEM_PROMPT}\n\n${reglesActions(typeVisite)}`
   const enTete = typeVisite ? `Type de visite : ${TYPES_VISITE[typeVisite]}\n\n` : ''
-  const userText = `${enTete}Notes de visite :\n${notes}\n\nLots disponibles (pour "lot_nom") : ${lots.length ? lots.join(', ') : 'aucun'}\n\nRenvoie les actions au format JSON demandé, en français.`
+  // Reprise d'un ANCIEN rapport rédigé (prose) → cadrage différent des notes brutes.
+  const bloc = body.source === 'ancien_rapport'
+    ? `ANCIEN COMPTE-RENDU DÉJÀ RÉDIGÉ (à convertir en actions) :\n${notes}\n\nExtrais CHAQUE remarque, réserve, décision, travail à réaliser ou point à suivre en une action distincte. Ignore les rubriques purement descriptives d'identification (référence dossier, adresse, intervenants présents, dates d'en-tête).`
+    : `Notes de visite :\n${notes}`
+  const userText = `${enTete}${bloc}\n\nLots disponibles (pour "lot_nom") : ${lots.length ? lots.join(', ') : 'aucun'}\n\nRenvoie les actions au format JSON demandé, en français.`
 
   const claudeBody = JSON.stringify({
     model: 'claude-sonnet-4-6',
