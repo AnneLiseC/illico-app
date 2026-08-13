@@ -32,6 +32,11 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
   const [vueGantt, setVueGantt] = useState('Week')
   const [ia, setIa] = useState(false)                 // appel IA en cours
   const [iaPropos, setIaPropos] = useState(null)      // propositions IA à relire (ou null)
+  const [exportOuvert, setExportOuvert] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [expFormat, setExpFormat] = useState('A4')
+  const [expCols, setExpCols] = useState({ artisan: true, debut: true, fin: true, duree: true, avancement: false })
+  const [expMention, setExpMention] = useState('Planning prévisionnel indicatif, sans valeur contractuelle. Les dates sont susceptibles d’évoluer en fonction de l’avancement du chantier et des aléas.')
 
   const artisans = artisansDepuisDevis(devis)
 
@@ -168,6 +173,28 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
     await recharger()
   }
 
+  // ── Export PDF du planning (A4/A3, colonnes, mention légale) ──
+  const exporterPlanning = async () => {
+    setExporting(true)
+    try {
+      const res = await apiFetch('/api/planning/pdf', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dossier_id: id, format: expFormat, colonnes: expCols, mention: expMention }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        setErreur?.(j.error || 'Export du planning impossible.'); return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      setExportOuvert(false)
+    } catch (e) {
+      setErreur?.('Export : ' + (e?.message || 'erreur'))
+    } finally { setExporting(false) }
+  }
+
   if (chargement) return <div style={{ padding: 24, color: 'var(--ink-500)' }}>Chargement des lots…</div>
 
   return (
@@ -252,7 +279,41 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
                 {m === 'Day' ? 'Jour' : m === 'Week' ? 'Semaine' : 'Mois'}
               </button>
             ))}
+            <button onClick={() => setExportOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px' }}>⬇ Exporter PDF</button>
           </div>
+
+          {exportOuvert && (
+            <div style={{ border: '1px solid var(--ink-200)', borderRadius: 8, padding: 12, display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--surface-2)' }}>
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>Format :</span>
+                {['A4', 'A3'].map(f => (
+                  <label key={f} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12.5 }}>
+                    <input type="radio" name="expfmt" checked={expFormat === f} onChange={() => setExpFormat(f)} /> {f} paysage
+                  </label>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>Colonnes :</span>
+                {[['artisan', 'Artisan'], ['debut', 'Début'], ['fin', 'Fin'], ['duree', 'Durée'], ['avancement', '%']].map(([k, lbl]) => (
+                  <label key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12.5 }}>
+                    <input type="checkbox" checked={!!expCols[k]} onChange={e => setExpCols(c => ({ ...c, [k]: e.target.checked }))} /> {lbl}
+                  </label>
+                ))}
+              </div>
+              <label style={{ fontSize: 12, color: 'var(--ink-500)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                Mention légale (pied de page)
+                <textarea value={expMention} onChange={e => setExpMention(e.target.value)} rows={2}
+                  className="input" style={{ fontSize: 12, resize: 'vertical' }} />
+              </label>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => setExportOuvert(false)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px' }}>Annuler</button>
+                <button onClick={exporterPlanning} disabled={exporting} className="btn btn-primary" style={{ fontSize: 11.5, padding: '4px 12px' }}>
+                  {exporting ? 'Génération…' : 'Générer le PDF'}
+                </button>
+              </div>
+            </div>
+          )}
+
           <GanttLots lots={lots} dependances={deps} interventions={interventionsDossier} onDateChange={majLot} viewMode={vueGantt} />
         </div>
       )}
