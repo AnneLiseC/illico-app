@@ -7,6 +7,7 @@ import { useEffect, useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api-auth-client'
+import { dureeOuvree, finApresOuvres, LIBELLES_JOURS, JOURS_DEFAUT } from '../../lib/joursOuvres'
 
 // frappe-gantt manipule le DOM directement → jamais de SSR.
 const GanttLots = dynamic(() => import('./GanttLots'), { ssr: false })
@@ -26,6 +27,7 @@ function artisansDepuisDevis(devis) {
 export default function LotsPanel({ id, devis, interventionsDossier, setErreur }) {
   const [lots, setLots] = useState([])
   const [deps, setDeps] = useState([])          // lot_dependances : { id, lot_id, depend_de_lot_id }
+  const [joursArtisan, setJoursArtisan] = useState({})  // artisan_id -> jours_travailles (int[] ISO)
   const [chargement, setChargement] = useState(true)
   const [vueGantt, setVueGantt] = useState('Week')
   const [ia, setIa] = useState(false)                 // appel IA en cours
@@ -48,6 +50,12 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
       const { data: dd } = await supabase.from('lot_dependances').select('id, lot_id, depend_de_lot_id').in('lot_id', ids)
       setDeps(dd || [])
     } else { setDeps([]) }
+    // Jours travaillés des artisans référencés par les lots (pour la durée en jours ouvrés).
+    const artIds = [...new Set((data || []).map(l => l.artisan_id).filter(Boolean))]
+    if (artIds.length) {
+      const { data: arts } = await supabase.from('artisans').select('id, jours_travailles').in('id', artIds)
+      setJoursArtisan(Object.fromEntries((arts || []).map(a => [a.id, a.jours_travailles || JOURS_DEFAUT])))
+    } else { setJoursArtisan({}) }
   }, [id, setErreur])
 
   useEffect(() => { (async () => { await recharger(); setChargement(false) })() }, [recharger])
@@ -71,6 +79,15 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
     setLots(prev => prev.map(l => l.id === lotId ? { ...l, ...champs } : l))
     const { error } = await supabase.from('lots').update({ ...champs, updated_at: new Date().toISOString() }).eq('id', lotId)
     if (error) setErreur?.('Enregistrement : ' + error.message)
+  }
+
+  // ── Jours travaillés d'un artisan (global à l'entreprise, pas au dossier) ──
+  const majJoursArtisan = async (artisanId, jours) => {
+    if (!artisanId) return
+    const tri = [...new Set(jours)].filter(n => n >= 1 && n <= 7).sort((a, b) => a - b)
+    setJoursArtisan(prev => ({ ...prev, [artisanId]: tri }))
+    const { error } = await supabase.from('artisans').update({ jours_travailles: tri }).eq('id', artisanId)
+    if (error) setErreur?.('Jours travaillés : ' + error.message)
   }
 
   // ── Dépendances (lot_id « après » depend_de_lot_id) ──
@@ -211,10 +228,12 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
 
       {lotsRacine.map(lot => (
         <div key={lot.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <LigneLot lot={lot} artisans={artisans} niveau={0} onMaj={majLot} onSupprimer={supprimerLot} onAjouterSousLot={() => ajouterLot(lot.id)} />
-          <LigneDeps lot={lot} lotsRacine={lotsRacine} deps={deps} onAjouter={ajouterDep} onRetirer={retirerDep} />
+          <LigneLot lot={lot} artisans={artisans} niveau={0} jours={joursArtisan[lot.artisan_id] || JOURS_DEFAUT} onMaj={majLot} onSupprimer={supprimerLot} onAjouterSousLot={() => ajouterLot(lot.id)} />
+          <LigneDeps lot={lot} lotsRacine={lotsRacine} deps={deps}
+            jours={joursArtisan[lot.artisan_id] || JOURS_DEFAUT} onMajJours={lot.artisan_id ? (j => majJoursArtisan(lot.artisan_id, j)) : null}
+            onAjouter={ajouterDep} onRetirer={retirerDep} />
           {sousLots(lot.id).map(sl => (
-            <LigneLot key={sl.id} lot={sl} artisans={artisans} niveau={1} onMaj={majLot} onSupprimer={supprimerLot} />
+            <LigneLot key={sl.id} lot={sl} artisans={artisans} niveau={1} jours={joursArtisan[sl.artisan_id] || joursArtisan[lot.artisan_id] || JOURS_DEFAUT} onMaj={majLot} onSupprimer={supprimerLot} />
           ))}
         </div>
       ))}
@@ -243,11 +262,16 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
 
 // Dépendances d'un lot racine : « Après : [chips] + sélecteur ». L'arête Gantt part du
 // prédécesseur. On ne propose que les AUTRES lots racine (les sous-lots héritent du parent).
-function LigneDeps({ lot, lotsRacine, deps, onAjouter, onRetirer }) {
+function LigneDeps({ lot, lotsRacine, deps, jours = JOURS_DEFAUT, onMajJours, onAjouter, onRetirer }) {
   const mesDeps = deps.filter(d => d.lot_id === lot.id)
   const dejaPred = new Set(mesDeps.map(d => d.depend_de_lot_id))
   const options = lotsRacine.filter(l => l.id !== lot.id && !dejaPred.has(l.id))
   const nomDe = (lid) => lotsRacine.find(l => l.id === lid)?.nom || '—'
+  const jset = new Set(jours)
+  const toggleJour = (iso) => {
+    if (!onMajJours) return
+    onMajJours(jset.has(iso) ? jours.filter(j => j !== iso) : [...jours, iso])
+  }
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
       padding: '6px 14px 8px', paddingLeft: 34, borderTop: '1px solid var(--ink-100)', background: 'var(--surface-2)' }}>
@@ -268,13 +292,31 @@ function LigneDeps({ lot, lotsRacine, deps, onAjouter, onRetirer }) {
           {options.map(l => <option key={l.id} value={l.id}>{l.nom}</option>)}
         </select>
       )}
+
+      {onMajJours && (
+        <>
+          <span style={{ fontSize: 11.5, color: 'var(--ink-500)', marginLeft: 10 }} title="Jours travaillés de l'entreprise (sert au calcul de durée). S'applique à toute l'entreprise.">Jours&nbsp;:</span>
+          {LIBELLES_JOURS.map(j => {
+            const actif = jset.has(j.iso)
+            return (
+              <button key={j.iso} onClick={() => toggleJour(j.iso)} title={actif ? 'Travaillé' : 'Non travaillé'}
+                style={{ width: 22, height: 22, borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                  border: '1px solid ' + (actif ? '#4f46e5' : 'var(--ink-200)'),
+                  background: actif ? '#4f46e5' : 'transparent', color: actif ? '#fff' : 'var(--ink-500)' }}>
+                {j.l}
+              </button>
+            )
+          })}
+        </>
+      )}
     </div>
   )
 }
 
 // Une ligne éditable (lot ou sous-lot). Nom NON contrôlé (defaultValue + save au blur) :
 // évite de resynchroniser un state local à chaque maj optimiste du parent.
-function LigneLot({ lot, artisans, niveau, onMaj, onSupprimer, onAjouterSousLot }) {
+function LigneLot({ lot, artisans, niveau, jours = JOURS_DEFAUT, onMaj, onSupprimer, onAjouterSousLot }) {
+  const nbOuvres = (lot.date_debut && lot.date_fin) ? dureeOuvree(lot.date_debut, lot.date_fin, jours) : ''
   return (
     <div style={{
       display: 'flex', gap: 10, alignItems: 'center', padding: '10px 14px', flexWrap: 'wrap',
@@ -298,6 +340,18 @@ function LigneLot({ lot, artisans, niveau, onMaj, onSupprimer, onAjouterSousLot 
         className="input" style={{ height: 34, fontSize: 12.5 }} title="Début" />
       <input type="date" value={lot.date_fin || ''} onChange={e => onMaj(lot.id, { date_fin: e.target.value || null })}
         className="input" style={{ height: 34, fontSize: 12.5 }} title="Fin" />
+
+      {/* Durée en jours OUVRÉS de l'artisan : saisir recalcule la date de fin. */}
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--ink-500)' }} title="Durée en jours ouvrés (selon les jours travaillés de l'artisan)">
+        <input type="number" min={1} value={nbOuvres}
+          disabled={!lot.date_debut}
+          onChange={e => {
+            const n = Number(e.target.value)
+            if (!lot.date_debut || !n || n < 1) return
+            onMaj(lot.id, { date_fin: finApresOuvres(lot.date_debut, n, jours) })
+          }}
+          className="input" style={{ width: 52, height: 34, fontSize: 12.5 }} /> j.o.
+      </label>
 
       <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--ink-500)' }}>
         <input type="number" min={0} max={100} value={lot.avancement ?? 0}
