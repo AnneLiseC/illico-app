@@ -57,20 +57,21 @@ Réponds STRICTEMENT par un objet JSON (aucun texte autour, pas de markdown) :
 }
 
 RÈGLES DE CONSOLIDATION (le cœur du travail) :
-- DÉDOUBLONNE : un même point réel qui revient dans plusieurs rapports = UNE SEULE action. Ne le répète JAMAIS. Garde la formulation et surtout le STATUT du rapport le PLUS RÉCENT où il apparaît.
-- MET À JOUR : si un point évolue (ex. "en attente" → "en cours" → "réalisé"), reflète UNIQUEMENT son DERNIER état connu.
-- EXCLUS ce qui est clairement TERMINÉ / résolu / réceptionné dans un rapport ultérieur : ne le mets pas dans la liste. (Ne garde un point achevé QUE s'il reste une réserve ou un suivi.)
-- GARDE tel quel un point mentionné une seule fois et non contredit plus tard.
+- PRIORITÉ = EXHAUSTIVITÉ. Il vaut BEAUCOUP mieux garder un point de trop (que l'utilisatrice décochera) qu'en oublier un. EN CAS DE DOUTE, GARDE le point.
+- Ne FUSIONNE que des points VRAIMENT IDENTIQUES (même sujet, même travail). Deux points liés mais DISTINCTS restent SÉPARÉS — ex. « tirage électrique à 98 %, 2 % restants » et « finitions/appareillages en fin de chantier » et « passage de contrôle » sont TROIS actions différentes, pas une seule.
+- Quand un même point revient à l'identique dans plusieurs rapports, garde-le UNE fois, avec le STATUT du rapport le PLUS RÉCENT.
+- N'EXCLUS JAMAIS un point de la liste, même terminé. Un point réalisé/réceptionné/soldé reste AFFICHÉ, avec le statut "cloture" (ou "quitus_transmis" si un quitus est mentionné) — c'est l'historique. On NE SUPPRIME pas, on change le statut.
+- GARDE tout : ouvert, en cours, en attente, à programmer, à surveiller, à venir, ET terminé — y compris les points de coordination / co-activité et les points de vigilance.
 - N'invente rien : uniquement ce qui est écrit dans les rapports.
-- Écris TOUJOURS en FRANÇAIS.
+- Écris TOUJOURS en FRANÇAIS. UNE phrase concise par action (≤ 200 caractères).
+- STATUT — choisis le PLUS PRÉCIS parmi les 16, il y a de la nuance : "en_attente", "a_surveiller", "a_programmer", "programme", "en_cours", "en_retard", "date_limite", "urgent", "rappel", "information", "acte", "constate", "garder_memoire"…
+- ATTENTION "cloture" et "quitus_transmis" FERMENT le point : il sort du suivi et ne se reporte plus. Ne les utilise QUE si un rapport dit EXPLICITEMENT que c'est terminé/soldé. Dans le doute, choisis un statut OUVERT (jamais "cloture" par précaution). Un point simplement ancien n'est PAS clôturé.
 - statut_date : la date d'échéance/statut la plus récente et pertinente si une date est donnée, sinon "".
 - Rattache à un lot (portee="lot") seulement si c'est clair, en choisissant "lot_nom" dans la liste fournie quand elle correspond.
 
-DATES DE PLANNING ("dates") : pour CHAQUE lot dont une période d'intervention est mentionnée dans les rapports, donne UNE seule ligne = la période la PLUS RÉCENTE connue (un lot re-planifié d'un rapport à l'autre → garde la dernière date, pas les anciennes). N'invente aucune date. "lot_nom" doit venir de la liste fournie. Si aucune date n'est donnée pour un lot, ne l'inclus pas dans "dates".
+DATES DE PLANNING ("dates") : liste TOUTES les périodes d'intervention distinctes mentionnées, par lot. Un lot peut intervenir en PLUSIEURS phases → sors-les TOUTES (ne garde pas seulement la plus récente). Ne dédoublonne QUE des périodes strictement identiques (mêmes dates, même lot). N'invente aucune date. "lot_nom" doit venir de la liste fournie. Si aucune date n'est donnée pour un lot, ne l'inclus pas dans "dates".
 
-OBJECTIF : la liste finale doit être ce qu'une AMO garderait sous les yeux aujourd'hui — chaque point ouvert UNE fois, à jour, sans redite d'un rapport à l'autre.
-
-CONCISION (important pour la rapidité) : sois ÉCONOME. UNE phrase courte par action, pas de paragraphe. Regroupe finement : vise une liste resserrée (idéalement ≤ 50 actions), pas un catalogue.`
+OBJECTIF : une liste de suivi COMPLÈTE et à jour — chaque point réel présent, sans redite littérale. Mieux vaut 60 points justes que 20 qui en oublient.`
 
 function parseJsonSafe(text) {
   if (!text) return null
@@ -124,7 +125,7 @@ export async function POST(request) {
 
   const claudeBody = JSON.stringify({
     model: 'claude-sonnet-4-6',
-    max_tokens: 6000,
+    max_tokens: 8000,   // exhaustivité prioritaire : de la marge pour ne rien tronquer (Pro : 120 s)
     temperature: 0,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
