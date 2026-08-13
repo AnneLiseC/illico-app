@@ -40,7 +40,7 @@ Réponds STRICTEMENT par un objet JSON (aucun texte autour, pas de markdown) :
   "actions": [
     {
       "titre": chaîne,        // titre court (~60 caractères), optionnel ("" si rien)
-      "texte": chaîne,        // le point rédigé en UNE seule phrase concise (≤ 200 caractères), à jour
+      "texte": chaîne,        // le point rédigé en UNE phrase TÉLÉGRAPHIQUE et courte (≤ 130 caractères), à jour
       "portee": "generale" | "lot",
       "lot_nom": chaîne,      // si portee="lot" : nom du lot, choisi PARMI la liste fournie si possible ; sinon ""
       "statut": une des valeurs EXACTES: ${STATUTS.join(', ')},
@@ -63,7 +63,7 @@ RÈGLES DE CONSOLIDATION (le cœur du travail) :
 - N'EXCLUS JAMAIS un point de la liste, même terminé. Un point réalisé/réceptionné/soldé reste AFFICHÉ, avec le statut "cloture" (ou "quitus_transmis" si un quitus est mentionné) — c'est l'historique. On NE SUPPRIME pas, on change le statut.
 - GARDE tout : ouvert, en cours, en attente, à programmer, à surveiller, à venir, ET terminé — y compris les points de coordination / co-activité et les points de vigilance.
 - N'invente rien : uniquement ce qui est écrit dans les rapports.
-- Écris TOUJOURS en FRANÇAIS. UNE phrase concise par action (≤ 200 caractères).
+- Écris TOUJOURS en FRANÇAIS. UNE phrase COURTE et télégraphique par action (≤ 130 caractères) — pas de paragraphe, va à l'essentiel.
 - STATUT — choisis le PLUS PRÉCIS parmi les 16, il y a de la nuance : "en_attente", "a_surveiller", "a_programmer", "programme", "en_cours", "en_retard", "date_limite", "urgent", "rappel", "information", "acte", "constate", "garder_memoire"…
 - ATTENTION "cloture" et "quitus_transmis" FERMENT le point : il sort du suivi et ne se reporte plus. Ne les utilise QUE si un rapport dit EXPLICITEMENT que c'est terminé/soldé. Dans le doute, choisis un statut OUVERT (jamais "cloture" par précaution). Un point simplement ancien n'est PAS clôturé.
 - statut_date : la date d'échéance/statut la plus récente et pertinente si une date est donnée, sinon "".
@@ -79,6 +79,39 @@ function parseJsonSafe(text) {
   const i = text.indexOf('{'); const j = text.lastIndexOf('}')
   if (i === -1 || j === -1 || j <= i) return null
   try { return JSON.parse(text.slice(i, j + 1)) } catch { return null }
+}
+
+// Renvoie les objets {...} ÉQUILIBRÉS trouvés au 1er niveau d'un segment (ignore chaînes/échappements).
+// Sert à récupérer une liste JSON même si la fin a été TRONQUÉE (dernier objet incomplet ignoré).
+function objetsBalances(segment) {
+  const objets = []
+  let prof = 0, debut = -1, dansStr = false, echap = false
+  for (let k = 0; k < segment.length; k++) {
+    const ch = segment[k]
+    if (dansStr) {
+      if (echap) echap = false
+      else if (ch === '\\') echap = true
+      else if (ch === '"') dansStr = false
+      continue
+    }
+    if (ch === '"') dansStr = true
+    else if (ch === '{') { if (prof === 0) debut = k; prof++ }
+    else if (ch === '}') { if (prof > 0) { prof--; if (prof === 0 && debut !== -1) { objets.push(segment.slice(debut, k + 1)); debut = -1 } } }
+  }
+  return objets
+}
+
+// Récupération d'une sortie TRONQUÉE : on lit ce qu'on peut des tableaux "actions" et "dates".
+function recupererConsolidation(text) {
+  if (!text) return null
+  const iAct = text.indexOf('"actions"')
+  const iDat = text.indexOf('"dates"')
+  const tryParse = (s) => { try { return JSON.parse(s) } catch { return null } }
+  const segAct = iAct === -1 ? '' : text.slice(text.indexOf('[', iAct) + 1, iDat > iAct ? iDat : undefined)
+  const segDat = iDat === -1 ? '' : text.slice(text.indexOf('[', iDat) + 1)
+  const actions = objetsBalances(segAct).map(tryParse).filter(Boolean)
+  const dates = objetsBalances(segDat).map(tryParse).filter(Boolean)
+  return actions.length ? { actions, dates } : null
 }
 
 export async function POST(request) {
@@ -125,7 +158,7 @@ export async function POST(request) {
 
   const claudeBody = JSON.stringify({
     model: 'claude-sonnet-4-6',
-    max_tokens: 8000,   // exhaustivité prioritaire : de la marge pour ne rien tronquer (Pro : 120 s)
+    max_tokens: 12000,  // exhaustivité : large marge pour ne pas tronquer (+ parseur de récupération en filet)
     temperature: 0,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
@@ -159,7 +192,11 @@ export async function POST(request) {
   }
 
   const claudeData = await claudeRes.json()
-  const raw = parseJsonSafe(claudeData.content?.[0]?.text || '')
+  const claudeText = claudeData.content?.[0]?.text || ''
+  const tronquee = claudeData.stop_reason === 'max_tokens'   // sortie coupée par le plafond de tokens
+  let raw = parseJsonSafe(claudeText)
+  // Filet : si le JSON strict échoue (souvent = fin tronquée), on récupère les objets complets.
+  if (!raw || !Array.isArray(raw.actions)) raw = recupererConsolidation(claudeText)
   if (!raw || !Array.isArray(raw.actions)) return NextResponse.json({ error: 'Réponse IA illisible' }, { status: 502 })
 
   // Coercition : on ne fait jamais confiance à la sortie brute.
@@ -186,5 +223,5 @@ export async function POST(request) {
     return { lot_nom, date_debut: debut, date_fin: fin }
   }).filter(Boolean)
 
-  return NextResponse.json({ actions, dates, rapports: blocs.length })
+  return NextResponse.json({ actions, dates, rapports: blocs.length, tronquee })
 }

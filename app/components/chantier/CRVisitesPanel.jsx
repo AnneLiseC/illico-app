@@ -434,6 +434,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
       if (!res.ok) { setErreur?.(j.error || 'Consolidation impossible.'); return }
       setIaCandidats((j.actions || []).map(a => ({ ...a, sel: true })))
       if (!j.actions?.length) setErreur?.('Aucun ancien rapport prose à consolider.')
+      else if (j.tronquee) setErreur?.(`Liste longue : l'IA a peut-être été coupée (${j.actions.length} actions récupérées). Vérifie qu'il ne manque rien, ou relance.`)
       // Dates de planning consolidées (tous les rapports, période la plus récente par lot).
       // On mappe lot_nom → lot local, et on décoche les lots DÉJÀ planifiés (pas d'écrasement).
       const dcands = (j.dates || []).map(d => {
