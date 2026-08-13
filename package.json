@@ -23,6 +23,7 @@
     "@vercel/speed-insights": "^2.0.0",
     "chart.js": "^4.5.1",
     "claude": "^0.1.1",
+    "frappe-gantt": "^1.2.2",
     "googleapis": "^171.4.0",
     "heic-convert": "^2.1.0",
     "heic2any": "^0.0.4",

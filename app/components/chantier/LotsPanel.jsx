@@ -4,7 +4,11 @@
 // Table `lots` (socle Lot 0). Hiérarchie via parent_lot_id. Sauvegarde directe Supabase
 // (RLS staff). Aucune dépendance IA.
 import { useEffect, useState, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { supabase } from '../../lib/supabase'
+
+// frappe-gantt manipule le DOM directement → jamais de SSR.
+const GanttLots = dynamic(() => import('./GanttLots'), { ssr: false })
 
 const COULEURS = ['#4f46e5', '#0ea5e9', '#16a34a', '#a16207', '#dc2626', '#7c3aed', '#0d9488', '#db2777']
 
@@ -22,6 +26,7 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
   const [lots, setLots] = useState([])
   const [chargement, setChargement] = useState(true)
   const [prefill, setPrefill] = useState(false)
+  const [vueGantt, setVueGantt] = useState('Week')
 
   const artisans = artisansDepuisDevis(devis)
 
@@ -126,6 +131,23 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
           ))}
         </div>
       ))}
+
+      {lotsRacine.length > 0 && (
+        <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Planning (Gantt)</span>
+            <div style={{ flex: 1 }} />
+            {['Day', 'Week', 'Month'].map(m => (
+              <button key={m} onClick={() => setVueGantt(m)}
+                className={vueGantt === m ? 'btn btn-primary' : 'btn btn-ghost'}
+                style={{ fontSize: 11.5, padding: '4px 10px' }}>
+                {m === 'Day' ? 'Jour' : m === 'Week' ? 'Semaine' : 'Mois'}
+              </button>
+            ))}
+          </div>
+          <GanttLots lots={lots} onDateChange={majLot} viewMode={vueGantt} />
+        </div>
+      )}
     </div>
   )
 }
