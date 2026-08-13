@@ -30,8 +30,12 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
   const [joursArtisan, setJoursArtisan] = useState({})  // artisan_id -> jours_travailles (int[] ISO)
   const [chargement, setChargement] = useState(true)
   const [vueGantt, setVueGantt] = useState('Week')
-  const [ia, setIa] = useState(false)                 // appel IA en cours
+  const [ia, setIa] = useState(false)                 // appel IA en cours (pré-remplissage)
   const [iaPropos, setIaPropos] = useState(null)      // propositions IA à relire (ou null)
+  const [datesOuvert, setDatesOuvert] = useState(false)  // panneau « dates par IA »
+  const [datesNotes, setDatesNotes] = useState('')
+  const [datesIa, setDatesIa] = useState(false)
+  const [datesPropos, setDatesPropos] = useState(null)   // [{lot_id, date_debut, date_fin, inclus}]
   const [exportOuvert, setExportOuvert] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [expFormat, setExpFormat] = useState('A4')
@@ -173,6 +177,37 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
     await recharger()
   }
 
+  // ── Dates par IA (Lot 4-6) : extrait des périodes depuis des notes → à valider avant application ──
+  const suggererDates = async () => {
+    if (!datesNotes.trim()) { setErreur?.('Colle des notes à analyser.'); return }
+    setDatesIa(true)
+    try {
+      const lotsPayload = lots.map(l => ({ id: l.id, nom: l.nom, artisan: artisans.find(a => a.id === l.artisan_id)?.entreprise || '' }))
+      const today = new Date().toISOString().slice(0, 10)
+      const res = await apiFetch('/api/lots/dates', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dossier_id: id, notes: datesNotes, lots: lotsPayload, today }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) { setErreur?.(j.error || 'Aide IA indisponible.'); return }
+      const props = (j.propositions || []).map(p => ({ ...p, inclus: true }))
+      if (!props.length) { setErreur?.('Aucune date exploitable trouvée dans les notes.'); return }
+      setDatesPropos(props)
+    } catch (e) {
+      setErreur?.('Dates IA : ' + (e?.message || 'erreur'))
+    } finally { setDatesIa(false) }
+  }
+
+  const appliquerDates = async () => {
+    for (const p of (datesPropos || [])) {
+      if (!p.inclus) continue
+      await majLot(p.lot_id, { date_debut: p.date_debut, date_fin: p.date_fin })
+    }
+    setDatesPropos(null); setDatesNotes(''); setDatesOuvert(false)
+  }
+
+  const nomLot = (lid) => lots.find(l => l.id === lid)?.nom || '—'
+
   // ── Export PDF du planning (A4/A3, colonnes, mention légale) ──
   const exporterPlanning = async () => {
     setExporting(true)
@@ -209,7 +244,56 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
         <button onClick={suggererIA} disabled={ia} className="btn btn-ghost" style={{ fontSize: 12.5 }} title="Lit les PDF de devis et propose lots + sous-lots (dates récupérées des interventions)">
           {ia ? 'Analyse des devis…' : '✨ Pré-remplir depuis les devis'}
         </button>
+        {lotsRacine.length > 0 && (
+          <button onClick={() => setDatesOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }} title="Coller des notes (mail, CR) : l'IA en extrait les dates à placer dans le planning">
+            📅 Dates par IA
+          </button>
+        )}
       </div>
+
+      {datesOuvert && (
+        <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderLeft: '3px solid #0ea5e9' }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Dates par IA</span>
+          <span style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>Colle un mail d’artisan, un extrait de compte-rendu… L’IA propose des périodes par lot, que tu valides avant de les appliquer.</span>
+          <textarea value={datesNotes} onChange={e => setDatesNotes(e.target.value)} rows={4}
+            placeholder="Ex : « La plomberie démarre le 12 mars pour environ 8 jours. L’électricien passe la semaine du 24. »"
+            className="input" style={{ fontSize: 12.5, resize: 'vertical' }} />
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button onClick={() => { setDatesOuvert(false); setDatesPropos(null) }} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px' }}>Fermer</button>
+            <button onClick={suggererDates} disabled={datesIa} className="btn btn-primary" style={{ fontSize: 11.5, padding: '4px 12px' }}>
+              {datesIa ? 'Analyse…' : 'Analyser les notes'}
+            </button>
+          </div>
+
+          {datesPropos && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--ink-100)', paddingTop: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: 600 }}>Propositions — relis et ajuste avant d’appliquer</span>
+              {datesPropos.map((p, pi) => {
+                const lot = lots.find(l => l.id === p.lot_id)
+                const ancien = (lot?.date_debut || lot?.date_fin) ? `${lot?.date_debut || '?'} → ${lot?.date_fin || '?'}` : 'aucune date'
+                return (
+                  <div key={pi} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', opacity: p.inclus ? 1 : 0.5 }}>
+                    <input type="checkbox" checked={p.inclus}
+                      onChange={e => setDatesPropos(prev => prev.map((x, i) => i === pi ? { ...x, inclus: e.target.checked } : x))} />
+                    <span style={{ fontSize: 12.5, fontWeight: 600, flex: '0 1 150px' }}>{nomLot(p.lot_id)}</span>
+                    <span style={{ fontSize: 11, color: 'var(--ink-400)' }}>{ancien} →</span>
+                    <input type="date" value={p.date_debut}
+                      onChange={e => setDatesPropos(prev => prev.map((x, i) => i === pi ? { ...x, date_debut: e.target.value } : x))}
+                      className="input" style={{ height: 30, fontSize: 12 }} />
+                    <input type="date" value={p.date_fin}
+                      onChange={e => setDatesPropos(prev => prev.map((x, i) => i === pi ? { ...x, date_fin: e.target.value } : x))}
+                      className="input" style={{ height: 30, fontSize: 12 }} />
+                  </div>
+                )
+              })}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => setDatesPropos(null)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px' }}>Annuler</button>
+                <button onClick={appliquerDates} className="btn btn-primary" style={{ fontSize: 11.5, padding: '4px 12px' }}>Appliquer au planning</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {iaPropos && (
         <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderLeft: '3px solid #7c3aed' }}>
