@@ -20,7 +20,7 @@ function iso(d) {
 
 const MODES = ['Day', 'Week', 'Month']
 
-export default function GanttLots({ lots, dependances = [], onDateChange, viewMode = 'Week' }) {
+export default function GanttLots({ lots, dependances = [], interventions = [], onDateChange, viewMode = 'Week' }) {
   const conteneurRef = useRef(null)
   const ganttRef = useRef(null)
   // Callback dans une ref : évite de reconstruire le Gantt à chaque re-render du parent.
@@ -56,6 +56,26 @@ export default function GanttLots({ lots, dependances = [], onDateChange, viewMo
       custom_class: parents.has(l.parent_lot_id) ? 'bar-sous-lot' : '',
     }))
 
+    // Interventions NON encore rattachées à un lot → barres LECTURE SEULE (rien de perdu).
+    // Un lot qui référence l'intervention (intervention_id) la représente déjà : on l'ignore.
+    const interLiees = new Set((lots || []).map(l => l.intervention_id).filter(Boolean).map(String))
+    for (const it of (interventions || [])) {
+      if (!it?.date_debut || !it?.date_fin) continue
+      if (interLiees.has(String(it.id))) continue
+      const tid = 'int_' + it.id
+      idsAffichables.add(tid)
+      taches.push({
+        id: tid,
+        name: '📅 ' + (it.artisan?.entreprise || it.artisan?.metier || 'Intervention'),
+        start: iso(it.date_debut),
+        end: iso(it.date_fin),
+        progress: 0,
+        dependencies: [],
+        custom_class: 'bar-intervention',
+        readonly: true,
+      })
+    }
+
     el.innerHTML = ''
     if (!taches.length) {
       ganttRef.current = null
@@ -71,8 +91,8 @@ export default function GanttLots({ lots, dependances = [], onDateChange, viewMo
         today_button: true,
         popup_on: 'hover',
         on_date_change: (task, start, end) => {
-          const maj = { date_debut: iso(start), date_fin: iso(end) }
-          cbRef.current?.(task.id, maj)
+          if (!task?.id || String(task.id).startsWith('int_')) return  // interventions = lecture seule
+          cbRef.current?.(task.id, { date_debut: iso(start), date_fin: iso(end) })
         },
       })
     } catch (e) {
@@ -81,18 +101,27 @@ export default function GanttLots({ lots, dependances = [], onDateChange, viewMo
     }
 
     return () => { if (el) el.innerHTML = '' }
-  }, [lots, dependances, viewMode])
+  }, [lots, dependances, interventions, viewMode])
 
-  const nbAffichables = (lots || []).filter(l => l.date_debut && l.date_fin).length
+  const nbLots = (lots || []).filter(l => l.date_debut && l.date_fin).length
+  const interLiees = new Set((lots || []).map(l => l.intervention_id).filter(Boolean).map(String))
+  const nbInter = (interventions || []).filter(i => i.date_debut && i.date_fin && !interLiees.has(String(i.id))).length
 
   return (
     <div>
-      {nbAffichables === 0 ? (
+      {nbLots + nbInter === 0 ? (
         <div className="card" style={{ padding: 20, textAlign: 'center', color: 'var(--ink-500)', fontSize: 13 }}>
           Renseigne des dates de début et de fin sur tes lots pour voir le planning.
         </div>
       ) : (
-        <div ref={conteneurRef} className="gantt-lots" style={{ overflowX: 'auto' }} />
+        <>
+          <div ref={conteneurRef} className="gantt-lots" style={{ overflowX: 'auto' }} />
+          {nbInter > 0 && (
+            <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 6 }}>
+              📅 {nbInter} intervention{nbInter > 1 ? 's' : ''} non rattachée{nbInter > 1 ? 's' : ''} à un lot (lecture seule) — pré-remplis depuis les devis pour les éditer.
+            </div>
+          )}
+        </>
       )}
     </div>
   )

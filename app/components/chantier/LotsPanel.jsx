@@ -27,7 +27,6 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
   const [lots, setLots] = useState([])
   const [deps, setDeps] = useState([])          // lot_dependances : { id, lot_id, depend_de_lot_id }
   const [chargement, setChargement] = useState(true)
-  const [prefill, setPrefill] = useState(false)
   const [vueGantt, setVueGantt] = useState('Week')
   const [ia, setIa] = useState(false)                 // appel IA en cours
   const [iaPropos, setIaPropos] = useState(null)      // propositions IA à relire (ou null)
@@ -100,40 +99,7 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
     if (error) { setErreur?.('Suppression : ' + error.message); recharger() }
   }
 
-  // ── Pré-remplissage depuis les devis (1 devis non refusé → 1 lot ; dates de l'intervention) ──
-  const prefillDevis = async () => {
-    setPrefill(true)
-    try {
-      const dejaArtisans = new Set(lots.map(l => l.artisan_id).filter(Boolean))
-      const seen = new Set()
-      const aCreer = []
-      let ordre = lotsRacine.length
-      for (const d of (devis || [])) {
-        if (d.statut === 'refuse') continue
-        const a = d.artisan
-        if (!a?.id || seen.has(a.id) || dejaArtisans.has(a.id)) continue
-        seen.add(a.id)
-        const inter = (interventionsDossier || []).find(i => i.artisan_id === a.id)
-        aCreer.push({
-          dossier_id: id, parent_lot_id: null, artisan_id: a.id,
-          intervention_id: inter?.id || null,
-          nom: a.metier || a.entreprise || 'Lot',
-          date_debut: inter?.date_debut || null,
-          date_fin: inter?.date_fin || null,
-          couleur: COULEURS[(ordre) % COULEURS.length],
-          ordre: ordre++,
-        })
-      }
-      if (!aCreer.length) { setErreur?.('Aucun nouveau lot à créer depuis les devis.'); return }
-      const { error } = await supabase.from('lots').insert(aCreer)
-      if (error) { setErreur?.('Pré-remplissage : ' + error.message); return }
-      await recharger()
-    } finally {
-      setPrefill(false)
-    }
-  }
-
-  // ── Aide IA : lit les PDF de devis → propose lots + sous-lots (relus avant insertion) ──
+  // ── Pré-remplissage IA depuis les devis : lit les PDF → propose lots + sous-lots (relus avant insertion) ──
   const suggererIA = async () => {
     setIa(true)
     try {
@@ -163,8 +129,13 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
     if (!choisis.length) { setIaPropos(null); return }
     let ordre = lotsRacine.length
     for (const p of choisis) {
+      // Rattache l'intervention de cet artisan (si elle existe) → le lot hérite de ses dates,
+      // pour que le planning existant se retrouve dans le Gantt.
+      const inter = (interventionsDossier || []).find(i => i.artisan_id === p.artisan_id)
       const { data: parent, error } = await supabase.from('lots')
         .insert({ dossier_id: id, parent_lot_id: null, artisan_id: p.artisan_id || null,
+                  intervention_id: inter?.id || null,
+                  date_debut: inter?.date_debut || null, date_fin: inter?.date_fin || null,
                   nom: p.lot_nom || 'Lot', couleur: COULEURS[ordre % COULEURS.length], ordre: ordre++ })
         .select().single()
       if (error) { setErreur?.('Création lot : ' + error.message); continue }
@@ -191,11 +162,8 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '0 14px 14px' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={() => ajouterLot(null)} className="btn btn-primary" style={{ fontSize: 12.5 }}>+ Lot</button>
-        <button onClick={prefillDevis} disabled={prefill} className="btn btn-ghost" style={{ fontSize: 12.5 }}>
-          {prefill ? 'Pré-remplissage…' : 'Pré-remplir depuis les devis'}
-        </button>
-        <button onClick={suggererIA} disabled={ia} className="btn btn-ghost" style={{ fontSize: 12.5 }} title="Lit les PDF de devis et propose lots + sous-lots">
-          {ia ? 'Analyse des devis…' : '✨ Aide IA'}
+        <button onClick={suggererIA} disabled={ia} className="btn btn-ghost" style={{ fontSize: 12.5 }} title="Lit les PDF de devis et propose lots + sous-lots (dates récupérées des interventions)">
+          {ia ? 'Analyse des devis…' : '✨ Pré-remplir depuis les devis'}
         </button>
       </div>
 
@@ -253,7 +221,7 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
         </div>
       </details>
 
-      {lotsRacine.length > 0 && (
+      {(lotsRacine.length > 0 || (interventionsDossier || []).some(i => i.date_debut && i.date_fin)) && (
         <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>Planning (Gantt)</span>
@@ -266,7 +234,7 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
               </button>
             ))}
           </div>
-          <GanttLots lots={lots} dependances={deps} onDateChange={majLot} viewMode={vueGantt} />
+          <GanttLots lots={lots} dependances={deps} interventions={interventionsDossier} onDateChange={majLot} viewMode={vueGantt} />
         </div>
       )}
     </div>

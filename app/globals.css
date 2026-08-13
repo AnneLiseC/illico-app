@@ -1536,3 +1536,7 @@ img, svg, video, canvas { max-width: 100%; }
 /* Barres de sous-lots dans le Gantt des lots (Lot 4-1) : plus fines + hachurées. */
 .gantt .bar-sous-lot .bar{opacity:.85}
 .gantt .bar-sous-lot .bar-progress{fill:var(--g-handle-color)}
+
+/* Barres d'interventions (lecture seule) dans le Gantt des lots (Lot 4-2b). */
+.gantt .bar-intervention .bar{fill:var(--surface-2);stroke:var(--ink-400);stroke-width:1;stroke-dasharray:4 3}
+.gantt .bar-intervention .bar-label{fill:var(--ink-600)}
