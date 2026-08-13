@@ -142,6 +142,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
 function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, onRetour, onMajVisite }) {
   const [actions, setActions] = useState([])
   const [chargement, setChargement] = useState(true)
+  const [ancien, setAncien] = useState(null) // { contenu_final } — rapport ANCIEN format (prose), lecture seule
   const visiteId = visite?.id
 
   const recharger = useCallback(async () => {
@@ -160,7 +161,15 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
     setActions(visibles)
   }, [visiteId, dossierId, setErreur])
 
-  useEffect(() => { (async () => { await recharger(); setChargement(false) })() }, [recharger])
+  useEffect(() => {
+    (async () => {
+      await recharger()
+      // Pont : contenu prose des anciens rapports (avant le nouveau système), affiché en lecture seule.
+      const { data: cr } = await supabase.from('comptes_rendus').select('contenu_final').eq('id', visiteId).maybeSingle()
+      setAncien(cr?.contenu_final ? { contenu_final: cr.contenu_final } : null)
+      setChargement(false)
+    })()
+  }, [recharger, visiteId])
 
   const ajouterAction = async (portee) => {
     const ordre = actions.length
@@ -312,6 +321,16 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
               </label>
             )
           })}
+        </div>
+      )}
+
+      {!chargement && ancien?.contenu_final && (
+        <div className="card" style={{ padding: 14, borderColor: 'rgba(99,102,241,0.35)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color: '#4338ca', background: 'rgba(99,102,241,0.10)', padding: '4px 10px', borderRadius: 8, alignSelf: 'flex-start' }}>
+            Ancien format · lecture seule
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-700)', whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{ancien.contenu_final}</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>Ce rapport a été rédigé avec l&apos;ancien système. Tu peux ajouter des actions ci-dessous si tu veux le reprendre au nouveau format.</div>
         </div>
       )}
 
