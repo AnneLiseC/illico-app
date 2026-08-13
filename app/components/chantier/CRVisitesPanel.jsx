@@ -297,14 +297,17 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
   const [iaNotes, setIaNotes] = useState('')
   const [iaLoading, setIaLoading] = useState(false)
   const [iaCandidats, setIaCandidats] = useState(null) // [{...action, sel}]
+  const [datesCandidats, setDatesCandidats] = useState(null) // [{lot_id, date_debut, date_fin, sel}] (reprise ancien → planning)
+  const [datesLoading, setDatesLoading] = useState(false)
 
-  const analyserIA = async () => {
-    if (!iaNotes.trim()) return
+  const analyserIA = async (notesArg) => {
+    const notes = (typeof notesArg === 'string' ? notesArg : iaNotes).trim()
+    if (!notes) return
     setIaLoading(true); setIaCandidats(null)
     try {
       const res = await apiFetch('/api/actions/suggest', {
         method: 'POST',
-        body: JSON.stringify({ notes: iaNotes, lots: lots.map(l => ({ id: l.id, nom: l.nom })), type_visite: visite?.type_visite || 'suivi' }),
+        body: JSON.stringify({ notes, lots: lots.map(l => ({ id: l.id, nom: l.nom })), type_visite: visite?.type_visite || 'suivi' }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) { setErreur?.(j.error || 'Analyse IA impossible.'); return }
@@ -336,9 +339,53 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
       }
     }
     setSucces?.(`${choisies.length} action(s) ajoutée(s) ✓`)
-    setIaOuvert(false); setIaNotes(''); setIaCandidats(null)
+    if (!datesCandidats?.length) { setIaOuvert(false); setIaNotes('') }  // rien à valider côté dates → on ferme
+    setIaCandidats(null)
     recharger()
   }
+
+  // ── Extraction des DATES depuis un texte (reprise d'un ancien rapport → planning/Gantt) ──
+  const extraireDates = async (notesArg) => {
+    const notes = (typeof notesArg === 'string' ? notesArg : '').trim()
+    if (!notes || !lots.length) return
+    setDatesLoading(true); setDatesCandidats(null)
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const res = await apiFetch('/api/lots/dates', {
+        method: 'POST',
+        body: JSON.stringify({ dossier_id: dossierId, notes, today, lots: lots.map(l => ({ id: l.id, nom: l.nom, artisan: l.artisan?.entreprise || '' })) }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) { setErreur?.(j.error || 'Extraction des dates impossible.'); return }
+      setDatesCandidats((j.propositions || []).map(p => ({ ...p, sel: true })))
+    } catch {
+      setErreur?.('Erreur réseau IA (dates).')
+    } finally { setDatesLoading(false) }
+  }
+
+  // Applique les dates retenues aux LOTS → elles apparaissent dans le Gantt (onglet Planning).
+  const appliquerDatesReprise = async () => {
+    const choisies = (datesCandidats || []).filter(c => c.sel && c.lot_id)
+    for (const c of choisies) {
+      const { error } = await supabase.from('lots')
+        .update({ date_debut: c.date_debut, date_fin: c.date_fin, updated_at: new Date().toISOString() })
+        .eq('id', c.lot_id)
+      if (error) setErreur?.('Dates : ' + error.message)
+    }
+    setDatesCandidats(null); setIaOuvert(false); setIaNotes('')
+    setSucces?.(`${choisies.length} date(s) appliquée(s) au planning ✓`)
+  }
+
+  // Reprise complète d'un ancien rapport (prose) : actions + dates, à valider. N'altère jamais l'original.
+  const reecrireDepuisAncien = () => {
+    const notes = ancien?.contenu_final
+    if (!notes) return
+    setIaOuvert(true); setIaNotes(notes)
+    analyserIA(notes)
+    extraireDates(notes)
+  }
+
+  const nomLot = (lid) => lots.find(l => l.id === lid)?.nom || '—'
 
   const generales = actions.filter(a => a.portee === 'generale')
   const parLot = actions.filter(a => a.portee === 'lot')
@@ -467,7 +514,36 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
             Ancien format · lecture seule
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--ink-700)', whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{ancien.contenu_final}</div>
-          <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>Ce rapport a été rédigé avec l&apos;ancien système. Tu peux ajouter des actions ci-dessous si tu veux le reprendre au nouveau format.</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>Ce rapport a été rédigé avec l&apos;ancien système. L&apos;original reste intact (il a pu être envoyé au client) — la réécriture ne fait qu&apos;en <b>extraire</b> des actions et des dates, à valider.</div>
+          <button onClick={reecrireDepuisAncien} disabled={iaLoading || datesLoading} className="btn btn-primary" style={{ fontSize: 12.5, alignSelf: 'flex-start' }}>
+            {(iaLoading || datesLoading) ? 'Analyse…' : '✨ Réécrire au nouveau format'}
+          </button>
+        </div>
+      )}
+
+      {datesCandidats && (
+        <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8, borderLeft: '3px solid #0ea5e9' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Dates repérées → planning (Gantt)</div>
+          {datesCandidats.length === 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>Aucune date de lot exploitable dans ce rapport.</span>
+              <button onClick={() => setDatesCandidats(null)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px' }}>OK</button>
+            </div>
+          )}
+          {datesCandidats.map((c, i) => (
+            <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, flexWrap: 'wrap', opacity: c.sel ? 1 : 0.5 }}>
+              <input type="checkbox" checked={c.sel} onChange={() => setDatesCandidats(prev => prev.map((x, j) => j === i ? { ...x, sel: !x.sel } : x))} />
+              <b style={{ flex: '0 1 150px' }}>{nomLot(c.lot_id)}</b>
+              <input type="date" value={c.date_debut} onChange={e => setDatesCandidats(prev => prev.map((x, j) => j === i ? { ...x, date_debut: e.target.value } : x))} className="input" style={{ height: 30, fontSize: 12 }} />
+              <input type="date" value={c.date_fin} onChange={e => setDatesCandidats(prev => prev.map((x, j) => j === i ? { ...x, date_fin: e.target.value } : x))} className="input" style={{ height: 30, fontSize: 12 }} />
+            </label>
+          ))}
+          {datesCandidats.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setDatesCandidats(null)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px' }}>Ignorer</button>
+              <button onClick={appliquerDatesReprise} className="btn btn-primary" style={{ fontSize: 11.5, padding: '4px 12px' }}>Appliquer au planning</button>
+            </div>
+          )}
         </div>
       )}
 
