@@ -48,12 +48,26 @@ export default function BoutonDictee({ dossierId, onTexte, setErreur, compact = 
   }
   const arreter = () => { mrRef.current?.stop(); setRecording(false) }
 
+  // Dépôt d'un fichier audio (mémo vocal iPhone, .m4a…) → même transcription.
+  const onFichier = async (file) => {
+    if (!file) return
+    await transcrire(file, (file.name.split('.').pop() || 'm4a').toLowerCase())
+  }
+
+  const btnStyle = { fontSize: compact ? 11 : 12.5, padding: compact ? '3px 8px' : '4px 10px', whiteSpace: 'nowrap' }
   return (
-    <button type="button" onClick={recording ? arreter : demarrer} disabled={busy}
-      className={recording ? 'btn btn-primary' : 'btn btn-ghost'}
-      title="Dictée vocale (transcription automatique)"
-      style={{ fontSize: compact ? 11 : 12.5, padding: compact ? '3px 8px' : '4px 10px', whiteSpace: 'nowrap', ...(recording ? { background: '#b91c1c', borderColor: '#b91c1c' } : {}) }}>
-      {busy ? 'Transcription…' : recording ? '■ Arrêter' : 'Dicter'}
-    </button>
+    <span style={{ display: 'inline-flex', gap: 6 }}>
+      <button type="button" onClick={recording ? arreter : demarrer} disabled={busy}
+        className={recording ? 'btn btn-primary' : 'btn btn-ghost'}
+        title="Dictée vocale (transcription automatique)"
+        style={{ ...btnStyle, ...(recording ? { background: '#b91c1c', borderColor: '#b91c1c' } : {}) }}>
+        {busy ? 'Transcription…' : recording ? '■ Arrêter' : 'Dicter'}
+      </button>
+      <label className="btn btn-ghost" style={{ ...btnStyle, cursor: busy ? 'wait' : 'pointer' }} title="Importer un fichier audio (mémo vocal) à transcrire">
+        Audio
+        <input type="file" accept="audio/*" disabled={busy} style={{ display: 'none' }}
+          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; onFichier(f) }} />
+      </label>
+    </span>
   )
 }
