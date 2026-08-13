@@ -45,7 +45,26 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
       .order('numero_visite', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
     if (error) { setErreur?.('Chargement des visites : ' + error.message); return }
-    setVisites(data || [])
+    const visiteIds = (data || []).map(v => v.id)
+
+    // Compteur de suivi par visite : actions du report (inclus) + créées dans la visite,
+    // moins celles retirées. « ouvertes » = tout sauf Clôturé / Quitus transmis.
+    let compteurs = {}
+    if (visiteIds.length) {
+      const { data: links } = await supabase.from('cr_actions').select('cr_id, action_id, inclus').in('cr_id', visiteIds)
+      const { data: acts } = await supabase.from('actions').select('id, cr_origine_id, statut').eq('dossier_id', id)
+      const statutById = Object.fromEntries((acts || []).map(a => [a.id, a.statut]))
+      for (const v of (data || [])) {
+        const incl = new Set(), excl = new Set()
+        for (const l of (links || [])) if (l.cr_id === v.id) (l.inclus ? incl : excl).add(l.action_id)
+        const ids = new Set()
+        for (const a of (acts || [])) if ((a.cr_origine_id === v.id || incl.has(a.id)) && !excl.has(a.id)) ids.add(a.id)
+        let ouvertes = 0
+        ids.forEach(aid => { if (!CLOTURANTS.has(statutById[aid])) ouvertes++ })
+        compteurs[v.id] = { total: ids.size, ouvertes }
+      }
+    }
+    setVisites((data || []).map(v => ({ ...v, _compteur: compteurs[v.id] })))
   }, [id, setErreur])
 
   useEffect(() => {
@@ -63,6 +82,14 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
       .insert({ dossier_id: id, numero_visite: maxNum + 1, date_visite: new Date().toISOString().slice(0, 10), valide: false })
       .select().single()
     if (error) { setErreur?.('Nouvelle visite : ' + error.message); return }
+    // Report : on reprend toutes les actions NON clôturées du dossier dans la nouvelle visite.
+    const { data: ouvertes } = await supabase.from('actions')
+      .select('id, statut, texte').eq('dossier_id', id).not('statut', 'in', '(cloture,quitus_transmis)')
+    if (ouvertes && ouvertes.length) {
+      await supabase.from('cr_actions').insert(ouvertes.map(a => ({
+        cr_id: data.id, action_id: a.id, statut_au_cr: a.statut, texte_au_cr: a.texte, inclus: true,
+      })))
+    }
     await rechargerVisites()
     setSelected(data.id)
   }
@@ -96,6 +123,11 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
             Visite de chantier {v.numero_visite || '—'}
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>{fmtDate(v.date_visite)}</div>
+          {v._compteur && v._compteur.total > 0 && (
+            <span style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>
+              {v._compteur.total} action{v._compteur.total > 1 ? 's' : ''} · <b style={{ color: v._compteur.ouvertes ? '#b45309' : '#15803d' }}>{v._compteur.ouvertes} ouverte{v._compteur.ouvertes > 1 ? 's' : ''}</b>
+            </span>
+          )}
           <div style={{ flex: 1 }} />
           {v.valide
             ? <span style={{ fontSize: 11, fontWeight: 700, color: '#15803d' }}>Publié</span>
@@ -113,14 +145,20 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
   const visiteId = visite?.id
 
   const recharger = useCallback(async () => {
+    // Actions affichées dans cette visite = créées ici (cr_origine_id) OU reportées (cr_actions
+    // inclus), moins celles retirées de cette visite (cr_actions inclus=false).
+    const { data: links } = await supabase.from('cr_actions').select('action_id, inclus').eq('cr_id', visiteId)
+    const inclusIds = new Set((links || []).filter(l => l.inclus).map(l => l.action_id))
+    const exclusIds = new Set((links || []).filter(l => !l.inclus).map(l => l.action_id))
     const { data, error } = await supabase.from('actions')
       .select('*, cibles:action_cibles(id, lot_id, intervenant_id)')
-      .eq('cr_origine_id', visiteId)
+      .eq('dossier_id', dossierId)
       .order('ordre', { ascending: true })
       .order('created_at', { ascending: true })
     if (error) { setErreur?.('Chargement des actions : ' + error.message); return }
-    setActions(data || [])
-  }, [visiteId, setErreur])
+    const visibles = (data || []).filter(a => (a.cr_origine_id === visiteId || inclusIds.has(a.id)) && !exclusIds.has(a.id))
+    setActions(visibles)
+  }, [visiteId, dossierId, setErreur])
 
   useEffect(() => { (async () => { await recharger(); setChargement(false) })() }, [recharger])
 
@@ -132,7 +170,15 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
                 statut: 'en_cours', statut_date: new Date().toISOString().slice(0, 10), ordre })
       .select('*, cibles:action_cibles(id, lot_id, intervenant_id)').single()
     if (error) { setErreur?.('Ajout action : ' + error.message); return }
+    await supabase.from('cr_actions').insert({ cr_id: visiteId, action_id: data.id, statut_au_cr: data.statut, texte_au_cr: data.texte, inclus: true })
     setActions(prev => [...prev, data])
+  }
+
+  // Retirer une action REPORTÉE de cette visite (elle reste dans le dossier / les autres visites).
+  const retirerDeVisite = async (actionId) => {
+    setActions(prev => prev.filter(a => a.id !== actionId))
+    const { error } = await supabase.from('cr_actions').upsert({ cr_id: visiteId, action_id: actionId, inclus: false }, { onConflict: 'cr_id,action_id' })
+    if (error) { setErreur?.('Retrait : ' + error.message); recharger() }
   }
 
   const majAction = async (actionId, champs) => {
@@ -198,6 +244,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
         .select().single()
       if (error) { setErreur?.('Import action : ' + error.message); continue }
       ordre++
+      await supabase.from('cr_actions').insert({ cr_id: visiteId, action_id: data.id, statut_au_cr: data.statut, texte_au_cr: data.texte, inclus: true })
       if (c.portee === 'lot' && c.lot_nom) {
         const lot = lots.find(l => (l.nom || '').toLowerCase() === c.lot_nom.toLowerCase())
         if (lot) await supabase.from('action_cibles').insert({ action_id: data.id, lot_id: lot.id })
@@ -210,6 +257,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
 
   const generales = actions.filter(a => a.portee === 'generale')
   const parLot = actions.filter(a => a.portee === 'lot')
+  const ouvertes = actions.filter(a => !CLOTURANTS.has(a.statut)).length
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -218,6 +266,11 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
         <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--ink-900)' }}>
           Visite de chantier {visite?.numero_visite || '—'}
         </div>
+        {actions.length > 0 && (
+          <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>
+            {actions.length} action{actions.length > 1 ? 's' : ''} · <b style={{ color: ouvertes ? '#b45309' : '#15803d' }}>{ouvertes} ouverte{ouvertes > 1 ? 's' : ''}</b>
+          </span>
+        )}
         <input type="date" defaultValue={visite?.date_visite || ''} className="input" style={{ height: 34, fontSize: 12.5 }}
           onBlur={e => e.target.value !== visite?.date_visite && supabase.from('comptes_rendus').update({ date_visite: e.target.value || null }).eq('id', visiteId).then(onMajVisite)} />
         <div style={{ flex: 1 }} />
@@ -267,7 +320,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
           <Section titre="Remarques générales" onAjouter={() => ajouterAction('generale')}>
             {generales.map(a => (
               <ActionCard key={a.id} action={a} lots={lots} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur}
-                onMaj={majAction} onSupprimer={supprimerAction} />
+                carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)} />
             ))}
             {generales.length === 0 && <Vide />}
           </Section>
@@ -275,7 +328,8 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
           <Section titre="Par lot / artisan" onAjouter={() => ajouterAction('lot')}>
             {parLot.map(a => (
               <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur}
-                onMaj={majAction} onSupprimer={supprimerAction} onSetLot={(lotId) => setCibleLot(a, lotId)} />
+                carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)}
+                onSetLot={(lotId) => setCibleLot(a, lotId)} />
             ))}
             {parLot.length === 0 && <Vide />}
           </Section>
@@ -300,7 +354,7 @@ function Section({ titre, onAjouter, children }) {
 const Vide = () => <div style={{ fontSize: 12, color: 'var(--ink-400)', fontStyle: 'italic' }}>Aucune action.</div>
 
 // ── Carte d'une action éditable (statut, texte, photos annotées, checklist vivante) ──
-function ActionCard({ action, lots, withLot, dossierId, setAnnot, setErreur, onMaj, onSupprimer, onSetLot }) {
+function ActionCard({ action, lots, withLot, carried, dossierId, setAnnot, setErreur, onMaj, onSupprimer, onRetirer, onSetLot }) {
   const st = STATUT_MAP[action.statut] || STATUTS[0]
   const cibleLot = action.cibles?.find(c => c.lot_id)?.lot_id || ''
 
@@ -308,6 +362,7 @@ function ActionCard({ action, lots, withLot, dossierId, setAnnot, setErreur, onM
     <div className="card" style={{ padding: 12, borderLeft: `3px solid ${st.c}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink-500)' }}>{action.numero}</span>
+        {carried && <span style={{ fontSize: 10, fontWeight: 700, color: '#4338ca', background: 'rgba(99,102,241,0.12)', padding: '1px 6px', borderRadius: 99 }}>reportée</span>}
 
         {/* Statut */}
         <select value={action.statut} onChange={e => {
@@ -331,7 +386,9 @@ function ActionCard({ action, lots, withLot, dossierId, setAnnot, setErreur, onM
         )}
 
         <div style={{ flex: 1 }} />
-        <button onClick={() => onSupprimer(action.id)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 8px', color: '#b91c1c' }}>Supprimer</button>
+        {carried
+          ? <button onClick={() => onRetirer?.()} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 8px', color: 'var(--ink-500)' }} title="Retirer de cette visite (l'action reste dans le dossier)">Retirer</button>
+          : <button onClick={() => onSupprimer(action.id)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 8px', color: '#b91c1c' }}>Supprimer</button>}
       </div>
 
       <input defaultValue={action.titre || ''} placeholder="Titre (optionnel)"
