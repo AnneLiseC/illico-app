@@ -1189,6 +1189,18 @@ export default function FicheChantier({ params }) {
     setSucces('Intervention modifiée ✓')
   }
 
+  // Déplacement d'une intervention DEPUIS le Gantt (glisser-déposer). On passe par le même
+  // chemin que l'édition (maj + push Google) pour ne PAS désynchroniser l'agenda. Ne concerne
+  // que les interventions « période » (celles affichées en barre). Optimiste puis rechargement.
+  const majInterventionDates = async (intId, { date_debut, date_fin }) => {
+    setInterventionsDossier(prev => prev.map(i => i.id === intId ? { ...i, date_debut, date_fin } : i))
+    const { error } = await supabase.from('interventions_artisans')
+      .update({ date_debut: date_debut || null, date_fin: date_fin || null }).eq('id', intId)
+    if (error) { setErreur('Erreur : ' + error.message); await chargerRdvsDossier(); return }
+    pushToGoogle('intervention', intId)   // resync agenda (non bloquant)
+    await chargerRdvsDossier()
+  }
+
   const supprimerInterventionDossier = async (intId) => {
     if (!confirm('Supprimer cette intervention ?')) return
     const intervention = interventionsDossier.find(i => i.id === intId)
@@ -5751,7 +5763,7 @@ export default function FicheChantier({ params }) {
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
         {/* Lots / sous-lots + Gantt (éditeur repliable en haut, puis le visuel). */}
-        <LotsPanel id={id} devis={devis} interventionsDossier={interventionsDossier} setErreur={setErreur} />
+        <LotsPanel id={id} devis={devis} interventionsDossier={interventionsDossier} onMajIntervention={majInterventionDates} setErreur={setErreur} />
 
         {/* Planning : RDV pleine largeur (les interventions vivent désormais dans le Gantt ci-dessus). */}
         {/* Card RDV */}

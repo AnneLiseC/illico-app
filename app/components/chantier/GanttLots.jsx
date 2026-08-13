@@ -20,12 +20,14 @@ function iso(d) {
 
 const MODES = ['Day', 'Week', 'Month']
 
-export default function GanttLots({ lots, dependances = [], interventions = [], onDateChange, viewMode = 'Week' }) {
+export default function GanttLots({ lots, dependances = [], interventions = [], onDateChange, onInterventionDateChange, viewMode = 'Week' }) {
   const conteneurRef = useRef(null)
   const ganttRef = useRef(null)
-  // Callback dans une ref : évite de reconstruire le Gantt à chaque re-render du parent.
+  // Callbacks dans des refs : évite de reconstruire le Gantt à chaque re-render du parent.
   const cbRef = useRef(onDateChange)
+  const cbInterRef = useRef(onInterventionDateChange)
   useEffect(() => { cbRef.current = onDateChange }, [onDateChange])
+  useEffect(() => { cbInterRef.current = onInterventionDateChange }, [onInterventionDateChange])
 
   useEffect(() => {
     const el = conteneurRef.current
@@ -72,7 +74,8 @@ export default function GanttLots({ lots, dependances = [], interventions = [], 
         progress: 0,
         dependencies: [],
         custom_class: 'bar-intervention',
-        readonly: true,
+        // Éditable seulement si un handler est fourni (sinon lecture seule).
+        readonly: !cbInterRef.current,
       })
     }
 
@@ -91,8 +94,11 @@ export default function GanttLots({ lots, dependances = [], interventions = [], 
         today_button: true,
         popup_on: 'hover',
         on_date_change: (task, start, end) => {
-          if (!task?.id || String(task.id).startsWith('int_')) return  // interventions = lecture seule
-          cbRef.current?.(task.id, { date_debut: iso(start), date_fin: iso(end) })
+          if (!task?.id) return
+          const maj = { date_debut: iso(start), date_fin: iso(end) }
+          const sid = String(task.id)
+          if (sid.startsWith('int_')) cbInterRef.current?.(sid.slice(4), maj)  // intervention (id sans le préfixe)
+          else cbRef.current?.(sid, maj)                                        // lot
         },
       })
     } catch (e) {
@@ -118,7 +124,7 @@ export default function GanttLots({ lots, dependances = [], interventions = [], 
           <div ref={conteneurRef} className="gantt-lots" style={{ overflowX: 'auto' }} />
           {nbInter > 0 && (
             <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: 6 }}>
-              📅 {nbInter} intervention{nbInter > 1 ? 's' : ''} non rattachée{nbInter > 1 ? 's' : ''} à un lot (lecture seule) — pré-remplis depuis les devis pour les éditer.
+              📅 {nbInter} intervention{nbInter > 1 ? 's' : ''} non rattachée{nbInter > 1 ? 's' : ''} à un lot{onInterventionDateChange ? ' (déplaçable ; l’agenda Google est resynchronisé)' : ' (lecture seule)'}.
             </div>
           )}
         </>

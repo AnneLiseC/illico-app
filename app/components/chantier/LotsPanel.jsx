@@ -24,7 +24,7 @@ function artisansDepuisDevis(devis) {
   return [...map.values()]
 }
 
-export default function LotsPanel({ id, devis, interventionsDossier, setErreur }) {
+export default function LotsPanel({ id, devis, interventionsDossier, onMajIntervention, setErreur }) {
   const [lots, setLots] = useState([])
   const [deps, setDeps] = useState([])          // lot_dependances : { id, lot_id, depend_de_lot_id }
   const [joursArtisan, setJoursArtisan] = useState({})  // artisan_id -> jours_travailles (int[] ISO)
@@ -314,7 +314,8 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
             </div>
           )}
 
-          <GanttLots lots={lots} dependances={deps} interventions={interventionsDossier} onDateChange={majLot} viewMode={vueGantt} />
+          <GanttLots lots={lots} dependances={deps} interventions={interventionsDossier}
+            onDateChange={majLot} onInterventionDateChange={onMajIntervention} viewMode={vueGantt} />
         </div>
       )}
     </div>
