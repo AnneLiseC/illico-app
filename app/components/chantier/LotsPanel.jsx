@@ -102,7 +102,7 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
   const majLot = async (lotId, champs) => {
     setLots(prev => prev.map(l => l.id === lotId ? { ...l, ...champs } : l))
     const { error } = await supabase.from('lots').update({ ...champs, updated_at: new Date().toISOString() }).eq('id', lotId)
-    if (error) setErreur?.('Enregistrement : ' + error.message)
+    if (error) { setErreur?.('Enregistrement : ' + error.message); recharger() }  // rollback optimiste
   }
 
   // ── Jours travaillés d'un artisan (global à l'entreprise, pas au dossier) ──

@@ -10,7 +10,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireRole } from '../../../lib/api-auth'
+import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 
 export const maxDuration = 60
 
@@ -88,6 +88,9 @@ export async function POST(request) {
   let body; try { body = await request.json() } catch { body = {} }
   const dossierId = body.dossier_id
   if (!dossierId) return NextResponse.json({ error: 'dossier_id manquant' }, { status: 400 })
+  // Appartenance au tenant AVANT toute lecture service_role (téléchargement des PDF de devis).
+  const acces = await assertDossierAccessible(dossierId, auth.profile)
+  if (acces.error) return acces.error
 
   const db = admin()
   const { data: devis, error } = await db.from('devis_artisans')
@@ -107,7 +110,7 @@ export async function POST(request) {
   const liste = [...parArtisan.values()].slice(0, MAX_DEVIS)
   if (!liste.length) return NextResponse.json({ propositions: [] })
 
-  const propositions = await Promise.all(liste.map(async (d) => {
+  const traiterDevis = async (d) => {
     const nom = d.artisan?.entreprise || d.artisan?.metier || 'Artisan'
     const base = { artisan_id: d.artisan_id, artisan_nom: nom }
     // Pas de PDF → repli sur le métier, sans sous-lots (on n'invente pas).
@@ -129,7 +132,19 @@ export async function POST(request) {
     } catch {
       return { ...base, lot_nom: d.artisan?.metier || nom, sous_lots: [], source: 'metier', note: 'PDF illisible — nom déduit du métier.' }
     }
-  }))
+  }
+
+  // Pool de concurrence borné : évite la rafale de N appels Claude + N PDF de 10 Mo en mémoire.
+  const CONCURRENCE = 4
+  const propositions = new Array(liste.length)
+  let curseur = 0
+  const worker = async () => {
+    while (curseur < liste.length) {
+      const i = curseur++
+      propositions[i] = await traiterDevis(liste[i])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCE, liste.length) }, worker))
 
   return NextResponse.json({ propositions })
 }

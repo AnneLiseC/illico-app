@@ -824,7 +824,7 @@ export default function FicheChantier({ params }) {
           client:clients(*),
           devis_artisans(*, artisan:artisans(id, entreprise, metier, partenaire, paiement_direct)),
           rendez_vous(*, artisan:artisans(id, entreprise)),
-          interventions_artisans(*, artisan:artisans(id, entreprise)),
+          interventions_artisans(*, artisan:artisans(id, entreprise, metier)),
           suivi_financier(*),
           chantier_fiches_techniques(*, fiche:fiches_techniques(id, nom, description))
         `)
@@ -1061,7 +1061,7 @@ export default function FicheChantier({ params }) {
   const chargerRdvsDossier = async () => {
     const { data } = await supabase.from('rendez_vous').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_heure')
     setRdvsDossier(data || [])
-    const { data: intData } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
+    const { data: intData } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise, metier)').eq('dossier_id', id).order('date_debut')
     setInterventionsDossier(intData || [])
   }
 
@@ -1207,7 +1207,7 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.from('interventions_artisans').delete().eq('id', intId)
     if (error) { setErreur('Erreur : ' + error.message); return }
     if (intervention?.google_event_id) await deleteGoogleEvent(intervention.google_event_id, intervention.cible_id)
-    const { data } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_debut')
+    const { data } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise, metier)').eq('dossier_id', id).order('date_debut')
     setInterventionsDossier(data || [])
   }
 

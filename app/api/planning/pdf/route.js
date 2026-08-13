@@ -4,7 +4,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireRole } from '../../../lib/api-auth'
+import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { genererPlanningPDF } from '../../../lib/pdf/genererPlanning.js'
 import { formatNomClient } from '../../../lib/clients.js'
 
@@ -25,6 +25,9 @@ export async function POST(request) {
   let body; try { body = await request.json() } catch { body = {} }
   const dossierId = body.dossier_id
   if (!dossierId) return NextResponse.json({ error: 'dossier_id manquant' }, { status: 400 })
+  // Appartenance au tenant (service_role contourne la RLS).
+  const acces = await assertDossierAccessible(dossierId, auth.profile)
+  if (acces.error) return acces.error
   const format = body.format === 'A3' ? 'A3' : 'A4'
   const colonnes = body.colonnes && typeof body.colonnes === 'object' ? body.colonnes : {}
   const mention = typeof body.mention === 'string' ? body.mention.slice(0, MENTION_MAX) : ''

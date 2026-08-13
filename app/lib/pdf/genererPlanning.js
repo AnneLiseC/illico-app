@@ -32,6 +32,7 @@ export async function genererPlanningPDF(db, dossierId, { format = 'A4', colonne
   const { data: inters } = await db.from('interventions_artisans')
     .select('id, date_debut, date_fin, type_intervention, artisan:artisans(entreprise, metier)')
     .eq('dossier_id', dossierId)
+    .eq('type_intervention', 'periode')   // cohérent avec l'éditeur : seules les périodes sont des barres
   const interLiees = new Set(listeLots.map(l => l.intervention_id).filter(Boolean).map(String))
 
   const jm = (l) => (l.artisan?.jours_travailles && l.artisan.jours_travailles.length ? l.artisan.jours_travailles : JOURS_DEFAUT)
