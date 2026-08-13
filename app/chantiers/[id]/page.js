@@ -3475,7 +3475,6 @@ export default function FicheChantier({ params }) {
           { key:'devis',     label:'Devis & artisans', icon:<HammerIcon />, count: devis.length },
           { key:'comparateur', label:'Comparateur',    icon:<ChartIcon /> },
           { key:'planning',  label:'Planning',         icon:<CalIcon />,    count: rdvsDossier.length + interventionsDossier.length },
-          { key:'lots',      label:'Lots',             icon:<HammerIcon /> },
           { key:'photos',    label:'Photos',           icon:<CamIcon />,    count: photos.length },
           { key:'cr',        label:'Rapports de visite',   icon:<DocIcon />,    count: comptesRendus.length },
           { key:'finance',   label:'Suivi financier',  icon:<WalletIcon /> },
@@ -5747,6 +5746,9 @@ export default function FicheChantier({ params }) {
       {onglet === 'planning' && (
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
+        {/* Lots / sous-lots + Gantt (éditeur repliable en haut, puis le visuel). */}
+        <LotsPanel id={id} devis={devis} interventionsDossier={interventionsDossier} setErreur={setErreur} />
+
         {/* Planning : RDV + Interventions (maquette : 2 cards séparées) */}
         <div className="grid-2c" style={{gap:18}}>
 
@@ -6191,12 +6193,7 @@ export default function FicheChantier({ params }) {
         )
       })()}
 
-      {/* ── LOTS / SOUS-LOTS (référentiel partagé Gantt + CR) ── */}
-      {onglet === 'lots' && (
-        <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          <LotsPanel id={id} devis={devis} interventionsDossier={interventionsDossier} setErreur={setErreur} />
-        </div>
-      )}
+      {/* Lots / sous-lots + Gantt : désormais intégrés dans l'onglet Planning (plus d'onglet dédié). */}
 
       {/* ── RAPPORTS DE VISITE — NOUVEAU système (liste de visites → page par visite) ── */}
       {onglet === 'cr' && !CR_LEGACY_VISIBLE && (

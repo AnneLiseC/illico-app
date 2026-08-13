@@ -20,7 +20,7 @@ function iso(d) {
 
 const MODES = ['Day', 'Week', 'Month']
 
-export default function GanttLots({ lots, onDateChange, viewMode = 'Week' }) {
+export default function GanttLots({ lots, dependances = [], onDateChange, viewMode = 'Week' }) {
   const conteneurRef = useRef(null)
   const ganttRef = useRef(null)
   // Callback dans une ref : évite de reconstruire le Gantt à chaque re-render du parent.
@@ -33,16 +33,28 @@ export default function GanttLots({ lots, onDateChange, viewMode = 'Week' }) {
 
     // parent_lot_id -> préfixe visuel « ↳ » pour les sous-lots.
     const parents = new Set(lots.filter(l => !l.parent_lot_id).map(l => l.id))
-    const taches = (lots || [])
-      .filter(l => l.date_debut && l.date_fin)
-      .map(l => ({
-        id: String(l.id),
-        name: (l.parent_lot_id ? '↳ ' : '') + (l.nom || 'Lot'),
-        start: iso(l.date_debut),
-        end: iso(l.date_fin),
-        progress: Math.max(0, Math.min(100, Number(l.avancement) || 0)),
-        custom_class: parents.has(l.parent_lot_id) ? 'bar-sous-lot' : '',
-      }))
+    const affichables = (lots || []).filter(l => l.date_debut && l.date_fin)
+    const idsAffichables = new Set(affichables.map(l => String(l.id)))
+
+    // Dépendances : seulement entre lots RÉELLEMENT rendus (frappe-gantt plante si une
+    // dépendance pointe vers un id absent). L'arête va du prédécesseur (depend_de) vers le lot.
+    const depsParLot = new Map()
+    for (const d of (dependances || [])) {
+      const cible = String(d.lot_id), pred = String(d.depend_de_lot_id)
+      if (!idsAffichables.has(cible) || !idsAffichables.has(pred)) continue
+      if (!depsParLot.has(cible)) depsParLot.set(cible, [])
+      depsParLot.get(cible).push(pred)
+    }
+
+    const taches = affichables.map(l => ({
+      id: String(l.id),
+      name: (l.parent_lot_id ? '↳ ' : '') + (l.nom || 'Lot'),
+      start: iso(l.date_debut),
+      end: iso(l.date_fin),
+      progress: Math.max(0, Math.min(100, Number(l.avancement) || 0)),
+      dependencies: depsParLot.get(String(l.id)) || [],
+      custom_class: parents.has(l.parent_lot_id) ? 'bar-sous-lot' : '',
+    }))
 
     el.innerHTML = ''
     if (!taches.length) {
@@ -56,6 +68,7 @@ export default function GanttLots({ lots, onDateChange, viewMode = 'Week' }) {
         date_format: 'YYYY-MM-DD',
         language: 'fr',
         readonly_progress: true,
+        today_button: true,
         popup_on: 'hover',
         on_date_change: (task, start, end) => {
           const maj = { date_debut: iso(start), date_fin: iso(end) }
@@ -68,7 +81,7 @@ export default function GanttLots({ lots, onDateChange, viewMode = 'Week' }) {
     }
 
     return () => { if (el) el.innerHTML = '' }
-  }, [lots, viewMode])
+  }, [lots, dependances, viewMode])
 
   const nbAffichables = (lots || []).filter(l => l.date_debut && l.date_fin).length
 

@@ -25,6 +25,7 @@ function artisansDepuisDevis(devis) {
 
 export default function LotsPanel({ id, devis, interventionsDossier, setErreur }) {
   const [lots, setLots] = useState([])
+  const [deps, setDeps] = useState([])          // lot_dependances : { id, lot_id, depend_de_lot_id }
   const [chargement, setChargement] = useState(true)
   const [prefill, setPrefill] = useState(false)
   const [vueGantt, setVueGantt] = useState('Week')
@@ -42,6 +43,12 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
       .order('created_at', { ascending: true })
     if (error) { setErreur?.('Chargement des lots : ' + error.message); return }
     setLots(data || [])
+    // Dépendances du dossier (via les lots du dossier).
+    const ids = (data || []).map(l => l.id)
+    if (ids.length) {
+      const { data: dd } = await supabase.from('lot_dependances').select('id, lot_id, depend_de_lot_id').in('lot_id', ids)
+      setDeps(dd || [])
+    } else { setDeps([]) }
   }, [id, setErreur])
 
   useEffect(() => { (async () => { await recharger(); setChargement(false) })() }, [recharger])
@@ -65,6 +72,25 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
     setLots(prev => prev.map(l => l.id === lotId ? { ...l, ...champs } : l))
     const { error } = await supabase.from('lots').update({ ...champs, updated_at: new Date().toISOString() }).eq('id', lotId)
     if (error) setErreur?.('Enregistrement : ' + error.message)
+  }
+
+  // ── Dépendances (lot_id « après » depend_de_lot_id) ──
+  const ajouterDep = async (lotId, dependDeId) => {
+    if (!dependDeId || lotId === dependDeId) return
+    if (deps.some(d => d.lot_id === lotId && d.depend_de_lot_id === dependDeId)) return
+    // Anti-cycle simple : refuse si l'autre dépend déjà (directement) de celui-ci.
+    if (deps.some(d => d.lot_id === dependDeId && d.depend_de_lot_id === lotId)) {
+      setErreur?.('Dépendance circulaire refusée.'); return
+    }
+    const { data, error } = await supabase.from('lot_dependances')
+      .insert({ lot_id: lotId, depend_de_lot_id: dependDeId }).select().single()
+    if (error) { setErreur?.('Dépendance : ' + error.message); return }
+    setDeps(prev => [...prev, data])
+  }
+  const retirerDep = async (depId) => {
+    setDeps(prev => prev.filter(d => d.id !== depId))
+    const { error } = await supabase.from('lot_dependances').delete().eq('id', depId)
+    if (error) { setErreur?.('Suppression dépendance : ' + error.message); recharger() }
   }
 
   // ── Suppression (cascade sur les sous-lots via FK ON DELETE CASCADE) ──
@@ -158,6 +184,11 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <details className="card" open style={{ padding: 0, overflow: 'hidden' }}>
+        <summary style={{ cursor: 'pointer', padding: '12px 14px', fontSize: 13, fontWeight: 600, listStyle: 'revert' }}>
+          Gérer les lots <span style={{ fontWeight: 400, color: 'var(--ink-500)' }}>· {lotsRacine.length} lot{lotsRacine.length > 1 ? 's' : ''}</span>
+        </summary>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '0 14px 14px' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={() => ajouterLot(null)} className="btn btn-primary" style={{ fontSize: 12.5 }}>+ Lot</button>
         <button onClick={prefillDevis} disabled={prefill} className="btn btn-ghost" style={{ fontSize: 12.5 }}>
@@ -166,8 +197,6 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
         <button onClick={suggererIA} disabled={ia} className="btn btn-ghost" style={{ fontSize: 12.5 }} title="Lit les PDF de devis et propose lots + sous-lots">
           {ia ? 'Analyse des devis…' : '✨ Aide IA'}
         </button>
-        <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>{lotsRacine.length} lot{lotsRacine.length > 1 ? 's' : ''}</span>
       </div>
 
       {iaPropos && (
@@ -215,11 +244,14 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
       {lotsRacine.map(lot => (
         <div key={lot.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <LigneLot lot={lot} artisans={artisans} niveau={0} onMaj={majLot} onSupprimer={supprimerLot} onAjouterSousLot={() => ajouterLot(lot.id)} />
+          <LigneDeps lot={lot} lotsRacine={lotsRacine} deps={deps} onAjouter={ajouterDep} onRetirer={retirerDep} />
           {sousLots(lot.id).map(sl => (
             <LigneLot key={sl.id} lot={sl} artisans={artisans} niveau={1} onMaj={majLot} onSupprimer={supprimerLot} />
           ))}
         </div>
       ))}
+        </div>
+      </details>
 
       {lotsRacine.length > 0 && (
         <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -234,8 +266,39 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
               </button>
             ))}
           </div>
-          <GanttLots lots={lots} onDateChange={majLot} viewMode={vueGantt} />
+          <GanttLots lots={lots} dependances={deps} onDateChange={majLot} viewMode={vueGantt} />
         </div>
+      )}
+    </div>
+  )
+}
+
+// Dépendances d'un lot racine : « Après : [chips] + sélecteur ». L'arête Gantt part du
+// prédécesseur. On ne propose que les AUTRES lots racine (les sous-lots héritent du parent).
+function LigneDeps({ lot, lotsRacine, deps, onAjouter, onRetirer }) {
+  const mesDeps = deps.filter(d => d.lot_id === lot.id)
+  const dejaPred = new Set(mesDeps.map(d => d.depend_de_lot_id))
+  const options = lotsRacine.filter(l => l.id !== lot.id && !dejaPred.has(l.id))
+  const nomDe = (lid) => lotsRacine.find(l => l.id === lid)?.nom || '—'
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
+      padding: '6px 14px 8px', paddingLeft: 34, borderTop: '1px solid var(--ink-100)', background: 'var(--surface-2)' }}>
+      <span style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>Après&nbsp;:</span>
+      {mesDeps.length === 0 && <span style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>aucune</span>}
+      {mesDeps.map(d => (
+        <span key={d.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5,
+          background: 'var(--ink-100)', borderRadius: 12, padding: '2px 6px 2px 8px' }}>
+          {nomDe(d.depend_de_lot_id)}
+          <button onClick={() => onRetirer(d.id)} title="Retirer"
+            style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#b91c1c', fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
+        </span>
+      ))}
+      {options.length > 0 && (
+        <select value="" onChange={e => { if (e.target.value) onAjouter(lot.id, e.target.value) }}
+          className="input" style={{ height: 28, fontSize: 11.5, flex: '0 1 160px' }}>
+          <option value="">+ dépendance…</option>
+          {options.map(l => <option key={l.id} value={l.id}>{l.nom}</option>)}
+        </select>
       )}
     </div>
   )
