@@ -7,6 +7,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { compressImageToBlob } from '../../lib/images'
 import { apiFetch } from '../../lib/api-auth-client'
+import { TYPES_VISITE, ORDRE_TYPES } from '../../lib/crRegles'
 
 // 16 statuts figés (clés = CHECK de la table `actions`), 4 familles couleur + libellé daté.
 export const STATUTS = [
@@ -40,7 +41,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
 
   const rechargerVisites = useCallback(async () => {
     const { data, error } = await supabase.from('comptes_rendus')
-      .select('id, numero_visite, date_visite, prochaine_reunion_at, valide, created_at')
+      .select('id, numero_visite, date_visite, type_visite, prochaine_reunion_at, valide, created_at')
       .eq('dossier_id', id)
       .order('numero_visite', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
@@ -79,7 +80,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
   const nouvelleVisite = async () => {
     const maxNum = visites.reduce((m, v) => Math.max(m, v.numero_visite || 0), 0)
     const { data, error } = await supabase.from('comptes_rendus')
-      .insert({ dossier_id: id, numero_visite: maxNum + 1, date_visite: new Date().toISOString().slice(0, 10), valide: false })
+      .insert({ dossier_id: id, numero_visite: maxNum + 1, date_visite: new Date().toISOString().slice(0, 10), type_visite: 'suivi', valide: false })
       .select().single()
     if (error) { setErreur?.('Nouvelle visite : ' + error.message); return }
     // Report : on reprend toutes les actions NON clôturées du dossier dans la nouvelle visite.
@@ -285,7 +286,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
     try {
       const res = await apiFetch('/api/actions/suggest', {
         method: 'POST',
-        body: JSON.stringify({ notes: iaNotes, lots: lots.map(l => ({ id: l.id, nom: l.nom })) }),
+        body: JSON.stringify({ notes: iaNotes, lots: lots.map(l => ({ id: l.id, nom: l.nom })), type_visite: visite?.type_visite || 'suivi' }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) { setErreur?.(j.error || 'Analyse IA impossible.'); return }
@@ -330,8 +331,13 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <button onClick={onRetour} className="btn btn-ghost" style={{ fontSize: 12.5 }}>← Visites</button>
         <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--ink-900)' }}>
-          Visite de chantier {visite?.numero_visite || '—'}
+          Visite {visite?.numero_visite || '—'}
         </div>
+        <select value={visite?.type_visite || 'suivi'}
+          onChange={e => supabase.from('comptes_rendus').update({ type_visite: e.target.value }).eq('id', visiteId).then(onMajVisite)}
+          className="input" style={{ height: 32, fontSize: 12, flex: '0 1 220px' }} title="Type de visite : oriente les règles de rédaction de l'IA">
+          {ORDRE_TYPES.map(t => <option key={t} value={t}>{TYPES_VISITE[t]}</option>)}
+        </select>
         {actions.length > 0 && (
           <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>
             {actions.length} action{actions.length > 1 ? 's' : ''} · <b style={{ color: ouvertes ? '#b45309' : '#15803d' }}>{ouvertes} ouverte{ouvertes > 1 ? 's' : ''}</b>

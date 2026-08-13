@@ -9,6 +9,7 @@
 
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
+import { reglesActions, TYPES_VISITE } from '../../../lib/crRegles'
 
 export const maxDuration = 60
 
@@ -64,14 +65,19 @@ export async function POST(request) {
   const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, MAX_NOTES) : ''
   if (!notes) return NextResponse.json({ error: 'notes manquantes' }, { status: 400 })
   const lots = Array.isArray(body.lots) ? body.lots.filter(l => l?.nom).map(l => l.nom).slice(0, 60) : []
+  // Type de visite (R1/R2/R3/suivi/réception) → règles rédactionnelles + contexte adaptés.
+  const typeVisite = TYPES_VISITE[body.type_visite] ? body.type_visite : null
 
-  const userText = `Notes de visite :\n${notes}\n\nLots disponibles (pour "lot_nom") : ${lots.length ? lots.join(', ') : 'aucun'}\n\nRenvoie les actions au format JSON demandé, en français.`
+  // Les règles du CR (consignes générales + contexte du type) sont injectées dans le prompt système.
+  const system = `${SYSTEM_PROMPT}\n\n${reglesActions(typeVisite)}`
+  const enTete = typeVisite ? `Type de visite : ${TYPES_VISITE[typeVisite]}\n\n` : ''
+  const userText = `${enTete}Notes de visite :\n${notes}\n\nLots disponibles (pour "lot_nom") : ${lots.length ? lots.join(', ') : 'aucun'}\n\nRenvoie les actions au format JSON demandé, en français.`
 
   const claudeBody = JSON.stringify({
     model: 'claude-sonnet-4-6',
     max_tokens: 2500,
     temperature: 0,
-    system: SYSTEM_PROMPT,
+    system,
     messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
   })
 
