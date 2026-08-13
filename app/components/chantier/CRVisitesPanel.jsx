@@ -240,6 +240,39 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
   }
   const togglePdfOpt = (k) => setPdfOpts(o => ({ ...o, [k]: !o[k] }))
 
+  // ── Diffusion (mail) — envoi UNIQUEMENT sur confirmation explicite ──
+  const [diffPanel, setDiffPanel] = useState(false)
+  const [diffLots, setDiffLots] = useState(() => new Set())
+  const [diffClient, setDiffClient] = useState(false)
+  const [filtrerParLot, setFiltrerParLot] = useState(false)
+  const [diffLoading, setDiffLoading] = useState(false)
+  const toggleDiffLot = (id) => setDiffLots(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const diffuser = async () => {
+    const lot_ids = [...diffLots]
+    const n = lot_ids.length + (diffClient ? 1 : 0)
+    if (!n) { setErreur?.('Sélectionne au moins un destinataire.'); return }
+    // Garde-fou : envoi réel de mails → confirmation obligatoire.
+    if (!window.confirm(`Envoyer le compte-rendu par mail à ${n} destinataire(s) MAINTENANT ? Le mail part immédiatement.`)) return
+    setDiffLoading(true)
+    try {
+      const res = await apiFetch('/api/cr/visite-diffuser', {
+        method: 'POST',
+        body: JSON.stringify({ visite_id: visiteId, lot_ids, inclure_client: diffClient, filtrer_par_lot: filtrerParLot }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) { setErreur?.(j.error || 'Diffusion impossible.'); return }
+      const envoyes = j.envoyes?.length || 0
+      const erreurs = j.erreurs?.length || 0
+      if (envoyes) setSucces?.(`${envoyes} mail(s) envoyé(s)${erreurs ? ` · ${erreurs} échec(s)` : ''} ✓`)
+      else setErreur?.(erreurs ? `Aucun envoi — ${erreurs} destinataire(s) en échec (email manquant ?).` : 'Aucun destinataire.')
+      setDiffPanel(false)
+    } catch {
+      setErreur?.('Erreur réseau diffusion.')
+    } finally {
+      setDiffLoading(false)
+    }
+  }
+
   // ── Aide IA (optionnelle) : notes → actions candidates → validation → insertion ──
   const [iaOuvert, setIaOuvert] = useState(false)
   const [iaNotes, setIaNotes] = useState('')
@@ -309,8 +342,36 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
         <div style={{ flex: 1 }} />
         <button onClick={() => setIaOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>✨ Aide IA</button>
         <button onClick={() => setPdfPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Exporter PDF</button>
+        <button onClick={() => setDiffPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Diffuser</button>
         {!visite?.valide && <button onClick={publier} className="btn btn-primary" style={{ fontSize: 12.5, background: '#15803d', borderColor: '#15803d' }}>Publier</button>}
       </div>
+
+      {diffPanel && (
+        <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderColor: 'rgba(220,38,38,0.3)' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Diffuser le compte-rendu par mail</div>
+          <div style={{ fontSize: 11.5, color: '#b45309' }}>⚠ Les destinataires cochés recevront un mail réel dès que tu confirmeras.</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-600)' }}>Artisans (par lot) :</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {lots.filter(l => !l.parent_lot_id).length === 0 && <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Aucun lot — crée-les d’abord dans l’onglet Lots.</span>}
+            {lots.filter(l => !l.parent_lot_id).map(l => (
+              <label key={l.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
+                <input type="checkbox" checked={diffLots.has(l.id)} onChange={() => toggleDiffLot(l.id)} style={{ accentColor: '#4f46e5' }} /> {l.nom}
+              </label>
+            ))}
+          </div>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
+            <input type="checkbox" checked={diffClient} onChange={() => setDiffClient(v => !v)} style={{ accentColor: '#4f46e5' }} /> Envoyer aussi au client
+          </label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            <input type="checkbox" checked={filtrerParLot} onChange={() => setFiltrerParLot(v => !v)} style={{ accentColor: '#4f46e5' }} /> Chaque artisan ne reçoit que son lot (+ les générales)
+          </label>
+          <div>
+            <button onClick={diffuser} disabled={diffLoading} className="btn btn-primary" style={{ fontSize: 12.5, background: '#b91c1c', borderColor: '#b91c1c' }}>
+              {diffLoading ? 'Envoi…' : 'Envoyer (confirmation demandée)'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {pdfPanel && (
         <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>

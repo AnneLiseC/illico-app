@@ -1,0 +1,90 @@
+// app/lib/pdf/genererVisite.js
+// Génère le PDF d'une VISITE (nouveau système actions). Extrait de /api/cr/visite-pdf pour
+// être réutilisé par l'export ET la diffusion (/api/cr/visite-diffuser). Reçoit un client
+// Supabase admin déjà construit. Renvoie { buffer, dossier, visite }.
+
+import path from 'path'
+import fs from 'fs'
+import { renderToBuffer } from '@react-pdf/renderer'
+import './fonts.js'
+import { buildVisiteDocument } from './visiteDocument.js'
+
+function getLogoBase64() {
+  try {
+    const p = path.join(process.cwd(), 'public', 'logo.png')
+    if (!fs.existsSync(p)) return null
+    return `data:image/png;base64,${fs.readFileSync(p).toString('base64')}`
+  } catch { return null }
+}
+
+// db : client Supabase (service_role). opts : { options, filtreLotId }.
+export async function genererVisitePDF(db, visiteId, { options = {}, filtreLotId = null } = {}) {
+  const { data: visite } = await db.from('comptes_rendus')
+    .select('id, dossier_id, numero_visite, date_visite').eq('id', visiteId).maybeSingle()
+  if (!visite) throw new Error('Visite introuvable')
+
+  const { data: dossier } = await db.from('dossiers')
+    .select('*, referente:profiles!dossiers_referente_id_fkey(prenom, nom), client:clients(*), agence:agences!dossiers_agence_id_fkey(nom)')
+    .eq('id', visite.dossier_id).maybeSingle()
+  if (!dossier) throw new Error('Dossier introuvable')
+
+  // Actions affichées dans la visite (créées ici OU reportées, moins retirées).
+  const { data: links } = await db.from('cr_actions').select('action_id, inclus').eq('cr_id', visiteId)
+  const inclus = new Set((links || []).filter(l => l.inclus).map(l => l.action_id))
+  const exclus = new Set((links || []).filter(l => !l.inclus).map(l => l.action_id))
+  const { data: allActions } = await db.from('actions')
+    .select('id, numero, portee, titre, texte, statut, statut_date, cr_origine_id, ordre')
+    .eq('dossier_id', visite.dossier_id).order('ordre').order('created_at')
+  const actions = (allActions || []).filter(a => (a.cr_origine_id === visiteId || inclus.has(a.id)) && !exclus.has(a.id))
+  const actionIds = actions.map(a => a.id)
+
+  let cibles = [], photos = [], checklist = []
+  if (actionIds.length) {
+    ;[cibles, photos, checklist] = await Promise.all([
+      db.from('action_cibles').select('action_id, lot_id').in('action_id', actionIds).then(r => r.data || []),
+      db.from('action_photos').select('action_id, path, ordre').in('action_id', actionIds).order('ordre').then(r => r.data || []),
+      db.from('action_checklist').select('action_id, label, checked, ordre').in('action_id', actionIds).order('ordre').then(r => r.data || []),
+    ])
+  }
+
+  const lotIds = [...new Set(cibles.map(c => c.lot_id).filter(Boolean))]
+  let lotNomById = {}
+  if (lotIds.length) {
+    const { data: lots } = await db.from('lots').select('id, nom').in('id', lotIds)
+    lotNomById = Object.fromEntries((lots || []).map(l => [l.id, l.nom]))
+  }
+
+  const photosB64ByAction = {}
+  for (const ph of photos) {
+    if ((photosB64ByAction[ph.action_id]?.length || 0) >= 6) continue
+    try {
+      const { data: blob } = await db.storage.from('photos').download(ph.path)
+      if (blob) {
+        const buf = Buffer.from(await blob.arrayBuffer())
+        const ext = (ph.path.split('.').pop() || 'jpg').toLowerCase()
+        const mime = ext === 'png' ? 'image/png' : 'image/jpeg'
+        ;(photosB64ByAction[ph.action_id] ||= []).push(`data:${mime};base64,${buf.toString('base64')}`)
+      }
+    } catch { /* photo ignorée */ }
+  }
+  const checklistByAction = {}
+  for (const it of checklist) (checklistByAction[it.action_id] ||= []).push({ label: it.label, checked: it.checked })
+
+  const enrich = (a) => ({ ...a, photosB64: photosB64ByAction[a.id] || [], checklist: checklistByAction[a.id] || [] })
+  const generales = actions.filter(a => a.portee === 'generale').map(enrich)
+  const lotActions = actions.filter(a => a.portee === 'lot').map(enrich)
+  const lotIdForAction = (aid) => (cibles.find(x => x.action_id === aid && x.lot_id)?.lot_id) || null
+  const parLotMap = new Map()
+  for (const a of lotActions) {
+    const lid = lotIdForAction(a.id)
+    if (filtreLotId && lid !== filtreLotId) continue
+    const key = lid || '_sans'
+    if (!parLotMap.has(key)) parLotMap.set(key, { lotNom: lid ? (lotNomById[lid] || 'Sans lot') : 'Sans lot', actions: [] })
+    parLotMap.get(key).actions.push(a)
+  }
+  const parLot = [...parLotMap.values()]
+
+  const doc = buildVisiteDocument({ dossier, visite, generales, parLot, logo: getLogoBase64(), opts: options })
+  const buffer = await renderToBuffer(doc)
+  return { buffer, dossier, visite }
+}
