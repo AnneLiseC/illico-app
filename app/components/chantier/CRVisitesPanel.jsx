@@ -30,6 +30,9 @@ export const STATUTS = [
 ]
 const STATUT_MAP = Object.fromEntries(STATUTS.map(s => [s.k, s]))
 const CLOTURANTS = new Set(['cloture', 'quitus_transmis']) // ferment le report
+// Étiquette courte + couleur par type de visite (pour la liste).
+const TYPE_COURT = { r1: 'R1', r2: 'R2', r3: 'R3', suivi: 'Suivi', reception: 'Réception' }
+const TYPE_COULEUR = { r1: '#4f46e5', r2: '#4f46e5', r3: '#4f46e5', suivi: '#d97706', reception: '#16a34a' }
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-FR') : ''
 
@@ -137,6 +140,11 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink-900)' }}>
               Visite {v.numero_visite || '—'}
             </div>
+            <span style={{ fontSize: 11, fontWeight: 700, color: v.type_visite ? (TYPE_COULEUR[v.type_visite] || 'var(--ink-500)') : '#94a3b8',
+              background: (v.type_visite ? (TYPE_COULEUR[v.type_visite] || '#94a3b8') : '#94a3b8') + '1a', borderRadius: 20, padding: '2px 9px' }}
+              title={v.type_visite ? '' : 'Type non défini — ouvre la visite pour le choisir'}>
+              {v.type_visite ? (TYPE_COURT[v.type_visite] || v.type_visite) : 'type ?'}
+            </span>
             <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>{fmtDate(v.date_visite)}</div>
             {v._compteur && v._compteur.total > 0 && (
               <span style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>
