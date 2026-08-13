@@ -45,7 +45,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-FR') : ''
 // Types gérés par l'ancien système prose (générateur IA + CR manuel), pas par les actions.
 const TYPES_ANCIENS = new Set(['r1', 'r2', 'r3'])
 
-export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onCreerAncien, onEditerAncien }) {
+export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onCreerAncien, onEditerAncien, refreshKey }) {
   const [visites, setVisites] = useState([])
   const [lots, setLots] = useState([])
   const [selected, setSelected] = useState(null)   // id de la visite ouverte
@@ -88,7 +88,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
       setLots(l || [])
       setChargement(false)
     })()
-  }, [id, rechargerVisites])
+  }, [id, rechargerVisites, refreshKey])  // refreshKey : re-fetch après création/édition prose (ancien modal)
 
   // Nouvelle visite STRUCTURÉE (suivi / réception uniquement — R1/R2/R3 passent par l'ancien).
   const nouvelleVisite = async (type = 'suivi') => {
@@ -141,7 +141,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
             <button onClick={() => nouvelleVisite('suivi')} className="btn btn-ghost" style={{ fontSize: 12.5, justifyContent: 'flex-start' }}>Suivi de chantier <span style={{ color: 'var(--ink-400)', marginLeft: 4 }}>· actions</span></button>
             <button onClick={() => nouvelleVisite('reception')} className="btn btn-ghost" style={{ fontSize: 12.5, justifyContent: 'flex-start' }}>Réception <span style={{ color: 'var(--ink-400)', marginLeft: 4 }}>· actions</span></button>
             <div style={{ borderTop: '1px solid var(--ink-100)', margin: '2px 0' }} />
-            <button onClick={() => { setMenuNouv(false); onCreerAncien?.() }} className="btn btn-ghost" style={{ fontSize: 12.5, justifyContent: 'flex-start' }}>R1 / R2 / R3 <span style={{ color: 'var(--ink-400)', marginLeft: 4 }}>· ancien format prose</span></button>
+            <button onClick={() => { setMenuNouv(false); onCreerAncien?.() }} className="btn btn-ghost" style={{ fontSize: 12.5, justifyContent: 'flex-start' }}>R1 / R2 / R3</button>
           </div>
         )}
         <div style={{ flex: 1 }} />

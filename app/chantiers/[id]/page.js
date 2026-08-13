@@ -726,6 +726,10 @@ export default function FicheChantier({ params }) {
   const [photosAffichees, setPhotosAffichees] = useState(3)
   const [uploadingDoc, setUploadingDoc] = useState(null) // devisId en cours d'upload
   const [comptesRendus, setComptesRendus] = useState([])
+  // Signal de rafraîchissement du nouvel onglet CR après création/édition d'un R1/R2/R3 via
+  // l'ancien modal (les deux systèmes ont des sources séparées).
+  const [crVersion, setCrVersion] = useState(0)
+  useEffect(() => { setCrVersion(v => v + 1) }, [comptesRendus])
   const [messages, setMessages] = useState([])
   const [factures, setFactures] = useState([])
   const [ajouterFacture, setAjouterFacture] = useState(null) // devisId en cours
@@ -6156,7 +6160,7 @@ export default function FicheChantier({ params }) {
       {/* ── RAPPORTS DE VISITE — NOUVEAU système (liste de visites → page par visite) ── */}
       {onglet === 'cr' && !CR_LEGACY_VISIBLE && (
         <CRVisitesPanel id={id} setErreur={setErreur} setSucces={setSucces} setAnnot={setAnnot}
-          onCreerAncien={() => setCrModal(true)} onEditerAncien={editerCR} />
+          onCreerAncien={() => setCrModal(true)} onEditerAncien={editerCR} refreshKey={crVersion} />
       )}
 
       {/* ── COMPTES-RENDUS (ANCIEN — conservé mais masqué via CR_LEGACY_VISIBLE) ── */}
