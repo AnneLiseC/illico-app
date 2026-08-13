@@ -8,6 +8,7 @@ import { supabase } from '../../lib/supabase'
 import { compressImageToBlob } from '../../lib/images'
 import { apiFetch } from '../../lib/api-auth-client'
 import { TYPES_VISITE, ORDRE_TYPES } from '../../lib/crRegles'
+import BoutonDictee from './BoutonDictee'
 
 // 16 statuts figés (clés = CHECK de la table `actions`), 4 familles couleur + libellé daté.
 export const STATUTS = [
@@ -496,13 +497,15 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
 
       {iaOuvert && (
         <div ref={iaPanelRef} className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderColor: 'rgba(99,102,241,0.35)' }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Aide IA — colle tes notes de visite, l&apos;IA propose des actions (tu valides).</div>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Notes de visite — dicte ou tape. Ensuite, au choix : laisse l&apos;IA proposer des actions, ou ajoute-les toi-même.</div>
           <textarea value={iaNotes} onChange={e => setIaNotes(e.target.value)} rows={4}
-            placeholder="Notes brutes : bullet points, phrases incomplètes… (ex. « muret entrée à refaire avant le 12/02 ; peinture RAS »)"
+            placeholder="Dicte au micro ou tape tes notes… (ex. « muret entrée à refaire avant le 12/02 ; peinture RAS »)"
             className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical', minHeight: 80 }} />
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <BoutonDictee dossierId={dossierId} setErreur={setErreur}
+              onTexte={txt => setIaNotes(prev => [prev, txt].filter(Boolean).join(' '))} />
             <button onClick={analyserIA} disabled={iaLoading || !iaNotes.trim()} className="btn btn-primary" style={{ fontSize: 12.5 }}>
-              {iaLoading ? 'Analyse…' : 'Analyser'}
+              {iaLoading ? 'Analyse…' : 'Analyser avec l’IA'}
             </button>
             {iaCandidats && iaCandidats.length > 0 && (
               <button onClick={importerIA} className="btn btn-ghost" style={{ fontSize: 12.5 }}>
@@ -666,6 +669,14 @@ function RenderProse({ text }) {
 function ActionCard({ action, lots, withLot, carried, dossierId, setAnnot, setErreur, onMaj, onSupprimer, onRetirer, onSetLot }) {
   const st = STATUT_MAP[action.statut] || STATUTS[0]
   const cibleLot = action.cibles?.find(c => c.lot_id)?.lot_id || ''
+  const txtRef = useRef(null)
+  // Dictée directement dans le texte de l'action (sans IA) : on ajoute au champ + on enregistre.
+  const dicterDansTexte = (txt) => {
+    const el = txtRef.current; if (!el) return
+    const nv = [el.value, txt].filter(Boolean).join(' ')
+    el.value = nv
+    onMaj(action.id, { texte: nv })
+  }
 
   return (
     <div className="card" style={{ padding: 12, borderLeft: `3px solid ${st.c}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -704,9 +715,12 @@ function ActionCard({ action, lots, withLot, carried, dossierId, setAnnot, setEr
         onBlur={e => e.target.value !== (action.titre || '') && onMaj(action.id, { titre: e.target.value })}
         className="input" style={{ height: 32, fontSize: 12.5, fontWeight: 600 }} />
 
-      <textarea defaultValue={action.texte || ''} placeholder="Description de la remarque…" rows={2}
+      <textarea ref={txtRef} defaultValue={action.texte || ''} placeholder="Description de la remarque… (ou dicte au micro)" rows={2}
         onBlur={e => e.target.value !== (action.texte || '') && onMaj(action.id, { texte: e.target.value })}
         className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical', minHeight: 52 }} />
+      <div style={{ display: 'flex' }}>
+        <BoutonDictee dossierId={dossierId} setErreur={setErreur} onTexte={dicterDansTexte} compact />
+      </div>
 
       <ActionPhotos action={action} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} />
       <ActionChecklist action={action} setErreur={setErreur} />
