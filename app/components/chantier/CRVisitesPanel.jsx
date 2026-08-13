@@ -496,7 +496,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
       )}
 
       {iaOuvert && (
-        <div ref={iaPanelRef} className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderColor: 'rgba(99,102,241,0.35)' }}>
+        <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderColor: 'rgba(99,102,241,0.35)' }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Notes de visite — dicte ou tape. Ensuite, au choix : laisse l&apos;IA proposer des actions, ou ajoute-les toi-même.</div>
           <textarea value={iaNotes} onChange={e => setIaNotes(e.target.value)} rows={4}
             placeholder="Dicte au micro ou tape tes notes… (ex. « muret entrée à refaire avant le 12/02 ; peinture RAS »)"
@@ -669,14 +669,6 @@ function RenderProse({ text }) {
 function ActionCard({ action, lots, withLot, carried, dossierId, setAnnot, setErreur, onMaj, onSupprimer, onRetirer, onSetLot }) {
   const st = STATUT_MAP[action.statut] || STATUTS[0]
   const cibleLot = action.cibles?.find(c => c.lot_id)?.lot_id || ''
-  const txtRef = useRef(null)
-  // Dictée directement dans le texte de l'action (sans IA) : on ajoute au champ + on enregistre.
-  const dicterDansTexte = (txt) => {
-    const el = txtRef.current; if (!el) return
-    const nv = [el.value, txt].filter(Boolean).join(' ')
-    el.value = nv
-    onMaj(action.id, { texte: nv })
-  }
 
   return (
     <div className="card" style={{ padding: 12, borderLeft: `3px solid ${st.c}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -715,12 +707,9 @@ function ActionCard({ action, lots, withLot, carried, dossierId, setAnnot, setEr
         onBlur={e => e.target.value !== (action.titre || '') && onMaj(action.id, { titre: e.target.value })}
         className="input" style={{ height: 32, fontSize: 12.5, fontWeight: 600 }} />
 
-      <textarea ref={txtRef} defaultValue={action.texte || ''} placeholder="Description de la remarque… (ou dicte au micro)" rows={2}
+      <textarea defaultValue={action.texte || ''} placeholder="Description de la remarque…" rows={2}
         onBlur={e => e.target.value !== (action.texte || '') && onMaj(action.id, { texte: e.target.value })}
         className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical', minHeight: 52 }} />
-      <div style={{ display: 'flex' }}>
-        <BoutonDictee dossierId={dossierId} setErreur={setErreur} onTexte={dicterDansTexte} compact />
-      </div>
 
       <ActionPhotos action={action} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} />
       <ActionChecklist action={action} setErreur={setErreur} />
@@ -734,6 +723,8 @@ function ActionCard({ action, lots, withLot, carried, dossierId, setAnnot, setEr
 function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
   const [photos, setPhotos] = useState([])
   const [up, setUp] = useState(false)
+  const [picker, setPicker] = useState(false)          // sélecteur de photos du dossier
+  const [dossierPhotos, setDossierPhotos] = useState(null)
 
   const recharger = useCallback(async () => {
     const { data } = await supabase.from('action_photos').select('id, path, annotations, ordre').eq('action_id', action.id).order('ordre')
@@ -769,6 +760,28 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
     recharger()
   }
 
+  // Sélecteur : photos DÉJÀ dans le dossier (prises ailleurs dans l'app).
+  const ouvrirPicker = async () => {
+    setPicker(true)
+    if (dossierPhotos) return
+    const { data } = await supabase.from('photos').select('id, url, categorie').eq('dossier_id', dossierId).order('created_at', { ascending: false })
+    const rows = data || []
+    if (!rows.length) { setDossierPhotos([]); return }
+    const { data: signed } = await supabase.storage.from('photos').createSignedUrls(rows.map(r => r.url), 3600)
+    const urlByPath = Object.fromEntries((signed || []).map(s => [s.path, s.signedUrl]))
+    setDossierPhotos(rows.map(r => ({ ...r, thumb: urlByPath[r.url] || '' })))
+  }
+  // Attache une photo du dossier : on COPIE vers un chemin propre à l'action → supprimer la
+  // photo de l'action n'efface jamais l'originale du dossier.
+  const attacher = async (p) => {
+    const dest = `chantiers/${dossierId}/actions/${crypto.randomUUID()}.jpg`
+    const { error } = await supabase.storage.from('photos').copy(p.url, dest)
+    if (error) { setErreur?.('Ajout depuis le dossier : ' + error.message); return }
+    await supabase.from('action_photos').insert({ action_id: action.id, path: dest, ordre: photos.length })
+    setPicker(false)
+    recharger()
+  }
+
   const annoter = (ph) => setAnnot?.({
     src: ph.url, titre: 'Annoter la photo',
     onSave: async (blob) => {
@@ -795,11 +808,36 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
           )}
         </div>
       ))}
-      <label style={{ width: 72, height: 72, borderRadius: 8, border: '2px dashed var(--ink-300)', display: 'grid', placeItems: 'center', cursor: up ? 'wait' : 'pointer' }}>
+      <label title="Ajouter depuis l'ordinateur" style={{ width: 72, height: 72, borderRadius: 8, border: '2px dashed var(--ink-300)', display: 'grid', placeItems: 'center', cursor: up ? 'wait' : 'pointer' }}>
         <span style={{ fontSize: 22, color: 'var(--ink-300)' }}>{up ? '…' : '+'}</span>
         <input type="file" accept="image/*" multiple disabled={up} style={{ display: 'none' }}
           onChange={e => { const fs = Array.from(e.target.files || []); e.target.value = ''; onFiles(fs) }} />
       </label>
+      <button type="button" onClick={ouvrirPicker} title="Choisir parmi les photos du dossier"
+        style={{ width: 72, height: 72, borderRadius: 8, border: '2px dashed var(--ink-300)', background: 'none', cursor: 'pointer', color: 'var(--ink-400)', fontSize: 10.5, lineHeight: 1.2, padding: 4 }}>
+        Depuis le dossier
+      </button>
+
+      {picker && (
+        <div style={{ flexBasis: '100%', border: '1px solid var(--ink-200)', borderRadius: 8, padding: 10, marginTop: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-600)' }}>Photos du dossier</span>
+            <div style={{ flex: 1 }} />
+            <button onClick={() => setPicker(false)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 9px' }}>Fermer</button>
+          </div>
+          {dossierPhotos === null && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Chargement…</div>}
+          {dossierPhotos && dossierPhotos.length === 0 && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Aucune photo dans ce dossier pour l’instant.</div>}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {(dossierPhotos || []).map(p => (
+              <button key={p.id} type="button" onClick={() => attacher(p)} title={`Ajouter (${p.categorie || 'photo'})`}
+                style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={p.thumb} alt="" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--ink-200)' }} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
