@@ -94,7 +94,7 @@ export async function POST(request) {
 
   const db = admin()
   const { data: devis, error } = await db.from('devis_artisans')
-    .select('id, artisan_id, statut, devis_pdf_path, artisan:artisans(id, entreprise, metier)')
+    .select('id, artisan_id, statut, devis_pdf_path, lots_ia_cache, artisan:artisans(id, entreprise, metier)')
     .eq('dossier_id', dossierId)
     .order('ordre').order('created_at')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -117,6 +117,19 @@ export async function POST(request) {
     if (!d.devis_pdf_path) {
       return { ...base, lot_nom: d.artisan?.metier || nom, sous_lots: [], source: 'metier', note: 'Pas de PDF — nom déduit du métier.' }
     }
+    // CACHE : si CE MÊME PDF (même chemin) a déjà été analysé, on réutilise le résultat →
+    // 0 appel Claude facturé. Profite aussi aux autres utilisateurs (cache posé sur la ligne).
+    // Le chemin storage est un UUID : remplacer le PDF crée un nouveau chemin → le cache
+    // devient automatiquement caduc (miss) sans invalidation manuelle.
+    const cache = d.lots_ia_cache
+    if (cache && cache.pdf_path === d.devis_pdf_path && typeof cache.lot_nom === 'string') {
+      return {
+        ...base,
+        lot_nom: cache.lot_nom,
+        sous_lots: Array.isArray(cache.sous_lots) ? cache.sous_lots : [],
+        source: 'cache',
+      }
+    }
     try {
       const { data: blob, error: dlErr } = await db.storage.from('documents').download(d.devis_pdf_path)
       if (dlErr || !blob) throw new Error('download')
@@ -128,6 +141,13 @@ export async function POST(request) {
       const sousLots = Array.isArray(raw.sous_lots)
         ? raw.sous_lots.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim().slice(0, 120)).slice(0, 8)
         : []
+      // Écrit le cache pour ce PDF (réutilisé aux prochains clics et par les autres utilisateurs).
+      // Best-effort : un échec d'écriture ne casse pas la proposition (on a déjà le résultat).
+      try {
+        await db.from('devis_artisans')
+          .update({ lots_ia_cache: { pdf_path: d.devis_pdf_path, lot_nom: lotNom, sous_lots: sousLots, at: new Date().toISOString() } })
+          .eq('id', d.id)
+      } catch { /* best-effort */ }
       return { ...base, lot_nom: lotNom, sous_lots: sousLots, source: 'pdf' }
     } catch {
       return { ...base, lot_nom: d.artisan?.metier || nom, sous_lots: [], source: 'metier', note: 'PDF illisible — nom déduit du métier.' }
