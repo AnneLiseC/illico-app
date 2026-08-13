@@ -13,6 +13,8 @@ import { dureeOuvree, finApresOuvres, LIBELLES_JOURS, JOURS_DEFAUT } from '../..
 const GanttLots = dynamic(() => import('./GanttLots'), { ssr: false })
 
 const COULEURS = ['#4f46e5', '#0ea5e9', '#16a34a', '#a16207', '#dc2626', '#7c3aed', '#0d9488', '#db2777']
+// Statuts « clôturants » (mêmes clés que le CR) : une action y est considérée comme réglée.
+const CLOTURANTS = new Set(['cloture', 'quitus_transmis'])
 
 // Artisans disponibles (dédupliqués) tirés des devis du dossier.
 function artisansDepuisDevis(devis) {
@@ -28,6 +30,7 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
   const [lots, setLots] = useState([])
   const [deps, setDeps] = useState([])          // lot_dependances : { id, lot_id, depend_de_lot_id }
   const [joursArtisan, setJoursArtisan] = useState({})  // artisan_id -> jours_travailles (int[] ISO)
+  const [actionsParLot, setActionsParLot] = useState({})  // lot_id -> { total, cloturees } (lien CR↔planning)
   const [chargement, setChargement] = useState(true)
   const [vueGantt, setVueGantt] = useState('Week')
   const [ia, setIa] = useState(false)                 // appel IA en cours (pré-remplissage)
@@ -66,6 +69,17 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
       const { data: arts } = await supabase.from('artisans').select('id, jours_travailles').in('id', artIds)
       setJoursArtisan(Object.fromEntries((arts || []).map(a => [a.id, a.jours_travailles || JOURS_DEFAUT])))
     } else { setJoursArtisan({}) }
+    // Actions de CR rattachées à chaque lot (lien Planning ↔ Rapports de visite).
+    if (ids.length) {
+      const { data: cbl } = await supabase.from('action_cibles').select('lot_id, action:actions(id, statut)').in('lot_id', ids)
+      const map = {}
+      for (const c of (cbl || [])) {
+        if (!c.lot_id || !c.action) continue
+        const m = map[c.lot_id] || (map[c.lot_id] = { total: 0, cloturees: 0 })
+        m.total++; if (CLOTURANTS.has(c.action.statut)) m.cloturees++
+      }
+      setActionsParLot(map)
+    } else { setActionsParLot({}) }
   }, [id, setErreur])
 
   useEffect(() => { (async () => { await recharger(); setChargement(false) })() }, [recharger])
@@ -403,7 +417,7 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
 
       {lotsRacine.map(lot => (
         <div key={lot.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <LigneLot lot={lot} artisans={artisans} niveau={0} jours={joursArtisan[lot.artisan_id] || JOURS_DEFAUT} onMaj={majLot} onSupprimer={supprimerLot} onAjouterSousLot={() => ajouterLot(lot.id)} />
+          <LigneLot lot={lot} artisans={artisans} niveau={0} jours={joursArtisan[lot.artisan_id] || JOURS_DEFAUT} stats={actionsParLot[lot.id]} onMaj={majLot} onSupprimer={supprimerLot} onAjouterSousLot={() => ajouterLot(lot.id)} />
           <LigneDeps lot={lot} lotsRacine={lotsRacine} deps={deps}
             jours={joursArtisan[lot.artisan_id] || JOURS_DEFAUT} onMajJours={lot.artisan_id ? (j => majJoursArtisan(lot.artisan_id, j)) : null}
             onAjouter={ajouterDep} onRetirer={retirerDep} />
@@ -525,8 +539,10 @@ function LigneDeps({ lot, lotsRacine, deps, jours = JOURS_DEFAUT, onMajJours, on
 
 // Une ligne éditable (lot ou sous-lot). Nom NON contrôlé (defaultValue + save au blur) :
 // évite de resynchroniser un state local à chaque maj optimiste du parent.
-function LigneLot({ lot, artisans, niveau, jours = JOURS_DEFAUT, onMaj, onSupprimer, onAjouterSousLot }) {
+function LigneLot({ lot, artisans, niveau, jours = JOURS_DEFAUT, stats, onMaj, onSupprimer, onAjouterSousLot }) {
   const nbOuvres = (lot.date_debut && lot.date_fin) ? dureeOuvree(lot.date_debut, lot.date_fin, jours) : ''
+  // Avancement suggéré depuis les actions de CR clôturées rattachées à ce lot.
+  const pctActions = (stats && stats.total) ? Math.round((stats.cloturees / stats.total) * 100) : null
   return (
     <div style={{
       display: 'flex', gap: 10, alignItems: 'center', padding: '10px 14px', flexWrap: 'wrap',
@@ -568,6 +584,21 @@ function LigneLot({ lot, artisans, niveau, jours = JOURS_DEFAUT, onMaj, onSuppri
           onChange={e => onMaj(lot.id, { avancement: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
           className="input" style={{ width: 58, height: 34, fontSize: 12.5 }} /> %
       </label>
+
+      {/* Lien CR ↔ planning : actions rattachées à ce lot + avancement suggéré (non imposé). */}
+      {stats?.total > 0 && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--ink-500)' }}
+          title="Actions de compte-rendu rattachées à ce lot">
+          <span style={{ background: 'var(--ink-100)', borderRadius: 10, padding: '2px 7px' }}>
+            {stats.cloturees}/{stats.total} action{stats.total > 1 ? 's' : ''} levée{stats.cloturees > 1 ? 's' : ''}
+          </span>
+          {pctActions != null && pctActions !== (lot.avancement ?? 0) && (
+            <button onClick={() => onMaj(lot.id, { avancement: pctActions })}
+              className="btn btn-ghost" style={{ fontSize: 10.5, padding: '2px 6px' }}
+              title="Reporter cet avancement (déduit des actions clôturées) dans le champ %">→ {pctActions}%</button>
+          )}
+        </span>
+      )}
 
       <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
         {niveau === 0 && (
