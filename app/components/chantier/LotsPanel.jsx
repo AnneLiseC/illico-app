@@ -36,6 +36,7 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
   const [datesNotes, setDatesNotes] = useState('')
   const [datesIa, setDatesIa] = useState(false)
   const [datesPropos, setDatesPropos] = useState(null)   // [{lot_id, date_debut, date_fin, inclus}]
+  const [liaisonPropos, setLiaisonPropos] = useState(null)  // liaisons interventions -> lots à valider
   const [exportOuvert, setExportOuvert] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [expFormat, setExpFormat] = useState('A4')
@@ -208,6 +209,37 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
 
   const nomLot = (lid) => lots.find(l => l.id === lid)?.nom || '—'
 
+  // ── Relier les interventions existantes aux lots (Lot 4-7) : matching par artisan, sans IA ──
+  const interLiees = new Set(lots.map(l => l.intervention_id).filter(Boolean).map(String))
+  const interARelier = (interventionsDossier || []).filter(i =>
+    i.type_intervention === 'periode' && i.date_debut && i.date_fin && !interLiees.has(String(i.id)))
+
+  const proposerLiaisons = () => {
+    const usedLot = new Set()
+    const props = interARelier.map(it => {
+      const lot = lots.find(l => !l.parent_lot_id && l.artisan_id === it.artisan_id && !l.intervention_id && !usedLot.has(l.id))
+      if (lot) usedLot.add(lot.id)
+      return {
+        intervention_id: it.id,
+        artisan_nom: it.artisan?.entreprise || it.artisan?.metier || 'Artisan',
+        lot_id: lot?.id || null, lot_nom: lot?.nom || null,
+        date_debut: it.date_debut, date_fin: it.date_fin,
+        ecrase: lot ? !!(lot.date_debut || lot.date_fin) : false,
+        inclus: !!lot,
+      }
+    })
+    setLiaisonPropos(props)
+  }
+
+  const appliquerLiaisons = async () => {
+    for (const p of (liaisonPropos || [])) {
+      if (!p.inclus || !p.lot_id) continue
+      await majLot(p.lot_id, { intervention_id: p.intervention_id, date_debut: p.date_debut, date_fin: p.date_fin })
+    }
+    setLiaisonPropos(null)
+    await recharger()
+  }
+
   // ── Export PDF du planning (A4/A3, colonnes, mention légale) ──
   const exporterPlanning = async () => {
     setExporting(true)
@@ -249,7 +281,39 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
             📅 Dates par IA
           </button>
         )}
+        {interARelier.length > 0 && (
+          <button onClick={proposerLiaisons} className="btn btn-ghost" style={{ fontSize: 12.5 }} title="Relie les interventions existantes aux lots du même artisan (dates récupérées)">
+            🔗 Relier les interventions ({interARelier.length})
+          </button>
+        )}
       </div>
+
+      {liaisonPropos && (
+        <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8, borderLeft: '3px solid #16a34a' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Relier les interventions aux lots</span>
+            <div style={{ flex: 1 }} />
+            <button onClick={() => setLiaisonPropos(null)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 8px' }}>Annuler</button>
+            <button onClick={appliquerLiaisons} className="btn btn-primary" style={{ fontSize: 11.5, padding: '4px 10px' }}>Relier la sélection</button>
+          </div>
+          {liaisonPropos.map((p, pi) => (
+            <div key={pi} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5, opacity: (p.inclus && p.lot_id) ? 1 : 0.55 }}>
+              {p.lot_id ? (
+                <>
+                  <input type="checkbox" checked={p.inclus}
+                    onChange={e => setLiaisonPropos(prev => prev.map((x, i) => i === pi ? { ...x, inclus: e.target.checked } : x))} />
+                  <span><b>{p.artisan_nom}</b> ({p.date_debut} → {p.date_fin})</span>
+                  <span style={{ color: 'var(--ink-400)' }}>→ lot</span>
+                  <span style={{ fontWeight: 600 }}>{p.lot_nom}</span>
+                  {p.ecrase && <span style={{ fontSize: 11, color: '#b45309' }}>⚠ écrase les dates du lot</span>}
+                </>
+              ) : (
+                <span style={{ color: 'var(--ink-500)' }}>⨯ <b>{p.artisan_nom}</b> ({p.date_debut} → {p.date_fin}) — aucun lot pour cet artisan (pré-remplis depuis les devis d’abord)</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {datesOuvert && (
         <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderLeft: '3px solid #0ea5e9' }}>
