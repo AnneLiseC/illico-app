@@ -283,20 +283,20 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={() => ajouterLot(null)} className="btn btn-primary" style={{ fontSize: 12.5 }}>+ Lot</button>
         <button onClick={suggererIA} disabled={ia} className="btn btn-ghost" style={{ fontSize: 12.5 }} title="Lit les PDF de devis et propose lots + sous-lots (dates récupérées des interventions)">
-          {ia ? 'Analyse des devis…' : '✨ Pré-remplir depuis les devis'}
+          {ia ? 'Analyse des devis…' : 'Pré-remplir depuis les devis'}
         </button>
         {lotsRacine.length > 0 && (
           <button onClick={() => setDatesOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }} title="Coller des notes (mail, CR) : l'IA en extrait les dates à placer dans le planning">
-            📅 Dates par IA
+            Dates par IA
           </button>
         )}
         {interARelier.length > 0 && (
           <button onClick={proposerLiaisons} className="btn btn-ghost" style={{ fontSize: 12.5 }} title="Relie les interventions existantes aux lots du même artisan (dates récupérées)">
-            🔗 Relier les interventions ({interARelier.length})
+            Relier les interventions ({interARelier.length})
           </button>
         )}
         <div style={{ flex: 1 }} />
-        <button onClick={() => setExportOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>⬇ Exporter PDF</button>
+        <button onClick={() => setExportOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Exporter PDF</button>
       </div>
 
       {/* Repère : ce que chaque colonne représente (source de confusion fréquente). */}
@@ -322,7 +322,7 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
                   <span><b>{p.artisan_nom}</b> ({p.date_debut} → {p.date_fin})</span>
                   <span style={{ color: 'var(--ink-400)' }}>→ lot</span>
                   <span style={{ fontWeight: 600 }}>{p.lot_nom}</span>
-                  {p.ecrase && <span style={{ fontSize: 11, color: '#b45309' }}>⚠ écrase les dates du lot</span>}
+                  {p.ecrase && <span style={{ fontSize: 11, color: '#b45309' }}>écrase les dates du lot</span>}
                 </>
               ) : (
                 <span style={{ color: 'var(--ink-500)' }}>⨯ <b>{p.artisan_nom}</b> ({p.date_debut} → {p.date_fin}) — aucun lot pour cet artisan (pré-remplis depuis les devis d’abord)</span>

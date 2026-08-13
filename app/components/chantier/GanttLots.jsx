@@ -63,7 +63,7 @@ export default function GanttLots({
       if (it.type_intervention !== 'periode' || !it.date_debut || !it.date_fin) continue
       if (interLiees.has(String(it.id))) continue
       r.push({ key: 'int_' + it.id, id: 'int_' + it.id, inter: it, niveau: 0, readonly: true,
-        nom: '📅 ' + (it.artisan?.entreprise || it.artisan?.metier || 'Intervention'),
+        nom: (it.artisan?.entreprise || it.artisan?.metier || 'Intervention'),
         couleur: '#9ca3af', debut: it.date_debut, fin: it.date_fin, avancement: 0 })
     }
     return r
@@ -189,7 +189,7 @@ export default function GanttLots({
                 {!r.readonly && (
                   <>
                     <button onClick={() => setEditId(editId === r.id ? null : r.id)} title="Modifier" style={icBtn}>✎</button>
-                    {r.niveau === 0 && <button onClick={() => onAjouterLot?.(r.id)} title="Ajouter un sous-lot" style={icBtn}>＋</button>}
+                    {r.niveau === 0 && <button onClick={() => onAjouterLot?.(r.id)} title="Ajouter un sous-lot" style={icBtn}>+</button>}
                     <button onClick={() => onSupprimerLot?.(r.id)} title="Supprimer" style={{ ...icBtn, color: '#b91c1c' }}>🗑</button>
                   </>
                 )}

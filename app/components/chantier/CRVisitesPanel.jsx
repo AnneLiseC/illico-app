@@ -30,9 +30,14 @@ export const STATUTS = [
 ]
 const STATUT_MAP = Object.fromEntries(STATUTS.map(s => [s.k, s]))
 const CLOTURANTS = new Set(['cloture', 'quitus_transmis']) // ferment le report
-// Étiquette courte + couleur par type de visite (pour la liste).
-const TYPE_COURT = { r1: 'R1', r2: 'R2', r3: 'R3', suivi: 'Suivi', reception: 'Réception' }
-const TYPE_COULEUR = { r1: '#4f46e5', r2: '#4f46e5', r3: '#4f46e5', suivi: '#d97706', reception: '#16a34a' }
+// Titre d'une visite dans la liste : R1/R2/R3 = le code ; réception = « Réception N » ;
+// suivi (et non typé) = « Visite N ».
+function titreVisite(v) {
+  const t = v.type_visite
+  if (t === 'r1' || t === 'r2' || t === 'r3') return t.toUpperCase()
+  if (t === 'reception') return `Réception${v.numero_visite ? ' ' + v.numero_visite : ''}`
+  return `Visite ${v.numero_visite || '—'}`
+}
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-FR') : ''
 
@@ -139,13 +144,12 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
           style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
           <div onClick={() => setSelected(v.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, cursor: 'pointer' }}>
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink-900)' }}>
-              Visite {v.numero_visite || '—'}
+              {titreVisite(v)}
             </div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: v.type_visite ? (TYPE_COULEUR[v.type_visite] || 'var(--ink-500)') : '#94a3b8',
-              background: (v.type_visite ? (TYPE_COULEUR[v.type_visite] || '#94a3b8') : '#94a3b8') + '1a', borderRadius: 20, padding: '2px 9px' }}
-              title={v.type_visite ? '' : 'Type non défini — ouvre la visite pour le choisir'}>
-              {v.type_visite ? (TYPE_COURT[v.type_visite] || v.type_visite) : 'type ?'}
-            </span>
+            {!v.type_visite && (
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#94a3b81a', borderRadius: 20, padding: '2px 9px' }}
+                title="Type non défini — ouvre la visite pour le choisir">type ?</span>
+            )}
             <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>{fmtDate(v.date_visite)}</div>
             {v._compteur && v._compteur.total > 0 && (
               <span style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>
@@ -308,6 +312,8 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
   const [iaCandidats, setIaCandidats] = useState(null) // [{...action, sel}]
   const [datesCandidats, setDatesCandidats] = useState(null) // [{lot_id, date_debut, date_fin, sel}] (reprise ancien → planning)
   const [datesLoading, setDatesLoading] = useState(false)
+  const [repriseOuvert, setRepriseOuvert] = useState(false) // panneau dédié de reprise d'un ancien rapport
+  const repriseRef = useRef(null)
 
   const analyserIA = async (notesArg, source) => {
     const notes = (typeof notesArg === 'string' ? notesArg : iaNotes).trim()
@@ -386,15 +392,13 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
   }
 
   // Reprise complète d'un ancien rapport (prose) : actions + dates, à valider. N'altère jamais l'original.
-  const iaPanelRef = useRef(null)
   const reecrireDepuisAncien = () => {
     const notes = ancien?.contenu_final
     if (!notes) return
-    setIaOuvert(true); setIaNotes(notes)
+    setRepriseOuvert(true)
     analyserIA(notes, 'ancien_rapport')
     extraireDates(notes)
-    // Le panneau de résultats est au-dessus du bouton : on l'amène à l'écran.
-    setTimeout(() => iaPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250)
+    setTimeout(() => repriseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250)
   }
 
   const nomLot = (lid) => lots.find(l => l.id === lid)?.nom || '—'
@@ -423,7 +427,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
         <input type="date" defaultValue={visite?.date_visite || ''} className="input" style={{ height: 34, fontSize: 12.5 }}
           onBlur={e => e.target.value !== visite?.date_visite && supabase.from('comptes_rendus').update({ date_visite: e.target.value || null }).eq('id', visiteId).then(onMajVisite)} />
         <div style={{ flex: 1 }} />
-        <button onClick={() => setIaOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>✨ Aide IA</button>
+        <button onClick={() => setIaOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Aide IA</button>
         <button onClick={() => setPdfPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Exporter PDF</button>
         <button onClick={() => setDiffPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Diffuser</button>
         {!visite?.valide && <button onClick={publier} className="btn btn-primary" style={{ fontSize: 12.5, background: '#15803d', borderColor: '#15803d' }}>Publier</button>}
@@ -432,7 +436,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
       {diffPanel && (
         <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderColor: 'rgba(220,38,38,0.3)' }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Diffuser le rapport de visite par mail</div>
-          <div style={{ fontSize: 11.5, color: '#b45309' }}>⚠ Les destinataires cochés recevront un mail réel dès que tu confirmeras.</div>
+          <div style={{ fontSize: 11.5, color: '#b45309' }}>Les destinataires cochés recevront un mail réel dès que tu confirmeras.</div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-600)' }}>Artisans (par lot) :</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {lots.filter(l => !l.parent_lot_id).length === 0 && <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Aucun lot — crée-les d’abord dans l’onglet Lots.</span>}
@@ -535,34 +539,66 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
           <RenderProse text={ancien.contenu_final} />
           <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>Ce rapport a été rédigé avec l&apos;ancien système. L&apos;original reste intact (il a pu être envoyé au client) — la réécriture ne fait qu&apos;en <b>extraire</b> des actions et des dates, à valider.</div>
           <button onClick={reecrireDepuisAncien} disabled={iaLoading || datesLoading} className="btn btn-primary" style={{ fontSize: 12.5, alignSelf: 'flex-start' }}>
-            {(iaLoading || datesLoading) ? 'Analyse…' : '✨ Réécrire au nouveau format'}
+            {(iaLoading || datesLoading) ? 'Analyse…' : 'Réécrire au nouveau format'}
           </button>
         </div>
       )}
 
-      {datesCandidats && (
-        <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8, borderLeft: '3px solid #0ea5e9' }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Dates repérées → planning (Gantt)</div>
-          {datesCandidats.length === 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>Aucune date de lot exploitable dans ce rapport.</span>
-              <button onClick={() => setDatesCandidats(null)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px' }}>OK</button>
-            </div>
-          )}
-          {datesCandidats.map((c, i) => (
-            <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, flexWrap: 'wrap', opacity: c.sel ? 1 : 0.5 }}>
-              <input type="checkbox" checked={c.sel} onChange={() => setDatesCandidats(prev => prev.map((x, j) => j === i ? { ...x, sel: !x.sel } : x))} />
-              <b style={{ flex: '0 1 150px' }}>{nomLot(c.lot_id)}</b>
-              <input type="date" value={c.date_debut} onChange={e => setDatesCandidats(prev => prev.map((x, j) => j === i ? { ...x, date_debut: e.target.value } : x))} className="input" style={{ height: 30, fontSize: 12 }} />
-              <input type="date" value={c.date_fin} onChange={e => setDatesCandidats(prev => prev.map((x, j) => j === i ? { ...x, date_fin: e.target.value } : x))} className="input" style={{ height: 30, fontSize: 12 }} />
-            </label>
-          ))}
-          {datesCandidats.length > 0 && (
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setDatesCandidats(null)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px' }}>Ignorer</button>
-              <button onClick={appliquerDatesReprise} className="btn btn-primary" style={{ fontSize: 11.5, padding: '4px 12px' }}>Appliquer au planning</button>
-            </div>
-          )}
+      {repriseOuvert && (
+        <div ref={repriseRef} className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14, borderColor: 'rgba(99,102,241,0.35)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>Reprise du rapport au nouveau format</span>
+            <div style={{ flex: 1 }} />
+            <button onClick={() => { setRepriseOuvert(false); setIaCandidats(null); setDatesCandidats(null) }} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px' }}>Fermer</button>
+          </div>
+
+          {/* Étape 1 — Actions */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>1 · Actions à créer</div>
+            {iaLoading && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Analyse en cours…</div>}
+            {!iaLoading && iaCandidats && iaCandidats.length === 0 && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Aucune action détectée.</div>}
+            {!iaLoading && !iaCandidats && <div style={{ fontSize: 12, color: '#15803d' }}>Actions traitées.</div>}
+            {iaCandidats && iaCandidats.map((c, i) => {
+              const s = STATUT_MAP[c.statut] || STATUTS[0]
+              return (
+                <label key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, padding: '4px 0', borderTop: '1px solid var(--ink-100)' }}>
+                  <input type="checkbox" checked={c.sel} onChange={() => setIaCandidats(prev => prev.map((x, j) => j === i ? { ...x, sel: !x.sel } : x))} style={{ marginTop: 3 }} />
+                  <span style={{ flex: 1 }}>
+                    <b>{c.titre || c.texte.slice(0, 40)}</b>{c.texte && c.titre ? ` — ${c.texte}` : ''}
+                    <span style={{ marginLeft: 6, color: s.c, fontWeight: 700 }}>· {s.l}</span>
+                    {c.portee === 'lot' && c.lot_nom && <span style={{ color: 'var(--ink-500)' }}> · {c.lot_nom}</span>}
+                    {c.statut_date && <span style={{ color: 'var(--ink-500)' }}> · {fmtDate(c.statut_date)}</span>}
+                  </span>
+                </label>
+              )
+            })}
+            {iaCandidats && iaCandidats.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={importerIA} className="btn btn-primary" style={{ fontSize: 11.5, padding: '4px 12px' }}>Créer les {iaCandidats.filter(c => c.sel).length} action(s)</button>
+              </div>
+            )}
+          </div>
+
+          {/* Étape 2 — Dates */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid var(--ink-100)', paddingTop: 12 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>2 · Dates à placer dans le planning</div>
+            {datesLoading && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Analyse en cours…</div>}
+            {!datesLoading && datesCandidats && datesCandidats.length === 0 && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Aucune date de lot exploitable.</div>}
+            {!datesLoading && !datesCandidats && <div style={{ fontSize: 12, color: '#15803d' }}>Dates traitées.</div>}
+            {datesCandidats && datesCandidats.map((c, i) => (
+              <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, flexWrap: 'wrap', opacity: c.sel ? 1 : 0.5 }}>
+                <input type="checkbox" checked={c.sel} onChange={() => setDatesCandidats(prev => prev.map((x, j) => j === i ? { ...x, sel: !x.sel } : x))} />
+                <b style={{ flex: '0 1 150px' }}>{nomLot(c.lot_id)}</b>
+                <input type="date" value={c.date_debut} onChange={e => setDatesCandidats(prev => prev.map((x, j) => j === i ? { ...x, date_debut: e.target.value } : x))} className="input" style={{ height: 30, fontSize: 12 }} />
+                <input type="date" value={c.date_fin} onChange={e => setDatesCandidats(prev => prev.map((x, j) => j === i ? { ...x, date_fin: e.target.value } : x))} className="input" style={{ height: 30, fontSize: 12 }} />
+              </label>
+            ))}
+            {datesCandidats && datesCandidats.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={appliquerDatesReprise} className="btn btn-primary" style={{ fontSize: 11.5, padding: '4px 12px' }}>Appliquer au planning</button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
