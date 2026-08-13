@@ -216,6 +216,23 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
     onMajVisite?.()
   }
 
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const exporterPDF = async () => {
+    setPdfLoading(true)
+    try {
+      const res = await apiFetch('/api/cr/visite-pdf', { method: 'POST', body: JSON.stringify({ visite_id: visiteId }) })
+      if (!res.ok) { const j = await res.json().catch(() => ({})); setErreur?.(j.error || 'Export PDF impossible.'); return }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch {
+      setErreur?.('Erreur réseau export PDF.')
+    } finally {
+      setPdfLoading(false)
+    }
+  }
+
   // ── Aide IA (optionnelle) : notes → actions candidates → validation → insertion ──
   const [iaOuvert, setIaOuvert] = useState(false)
   const [iaNotes, setIaNotes] = useState('')
@@ -284,6 +301,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
           onBlur={e => e.target.value !== visite?.date_visite && supabase.from('comptes_rendus').update({ date_visite: e.target.value || null }).eq('id', visiteId).then(onMajVisite)} />
         <div style={{ flex: 1 }} />
         <button onClick={() => setIaOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>✨ Aide IA</button>
+        <button onClick={exporterPDF} disabled={pdfLoading} className="btn btn-ghost" style={{ fontSize: 12.5 }}>{pdfLoading ? 'PDF…' : 'Exporter PDF'}</button>
         {!visite?.valide && <button onClick={publier} className="btn btn-primary" style={{ fontSize: 12.5, background: '#15803d', borderColor: '#15803d' }}>Publier</button>}
       </div>
 
