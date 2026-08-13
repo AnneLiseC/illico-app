@@ -6,6 +6,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import { supabase } from '../../lib/supabase'
+import { apiFetch } from '../../lib/api-auth-client'
 
 // frappe-gantt manipule le DOM directement → jamais de SSR.
 const GanttLots = dynamic(() => import('./GanttLots'), { ssr: false })
@@ -27,6 +28,8 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
   const [chargement, setChargement] = useState(true)
   const [prefill, setPrefill] = useState(false)
   const [vueGantt, setVueGantt] = useState('Week')
+  const [ia, setIa] = useState(false)                 // appel IA en cours
+  const [iaPropos, setIaPropos] = useState(null)      // propositions IA à relire (ou null)
 
   const artisans = artisansDepuisDevis(devis)
 
@@ -104,6 +107,53 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
     }
   }
 
+  // ── Aide IA : lit les PDF de devis → propose lots + sous-lots (relus avant insertion) ──
+  const suggererIA = async () => {
+    setIa(true)
+    try {
+      const res = await apiFetch('/api/lots/suggest', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dossier_id: id }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) { setErreur?.(j.error || 'Aide IA indisponible.'); return }
+      const dejaArtisans = new Set(lots.map(l => l.artisan_id).filter(Boolean))
+      // On coche par défaut ce qui n'existe pas déjà.
+      const props = (j.propositions || []).map((p, i) => ({
+        ...p, _key: p.artisan_id || 'p' + i,
+        inclus: !dejaArtisans.has(p.artisan_id),
+        sous_lots: (p.sous_lots || []).map(s => ({ nom: s, inclus: true })),
+      }))
+      if (!props.length) { setErreur?.('Aucune proposition (pas de devis exploitable).'); return }
+      setIaPropos(props)
+    } catch (e) {
+      setErreur?.('Aide IA : ' + (e?.message || 'erreur'))
+    } finally { setIa(false) }
+  }
+
+  // Applique la sélection : 1 proposition cochée → 1 lot + ses sous-lots cochés.
+  const appliquerIA = async () => {
+    const choisis = (iaPropos || []).filter(p => p.inclus)
+    if (!choisis.length) { setIaPropos(null); return }
+    let ordre = lotsRacine.length
+    for (const p of choisis) {
+      const { data: parent, error } = await supabase.from('lots')
+        .insert({ dossier_id: id, parent_lot_id: null, artisan_id: p.artisan_id || null,
+                  nom: p.lot_nom || 'Lot', couleur: COULEURS[ordre % COULEURS.length], ordre: ordre++ })
+        .select().single()
+      if (error) { setErreur?.('Création lot : ' + error.message); continue }
+      const enfants = p.sous_lots.filter(s => s.inclus && s.nom.trim())
+      if (enfants.length) {
+        const { error: e2 } = await supabase.from('lots').insert(
+          enfants.map((s, k) => ({ dossier_id: id, parent_lot_id: parent.id, nom: s.nom.trim(), couleur: parent.couleur, ordre: k }))
+        )
+        if (e2) setErreur?.('Création sous-lots : ' + e2.message)
+      }
+    }
+    setIaPropos(null)
+    await recharger()
+  }
+
   if (chargement) return <div style={{ padding: 24, color: 'var(--ink-500)' }}>Chargement des lots…</div>
 
   return (
@@ -113,9 +163,48 @@ export default function LotsPanel({ id, devis, interventionsDossier, setErreur }
         <button onClick={prefillDevis} disabled={prefill} className="btn btn-ghost" style={{ fontSize: 12.5 }}>
           {prefill ? 'Pré-remplissage…' : 'Pré-remplir depuis les devis'}
         </button>
+        <button onClick={suggererIA} disabled={ia} className="btn btn-ghost" style={{ fontSize: 12.5 }} title="Lit les PDF de devis et propose lots + sous-lots">
+          {ia ? 'Analyse des devis…' : '✨ Aide IA'}
+        </button>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>{lotsRacine.length} lot{lotsRacine.length > 1 ? 's' : ''}</span>
       </div>
+
+      {iaPropos && (
+        <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderLeft: '3px solid #7c3aed' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Propositions IA — relis et décoche ce que tu ne veux pas</span>
+            <div style={{ flex: 1 }} />
+            <button onClick={() => setIaPropos(null)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '4px 8px' }}>Annuler</button>
+            <button onClick={appliquerIA} className="btn btn-primary" style={{ fontSize: 11.5, padding: '4px 10px' }}>Ajouter la sélection</button>
+          </div>
+          {iaPropos.map((p, pi) => (
+            <div key={p._key} style={{ border: '1px solid var(--ink-100)', borderRadius: 8, padding: '8px 10px', opacity: p.inclus ? 1 : 0.5 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked={p.inclus}
+                  onChange={e => setIaPropos(prev => prev.map((x, i) => i === pi ? { ...x, inclus: e.target.checked } : x))} />
+                <input value={p.lot_nom}
+                  onChange={e => setIaPropos(prev => prev.map((x, i) => i === pi ? { ...x, lot_nom: e.target.value } : x))}
+                  className="input" style={{ flex: '1 1 180px', height: 30, fontSize: 13, fontWeight: 600 }} />
+                <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>{p.artisan_nom}{p.source === 'metier' ? ' · sans PDF' : ''}</span>
+              </label>
+              {p.note && <div style={{ fontSize: 11, color: '#b45309', marginLeft: 26, marginTop: 2 }}>{p.note}</div>}
+              {p.sous_lots.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginLeft: 26, marginTop: 6 }}>
+                  {p.sous_lots.map((s, si) => (
+                    <label key={si} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--ink-600)' }}>
+                      <input type="checkbox" checked={s.inclus}
+                        onChange={e => setIaPropos(prev => prev.map((x, i) => i === pi
+                          ? { ...x, sous_lots: x.sous_lots.map((y, k) => k === si ? { ...y, inclus: e.target.checked } : y) } : x))} />
+                      {s.nom}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {lotsRacine.length === 0 && (
         <div className="card" style={{ padding: 20, textAlign: 'center', color: 'var(--ink-500)', fontSize: 13 }}>
