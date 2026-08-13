@@ -1544,3 +1544,7 @@ img, svg, video, canvas { max-width: 100%; }
 /* Barres invisibles (lots sans dates) : occupent la ligne pour l'alignement, rien à l'écran. */
 .gantt .bar-vide .bar{fill:transparent;stroke:transparent}
 .gantt .bar-vide .bar-label,.gantt .bar-vide .bar-progress{display:none}
+
+/* Gantt intégré : on neutralise le scroll interne de frappe-gantt. Le scroll (H + V) est géré
+   par le conteneur parent ; la colonne des lots est figée en sticky (voir GanttLots.jsx). */
+.gantt-lots .gantt-container{overflow:visible!important;height:auto!important}

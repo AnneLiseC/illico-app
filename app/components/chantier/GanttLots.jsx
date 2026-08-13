@@ -158,17 +158,19 @@ export default function GanttLots({
         </div>
       ) : null}
 
-      {/* Arbre (gauche) + timeline (droite), scroll vertical commun */}
-      <div style={{ display: 'flex', maxHeight: 560, overflowY: 'auto' }}>
-        <div style={{ flex: '0 0 300px', borderRight: '1px solid var(--ink-200)' }}>
-          <div ref={headRef} style={{ display: 'flex', alignItems: 'center', padding: '0 12px', fontWeight: 700, fontSize: 13, color: 'var(--ink-700)', borderBottom: '1px solid var(--ink-200)', boxSizing: 'border-box' }}>
+      {/* Arbre (gauche, figé) + timeline (droite). UN SEUL conteneur scrolle (H + V) : la colonne
+          de gauche est « sticky left » et son en-tête « sticky top » → alignement conservé au scroll.
+          Le scroll interne de frappe-gantt est neutralisé (voir globals.css .gantt-lots). */}
+      <div style={{ display: 'flex', maxHeight: 560, overflow: 'auto', position: 'relative' }}>
+        <div style={{ flex: '0 0 300px', borderRight: '1px solid var(--ink-200)', position: 'sticky', left: 0, zIndex: 5, background: 'var(--surface, #fff)' }}>
+          <div ref={headRef} style={{ display: 'flex', alignItems: 'center', padding: '0 12px', fontWeight: 700, fontSize: 13, color: 'var(--ink-700)', borderBottom: '1px solid var(--ink-200)', boxSizing: 'border-box', position: 'sticky', top: 0, zIndex: 6, background: 'var(--surface, #fff)' }}>
             Lots / Sous-lots
           </div>
           {rows.map(r => (
             <div key={r.key}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, height: PITCH, boxSizing: 'border-box',
                 padding: '0 10px', paddingLeft: r.niveau ? 28 : 10, borderBottom: '1px solid var(--ink-100)',
-                background: editId === r.id ? 'var(--surface-2)' : 'transparent' }}>
+                background: editId === r.id ? 'var(--surface-2)' : 'var(--surface, #fff)' }}>
                 {r.hasEnfants ? (
                   <button onClick={() => setCollapse(s => { const n = new Set(s); n.has(r.id) ? n.delete(r.id) : n.add(r.id); return n })}
                     style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-500)', fontSize: 12, width: 14, padding: 0 }}>
@@ -200,7 +202,7 @@ export default function GanttLots({
             </div>
           ))}
         </div>
-        <div ref={conteneurRef} className="gantt-lots" style={{ flex: 1, overflowX: 'auto', minWidth: 0 }} />
+        <div ref={conteneurRef} className="gantt-lots" style={{ flex: '0 0 auto' }} />
       </div>
     </div>
   )
