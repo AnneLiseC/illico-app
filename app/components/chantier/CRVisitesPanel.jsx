@@ -333,6 +333,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
   const [datesLoading, setDatesLoading] = useState(false)
   const [repriseOuvert, setRepriseOuvert] = useState(false) // panneau dédié de reprise d'un ancien rapport
   const [analyseSecs, setAnalyseSecs] = useState(0)          // compteur affiché pendant l'analyse IA (longue)
+  const [grouperArtisan, setGrouperArtisan] = useState(false) // relecture « Par lot » : à plat (défaut) ou groupée
   const repriseRef = useRef(null)
   const iaEnCoursRef = useRef(false)      // garde anti-double-clic (appel IA facturé)
   const importEnCoursRef = useRef(false)  // garde anti-double-clic sur l'INSERTION des actions
@@ -683,12 +684,49 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
           </Section>
 
           <Section titre="Par lot / artisan" onAjouter={() => ajouterAction('lot')}>
-            {parLot.map(a => (
+            {parLot.length > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => setGrouperArtisan(v => !v)} className="btn btn-ghost" style={{ fontSize: 11 }}>
+                  {grouperArtisan ? 'Vue à plat' : 'Grouper par artisan'}
+                </button>
+              </div>
+            )}
+            {parLot.length === 0 && <Vide />}
+            {!grouperArtisan && parLot.map(a => (
               <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur}
                 carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)}
                 onSetLot={(lotId) => setCibleLot(a, lotId)} />
             ))}
-            {parLot.length === 0 && <Vide />}
+            {grouperArtisan && (() => {
+              // Regroupement par LOT / ARTISAN pour la relecture : un sous-bloc par entreprise,
+              // avec en-tête + compte. Actions sans lot → « Non attribué » en dernier.
+              const groupes = new Map()
+              parLot.forEach(a => {
+                const lotId = a.cibles?.find(c => c.lot_id)?.lot_id || null
+                const k = lotId || '__none__'
+                if (!groupes.has(k)) groupes.set(k, { lot: lots.find(l => l.id === lotId) || null, acts: [] })
+                groupes.get(k).acts.push(a)
+              })
+              const rang = (id) => { const i = lots.findIndex(l => l.id === id); return i === -1 ? 1e9 : i }
+              const blocs = [...groupes.values()].sort((x, y) => rang(x.lot?.id) - rang(y.lot?.id))
+              return blocs.map(({ lot, acts }) => {
+                const nom = lot ? (lot.artisan?.entreprise || lot.nom) : 'Non attribué'
+                return (
+                  <div key={lot?.id || 'none'} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, padding: '3px 10px', background: 'var(--ink-100)', borderRadius: 6 }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--ink-800)' }}>{nom}</span>
+                      {lot && lot.nom && lot.artisan?.entreprise && <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>· {lot.nom}</span>}
+                      <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>({acts.length})</span>
+                    </div>
+                    {acts.map(a => (
+                      <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur}
+                        carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)}
+                        onSetLot={(lotId) => setCibleLot(a, lotId)} />
+                    ))}
+                  </div>
+                )
+              })
+            })()}
           </Section>
         </>
       )}
@@ -699,8 +737,8 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
 function Section({ titre, onAjouter, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink-700)' }}>{titre}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, borderLeft: '3px solid #4338ca', paddingLeft: 10 }}>
+        <div style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--ink-900)', textTransform: 'uppercase', letterSpacing: 0.4 }}>{titre}</div>
         <button onClick={onAjouter} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 9px' }}>+ Action</button>
       </div>
       {children}
