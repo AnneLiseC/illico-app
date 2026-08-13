@@ -4,7 +4,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireUser } from '../../../lib/api-auth'
+import { requireUser, assertDossierAccessible } from '../../../lib/api-auth'
 import { genererVisitePDF } from '../../../lib/pdf/genererVisite.js'
 import { formatNomClient } from '../../../lib/clients.js'
 
@@ -39,6 +39,12 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
     }
     options = {}; filtreLotId = null
+  } else {
+    // Staff (admin/agente) : contrôle d'appartenance au tenant (service_role contourne la RLS).
+    const { data: v } = await db.from('comptes_rendus').select('dossier_id').eq('id', visiteId).maybeSingle()
+    if (!v) return NextResponse.json({ error: 'Visite introuvable' }, { status: 404 })
+    const acces = await assertDossierAccessible(v.dossier_id, auth.profile)
+    if (acces.error) return acces.error
   }
 
   try {

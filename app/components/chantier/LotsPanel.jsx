@@ -302,6 +302,12 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
         )}
       </div>
 
+      {/* Repère : ce que chaque colonne représente (source de confusion fréquente). */}
+      <div style={{ fontSize: 11.5, color: 'var(--ink-500)', background: 'var(--surface-2)', borderRadius: 8, padding: '8px 12px' }}>
+        Chaque ligne : <b>nom du lot</b> (le corps d’état, ex. « PLACO ») · <b>artisan</b> (l’entreprise qui le réalise) · dates · <b>durée en jours ouvrés</b> · avancement.
+        Le nom et l’artisan sont <b>indépendants</b> : « Pré-remplir depuis les devis » remplit les deux (nom déduit du PDF, artisan depuis le devis), mais tu peux tout modifier à la main.
+      </div>
+
       {liaisonPropos && (
         <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8, borderLeft: '3px solid #16a34a' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -552,7 +558,7 @@ function LigneLot({ lot, artisans, niveau, jours = JOURS_DEFAUT, stats, onMaj, o
     }}>
       <span style={{ width: 10, height: 10, borderRadius: '50%', background: lot.couleur || '#94a3b8', flexShrink: 0 }} />
 
-      <input key={lot.id} defaultValue={lot.nom || ''}
+      <input key={lot.id} defaultValue={lot.nom || ''} placeholder={niveau ? 'Nom du sous-lot' : 'Nom du lot (corps d’état)'}
         onBlur={e => { const v = e.target.value.trim() || 'Lot'; if (v !== lot.nom) onMaj(lot.id, { nom: v }) }}
         className="input" style={{ flex: '1 1 160px', minWidth: 120, height: 34, fontSize: 13, fontWeight: niveau ? 500 : 600 }} />
 

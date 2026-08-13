@@ -6,7 +6,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireRole } from '../../../lib/api-auth'
+import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { genererVisitePDF } from '../../../lib/pdf/genererVisite.js'
 import { sendEmail } from '../../../lib/email'
 import { formatNomClient } from '../../../lib/clients.js'
@@ -36,6 +36,9 @@ export async function POST(request) {
   const { data: visite } = await db.from('comptes_rendus')
     .select('id, dossier_id, numero_visite').eq('id', visiteId).maybeSingle()
   if (!visite) return NextResponse.json({ error: 'Visite introuvable' }, { status: 404 })
+  // Appartenance au tenant (service_role contourne la RLS + on envoie des mails).
+  const acces = await assertDossierAccessible(visite.dossier_id, auth.profile)
+  if (acces.error) return acces.error
   const { data: dossier } = await db.from('dossiers')
     .select('id, client:clients(nom, prenom, email, raison_sociale, type_client, forme_juridique, civilite, prenom2, nom2, nom)')
     .eq('id', visite.dossier_id).maybeSingle()
@@ -43,7 +46,7 @@ export async function POST(request) {
 
   const clientNom = formatNomClient(dossier.client, { civilite: false }) || 'client'
   const nomFichier = (base) => `${base}_Visite_${visite.numero_visite || ''}.pdf`.replace('__', '_')
-  const sujet = `Compte-rendu de visite ${visite.numero_visite || ''} — ${clientNom}`.trim()
+  const sujet = `Rapport de visite ${visite.numero_visite || ''} — ${clientNom}`.trim()
 
   const envoyes = []
   const erreurs = []
@@ -70,7 +73,7 @@ export async function POST(request) {
         await sendEmail({
           to: artisan.email,
           subject: sujet,
-          html: `<p>Bonjour,</p><p>Veuillez trouver ci-joint le compte-rendu de la visite de chantier ${visite.numero_visite || ''} concernant le chantier de ${clientNom}.</p><p>Cordialement,<br/>illiCO travaux</p>`,
+          html: `<p>Bonjour,</p><p>Veuillez trouver ci-joint le rapport de la visite de chantier ${visite.numero_visite || ''} concernant le chantier de ${clientNom}.</p><p>Cordialement,<br/>illiCO travaux</p>`,
           attachments: [{ filename: nomFichier(artisan.entreprise || 'CR'), contentBytes: b64(buffer), contentType: 'application/pdf' }],
         })
         envoyes.push({ artisan: artisan.entreprise, email: artisan.email })
@@ -90,7 +93,7 @@ export async function POST(request) {
         await sendEmail({
           to: dossier.client.email,
           subject: sujet,
-          html: `<p>Bonjour,</p><p>Un compte-rendu de visite de votre chantier est disponible. Vous le trouverez en pièce jointe, et également dans votre espace client.</p><p>Cordialement,<br/>illiCO travaux</p>`,
+          html: `<p>Bonjour,</p><p>Un rapport de visite de votre chantier est disponible. Vous le trouverez en pièce jointe, et également dans votre espace client.</p><p>Cordialement,<br/>illiCO travaux</p>`,
           attachments: [{ filename: nomFichier('CR'), contentBytes: b64(buffer), contentType: 'application/pdf' }],
         })
         envoyes.push({ client: clientNom, email: dossier.client.email })

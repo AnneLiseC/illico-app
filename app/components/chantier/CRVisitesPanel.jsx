@@ -71,7 +71,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
   useEffect(() => {
     (async () => {
       await rechargerVisites()
-      const { data: l } = await supabase.from('lots').select('id, nom, parent_lot_id').eq('dossier_id', id).order('ordre')
+      const { data: l } = await supabase.from('lots').select('id, nom, parent_lot_id, artisan:artisans(id, entreprise, metier)').eq('dossier_id', id).order('ordre')
       setLots(l || [])
       setChargement(false)
     })()
@@ -93,6 +93,19 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
     }
     await rechargerVisites()
     setSelected(data.id)
+  }
+
+  // Supprimer un BROUILLON (jamais une visite publiée : elle a pu être envoyée au client).
+  // Les actions NÉES dans ce brouillon (cr_origine_id) sont supprimées avec lui ; les actions
+  // reportées d'autres visites ne perdent que leur lien (cr_actions en cascade).
+  const supprimerVisite = async (v) => {
+    if (v.valide) { setErreur?.('Une visite publiée ne peut pas être supprimée.'); return }
+    if (!window.confirm(`Supprimer le brouillon « Visite ${v.numero_visite || ''} » ? Les actions créées dans ce brouillon seront supprimées.`)) return
+    await supabase.from('actions').delete().eq('cr_origine_id', v.id)
+    const { error } = await supabase.from('comptes_rendus').delete().eq('id', v.id)
+    if (error) { setErreur?.('Suppression : ' + error.message); return }
+    if (selected === v.id) setSelected(null)
+    await rechargerVisites()
   }
 
   if (chargement) return <div style={{ padding: 24, color: 'var(--ink-500)' }}>Chargement…</div>
@@ -118,22 +131,27 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot }) {
       )}
 
       {visites.map(v => (
-        <button key={v.id} onClick={() => setSelected(v.id)} className="card"
-          style={{ padding: '14px 16px', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink-900)' }}>
-            Visite de chantier {v.numero_visite || '—'}
+        <div key={v.id} className="card"
+          style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div onClick={() => setSelected(v.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, cursor: 'pointer' }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink-900)' }}>
+              Visite {v.numero_visite || '—'}
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>{fmtDate(v.date_visite)}</div>
+            {v._compteur && v._compteur.total > 0 && (
+              <span style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>
+                {v._compteur.total} action{v._compteur.total > 1 ? 's' : ''} · <b style={{ color: v._compteur.ouvertes ? '#b45309' : '#15803d' }}>{v._compteur.ouvertes} ouverte{v._compteur.ouvertes > 1 ? 's' : ''}</b>
+              </span>
+            )}
           </div>
-          <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>{fmtDate(v.date_visite)}</div>
-          {v._compteur && v._compteur.total > 0 && (
-            <span style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>
-              {v._compteur.total} action{v._compteur.total > 1 ? 's' : ''} · <b style={{ color: v._compteur.ouvertes ? '#b45309' : '#15803d' }}>{v._compteur.ouvertes} ouverte{v._compteur.ouvertes > 1 ? 's' : ''}</b>
-            </span>
-          )}
-          <div style={{ flex: 1 }} />
           {v.valide
             ? <span style={{ fontSize: 11, fontWeight: 700, color: '#15803d' }}>Publié</span>
             : <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-500)' }}>Brouillon</span>}
-        </button>
+          {!v.valide && (
+            <button onClick={() => supprimerVisite(v)} className="btn btn-ghost"
+              style={{ fontSize: 11.5, padding: '4px 8px', color: '#b91c1c' }} title="Supprimer ce brouillon">🗑</button>
+          )}
+        </div>
       ))}
     </div>
   )
@@ -253,7 +271,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
     const n = lot_ids.length + (diffClient ? 1 : 0)
     if (!n) { setErreur?.('Sélectionne au moins un destinataire.'); return }
     // Garde-fou : envoi réel de mails → confirmation obligatoire.
-    if (!window.confirm(`Envoyer le compte-rendu par mail à ${n} destinataire(s) MAINTENANT ? Le mail part immédiatement.`)) return
+    if (!window.confirm(`Envoyer le rapport de visite par mail à ${n} destinataire(s) MAINTENANT ? Le mail part immédiatement.`)) return
     setDiffLoading(true)
     try {
       const res = await apiFetch('/api/cr/visite-diffuser', {
@@ -354,16 +372,21 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
 
       {diffPanel && (
         <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderColor: 'rgba(220,38,38,0.3)' }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Diffuser le compte-rendu par mail</div>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Diffuser le rapport de visite par mail</div>
           <div style={{ fontSize: 11.5, color: '#b45309' }}>⚠ Les destinataires cochés recevront un mail réel dès que tu confirmeras.</div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-600)' }}>Artisans (par lot) :</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {lots.filter(l => !l.parent_lot_id).length === 0 && <span style={{ fontSize: 12, color: 'var(--ink-400)' }}>Aucun lot — crée-les d’abord dans l’onglet Lots.</span>}
-            {lots.filter(l => !l.parent_lot_id).map(l => (
-              <label key={l.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
-                <input type="checkbox" checked={diffLots.has(l.id)} onChange={() => toggleDiffLot(l.id)} style={{ accentColor: '#4f46e5' }} /> {l.nom}
-              </label>
-            ))}
+            {lots.filter(l => !l.parent_lot_id).map(l => {
+              const art = l.artisan?.entreprise || l.artisan?.metier
+              return (
+                <label key={l.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
+                  <input type="checkbox" checked={diffLots.has(l.id)} onChange={() => toggleDiffLot(l.id)} style={{ accentColor: '#4f46e5' }} />
+                  {l.nom}
+                  {art ? <span style={{ color: 'var(--ink-500)' }}>— {art}</span> : <span style={{ color: '#b45309', fontSize: 11 }}>(aucun artisan → pas d’envoi)</span>}
+                </label>
+              )
+            })}
           </div>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
             <input type="checkbox" checked={diffClient} onChange={() => setDiffClient(v => !v)} style={{ accentColor: '#4f46e5' }} /> Envoyer aussi au client
@@ -393,7 +416,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, o
             <label style={{ fontSize: 12.5, color: 'var(--ink-600)' }}>Destinataire :</label>
             <select value={filtreLot} onChange={e => setFiltreLot(e.target.value)} className="input" style={{ height: 32, fontSize: 12.5 }}>
               <option value="">Tout le monde (tous les lots)</option>
-              {lots.map(l => <option key={l.id} value={l.id}>{l.parent_lot_id ? '— ' : ''}{l.nom}</option>)}
+              {lots.map(l => <option key={l.id} value={l.id}>{l.parent_lot_id ? '— ' : ''}{l.nom}{l.artisan?.entreprise ? ' — ' + l.artisan.entreprise : ''}</option>)}
             </select>
             <div style={{ flex: 1 }} />
             <button onClick={exporterPDF} disabled={pdfLoading} className="btn btn-primary" style={{ fontSize: 12.5 }}>{pdfLoading ? 'Génération…' : 'Générer le PDF'}</button>
@@ -514,7 +537,7 @@ function ActionCard({ action, lots, withLot, carried, dossierId, setAnnot, setEr
         {withLot && (
           <select value={cibleLot} onChange={e => onSetLot(e.target.value || null)} className="input" style={{ height: 30, fontSize: 12, flex: '0 1 170px' }}>
             <option value="">— Lot —</option>
-            {lots.map(l => <option key={l.id} value={l.id}>{l.parent_lot_id ? '— ' : ''}{l.nom}</option>)}
+            {lots.map(l => <option key={l.id} value={l.id}>{l.parent_lot_id ? '— ' : ''}{l.nom}{l.artisan?.entreprise ? ' — ' + l.artisan.entreprise : ''}</option>)}
           </select>
         )}
 
