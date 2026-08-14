@@ -255,6 +255,22 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     if (error) setErreur?.('Enregistrement : ' + error.message)
   }
 
+  // JOURNAL cumulatif : une modification (IA ou manuelle) s'AJOUTE au journal de l'action au lieu
+  // d'écraser son texte d'origine (qui reste en noir). Chaque entrée est datée + rattachée à la visite.
+  // Si un statut est fourni, il met aussi à jour l'action (la pastille reflète l'état courant).
+  const ajouterJournal = async (actionId, { texte = '', statut = null } = {}) => {
+    const a = actions.find(x => x.id === actionId)
+    const t = (texte || '').trim()
+    if (!t && !statut) return
+    const entree = { at: new Date().toISOString(), cr_id: visiteId, visite: titreVisite(visite), texte: t, statut: statut || null }
+    const journal = [...(Array.isArray(a?.journal) ? a.journal : []), entree]
+    const champs = { journal }
+    if (statut) { champs.statut = statut; champs.statut_date = new Date().toISOString().slice(0, 10) }
+    setActions(prev => prev.map(x => x.id === actionId ? { ...x, ...champs } : x))
+    const { error } = await supabase.from('actions').update({ ...champs, updated_at: new Date().toISOString() }).eq('id', actionId)
+    if (error) setErreur?.('Journal : ' + error.message)
+  }
+
   const supprimerAction = async (actionId) => {
     setActions(prev => prev.filter(a => a.id !== actionId))
     const { error } = await supabase.from('actions').delete().eq('id', actionId)
@@ -341,6 +357,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
   const [iaNotes, setIaNotes] = useState('')
   const [iaLoading, setIaLoading] = useState(false)
   const [iaCandidats, setIaCandidats] = useState(null) // [{...action, sel}]
+  const [iaUpdates, setIaUpdates] = useState(null)     // [{action_id, ref, statut, texte, note, avant, sel}] — MAJ d'actions existantes
   const [datesCandidats, setDatesCandidats] = useState(null) // [{lot_id, date_debut, date_fin, sel}] (reprise ancien → planning)
   const [datesLoading, setDatesLoading] = useState(false)
   const [repriseOuvert, setRepriseOuvert] = useState(false) // panneau dédié de reprise d'un ancien rapport
@@ -363,15 +380,30 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     if (!notes) return
     if (iaEnCoursRef.current) return
     iaEnCoursRef.current = true
-    setIaLoading(true); setIaCandidats(null)
+    setIaLoading(true); setIaCandidats(null); setIaUpdates(null)
+    // Actions DÉJÀ présentes → envoyées à l'IA pour qu'elle propose des MISES À JOUR (pas des doublons).
+    // La "ref" = index+1 ; on garde la correspondance ref → action locale pour appliquer ensuite.
+    const lotNomAction = (a) => {
+      const lid = a.cibles?.find(c => c.lot_id)?.lot_id
+      return lots.find(l => l.id === lid)?.nom || ''
+    }
+    const existantes = actions.map((a, i) => ({
+      ref: i + 1, titre: a.titre || '', texte: a.texte || '', statut: a.statut, lot_nom: lotNomAction(a),
+    }))
     try {
       const res = await apiFetch('/api/actions/suggest', {
         method: 'POST',
-        body: JSON.stringify({ notes, lots: lots.map(l => ({ id: l.id, nom: l.nom })), type_visite: visite?.type_visite || 'suivi', source: source || undefined }),
+        body: JSON.stringify({ notes, lots: lots.map(l => ({ id: l.id, nom: l.nom })), type_visite: visite?.type_visite || 'suivi', source: source || undefined, existantes }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) { setErreur?.(j.error || 'Analyse IA impossible.'); return }
       setIaCandidats((j.actions || []).map(a => ({ ...a, sel: true })))
+      // Rattache chaque MAJ à l'action locale via sa ref, et garde l'état "avant" pour l'affichage.
+      setIaUpdates((j.updates || []).map(u => {
+        const a = actions[u.ref - 1]
+        if (!a) return null
+        return { ...u, action_id: a.id, avant: { statut: a.statut, titre: a.titre, texte: a.texte }, sel: true }
+      }).filter(Boolean))
     } catch {
       setErreur?.('Erreur réseau IA.')
     } finally {
@@ -384,10 +416,16 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     // → doublons. La garde bloque le 2e appel AVANT tout await, le bouton est aussi désactivé.
     if (importEnCoursRef.current) return
     const choisies = (iaCandidats || []).filter(c => c.sel)
-    if (!choisies.length) return
+    const majChoisies = (iaUpdates || []).filter(u => u.sel)
+    if (!choisies.length && !majChoisies.length) return
     importEnCoursRef.current = true
     setImporting(true)
     try {
+      // 1) MAJ d'actions EXISTANTES → AJOUT au JOURNAL (jamais d'écrasement du texte d'origine).
+      for (const u of majChoisies) {
+        await ajouterJournal(u.action_id, { texte: u.texte || u.note || '', statut: u.statut || null })
+      }
+      // 2) Nouvelles actions.
       let ordre = actions.length
       for (const c of choisies) {
         const numero = `${visite?.numero_visite || 1}.${ordre + 1}`
@@ -404,9 +442,12 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
           if (lot) await supabase.from('action_cibles').insert({ action_id: data.id, lot_id: lot.id })
         }
       }
-      setSucces?.(`${choisies.length} action(s) ajoutée(s) ✓`)
+      const bouts = []
+      if (majChoisies.length) bouts.push(`${majChoisies.length} mise(s) à jour`)
+      if (choisies.length) bouts.push(`${choisies.length} nouvelle(s)`)
+      setSucces?.(`${bouts.join(' + ')} ✓`)
       if (!datesCandidats?.length) { setIaOuvert(false); setIaNotes('') }  // rien à valider côté dates → on ferme
-      setIaCandidats(null)
+      setIaCandidats(null); setIaUpdates(null)
       await recharger()
     } finally {
       setImporting(false); importEnCoursRef.current = false
@@ -469,6 +510,8 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
   const generales = actions.filter(a => a.portee === 'generale')
   const parLot = actions.filter(a => a.portee === 'lot')
   const ouvertes = actions.filter(a => !CLOTURANTS.has(a.statut)).length
+  // MAJ IA cochées mais PAS ENCORE appliquées → prévisualisation de l'ajout au journal sur l'action.
+  const majEnAttente = new Map((iaUpdates || []).filter(u => u.sel).map(u => [u.action_id, u]))
 
   // ── Page LECTURE d'un R1/R2/R3 (prose) : contenu + Modifier + Export PDF. Pas d'actions. ──
   if (estProse) {
@@ -598,16 +641,39 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
             <button onClick={analyserIA} disabled={iaLoading || !iaNotes.trim()} className="btn btn-primary" style={{ fontSize: 12.5 }}>
               {iaLoading ? 'Analyse…' : 'Analyser avec l’IA'}
             </button>
-            {iaCandidats && iaCandidats.length > 0 && (
+            {((iaCandidats && iaCandidats.length > 0) || (iaUpdates && iaUpdates.length > 0)) && (
               <button onClick={importerIA} disabled={importing} className="btn btn-ghost" style={{ fontSize: 12.5, opacity: importing ? 0.55 : 1 }}>
-                {importing ? 'Ajout…' : `Ajouter les ${iaCandidats.filter(c => c.sel).length} cochée(s)`}
+                {importing ? 'Application…' : `Appliquer${(iaUpdates?.filter(u => u.sel).length) ? ` ${iaUpdates.filter(u => u.sel).length} MAJ` : ''}${(iaCandidats?.filter(c => c.sel).length) ? ` + ${iaCandidats.filter(c => c.sel).length} nouvelle(s)` : ''}`}
               </button>
             )}
           </div>
 
-          {iaCandidats && iaCandidats.length === 0 && (
+          {/* Mises à jour proposées d'actions DÉJÀ présentes (évite les doublons). */}
+          {iaUpdates && iaUpdates.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: '#b45309', marginTop: 4 }}>Mises à jour d&apos;actions existantes ({iaUpdates.length})</div>
+              {iaUpdates.map((u, i) => {
+                const sAv = STATUT_MAP[u.avant?.statut] || STATUTS[0]
+                const sAp = u.statut ? (STATUT_MAP[u.statut] || STATUTS[0]) : null
+                return (
+                  <label key={`u${i}`} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, padding: '4px 0', borderTop: '1px solid var(--ink-100)', background: 'rgba(180,83,9,0.05)' }}>
+                    <input type="checkbox" checked={u.sel} onChange={() => setIaUpdates(prev => prev.map((x, j) => j === i ? { ...x, sel: !x.sel } : x))} style={{ marginTop: 3 }} />
+                    <span style={{ flex: 1 }}>
+                      <b>{u.avant?.titre || (u.avant?.texte || '').slice(0, 40)}</b>
+                      {sAp && <span style={{ marginLeft: 6 }}><span style={{ color: sAv.c }}>{sAv.l}</span> <span style={{ color: 'var(--ink-400)' }}>→</span> <span style={{ color: sAp.c, fontWeight: 700 }}>{sAp.l}</span></span>}
+                      {u.note && <span style={{ color: 'var(--ink-500)' }}> · {u.note}</span>}
+                      {u.texte && <div style={{ color: 'var(--ink-600)', marginTop: 2 }}>{u.texte}</div>}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          )}
+
+          {iaCandidats && iaCandidats.length === 0 && (!iaUpdates || iaUpdates.length === 0) && (
             <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Aucune action détectée dans ces notes.</div>
           )}
+          {iaCandidats && iaCandidats.length > 0 && <div style={{ fontSize: 11.5, fontWeight: 800, color: '#4338ca', marginTop: 4 }}>Nouvelles actions ({iaCandidats.length})</div>}
           {iaCandidats && iaCandidats.map((c, i) => {
             const s = STATUT_MAP[c.statut] || STATUTS[0]
             return (
@@ -712,7 +778,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
         <>
           <Section titre="Remarques générales" onAjouter={() => ajouterAction('generale')}>
             {generales.map(a => (
-              <ActionCard key={a.id} action={a} lots={lots} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur}
+              <ActionCard key={a.id} action={a} lots={lots} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal}
                 carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)} />
             ))}
             {generales.length === 0 && <Vide />}
@@ -728,7 +794,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
             )}
             {parLot.length === 0 && <Vide />}
             {!grouperArtisan && parLot.map(a => (
-              <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur}
+              <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal}
                 carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)}
                 onSetLot={(lotId) => setCibleLot(a, lotId)} />
             ))}
@@ -754,7 +820,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
                       <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>({acts.length})</span>
                     </div>
                     {acts.map(a => (
-                      <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur}
+                      <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal}
                         carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)}
                         onSetLot={(lotId) => setCibleLot(a, lotId)} />
                     ))}
@@ -806,9 +872,13 @@ function RenderProse({ text }) {
 }
 
 // ── Carte d'une action éditable (statut, texte, photos annotées, checklist vivante) ──
-function ActionCard({ action, lots, withLot, carried, dossierId, setAnnot, setErreur, onMaj, onSupprimer, onRetirer, onSetLot }) {
+function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, dossierId, setAnnot, setErreur, onMaj, onSupprimer, onRetirer, onSetLot }) {
   const st = STATUT_MAP[action.statut] || STATUTS[0]
   const cibleLot = action.cibles?.find(c => c.lot_id)?.lot_id || ''
+  const journal = Array.isArray(action.journal) ? action.journal : []
+  const ferme = CLOTURANTS.has(action.statut)   // action clôturée → on n'ajoute plus au journal
+  const [note, setNote] = useState('')
+  const JCOL = '#b45309'                          // couleur du journal (le texte d'origine reste noir)
 
   return (
     <div className="card" style={{ padding: 12, borderLeft: `3px solid ${st.c}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -850,6 +920,40 @@ function ActionCard({ action, lots, withLot, carried, dossierId, setAnnot, setEr
       <textarea defaultValue={action.texte || ''} placeholder="Description de la remarque…" rows={2}
         onBlur={e => e.target.value !== (action.texte || '') && onMaj(action.id, { texte: e.target.value })}
         className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical', minHeight: 52 }} />
+
+      {/* JOURNAL cumulatif : texte d'origine en noir ci-dessus, modifications en couleur ici. */}
+      {(journal.length > 0 || aMaj) && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, borderLeft: `2px solid ${JCOL}`, paddingLeft: 8 }}>
+          {journal.map((e, i) => {
+            const es = e.statut ? (STATUT_MAP[e.statut] || null) : null
+            return (
+              <div key={i} style={{ fontSize: 12, color: JCOL, lineHeight: 1.45 }}>
+                <b>[{e.visite || 'Visite'}{e.at ? ' · ' + fmtDate(e.at) : ''}]</b> {e.texte}
+                {es && <span style={{ fontWeight: 700 }}> (→ {es.l})</span>}
+              </div>
+            )
+          })}
+          {aMaj && (
+            <div style={{ fontSize: 12, color: JCOL, lineHeight: 1.45, opacity: 0.85, fontStyle: 'italic' }}>
+              <b>[à ajouter]</b> {aMaj.texte || aMaj.note || 'mise à jour'}
+              {aMaj.statut && <span style={{ fontWeight: 700 }}> (→ {(STATUT_MAP[aMaj.statut] || {}).l})</span>}
+              <span style={{ color: 'var(--ink-500)', fontStyle: 'normal' }}> — coche « Appliquer » pour valider</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Ajout manuel d'une entrée de journal (tant que l'action n'est pas clôturée). */}
+      {!ferme && onJournal && (
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input value={note} onChange={e => setNote(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && note.trim()) { onJournal(action.id, { texte: note }); setNote('') } }}
+            placeholder="+ Ajouter une note datée (avancement, décision…)"
+            className="input" style={{ flex: 1, height: 30, fontSize: 12 }} />
+          <button onClick={() => { if (note.trim()) { onJournal(action.id, { texte: note }); setNote('') } }}
+            disabled={!note.trim()} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 10px', opacity: note.trim() ? 1 : 0.5 }}>Ajouter</button>
+        </div>
+      )}
 
       <ActionPhotos action={action} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} />
       <ActionChecklist action={action} setErreur={setErreur} />

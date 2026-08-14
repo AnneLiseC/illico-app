@@ -6,29 +6,31 @@
 //
 // IN  : { notes: string, lots?: [{id, nom}] }
 // OUT : { actions: [{ titre, texte, portee, lot_nom, statut, statut_date }] }
-
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
 import { reglesActions, TYPES_VISITE } from '../../../lib/crRegles'
-
 export const maxDuration = 60
-
 const CLAUDE_TIMEOUT_MS = 45_000
 const CLAUDE_RETRIES = 2
 const RETRIABLE_STATUS = new Set([408, 429, 500, 502, 503, 504, 529])
 const MAX_NOTES = 12_000
-
 // 16 statuts figés (mêmes clés que le CHECK de la table `actions`).
 const STATUTS = ['en_cours', 'date_limite', 'urgent', 'refuse', 'en_retard', 'rappel',
   'en_attente', 'a_surveiller', 'programme', 'a_programmer', 'information',
   'quitus_transmis', 'garder_memoire', 'constate', 'acte', 'cloture']
 const STATUT_SET = new Set(STATUTS)
-
 const SYSTEM_PROMPT = `Tu es un assistant pour une courtière en travaux / AMO (illiCO travaux). On te donne des NOTES BRUTES prises pendant une visite de chantier (bullet points, phrases incomplètes, dictée…). Tu dois en extraire une LISTE d'ACTIONS / remarques de compte-rendu, structurées.
-
 Réponds STRICTEMENT par un objet JSON (aucun texte autour, pas de markdown) :
 {
-  "actions": [
+  "updates": [   // MISES À JOUR d'actions DÉJÀ PRÉSENTES (voir liste fournie). Vide [] si aucune.
+    {
+      "ref": nombre,          // le numéro de réf. de l'action existante concernée (dans la liste fournie)
+      "statut": une des valeurs EXACTES ci-dessous | "",   // nouveau statut si les notes le font évoluer, sinon ""
+      "texte": chaîne | "",   // texte à jour SEULEMENT si les notes ajoutent une info ; sinon "" (on garde l'ancien)
+      "note": chaîne          // en 1 phrase, ce qui change (pour que l'humaine comprenne). Ex : « passe en terminé »
+    }
+  ],
+  "actions": [    // uniquement les points RÉELLEMENT NOUVEAUX (pas déjà dans la liste fournie)
     {
       "titre": chaîne,        // titre court de l'action (~60 caractères), optionnel ("" si rien)
       "texte": chaîne,        // la remarque rédigée clairement, 1 à 3 phrases
@@ -39,14 +41,14 @@ Réponds STRICTEMENT par un objet JSON (aucun texte autour, pas de markdown) :
     }
   ]
 }
-
 RÈGLES :
 - Écris TOUJOURS en FRANÇAIS, même si les notes sont dans une autre langue.
 - N'invente rien : uniquement ce qui est dans les notes. Une note = potentiellement une action.
+- Si des ACTIONS DÉJÀ PRÉSENTES te sont fournies : quand un point des notes CONCERNE l'une d'elles (même sujet / même lot), NE crée PAS de doublon → mets-le dans "updates" avec sa "ref" et le nouveau statut (et un texte à jour seulement si tu ajoutes une info). Ne mets dans "actions" QUE les points réellement nouveaux, absents de la liste.
+- Si aucune action existante ne correspond (ou aucune fournie), "updates" reste [].
 - "statut" par défaut = "en_cours". Utilise "date_limite" ou "a_programmer" si une échéance est donnée ; "information" pour une simple info ; "cloture" seulement si la note dit explicitement que c'est réglé.
 - Si une DATE est mentionnée (ex. "avant le 12/02", "semaine prochaine" → estime au mieux en AAAA-MM-JJ), mets-la dans "statut_date".
 - Rattache à un lot (portee="lot") seulement si c'est clair, en choisissant "lot_nom" dans la liste fournie quand elle correspond.`
-
 function parseJsonSafe(text) {
   if (!text) return null
   try { return JSON.parse(text) } catch { /* isole l'objet */ }
@@ -55,19 +57,29 @@ function parseJsonSafe(text) {
   if (i === -1 || j === -1 || j <= i) return null
   try { return JSON.parse(text.slice(i, j + 1)) } catch { return null }
 }
-
 export async function POST(request) {
   const auth = await requireRole(request, ['admin', 'agente'])
   if (auth.error) return auth.error
-
   let body
   try { body = await request.json() } catch { body = {} }
   const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, MAX_NOTES) : ''
   if (!notes) return NextResponse.json({ error: 'notes manquantes' }, { status: 400 })
   const lots = Array.isArray(body.lots) ? body.lots.filter(l => l?.nom).map(l => l.nom).slice(0, 60) : []
+  // Actions DÉJÀ présentes dans le rapport (reportées ou créées) → l'IA propose des MISES À JOUR
+  // au lieu de recréer des doublons. Chaque entrée porte une "ref" (numéro) stable côté client.
+  const existantes = (Array.isArray(body.existantes) ? body.existantes : [])
+    .filter(e => Number.isFinite(Number(e?.ref)))
+    .slice(0, 120)
+    .map(e => ({
+      ref: Number(e.ref),
+      titre: typeof e?.titre === 'string' ? e.titre.slice(0, 160) : '',
+      texte: typeof e?.texte === 'string' ? e.texte.slice(0, 400) : '',
+      statut: typeof e?.statut === 'string' ? e.statut : '',
+      lot_nom: typeof e?.lot_nom === 'string' ? e.lot_nom.slice(0, 120) : '',
+    }))
+  const refSet = new Set(existantes.map(e => e.ref))
   // Type de visite (R1/R2/R3/suivi/réception) → règles rédactionnelles + contexte adaptés.
   const typeVisite = TYPES_VISITE[body.type_visite] ? body.type_visite : null
-
   // Les règles du CR (consignes générales + contexte du type) sont injectées dans le prompt système.
   const system = `${SYSTEM_PROMPT}\n\n${reglesActions(typeVisite)}`
   const enTete = typeVisite ? `Type de visite : ${TYPES_VISITE[typeVisite]}\n\n` : ''
@@ -75,8 +87,11 @@ export async function POST(request) {
   const bloc = body.source === 'ancien_rapport'
     ? `ANCIEN COMPTE-RENDU DÉJÀ RÉDIGÉ (à convertir en actions) :\n${notes}\n\nSois EXHAUSTIF : parcours TOUT le rapport et extrais CHAQUE élément actionnable en une action distincte — chaque travail réalisé, chaque point à suivre, chaque réserve, chaque décision, validation, arbitrage, demande, relance ou point de vigilance. Vise plutôt trop que pas assez (mieux vaut une action de trop, décochable, qu'un oubli). Une puce ou une phrase du rapport = souvent une action. Ignore UNIQUEMENT les rubriques purement descriptives d'identification (référence dossier, adresse, intervenants présents, dates d'en-tête) et les phrases de liaison sans contenu.`
     : `Notes de visite :\n${notes}`
-  const userText = `${enTete}${bloc}\n\nLots disponibles (pour "lot_nom") : ${lots.length ? lots.join(', ') : 'aucun'}\n\nRenvoie les actions au format JSON demandé, en français.`
-
+  // Bloc « actions déjà présentes » : injecté seulement s'il y en a (flux notes d'un suivi).
+  const blocExistantes = existantes.length
+    ? `\n\nACTIONS DÉJÀ PRÉSENTES dans ce rapport (ne PAS les recréer ; propose une MISE À JOUR via "updates" avec la "ref" si un point des notes les concerne) :\n${existantes.map(e => `[ref ${e.ref}] (${e.statut || '—'})${e.lot_nom ? ' [' + e.lot_nom + ']' : ''} ${e.titre || ''}${e.texte ? ' — ' + e.texte : ''}`.trim()).join('\n')}`
+    : ''
+  const userText = `${enTete}${bloc}${blocExistantes}\n\nLots disponibles (pour "lot_nom") : ${lots.length ? lots.join(', ') : 'aucun'}\n\nRenvoie les mises à jour (updates) et les nouvelles actions au format JSON demandé, en français.`
   const claudeBody = JSON.stringify({
     model: 'claude-sonnet-4-6',
     max_tokens: 4000,
@@ -84,7 +99,6 @@ export async function POST(request) {
     system,
     messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
   })
-
   let claudeRes = null
   let derniereErreur = null
   for (let tentative = 0; tentative <= CLAUDE_RETRIES; tentative++) {
@@ -112,17 +126,14 @@ export async function POST(request) {
       derniereErreur = e
     }
   }
-
   if (!claudeRes) return NextResponse.json({ error: `Service IA indisponible (${derniereErreur?.message || 'timeout'}). Réessaie.` }, { status: 503 })
   if (!claudeRes.ok) {
     const err = await claudeRes.json().catch(() => ({}))
     return NextResponse.json({ error: err.error?.message || 'Erreur Claude API' }, { status: 500 })
   }
-
   const claudeData = await claudeRes.json()
   const raw = parseJsonSafe(claudeData.content?.[0]?.text || '')
   if (!raw || !Array.isArray(raw.actions)) return NextResponse.json({ error: 'Réponse IA illisible' }, { status: 502 })
-
   // Coercition : on ne fait jamais confiance à la sortie brute.
   const dateOk = (s) => (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s)) ? s : null
   const actions = raw.actions.slice(0, 40).map(a => {
@@ -137,6 +148,14 @@ export async function POST(request) {
       statut_date: dateOk(a?.statut_date),
     }
   }).filter(a => a.texte || a.titre)
-
-  return NextResponse.json({ actions })
+  // Mises à jour : ref valide + au moins un changement (statut ou texte). On ne fait jamais confiance.
+  const updates = (Array.isArray(raw.updates) ? raw.updates : []).map(u => {
+    const ref = Number(u?.ref)
+    if (!refSet.has(ref)) return null
+    const statut = STATUT_SET.has(u?.statut) ? u.statut : null
+    const texte = (typeof u?.texte === 'string' && u.texte.trim()) ? u.texte.trim().slice(0, 1500) : null
+    if (!statut && !texte) return null
+    return { ref, statut, texte, note: typeof u?.note === 'string' ? u.note.trim().slice(0, 200) : '' }
+  }).filter(Boolean)
+  return NextResponse.json({ actions, updates })
 }
