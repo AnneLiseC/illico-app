@@ -299,6 +299,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     setPdfLoading(true)
     // Onglet ouvert TOUT DE SUITE (dans le geste) → pas de blocage popup après l'await.
     const win = window.open('', '_blank')
+    if (win) try { win.document.write('<!doctype html><meta charset="utf-8"><title>Génération du PDF…</title><body style="margin:0;font:16px system-ui;display:flex;height:100vh;align-items:center;justify-content:center;color:#334155">Génération du PDF en cours, patiente…</body>') } catch { /* onglet indispo */ }
     try {
       const res = await apiFetch('/api/cr/visite-pdf', {
         method: 'POST',

@@ -9,6 +9,21 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
 
+// Photos : on RÉDUIT + réoriente (EXIF) et recompresse en JPEG avant de les embarquer. Les gros
+// JPEG iPhone bruts font ramer @react-pdf et peuvent produire des PAGES BLANCHES ; réduits, le PDF
+// est léger, rapide et fiable. Import dynamique de sharp (évite tout souci de bundling). Repli sur
+// l'original si sharp indisponible, null si l'image est illisible (elle est alors simplement omise).
+let _sharp
+async function photoDataURL(buf) {
+  try {
+    if (!_sharp) _sharp = (await import('sharp')).default
+    const out = await _sharp(buf).rotate().resize({ width: 1400, height: 1400, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 72 }).toBuffer()
+    return `data:image/jpeg;base64,${out.toString('base64')}`
+  } catch {
+    try { return `data:image/jpeg;base64,${buf.toString('base64')}` } catch { return null }
+  }
+}
+
 // Nom de fichier basé sur le client (accents/espaces nettoyés). Fallback : référence.
 function nomFichierClient(dossier) {
   return (formatNomClient(dossier?.client, { civilite: false }) || dossier?.reference || 'Client')
@@ -383,10 +398,8 @@ export async function POST(request) {
         try {
           const { data: fileData } = await getSupabaseAdmin().storage.from('photos').download(photo.url)
           if (fileData) {
-            const buf = Buffer.from(await fileData.arrayBuffer())
-            const ext = (photo.url || '').split('.').pop().toLowerCase()
-            const mime = ext === 'png' ? 'image/png' : 'image/jpeg'
-            return { ...photo, base64: `data:${mime};base64,${buf.toString('base64')}` }
+            const b64 = await photoDataURL(Buffer.from(await fileData.arrayBuffer()))
+            if (b64) return { ...photo, base64: b64 }
           }
         } catch {}
         return photo
@@ -446,10 +459,8 @@ export async function POST(request) {
         try {
           const { data: fileData } = await getSupabaseAdmin().storage.from('photos').download(path)
           if (fileData) {
-            const buf = Buffer.from(await fileData.arrayBuffer())
-            const ext = (path || '').split('.').pop().toLowerCase()
-            const mime = ext === 'png' ? 'image/png' : 'image/jpeg'
-            return { id, path, base64: `data:${mime};base64,${buf.toString('base64')}` }
+            const b64 = await photoDataURL(Buffer.from(await fileData.arrayBuffer()))
+            if (b64) return { id, path, base64: b64 }
           }
         } catch {}
         return { id, path }
