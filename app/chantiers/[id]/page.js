@@ -6160,7 +6160,7 @@ export default function FicheChantier({ params }) {
       {/* ── RAPPORTS DE VISITE — NOUVEAU système (liste de visites → page par visite) ── */}
       {onglet === 'cr' && !CR_LEGACY_VISIBLE && (
         <CRVisitesPanel id={id} setErreur={setErreur} setSucces={setSucces} setAnnot={setAnnot}
-          onCreerAncien={() => setCrModal(true)} onEditerAncien={editerCR} refreshKey={crVersion} />
+          onCreerAncien={() => setCrModal(true)} onEditerAncien={editerCR} onPdfProse={(crId) => generatePDF('cr', crId)} refreshKey={crVersion} />
       )}
 
       {/* ── COMPTES-RENDUS (ANCIEN — conservé mais masqué via CR_LEGACY_VISIBLE) ── */}

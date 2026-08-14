@@ -45,7 +45,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('fr-FR') : ''
 // Types gérés par l'ancien système prose (générateur IA + CR manuel), pas par les actions.
 const TYPES_ANCIENS = new Set(['r1', 'r2', 'r3'])
 
-export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onCreerAncien, onEditerAncien, refreshKey }) {
+export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onCreerAncien, onEditerAncien, onPdfProse, refreshKey }) {
   const [visites, setVisites] = useState([])
   const [lots, setLots] = useState([])
   const [selected, setSelected] = useState(null)   // id de la visite ouverte
@@ -131,7 +131,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
     // Nombre de rapports PROSE (ancien système) du dossier → conditionne le bouton « Consolider ».
     const anciensProse = visites.filter(v => (v.contenu_final || '').trim()).length
     return <VisitePage visite={visite} dossierId={id} lots={lots} setErreur={setErreur} setSucces={setSucces} setAnnot={setAnnot}
-             anciensProse={anciensProse}
+             anciensProse={anciensProse} onEditerAncien={onEditerAncien} onPdfProse={onPdfProse}
              onRetour={() => { setSelected(null); rechargerVisites() }} onMajVisite={rechargerVisites} />
   }
 
@@ -160,7 +160,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
       {visites.map(v => (
         <div key={v.id} className="card"
           style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div onClick={() => TYPES_ANCIENS.has(v.type_visite) ? onEditerAncien?.(v) : setSelected(v.id)}
+          <div onClick={() => setSelected(v.id)}
             style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, cursor: 'pointer' }}>
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink-900)' }}>
               {titreVisite(v)}
@@ -190,7 +190,9 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
 }
 
 // ── Page d'une visite : ses actions (générales + par lot) ──
-function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, anciensProse = 0, onRetour, onMajVisite }) {
+function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, anciensProse = 0, onEditerAncien, onPdfProse, onRetour, onMajVisite }) {
+  // R1/R2/R3 = ancien système prose : page de LECTURE (pas d'actions), affichage instantané.
+  const estProse = TYPES_ANCIENS.has(visite?.type_visite)
   const [actions, setActions] = useState([])
   const [chargement, setChargement] = useState(true)
   const [ancien, setAncien] = useState(null) // { contenu_final } — rapport ANCIEN format (prose), lecture seule
@@ -214,13 +216,15 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
 
   useEffect(() => {
     (async () => {
+      // R1/R2/R3 : pas d'actions à charger — on affiche direct le contenu prose déjà en mémoire.
+      if (estProse) { setChargement(false); return }
       await recharger()
       // Pont : contenu prose des anciens rapports (avant le nouveau système), affiché en lecture seule.
       const { data: cr } = await supabase.from('comptes_rendus').select('contenu_final').eq('id', visiteId).maybeSingle()
       setAncien(cr?.contenu_final ? { contenu_final: cr.contenu_final } : null)
       setChargement(false)
     })()
-  }, [recharger, visiteId])
+  }, [recharger, visiteId, estProse])
 
   const ajouterAction = async (portee) => {
     const ordre = actions.length
@@ -458,6 +462,27 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
   const parLot = actions.filter(a => a.portee === 'lot')
   const ouvertes = actions.filter(a => !CLOTURANTS.has(a.statut)).length
 
+  // ── Page LECTURE d'un R1/R2/R3 (prose) : contenu + Modifier + Export PDF. Pas d'actions. ──
+  if (estProse) {
+    const contenu = (visite?.contenu_final || '').trim()
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <button onClick={onRetour} className="btn btn-ghost" style={{ fontSize: 12.5 }}>← Visites</button>
+          <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--ink-900)' }}>{titreVisite(visite)}</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>{fmtDate(visite?.date_visite)}</div>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#4338ca', background: 'rgba(99,102,241,0.10)', borderRadius: 20, padding: '2px 9px' }}>ancien format</span>
+          <div style={{ flex: 1 }} />
+          <button onClick={() => onEditerAncien?.(visite)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Modifier</button>
+          {contenu && <button onClick={() => onPdfProse?.(visiteId)} className="btn btn-primary" style={{ fontSize: 12.5 }}>Exporter PDF</button>}
+        </div>
+        {contenu
+          ? <div className="card" style={{ padding: 16 }}><RenderProse text={contenu} /></div>
+          : <div style={{ fontSize: 13, color: 'var(--ink-500)' }}>Ce rapport n&apos;a pas encore de contenu. Clique sur <b>Modifier</b> pour le rédiger.</div>}
+      </div>
+    )
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -673,7 +698,9 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
         </div>
       )}
 
-      {chargement ? <div style={{ color: 'var(--ink-500)' }}>Chargement des actions…</div> : (
+      {/* On n'affiche plus un écran « Chargement… » bloquant : les sections apparaissent tout de
+          suite (vides puis remplies), ce qui évite le flash surtout quand il n'y a pas d'action. */}
+      {(
         <>
           <Section titre="Remarques générales" onAjouter={() => ajouterAction('generale')}>
             {generales.map(a => (
