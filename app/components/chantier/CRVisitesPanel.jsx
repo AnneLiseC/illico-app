@@ -103,9 +103,10 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
       .insert({ dossier_id: id, numero_visite: maxNum + 1, date_visite: new Date().toISOString().slice(0, 10), type_visite: type, valide: false })
       .select().single()
     if (error) { setErreur?.('Nouvelle visite : ' + error.message); return }
-    // Report : on reprend toutes les actions NON clôturées du dossier dans la nouvelle visite.
+    // Report : on reprend les actions du dossier dans la nouvelle visite, SAUF celles clôturées,
+    // quitus transmis ou ACTÉES (une décision actée reste sur son CR, elle ne se reporte pas).
     const { data: ouvertes } = await supabase.from('actions')
-      .select('id, statut, texte').eq('dossier_id', id).not('statut', 'in', '(cloture,quitus_transmis)')
+      .select('id, statut, texte').eq('dossier_id', id).not('statut', 'in', '(cloture,quitus_transmis,acte)')
     if (ouvertes && ouvertes.length) {
       await supabase.from('cr_actions').insert(ouvertes.map(a => ({
         cr_id: data.id, action_id: a.id, statut_au_cr: a.statut, texte_au_cr: a.texte, inclus: true,
@@ -293,8 +294,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
 
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfPanel, setPdfPanel] = useState(false)
-  const [pdfOpts, setPdfOpts] = useState({ generales: true, parLot: true, photos: true, checklist: true, barrerCloturees: false })
-  const [filtreLots, setFiltreLots] = useState(() => new Set()) // vide = toutes les entreprises
+  const [pdfOpts, setPdfOpts] = useState({ generales: true, parLot: true, photos: true, checklist: true })
   const exporterPDF = async () => {
     setPdfLoading(true)
     // Onglet ouvert TOUT DE SUITE (dans le geste) → pas de blocage popup après l'await.
@@ -303,7 +303,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     try {
       const res = await apiFetch('/api/cr/visite-pdf', {
         method: 'POST',
-        body: JSON.stringify({ visite_id: visiteId, options: pdfOpts, filtre_lot_ids: [...filtreLots] }),
+        body: JSON.stringify({ visite_id: visiteId, options: pdfOpts }),
       })
       if (!res.ok) { const j = await res.json().catch(() => ({})); setErreur?.(j.error || 'Export PDF impossible.'); win?.close(); return }
       const blob = await res.blob()
@@ -547,11 +547,17 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
           className="input" style={{ height: 32, fontSize: 12, flex: '0 1 220px' }} title="Type de visite : oriente les règles de rédaction de l'IA">
           {ORDRE_TYPES.map(t => <option key={t} value={t}>{TYPES_VISITE[t]}</option>)}
         </select>
-        {actions.length > 0 && (
-          <span style={{ fontSize: 12, color: 'var(--ink-500)' }}>
-            {actions.length} action{actions.length > 1 ? 's' : ''} · <b style={{ color: ouvertes ? '#b45309' : '#15803d' }}>{ouvertes} ouverte{ouvertes > 1 ? 's' : ''}</b>
-          </span>
-        )}
+        {actions.length > 0 && (() => {
+          // Compteur par COULEUR de statut : chaque nombre écrit dans la couleur de sa famille.
+          const cnt = { '#dc2626': 0, '#d97706': 0, '#2563eb': 0, '#16a34a': 0 }
+          actions.forEach(a => { const c = (STATUT_MAP[a.statut] || {}).c; if (c in cnt) cnt[c]++ })
+          return (
+            <span style={{ fontSize: 12, color: 'var(--ink-500)', display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+              <span>{actions.length} action{actions.length > 1 ? 's' : ''} ·</span>
+              {['#dc2626', '#d97706', '#2563eb', '#16a34a'].filter(c => cnt[c] > 0).map(c => <b key={c} style={{ color: c, fontSize: 13 }}>{cnt[c]}</b>)}
+            </span>
+          )
+        })()}
         <input type="date" defaultValue={visite?.date_visite || ''} className="input" style={{ height: 34, fontSize: 12.5 }}
           onBlur={e => e.target.value !== visite?.date_visite && supabase.from('comptes_rendus').update({ date_visite: e.target.value || null }).eq('id', visiteId).then(onMajVisite)} />
         <div style={{ flex: 1 }} />
@@ -566,7 +572,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
         <button onClick={() => setIaOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Aide IA</button>
         <button onClick={() => setPdfPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Exporter PDF</button>
         <button onClick={() => setDiffPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Diffuser</button>
-        {!visite?.valide && <button onClick={publier} className="btn btn-primary" style={{ fontSize: 12.5, background: '#15803d', borderColor: '#15803d' }}>Publier</button>}
+        <button onClick={publier} disabled={!!visite?.valide} className="btn btn-primary" style={{ fontSize: 12.5, background: '#15803d', borderColor: '#15803d', opacity: visite?.valide ? 0.6 : 1 }}>{visite?.valide ? 'Publié' : 'Publier'}</button>
       </div>
 
       {diffPanel && (
@@ -604,24 +610,11 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
         <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Export PDF — que veux-tu dedans ?</div>
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12.5 }}>
-            {[['generales', 'Remarques générales'], ['parLot', 'Par lot'], ['photos', 'Photos'], ['checklist', 'Checklist'], ['barrerCloturees', 'Barrer les clôturées']].map(([k, lbl]) => (
+            {[['generales', 'Remarques générales'], ['parLot', 'Par lot'], ['photos', 'Photos'], ['checklist', 'Checklist']].map(([k, lbl]) => (
               <label key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <input type="checkbox" checked={!!pdfOpts[k]} onChange={() => togglePdfOpt(k)} style={{ accentColor: '#4f46e5' }} /> {lbl}
               </label>
             ))}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={{ fontSize: 12, color: 'var(--ink-600)' }}>Limiter aux entreprises (rien de coché = toutes) :</span>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              {lots.filter(l => !l.parent_lot_id).map(l => (
-                <label key={l.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5 }}>
-                  <input type="checkbox" checked={filtreLots.has(l.id)}
-                    onChange={() => setFiltreLots(s => { const n = new Set(s); n.has(l.id) ? n.delete(l.id) : n.add(l.id); return n })}
-                    style={{ accentColor: '#4f46e5' }} />
-                  {l.artisan?.entreprise || l.nom}
-                </label>
-              ))}
-            </div>
           </div>
           <div style={{ display: 'flex' }}>
             <div style={{ flex: 1 }} />
@@ -832,6 +825,14 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
           </Section>
         </>
       )}
+
+      {/* Mêmes actions qu'en haut, répétées EN BAS pour ne pas avoir à remonter. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderTop: '1px solid var(--ink-100)', paddingTop: 12, marginTop: 4 }}>
+        <div style={{ flex: 1 }} />
+        <button onClick={() => setPdfPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Exporter PDF</button>
+        <button onClick={() => setDiffPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Diffuser</button>
+        <button onClick={publier} disabled={!!visite?.valide} className="btn btn-primary" style={{ fontSize: 12.5, background: '#15803d', borderColor: '#15803d', opacity: visite?.valide ? 0.6 : 1 }}>{visite?.valide ? 'Publié' : 'Publier'}</button>
+      </div>
     </div>
   )
 }
@@ -904,7 +905,7 @@ function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, dossierId
         {withLot && (
           <select value={cibleLot} onChange={e => onSetLot(e.target.value || null)} className="input" style={{ height: 30, fontSize: 12, flex: '0 1 170px' }}>
             <option value="">— Lot —</option>
-            {lots.map(l => <option key={l.id} value={l.id}>{l.parent_lot_id ? '— ' : ''}{l.nom}{l.artisan?.entreprise ? ' — ' + l.artisan.entreprise : ''}</option>)}
+            {lots.filter(l => !l.parent_lot_id).map(l => <option key={l.id} value={l.id}>{l.nom}{l.artisan?.entreprise ? ' — ' + l.artisan.entreprise : ''}</option>)}
           </select>
         )}
 
@@ -1124,7 +1125,7 @@ function ActionChecklist({ action, setErreur }) {
   return (
     <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-500)' }}>
-        Points de contrôle{items.length ? ` · ${pct}% (${done}/${items.length})` : ''}
+        Checklist{items.length ? ` · ${pct}% (${done}/${items.length})` : ''}
       </div>
       {items.map(item => (
         <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1135,7 +1136,7 @@ function ActionChecklist({ action, setErreur }) {
       ))}
       <div style={{ display: 'flex', gap: 6 }}>
         <input value={label} onChange={e => setLabel(e.target.value)} onKeyDown={e => e.key === 'Enter' && ajouter()}
-          placeholder="Ajouter un point de contrôle…" className="input" style={{ flex: 1, height: 30, fontSize: 12 }} />
+          placeholder="Ajouter à la checklist…" className="input" style={{ flex: 1, height: 30, fontSize: 12 }} />
         <button onClick={ajouter} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 9px' }}>+</button>
       </div>
     </div>
