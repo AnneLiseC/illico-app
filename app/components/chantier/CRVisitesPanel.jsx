@@ -281,18 +281,22 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
   const [filtreLots, setFiltreLots] = useState(() => new Set()) // vide = toutes les entreprises
   const exporterPDF = async () => {
     setPdfLoading(true)
+    // Onglet ouvert TOUT DE SUITE (dans le geste) → pas de blocage popup après l'await.
+    const win = window.open('', '_blank')
     try {
       const res = await apiFetch('/api/cr/visite-pdf', {
         method: 'POST',
         body: JSON.stringify({ visite_id: visiteId, options: pdfOpts, filtre_lot_ids: [...filtreLots] }),
       })
-      if (!res.ok) { const j = await res.json().catch(() => ({})); setErreur?.(j.error || 'Export PDF impossible.'); return }
+      if (!res.ok) { const j = await res.json().catch(() => ({})); setErreur?.(j.error || 'Export PDF impossible.'); win?.close(); return }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
-      window.open(url, '_blank')
+      if (win) win.location.href = url
+      else window.open(url, '_blank')
       setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch {
       setErreur?.('Erreur réseau export PDF.')
+      win?.close()
     } finally {
       setPdfLoading(false)
     }
@@ -585,9 +589,9 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
       {iaOuvert && (
         <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, borderColor: 'rgba(99,102,241,0.35)' }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Notes de visite — dicte ou tape. Ensuite, au choix : laisse l&apos;IA proposer des actions, ou ajoute-les toi-même.</div>
-          <textarea value={iaNotes} onChange={e => setIaNotes(e.target.value)} rows={4}
+          <textarea value={iaNotes} onChange={e => setIaNotes(e.target.value)} rows={12}
             placeholder="Dicte au micro ou tape tes notes… (ex. « muret entrée à refaire avant le 12/02 ; peinture RAS »)"
-            className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical', minHeight: 80 }} />
+            className="input" style={{ padding: 12, fontSize: 13, lineHeight: 1.6, resize: 'vertical', minHeight: 260 }} />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <BoutonDictee dossierId={dossierId} setErreur={setErreur}
               onTexte={txt => setIaNotes(prev => [prev, txt].filter(Boolean).join(' '))} />
