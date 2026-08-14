@@ -1065,6 +1065,7 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
   const [up, setUp] = useState(false)
   const [picker, setPicker] = useState(false)          // sélecteur de photos du dossier
   const [dossierPhotos, setDossierPhotos] = useState(null)
+  const [lightbox, setLightbox] = useState(null)       // url de la photo affichée en grand (ou null)
 
   const recharger = useCallback(async () => {
     const { data } = await supabase.from('action_photos').select('id, path, annotations, ordre').eq('action_id', action.id).order('ordre')
@@ -1135,28 +1136,41 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
   })
 
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-      {photos.map(ph => (
-        <div key={ph.id} style={{ position: 'relative' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Bandeau horizontal défilant : vignettes plus grandes, clic = agrandir. */}
+      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+        {photos.map(ph => (
+          <div key={ph.id} style={{ position: 'relative', flex: '0 0 auto' }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={ph.url} alt="" onClick={() => ph.url && setLightbox(ph.url)} title="Agrandir"
+              style={{ width: 116, height: 116, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--ink-200)', cursor: 'zoom-in', display: 'block' }} />
+            <button onClick={() => supprimer(ph)} title="Supprimer"
+              style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, display: 'grid', placeItems: 'center' }}>✕</button>
+            {ph.url && (
+              <button onClick={() => annoter(ph)} title="Annoter"
+                style={{ position: 'absolute', bottom: -6, right: -6, width: 22, height: 22, borderRadius: '50%', background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, display: 'grid', placeItems: 'center' }}>✎</button>
+            )}
+          </div>
+        ))}
+        <label title="Ajouter depuis l'ordinateur" style={{ flex: '0 0 auto', width: 116, height: 116, borderRadius: 8, border: '2px dashed var(--ink-300)', display: 'grid', placeItems: 'center', textAlign: 'center', cursor: up ? 'wait' : 'pointer', color: 'var(--ink-400)', fontSize: 11, lineHeight: 1.2, padding: 4 }}>
+          {up ? 'Envoi…' : '+ Ordinateur'}
+          <input type="file" accept="image/*" multiple disabled={up} style={{ display: 'none' }}
+            onChange={e => { const fs = Array.from(e.target.files || []); e.target.value = ''; onFiles(fs) }} />
+        </label>
+        <button type="button" onClick={ouvrirPicker} title="Choisir parmi les photos du dossier"
+          style={{ flex: '0 0 auto', width: 116, height: 116, borderRadius: 8, border: '2px dashed var(--ink-300)', background: 'none', cursor: 'pointer', color: 'var(--ink-400)', fontSize: 11, lineHeight: 1.2, padding: 4 }}>
+          + Dossier
+        </button>
+      </div>
+
+      {/* Lightbox : photo en grand, clic n'importe où pour fermer. */}
+      {lightbox && (
+        <div onClick={() => setLightbox(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', zIndex: 500, display: 'grid', placeItems: 'center', cursor: 'zoom-out', padding: 20 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={ph.url} alt="" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--ink-200)' }} />
-          <button onClick={() => supprimer(ph)} title="Supprimer"
-            style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, display: 'grid', placeItems: 'center' }}>✕</button>
-          {ph.url && (
-            <button onClick={() => annoter(ph)} title="Annoter"
-              style={{ position: 'absolute', bottom: -6, right: -6, width: 22, height: 22, borderRadius: '50%', background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, display: 'grid', placeItems: 'center' }}>✎</button>
-          )}
+          <img src={lightbox} alt="" style={{ maxWidth: '95%', maxHeight: '95%', objectFit: 'contain', borderRadius: 8 }} />
         </div>
-      ))}
-      <label title="Ajouter depuis l'ordinateur" style={{ width: 72, height: 72, borderRadius: 8, border: '2px dashed var(--ink-300)', display: 'grid', placeItems: 'center', textAlign: 'center', cursor: up ? 'wait' : 'pointer', color: 'var(--ink-400)', fontSize: 10.5, lineHeight: 1.2, padding: 4 }}>
-        {up ? 'Envoi…' : 'Depuis l’ordinateur'}
-        <input type="file" accept="image/*" multiple disabled={up} style={{ display: 'none' }}
-          onChange={e => { const fs = Array.from(e.target.files || []); e.target.value = ''; onFiles(fs) }} />
-      </label>
-      <button type="button" onClick={ouvrirPicker} title="Choisir parmi les photos du dossier"
-        style={{ width: 72, height: 72, borderRadius: 8, border: '2px dashed var(--ink-300)', background: 'none', cursor: 'pointer', color: 'var(--ink-400)', fontSize: 10.5, lineHeight: 1.2, padding: 4 }}>
-        Depuis le dossier
-      </button>
+      )}
 
       {picker && (
         <div style={{ flexBasis: '100%', border: '1px solid var(--ink-200)', borderRadius: 8, padding: 10, marginTop: 4 }}>
@@ -1167,12 +1181,12 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
           </div>
           {dossierPhotos === null && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Chargement…</div>}
           {dossierPhotos && dossierPhotos.length === 0 && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Aucune photo dans ce dossier pour l’instant.</div>}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
             {(dossierPhotos || []).map(p => (
               <button key={p.id} type="button" onClick={() => attacher(p)} title={`Ajouter (${p.categorie || 'photo'})`}
-                style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}>
+                style={{ flex: '0 0 auto', border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.thumb} alt="" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--ink-200)' }} />
+                <img src={p.thumb} alt="" style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--ink-200)' }} />
               </button>
             ))}
           </div>
