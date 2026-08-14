@@ -59,14 +59,20 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
       .order('numero_visite', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
     if (error) { setErreur?.('Chargement des visites : ' + error.message); return }
+    // Affiche la LISTE tout de suite (sans attendre les compteurs ni les lots) → plus de « Chargement… » bloquant.
+    setVisites(data || [])
+    setChargement(false)
     const visiteIds = (data || []).map(v => v.id)
 
     // Compteur de suivi par visite : actions du report (inclus) + créées dans la visite,
-    // moins celles retirées. « ouvertes » = tout sauf Clôturé / Quitus transmis.
+    // moins celles retirées. « ouvertes » = tout sauf Clôturé / Quitus transmis. Calculé APRÈS
+    // l'affichage (les 2 requêtes en parallèle), puis fusionné dans la liste déjà visible.
     let compteurs = {}
     if (visiteIds.length) {
-      const { data: links } = await supabase.from('cr_actions').select('cr_id, action_id, inclus').in('cr_id', visiteIds)
-      const { data: acts } = await supabase.from('actions').select('id, cr_origine_id, statut').eq('dossier_id', id)
+      const [{ data: links }, { data: acts }] = await Promise.all([
+        supabase.from('cr_actions').select('cr_id, action_id, inclus').in('cr_id', visiteIds),
+        supabase.from('actions').select('id, cr_origine_id, statut').eq('dossier_id', id),
+      ])
       const statutById = Object.fromEntries((acts || []).map(a => [a.id, a.statut]))
       for (const v of (data || [])) {
         const incl = new Set(), excl = new Set()
@@ -82,12 +88,10 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
   }, [id, setErreur])
 
   useEffect(() => {
-    (async () => {
-      await rechargerVisites()
-      const { data: l } = await supabase.from('lots').select('id, nom, parent_lot_id, date_debut, date_fin, artisan:artisans(id, entreprise, metier)').eq('dossier_id', id).order('ordre')
-      setLots(l || [])
-      setChargement(false)
-    })()
+    // Lots en PARALLÈLE (utilisés seulement à l'ouverture d'une visite) — ne bloque pas la liste.
+    supabase.from('lots').select('id, nom, parent_lot_id, date_debut, date_fin, artisan:artisans(id, entreprise, metier)').eq('dossier_id', id).order('ordre')
+      .then(({ data }) => setLots(data || []))
+    rechargerVisites()  // affiche la liste dès qu'elle arrive + bascule chargement=false (voir plus haut)
   }, [id, rechargerVisites, refreshKey])  // refreshKey : re-fetch après création/édition prose (ancien modal)
 
   // Nouvelle visite STRUCTURÉE (suivi / réception uniquement — R1/R2/R3 passent par l'ancien).
