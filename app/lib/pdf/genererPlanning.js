@@ -9,7 +9,7 @@ import fs from 'fs'
 import { renderToBuffer } from '@react-pdf/renderer'
 import './fonts.js'
 import { buildPlanningDocument } from './planningDocument.js'
-import { dureeOuvree, JOURS_DEFAUT } from '../joursOuvres.js'
+import { dureeJours } from '../joursOuvres.js'
 
 function getLogoBase64() {
   try {
@@ -35,7 +35,6 @@ export async function genererPlanningPDF(db, dossierId, { format = 'A4', colonne
     .eq('type_intervention', 'periode')   // cohérent avec l'éditeur : seules les périodes sont des barres
   const interLiees = new Set(listeLots.map(l => l.intervention_id).filter(Boolean).map(String))
 
-  const jm = (l) => (l.artisan?.jours_travailles && l.artisan.jours_travailles.length ? l.artisan.jours_travailles : JOURS_DEFAUT)
   const mapLigne = (l) => ({
     key: l.id,
     niveau: l.parent_lot_id ? 1 : 0,
@@ -43,7 +42,7 @@ export async function genererPlanningPDF(db, dossierId, { format = 'A4', colonne
     artisan: l.artisan?.entreprise || l.artisan?.metier || '',
     debut: l.date_debut || null,
     fin: l.date_fin || null,
-    duree: (l.date_debut && l.date_fin) ? dureeOuvree(l.date_debut, l.date_fin, jm(l)) : null,
+    duree: (l.date_debut && l.date_fin) ? dureeJours(l.date_debut, l.date_fin) : null,
     avancement: l.avancement || 0,
     couleur: l.couleur || '#4f46e5',
     readonly: false,

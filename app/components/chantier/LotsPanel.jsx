@@ -7,7 +7,6 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api-auth-client'
-import { dureeOuvree, finApresOuvres, LIBELLES_JOURS, JOURS_DEFAUT } from '../../lib/joursOuvres'
 
 // frappe-gantt manipule le DOM directement → jamais de SSR.
 const GanttLots = dynamic(() => import('./GanttLots'), { ssr: false })
@@ -29,7 +28,6 @@ function artisansDepuisDevis(devis) {
 export default function LotsPanel({ id, devis, interventionsDossier, onMajIntervention, setErreur }) {
   const [lots, setLots] = useState([])
   const [deps, setDeps] = useState([])          // lot_dependances : { id, lot_id, depend_de_lot_id }
-  const [joursArtisan, setJoursArtisan] = useState({})  // artisan_id -> jours_travailles (int[] ISO)
   const [actionsParLot, setActionsParLot] = useState({})  // lot_id -> { total, cloturees } (lien CR↔planning)
   const [chargement, setChargement] = useState(true)
   const [ia, setIa] = useState(false)                 // appel IA en cours (pré-remplissage)
@@ -59,12 +57,6 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
       const { data: dd } = await supabase.from('lot_dependances').select('id, lot_id, depend_de_lot_id').in('lot_id', ids)
       setDeps(dd || [])
     } else { setDeps([]) }
-    // Jours travaillés des artisans référencés par les lots (pour la durée en jours ouvrés).
-    const artIds = [...new Set((data || []).map(l => l.artisan_id).filter(Boolean))]
-    if (artIds.length) {
-      const { data: arts } = await supabase.from('artisans').select('id, jours_travailles').in('id', artIds)
-      setJoursArtisan(Object.fromEntries((arts || []).map(a => [a.id, a.jours_travailles || JOURS_DEFAUT])))
-    } else { setJoursArtisan({}) }
     // Actions de CR rattachées à chaque lot (lien Planning ↔ Rapports de visite).
     if (ids.length) {
       const { data: cbl } = await supabase.from('action_cibles').select('lot_id, action:actions(id, statut)').in('lot_id', ids)
@@ -101,14 +93,23 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
     if (error) { setErreur?.('Enregistrement : ' + error.message); recharger() }  // rollback optimiste
   }
 
-  // ── Jours travaillés d'un artisan (global à l'entreprise, pas au dossier) ──
-  const majJoursArtisan = async (artisanId, jours) => {
-    if (!artisanId) return
-    const tri = [...new Set(jours)].filter(n => n >= 1 && n <= 7).sort((a, b) => a - b)
-    setJoursArtisan(prev => ({ ...prev, [artisanId]: tri }))
-    const { error } = await supabase.from('artisans').update({ jours_travailles: tri }).eq('id', artisanId)
-    if (error) setErreur?.('Jours travaillés : ' + error.message)
-  }
+  // ── Backfill artisan des sous-lots : un sous-lot sans artisan hérite de celui de son lot parent,
+  //    ENREGISTRÉ en base (modifiable ensuite via l'édition du sous-lot). Idempotent : ne touche que
+  //    les sous-lots encore vides, donc ne réécrase jamais un artisan choisi à la main.
+  useEffect(() => {
+    const parById = Object.fromEntries(lots.map(l => [l.id, l]))
+    const cibles = lots.filter(l => l.parent_lot_id && !l.artisan_id && parById[l.parent_lot_id]?.artisan_id)
+    if (!cibles.length) return
+    ;(async () => {
+      for (const s of cibles) {
+        await supabase.from('lots').update({ artisan_id: parById[s.parent_lot_id].artisan_id, updated_at: new Date().toISOString() }).eq('id', s.id)
+      }
+      setLots(prev => prev.map(l => {
+        const p = parById[l.parent_lot_id]
+        return (l.parent_lot_id && !l.artisan_id && p?.artisan_id) ? { ...l, artisan_id: p.artisan_id } : l
+      }))
+    })()
+  }, [lots])
 
   // ── Dépendances (lot_id « après » depend_de_lot_id) ──
   const ajouterDep = async (lotId, dependDeId) => {
@@ -267,7 +268,7 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
 
       {/* Repère : ce que chaque colonne représente (source de confusion fréquente). */}
       <div style={{ fontSize: 11.5, color: 'var(--ink-500)', background: 'var(--surface-2)', borderRadius: 8, padding: '8px 12px' }}>
-        Chaque ligne : <b>nom du lot</b> (le corps d’état, ex. « PLACO ») · <b>artisan</b> (l’entreprise qui le réalise) · dates · <b>durée en jours ouvrés</b> · avancement.
+        Chaque ligne : <b>nom du lot</b> (le corps d’état, ex. « PLACO ») · <b>artisan</b> (l’entreprise qui le réalise) · dates · <b>durée en jours</b> · avancement.
         Le nom et l’artisan sont <b>indépendants</b> : « Pré-remplir depuis les devis » remplit les deux (nom déduit du PDF, artisan depuis le devis), mais tu peux tout modifier à la main.
       </div>
 
@@ -368,9 +369,9 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
       </div>
 
       <GanttLots lots={lots} dependances={deps} interventions={interventionsDossier}
-        joursArtisan={joursArtisan} artisans={artisans} actionsParLot={actionsParLot}
+        artisans={artisans} actionsParLot={actionsParLot}
         onMajLot={majLot} onAjouterLot={ajouterLot} onSupprimerLot={supprimerLot}
-        onAjouterDep={ajouterDep} onRetirerDep={retirerDep} onMajJoursArtisan={majJoursArtisan}
+        onAjouterDep={ajouterDep} onRetirerDep={retirerDep}
         onDateChange={majLot} onInterventionDateChange={onMajIntervention} />
     </div>
   )

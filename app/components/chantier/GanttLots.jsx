@@ -9,7 +9,7 @@
 // verticalement les DEUX ensemble ; la timeline ne scrolle qu'horizontalement.
 import { useEffect, useRef, useState, useMemo } from 'react'
 import Gantt from 'frappe-gantt'
-import { dureeOuvree, finApresOuvres, LIBELLES_JOURS, JOURS_DEFAUT } from '../../lib/joursOuvres'
+import { dureeJours, finApresJours } from '../../lib/joursOuvres'
 
 const BAR = 30, PAD = 18, PITCH = BAR + PAD
 const VUES = [['fit', 'Vue ajustée'], ['Day', 'Jours'], ['Week', 'Semaines'], ['Month', 'Mois'], ['Year', 'Années']]
@@ -30,8 +30,8 @@ function modeAjuste(rows) {
 }
 
 export default function GanttLots({
-  lots, dependances = [], interventions = [], joursArtisan = {}, artisans = [], actionsParLot = {},
-  onMajLot, onAjouterLot, onSupprimerLot, onAjouterDep, onRetirerDep, onMajJoursArtisan,
+  lots, dependances = [], interventions = [], artisans = [], actionsParLot = {},
+  onMajLot, onAjouterLot, onSupprimerLot, onAjouterDep, onRetirerDep,
   onDateChange, onInterventionDateChange,
 }) {
   const [vue, setVue] = useState('Week')
@@ -69,7 +69,6 @@ export default function GanttLots({
     return r
   }, [lots, interventions, collapse])
 
-  const joursDe = (row) => row.lot ? (joursArtisan[row.lot.artisan_id] || JOURS_DEFAUT) : JOURS_DEFAUT
 
   // Signature : reconstruit le gantt seulement si la donnée pertinente change.
   const sig = rows.map(r => `${r.id}|${r.nom}|${r.debut}|${r.fin}|${r.avancement}|${r.couleur}`).join('~')
@@ -97,8 +96,7 @@ export default function GanttLots({
       if (!r.debut || !r.fin) {
         return { id: String(r.id), name: '', start: refDate, end: refDate, progress: 0, dependencies: [], custom_class: 'bar-vide', readonly: true }
       }
-      const j = joursDe(r)
-      const duree = dureeOuvree(r.debut, r.fin, j)
+      const duree = dureeJours(r.debut, r.fin)
       return {
         id: String(r.id),
         name: `${r.nom || 'Lot'} — ${duree} j (${r.avancement || 0} %)`,
@@ -200,8 +198,8 @@ export default function GanttLots({
                 )}
               </div>
               {editId === r.id && r.lot && (
-                <EditPanel row={r} jours={joursDe(r)} artisans={artisans} lotsRacine={lots.filter(l => !l.parent_lot_id)}
-                  deps={dependances} onMaj={onMajLot} onMajJours={onMajJoursArtisan}
+                <EditPanel row={r} artisans={artisans} lotsRacine={lots.filter(l => !l.parent_lot_id)}
+                  deps={dependances} onMaj={onMajLot}
                   onAjouterDep={onAjouterDep} onRetirerDep={onRetirerDep} />
               )}
             </div>
@@ -216,14 +214,13 @@ export default function GanttLots({
 const icBtn = { border: 'none', background: 'none', cursor: 'pointer', color: 'var(--ink-400)', fontSize: 13, padding: '0 2px', lineHeight: 1 }
 
 // Panneau d'édition détaillée d'un lot (déplié sous sa ligne).
-function EditPanel({ row, jours, artisans, lotsRacine, deps, onMaj, onMajJours, onAjouterDep, onRetirerDep }) {
+function EditPanel({ row, artisans, lotsRacine, deps, onMaj, onAjouterDep, onRetirerDep }) {
   const lot = row.lot
-  const nbOuvres = (lot.date_debut && lot.date_fin) ? dureeOuvree(lot.date_debut, lot.date_fin, jours) : ''
+  const nbJours = (lot.date_debut && lot.date_fin) ? dureeJours(lot.date_debut, lot.date_fin) : ''
   const mesDeps = deps.filter(d => d.lot_id === lot.id)
   const dejaPred = new Set(mesDeps.map(d => d.depend_de_lot_id))
   const options = lotsRacine.filter(l => l.id !== lot.id && !dejaPred.has(l.id))
   const nomDe = lid => lotsRacine.find(l => l.id === lid)?.nom || '—'
-  const jset = new Set(jours)
   const estRacine = !lot.parent_lot_id
   return (
     <div style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--ink-100)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -240,10 +237,10 @@ function EditPanel({ row, jours, artisans, lotsRacine, deps, onMaj, onMajJours, 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <input type="date" value={lot.date_debut || ''} onChange={e => onMaj(lot.id, { date_debut: e.target.value || null })} className="input" style={{ height: 32, fontSize: 12 }} title="Début" />
         <input type="date" value={lot.date_fin || ''} onChange={e => onMaj(lot.id, { date_fin: e.target.value || null })} className="input" style={{ height: 32, fontSize: 12 }} title="Fin" />
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--ink-500)' }} title="Durée en jours ouvrés de l'artisan">
-          <input type="number" min={1} value={nbOuvres} disabled={!lot.date_debut}
-            onChange={e => { const n = Number(e.target.value); if (lot.date_debut && n >= 1) onMaj(lot.id, { date_fin: finApresOuvres(lot.date_debut, n, jours) }) }}
-            className="input" style={{ width: 50, height: 32, fontSize: 12 }} /> j.o.
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--ink-500)' }} title="Durée en jours (calendaires)">
+          <input type="number" min={1} value={nbJours} disabled={!lot.date_debut}
+            onChange={e => { const n = Number(e.target.value); if (lot.date_debut && n >= 1) onMaj(lot.id, { date_fin: finApresJours(lot.date_debut, n) }) }}
+            className="input" style={{ width: 50, height: 32, fontSize: 12 }} /> j.
         </label>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--ink-500)' }}>
           <input type="number" min={0} max={100} value={lot.avancement ?? 0}
@@ -266,22 +263,6 @@ function EditPanel({ row, jours, artisans, lotsRacine, deps, onMaj, onMajJours, 
               <option value="">+ dépendance…</option>
               {options.map(l => <option key={l.id} value={l.id}>{l.nom}</option>)}
             </select>
-          )}
-          {lot.artisan_id && onMajJours && (
-            <>
-              <span style={{ fontSize: 11.5, color: 'var(--ink-500)', marginLeft: 8 }} title="Jours travaillés de l'entreprise (durée). Global à l'entreprise.">Jours :</span>
-              {LIBELLES_JOURS.map(j => {
-                const actif = jset.has(j.iso)
-                return (
-                  <button key={j.iso} onClick={() => onMajJours(lot.artisan_id, actif ? jours.filter(x => x !== j.iso) : [...jours, j.iso])}
-                    title={actif ? 'Travaillé' : 'Non travaillé'}
-                    style={{ width: 22, height: 22, borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                      border: '1px solid ' + (actif ? '#4f46e5' : 'var(--ink-200)'), background: actif ? '#4f46e5' : 'transparent', color: actif ? '#fff' : 'var(--ink-500)' }}>
-                    {j.l}
-                  </button>
-                )
-              })}
-            </>
           )}
         </div>
       )}
