@@ -17,6 +17,21 @@ function getLogoBase64() {
   } catch { return null }
 }
 
+// Redimensionne chaque photo avant de l'incruster dans le PDF : les JPEG bruts d'iPhone
+// (plusieurs Mo) faisaient planter @react-pdf → pages blanches. On les ramène à 1400 px max,
+// qualité 72, orientation EXIF corrigée. Import dynamique de sharp. Repli sur l'original si
+// sharp indisponible, null si l'image est illisible (elle est alors simplement omise).
+let _sharp
+async function photoDataURL(buf) {
+  try {
+    if (!_sharp) _sharp = (await import('sharp')).default
+    const out = await _sharp(buf).rotate().resize({ width: 1400, height: 1400, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 72 }).toBuffer()
+    return `data:image/jpeg;base64,${out.toString('base64')}`
+  } catch {
+    try { return `data:image/jpeg;base64,${buf.toString('base64')}` } catch { return null }
+  }
+}
+
 // db : client Supabase (service_role). opts : { options, filtreLotId }.
 export async function genererVisitePDF(db, visiteId, { options = {}, filtreLotId = null, filtreLotIds = null } = {}) {
   const { data: visite } = await db.from('comptes_rendus')
@@ -36,7 +51,7 @@ export async function genererVisitePDF(db, visiteId, { options = {}, filtreLotId
   const inclus = new Set((links || []).filter(l => l.inclus).map(l => l.action_id))
   const exclus = new Set((links || []).filter(l => !l.inclus).map(l => l.action_id))
   const { data: allActions } = await db.from('actions')
-    .select('id, numero, portee, titre, texte, statut, statut_date, cr_origine_id, ordre')
+    .select('id, numero, portee, titre, texte, statut, statut_date, cr_origine_id, ordre, journal')
     .eq('dossier_id', visite.dossier_id).order('ordre').order('created_at')
   const actions = (allActions || []).filter(a => (a.cr_origine_id === visiteId || inclus.has(a.id)) && !exclus.has(a.id))
   const actionIds = actions.map(a => a.id)
@@ -64,9 +79,8 @@ export async function genererVisitePDF(db, visiteId, { options = {}, filtreLotId
       const { data: blob } = await db.storage.from('photos').download(ph.path)
       if (blob) {
         const buf = Buffer.from(await blob.arrayBuffer())
-        const ext = (ph.path.split('.').pop() || 'jpg').toLowerCase()
-        const mime = ext === 'png' ? 'image/png' : 'image/jpeg'
-        ;(photosB64ByAction[ph.action_id] ||= []).push(`data:${mime};base64,${buf.toString('base64')}`)
+        const dataUrl = await photoDataURL(buf)
+        if (dataUrl) (photosB64ByAction[ph.action_id] ||= []).push(dataUrl)
       }
     } catch { /* photo ignorée */ }
   }

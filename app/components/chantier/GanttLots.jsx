@@ -127,17 +127,22 @@ export default function GanttLots({
       })
     } catch (e) { console.error('[GanttLots]', e); return }
 
-    // Couleur des barres (par lot). data-id = id de la tâche.
-    for (const r of dates) {
-      if (r.readonly) continue
-      const bar = el.querySelector(`.bar-wrapper[data-id="${CSS.escape(String(r.id))}"] .bar`)
-      if (bar && r.couleur) { bar.style.fill = r.couleur; bar.style.stroke = r.couleur }
+    // Couleur des barres (par lot) + alignement en-tête. Différé aussi en rAF : selon la version,
+    // frappe-gantt peut finir de peindre le SVG juste après le constructeur, donc on repasse une
+    // fois le DOM en place. Couleur de repli si le lot n'en a pas (jamais de barre invisible).
+    const peindre = () => {
+      for (const r of dates) {
+        if (r.readonly) continue
+        const bar = el.querySelector(`.bar-wrapper[data-id="${CSS.escape(String(r.id))}"] .bar`)
+        if (bar) { const c = r.couleur || '#6366f1'; bar.style.fill = c; bar.style.stroke = c }
+      }
+      const gh = el.querySelector('.grid-header')?.getBoundingClientRect().height
+      if (gh && headRef.current) headRef.current.style.height = gh + 'px'
     }
-    // Aligne l'en-tête de l'arbre sur celle du gantt.
-    const gh = el.querySelector('.grid-header')?.getBoundingClientRect().height
-    if (gh && headRef.current) headRef.current.style.height = gh + 'px'
+    peindre()
+    const raf = requestAnimationFrame(peindre)
 
-    return () => { if (el) el.innerHTML = '' }
+    return () => { cancelAnimationFrame(raf); if (el) el.innerHTML = '' }
   }, [sig])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const vide = rows.length === 0
