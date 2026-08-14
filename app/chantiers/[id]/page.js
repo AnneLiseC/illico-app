@@ -2521,6 +2521,8 @@ export default function FicheChantier({ params }) {
     // Ouvre l'onglet TOUT DE SUITE (dans le geste de clic) → le PDF s'affichera dedans sans être
     // bloqué comme une popup ouverte après un await. Le PDF s'ouvre en lecture, pas en téléchargement.
     const win = window.open('', '_blank')
+    // Message d'attente pour ne pas laisser « about:blank » (le PDF peut mettre quelques secondes).
+    if (win) try { win.document.write('<!doctype html><meta charset="utf-8"><title>Génération du PDF…</title><body style="margin:0;font:16px system-ui;display:flex;height:100vh;align-items:center;justify-content:center;color:#334155">Génération du PDF en cours, patiente…</body>') } catch { /* onglet indispo */ }
     try {
       const res = await apiFetch('/api/pdf', {
         method: 'POST',
