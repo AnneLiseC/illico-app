@@ -64,6 +64,23 @@ const S = StyleSheet.create({
 })
 
 const CLOTURANTS = new Set(['cloture', 'quitus_transmis'])
+const JOURNAL_COL = '#b45309'   // couleur du journal (le texte d'origine reste noir)
+
+// Découpe un texte avec balises **gras** et ~~barré~~ en runs <Text> imbriqués (@react-pdf).
+function richRuns(txt) {
+  const runs = []; const re = /(\*\*[^*]+\*\*|~~[^~]+~~)/g
+  let last = 0, m, k = 0
+  const src = String(txt || '')
+  while ((m = re.exec(src))) {
+    if (m.index > last) runs.push(React.createElement(Text, { key: k++ }, src.slice(last, m.index)))
+    const tok = m[0]
+    if (tok.startsWith('**')) runs.push(React.createElement(Text, { key: k++, style: { fontFamily: 'Roboto-Bold' } }, tok.slice(2, -2)))
+    else runs.push(React.createElement(Text, { key: k++, style: { textDecoration: 'line-through' } }, tok.slice(2, -2)))
+    last = re.lastIndex
+  }
+  if (last < src.length) runs.push(React.createElement(Text, { key: k++ }, src.slice(last)))
+  return runs
+}
 
 function ActionBlock(action, opts) {
   const st = STATUTS[action.statut] || STATUTS.en_cours
@@ -77,7 +94,15 @@ function ActionBlock(action, opts) {
       React.createElement(Text, { style: S.statutDate }, `${st.p} ${fmtDate(action.statut_date)}`),
     ),
     action.titre ? React.createElement(Text, { style: titreStyle }, action.titre) : null,
-    action.texte ? React.createElement(Text, { style: txtStyle }, action.texte) : null,
+    action.texte ? React.createElement(Text, { style: txtStyle }, richRuns(action.texte)) : null,
+    (Array.isArray(action.journal) && action.journal.length)
+      ? React.createElement(View, { style: { marginTop: 1, marginBottom: 2, borderLeftWidth: 1.5, borderLeftColor: JOURNAL_COL, paddingLeft: 5 } },
+          action.journal.map((e, i) => React.createElement(Text, { key: i, style: { fontSize: 8, color: JOURNAL_COL, lineHeight: 1.4, marginBottom: 1 } },
+            React.createElement(Text, { style: { fontFamily: 'Roboto-Bold' } }, `[${e.visite || 'Visite'}${e.at ? ' · ' + fmtDate(e.at) : ''}] `),
+            ...richRuns(e.texte || ''),
+            (e.statut && STATUTS[e.statut]) ? React.createElement(Text, { style: { fontFamily: 'Roboto-Bold' } }, ` (→ ${STATUTS[e.statut].l})`) : null,
+          )))
+      : null,
     (opts.photos && action.photosB64 && action.photosB64.length)
       ? React.createElement(View, { style: S.photosRow }, action.photosB64.map((src, i) => React.createElement(PdfImage, { key: i, src, style: S.photo })))
       : null,

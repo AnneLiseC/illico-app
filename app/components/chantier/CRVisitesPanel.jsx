@@ -89,10 +89,24 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
 
   useEffect(() => {
     // Lots en PARALLÈLE (utilisés seulement à l'ouverture d'une visite) — ne bloque pas la liste.
-    supabase.from('lots').select('id, nom, parent_lot_id, date_debut, date_fin, artisan:artisans(id, entreprise, metier)').eq('dossier_id', id).order('ordre')
-      .then(({ data }) => setLots(data || []))
+    // ⚠ On n'utilise PAS l'embed « artisan:artisans(...) » : il ne peuplait pas les lots (dropdown
+    // vide) alors que la page Lots, qui fait un simple .select('*') + fetch artisans séparé, marche.
+    // On copie donc ce pattern éprouvé, et on vérifie l'erreur au lieu de l'avaler (setLots(data||[])).
+    ;(async () => {
+      const { data: lotsData, error } = await supabase.from('lots')
+        .select('id, nom, parent_lot_id, date_debut, date_fin, artisan_id').eq('dossier_id', id).order('ordre')
+      if (error) { setErreur?.('Chargement des lots : ' + error.message); setLots([]); return }
+      const rows = lotsData || []
+      const artIds = [...new Set(rows.map(l => l.artisan_id).filter(Boolean))]
+      let artById = {}
+      if (artIds.length) {
+        const { data: arts } = await supabase.from('artisans').select('id, entreprise, metier').in('id', artIds)
+        artById = Object.fromEntries((arts || []).map(a => [a.id, a]))
+      }
+      setLots(rows.map(l => ({ ...l, artisan: l.artisan_id ? (artById[l.artisan_id] || null) : null })))
+    })()
     rechargerVisites()  // affiche la liste dès qu'elle arrive + bascule chargement=false (voir plus haut)
-  }, [id, rechargerVisites, refreshKey])  // refreshKey : re-fetch après création/édition prose (ancien modal)
+  }, [id, rechargerVisites, refreshKey, setErreur])  // refreshKey : re-fetch après création/édition prose (ancien modal)
 
   // Nouvelle visite STRUCTURÉE (suivi / réception uniquement — R1/R2/R3 passent par l'ancien).
   const nouvelleVisite = async (type = 'suivi') => {
@@ -269,6 +283,20 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     if (statut) { champs.statut = statut; champs.statut_date = new Date().toISOString().slice(0, 10) }
     setActions(prev => prev.map(x => x.id === actionId ? { ...x, ...champs } : x))
     const { error } = await supabase.from('actions').update({ ...champs, updated_at: new Date().toISOString() }).eq('id', actionId)
+    if (error) setErreur?.('Journal : ' + error.message)
+  }
+
+  // Correction d'une entrée de journal déjà posée (clic dans la note → champ → clic dehors = enregistré).
+  // On ne supprime jamais : un texte vidé est ignoré (garde la note d'origine).
+  const modifierJournal = async (actionId, index, texte) => {
+    const a = actions.find(x => x.id === actionId)
+    const src = Array.isArray(a?.journal) ? a.journal : []
+    if (!src[index]) return
+    const t = (texte || '').trim()
+    if (!t || t === (src[index].texte || '')) return
+    const journal = src.map((e, i) => i === index ? { ...e, texte: t, edite_at: new Date().toISOString() } : e)
+    setActions(prev => prev.map(x => x.id === actionId ? { ...x, journal } : x))
+    const { error } = await supabase.from('actions').update({ journal, updated_at: new Date().toISOString() }).eq('id', actionId)
     if (error) setErreur?.('Journal : ' + error.message)
   }
 
@@ -772,7 +800,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
         <>
           <Section titre="Remarques générales" onAjouter={() => ajouterAction('generale')}>
             {generales.map(a => (
-              <ActionCard key={a.id} action={a} lots={lots} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal}
+              <ActionCard key={a.id} action={a} lots={lots} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal}
                 carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)} />
             ))}
             {generales.length === 0 && <Vide />}
@@ -788,7 +816,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
             )}
             {parLot.length === 0 && <Vide />}
             {!grouperArtisan && parLot.map(a => (
-              <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal}
+              <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal}
                 carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)}
                 onSetLot={(lotId) => setCibleLot(a, lotId)} />
             ))}
@@ -814,7 +842,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
                       <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>({acts.length})</span>
                     </div>
                     {acts.map(a => (
-                      <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal}
+                      <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal}
                         carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)}
                         onSetLot={(lotId) => setCibleLot(a, lotId)} />
                     ))}
@@ -873,8 +901,79 @@ function RenderProse({ text }) {
   )
 }
 
+// Rend un texte avec balises **gras** et ~~barré~~ en éléments React (aperçu app + journal).
+function renderInline(txt) {
+  if (!txt) return null
+  const out = []; const re = /(\*\*[^*]+\*\*|~~[^~]+~~)/g
+  let last = 0, m, k = 0
+  while ((m = re.exec(txt))) {
+    if (m.index > last) out.push(<span key={k++}>{txt.slice(last, m.index)}</span>)
+    const tok = m[0]
+    if (tok.startsWith('**')) out.push(<b key={k++}>{tok.slice(2, -2)}</b>)
+    else out.push(<s key={k++}>{tok.slice(2, -2)}</s>)
+    last = re.lastIndex
+  }
+  if (last < txt.length) out.push(<span key={k++}>{txt.slice(last)}</span>)
+  return out
+}
+
+// Champ description avec mise en forme : sélectionner du texte puis B (gras) / S (barré).
+// Stocke des balises **…** / ~~…~~ (rendues dans l'app et dans le PDF). Sauvegarde au blur.
+function FormattedTextField({ defaultValue, placeholder, onSave }) {
+  const ref = useRef(null)
+  const [preview, setPreview] = useState(defaultValue || '')
+  const wrap = (mark) => {
+    const ta = ref.current; if (!ta) return
+    const s = ta.selectionStart, e = ta.selectionEnd
+    if (s === e) return
+    const v = ta.value
+    ta.value = v.slice(0, s) + mark + v.slice(s, e) + mark + v.slice(e)
+    ta.focus(); ta.setSelectionRange(s, e + 2 * mark.length)
+    setPreview(ta.value); onSave(ta.value)
+  }
+  const btn = { fontSize: 12, padding: '2px 9px', lineHeight: 1 }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+        <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => wrap('**')} className="btn btn-ghost" style={btn} title="Gras (sélectionne du texte d'abord)"><b>B</b></button>
+        <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => wrap('~~')} className="btn btn-ghost" style={btn} title="Barré (sélectionne du texte d'abord)"><s>S</s></button>
+        <span style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>Sélectionne du texte puis B / S</span>
+      </div>
+      <textarea ref={ref} defaultValue={defaultValue || ''} placeholder={placeholder} rows={2}
+        onChange={e => setPreview(e.target.value)} onBlur={e => onSave(e.target.value)}
+        className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical', minHeight: 52 }} />
+      {/(\*\*|~~)/.test(preview) && (
+        <div style={{ fontSize: 12, color: 'var(--ink-600)', padding: '1px 2px' }}>Aperçu : {renderInline(preview)}</div>
+      )}
+    </div>
+  )
+}
+
+// Une entrée de journal : cliquer dessus (si éditable) → champ → clic dehors = enregistré.
+function JournalEntry({ entry, index, onSave, editable, color }) {
+  const [editing, setEditing] = useState(false)
+  const es = entry.statut ? (STATUT_MAP[entry.statut] || null) : null
+  if (editing) {
+    return (
+      <textarea defaultValue={entry.texte || ''} autoFocus rows={2}
+        onBlur={e => { setEditing(false); onSave(index, e.target.value) }}
+        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.target.blur() } }}
+        className="input" style={{ fontSize: 12, padding: 6, lineHeight: 1.4, resize: 'vertical' }} />
+    )
+  }
+  return (
+    <div onClick={editable ? () => setEditing(true) : undefined}
+      title={editable ? 'Cliquer pour corriger' : undefined}
+      style={{ fontSize: 12, color, lineHeight: 1.45, cursor: editable ? 'text' : 'default' }}>
+      <b>[{entry.visite || 'Visite'}{entry.at ? ' · ' + fmtDate(entry.at) : ''}]</b> {renderInline(entry.texte)}
+      {es && <span style={{ fontWeight: 700 }}> (→ {es.l})</span>}
+      {entry.edite_at && <span style={{ fontStyle: 'italic', opacity: 0.7 }}> · modifié</span>}
+    </div>
+  )
+}
+
 // ── Carte d'une action éditable (statut, texte, photos annotées, checklist vivante) ──
-function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, dossierId, setAnnot, setErreur, onMaj, onSupprimer, onRetirer, onSetLot }) {
+function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifierJournal, dossierId, setAnnot, setErreur, onMaj, onSupprimer, onRetirer, onSetLot }) {
   const st = STATUT_MAP[action.statut] || STATUTS[0]
   const cibleLot = action.cibles?.find(c => c.lot_id)?.lot_id || ''
   const journal = Array.isArray(action.journal) ? action.journal : []
@@ -919,22 +1018,17 @@ function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, dossierId
         onBlur={e => e.target.value !== (action.titre || '') && onMaj(action.id, { titre: e.target.value })}
         className="input" style={{ height: 32, fontSize: 12.5, fontWeight: 600 }} />
 
-      <textarea defaultValue={action.texte || ''} placeholder="Description de la remarque…" rows={2}
-        onBlur={e => e.target.value !== (action.texte || '') && onMaj(action.id, { texte: e.target.value })}
-        className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical', minHeight: 52 }} />
+      <FormattedTextField defaultValue={action.texte || ''} placeholder="Description de la remarque…"
+        onSave={v => v !== (action.texte || '') && onMaj(action.id, { texte: v })} />
 
       {/* JOURNAL cumulatif : texte d'origine en noir ci-dessus, modifications en couleur ici. */}
       {(journal.length > 0 || aMaj) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3, borderLeft: `2px solid ${JCOL}`, paddingLeft: 8 }}>
-          {journal.map((e, i) => {
-            const es = e.statut ? (STATUT_MAP[e.statut] || null) : null
-            return (
-              <div key={i} style={{ fontSize: 12, color: JCOL, lineHeight: 1.45 }}>
-                <b>[{e.visite || 'Visite'}{e.at ? ' · ' + fmtDate(e.at) : ''}]</b> {e.texte}
-                {es && <span style={{ fontWeight: 700 }}> (→ {es.l})</span>}
-              </div>
-            )
-          })}
+          {journal.map((e, i) => (
+            <JournalEntry key={i} entry={e} index={i} color={JCOL}
+              editable={!ferme && !!onModifierJournal}
+              onSave={(idx, val) => onModifierJournal(action.id, idx, val)} />
+          ))}
           {aMaj && (
             <div style={{ fontSize: 12, color: JCOL, lineHeight: 1.45, opacity: 0.85, fontStyle: 'italic' }}>
               <b>[à ajouter]</b> {aMaj.texte || aMaj.note || 'mise à jour'}
