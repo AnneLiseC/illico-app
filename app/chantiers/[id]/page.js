@@ -2518,6 +2518,9 @@ export default function FicheChantier({ params }) {
     const generatePDF = async (type, crId = null) => {
     const key = crId ? `cr-${crId}` : type
     setGeneratingPDF(key)
+    // Ouvre l'onglet TOUT DE SUITE (dans le geste de clic) → le PDF s'affichera dedans sans être
+    // bloqué comme une popup ouverte après un await. Le PDF s'ouvre en lecture, pas en téléchargement.
+    const win = window.open('', '_blank')
     try {
       const res = await apiFetch('/api/pdf', {
         method: 'POST',
@@ -2526,27 +2529,16 @@ export default function FicheChantier({ params }) {
       if (!res.ok) {
         const err = await res.json()
         setErreur('Erreur PDF : ' + err.error)
+        win?.close()
         return
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
-      const nomFich = nomFichierClient(dossier)
-      // CR : préfixe date de visite (sinon date d'émission) → <date>_CR_<client>.pdf
-      const crForFile = crId ? comptesRendus.find(c => c.id === crId) : null
-      const crDate = crForFile?.date_visite || crForFile?.created_at
-      const crDateStr = crDate ? new Date(crDate).toISOString().slice(0, 10) : ''
-      const filename = type === 'recapitulatif_prev'
-        ? `Recap_Financier_${nomFich}.pdf`
-        : type === 'recapitulatif'
-        ? `Suivi_Financier_${nomFich}.pdf`
-        : type === 'dossier_suivi'
-        ? `DossierSuivi_${nomFich}.pdf`
-        : type === 'cr'
-        ? `${crDateStr ? crDateStr + '_' : ''}CR_${nomFich}.pdf`
-        : `Dossier_${nomFich}.pdf`
-      setDocViewer({ url, nom: filename })
+      if (win) win.location.href = url
+      else window.open(url, '_blank')  // repli si l'onglet initial a été bloqué
     } catch (err) {
       setErreur('Erreur lors de la génération : ' + err.message)
+      win?.close()
     } finally {
       setGeneratingPDF(null)
     }
