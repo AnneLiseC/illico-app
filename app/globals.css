@@ -1569,6 +1569,11 @@ img, svg, video, canvas { max-width: 100%; }
 .gantt .bar-vide .bar{fill:transparent;stroke:transparent}
 .gantt .bar-vide .bar-label,.gantt .bar-vide .bar-progress{display:none}
 
-/* Gantt intégré : on neutralise le scroll interne de frappe-gantt. Le scroll (H + V) est géré
-   par le conteneur parent ; la colonne des lots est figée en sticky (voir GanttLots.jsx). */
-.gantt-lots .gantt-container{overflow-x:auto;overflow-y:visible;height:auto!important}
+/* Gantt intégré : scroll horizontal du temps géré par le conteneur.
+   ⚠ NE PAS forcer height:auto — frappe-gantt v1.2.2 pose une hauteur inline calculée sur
+   .gantt-container ; un height:auto!important l'écrasait → grille + barres invisibles (seul
+   l'en-tête restait). On laisse donc la hauteur inline s'appliquer. */
+.gantt-lots .gantt-container{overflow-x:auto;overflow-y:visible}
+/* Couleur de barre par défaut VISIBLE (le défaut de la lib est blanc → invisible sur fond blanc).
+   Les barres réelles sont recolorées par lot en JS ; les placeholders (bar-vide) restent transparents. */
+.gantt-lots{--g-bar-color:#6366f1}
