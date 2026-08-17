@@ -113,7 +113,7 @@ export default function GanttLots({
     try {
       g = new Gantt(el, taches, {
         view_mode: mode, date_format: 'YYYY-MM-DD', language: 'fr',
-        bar_height: BAR, padding: PAD, container_height: 'auto', scroll_to: 'today',
+        bar_height: BAR, padding: PAD, container_height: 'auto',
         readonly_progress: true, today_button: false, view_mode_select: false, popup_on: 'hover',
         on_date_change: (task, start, end) => {
           if (!task?.id) return
