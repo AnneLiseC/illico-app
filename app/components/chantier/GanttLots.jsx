@@ -34,7 +34,7 @@ export default function GanttLots({
   onMajLot, onAjouterLot, onSupprimerLot, onAjouterDep, onRetirerDep,
   onDateChange, onInterventionDateChange,
 }) {
-  const [vue, setVue] = useState('Week')
+  const [vue, setVue] = useState('fit')   // « Vue ajustée » par défaut : tout le planning tient à l'écran
   const [collapse, setCollapse] = useState(() => new Set())
   const [editId, setEditId] = useState(null)
   const conteneurRef = useRef(null)
@@ -109,20 +109,34 @@ export default function GanttLots({
     })
 
     const mode = vue === 'fit' ? modeAjuste(rows) : vue
+    const optsGantt = {
+      view_mode: mode, date_format: 'YYYY-MM-DD', language: 'fr',
+      bar_height: BAR, padding: PAD, container_height: 'auto',
+      readonly_progress: true, today_button: false, view_mode_select: false, popup_on: 'hover',
+      on_date_change: (task, start, end) => {
+        if (!task?.id) return
+        const maj = { date_debut: iso(start), date_fin: iso(end) }
+        const s = String(task.id)
+        if (s.startsWith('int_')) cbInt.current?.(s.slice(4), maj)
+        else cbLot.current?.(s, maj)
+      },
+    }
+    // « Vue ajustée » : largeur de colonne calculée pour que TOUT le planning tienne dans la
+    // largeur visible. Sinon, en semaines, un chantier de plusieurs mois fait des milliers de px
+    // et on ne voit qu'une fraction → le planning paraît « vide » à l'ouverture. Bornée (28–240)
+    // pour garder des barres lisibles.
+    if (vue === 'fit' && dates.length) {
+      const debs = dates.map(r => new Date(r.debut).getTime())
+      const fins = dates.map(r => new Date(r.fin).getTime())
+      const spanJours = Math.max(1, (Math.max(...fins) - Math.min(...debs)) / 86400000)
+      const unite = mode === 'Day' ? 1 : mode === 'Week' ? 7 : mode === 'Month' ? 30 : 365
+      const colonnes = spanJours / unite + 4
+      const dispo = (el.clientWidth || 900) - 16
+      optsGantt.column_width = Math.max(28, Math.min(240, Math.floor(dispo / colonnes)))
+    }
     let g
     try {
-      g = new Gantt(el, taches, {
-        view_mode: mode, date_format: 'YYYY-MM-DD', language: 'fr',
-        bar_height: BAR, padding: PAD, container_height: 'auto',
-        readonly_progress: true, today_button: false, view_mode_select: false, popup_on: 'hover',
-        on_date_change: (task, start, end) => {
-          if (!task?.id) return
-          const maj = { date_debut: iso(start), date_fin: iso(end) }
-          const s = String(task.id)
-          if (s.startsWith('int_')) cbInt.current?.(s.slice(4), maj)
-          else cbLot.current?.(s, maj)
-        },
-      })
+      g = new Gantt(el, taches, optsGantt)
     } catch (e) { console.error('[GanttLots]', e); return }
 
     // Couleur des barres (par lot) + alignement en-tête. Différé aussi en rAF : selon la version,

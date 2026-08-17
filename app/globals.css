@@ -1565,8 +1565,10 @@ img, svg, video, canvas { max-width: 100%; }
 .gantt .bar-intervention .bar{fill:var(--surface-2);stroke:var(--ink-400);stroke-width:1;stroke-dasharray:4 3}
 .gantt .bar-intervention .bar-label{fill:var(--ink-600)}
 
-/* Barres invisibles (lots sans dates) : occupent la ligne pour l'alignement, rien à l'écran. */
-.gantt .bar-vide .bar{fill:transparent;stroke:transparent}
+/* Barres invisibles (lots sans dates) : occupent la ligne pour l'alignement, rien à l'écran.
+   outline:none + border:none : la règle de base ajoute un contour 1px qui laissait un carré
+   fantôme gris sur les lignes sans dates. */
+.gantt .bar-vide .bar{fill:transparent!important;stroke:transparent!important;outline:none!important;border:none!important}
 .gantt .bar-vide .bar-label,.gantt .bar-vide .bar-progress{display:none}
 
 /* Gantt intégré : scroll horizontal du temps géré par le conteneur.
