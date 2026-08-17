@@ -129,13 +129,21 @@ export default function GanttLots({
     // frappe-gantt peut finir de peindre le SVG juste après le constructeur, donc on repasse une
     // fois le DOM en place. Couleur de repli si le lot n'en a pas (jamais de barre invisible).
     const peindre = () => {
+      let minX = Infinity
       for (const r of dates) {
         if (r.readonly) continue
         const bar = el.querySelector(`.bar-wrapper[data-id="${CSS.escape(String(r.id))}"] .bar`)
-        if (bar) { const c = r.couleur || '#6366f1'; bar.style.fill = c; bar.style.stroke = c }
+        if (bar) {
+          const c = r.couleur || '#6366f1'; bar.style.fill = c; bar.style.stroke = c
+          if (bar.getBBox) { try { const x = bar.getBBox().x; if (x < minX) minX = x } catch { /* SVG pas prêt */ } }
+        }
       }
       const gh = el.querySelector('.grid-header')?.getBoundingClientRect().height
       if (gh && headRef.current) headRef.current.style.height = gh + 'px'
+      // Scroll horizontal sur le DÉBUT des travaux (1re barre datée), pas sur « aujourd'hui » : si les
+      // lots sont dans le passé/futur, today tombe sur une zone vide et le planning semble vide.
+      const cont = el.querySelector('.gantt-container')
+      if (cont && isFinite(minX)) cont.scrollLeft = Math.max(0, minX - 40)
     }
     peindre()
     const raf = requestAnimationFrame(peindre)
