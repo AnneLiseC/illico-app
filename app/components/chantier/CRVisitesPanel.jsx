@@ -391,7 +391,8 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
   const [datesLoading, setDatesLoading] = useState(false)
   const [repriseOuvert, setRepriseOuvert] = useState(false) // panneau dédié de reprise d'un ancien rapport
   const [analyseSecs, setAnalyseSecs] = useState(0)          // compteur affiché pendant l'analyse IA (longue)
-  const [grouperArtisan, setGrouperArtisan] = useState(false) // relecture « Par lot » : à plat (défaut) ou groupée
+  const [triMode, setTriMode] = useState('plat')             // relecture « Par lot » : 'plat' | 'lot' | 'artisan'
+  const [grpFermes, setGrpFermes] = useState(() => new Set()) // clés de groupes repliés (tri par lot/artisan)
   const repriseRef = useRef(null)
   const iaEnCoursRef = useRef(false)      // garde anti-double-clic (appel IA facturé)
   const importEnCoursRef = useRef(false)  // garde anti-double-clic sur l'INSERTION des actions
@@ -808,40 +809,52 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
 
           <Section titre="Par lot / artisan" onAjouter={() => ajouterAction('lot')}>
             {parLot.length > 1 && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button onClick={() => setGrouperArtisan(v => !v)} className="btn btn-ghost" style={{ fontSize: 11 }}>
-                  {grouperArtisan ? 'Vue à plat' : 'Grouper par artisan'}
-                </button>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
+                {[['plat', 'À plat'], ['lot', 'Par lot'], ['artisan', 'Par artisan']].map(([k, lbl]) => (
+                  <button key={k} onClick={() => setTriMode(k)}
+                    className={triMode === k ? 'btn btn-primary' : 'btn btn-ghost'} style={{ fontSize: 11, padding: '3px 10px' }}>{lbl}</button>
+                ))}
               </div>
             )}
             {parLot.length === 0 && <Vide />}
-            {!grouperArtisan && parLot.map(a => (
+            {triMode === 'plat' && parLot.map(a => (
               <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal}
                 carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)}
                 onSetLot={(lotId) => setCibleLot(a, lotId)} />
             ))}
-            {grouperArtisan && (() => {
-              // Regroupement par LOT / ARTISAN pour la relecture : un sous-bloc par entreprise,
-              // avec en-tête + compte. Actions sans lot → « Non attribué » en dernier.
+            {triMode !== 'plat' && (() => {
+              // Regroupement dépliable pour la relecture. « Par lot » : un bloc par lot. « Par artisan » :
+              // un bloc par entreprise (un artisan peut avoir plusieurs lots → tout est réuni). Non
+              // attribué → en dernier. Clic sur l'en-tête = replier/déplier.
               const groupes = new Map()
               parLot.forEach(a => {
                 const lotId = a.cibles?.find(c => c.lot_id)?.lot_id || null
-                const k = lotId || '__none__'
-                if (!groupes.has(k)) groupes.set(k, { lot: lots.find(l => l.id === lotId) || null, acts: [] })
-                groupes.get(k).acts.push(a)
+                const lot = lots.find(l => l.id === lotId) || null
+                let key, label
+                if (triMode === 'artisan') {
+                  const artId = lot?.artisan?.id || lot?.artisan_id || null
+                  key = artId ? 'art_' + artId : '__none__'
+                  label = lot?.artisan?.entreprise || lot?.artisan?.metier || 'Non attribué'
+                } else {
+                  key = lotId || '__none__'
+                  label = lot ? (lot.nom + (lot.artisan?.entreprise ? ' — ' + lot.artisan.entreprise : '')) : 'Non attribué'
+                }
+                if (!groupes.has(key)) groupes.set(key, { key, label, lot, acts: [] })
+                groupes.get(key).acts.push(a)
               })
               const rang = (id) => { const i = lots.findIndex(l => l.id === id); return i === -1 ? 1e9 : i }
               const blocs = [...groupes.values()].sort((x, y) => rang(x.lot?.id) - rang(y.lot?.id))
-              return blocs.map(({ lot, acts }) => {
-                const nom = lot ? (lot.artisan?.entreprise || lot.nom) : 'Non attribué'
+              return blocs.map(({ key, label, acts }) => {
+                const ouvert = !grpFermes.has(key)
                 return (
-                  <div key={lot?.id || 'none'} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, padding: '3px 10px', background: 'var(--ink-100)', borderRadius: 6 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--ink-800)' }}>{nom}</span>
-                      {lot && lot.nom && lot.artisan?.entreprise && <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>· {lot.nom}</span>}
+                  <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div onClick={() => setGrpFermes(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n })}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, padding: '4px 10px', background: 'var(--ink-100)', borderRadius: 6, cursor: 'pointer' }}>
+                      <span style={{ fontSize: 12, color: 'var(--ink-500)', width: 12 }}>{ouvert ? '▾' : '▸'}</span>
+                      <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--ink-800)' }}>{label}</span>
                       <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>({acts.length})</span>
                     </div>
-                    {acts.map(a => (
+                    {ouvert && acts.map(a => (
                       <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal}
                         carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)}
                         onSetLot={(lotId) => setCibleLot(a, lotId)} />
@@ -965,7 +978,7 @@ function JournalEntry({ entry, index, onSave, editable, color }) {
     <div onClick={editable ? () => setEditing(true) : undefined}
       title={editable ? 'Cliquer pour corriger' : undefined}
       style={{ fontSize: 12, color, lineHeight: 1.45, cursor: editable ? 'text' : 'default' }}>
-      <b>[{entry.visite || 'Visite'}{entry.at ? ' · ' + fmtDate(entry.at) : ''}]</b> {renderInline(entry.texte)}
+      <b>[{entry.at ? fmtDate(entry.at) : 'Note'}]</b> {renderInline(entry.texte)}
       {es && <span style={{ fontWeight: 700 }}> (→ {es.l})</span>}
       {entry.edite_at && <span style={{ fontStyle: 'italic', opacity: 0.7 }}> · modifié</span>}
     </div>
@@ -1013,10 +1026,6 @@ function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifie
           ? <button onClick={() => onRetirer?.()} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 8px', color: 'var(--ink-500)' }} title="Retirer de cette visite (l'action reste dans le dossier)">Retirer</button>
           : <button onClick={() => onSupprimer(action.id)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 8px', color: '#b91c1c' }}>Supprimer</button>}
       </div>
-
-      <input defaultValue={action.titre || ''} placeholder="Titre (optionnel)"
-        onBlur={e => e.target.value !== (action.titre || '') && onMaj(action.id, { titre: e.target.value })}
-        className="input" style={{ height: 32, fontSize: 12.5, fontWeight: 600 }} />
 
       <FormattedTextField defaultValue={action.texte || ''} placeholder="Description de la remarque…"
         onSave={v => v !== (action.texte || '') && onMaj(action.id, { texte: v })} />

@@ -66,10 +66,11 @@ export async function genererVisitePDF(db, visiteId, { options = {}, filtreLotId
   }
 
   const lotIds = [...new Set(cibles.map(c => c.lot_id).filter(Boolean))]
-  let lotNomById = {}
+  let lotInfoById = {}
   if (lotIds.length) {
-    const { data: lots } = await db.from('lots').select('id, nom').in('id', lotIds)
-    lotNomById = Object.fromEntries((lots || []).map(l => [l.id, l.nom]))
+    // service_role → l'embed artisan fonctionne (RLS contournée, FK lots→artisans présente).
+    const { data: lots } = await db.from('lots').select('id, nom, artisan:artisans(entreprise, metier)').in('id', lotIds)
+    lotInfoById = Object.fromEntries((lots || []).map(l => [l.id, { nom: l.nom, entreprise: l.artisan?.entreprise || l.artisan?.metier || '' }]))
   }
 
   const photosB64ByAction = {}
@@ -96,7 +97,7 @@ export async function genererVisitePDF(db, visiteId, { options = {}, filtreLotId
     const lid = lotIdForAction(a.id)
     if (lotFiltre && !lotFiltre.has(String(lid))) continue
     const key = lid || '_sans'
-    if (!parLotMap.has(key)) parLotMap.set(key, { lotNom: lid ? (lotNomById[lid] || 'Sans lot') : 'Sans lot', actions: [] })
+    if (!parLotMap.has(key)) parLotMap.set(key, { lotNom: lid ? (lotInfoById[lid]?.nom || 'Sans lot') : 'Sans lot', lotEntreprise: lid ? (lotInfoById[lid]?.entreprise || '') : '', actions: [] })
     parLotMap.get(key).actions.push(a)
   }
   const parLot = [...parLotMap.values()]
