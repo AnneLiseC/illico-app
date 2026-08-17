@@ -25,11 +25,16 @@ function artisansDepuisDevis(devis) {
   return [...map.values()]
 }
 
+// Cache mémoire (par dossier) : le sous-onglet Planning est démonté/remonté à chaque changement
+// d'onglet. Sans cache, chaque retour rejoue un « Chargement… » + reconstruit le Gantt (flash).
+// On garde les dernières données pour réafficher INSTANTANÉMENT, puis on rafraîchit en fond.
+const planningCache = new Map()  // id dossier -> { lots, deps, actionsParLot }
+
 export default function LotsPanel({ id, devis, interventionsDossier, onMajIntervention, setErreur }) {
-  const [lots, setLots] = useState([])
-  const [deps, setDeps] = useState([])          // lot_dependances : { id, lot_id, depend_de_lot_id }
-  const [actionsParLot, setActionsParLot] = useState({})  // lot_id -> { total, cloturees } (lien CR↔planning)
-  const [chargement, setChargement] = useState(true)
+  const [lots, setLots] = useState(() => planningCache.get(id)?.lots || [])
+  const [deps, setDeps] = useState(() => planningCache.get(id)?.deps || [])          // lot_dependances : { id, lot_id, depend_de_lot_id }
+  const [actionsParLot, setActionsParLot] = useState(() => planningCache.get(id)?.actionsParLot || {})  // lot_id -> { total, cloturees } (lien CR↔planning)
+  const [chargement, setChargement] = useState(() => !planningCache.has(id))  // pas de spinner si déjà en cache
   const [ia, setIa] = useState(false)                 // appel IA en cours (pré-remplissage)
   const iaEnCoursRef = useRef(false)                  // garde anti-double-clic (facturation)
   const [iaPropos, setIaPropos] = useState(null)      // propositions IA à relire (ou null)
@@ -71,6 +76,9 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
   }, [id, setErreur])
 
   useEffect(() => { (async () => { await recharger(); setChargement(false) })() }, [recharger])
+
+  // Mémorise l'état courant pour un réaffichage instantané au prochain montage (voir planningCache).
+  useEffect(() => { planningCache.set(id, { lots, deps, actionsParLot }) }, [id, lots, deps, actionsParLot])
 
   const lotsRacine = lots.filter(l => !l.parent_lot_id)
   const sousLots = (lotId) => lots.filter(l => l.parent_lot_id === lotId)
