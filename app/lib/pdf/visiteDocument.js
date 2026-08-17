@@ -46,7 +46,7 @@ const S = StyleSheet.create({
   emis: { fontSize: 8.5, color: '#6b7280' },
   secHeader: { fontSize: 11, fontFamily: 'Roboto-Bold', color: BLEU, marginTop: 12, marginBottom: 6, borderBottomWidth: 1.2, borderBottomColor: BLEU, paddingBottom: 3 },
   lotHeader: { fontSize: 10, fontFamily: 'Roboto-Bold', color: '#111827', marginTop: 8, marginBottom: 4, backgroundColor: '#f3f4f6', padding: 4 },
-  action: { marginBottom: 8, borderLeftWidth: 3, paddingLeft: 8, paddingVertical: 2 },
+  action: { marginBottom: 8, paddingVertical: 2 },
   actionHead: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
   num: { fontSize: 8.5, fontFamily: 'Roboto-Bold', color: '#6b7280', marginRight: 6 },
   statut: { fontSize: 8.5, fontFamily: 'Roboto-Bold', marginRight: 6 },
@@ -86,19 +86,17 @@ function ActionBlock(action, opts) {
   const st = STATUTS[action.statut] || STATUTS.en_cours
   const barre = opts.barrerCloturees && CLOTURANTS.has(action.statut)
   const txtStyle = barre ? [S.texte, { textDecoration: 'line-through', color: '#9ca3af' }] : S.texte
-  const titreStyle = barre ? [S.titre, { textDecoration: 'line-through', color: '#9ca3af' }] : S.titre
-  return React.createElement(View, { style: [S.action, { borderLeftColor: st.c }], wrap: false, key: action.id },
+  return React.createElement(View, { style: S.action, wrap: false, key: action.id },
     React.createElement(View, { style: S.actionHead },
       React.createElement(Text, { style: S.num }, action.numero || ''),
       React.createElement(Text, { style: [S.statut, { color: st.c }] }, st.l),
       React.createElement(Text, { style: S.statutDate }, `${st.p} ${fmtDate(action.statut_date)}`),
     ),
-    action.titre ? React.createElement(Text, { style: titreStyle }, action.titre) : null,
     action.texte ? React.createElement(Text, { style: txtStyle }, richRuns(action.texte)) : null,
     (Array.isArray(action.journal) && action.journal.length)
       ? React.createElement(View, { style: { marginTop: 1, marginBottom: 2, borderLeftWidth: 1.5, borderLeftColor: JOURNAL_COL, paddingLeft: 5 } },
           action.journal.map((e, i) => React.createElement(Text, { key: i, style: { fontSize: 8, color: JOURNAL_COL, lineHeight: 1.4, marginBottom: 1 } },
-            React.createElement(Text, { style: { fontFamily: 'Roboto-Bold' } }, `[${e.visite || 'Visite'}${e.at ? ' · ' + fmtDate(e.at) : ''}] `),
+            React.createElement(Text, { style: { fontFamily: 'Roboto-Bold' } }, `[${e.at ? fmtDate(e.at) : 'Note'}] `),
             ...richRuns(e.texte || ''),
             (e.statut && STATUTS[e.statut]) ? React.createElement(Text, { style: { fontFamily: 'Roboto-Bold' } }, ` (→ ${STATUTS[e.statut].l})`) : null,
           )))
@@ -154,7 +152,7 @@ export function buildVisiteDocument({ dossier, visite, generales = [], parLot = 
       O.parLot ? React.createElement(Text, { style: S.secHeader }, 'Par lot / artisan') : null,
       O.parLot ? (parLot.length
         ? parLot.map((grp, i) => React.createElement(View, { key: i },
-            React.createElement(Text, { style: S.lotHeader }, grp.lotNom || 'Sans lot'),
+            React.createElement(Text, { style: S.lotHeader }, grp.lotEntreprise ? `${grp.lotNom || 'Sans lot'} — ${grp.lotEntreprise}` : (grp.lotNom || 'Sans lot')),
             grp.actions.map(a => ActionBlock(a, O)),
           ))
         : React.createElement(Text, { style: S.vide }, 'Aucune remarque par lot.')) : null,

@@ -67,3 +67,21 @@ export function finApresOuvres(debut, nb, jours) {
   }
   return iso(d)
 }
+
+// ── Durée en JOURS CALENDAIRES simples (planning : lots ET sous-lots) ──
+// Nombre de jours entre debut et fin INCLUS (debut==fin ⇒ 1 jour). 0 si dates absentes/incohérentes.
+export function dureeJours(debut, fin) {
+  const a = toDate(debut), b = toDate(fin)
+  if (!a || !b || b < a) return 0
+  return Math.round((b - a) / 86400000) + 1
+}
+
+// Date de fin telle qu'il y ait `nb` jours calendaires depuis `debut` (inclus). 'YYYY-MM-DD' ou null.
+export function finApresJours(debut, nb) {
+  const a = toDate(debut)
+  const n = Math.max(1, Math.floor(Number(nb) || 1))
+  if (!a) return null
+  const d = new Date(a)
+  d.setDate(d.getDate() + (n - 1))
+  return iso(d)
+}
