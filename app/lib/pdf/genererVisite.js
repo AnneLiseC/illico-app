@@ -52,7 +52,7 @@ export async function genererVisitePDF(db, visiteId, { options = {}, filtreLotId
   const exclus = new Set((links || []).filter(l => !l.inclus).map(l => l.action_id))
   const { data: allActions } = await db.from('actions')
     .select('id, numero, portee, titre, texte, statut, statut_date, cr_origine_id, ordre, journal')
-    .eq('dossier_id', visite.dossier_id).is('supprime_at', null).order('ordre').order('created_at')
+    .eq('dossier_id', visite.dossier_id).order('ordre').order('created_at')
   const actions = (allActions || []).filter(a => (a.cr_origine_id === visiteId || inclus.has(a.id)) && !exclus.has(a.id))
   const actionIds = actions.map(a => a.id)
 

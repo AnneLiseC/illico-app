@@ -71,7 +71,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
     if (visiteIds.length) {
       const [{ data: links }, { data: acts }] = await Promise.all([
         supabase.from('cr_actions').select('cr_id, action_id, inclus').in('cr_id', visiteIds),
-        supabase.from('actions').select('id, cr_origine_id, statut').eq('dossier_id', id).is('supprime_at', null),
+        supabase.from('actions').select('id, cr_origine_id, statut').eq('dossier_id', id),
       ])
       const statutById = Object.fromEntries((acts || []).map(a => [a.id, a.statut]))
       for (const v of (data || [])) {
@@ -117,8 +117,9 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
       .insert({ dossier_id: id, numero_visite: maxNum + 1, date_visite: new Date().toISOString().slice(0, 10), type_visite: type, valide: false })
       .select().single()
     if (error) { setErreur?.('Nouvelle visite : ' + error.message); return }
-    // Report : on reprend les actions du dossier dans la nouvelle visite, SAUF celles clôturées,
-    // quitus transmis ou ACTÉES (une décision actée reste sur son CR, elle ne se reporte pas).
+    // Report : on reprend les actions ouvertes du dossier, SAUF les clôturées/quitus/actées et SAUF
+    // les ARCHIVÉES (supprime_at) — le marqueur permanent garantit qu'une remarque archivée ne
+    // revient jamais, même plusieurs CR plus tard.
     const { data: ouvertes } = await supabase.from('actions')
       .select('id, statut, texte').eq('dossier_id', id).is('supprime_at', null).not('statut', 'in', '(cloture,quitus_transmis,acte)')
     if (ouvertes && ouvertes.length) {
@@ -223,10 +224,11 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     const { data: links } = await supabase.from('cr_actions').select('action_id, inclus').eq('cr_id', visiteId)
     const inclusIds = new Set((links || []).filter(l => l.inclus).map(l => l.action_id))
     const exclusIds = new Set((links || []).filter(l => !l.inclus).map(l => l.action_id))
+    // Pas de filtre supprime_at ici : l'appartenance à CE CR (cr_origine / cr_actions inclus) fait foi.
+    // Une remarque archivée est retirée du CR courant (inclus=false) mais reste dans les CR passés.
     const { data, error } = await supabase.from('actions')
       .select('*, cibles:action_cibles(id, lot_id, intervenant_id)')
       .eq('dossier_id', dossierId)
-      .is('supprime_at', null)
       .order('ordre', { ascending: true })
       .order('created_at', { ascending: true })
     if (error) { setErreur?.('Chargement des actions : ' + error.message); return }
@@ -239,22 +241,18 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
   const [histOuvert, setHistOuvert] = useState(false)
   const [hist, setHist] = useState(null)   // { retirees: [...], supprimees: [...] } | null
   const chargerHistorique = useCallback(async () => {
-    // Retirées de CETTE visite (cr_actions inclus=false) et non supprimées.
-    const { data: links } = await supabase.from('cr_actions').select('action_id, inclus').eq('cr_id', visiteId)
-    const exclus = (links || []).filter(l => !l.inclus).map(l => l.action_id)
-    let retirees = []
-    if (exclus.length) {
-      const { data } = await supabase.from('actions')
-        .select('id, numero, portee, statut, titre, texte').in('id', exclus).is('supprime_at', null)
-      retirees = data || []
-    }
-    // Supprimées (archivées) du dossier.
-    const { data: sup } = await supabase.from('actions')
+    const FERMES = new Set(['cloture', 'quitus_transmis', 'acte'])
+    const { data: all } = await supabase.from('actions')
       .select('id, numero, portee, statut, titre, texte, supprime_at')
-      .eq('dossier_id', dossierId).not('supprime_at', 'is', null)
-      .order('supprime_at', { ascending: false })
-    setHist({ retirees, supprimees: sup || [] })
-  }, [visiteId, dossierId])
+      .eq('dossier_id', dossierId).order('numero')
+    const rows = all || []
+    // Archivées (retirées / supprimées) → récupérables.
+    const archivees = rows.filter(a => a.supprime_at)
+      .sort((x, y) => String(y.supprime_at).localeCompare(String(x.supprime_at)))
+    // Qui ne se reportent pas (Clôturé / Quitus transmis / Acté), non archivées → pour mémoire.
+    const fermees = rows.filter(a => !a.supprime_at && FERMES.has(a.statut))
+    setHist({ archivees, fermees })
+  }, [dossierId])
 
   useEffect(() => {
     (async () => {
@@ -291,12 +289,18 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     setActions(prev => [...prev, data])
   }
 
-  // Retirer une action REPORTÉE de cette visite (elle reste dans le dossier / les autres visites).
-  const retirerDeVisite = async (actionId) => {
+  // ARCHIVER une remarque : marqueur permanent (supprime_at) + retrait de CE CR (inclus=false).
+  // → elle sort d'ici ET des CR suivants (jamais reportée), reste dans les CR passés (leur lien
+  // inclus=true est intact), et devient récupérable via l'Historique.
+  const archiver = async (actionId) => {
     setActions(prev => prev.filter(a => a.id !== actionId))
-    const { error } = await supabase.from('cr_actions').upsert({ cr_id: visiteId, action_id: actionId, inclus: false }, { onConflict: 'cr_id,action_id' })
-    if (error) { setErreur?.('Retrait : ' + error.message); recharger() }
+    const { error } = await supabase.from('actions').update({ supprime_at: new Date().toISOString() }).eq('id', actionId)
+    if (error) { setErreur?.('Archivage : ' + error.message); recharger(); return }
+    await supabase.from('cr_actions').upsert({ cr_id: visiteId, action_id: actionId, inclus: false }, { onConflict: 'cr_id,action_id' })
   }
+
+  // « Retirer du CR » (remarque reportée) = archivage.
+  const retirerDeVisite = archiver
 
   const majAction = async (actionId, champs) => {
     setActions(prev => prev.map(a => a.id === actionId ? { ...a, ...champs } : a))
@@ -350,24 +354,25 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     if (error) setErreur?.('Journal : ' + error.message)
   }
 
-  // Suppression DOUCE : on archive (supprime_at) au lieu d'effacer → récupérable via l'Historique.
+  // « Supprimer » (remarque créée dans CE CR) : si le CR est un BROUILLON (non publié) → suppression
+  // DÉFINITIVE (la remarque n'a jamais été envoyée, pas d'historique). Si le CR est PUBLIÉ → archivage
+  // (récupérable), pour ne rien perdre de ce qui a été envoyé au client.
   const supprimerAction = async (actionId) => {
-    setActions(prev => prev.filter(a => a.id !== actionId))
-    const { error } = await supabase.from('actions').update({ supprime_at: new Date().toISOString() }).eq('id', actionId)
-    if (error) { setErreur?.('Suppression : ' + error.message); recharger() }
+    if (!visite?.valide) {
+      setActions(prev => prev.filter(a => a.id !== actionId))
+      await supabase.from('cr_actions').delete().eq('action_id', actionId)
+      const { error } = await supabase.from('actions').delete().eq('id', actionId)
+      if (error) { setErreur?.('Suppression : ' + error.message); recharger() }
+      return
+    }
+    await archiver(actionId)
   }
 
-  // Restaure une action archivée (supprimée par erreur).
-  const restaurerAction = async (actionId) => {
-    const { error } = await supabase.from('actions').update({ supprime_at: null }).eq('id', actionId)
-    if (error) { setErreur?.('Restauration : ' + error.message); return }
-    await recharger(); await chargerHistorique()
-  }
-
-  // Ré-ajoute à CETTE visite une action qui en avait été retirée (cr_actions inclus=false → true).
-  const reAjouterAVisite = async (actionId) => {
+  // Récupère une remarque ARCHIVÉE et la remet dans le CR courant (marqueur levé + inclus=true).
+  const restaurer = async (actionId) => {
+    await supabase.from('actions').update({ supprime_at: null }).eq('id', actionId)
     const { error } = await supabase.from('cr_actions').upsert({ cr_id: visiteId, action_id: actionId, inclus: true }, { onConflict: 'cr_id,action_id' })
-    if (error) { setErreur?.('Ré-ajout : ' + error.message); return }
+    if (error) { setErreur?.('Récupération : ' + error.message); return }
     await recharger(); await chargerHistorique()
   }
 
@@ -678,26 +683,28 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
           <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Historique — retrouver et récupérer des actions</div>
           {!hist && <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Chargement…</div>}
           {hist && (<>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-600)', marginTop: 2 }}>Retirées de cette visite ({hist.retirees.length})</div>
-            <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: -4 }}>Enlevées de ce CR mais toujours dans le dossier — « Ré-ajouter » les remet dans cette visite.</div>
-            {hist.retirees.length === 0 && <div style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>Aucune.</div>}
-            {hist.retirees.map(a => (
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#b91c1c', marginTop: 2 }}>Archivées — retirées / supprimées ({hist.archivees.length})</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: -4 }}>Récupérables — « Remettre » les réintègre dans ce CR.</div>
+            {hist.archivees.length === 0 && <div style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>Aucune.</div>}
+            {hist.archivees.map(a => (
               <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, lineHeight: 1.4 }}>
                 <span style={{ fontWeight: 800, color: 'var(--ink-500)', flexShrink: 0 }}>{a.numero}</span>
-                <span style={{ flex: 1 }}>{a.titre ? <b>{a.titre} — </b> : null}{a.texte}</span>
-                <button onClick={() => reAjouterAVisite(a.id)} className="btn btn-ghost" style={{ fontSize: 11, padding: '2px 8px', flexShrink: 0 }}>Ré-ajouter</button>
+                <span style={{ flex: 1 }}>{a.titre ? <b>{a.titre} — </b> : null}{a.texte}<span style={{ color: 'var(--ink-400)' }}> · le {fmtDate(a.supprime_at)}</span></span>
+                <button onClick={() => restaurer(a.id)} className="btn btn-ghost" style={{ fontSize: 11, padding: '2px 8px', flexShrink: 0 }}>Remettre</button>
               </div>
             ))}
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#b91c1c', marginTop: 8 }}>Supprimées / archivées ({hist.supprimees.length})</div>
-            <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: -4 }}>Actions effacées (récupérables) — « Restaurer » les remet dans le dossier.</div>
-            {hist.supprimees.length === 0 && <div style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>Aucune.</div>}
-            {hist.supprimees.map(a => (
-              <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, lineHeight: 1.4 }}>
-                <span style={{ fontWeight: 800, color: 'var(--ink-500)', flexShrink: 0 }}>{a.numero}</span>
-                <span style={{ flex: 1 }}>{a.titre ? <b>{a.titre} — </b> : null}{a.texte}<span style={{ color: 'var(--ink-400)' }}> · supprimée le {fmtDate(a.supprime_at)}</span></span>
-                <button onClick={() => restaurerAction(a.id)} className="btn btn-ghost" style={{ fontSize: 11, padding: '2px 8px', flexShrink: 0 }}>Restaurer</button>
-              </div>
-            ))}
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-600)', marginTop: 8 }}>Ne se reportent pas — clôturées / actées ({hist.fermees.length})</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: -4 }}>Pour mémoire : elles restent sur leur CR mais ne sont pas reprises dans les suivants.</div>
+            {hist.fermees.length === 0 && <div style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>Aucune.</div>}
+            {hist.fermees.map(a => {
+              const s = STATUT_MAP[a.statut]
+              return (
+                <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, lineHeight: 1.4 }}>
+                  <span style={{ fontWeight: 800, color: 'var(--ink-500)', flexShrink: 0 }}>{a.numero}</span>
+                  <span style={{ flex: 1 }}>{a.titre ? <b>{a.titre} — </b> : null}{a.texte}{s ? <span style={{ color: s.c, fontWeight: 700 }}> · {s.l}</span> : null}</span>
+                </div>
+              )
+            })}
           </>)}
         </div>
       )}
@@ -1126,8 +1133,8 @@ function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifie
 
         <div style={{ flex: 1 }} />
         {carried
-          ? <button onClick={() => onRetirer?.()} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 8px', color: 'var(--ink-500)' }} title="Enlève l'action de CE rapport seulement — elle reste dans le dossier et est récupérable via Historique. (≠ Supprimer)">Retirer du CR</button>
-          : <button onClick={() => onSupprimer(action.id)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 8px', color: '#b91c1c' }}>Supprimer</button>}
+          ? <button onClick={() => onRetirer?.()} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 8px', color: 'var(--ink-500)' }} title="Archive la remarque : elle sort de ce CR et des suivants, reste dans les CR passés, et est récupérable via Historique.">Retirer du CR</button>
+          : <button onClick={() => onSupprimer(action.id)} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 8px', color: '#b91c1c' }} title="Supprime la remarque (créée dans ce CR). Brouillon : définitif. CR publié : archivée et récupérable via Historique.">Supprimer</button>}
       </div>
 
       <FormattedTextField defaultValue={action.texte || ''} placeholder="Description de la remarque…"
