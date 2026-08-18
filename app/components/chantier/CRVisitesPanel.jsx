@@ -277,9 +277,14 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     const a = actions.find(x => x.id === actionId)
     const t = (texte || '').trim()
     if (!t && !statut) return
-    const entree = { at: new Date().toISOString(), cr_id: visiteId, visite: titreVisite(visite), texte: t, statut: statut || null }
-    const journal = [...(Array.isArray(a?.journal) ? a.journal : []), entree]
-    const champs = { journal }
+    const champs = {}
+    // Le journal = uniquement des NOTES datées (texte). Un changement de statut met à jour la
+    // pastille (état courant), sans créer d'entrée « (→ statut) » : le statut n'a pas à polluer
+    // l'historique des remarques.
+    if (t) {
+      const entree = { at: new Date().toISOString(), cr_id: visiteId, visite: titreVisite(visite), texte: t }
+      champs.journal = [...(Array.isArray(a?.journal) ? a.journal : []), entree]
+    }
     if (statut) { champs.statut = statut; champs.statut_date = new Date().toISOString().slice(0, 10) }
     setActions(prev => prev.map(x => x.id === actionId ? { ...x, ...champs } : x))
     const { error } = await supabase.from('actions').update({ ...champs, updated_at: new Date().toISOString() }).eq('id', actionId)
@@ -295,6 +300,17 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     const t = (texte || '').trim()
     if (!t || t === (src[index].texte || '')) return
     const journal = src.map((e, i) => i === index ? { ...e, texte: t, edite_at: new Date().toISOString() } : e)
+    setActions(prev => prev.map(x => x.id === actionId ? { ...x, journal } : x))
+    const { error } = await supabase.from('actions').update({ journal, updated_at: new Date().toISOString() }).eq('id', actionId)
+    if (error) setErreur?.('Journal : ' + error.message)
+  }
+
+  // Suppression d'une note datée (erreur de saisie / redondance).
+  const supprimerJournal = async (actionId, index) => {
+    const a = actions.find(x => x.id === actionId)
+    const src = Array.isArray(a?.journal) ? a.journal : []
+    if (!src[index]) return
+    const journal = src.filter((_, i) => i !== index)
     setActions(prev => prev.map(x => x.id === actionId ? { ...x, journal } : x))
     const { error } = await supabase.from('actions').update({ journal, updated_at: new Date().toISOString() }).eq('id', actionId)
     if (error) setErreur?.('Journal : ' + error.message)
@@ -801,7 +817,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
         <>
           <Section titre="Remarques générales" onAjouter={() => ajouterAction('generale')}>
             {generales.map(a => (
-              <ActionCard key={a.id} action={a} lots={lots} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal}
+              <ActionCard key={a.id} action={a} lots={lots} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal} onSupprimerJournal={visite?.valide ? null : supprimerJournal}
                 carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)} />
             ))}
             {generales.length === 0 && <Vide />}
@@ -818,7 +834,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
             )}
             {parLot.length === 0 && <Vide />}
             {triMode === 'plat' && parLot.map(a => (
-              <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal}
+              <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal} onSupprimerJournal={visite?.valide ? null : supprimerJournal}
                 carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)}
                 onSetLot={(lotId) => setCibleLot(a, lotId)} />
             ))}
@@ -855,7 +871,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
                       <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>({acts.length})</span>
                     </div>
                     {ouvert && acts.map(a => (
-                      <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal}
+                      <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal} onSupprimerJournal={visite?.valide ? null : supprimerJournal}
                         carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)}
                         onSetLot={(lotId) => setCibleLot(a, lotId)} />
                     ))}
@@ -962,10 +978,10 @@ function FormattedTextField({ defaultValue, placeholder, onSave }) {
   )
 }
 
-// Une entrée de journal : cliquer dessus (si éditable) → champ → clic dehors = enregistré.
-function JournalEntry({ entry, index, onSave, editable, color }) {
+// Une entrée de journal (note datée) : cliquer dessus (si éditable) → champ → clic dehors =
+// enregistré. Bouton ✕ pour supprimer une note erronée ou redondante.
+function JournalEntry({ entry, index, onSave, onDelete, editable, color }) {
   const [editing, setEditing] = useState(false)
-  const es = entry.statut ? (STATUT_MAP[entry.statut] || null) : null
   if (editing) {
     return (
       <textarea defaultValue={entry.texte || ''} autoFocus rows={2}
@@ -975,18 +991,23 @@ function JournalEntry({ entry, index, onSave, editable, color }) {
     )
   }
   return (
-    <div onClick={editable ? () => setEditing(true) : undefined}
-      title={editable ? 'Cliquer pour corriger' : undefined}
-      style={{ fontSize: 12, color, lineHeight: 1.45, cursor: editable ? 'text' : 'default' }}>
-      <b>[{entry.at ? fmtDate(entry.at) : 'Note'}]</b> {renderInline(entry.texte)}
-      {es && <span style={{ fontWeight: 700 }}> (→ {es.l})</span>}
-      {entry.edite_at && <span style={{ fontStyle: 'italic', opacity: 0.7 }}> · modifié</span>}
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+      <div onClick={editable ? () => setEditing(true) : undefined}
+        title={editable ? 'Cliquer pour corriger' : undefined}
+        style={{ flex: 1, fontSize: 12, color, lineHeight: 1.45, cursor: editable ? 'text' : 'default' }}>
+        <b>[{entry.at ? fmtDate(entry.at) : 'Note'}]</b> {renderInline(entry.texte)}
+        {entry.edite_at && <span style={{ fontStyle: 'italic', opacity: 0.7 }}> · modifié</span>}
+      </div>
+      {editable && onDelete && (
+        <button onClick={() => onDelete(index)} title="Supprimer cette note"
+          style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#b91c1c', fontSize: 13, padding: 0, lineHeight: 1, flexShrink: 0 }}>✕</button>
+      )}
     </div>
   )
 }
 
 // ── Carte d'une action éditable (statut, texte, photos annotées, checklist vivante) ──
-function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifierJournal, dossierId, setAnnot, setErreur, onMaj, onSupprimer, onRetirer, onSetLot }) {
+function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifierJournal, onSupprimerJournal, dossierId, setAnnot, setErreur, onMaj, onSupprimer, onRetirer, onSetLot }) {
   const st = STATUT_MAP[action.statut] || STATUTS[0]
   const cibleLot = action.cibles?.find(c => c.lot_id)?.lot_id || ''
   const journal = Array.isArray(action.journal) ? action.journal : []
@@ -1036,12 +1057,12 @@ function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifie
           {journal.map((e, i) => (
             <JournalEntry key={i} entry={e} index={i} color={JCOL}
               editable={!ferme && !!onModifierJournal}
-              onSave={(idx, val) => onModifierJournal(action.id, idx, val)} />
+              onSave={(idx, val) => onModifierJournal(action.id, idx, val)}
+              onDelete={onSupprimerJournal ? (idx) => onSupprimerJournal(action.id, idx) : null} />
           ))}
           {aMaj && (
             <div style={{ fontSize: 12, color: JCOL, lineHeight: 1.45, opacity: 0.85, fontStyle: 'italic' }}>
               <b>[à ajouter]</b> {aMaj.texte || aMaj.note || 'mise à jour'}
-              {aMaj.statut && <span style={{ fontWeight: 700 }}> (→ {(STATUT_MAP[aMaj.statut] || {}).l})</span>}
               <span style={{ color: 'var(--ink-500)', fontStyle: 'normal' }}> — coche « Appliquer » pour valider</span>
             </div>
           )}
