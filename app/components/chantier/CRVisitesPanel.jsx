@@ -817,7 +817,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
         <>
           <Section titre="Remarques générales" onAjouter={() => ajouterAction('generale')}>
             {generales.map(a => (
-              <ActionCard key={a.id} action={a} lots={lots} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal} onSupprimerJournal={visite?.valide ? null : supprimerJournal}
+              <ActionCard key={a.id} action={a} lots={lots} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal} onSupprimerJournal={supprimerJournal} visiteId={visiteId} visitePubliee={!!visite?.valide}
                 carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)} />
             ))}
             {generales.length === 0 && <Vide />}
@@ -834,7 +834,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
             )}
             {parLot.length === 0 && <Vide />}
             {triMode === 'plat' && parLot.map(a => (
-              <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal} onSupprimerJournal={visite?.valide ? null : supprimerJournal}
+              <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal} onSupprimerJournal={supprimerJournal} visiteId={visiteId} visitePubliee={!!visite?.valide}
                 carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)}
                 onSetLot={(lotId) => setCibleLot(a, lotId)} />
             ))}
@@ -871,7 +871,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
                       <span style={{ fontSize: 11, color: 'var(--ink-500)' }}>({acts.length})</span>
                     </div>
                     {ouvert && acts.map(a => (
-                      <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal} onSupprimerJournal={visite?.valide ? null : supprimerJournal}
+                      <ActionCard key={a.id} action={a} lots={lots} withLot dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} aMaj={majEnAttente.get(a.id)} onJournal={ajouterJournal} onModifierJournal={modifierJournal} onSupprimerJournal={supprimerJournal} visiteId={visiteId} visitePubliee={!!visite?.valide}
                         carried={a.cr_origine_id !== visiteId} onMaj={majAction} onSupprimer={supprimerAction} onRetirer={() => retirerDeVisite(a.id)}
                         onSetLot={(lotId) => setCibleLot(a, lotId)} />
                     ))}
@@ -1007,7 +1007,7 @@ function JournalEntry({ entry, index, onSave, onDelete, editable, color }) {
 }
 
 // ── Carte d'une action éditable (statut, texte, photos annotées, checklist vivante) ──
-function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifierJournal, onSupprimerJournal, dossierId, setAnnot, setErreur, onMaj, onSupprimer, onRetirer, onSetLot }) {
+function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifierJournal, onSupprimerJournal, visiteId, visitePubliee, dossierId, setAnnot, setErreur, onMaj, onSupprimer, onRetirer, onSetLot }) {
   const st = STATUT_MAP[action.statut] || STATUTS[0]
   const cibleLot = action.cibles?.find(c => c.lot_id)?.lot_id || ''
   const journal = Array.isArray(action.journal) ? action.journal : []
@@ -1054,12 +1054,17 @@ function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifie
       {/* JOURNAL cumulatif : texte d'origine en noir ci-dessus, modifications en couleur ici. */}
       {(journal.length > 0 || aMaj) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3, borderLeft: `2px solid ${JCOL}`, paddingLeft: 8 }}>
-          {journal.map((e, i) => (
-            <JournalEntry key={i} entry={e} index={i} color={JCOL}
-              editable={!ferme && !!onModifierJournal}
-              onSave={(idx, val) => onModifierJournal(action.id, idx, val)}
-              onDelete={onSupprimerJournal ? (idx) => onSupprimerJournal(action.id, idx) : null} />
-          ))}
+          {journal.map((e, i) => {
+            // Suppression possible UNIQUEMENT pour une note créée dans CETTE visite et non publiée.
+            // Les notes reportées d'autres visites (ou déjà envoyées) sont protégées.
+            const supprimable = !visitePubliee && !!onSupprimerJournal && e.cr_id === visiteId
+            return (
+              <JournalEntry key={i} entry={e} index={i} color={JCOL}
+                editable={!ferme && !!onModifierJournal}
+                onSave={(idx, val) => onModifierJournal(action.id, idx, val)}
+                onDelete={supprimable ? (idx) => onSupprimerJournal(action.id, idx) : null} />
+            )
+          })}
           {aMaj && (
             <div style={{ fontSize: 12, color: JCOL, lineHeight: 1.45, opacity: 0.85, fontStyle: 'italic' }}>
               <b>[à ajouter]</b> {aMaj.texte || aMaj.note || 'mise à jour'}
