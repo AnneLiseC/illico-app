@@ -64,10 +64,10 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
     } else { setDeps([]) }
     // Actions de CR rattachées à chaque lot (lien Planning ↔ Rapports de visite).
     if (ids.length) {
-      const { data: cbl } = await supabase.from('action_cibles').select('lot_id, action:actions(id, statut)').in('lot_id', ids)
+      const { data: cbl } = await supabase.from('action_cibles').select('lot_id, action:actions(id, statut, supprime_at)').in('lot_id', ids)
       const map = {}
       for (const c of (cbl || [])) {
-        if (!c.lot_id || !c.action) continue
+        if (!c.lot_id || !c.action || c.action.supprime_at) continue
         const m = map[c.lot_id] || (map[c.lot_id] = { total: 0, cloturees: 0 })
         m.total++; if (CLOTURANTS.has(c.action.statut)) m.cloturees++
       }
