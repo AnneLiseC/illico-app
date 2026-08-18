@@ -694,14 +694,18 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
               </div>
             ))}
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-600)', marginTop: 8 }}>Ne se reportent pas — clôturées / actées ({hist.fermees.length})</div>
-            <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: -4 }}>Pour mémoire : elles restent sur leur CR mais ne sont pas reprises dans les suivants.</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: -4 }}>Elles restent sur leur CR et ne sont pas reprises automatiquement — « Remettre » pour l'afficher dans ce CR.</div>
             {hist.fermees.length === 0 && <div style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>Aucune.</div>}
             {hist.fermees.map(a => {
               const s = STATUT_MAP[a.statut]
+              const deja = actions.some(x => x.id === a.id)
               return (
                 <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, lineHeight: 1.4 }}>
                   <span style={{ fontWeight: 800, color: 'var(--ink-500)', flexShrink: 0 }}>{a.numero}</span>
                   <span style={{ flex: 1 }}>{a.titre ? <b>{a.titre} — </b> : null}{a.texte}{s ? <span style={{ color: s.c, fontWeight: 700 }}> · {s.l}</span> : null}</span>
+                  {deja
+                    ? <span style={{ fontSize: 10.5, color: 'var(--ink-400)', flexShrink: 0, alignSelf: 'center' }}>affichée</span>
+                    : <button onClick={() => restaurer(a.id)} className="btn btn-ghost" style={{ fontSize: 11, padding: '2px 8px', flexShrink: 0 }}>Remettre</button>}
                 </div>
               )
             })}
