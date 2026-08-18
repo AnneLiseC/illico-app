@@ -7,15 +7,18 @@ import { AuthProvider } from "./lib/auth-context"
 import OnboardingGuard from "./components/onboarding-guard"
 import DisableNumberInputScroll from "./components/DisableNumberInputScroll"
 
+// ⚠ Les variables DOIVENT s'appeler --font-manrope / --font-jetbrains : c'est ce que globals.css
+// référence (l.87-88 @theme + body). Sous un autre nom, Manrope ne s'applique jamais et tout
+// l'app retombe sur la police système (Segoe UI sur Windows), plus grosse et moins soignée.
 const manrope = Manrope({
-  variable: "--font-sans",
+  variable: "--font-manrope",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800"],
   display: "swap",
 })
 
 const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-mono",
+  variable: "--font-jetbrains",
   subsets: ["latin"],
   weight: ["500", "600"],
   display: "swap",
