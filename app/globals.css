@@ -233,6 +233,9 @@ h2.page,
 }
 .input::placeholder { color: var(--ink-500); }
 select.input { padding-right: 32px; }
+/* Champs de saisie multiligne : hauteur de base confortable PARTOUT dans l'app (pas la hauteur
+   d'une seule ligne). On libère le height:36px de .input et on impose un plancher lisible. */
+textarea.input { height: auto; min-height: 110px; padding: 10px 12px; line-height: 1.5; }
 
 /* ─────────────────────────────────────────────────────────────────
    Badges

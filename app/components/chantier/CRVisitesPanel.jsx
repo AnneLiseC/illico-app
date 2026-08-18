@@ -968,9 +968,9 @@ function FormattedTextField({ defaultValue, placeholder, onSave }) {
         <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => wrap('~~')} className="btn btn-ghost" style={btn} title="Barré (sélectionne du texte d'abord)"><s>S</s></button>
         <span style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>Sélectionne du texte puis B / S</span>
       </div>
-      <textarea ref={ref} defaultValue={defaultValue || ''} placeholder={placeholder} rows={5}
+      <textarea ref={ref} defaultValue={defaultValue || ''} placeholder={placeholder} rows={4}
         onChange={e => setPreview(e.target.value)} onBlur={e => onSave(e.target.value)}
-        className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical', minHeight: 120 }} />
+        className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical' }} />
       {/(\*\*|~~)/.test(preview) && (
         <div style={{ fontSize: 12, color: 'var(--ink-600)', padding: '1px 2px' }}>Aperçu : {renderInline(preview)}</div>
       )}
@@ -1076,11 +1076,11 @@ function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifie
 
       {/* Ajout manuel d'une entrée de journal (tant que l'action n'est pas clôturée). */}
       {!ferme && onJournal && (
-        <div style={{ display: 'flex', gap: 6 }}>
-          <input value={note} onChange={e => setNote(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && note.trim()) { onJournal(action.id, { texte: note }); setNote('') } }}
-            placeholder="+ Ajouter une note datée (avancement, décision…)"
-            className="input" style={{ flex: 1, height: 30, fontSize: 12 }} />
+        <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+          <textarea value={note} onChange={e => setNote(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && note.trim()) { e.preventDefault(); onJournal(action.id, { texte: note }); setNote('') } }}
+            placeholder="+ Ajouter une note datée (avancement, décision…) — Entrée pour valider, Maj+Entrée pour un retour à la ligne" rows={4}
+            className="input" style={{ flex: 1, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical' }} />
           <button onClick={() => { if (note.trim()) { onJournal(action.id, { texte: note }); setNote('') } }}
             disabled={!note.trim()} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 10px', opacity: note.trim() ? 1 : 0.5 }}>Ajouter</button>
         </div>
