@@ -968,9 +968,9 @@ function FormattedTextField({ defaultValue, placeholder, onSave }) {
         <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => wrap('~~')} className="btn btn-ghost" style={btn} title="Barré (sélectionne du texte d'abord)"><s>S</s></button>
         <span style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>Sélectionne du texte puis B / S</span>
       </div>
-      <textarea ref={ref} defaultValue={defaultValue || ''} placeholder={placeholder} rows={2}
+      <textarea ref={ref} defaultValue={defaultValue || ''} placeholder={placeholder} rows={5}
         onChange={e => setPreview(e.target.value)} onBlur={e => onSave(e.target.value)}
-        className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical', minHeight: 52 }} />
+        className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical', minHeight: 120 }} />
       {/(\*\*|~~)/.test(preview) && (
         <div style={{ fontSize: 12, color: 'var(--ink-600)', padding: '1px 2px' }}>Aperçu : {renderInline(preview)}</div>
       )}
