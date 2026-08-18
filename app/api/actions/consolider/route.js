@@ -64,6 +64,7 @@ RÈGLES DE CONSOLIDATION (le cœur du travail) :
 - GARDE tout : ouvert, en cours, en attente, à programmer, à surveiller, à venir, ET terminé — y compris les points de coordination / co-activité et les points de vigilance.
 - N'invente rien : uniquement ce qui est écrit dans les rapports.
 - Écris TOUJOURS en FRANÇAIS. UNE phrase COURTE et télégraphique par action (≤ 130 caractères) — pas de paragraphe, va à l'essentiel.
+- ORTHOGRAPHE, GRAMMAIRE, CONJUGAISON — PRIORITÉ ABSOLUE : français IMPECCABLE (orthographe, accords, conjugaison, ponctuation, majuscules). Corrige toutes les fautes des rapports d'origine. Le compte-rendu est envoyé au client : aucune faute n'est tolérée.
 - STATUT — choisis le PLUS PRÉCIS parmi les 16, il y a de la nuance : "en_attente", "a_surveiller", "a_programmer", "programme", "en_cours", "en_retard", "date_limite", "urgent", "rappel", "information", "acte", "constate", "garder_memoire"…
 - ATTENTION "cloture" et "quitus_transmis" FERMENT le point : il sort du suivi et ne se reporte plus. Ne les utilise QUE si un rapport dit EXPLICITEMENT que c'est terminé/soldé. Dans le doute, choisis un statut OUVERT (jamais "cloture" par précaution). Un point simplement ancien n'est PAS clôturé.
 - statut_date : la date d'échéance/statut la plus récente et pertinente si une date est donnée, sinon "".

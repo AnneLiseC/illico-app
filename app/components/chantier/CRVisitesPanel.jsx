@@ -245,9 +245,20 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     })()
   }, [recharger, visiteId, estProse])
 
+  // Prochain suffixe de numéro pour CETTE visite : max des suffixes déjà utilisés par ses propres
+  // actions + 1. Robuste aux doublons (l'ancien calcul basé sur actions.length, qui comptait aussi
+  // les actions reportées, produisait des collisions type « 9.15 » en double).
+  const maxSuffixeVisite = () => {
+    const s = actions
+      .filter(a => a.cr_origine_id === visiteId)
+      .map(a => parseInt(String(a.numero || '').split('.')[1] || '0', 10))
+      .filter(Number.isFinite)
+    return s.length ? Math.max(...s) : 0
+  }
+
   const ajouterAction = async (portee) => {
     const ordre = actions.length
-    const numero = `${visite?.numero_visite || 1}.${ordre + 1}`
+    const numero = `${visite?.numero_visite || 1}.${maxSuffixeVisite() + 1}`
     const { data, error } = await supabase.from('actions')
       .insert({ dossier_id: dossierId, cr_origine_id: visiteId, portee, numero,
                 statut: 'en_cours', statut_date: new Date().toISOString().slice(0, 10), ordre })
@@ -471,10 +482,13 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
       for (const u of majChoisies) {
         await ajouterJournal(u.action_id, { texte: u.texte || u.note || '', statut: u.statut || null })
       }
-      // 2) Nouvelles actions.
+      // 2) Nouvelles actions. Suffixe = max existant de la visite + 1, incrémenté par item → jamais
+      //    de doublon (ni entre elles, ni avec les générales/par lot déjà créées).
       let ordre = actions.length
+      let suffixe = maxSuffixeVisite()
       for (const c of choisies) {
-        const numero = `${visite?.numero_visite || 1}.${ordre + 1}`
+        suffixe++
+        const numero = `${visite?.numero_visite || 1}.${suffixe}`
         const { data, error } = await supabase.from('actions')
           .insert({ dossier_id: dossierId, cr_origine_id: visiteId, portee: c.portee, numero,
                     titre: c.titre || null, texte: c.texte || null, statut: c.statut,

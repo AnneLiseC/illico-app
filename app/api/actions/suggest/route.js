@@ -43,6 +43,7 @@ Réponds STRICTEMENT par un objet JSON (aucun texte autour, pas de markdown) :
 }
 RÈGLES :
 - Écris TOUJOURS en FRANÇAIS, même si les notes sont dans une autre langue.
+- ORTHOGRAPHE, GRAMMAIRE, CONJUGAISON — PRIORITÉ ABSOLUE : chaque "titre" et "texte" doit être dans un français IMPECCABLE (orthographe, accords, conjugaison, ponctuation, majuscules). Corrige toutes les fautes des notes brutes / de la dictée. Le compte-rendu est envoyé au client : aucune faute n'est tolérée.
 - N'invente rien : uniquement ce qui est dans les notes. Une note = potentiellement une action.
 - Si des ACTIONS DÉJÀ PRÉSENTES te sont fournies : quand un point des notes CONCERNE l'une d'elles (même sujet / même lot), NE crée PAS de doublon → mets-le dans "updates" avec sa "ref" et le nouveau statut (et un texte à jour seulement si tu ajoutes une info). Ne mets dans "actions" QUE les points réellement nouveaux, absents de la liste.
 - Si aucune action existante ne correspond (ou aucune fournie), "updates" reste [].
