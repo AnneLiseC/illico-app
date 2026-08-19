@@ -406,7 +406,7 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
                       </button>
                       <label className="btn btn-ghost" style={{cursor: (crRecording || crTranscribing) ? 'default' : 'pointer', fontSize:13, padding:'8px 14px', opacity:(crRecording || crTranscribing) ? 0.6 : 1}}>
                         📂 Déposer un audio
-                        <input type="file" accept="audio/*" style={{display:'none'}} disabled={crRecording || crTranscribing}
+                        <input type="file" accept="audio/*,.m4a,.mp3,.wav,.aac,.ogg,.oga,.opus,.amr,.3gp,.3gpp,.caf,.flac,.wma,.aiff,.aif,.mp4,.m4b" style={{display:'none'}} disabled={crRecording || crTranscribing}
                           onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onAudioFile(f) }} />
                       </label>
                       {crTranscribing && <span style={{fontSize:12, color:'var(--ink-500)'}}>Transcription en cours…</span>}
