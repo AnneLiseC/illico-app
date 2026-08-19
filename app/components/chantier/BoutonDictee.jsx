@@ -65,7 +65,7 @@ export default function BoutonDictee({ dossierId, onTexte, setErreur, compact = 
       </button>
       <label className="btn btn-ghost" style={{ ...btnStyle, cursor: busy ? 'wait' : 'pointer' }} title="Importer un fichier audio (mémo vocal) à transcrire">
         Audio
-        <input type="file" accept="audio/*" disabled={busy} style={{ display: 'none' }}
+        <input type="file" accept="audio/*,.m4a,.mp3,.wav,.aac,.ogg,.oga,.opus,.amr,.3gp,.3gpp,.caf,.flac,.wma,.aiff,.aif,.mp4,.m4b" disabled={busy} style={{ display: 'none' }}
           onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; onFichier(f) }} />
       </label>
     </span>
