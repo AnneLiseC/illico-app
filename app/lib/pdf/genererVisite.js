@@ -75,7 +75,6 @@ export async function genererVisitePDF(db, visiteId, { options = {}, filtreLotId
 
   const photosB64ByAction = {}
   for (const ph of photos) {
-    if ((photosB64ByAction[ph.action_id]?.length || 0) >= 6) continue
     try {
       const { data: blob } = await db.storage.from('photos').download(ph.path)
       if (blob) {
