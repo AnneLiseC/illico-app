@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useEffect, useState, useMemo, useCallback } from 'react'
+import { Suspense, useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatNomClient } from '../lib/clients'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -208,6 +208,13 @@ function ChantierCard({ d, aujourdhui, onClick, onOpen }) {
 function ChantierPreview({ d, onOpen, onBack, backLabel, isMobile, onRefresh }) {
   const [menuOuvert, setMenuOuvert] = useState(false)
   const [menuBusy,   setMenuBusy]   = useState(false)
+  const [menuPos,    setMenuPos]    = useState(null)
+  const menuBtnRef = useRef(null)
+  const ouvrirMenu = () => {
+    const r = menuBtnRef.current?.getBoundingClientRect()
+    if (r) setMenuPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) })
+    setMenuOuvert(o => !o)
+  }
   if (!d) return (
     <div className="card" style={{ display: 'grid', placeItems: 'center', textAlign: 'center', color: 'var(--ink-500)' }}>
       <div>
@@ -294,12 +301,12 @@ function ChantierPreview({ d, onOpen, onBack, backLabel, isMobile, onRefresh }) 
               <MailIcon size={14} /> Email
             </a>
           )}
-          <div style={{ position: 'relative', marginLeft: 'auto' }}>
-            <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 8px' }} onClick={() => setMenuOuvert(o => !o)} disabled={menuBusy} title="Plus d'actions"><MoreIcon size={14} /></button>
-            {menuOuvert && (
+          <div style={{ marginLeft: 'auto' }}>
+            <button ref={menuBtnRef} className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 8px' }} onClick={ouvrirMenu} disabled={menuBusy} title="Plus d'actions"><MoreIcon size={14} /></button>
+            {menuOuvert && menuPos && (
               <>
-                <div onClick={() => setMenuOuvert(false)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-                <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 999, background: '#fff', border: '1px solid var(--ink-200)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', minWidth: 196, overflow: 'hidden' }}>
+                <div onClick={() => setMenuOuvert(false)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
+                <div style={{ position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999, background: '#fff', border: '1px solid var(--ink-200)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', minWidth: 196, overflow: 'hidden' }}>
                   {estArchive ? (
                     <button onClick={reouvrirChantier} disabled={menuBusy} style={menuItemStyle}>↩ Ré-ouvrir le chantier</button>
                   ) : (
