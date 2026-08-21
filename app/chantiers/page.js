@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useEffect, useState, useMemo } from 'react'
+import { Suspense, useEffect, useState, useMemo, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatNomClient } from '../lib/clients'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -205,7 +205,9 @@ function ChantierCard({ d, aujourdhui, onClick, onOpen }) {
 }
 
 /* ── Aperçu latéral ── */
-function ChantierPreview({ d, onOpen, onBack, backLabel, isMobile }) {
+function ChantierPreview({ d, onOpen, onBack, backLabel, isMobile, onRefresh }) {
+  const [menuOuvert, setMenuOuvert] = useState(false)
+  const [menuBusy,   setMenuBusy]   = useState(false)
   if (!d) return (
     <div className="card" style={{ display: 'grid', placeItems: 'center', textAlign: 'center', color: 'var(--ink-500)' }}>
       <div>
@@ -232,6 +234,27 @@ function ChantierPreview({ d, onOpen, onBack, backLabel, isMobile }) {
     x.artisan_id === (dv.artisan_id || dv.artisan?.id) &&
     x.statut_illico === 'recu')).length
   const commissionsHT      = calculateDossierFinance(d).commissions.comHT
+
+  // Menu ⋮ : annuler le chantier (→ statut 'annule', il bascule en Archivés) ou
+  // le ré-ouvrir (→ statut null, retour au calcul auto). Même logique que la
+  // page dossier. Pas de colonne `archive` : on réutilise l'onglet existant.
+  const estArchive = s === 'annule' || s === 'termine'
+  const annulerChantier = async () => {
+    if (!confirm('Annuler ce chantier ? Il passera dans les Archivés (réversible via « Ré-ouvrir »).')) return
+    setMenuBusy(true)
+    const { error } = await supabase.from('dossiers').update({ statut: 'annule' }).eq('id', d.id)
+    setMenuBusy(false); setMenuOuvert(false)
+    if (error) { alert('Erreur : ' + error.message); return }
+    onRefresh?.()
+  }
+  const reouvrirChantier = async () => {
+    setMenuBusy(true)
+    const { error } = await supabase.from('dossiers').update({ statut: null, acces_expire_le: null }).eq('id', d.id)
+    setMenuBusy(false); setMenuOuvert(false)
+    if (error) { alert('Erreur : ' + error.message); return }
+    onRefresh?.()
+  }
+  const menuItemStyle = { display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', fontSize: 12.5, background: 'none', border: 'none', cursor: menuBusy ? 'wait' : 'pointer', whiteSpace: 'nowrap' }
 
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: isMobile ? 'auto' : '100%' }}>
@@ -271,7 +294,21 @@ function ChantierPreview({ d, onOpen, onBack, backLabel, isMobile }) {
               <MailIcon size={14} /> Email
             </a>
           )}
-          <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 8px', marginLeft: 'auto' }}><MoreIcon size={14} /></button>
+          <div style={{ position: 'relative', marginLeft: 'auto' }}>
+            <button className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 8px' }} onClick={() => setMenuOuvert(o => !o)} disabled={menuBusy} title="Plus d'actions"><MoreIcon size={14} /></button>
+            {menuOuvert && (
+              <>
+                <div onClick={() => setMenuOuvert(false)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
+                <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 999, background: '#fff', border: '1px solid var(--ink-200)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', minWidth: 196, overflow: 'hidden' }}>
+                  {estArchive ? (
+                    <button onClick={reouvrirChantier} disabled={menuBusy} style={menuItemStyle}>↩ Ré-ouvrir le chantier</button>
+                  ) : (
+                    <button onClick={annulerChantier} disabled={menuBusy} style={{ ...menuItemStyle, color: '#b91c1c' }}>✕ Annuler le chantier</button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -471,11 +508,8 @@ function ChantiersInner() {
     return () => mq.removeEventListener('change', handler)
   }, [])
 
-  useEffect(() => {
-    if (!initialized) return
-    if (!user) { router.push('/login'); return }
+  const charger = useCallback(() => {
     if (!profile) return
-
     let query = supabase
       .from('dossiers')
       .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse, telephone, email, type_client), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, artisan_id, artisan:artisans(id, entreprise, metier, ville)), comptes_rendus(id, type_visite), rendez_vous(type_rdv, date_heure), suivi_financier(type_echeance, montant_ttc, statut_illico, statut_client, artisan_id)')
@@ -491,10 +525,17 @@ function ChantiersInner() {
     ]).then(([{ data }, { data: agentesData }]) => {
       setDossiers(data || [])
       setAgentes(agentesData || [])
-      if (data?.length) setSelectedId(data[0].id)
+      setSelectedId(prev => prev || data?.[0]?.id || null)
       setLoading(false)
     })
-  }, [initialized, user?.id, profile?.id, router])
+  }, [profile?.id, profile?.role])
+
+  useEffect(() => {
+    if (!initialized) return
+    if (!user) { router.push('/login'); return }
+    if (!profile) return
+    charger()
+  }, [initialized, user?.id, profile?.id, router, charger])
 
   const isAdmin = profile?.role === 'admin'
 
@@ -673,13 +714,13 @@ function ChantiersInner() {
         <div>
           {!showPreview
             ? <ChantiersList items={dossiersFiltres} selectedId={selected?.id} onSelect={handleSelect} onOpen={(id) => router.push(`/chantiers/${id}`)} aujourdhui={aujourdhui} isMobile />
-            : <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} onBack={() => setShowPreview(false)} isMobile />
+            : <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} onBack={() => setShowPreview(false)} onRefresh={charger} isMobile />
           }
         </div>
       ) : (
         <div className="grid-list" style={{ height: panelHeight }}>
           <ChantiersList items={dossiersFiltres} selectedId={selected?.id} onSelect={handleSelect} onOpen={(id) => router.push(`/chantiers/${id}`)} aujourdhui={aujourdhui} />
-          <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} />
+          <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} onRefresh={charger} />
         </div>
       )}
 
@@ -688,7 +729,7 @@ function ChantiersInner() {
         <div onClick={() => setApercuModal(false)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 200, display: 'grid', placeItems: 'center', padding: 16 }}>
           <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 560, maxHeight: '88vh', overflow: 'auto', borderRadius: 16 }}>
-            <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} onBack={() => setApercuModal(false)} backLabel="Fermer" isMobile />
+            <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} onBack={() => setApercuModal(false)} onRefresh={() => { setApercuModal(false); charger() }} backLabel="Fermer" isMobile />
           </div>
         </div>
       )}
