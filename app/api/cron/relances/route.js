@@ -156,7 +156,7 @@ export async function GET(req) {
         dossiers(id, reference, referente_id, agence_id,
           agences(ville),
           profiles!referente_id(email, prenom, nom, telephone, role),
-          clients(email, nom, prenom, civilite, nom2, prenom2, adresse_chantier))
+          clients(email, nom, prenom, civilite, nom2, prenom2))
       `)
       .eq('type_echeance', 'acompte_artisan')
       .eq('statut_client', 'en_attente')
