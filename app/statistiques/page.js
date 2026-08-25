@@ -144,7 +144,7 @@ export default function Statistiques() {
           id, reference, statut, typologie, created_at, archive, agence_id,
           frais_statut, frais_consultation, part_agente, frais_part_agente,
           honoraires_amo_taux, taux_courtage, contrat_signe, apporteur_actif,
-          date_signature_contrat, date_signature_devis, date_demarrage_chantier,
+          date_signature_contrat, date_demarrage_chantier,
           date_fin_chantier, date_limite_devis, date_cloture,
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
           client:clients(prenom, nom, apporteur_pourcentage, apporteur_base),

@@ -1908,7 +1908,6 @@ export default function FicheChantier({ params }) {
       date_limite_devis: dossier.date_limite_devis, contrat_signe: dossier.contrat_signe,
       date_signature_contrat: dossier.date_signature_contrat, date_demarrage_chantier_manuel: dossier.date_demarrage_chantier_manuel || null,
       date_fin_chantier: dossier.date_fin_chantier, taux_courtage: dossier.taux_courtage, honoraires_amo_taux: dossier.honoraires_amo_taux,
-      resume_projet: dossier.resume_projet || null,
       adresse_chantier: dossier.adresse_chantier || null,
       description: dossier.description || null,
       part_agente: newPartAgente,
@@ -3533,12 +3532,6 @@ export default function FicheChantier({ params }) {
               <div style={{marginTop:14, paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
                 <div className="eyebrow" style={{marginBottom:6}}>Descriptif</div>
                 <p style={{fontSize:13.5, color:'var(--ink-700)', lineHeight:1.55, margin:0}}>{dossier.description}</p>
-              </div>
-            )}
-            {dossier.resume_projet && (
-              <div style={{marginTop:14, paddingTop:14, borderTop:'1px solid var(--ink-100)'}}>
-                <div className="eyebrow" style={{marginBottom:6}}>Résumé du projet</div>
-                <p style={{fontSize:13.5, color:'var(--ink-700)', lineHeight:1.55, margin:0}}>{dossier.resume_projet}</p>
               </div>
             )}
           </div>
