@@ -4882,7 +4882,7 @@ export default function FicheChantier({ params }) {
                 <>
                   <EcheanceRow
                     label="Honoraires courtage"
-                    sub={`${tauxCourtagePct}% travaux HT · ${fmt(honorairesCourtagePrev)}`}
+                    sub={`${tauxCourtagePct}% des travaux · ${fmt(honorairesCourtagePrev)} TTC`}
                     statut={suiviCourtage?.statut_client || 'en_attente'}
                     date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || null}
                     onSetPaid={d => majSuiviChantier('honoraires_courtage', honorairesCourtagePrev, 'regle', d)}
@@ -4899,7 +4899,7 @@ export default function FicheChantier({ params }) {
                 <>
                   <EcheanceRow
                     label="Honoraires courtage — initial"
-                    sub={`${tauxCourtagePct}% travaux HT (hors TS) · ${fmt(courtageTS.courtageInitialTtc)}`}
+                    sub={`${tauxCourtagePct}% des travaux (hors TS) · ${fmt(courtageTS.courtageInitialTtc)} TTC`}
                     statut={suiviCourtage?.statut_client || 'en_attente'}
                     date={(suiviCourtage?.statut_client === 'regle' && suiviCourtage.date_paiement) || null}
                     onSetPaid={d => majSuiviChantier('honoraires_courtage', courtageTS.courtageInitialTtc, 'regle', d)}
@@ -4913,7 +4913,7 @@ export default function FicheChantier({ params }) {
                     <div key={l.id}>
                       <EcheanceRow
                         label={`Courtage — travaux supplémentaires${suiviCourtageTS.length > 1 ? ` (TS ${i + 1})` : ''}`}
-                        sub={`${tauxCourtagePct}% travaux HT · ${fmt(Number(l.montant_ttc || 0))}`}
+                        sub={`${tauxCourtagePct}% des travaux · ${fmt(Number(l.montant_ttc || 0))} TTC`}
                         statut={l.statut_client === 'regle' ? 'regle' : 'en_attente'}
                         date={(l.statut_client === 'regle' && l.date_paiement) || null}
                         onSetPaid={d => setCourtageTSPaye(l, true, d)}
@@ -4954,7 +4954,7 @@ export default function FicheChantier({ params }) {
                         <div style={{minWidth:0}}>
                           <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)'}}>Honoraires AMO — solde</div>
                           <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>
-                            {tauxAmoPct}% travaux HT · {fmt(soldeTotalTtc)} attendu
+                            {tauxAmoPct}% des travaux · {fmt(soldeTotalTtc)} TTC attendu
                           </div>
                         </div>
                         <div style={{display:'flex', alignItems:'center', gap:10}}>
@@ -4970,7 +4970,7 @@ export default function FicheChantier({ params }) {
                       <>
                         <EcheanceRow
                           label="Honoraires AMO — solde"
-                          sub={`${tauxAmoPct}% travaux HT · ${fmt(honorairesAMOPrev - honorairesCourtagePrev)}`}
+                          sub={`${tauxAmoPct}% des travaux · ${fmt(honorairesAMOPrev - honorairesCourtagePrev)} TTC`}
                           statut={suiviSoldeAMO?.statut_client || 'en_attente'}
                           date={(suiviSoldeAMO?.statut_client === 'regle' && suiviSoldeAMO.date_paiement) || null}
                           onSetPaid={d => majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'regle', d)}
