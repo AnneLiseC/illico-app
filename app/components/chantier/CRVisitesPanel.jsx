@@ -8,6 +8,8 @@ import { supabase } from '../../lib/supabase'
 import { compressImageToBlob } from '../../lib/images'
 import { apiFetch } from '../../lib/api-auth-client'
 import { TYPES_VISITE, ORDRE_TYPES } from '../../lib/crRegles'
+import { libelleStatut } from '../../lib/statutLibelle'
+import { lierOuCreerRdvVisite } from '../../lib/rdvVisite'
 import BoutonDictee from './BoutonDictee'
 
 // 16 statuts figés (clés = CHECK de la table `actions`), 4 familles couleur + libellé daté.
@@ -54,7 +56,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
 
   const rechargerVisites = useCallback(async () => {
     const { data, error } = await supabase.from('comptes_rendus')
-      .select('id, numero_visite, date_visite, type_visite, contenu_final, photos_jointes, prochaine_reunion_at, valide, created_at')
+      .select('id, numero_visite, date_visite, type_visite, contenu_final, photos_jointes, prochaine_reunion_at, valide, version, parent_cr_id, created_at')
       .eq('dossier_id', id)
       .order('numero_visite', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
@@ -113,10 +115,14 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
     setMenuNouv(false)
     // Numérotation PAR TYPE : cohérent avec le backfill SQL.
     const maxNum = visites.filter(v => (v.type_visite || 'suivi') === type).reduce((m, v) => Math.max(m, v.numero_visite || 0), 0)
+    const { data: { user: auteurVisite } } = await supabase.auth.getUser()
+    const dateVisite = new Date().toISOString().slice(0, 10)
     const { data, error } = await supabase.from('comptes_rendus')
-      .insert({ dossier_id: id, numero_visite: maxNum + 1, date_visite: new Date().toISOString().slice(0, 10), type_visite: type, valide: false })
+      .insert({ dossier_id: id, auteur_id: auteurVisite?.id ?? null, numero_visite: maxNum + 1, date_visite: dateVisite, type_visite: type, valide: false })
       .select().single()
     if (error) { setErreur?.('Nouvelle visite : ' + error.message); return }
+    // Rattache (ou crée) le RDV de visite correspondant, puis le pousse au calendrier.
+    lierOuCreerRdvVisite({ supabase, apiFetch, crId: data.id, dossierId: id, typeVisite: type, dateVisite }).catch(() => {})
     // Report : on reprend les actions ouvertes du dossier, SAUF les clôturées/quitus/actées et SAUF
     // les ARCHIVÉES (supprime_at) — le marqueur permanent garantit qu'une remarque archivée ne
     // revient jamais, même plusieurs CR plus tard.
@@ -129,6 +135,41 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
     }
     await rechargerVisites()
     setSelected(data.id)
+  }
+
+  // Nouvelle VERSION d'un CR déjà publié : on fige le CR envoyé (v1) et on crée un
+  // brouillon v2 lié (parent_cr_id = racine du fil, version + 1). On recopie le contenu
+  // prose ET le rattachement des actions (cr_actions) pour repartir de l'état publié.
+  const nouvelleVersion = async (srcId) => {
+    const { data: src } = await supabase.from('comptes_rendus').select('*').eq('id', srcId).maybeSingle()
+    if (!src) { setErreur?.('CR introuvable pour le versionnage.'); return }
+    const racine = src.parent_cr_id || src.id
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: v2, error } = await supabase.from('comptes_rendus').insert({
+      dossier_id: id,
+      auteur_id: user?.id ?? null,
+      type_visite: src.type_visite,
+      date_visite: new Date().toISOString().slice(0, 10),
+      numero_visite: src.numero_visite,
+      contenu_final: src.contenu_final || null,
+      notes_brutes: src.notes_brutes || null,
+      photos_paths: src.photos_paths || [],
+      photos_jointes: src.photos_jointes || [],
+      parent_cr_id: racine,
+      version: (src.version || 1) + 1,
+      valide: false,
+    }).select('id').single()
+    if (error) { setErreur?.('Nouvelle version : ' + error.message); return }
+    // Recopie du rattachement des actions (système visites structurées).
+    const { data: liens } = await supabase.from('cr_actions').select('action_id, statut_au_cr, texte_au_cr, inclus').eq('cr_id', src.id)
+    if (liens && liens.length) {
+      await supabase.from('cr_actions').insert(liens.map(l => ({
+        cr_id: v2.id, action_id: l.action_id, statut_au_cr: l.statut_au_cr, texte_au_cr: l.texte_au_cr, inclus: l.inclus,
+      })))
+    }
+    await rechargerVisites()
+    setSelected(v2.id)
+    setSucces?.('Nouvelle version créée (brouillon) ✓')
   }
 
   // Supprimer un BROUILLON (jamais une visite publiée : elle a pu être envoyée au client).
@@ -151,7 +192,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
     // Nombre de rapports PROSE (ancien système) du dossier → conditionne le bouton « Consolider ».
     const anciensProse = visites.filter(v => (v.contenu_final || '').trim()).length
     return <VisitePage visite={visite} dossierId={id} lots={lots} setErreur={setErreur} setSucces={setSucces} setAnnot={setAnnot}
-             anciensProse={anciensProse} onEditerAncien={onEditerAncien} onPdfProse={onPdfProse}
+             anciensProse={anciensProse} onEditerAncien={onEditerAncien} onPdfProse={onPdfProse} onNouvelleVersion={nouvelleVersion}
              onRetour={() => { setSelected(null); rechargerVisites() }} onMajVisite={rechargerVisites} />
   }
 
@@ -210,7 +251,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
 }
 
 // ── Page d'une visite : ses actions (générales + par lot) ──
-function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, anciensProse = 0, onEditerAncien, onPdfProse, onRetour, onMajVisite }) {
+function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, anciensProse = 0, onEditerAncien, onPdfProse, onNouvelleVersion, onRetour, onMajVisite }) {
   // R1/R2/R3 = ancien système prose : page de LECTURE (pas d'actions), affichage instantané.
   const estProse = TYPES_ANCIENS.has(visite?.type_visite)
   const [actions, setActions] = useState([])
@@ -240,6 +281,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
   //    SUPPRIMÉES du dossier (archivées). Permet de comprendre où est passée une action et de la récupérer.
   const [histOuvert, setHistOuvert] = useState(false)
   const [hist, setHist] = useState(null)   // { retirees: [...], supprimees: [...] } | null
+  const [presOuvert, setPresOuvert] = useState(false)   // panneau présences aux réunions
   const chargerHistorique = useCallback(async () => {
     const FERMES = new Set(['cloture', 'quitus_transmis', 'acte'])
     const { data: all } = await supabase.from('actions')
@@ -379,7 +421,11 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
   // Cible unique par lot pour 1c-1 (multi-cible = plus tard). Remplace la cible existante.
   const setCibleLot = async (action, lotId) => {
     await supabase.from('action_cibles').delete().eq('action_id', action.id)
-    if (lotId) await supabase.from('action_cibles').insert({ action_id: action.id, lot_id: lotId })
+    if (lotId) {
+      // On rattache aussi l'artisan du lot (le lot porte déjà son artisan).
+      const lotObj = lots.find(l => l.id === lotId)
+      await supabase.from('action_cibles').insert({ action_id: action.id, lot_id: lotId, intervenant_id: lotObj?.artisan_id || null })
+    }
     recharger()
   }
 
@@ -542,7 +588,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
         await supabase.from('cr_actions').insert({ cr_id: visiteId, action_id: data.id, statut_au_cr: data.statut, texte_au_cr: data.texte, inclus: true })
         if (c.portee === 'lot' && c.lot_nom) {
           const lot = lots.find(l => (l.nom || '').toLowerCase() === c.lot_nom.toLowerCase())
-          if (lot) await supabase.from('action_cibles').insert({ action_id: data.id, lot_id: lot.id })
+          if (lot) await supabase.from('action_cibles').insert({ action_id: data.id, lot_id: lot.id, intervenant_id: lot.artisan_id || null })
         }
       }
       const bouts = []
@@ -626,8 +672,11 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
           <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--ink-900)' }}>{titreVisite(visite)}</div>
           <div style={{ fontSize: 12.5, color: 'var(--ink-500)' }}>{fmtDate(visite?.date_visite)}</div>
           <span style={{ fontSize: 11, fontWeight: 700, color: '#4338ca', background: 'rgba(99,102,241,0.10)', borderRadius: 20, padding: '2px 9px' }}>ancien format</span>
+          {(visite?.version || 1) > 1 && <span style={{ fontSize: 11, fontWeight: 700, color: '#0f766e', background: 'rgba(13,148,136,0.12)', borderRadius: 20, padding: '2px 9px' }} title="Version d'un compte-rendu précédent">v{visite.version}</span>}
           <div style={{ flex: 1 }} />
-          <button onClick={() => onEditerAncien?.(visite)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Modifier</button>
+          {visite?.valide
+            ? <button onClick={() => onNouvelleVersion?.(visite.id)} className="btn btn-ghost" style={{ fontSize: 12.5 }} title="Le CR publié est figé — crée une nouvelle version modifiable">Nouvelle version</button>
+            : <button onClick={() => onEditerAncien?.(visite)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Modifier</button>}
           {contenu && <button onClick={() => onPdfProse?.(visiteId)} className="btn btn-primary" style={{ fontSize: 12.5 }}>Exporter PDF</button>}
         </div>
         {contenu
@@ -644,6 +693,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
         <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--ink-900)' }}>
           Visite {visite?.numero_visite || '—'}
         </div>
+        {(visite?.version || 1) > 1 && <span style={{ fontSize: 11, fontWeight: 700, color: '#0f766e', background: 'rgba(13,148,136,0.12)', borderRadius: 20, padding: '2px 9px' }} title="Version d'une visite précédente">v{visite.version}</span>}
         <select value={visite?.type_visite || 'suivi'}
           onChange={e => supabase.from('comptes_rendus').update({ type_visite: e.target.value }).eq('id', visiteId).then(onMajVisite)}
           className="input" style={{ height: 32, fontSize: 12, flex: '0 1 220px' }} title="Type de visite : oriente les règles de rédaction de l'IA">
@@ -672,11 +722,17 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
           </button>
         )}
         <button onClick={() => setIaOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Aide IA</button>
+        <button onClick={() => setPresOuvert(o => !o)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Présences</button>
         <button onClick={() => setHistOuvert(o => { const n = !o; if (n) chargerHistorique(); return n })} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Historique</button>
         <button onClick={() => setPdfPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Exporter PDF</button>
         <button onClick={() => setDiffPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Diffuser</button>
         <button onClick={publier} disabled={!!visite?.valide} className="btn btn-primary" style={{ fontSize: 12.5, background: '#15803d', borderColor: '#15803d', opacity: visite?.valide ? 0.6 : 1 }}>{visite?.valide ? 'Publié' : 'Publier'}</button>
+        {visite?.valide && <button onClick={() => onNouvelleVersion?.(visiteId)} className="btn btn-ghost" style={{ fontSize: 12.5 }} title="La visite publiée est figée — crée une nouvelle version modifiable">Nouvelle version</button>}
       </div>
+
+      {presOuvert && (
+        <PresencesVisite dossierId={dossierId} visiteId={visiteId} visitePubliee={!!visite?.valide} setErreur={setErreur} />
+      )}
 
       {histOuvert && (
         <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8, borderColor: 'rgba(99,102,241,0.3)' }}>
@@ -982,6 +1038,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
         <button onClick={() => setPdfPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Exporter PDF</button>
         <button onClick={() => setDiffPanel(p => !p)} className="btn btn-ghost" style={{ fontSize: 12.5 }}>Diffuser</button>
         <button onClick={publier} disabled={!!visite?.valide} className="btn btn-primary" style={{ fontSize: 12.5, background: '#15803d', borderColor: '#15803d', opacity: visite?.valide ? 0.6 : 1 }}>{visite?.valide ? 'Publié' : 'Publier'}</button>
+        {visite?.valide && <button onClick={() => onNouvelleVersion?.(visiteId)} className="btn btn-ghost" style={{ fontSize: 12.5 }} title="La visite publiée est figée — crée une nouvelle version modifiable">Nouvelle version</button>}
       </div>
     </div>
   )
@@ -1126,7 +1183,7 @@ function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifie
 
         {/* Date de statut */}
         <input type="date" value={action.statut_date || ''} onChange={e => onMaj(action.id, { statut_date: e.target.value || null })}
-          className="input" style={{ height: 30, fontSize: 12 }} title={st.libelle} />
+          className="input" style={{ height: 30, fontSize: 12 }} title={libelleStatut(action.statut, action.statut_date)} />
 
         {withLot && (
           <select value={cibleLot} onChange={e => onSetLot(e.target.value || null)} className="input" style={{ height: 30, fontSize: 12, flex: '0 1 170px' }}>
@@ -1182,7 +1239,7 @@ function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifie
       <ActionPhotos action={action} dossierId={dossierId} setAnnot={setAnnot} setErreur={setErreur} />
       <ActionChecklist action={action} setErreur={setErreur} />
 
-      <div style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>{st.libelle} {fmtDate(action.statut_date)}</div>
+      <div style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>{libelleStatut(action.statut, action.statut_date)} {fmtDate(action.statut_date)}</div>
     </div>
   )
 }
@@ -1375,6 +1432,116 @@ function ActionChecklist({ action, setErreur }) {
           placeholder="Ajouter à la checklist…" className="input" style={{ flex: 1, height: 30, fontSize: 12 }} />
         <button onClick={ajouter} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 9px' }}>+</button>
       </div>
+    </div>
+  )
+}
+
+// ── Présences à la réunion (table cr_presences, lue par le PDF de visite) ──
+const PRESENCES = [
+  { k: 'present', l: 'Présent', c: '#16a34a' },
+  { k: 'excuse', l: 'Excusé', c: '#d97706' },
+  { k: 'absent', l: 'Absent', c: '#dc2626' },
+  { k: 'absent_non_excuse', l: 'Absent (non excusé)', c: '#991b1b' },
+]
+
+function PresencesVisite({ dossierId, visiteId, visitePubliee, setErreur }) {
+  const [artisans, setArtisans] = useState([])   // intervenants du dossier (devis signés)
+  const [rows, setRows] = useState({})           // artisan_id -> { id, presence, convoque }
+  const [chargement, setChargement] = useState(true)
+
+  const charger = useCallback(async () => {
+    setChargement(true)
+    const { data: devis } = await supabase.from('devis_artisans')
+      .select('artisan:artisans(id, entreprise, metier)')
+      .eq('dossier_id', dossierId).eq('statut', 'accepte')
+    const uniq = new Map()
+    for (const d of devis || []) { const a = d.artisan; if (a?.id) uniq.set(a.id, a) }
+    const { data: pres } = await supabase.from('cr_presences')
+      .select('id, artisan_id, presence, convoque_prochaine, artisan:artisans(id, entreprise, metier)')
+      .eq('cr_id', visiteId)
+    const map = {}
+    for (const p of pres || []) {
+      if (!p.artisan_id) continue
+      map[p.artisan_id] = { id: p.id, presence: p.presence || null, convoque: !!p.convoque_prochaine }
+      if (p.artisan?.id) uniq.set(p.artisan.id, p.artisan) // artisan sans devis signé mais déjà noté présent
+    }
+    setArtisans([...uniq.values()].sort((a, b) => (a.entreprise || a.metier || '').localeCompare(b.entreprise || b.metier || '', 'fr', { sensitivity: 'base' })))
+    setRows(map)
+    setChargement(false)
+  }, [dossierId, visiteId])
+
+  useEffect(() => { charger() }, [charger])
+
+  const majPresence = async (artisanId, presence) => {
+    if (visitePubliee) return
+    const existant = rows[artisanId]
+    if (!presence) {
+      if (existant?.id) await supabase.from('cr_presences').delete().eq('id', existant.id)
+      setRows(r => { const n = { ...r }; if (existant?.convoque) n[artisanId] = { ...existant, presence: null }; else delete n[artisanId]; return n })
+      // Si « convoqué » était coché, on garde une ligne (recréée) ; sinon on supprime.
+      if (existant?.convoque) {
+        const { data } = await supabase.from('cr_presences').insert({ cr_id: visiteId, artisan_id: artisanId, convoque_prochaine: true }).select('id').single()
+        if (data) setRows(r => ({ ...r, [artisanId]: { id: data.id, presence: null, convoque: true } }))
+      }
+      return
+    }
+    if (existant?.id) {
+      const { error } = await supabase.from('cr_presences').update({ presence }).eq('id', existant.id)
+      if (error) { setErreur?.('Présence : ' + error.message); return }
+      setRows(r => ({ ...r, [artisanId]: { ...existant, presence } }))
+    } else {
+      const { data, error } = await supabase.from('cr_presences')
+        .insert({ cr_id: visiteId, artisan_id: artisanId, presence, convoque_prochaine: false })
+        .select('id').single()
+      if (error) { setErreur?.('Présence : ' + error.message); return }
+      setRows(r => ({ ...r, [artisanId]: { id: data.id, presence, convoque: false } }))
+    }
+  }
+
+  const majConvoque = async (artisanId, convoque) => {
+    if (visitePubliee) return
+    const existant = rows[artisanId]
+    if (existant?.id) {
+      await supabase.from('cr_presences').update({ convoque_prochaine: convoque }).eq('id', existant.id)
+      setRows(r => ({ ...r, [artisanId]: { ...existant, convoque } }))
+    } else if (convoque) {
+      const { data } = await supabase.from('cr_presences').insert({ cr_id: visiteId, artisan_id: artisanId, convoque_prochaine: true }).select('id').single()
+      if (data) setRows(r => ({ ...r, [artisanId]: { id: data.id, presence: null, convoque: true } }))
+    }
+  }
+
+  return (
+    <div className="card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8, borderColor: 'rgba(99,102,241,0.3)' }}>
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-700)' }}>Présences à la réunion</div>
+      {visitePubliee && <div style={{ fontSize: 11.5, color: 'var(--ink-500)', marginTop: -2 }}>Visite publiée — présences en lecture seule.</div>}
+      {chargement ? <div style={{ fontSize: 12, color: 'var(--ink-500)' }}>Chargement…</div>
+        : artisans.length === 0 ? <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>Aucun intervenant (devis signé) sur ce dossier.</div>
+        : artisans.map(a => {
+          const r = rows[a.id] || {}
+          return (
+            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderTop: '1px solid var(--ink-100)', paddingTop: 8 }}>
+              <b style={{ flex: '0 1 200px', minWidth: 130, fontSize: 12.5 }}>{a.entreprise || a.metier || '—'}</b>
+              <div style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+                {PRESENCES.map(p => {
+                  const actif = r.presence === p.k
+                  return (
+                    <button key={p.k} type="button" disabled={visitePubliee}
+                      onClick={() => majPresence(a.id, actif ? null : p.k)}
+                      style={{ fontSize: 11, padding: '3px 9px', borderRadius: 99, cursor: visitePubliee ? 'default' : 'pointer',
+                        border: `1px solid ${actif ? p.c : 'var(--ink-200)'}`,
+                        background: actif ? p.c : 'transparent', color: actif ? '#fff' : 'var(--ink-600)', fontWeight: actif ? 700 : 500 }}>
+                      {p.l}
+                    </button>
+                  )
+                })}
+              </div>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: 'var(--ink-500)' }}>
+                <input type="checkbox" checked={!!r.convoque} disabled={visitePubliee} onChange={e => majConvoque(a.id, e.target.checked)} />
+                convoqué prochaine
+              </label>
+            </div>
+          )
+        })}
     </div>
   )
 }

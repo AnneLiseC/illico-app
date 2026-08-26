@@ -101,9 +101,10 @@ export async function genererVisitePDF(db, visiteId, { options = {}, filtreLotId
   }
   const parLot = [...parLotMap.values()]
 
-  // Intervenants présents (pour l'en-tête « identification »).
-  const { data: pres } = await db.from('cr_presences').select('artisan:artisans(entreprise, metier)').eq('cr_id', visiteId)
-  const presences = (pres || []).map(p => p.artisan?.entreprise || p.artisan?.metier).filter(Boolean)
+  // Intervenants présents (pour l'en-tête « identification ») : uniquement ceux
+  // marqués « présent » dans cr_presences (absents / excusés non listés ici).
+  const { data: pres } = await db.from('cr_presences').select('presence, artisan:artisans(entreprise, metier)').eq('cr_id', visiteId)
+  const presences = (pres || []).filter(p => p.presence === 'present').map(p => p.artisan?.entreprise || p.artisan?.metier).filter(Boolean)
 
   const doc = buildVisiteDocument({ dossier, visite, generales, parLot, presences, logo: getLogoBase64(), opts: options })
   const buffer = await renderToBuffer(doc)
