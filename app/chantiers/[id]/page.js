@@ -10,6 +10,7 @@ import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../
 import { calculerAvancement, calculerEtapes, ETAPES_LABELS, detecterCategorie } from '../../lib/dossiers'
 import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
 import { apiFetch } from '../../lib/api-auth-client'
+import { lierOuCreerRdvVisite } from '../../lib/rdvVisite'
 import { buildDevisPayload } from '../../lib/devis'
 import MarkdownCR from '../../components/MarkdownCR'
 import ModalShell from '../../components/ModalShell'
@@ -2459,7 +2460,7 @@ export default function FicheChantier({ params }) {
     const contenuFinal = composerContenuCRManuel()
     const photos = crManuelForm.photos || []
     // Édition : on met à jour le CR existant. Création : on insère.
-    const { error: saveErr } = crEditId
+    const { data: crSauve, error: saveErr } = crEditId
       ? await supabase.from('comptes_rendus').update({
           type_visite: crManuelForm.type_visite || null,
           date_visite: crManuelForm.date_visite || null,
@@ -2470,15 +2471,18 @@ export default function FicheChantier({ params }) {
         }).eq('id', crEditId)
       : await supabase.from('comptes_rendus').insert({
           dossier_id: id,
+          auteur_id: profile?.id ?? null,
           type_visite: crManuelForm.type_visite || null,
           date_visite: crManuelForm.date_visite || null,
           contenu_final: contenuFinal,
           photos_jointes: photos,
           photos_paths: photos,
           valide: publier,
-        })
+        }).select('id').single()
     // Échec : on garde la saisie (modale ouverte) pour réessayer.
     if (saveErr) { setErreur('Erreur : ' + saveErr.message); setCrManuelSaving(false); return }
+    // Création uniquement : rattache (ou crée) le RDV de visite + push calendrier.
+    if (!crEditId && crSauve?.id) lierOuCreerRdvVisite({ supabase, apiFetch, crId: crSauve.id, dossierId: id, agenceId: dossier?.agence_id, typeVisite: crManuelForm.type_visite || null, dateVisite: crManuelForm.date_visite || null }).catch(() => {})
 
     const { data } = await supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
     setComptesRendus(data || [])

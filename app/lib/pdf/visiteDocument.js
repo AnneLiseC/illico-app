@@ -9,6 +9,7 @@ import React from 'react'
 import { Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
 import { formatNomClient } from '../clients.js'
 import { TYPES_VISITE } from '../crRegles.js'
+import { libelleStatut } from '../statutLibelle.js'
 
 const BLEU = '#00578e'
 
@@ -90,7 +91,7 @@ function ActionBlock(action, opts) {
     React.createElement(View, { style: S.actionHead },
       React.createElement(Text, { style: S.num }, action.numero || ''),
       React.createElement(Text, { style: [S.statut, { color: st.c }] }, st.l),
-      React.createElement(Text, { style: S.statutDate }, `${st.p} ${fmtDate(action.statut_date)}`),
+      React.createElement(Text, { style: S.statutDate }, `${libelleStatut(action.statut, action.statut_date)} ${fmtDate(action.statut_date)}`),
     ),
     action.texte ? React.createElement(Text, { style: txtStyle }, richRuns(action.texte)) : null,
     (Array.isArray(action.journal) && action.journal.length)

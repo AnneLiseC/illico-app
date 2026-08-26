@@ -59,6 +59,8 @@ export default function FicheArtisan({ params }) {
   const [nouvelleFiche, setNouvelleFiche] = useState({ nom: '', description: '', fichier: null })
   const [UploadEnCours, setUploadEnCours] = useState({})
   const [fichesExpand, setFichesExpand] = useState(false)
+  const [specialites, setSpecialites] = useState([])   // [{ id, nom }] rattachées à l'artisan
+  const [specBusy, setSpecBusy] = useState(false)
   const router = useRouter()
   const { user, profile, initialized } = useAuth()
 
@@ -76,11 +78,39 @@ export default function FicheArtisan({ params }) {
       setArtisan(data)
       setFichesTechniques(fichesData || [])
       setLoading(false)
+      chargerSpecialites()
     }
     init()
   }, [initialized, user?.id, id, router])
 
   const set = (champ, valeur) => setArtisan(a => ({ ...a, [champ]: valeur }))
+
+  const chargerSpecialites = async () => {
+    const { data } = await supabase.from('artisans_specialites')
+      .select('specialite:specialites(id, nom)').eq('artisan_id', id)
+    setSpecialites((data || []).map(r => r.specialite).filter(Boolean)
+      .sort((a, b) => (a.nom || '').localeCompare(b.nom || '', 'fr', { sensitivity: 'base' })))
+  }
+
+  // Déduit les spécialités depuis l'attestation décennale (IA côté serveur).
+  const deduireSpecialites = async () => {
+    setSpecBusy(true); setErreur(''); setSucces('')
+    try {
+      const res = await apiFetch('/api/artisans/specialites/extract', { method: 'POST', body: JSON.stringify({ artisanId: id }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setErreur(data.error || 'Échec de la déduction des spécialités.'); return }
+      await chargerSpecialites()
+      setSucces(data.specialites?.length ? `${data.specialites.length} spécialité(s) déduite(s) de la décennale ✓` : (data.message || 'Aucune spécialité détectée.'))
+    } catch (e) {
+      setErreur('Erreur : ' + (e?.message || 'réessaie'))
+    } finally { setSpecBusy(false) }
+  }
+
+  const retirerSpecialite = async (sid) => {
+    const { error } = await supabase.from('artisans_specialites').delete().eq('artisan_id', id).eq('specialite_id', sid)
+    if (error) { setErreur('Erreur : ' + error.message); return }
+    setSpecialites(s => s.filter(x => x.id !== sid))
+  }
 
   const chargerFiches = async () => {
     const { data } = await supabase.from('fiches_techniques').select('*').eq('artisan_id', id).order('nom')
@@ -258,6 +288,29 @@ export default function FicheArtisan({ params }) {
         <KpiCard label="CA cumulé HT" value={caHT > 0 ? fmtEur(caHT) : '—'} color="var(--brand-800)" />
         <KpiCard label="Commission moyenne" value={comMoyenne > 0 ? `${comMoyenne} %` : '—'} />
         <KpiCard label="Décennale" value={<DecBadge artisan={artisan}/>} />
+      </div>
+
+      {/* ── Spécialités (déduites de la décennale par IA) ── */}
+      <div className="card" style={{padding:16, marginTop:16}}>
+        <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', marginBottom:10}}>
+          <div style={{fontSize:13, fontWeight:700, color:'var(--ink-900)'}}>Spécialités</div>
+          <div style={{flex:1}} />
+          <button className="btn btn-ghost" onClick={deduireSpecialites} disabled={specBusy || !artisan.decennale_url}
+            title={artisan.decennale_url ? "Lire la décennale et déduire les corps d'état garantis" : 'Aucune attestation décennale enregistrée'}
+            style={{fontSize:12.5, opacity: (specBusy || !artisan.decennale_url) ? 0.6 : 1}}>
+            {specBusy ? 'Analyse de la décennale…' : '✨ Déduire depuis la décennale'}
+          </button>
+        </div>
+        {specialites.length === 0
+          ? <div style={{fontSize:12.5, color:'var(--ink-400)'}}>Aucune spécialité. {artisan.decennale_url ? 'Clique sur « Déduire depuis la décennale ».' : "Ajoute d'abord une attestation décennale."}</div>
+          : <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+              {specialites.map(s => (
+                <span key={s.id} style={{display:'inline-flex', alignItems:'center', gap:6, padding:'3px 10px', borderRadius:99, fontSize:12, fontWeight:600, background:'rgba(13,148,136,0.10)', color:'#0f766e'}}>
+                  {s.nom}
+                  <button onClick={() => retirerSpecialite(s.id)} title="Retirer" style={{border:'none', background:'none', color:'#0f766e', cursor:'pointer', fontSize:14, lineHeight:1, padding:0}}>×</button>
+                </span>
+              ))}
+            </div>}
       </div>
 
       {/* ── Formulaire édition ── */}

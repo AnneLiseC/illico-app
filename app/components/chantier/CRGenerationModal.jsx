@@ -8,6 +8,7 @@ import { useState, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api-auth-client'
 import { compressImageToBlob } from '../../lib/images'
+import { lierOuCreerRdvVisite } from '../../lib/rdvVisite'
 import { Badge } from '../shared'
 import ModalShell from '../ModalShell'
 
@@ -101,8 +102,10 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
     setCrSavingFinal(true)
     const contenuFinal = crSectionsEditees.map(s => `## ${s.numero}. ${s.titre}\n\n${s.contenu}`).join('\n\n')
     const notesCombinees = [crNotes, crVocalTexte, crAudioTexte].filter(Boolean).join('\n\n')
-    const { error: insertErr } = await supabase.from('comptes_rendus').insert({
+    const { data: { user: crAuteur } } = await supabase.auth.getUser()
+    const { data: crCree, error: insertErr } = await supabase.from('comptes_rendus').insert({
       dossier_id: id,
+      auteur_id: crAuteur?.id ?? null,
       type_visite: crForm.type_visite,
       date_visite: crForm.date_visite || null,
       notes_brutes: notesCombinees || null,
@@ -110,9 +113,11 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
       photos_paths: [...crImages.map(im => im.path), ...crPhotosDossier], // TOUT ce qu'a analysé l'IA (traçabilité)
       photos_jointes: crPhotosDossier, // affichées dans le PDF — photos du chantier UNIQUEMENT, jamais les photos ordi
       valide: publier,
-    })
+    }).select('id').single()
     // Échec de l'insert : on garde la modale ouverte (sections éditées conservées).
     if (insertErr) { setErreur('Erreur : ' + insertErr.message); setCrSavingFinal(false); return }
+    // Rattache (ou crée) le RDV de visite correspondant, puis le pousse au calendrier.
+    if (crCree?.id) lierOuCreerRdvVisite({ supabase, apiFetch, crId: crCree.id, dossierId: id, agenceId: dossier?.agence_id, typeVisite: crForm.type_visite, dateVisite: crForm.date_visite || null }).catch(() => {})
     const { data } = await supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
     setComptesRendus(data || [])
     setCrModal(false)
