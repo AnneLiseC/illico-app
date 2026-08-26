@@ -5370,8 +5370,8 @@ export default function FicheChantier({ params }) {
         const ARTISAN_DOCS = [
           { k: 'attestation_demarrage', l: 'Attestation démarrage', multi: false, restit: false },
           { k: 'avis_virement',         l: 'Avis de virement',      multi: true,  restit: false },
-          // PV de réception : va dans le PDF de restitution client (dans_restitution).
-          { k: 'pv_reception',          l: 'PV de réception',       multi: false, restit: true  },
+          // Le PV de réception n'est PLUS un document par artisan : il est rattaché à CHAQUE
+          // devis (devis_artisans.pv_path) → rendu par devis juste en dessous.
         ]
         // Artisans du chantier = ceux avec un devis accepté (ils y travaillent).
         const artisansChantier = [...new Map(
@@ -5392,6 +5392,8 @@ export default function FicheChantier({ params }) {
               <div style={{padding:'6px 16px'}}>
                 {artisansChantier.map(a => {
                   const docsA = documents.filter(d => d.artisan_id === a.id)
+                  // Devis (lots) acceptés de cet artisan → 1 PV de réception par devis.
+                  const devisArtisanA = devis.filter(d => d.artisan_id === a.id && d.statut === 'accepte')
                   // Factures : PDF affichés ici (lecture seule) ; la gestion des factures est dans l'onglet Suivi financier.
                   const facturesA = factures.filter(f => f.pdf_path && devis.find(d => d.id === f.devis_id)?.artisan_id === a.id)
                   return (
@@ -5415,6 +5417,32 @@ export default function FicheChantier({ params }) {
                           )
                         })}
                       </div>
+                      {/* PV de réception — 1 par devis (lot) de l'artisan, rattaché au devis (pv_path). */}
+                      {devisArtisanA.length > 0 && (
+                        <div style={{marginTop:10, display:'flex', flexDirection:'column', gap:6}}>
+                          {devisArtisanA.map(dv => (
+                            <div key={dv.id} style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                              <span style={{fontSize:12, fontWeight:600, whiteSpace:'nowrap', color: dv.pv_path ? '#15803d' : 'var(--ink-500)'}}>
+                                {dv.pv_path ? '✓' : '⌛'} PV de réception{dv.notes ? ` — ${dv.notes}` : ''}
+                              </span>
+                              {dv.pv_path ? (
+                                <>
+                                  <button onClick={() => ouvrirDocument(dv.pv_path, `PV_${nomFichierClient(dossier)}_${a.entreprise}.pdf`)}
+                                    style={{background:'none', border:'none', color:'var(--ink-700)', cursor:'pointer', padding:0, fontSize:12, textDecoration:'underline'}}>voir</button>
+                                  <button onClick={() => supprimerPV(dv.id, dv.pv_path)} className="btn btn-ghost"
+                                    style={{padding:'2px 7px', color:'#b91c1c'}} title="Supprimer le PV"><span style={{fontSize:13, lineHeight:1}}>×</span></button>
+                                </>
+                              ) : (
+                                <label style={{cursor: uploadingDoc === dv.id ? 'wait' : 'pointer', color:'var(--ink-900)', fontWeight:800, fontSize:15, lineHeight:1}} title="Ajouter le PV de réception de ce devis">
+                                  +
+                                  <input type="file" style={{display:'none'}} accept="application/pdf" disabled={uploadingDoc === dv.id}
+                                    onChange={e => e.target.files[0] && uploadPV(dv.id, e.target.files[0])} />
+                                </label>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {docsA.length > 0 && (
                         <div style={{marginTop:10, display:'flex', flexDirection:'column', gap:5}}>
                           {docsA.map(doc => (

@@ -791,6 +791,9 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     return n.split(/[^a-z0-9]+/).some(t => MOTS_ILLU.has(t))
   }
   const docsIllustration = autresDocs.filter(estIllustration)
+  // PV de réception (categorie 'pv_reception') : sortis du bloc « autres documents »
+  // (fin de PDF) pour être insérés dans la section Devis / Factures / PV, à côté du devis
+  // de l'artisan concerné. Suivi des PV déjà placés pour éviter les doublons.
   const autresDocsRest = autresDocs.filter(d => !estIllustration(d))
 
   const loadSep = async (b64) => PDFDocument.load(Buffer.from(b64, 'base64'))
@@ -897,6 +900,7 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
           await addExternalPDF(buf)
         }
       }
+      // PV de réception du devis (devis_artisans.pv_path) : rattachement EXACT au devis.
       if (d.pv_path) {
         const buf = await downloadPDF(supabaseAdmin, 'documents', d.pv_path)
         await addExternalPDF(buf)
@@ -919,11 +923,15 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   }
 
   // ── Qualifications (si présentes et stade post-signature) ──
+  // Dédoublonnage : une qualification par artisan, même s'il est sur plusieurs lots.
   if (!isPreSignature && hasQualif) {
     await addSep(sepQualification)
+    const vusQualif = new Set()
     for (const d of devisAcceptes) {
-      if (d.artisan?.qualification_url) {
-        const buf = await downloadPDF(supabaseAdmin, 'documents', d.artisan.qualification_url)
+      const urlQ = d.artisan?.qualification_url
+      if (urlQ && !vusQualif.has(urlQ)) {
+        vusQualif.add(urlQ)
+        const buf = await downloadPDF(supabaseAdmin, 'documents', urlQ)
         await addExternalPDF(buf)
       }
     }
@@ -965,15 +973,20 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   }
 
   // ── KBIS + Assurances (post-signature) ──
+  // Dédoublonnage : un même artisan présent sur plusieurs lots/devis ne voit son
+  // KBIS et sa décennale inclus qu'UNE seule fois (dédoublonnage par chemin de fichier).
   if (!isPreSignature) {
     await addSep(sepKbis)
+    const vusDocs = new Set()
     for (const d of devisAcceptes) {
       const art = d.artisan || {}
-      if (art.kbis_url) {
+      if (art.kbis_url && !vusDocs.has(art.kbis_url)) {
+        vusDocs.add(art.kbis_url)
         const buf = await downloadPDF(supabaseAdmin, 'documents', art.kbis_url)
         await addExternalPDF(buf)
       }
-      if (art.decennale_url) {
+      if (art.decennale_url && !vusDocs.has(art.decennale_url)) {
+        vusDocs.add(art.decennale_url)
         const buf = await downloadPDF(supabaseAdmin, 'documents', art.decennale_url)
         await addExternalPDF(buf)
       }
@@ -981,8 +994,9 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   }
 
   // ── KBIS + RIB du franchisé (admin de la société) — post-signature, sans séparateur. Non bloquant. ──
+  // MERAD (courtage à distance) : pas de KBIS CTP dans la restitution.
   if (!isPreSignature) {
-    if (adminFranchise?.kbis_url) {
+    if (dossier.typologie !== 'merad' && adminFranchise?.kbis_url) {
       const buf = await downloadPDF(supabaseAdmin, 'documents', adminFranchise.kbis_url)
       await addExternalPDF(buf)
     }
