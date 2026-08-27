@@ -12,6 +12,8 @@ import Gantt from 'frappe-gantt'
 import { dureeJours, finApresJours } from '../../lib/joursOuvres'
 
 const BAR = 30, PAD = 18, PITCH = BAR + PAD
+// Le planning montre toujours au moins jusqu'à aujourd'hui + 4 semaines (voir fenêtre forcée).
+const FUTUR_JOURS = 28
 const VUES = [['fit', 'Vue ajustée'], ['Day', 'Jours'], ['Week', 'Semaines'], ['Month', 'Mois'], ['Year', 'Années']]
 
 function iso(d) {
@@ -113,6 +115,12 @@ export default function GanttLots({
       view_mode: mode, date_format: 'YYYY-MM-DD', language: 'fr',
       bar_height: BAR, padding: PAD, container_height: 'auto',
       readonly_progress: true, today_button: false, view_mode_select: false, popup_on: 'hover',
+      // infinite_padding (défaut true) faisait DEUX choses nuisibles : (a) fenêtre = premier lot
+      // − 30 unités → un mois de vide avant la première barre en vue Jours ; (b) un handler
+      // « mousewheel » qui rallongeait la période et re-rendait le gantt à CHAQUE coup de molette
+      // (y compris un scroll vertical de la page) → dérive de l'axe et perte des couleurs peintes
+      // en JS. À false, la lib utilise view_mode.padding et n'installe pas ce handler.
+      infinite_padding: false,
       on_date_change: (task, start, end) => {
         if (!task?.id) return
         const maj = { date_debut: iso(start), date_fin: iso(end) }
@@ -126,8 +134,10 @@ export default function GanttLots({
     // et on ne voit qu'une fraction → le planning paraît « vide » à l'ouverture. Bornée (28–240)
     // pour garder des barres lisibles.
     if (vue === 'fit' && dates.length) {
-      const debs = dates.map(r => new Date(r.debut).getTime())
-      const fins = dates.map(r => new Date(r.fin).getTime())
+      // La fenêtre forcée ci-dessous inclut aujourd'hui et les 4 semaines suivantes : la largeur
+      // de colonne doit être calculée sur CETTE étendue, sinon « ajusté » ne tient plus à l'écran.
+      const debs = dates.map(r => new Date(r.debut).getTime()).concat(Date.now())
+      const fins = dates.map(r => new Date(r.fin).getTime()).concat(Date.now() + FUTUR_JOURS * 86400000)
       const spanJours = Math.max(1, (Math.max(...fins) - Math.min(...debs)) / 86400000)
       const unite = mode === 'Day' ? 1 : mode === 'Week' ? 7 : mode === 'Month' ? 30 : 365
       const colonnes = spanJours / unite + 4
@@ -138,6 +148,19 @@ export default function GanttLots({
     try {
       g = new Gantt(el, taches, optsGantt)
     } catch (e) { console.error('[GanttLots]', e); return }
+
+    // Fenêtre : frappe-gantt borne l'axe au premier et au dernier lot (+ padding). Si tous les
+    // lots sont dans le passé, aujourd'hui et le futur ne sont tout simplement PAS dessinés.
+    // On élargit donc l'axe pour couvrir au moins [aujourd'hui ; aujourd'hui + 4 semaines].
+    // setup_date_values() + render() = le chemin interne que la lib s'applique à elle-même.
+    try {
+      const auj = new Date(); auj.setHours(0, 0, 0, 0)
+      const finVoulue = new Date(auj); finVoulue.setDate(finVoulue.getDate() + FUTUR_JOURS)
+      let elargi = false
+      if (g.gantt_start > auj) { g.gantt_start = auj; elargi = true }
+      if (g.gantt_end < finVoulue) { g.gantt_end = finVoulue; elargi = true }
+      if (elargi) { g.setup_date_values(); g.render() }
+    } catch (e) { console.error('[GanttLots] fenêtre', e) }
 
     // Couleur des barres (par lot) + alignement en-tête. Différé aussi en rAF : selon la version,
     // frappe-gantt peut finir de peindre le SVG juste après le constructeur, donc on repasse une
