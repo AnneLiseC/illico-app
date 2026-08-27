@@ -120,3 +120,37 @@ Langue de travail et de communication : **français**.
 - Principe : différencier la conséquence mécanique évidente (`const key` qui
   n'est plus lu après retrait de son seul consommateur) du jugement éditorial
   (un commentaire qui pourrait servir de repère structurel).
+## 10. CONVENTIONS & DÉCISIONS ACTÉES (sessions récentes)
+
+**Finance — honoraires courtage/AMO (source : finance.js) :**
+- `honoraires.courtage.ttc` = taux × travaux **TTC** ; `.ht` = taux × travaux **HT**.
+  Le `.ttc` est LA valeur affichée partout (KPI, écritures suivi_financier, lignes
+  « Autres échéances », honoraire client). **Ne jamais multiplier `.ttc` par 1,20**
+  (double TVA). `soldeAmo.ttc` idem côté AMO ; solde AMO affiché = `honorairesAMO −
+  honorairesCourtage`.
+- Libellés corrects : « X % des travaux · MONTANT **TTC** » (surtout pas « travaux HT »).
+
+**Base de données — 5 vérifs OBLIGATOIRES avant tout DROP :**
+0 ligne de données + 0 réf. code + 0 réf. fonction/vue/policy/trigger + 0 FK entrante
++ feu vert explicite d'Anne-Lise. S'il en manque une → **seulement lister comme
+candidat**, ne pas supprimer. « Vide » se prouve par un COUNT exact, jamais par
+pg_stats/null_frac. (Erreur passée : colonnes annoncées vides à tort sur null_frac.)
+
+**Deux systèmes de CR coexistent (ne pas confondre) :**
+- CR narratifs (`comptes_rendus.contenu_final`, R1/R2/R3/suivi/réception) via
+  CRGenerationModal + chantiers/[id]/page.js.
+- Visites structurées (`actions`/`cr_actions`) via CRVisitesPanel.
+Câblés : `auteur_id`, `visite_rdv_id` (+ push calendrier), `action_cibles.intervenant_id`,
+`cr_presences`, versionnage (`parent_cr_id`/`version`, bouton « Nouvelle version »).
+
+**Restitution PDF — PV de réception :** rattachement EXACT 1 devis = 1 PV via
+`devis_artisans.pv_path` (upload par devis dans le sous-onglet Documents). Le PDF lit
+`d.pv_path` et place le PV dans la section devis/factures, pas en fin de PDF. MERAD :
+pas de kbis CTP. Même artisan sur plusieurs lots : kbis + assurance une seule fois.
+
+**Spécialités artisan :** déduites par IA depuis la décennale (route
+`/api/artisans/specialites/extract`), tables `specialites` + `artisans_specialites`.
+
+**Git / déploiement :** Anne-Lise committe et push elle-même depuis son terminal
+(`C:\Users\anne-\illico-app`). git via le pont Cowork échoue (identité + permissions
+`.git/objects`) — ne pas s'en servir pour committer : préparer le diff, donner les lignes.
