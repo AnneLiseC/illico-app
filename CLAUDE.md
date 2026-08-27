@@ -75,6 +75,7 @@ Autres règles structurantes : prospect avant le client (statut léger), détect
 - Avant de modifier un fichier, **expliquer brièvement ce qui va changer et pourquoi.**
 - Après chaque changement significatif, **vérifier que le build passe** (`npm run build`) et que rien d'autre n'est cassé.
 - Préférer des **commits petits et ciblés** (un sujet = un commit), pour pouvoir revenir en arrière facilement.
+- **`main` est PROTÉGÉE : le push direct est refusé** (règle GitHub, check `test` obligatoire ; erreur `GH013 — Repository rule violations`). Tout changement passe par une branche puis une PR mergée depuis l'interface GitHub — **y compris un commit de documentation**. Ne jamais proposer `git push origin main`.
 - En cas de doute sur une règle métier (finance, partage, typologie), **demander** plutôt que supposer.
 
 ---
