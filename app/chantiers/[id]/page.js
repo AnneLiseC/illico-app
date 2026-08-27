@@ -621,12 +621,21 @@ async function signerPhotos(rows) {
   if (!list.length) return []
   const { data } = await supabase.storage.from('photos').createSignedUrls(list.map(p => p.url), 3600)
   const parChemin = new Map((data || []).map(u => [u.path, u.signedUrl]))
-  const thumbs = await Promise.all(list.map(async (p) => {
-    if (p.type_media === 'video') return ''
-    const { data: t } = await supabase.storage.from('photos')
-      .createSignedUrl(p.url, 3600, { transform: THUMB_TRANSFORM })
-    return t?.signedUrl || ''
-  }))
+  // Par TRANCHES de 6 : un Promise.all sur toute la liste ouvrait autant de requêtes que de
+  // photos d'un coup (des centaines sur un gros chantier) et le Storage répondait 544 sur la
+  // salve → miniatures manquantes. La grille retombe déjà sur url_signee via onError, mais
+  // autant ne pas provoquer l'erreur. L'ordre est préservé (concaténation tranche par tranche).
+  const thumbs = []
+  const LOT_SIGN = 6
+  for (let i = 0; i < list.length; i += LOT_SIGN) {
+    const tranche = await Promise.all(list.slice(i, i + LOT_SIGN).map(async (p) => {
+      if (p.type_media === 'video') return ''
+      const { data: t } = await supabase.storage.from('photos')
+        .createSignedUrl(p.url, 3600, { transform: THUMB_TRANSFORM })
+      return t?.signedUrl || ''
+    }))
+    thumbs.push(...tranche)
+  }
   return list.map((p, i) => ({ ...p, url_signee: parChemin.get(p.url) || '', url_thumb: thumbs[i] || '' }))
 }
 
