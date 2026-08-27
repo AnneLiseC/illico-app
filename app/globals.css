@@ -1582,3 +1582,10 @@ img, svg, video, canvas { max-width: 100%; }
 /* Couleur de barre par défaut VISIBLE (le défaut de la lib est blanc → invisible sur fond blanc).
    Les barres réelles sont recolorées par lot en JS ; les placeholders (bar-vide) restent transparents. */
 .gantt-lots{--g-bar-color:#6366f1}
+
+/* Le shim responsive (`img, svg, video, canvas { max-width: 100% }`) rognait le planning :
+   l'attribut width du SVG vaut la largeur RÉELLE du gantt (ex. 7695px), CSS la ramenait à la
+   largeur du conteneur, et le SVG n'ayant PAS de viewBox, tout le contenu au-delà était
+   simplement invisible. La « Vue ajustée » marchait (largeur calculée ≈ conteneur) mais
+   Jours/Semaines/Mois et tout scroll horizontal ne montraient plus que du vide. */
+.gantt-container svg.gantt{max-width:none}
