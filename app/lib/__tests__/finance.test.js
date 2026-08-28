@@ -8,6 +8,7 @@
 
 import { describe, it, expect } from 'vitest'
 import {
+  calculateCourtageTS, isHorsHonoraires,
   TVA_FRAIS, TVA_TRAVAUX, ROYALTIES_RATE, COURTAGE_STANDARD, AMO_STANDARD, DEFAULT_PART_AGENTE,
   getPartAgente, getTauxCourtage, getTauxAmo,
   getActiveDevis, getSignedDevis,
@@ -320,5 +321,204 @@ describe('invariant HT — le total agente+admin ne dépasse jamais le net HT', 
       h.courtage.parts.agente + h.courtage.parts.admin +
       h.soldeAmo.parts.agente + h.soldeAmo.parts.admin
     expect(totalParts).toBeCloseTo(h.totalNet, 2)
+  })
+})
+
+// ── HORS HONORAIRES — case « Sans commission ni honoraires » ──────────────────
+// Cas de référence : dossier 2026-AM-002 (Eppinger). Devis 75 047,95 € TTC dont
+// 2 TS cochés (880 + 308 = 1 188 €). Base pleine 75 047,95 / base réduite 73 859,95.
+// Taux : courtage 5,4 % · AMO 6,6 %. Pivot posé AVANT les 2 TS → TS-1 armé.
+describe('hors_honoraires — exonération d\'honoraires par devis', () => {
+  const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100
+  const eppinger = (exonere) => dossier({
+    typologie: 'amo',
+    taux_courtage: 0.054,
+    honoraires_amo_taux: 6.6,
+    devis_artisans: [
+      devis({ id: 'base', montant_ht: 67145.41, montant_ttc: 73859.95, date_signature: '2026-02-01' }),
+      devis({ id: 'ts1', montant_ht: 800,  montant_ttc: 880, date_signature: '2026-05-20', hors_honoraires: exonere }),
+      devis({ id: 'ts2', montant_ht: 280,  montant_ttc: 308, date_signature: '2026-05-20', hors_honoraires: exonere }),
+    ],
+    suivi_financier: [
+      { type_echeance: 'honoraires_courtage', statut_client: 'regle', date_paiement: '2026-03-01' },
+    ],
+  })
+
+  it('helper : seul hors_honoraires === true exonère (commission 0 ne suffit pas)', () => {
+    expect(isHorsHonoraires({ hors_honoraires: true })).toBe(true)
+    expect(isHorsHonoraires({ commission_pourcentage: 0 })).toBe(false)
+    expect(isHorsHonoraires({})).toBe(false)
+  })
+
+  it('assiette pleine conservée pour le TOTAL CHANTIER et le tarif standard', () => {
+    const f = calculateHonorairesFinance(eppinger(true))
+    expect(f.totalDevisTTCSignes).toBeCloseTo(75047.95, 2)
+    expect(f.standard.courtageTTCBrut).toBeCloseTo(4502.88, 2)
+    expect(f.standard.amoTTC).toBeCloseTo(6754.32, 2)
+  })
+
+  it('acompte + solde AMO calculés sur l\'assiette réduite', () => {
+    const f = calculateHonorairesFinance(eppinger(true))
+    expect(f.courtage.brut).toBeCloseTo(3988.44, 2)
+    expect(f.soldeAmo.ttc).toBeCloseTo(4874.76, 2)
+    expect(f.courtage.brut + f.soldeAmo.ttc).toBeCloseTo(8863.20, 2)
+  })
+
+  it('précédence sur TS-1 : le TS exonéré n\'est PAS surtaxé à (courtage + AMO)', () => {
+    const exo = calculateHonorairesFinance(eppinger(true))
+    const ref = calculateHonorairesFinance(eppinger(false))
+    // Sans exonération, TS-1 bascule les 1 188 € à 12 % → +142,56 € sur le solde.
+    expect(ref.soldeAmo.ttc).toBeCloseTo(5017.32, 2)
+    expect(exo.soldeAmo.ttc).toBeCloseTo(4874.76, 2)
+    expect(ref.soldeAmo.ttc - exo.soldeAmo.ttc).toBeCloseTo(142.56, 2)
+    // Le courtage, lui, est identique : TS-1 l'amputait déjà des mêmes 1 188 €.
+    expect(exo.courtage.brut).toBeCloseTo(ref.courtage.brut, 2)
+  })
+
+  it('honoraires offerts valorisés aux taux standard', () => {
+    const f = calculateHonorairesFinance(eppinger(true))
+    expect(f.exclu.ttc).toBeCloseTo(1188, 2)
+    expect(f.exclu.courtageStdTTC).toBeCloseTo(71.28, 2)
+    expect(f.exclu.amoStdTTC).toBeCloseTo(106.92, 2)
+  })
+
+  it('décomposition exacte standard → votre tarif (contrôles du cahier des charges)', () => {
+    const f = calculateHonorairesFinance(eppinger(true))
+    const offertC = f.exclu.courtageStdTTC
+    const offertA = f.exclu.amoStdTTC
+    const remiseC = round2(f.standard.courtageTTCBrut - f.courtage.brut - offertC)
+    const remiseA = round2(f.standard.amoTTC - f.soldeAmo.ttc - offertA)
+    const honStd  = round2(f.standard.courtageTTCBrut + f.standard.amoTTC)
+    expect(honStd).toBeCloseTo(11257.20, 2)
+    expect(remiseC).toBeCloseTo(443.16, 2)
+    expect(remiseA).toBeCloseTo(1772.64, 2)
+    expect(round2(offertC + offertA)).toBeCloseTo(178.20, 2)
+    // 11 257,20 − 443,16 − 1 772,64 − 178,20 = 8 863,20
+    expect(round2(honStd - remiseC - remiseA - offertC - offertA)).toBeCloseTo(8863.20, 2)
+    // 3 988,44 + 4 874,76 = 8 863,20
+    expect(round2(f.courtage.brut + f.soldeAmo.ttc)).toBeCloseTo(8863.20, 2)
+  })
+
+  it('libellé TS : vrai seulement si TOUS les exonérés sont post-pivot', () => {
+    // Cas Eppinger : pivot 01/03, TS signés le 20/05 → travaux supplémentaires.
+    expect(calculateHonorairesFinance(eppinger(true)).exclu.tousTS).toBe(true)
+
+    // Devis exonéré signé AVANT le pivot → libellé générique.
+    const avant = dossier({
+      typologie: 'amo', taux_courtage: 0.054, honoraires_amo_taux: 6.6,
+      devis_artisans: [
+        devis({ id: 'base', montant_ttc: 73859.95, date_signature: '2026-02-01' }),
+        devis({ id: 'x', montant_ttc: 880, date_signature: '2026-02-10', hors_honoraires: true }),
+      ],
+      suivi_financier: [{ type_echeance: 'honoraires_courtage', statut_client: 'regle', date_paiement: '2026-03-01' }],
+    })
+    expect(calculateHonorairesFinance(avant).exclu.tousTS).toBe(false)
+
+    // Lot MIXTE (un avant, un après) → générique aussi.
+    const mixte = dossier({
+      typologie: 'amo', taux_courtage: 0.054, honoraires_amo_taux: 6.6,
+      devis_artisans: [
+        devis({ id: 'base', montant_ttc: 73859.95, date_signature: '2026-02-01' }),
+        devis({ id: 'x', montant_ttc: 880, date_signature: '2026-02-10', hors_honoraires: true }),
+        devis({ id: 'y', montant_ttc: 308, date_signature: '2026-05-20', hors_honoraires: true }),
+      ],
+      suivi_financier: [{ type_echeance: 'honoraires_courtage', statut_client: 'regle', date_paiement: '2026-03-01' }],
+    })
+    expect(calculateHonorairesFinance(mixte).exclu.tousTS).toBe(false)
+
+    // Aucun pivot (courtage non réglé) → générique.
+    const sansPivot = dossier({
+      typologie: 'amo', taux_courtage: 0.054, honoraires_amo_taux: 6.6,
+      devis_artisans: [
+        devis({ id: 'base', montant_ttc: 73859.95, date_signature: '2026-02-01' }),
+        devis({ id: 'x', montant_ttc: 880, date_signature: '2026-05-20', hors_honoraires: true }),
+      ],
+      suivi_financier: [],
+    })
+    expect(calculateHonorairesFinance(sansPivot).exclu.tousTS).toBe(false)
+
+    // Dossier COURTAGE : le pivot est lu sans gate typologie → TS reconnus aussi.
+    const courtageTS = dossier({
+      typologie: 'courtage', taux_courtage: 0.06,
+      devis_artisans: [
+        devis({ id: 'base', montant_ttc: 11000, date_signature: '2026-02-01' }),
+        devis({ id: 'ts', montant_ttc: 1100, date_signature: '2026-05-01', hors_honoraires: true }),
+      ],
+      suivi_financier: [{ type_echeance: 'honoraires_courtage', statut_client: 'regle', date_paiement: '2026-03-01' }],
+    })
+    expect(calculateHonorairesFinance(courtageTS).exclu.tousTS).toBe(true)
+
+    // Aucun devis exonéré → toujours false (aucune ligne au PDF).
+    expect(calculateHonorairesFinance(eppinger(false)).exclu.tousTS).toBe(false)
+  })
+
+  it('taux plein 6/9 % + devis exonéré : écart à expliquer non nul', () => {
+    // Point 3 : sans remise de taux, le total baisse quand même → le PDF doit pouvoir
+    // afficher le tarif standard barré. Ici on vérifie la matière : l'écart.
+    const d = dossier({
+      typologie: 'amo', taux_courtage: COURTAGE_STANDARD, honoraires_amo_taux: 9,
+      devis_artisans: [
+        devis({ id: 'base', montant_ttc: 10000, date_signature: '2026-02-01' }),
+        devis({ id: 'x', montant_ttc: 1000, date_signature: '2026-05-01', hors_honoraires: true }),
+      ],
+      suivi_financier: [],
+    })
+    const f = calculateHonorairesFinance(d)
+    expect(f.standard.courtageTTCBrut).toBeCloseTo(660, 2)   // 11 000 × 6 %
+    expect(f.courtage.brut).toBeCloseTo(600, 2)              // 10 000 × 6 %
+    expect(f.standard.amoTTC).toBeCloseTo(990, 2)            // 11 000 × 9 %
+    expect(f.soldeAmo.ttc).toBeCloseTo(900, 2)               // 10 000 × 9 %
+    // L'écart est exactement les honoraires offerts : aucune remise de taux.
+    expect(round2(f.standard.courtageTTCBrut - f.courtage.brut)).toBeCloseTo(f.exclu.courtageStdTTC, 2)
+    expect(round2(f.standard.amoTTC - f.soldeAmo.ttc)).toBeCloseTo(f.exclu.amoStdTTC, 2)
+  })
+
+  it('prévisionnel et recap recu+accepte suivent la même assiette réduite', () => {
+    const previ = calculateHonorairesPrevi(eppinger(true))
+    const recap = calculateHonorairesRecuAccepte(eppinger(true))
+    expect(previ.totalDevisTTCRecus).toBeCloseTo(75047.95, 2)
+    expect(previ.courtage.brut).toBeCloseTo(3988.44, 2)
+    expect(recap.totalDevisTTCRecuAccepte).toBeCloseTo(75047.95, 2)
+    expect(recap.courtage.brut).toBeCloseTo(3988.44, 2)
+  })
+
+  it('TS-2 (courtage-only) : un TS exonéré ne génère aucun supplément', () => {
+    const base = {
+      typologie: 'courtage',
+      taux_courtage: 0.06,
+      suivi_financier: [{ type_echeance: 'honoraires_courtage', statut_client: 'regle', date_paiement: '2026-03-01' }],
+    }
+    const mk = (exonere) => dossier({
+      ...base,
+      devis_artisans: [
+        devis({ id: 'a', montant_ht: 10000, montant_ttc: 11000, date_signature: '2026-02-01' }),
+        devis({ id: 'ts', montant_ht: 1000, montant_ttc: 1100, date_signature: '2026-05-01', hors_honoraires: exonere }),
+      ],
+    })
+    const ref = calculateCourtageTS(mk(false))
+    expect(ref.montantTSttc).toBeCloseTo(66, 2)          // 1 100 × 6 %
+    expect(ref.courtageTotalTtc).toBeCloseTo(726, 2)     // 12 100 × 6 %
+    const exo = calculateCourtageTS(mk(true))
+    expect(exo.montantTSttc).toBeCloseTo(0, 2)
+    expect(exo.courtageTotalTtc).toBeCloseTo(660, 2)     // 11 000 × 6 %
+  })
+
+  it('NON-RÉGRESSION : sans aucun devis coché, tout est identique au centime', () => {
+    const cas = [
+      dossier({ typologie: 'courtage' }),
+      dossier({ typologie: 'amo', honoraires_amo_taux: 9 }),
+      eppinger(false),
+      eppinger(undefined),
+    ]
+    for (const d of cas) {
+      const f = calculateHonorairesFinance(d)
+      expect(f.exclu.ttc).toBe(0)
+      expect(f.exclu.courtageStdTTC).toBe(0)
+      expect(f.exclu.amoStdTTC).toBe(0)
+    }
+    // eppinger(false) == eppinger(undefined) : hors_honoraires absent ⇒ non exonéré.
+    const a = calculateHonorairesFinance(eppinger(false))
+    const b = calculateHonorairesFinance(eppinger(undefined))
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b))
   })
 })

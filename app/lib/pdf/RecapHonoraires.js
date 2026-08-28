@@ -94,6 +94,16 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
   const soldeAmoReel = f.soldeAmo.ttc             // base × taux AMO (0 si typologie courtage)
   const amoStd       = f.standard.amoTTC          // base × 9%
 
+  // Devis cochés « sans commission ni honoraires » : honoraires OFFERTS, valorisés aux
+  // taux STANDARD (le tarif barré reste sur la base pleine, cf. finance.js). Tout à 0
+  // si aucun devis coché → aucune ligne ajoutée, PDF strictement identique à l'existant.
+  const exclu          = f.exclu || { ttc: 0, ht: 0, courtageStdTTC: 0, amoStdTTC: 0, tousTS: false }
+  const offertCourtage = exclu.courtageStdTTC                            // bloc COURTAGE
+  const offertAmo      = round2(exclu.courtageStdTTC + exclu.amoStdTTC)  // bloc AMO
+  // Libellé dérivé du pivot (finance.js) : « travaux supplémentaires » seulement si
+  // TOUS les devis exonérés sont signés après le paiement du courtage.
+  const LBL_OFFERT     = exclu.tousTS ? 'Honoraires offerts sur travaux supplémentaires' : 'Honoraires offerts'
+
   const fraisTTC       = toNum(dossier.frais_consultation)
   const fraisStatut    = dossier.frais_statut
   const fraisInTable   = fraisTTC > 0 && fraisStatut !== 'offerts' && fraisStatut !== 'rembourse'
@@ -110,6 +120,13 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
   const showAMO = isAMO || hasNego // courtage : scénario AMO simulé si ≥1 devis en négociation
 
   const courtageRemise = tauxCourtage < COURTAGE_STANDARD
+  // Écart standard → votre tarif, décomposé : remise (Δtaux × assiette réduite) +
+  // honoraires offerts (assiette exclue × taux standard). La remise est calculée par
+  // différence → elle absorbe l'arrondi et la colonne tombe toujours juste.
+  const remiseCourtageVal = round2(courtageStd - courtageReel - offertCourtage)
+  // Le bloc « Tarif standard » barré s'affiche dès qu'il y a un écart à EXPLIQUER :
+  // taux remisé OU honoraires offerts. Sans écart → strictement l'affichage actuel.
+  const showStdCourtage   = courtageRemise || offertCourtage > 0
 
   // ── TS-2 : ventilation courtage initial / travaux supplémentaires (courtage-only) ──
   // On REMPLACE la ligne courtage unique par : initial + une ligne par honoraires_courtage_ts.
@@ -154,13 +171,14 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
   const courtageChildren = [
     h(Text, { key: 't', style: S.blocTitleC }, `Honoraires illiCO travaux COURTAGE (${pct(COURTAGE_STANDARD)})`),
   ]
-  if (courtageRemise) {
+  if (showStdCourtage) {
     courtageChildren.push(
       h(Text, { key: 'ns', style: S.niveau }, 'Tarif standard'),
       ligneHon('Honoraires courtage — à la signature des devis', courtageStd, 'hs'),
       totalHon(pct(COURTAGE_STANDARD), courtageStd, 'ths'),
       totalChantier('TOTAL CHANTIER si COURTAGE (tarif standard)', totalChCourtageStd, { std: true }, 'tcs'),
-      ligneRemise(`Remise commerciale sur honoraire courtage (${pct(COURTAGE_STANDARD - tauxCourtage)})`, courtageStd - courtageReel, BLEU, 'rem'),
+      ...(remiseCourtageVal > 0 ? [ligneRemise(`Remise commerciale sur honoraire courtage (${pct(COURTAGE_STANDARD - tauxCourtage)})`, remiseCourtageVal, BLEU, 'rem')] : []),
+      ...(offertCourtage > 0 ? [ligneRemise(LBL_OFFERT, offertCourtage, BLEU, 'off')] : []),
       h(Text, { key: 'nr', style: S.niveau }, 'Votre tarif'),
       ...courtageReelLignes('cr'),
       ...(remiseFraisConso > 0 ? [ligneRemise('Remise commerciale sur frais de consultation', remiseFraisConso, VIOLET, 'crf')] : []),
@@ -181,10 +199,14 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
   let blocAMO = null
   if (showAMO) {
     const simule        = !isAMO
-    const soldeReel     = simule ? amoStd : soldeAmoReel
+    // Scénario simulé : AMO au taux standard sur l'assiette RÉDUITE (les devis exonérés
+    // ne doivent pas non plus être facturés dans la simulation).
+    const soldeReel     = simule ? round2(amoStd - exclu.amoStdTTC) : soldeAmoReel
     const tauxAmoReel   = simule ? AMO_STANDARD : tauxAmo
     const amoRemise     = isAMO && tauxAmo < AMO_STANDARD
-    const remise        = courtageRemise || amoRemise
+    const remiseAmoVal  = round2(amoStd - soldeReel - exclu.amoStdTTC)
+    // Même règle que le bloc courtage : on affiche le barré dès qu'il y a un écart.
+    const remise        = courtageRemise || amoRemise || offertAmo > 0
     const honStd        = courtageStd + amoStd
     const honReel       = courtageReel + soldeReel
     const totalChAmoStd  = baseTTC + honStd + totalFraisTable   // standard = brut (frais non déduits)
@@ -204,8 +226,9 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
       )
       // Remises expliquant le passage standard → votre tarif (frais d'abord, puis honoraires).
       if (remiseFraisConso > 0) amoChildren.push(ligneRemise('Remise commerciale sur frais de consultation', remiseFraisConso, VIOLET, 'remf'))
-      if (courtageRemise) amoChildren.push(ligneRemise(`Remise commerciale sur honoraire courtage (${pct(COURTAGE_STANDARD - tauxCourtage)})`, courtageStd - courtageReel, BLEU, 'remc'))
-      if (amoRemise)      amoChildren.push(ligneRemise(`Remise commerciale sur honoraire AMO (${pct(AMO_STANDARD - tauxAmo)})`, amoStd - soldeAmoReel, ORANGE, 'rema'))
+      if (remiseCourtageVal > 0)         amoChildren.push(ligneRemise(`Remise commerciale sur honoraire courtage (${pct(COURTAGE_STANDARD - tauxCourtage)})`, remiseCourtageVal, BLEU, 'remc'))
+      if (amoRemise && remiseAmoVal > 0)  amoChildren.push(ligneRemise(`Remise commerciale sur honoraire AMO (${pct(AMO_STANDARD - tauxAmo)})`, remiseAmoVal, ORANGE, 'rema'))
+      if (offertAmo > 0)                  amoChildren.push(ligneRemise(LBL_OFFERT, offertAmo, ORANGE, 'offa'))
       amoChildren.push(
         h(Text, { key: 'nr', style: S.niveau }, 'Votre tarif'),
         // Acompte AMO NET (remise frais déjà annoncée en transition) → Total = somme des lignes.

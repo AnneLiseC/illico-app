@@ -21,6 +21,10 @@ export function buildDevisPayload(form) {
     montant_ttc: form.montant_ttc !== '' ? parseFloat(form.montant_ttc) : null,
     ttc_manuel: form.ttc_manuel ?? false,
     commission_pourcentage: form.sans_commission ? 0 : (form.commission_pourcentage ? parseFloat(form.commission_pourcentage) / 100 : null),
+    // Case « Sans commission ni honoraires » = DEUX effets → DEUX colonnes. On n'utilise
+    // PAS commission_pourcentage = 0 comme marqueur d'exonération : commission et
+    // honoraires restent deux décisions séparées en base, même cochées d'un clic.
+    hors_honoraires: !!form.sans_commission,
     date_reception: form.date_reception || null,
     date_limite: form.date_limite || null,
     notes: form.notes || null,

@@ -81,14 +81,63 @@ export function getSignedDevis(dossier) {
   )
 }
 
-function getSignedTotals(dossier) {
-  const signed = getSignedDevis(dossier)
-  const totalHT  = round2(signed.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
-  const totalTTC = round2(signed.reduce((s, dv) => {
+// Devis EXONÉRÉ d'honoraires (case « Sans commission ni honoraires »). La décision
+// est portée par sa PROPRE colonne : `commission_pourcentage = 0` ne vaut PAS
+// exonération — commission et honoraires restent deux décisions séparées en base.
+// Le devis reste un devis normal partout ailleurs (intervenants, totaux chantier,
+// acomptes artisans, TOTAL CHANTIER) : SEUL le calcul des honoraires l'ignore.
+export function isHorsHonoraires(devis) {
+  return devis?.hors_honoraires === true
+}
+
+// Sous-liste entrant dans l'assiette honoraires.
+export function devisAssietteHonoraires(list) {
+  return (Array.isArray(list) ? list : []).filter(dv => !isHorsHonoraires(dv))
+}
+
+// Les devis exonérés de cette liste sont-ils TOUS des travaux supplémentaires, au sens
+// TS-1/TS-2 : signés APRÈS le pivot (= date_paiement du courtage réglé), comparaison
+// STRICTE, comme sousTotalApresPivot. Sert UNIQUEMENT au libellé client du PDF :
+//   true  → « Honoraires offerts sur travaux supplémentaires »
+//   false → « Honoraires offerts »  (pas de pivot, devis antérieur, ou lot mixte)
+// Aucun impact sur les montants.
+function exclusTousApresPivot(list, pivot) {
+  const exclus = (Array.isArray(list) ? list : []).filter(isHorsHonoraires)
+  if (!pivot || exclus.length === 0) return false
+  const pivotTime = pivot.getTime()
+  return exclus.every(dv => {
+    if (!isTruthyDate(dv?.date_signature)) return false
+    const d = new Date(dv.date_signature)
+    return !Number.isNaN(d.getTime()) && d.getTime() > pivotTime
+  })
+}
+
+// Somme HT/TTC d'une liste (TTC : montant_ttc si présent, sinon HT × TVA_TRAVAUX).
+function sumDevis(list) {
+  const l = Array.isArray(list) ? list : []
+  const totalHT  = round2(l.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
+  const totalTTC = round2(l.reduce((s, dv) => {
     if (dv.montant_ttc !== undefined && dv.montant_ttc !== null) return s + toNumber(dv.montant_ttc)
     return s + toNumber(dv.montant_ht) * TVA_TRAVAUX
   }, 0))
   return { totalHT, totalTTC }
+}
+
+// Deux couples de totaux pour une même liste :
+//   • totalHT / totalTTC       = base PLEINE  → TOTAL CHANTIER + tarif standard barré ;
+//   • totalHTHon / totalTTCHon = assiette HONORAIRES (devis exonérés retirés).
+// Sans aucun devis exonéré les deux couples sont identiques au centime.
+function totauxDevis(list) {
+  const plein = sumDevis(list)
+  const hon   = sumDevis(devisAssietteHonoraires(list))
+  return {
+    totalHT: plein.totalHT, totalTTC: plein.totalTTC,
+    totalHTHon: hon.totalHT, totalTTCHon: hon.totalTTC,
+  }
+}
+
+function getSignedTotals(dossier) {
+  return totauxDevis(getSignedDevis(dossier))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -152,13 +201,15 @@ export function calculateCourtageTS(dossier) {
   if (dossier?.typologie !== 'courtage') return zero
 
   const taux = getTauxCourtage(dossier)
-  const { totalTTC } = getSignedTotals(dossier)          // base complète signés (TTC)
-  const courtageTotalTtc = round2(totalTTC * taux)       // total courtage dû (INCHANGÉ)
+  // Assiette HONORAIRES (devis exonérés retirés) : un TS coché « sans commission ni
+  // honoraires » ne doit générer AUCUNE ligne honoraires_courtage_ts à encaisser.
+  const { totalTTCHon } = getSignedTotals(dossier)       // base signés (TTC), hors exonérés
+  const courtageTotalTtc = round2(totalTTCHon * taux)    // total courtage dû (INCHANGÉ)
 
   const pivot = getPivotCourtage(dossier)
   if (!pivot) return { ...zero, courtageTotalTtc, courtageInitialTtc: courtageTotalTtc }
 
-  const { ttcApres } = sousTotalApresPivot(getSignedDevis(dossier), pivot)
+  const { ttcApres } = sousTotalApresPivot(devisAssietteHonoraires(getSignedDevis(dossier)), pivot)
   const montantTSttc = round2(ttcApres * taux)           // courtage dû sur les TS
   const courtageInitialTtc = round2(courtageTotalTtc - montantTSttc) // base hors TS × taux
   return { montantTSttc, courtageInitialTtc, courtageTotalTtc }
@@ -257,7 +308,16 @@ export function calculateCommissionsFinance(dossier) {
 // Cœur de calcul des honoraires — arithmétique commune aux 3 entrées (signés /
 // actifs / recu+accepte). Prend la base (totaux devis) EN PARAMÈTRE ; ne refiltre
 // pas. Déplacement à l'identique de l'arithmétique existante : valeurs inchangées.
-function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC, totalHTApres: htApres = 0, totalTTCApres: ttcApres = 0 }) {
+function honorairesCore(dossier, {
+  totalHT: baseHT, totalTTC: baseTTC,
+  totalHTHon, totalTTCHon,
+  totalHTApres: htApres = 0, totalTTCApres: ttcApres = 0,
+  exclusPostPivot = false,
+}) {
+  // Assiette HONORAIRES = base moins les devis exonérés. Absent → base pleine, donc
+  // comportement historique strictement inchangé pour tout appelant qui l'ignore.
+  const baseHTHon    = totalHTHon  != null ? totalHTHon  : baseHT
+  const baseTTCHon   = totalTTCHon != null ? totalTTCHon : baseTTC
   const typologie    = dossier?.typologie || ''
   const partAgente   = getPartAgente(dossier)
   const tauxCourtage = getTauxCourtage(dossier)
@@ -270,8 +330,8 @@ function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC, totalHTAp
   // après le pivot (posé par les wrappers, AMO + pivot uniquement). Défaut 0 →
   // base courtage pleine → calcul ACTUEL strict (courtage-only : apres toujours 0).
   const reventile    = isAmo && ttcApres > 0
-  const baseTTCCourt = reventile ? round2(baseTTC - ttcApres) : baseTTC
-  const baseHTCourt  = reventile ? round2(baseHT - htApres) : baseHT
+  const baseTTCCourt = reventile ? round2(baseTTCHon - ttcApres) : baseTTCHon
+  const baseHTCourt  = reventile ? round2(baseHTHon - htApres) : baseHTHon
 
   // Frais remboursés : on retire le PLEIN montant TTC des frais du courtage CALCULÉ
   // (après application du taux), uniquement si frais_statut === 'rembourse'.
@@ -303,11 +363,11 @@ function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC, totalHTAp
     // pivot (taux_courtage + taux_amo sur ttcApres). apres=0 → base × tauxAmo →
     // identique à l'existant.
     const ttc       = reventile
-      ? round2((baseTTC - ttcApres) * tauxAmo + ttcApres * (tauxCourtage + tauxAmo))
-      : round2(baseTTC * tauxAmo)
+      ? round2((baseTTCHon - ttcApres) * tauxAmo + ttcApres * (tauxCourtage + tauxAmo))
+      : round2(baseTTCHon * tauxAmo)
     const ht        = reventile
-      ? round2((baseHT - htApres) * tauxAmo + htApres * (tauxCourtage + tauxAmo))
-      : round2(baseHT * tauxAmo)
+      ? round2((baseHTHon - htApres) * tauxAmo + htApres * (tauxCourtage + tauxAmo))
+      : round2(baseHTHon * tauxAmo)
     const royalties = round2(ht * ROYALTIES_RATE)
     const net       = round2(ht - royalties)
     const parts     = split(net, partAgente)
@@ -332,23 +392,44 @@ function honorairesCore(dossier, { totalHT: baseHT, totalTTC: baseTTC, totalHTAp
   }
   standard.totalTTC = round2(standard.courtageTTC + standard.amoTTC)
 
-  return { courtage, soldeAmo, totalTTC, totalRoyalties, totalNet, parts, standard }
+  // Devis exonérés : part d'assiette retirée + honoraires OFFERTS valorisés aux taux
+  // STANDARD — c'est exactement ce que le client voit barré (standard.* reste sur la
+  // base pleine). Tout à 0 si aucun devis coché → aucune ligne ajoutée au PDF.
+  const exclusTTC = round2(baseTTC - baseTTCHon)
+  const exclusHT  = round2(baseHT - baseHTHon)
+  const exclu = {
+    ttc: exclusTTC,
+    ht:  exclusHT,
+    courtageStdTTC: round2(exclusTTC * COURTAGE_STANDARD),
+    amoStdTTC:      round2(exclusTTC * AMO_STANDARD),
+    // Libellé client : TS uniquement si TOUS les devis exonérés sont post-pivot.
+    tousTS: exclusTTC > 0 && exclusPostPivot,
+  }
+
+  return { courtage, soldeAmo, totalTTC, totalRoyalties, totalNet, parts, standard, exclu }
 }
 
 export function calculateHonorairesFinance(dossier) {
-  const { totalHT, totalTTC } = getSignedTotals(dossier)
+  const totaux = getSignedTotals(dossier)
   // TS-1 (AMO + pivot) : part courtage des devis signés après le pivot basculée en AMO.
   const pivot = dossier?.typologie === 'amo' ? getPivotCourtage(dossier) : null
-  const { htApres, ttcApres } = sousTotalApresPivot(getSignedDevis(dossier), pivot)
-  const core = honorairesCore(dossier, { totalHT, totalTTC, totalHTApres: htApres, totalTTCApres: ttcApres })
+  // PRÉCÉDENCE sur TS-1 : un devis exonéré sort de l'assiette AVANT le pivot. Il n'est
+  // donc ni retiré du courtage ni surtaxé côté AMO à (taux_courtage + taux_amo) — il
+  // disparaît des deux. Sinon un TS exonéré serait facturé 15 % au lieu de 0 %.
+  const signes = getSignedDevis(dossier)
+  const { htApres, ttcApres } = sousTotalApresPivot(devisAssietteHonoraires(signes), pivot)
+  // Pivot lu SANS le gate typologie : un dossier courtage a lui aussi des TS (TS-2).
+  const exclusPostPivot = exclusTousApresPivot(signes, getPivotCourtage(dossier))
+  const core = honorairesCore(dossier, { ...totaux, totalHTApres: htApres, totalTTCApres: ttcApres, exclusPostPivot })
 
   return {
-    totalDevisTTCSignes: totalTTC,
+    totalDevisTTCSignes: totaux.totalTTC,   // PLEIN : TOTAL CHANTIER inchangé
     courtage: core.courtage,
     soldeAmo: core.soldeAmo,
     totalRoyalties: core.totalRoyalties,
     totalNet: core.totalNet,
     standard: core.standard,
+    exclu: core.exclu,
   }
 }
 
@@ -405,22 +486,19 @@ export function calculateSoldeAmoReel(dossier) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function getActiveTotals(dossier) {
-  const active   = getActiveDevis(dossier)
-  const totalHT  = round2(active.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
-  const totalTTC = round2(active.reduce((s, dv) => {
-    if (dv.montant_ttc !== undefined && dv.montant_ttc !== null) return s + toNumber(dv.montant_ttc)
-    return s + toNumber(dv.montant_ht) * TVA_TRAVAUX
-  }, 0))
-  return { totalHT, totalTTC }
+  return totauxDevis(getActiveDevis(dossier))
 }
 
 export function calculateHonorairesPrevi(dossier) {
-  const { totalHT, totalTTC } = getActiveTotals(dossier)
+  const totaux = getActiveTotals(dossier)
   // TS-1 : re-ventilation sur les devis actifs signés après le pivot → la ligne
-  // solde_amo à encaisser reflète le courtage tardif basculé.
+  // solde_amo à encaisser reflète le courtage tardif basculé. Devis exonérés exclus
+  // en amont (précédence, cf. calculateHonorairesFinance).
   const pivot = dossier?.typologie === 'amo' ? getPivotCourtage(dossier) : null
-  const { htApres, ttcApres } = sousTotalApresPivot(getActiveDevis(dossier), pivot)
-  const core = honorairesCore(dossier, { totalHT, totalTTC, totalHTApres: htApres, totalTTCApres: ttcApres })
+  const actifs = getActiveDevis(dossier)
+  const { htApres, ttcApres } = sousTotalApresPivot(devisAssietteHonoraires(actifs), pivot)
+  const exclusPostPivot = exclusTousApresPivot(actifs, getPivotCourtage(dossier))
+  const core = honorairesCore(dossier, { ...totaux, totalHTApres: htApres, totalTTCApres: ttcApres, exclusPostPivot })
 
   return {
     courtage: core.courtage,
@@ -430,8 +508,9 @@ export function calculateHonorairesPrevi(dossier) {
     // réel — `honoraires.parts` (réel) a été retiré au nettoyage code mort (aucun
     // lecteur). Ne pas re-ajouter `parts` côté réel « par symétrie ».
     parts: core.parts,
-    totalDevisTTCRecus: totalTTC,
+    totalDevisTTCRecus: totaux.totalTTC,   // PLEIN
     standard: core.standard,
+    exclu: core.exclu,
   }
 }
 
@@ -442,31 +521,27 @@ export function calculateHonorairesPrevi(dossier) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function getRecuAccepteTotals(dossier) {
-  const list = getDevisList(dossier).filter(dv => dv?.statut === 'recu' || dv?.statut === 'accepte')
-  const totalHT  = round2(list.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
-  const totalTTC = round2(list.reduce((s, dv) => {
-    if (dv.montant_ttc !== undefined && dv.montant_ttc !== null) return s + toNumber(dv.montant_ttc)
-    return s + toNumber(dv.montant_ht) * TVA_TRAVAUX
-  }, 0))
-  return { totalHT, totalTTC }
+  return totauxDevis(getDevisList(dossier).filter(dv => dv?.statut === 'recu' || dv?.statut === 'accepte'))
 }
 
 export function calculateHonorairesRecuAccepte(dossier) {
-  const { totalHT, totalTTC } = getRecuAccepteTotals(dossier)
+  const totaux = getRecuAccepteTotals(dossier)
   // TS-1 (décision actée : le PDF client montre le split courtage/AMO → cohérence).
   const pivot = dossier?.typologie === 'amo' ? getPivotCourtage(dossier) : null
   const recuAccepte = getDevisList(dossier).filter(dv => dv?.statut === 'recu' || dv?.statut === 'accepte')
-  const { htApres, ttcApres } = sousTotalApresPivot(recuAccepte, pivot)
-  const core = honorairesCore(dossier, { totalHT, totalTTC, totalHTApres: htApres, totalTTCApres: ttcApres })
+  const { htApres, ttcApres } = sousTotalApresPivot(devisAssietteHonoraires(recuAccepte), pivot)
+  const exclusPostPivot = exclusTousApresPivot(recuAccepte, getPivotCourtage(dossier))
+  const core = honorairesCore(dossier, { ...totaux, totalHTApres: htApres, totalTTCApres: ttcApres, exclusPostPivot })
 
   return {
     courtage: core.courtage,
     soldeAmo: core.soldeAmo,
     totalNet: core.totalNet,
     parts: core.parts,
-    totalDevisTTCRecuAccepte: totalTTC,
+    totalDevisTTCRecuAccepte: totaux.totalTTC,   // PLEIN
     totalTTC: core.totalTTC,
     standard: core.standard,
+    exclu: core.exclu,
   }
 }
 
