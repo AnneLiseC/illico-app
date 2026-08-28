@@ -17,9 +17,15 @@ describe('buildDevisPayload', () => {
     expect(p.acompte_montant_fixe).toBeNull()
   })
 
-  it('sans_commission force 0 (et non null)', () => {
+  it('sans_commission force 0 (et non null) ET exonère les honoraires', () => {
     const p = buildDevisPayload({ montant_ht: '500', montant_ttc: '550', sans_commission: true, commission_pourcentage: '15', acompte_pourcentage: 30 })
     expect(p.commission_pourcentage).toBe(0)
+    expect(p.hors_honoraires).toBe(true)
+  })
+
+  it('case décochée → hors_honoraires false explicite (jamais undefined)', () => {
+    const p = buildDevisPayload({ montant_ht: '500', montant_ttc: '550', commission_pourcentage: '15', acompte_pourcentage: 30 })
+    expect(p.hors_honoraires).toBe(false)
   })
 
   it('commission vide → null (défaut standard côté finance)', () => {

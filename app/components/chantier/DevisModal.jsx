@@ -15,9 +15,10 @@ export default function DevisModal({ open, devis, onClose, onSave, onAutofill, a
     montant_ttc: devis?.montant_ttc ?? '',
     ttc_manuel: devis?.ttc_manuel ?? false,
     commission_pourcentage: devis?.commission_pourcentage != null ? (devis.commission_pourcentage * 100).toFixed(1) : '',
-    // Ne JAMAIS cocher « sans commission » en création : uniquement en édition d'un
-    // devis dont la commission a été explicitement mise à 0.
-    sans_commission: !!devis && devis.commission_pourcentage === 0,
+    // Ne JAMAIS cocher en création : uniquement en édition d'un devis explicitement
+    // exonéré. Source de vérité = `hors_honoraires` (et non commission_pourcentage === 0,
+    // qui ne dit rien des honoraires) → pas de bascule silencieuse en réouvrant un devis.
+    sans_commission: !!devis && devis.hors_honoraires === true,
     date_reception: devis?.date_reception || '',
     date_limite: devis?.date_limite || '',
     notes: devis?.notes || '',
@@ -215,6 +216,11 @@ export default function DevisModal({ open, devis, onClose, onSave, onAutofill, a
                 style={{width:14, height:14, accentColor:'#4f46e5'}} />
               <span style={{fontSize:12, color:'var(--ink-500)'}}>Sans commission ni honoraires</span>
             </label>
+            {form.sans_commission && (
+              <div style={{fontSize:11, color:'var(--ink-400)', marginTop:4, marginLeft:22}}>
+                Ce devis reste compté dans le total chantier et les acomptes, mais sort de l’assiette des honoraires (courtage et AMO).
+              </div>
+            )}
           </div>
 
           <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
