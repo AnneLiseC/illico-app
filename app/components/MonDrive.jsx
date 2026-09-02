@@ -32,6 +32,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
   const [rattacherId, setRattacherId] = useState(null)
   const [rForm, setRForm] = useState({ dossier_id: '', categorie: '' })
   const [importing, setImporting] = useState(false)
+  const [autoRattaches, setAutoRattaches] = useState([])  // rattachés auto (30 j), annulables
 
   const charger = useCallback(async () => {
     if (!profile) return
@@ -52,6 +53,21 @@ export default function MonDrive({ profile, onError, onSucces }) {
         .select('id, created_at, client:clients(nom)').eq('referente_id', profile.id)
         .order('created_at', { ascending: false })
       setDossiersRef(doss || [])
+      // Rattachés automatiquement (30 derniers jours) — pour pouvoir annuler.
+      const depuis = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+      const { data: autos } = await supabase.from('drive_inbox')
+        .select('id, name, item_id, rattache_le').eq('user_id', profile.id)
+        .eq('rattachement_auto', true).gte('rattache_le', depuis)
+        .order('rattache_le', { ascending: false })
+      const itemIds = (autos || []).map(a => a.item_id).filter(Boolean)
+      const dossierParItem = {}
+      if (itemIds.length) {
+        const { data: idx } = await supabase.from('doc_index').select('item_id, dossier_id').in('item_id', itemIds)
+        for (const x of (idx || [])) dossierParItem[x.item_id] = x.dossier_id
+      }
+      const nomChantier = {}
+      for (const d of (doss || [])) nomChantier[d.id] = `${(d.created_at || '').slice(0, 10)} ${d.client?.nom || ''}`.trim()
+      setAutoRattaches((autos || []).map(a => ({ ...a, chantier: nomChantier[dossierParItem[a.item_id]] || '(chantier)' })))
     }
   }, [profile?.id])
 
@@ -228,6 +244,18 @@ export default function MonDrive({ profile, onError, onSucces }) {
     } catch { /* ignore */ }
   }
 
+  const annulerAuto = async (id) => {
+    onError?.(''); onSucces?.('')
+    try {
+      const res = await apiFetch('/api/drive/annuler-rattachement', {
+        method: 'POST', body: JSON.stringify({ inbox_id: id }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (res.ok && d.ok) { onSucces?.('Rattachement annulé — le fichier revient « à rattacher » ✓'); charger() }
+      else onError?.(d.error || 'Annulation impossible')
+    } catch { onError?.('Annulation impossible') }
+  }
+
   const choisir = (f) => enregistrerRacine({ drive_id: f.driveId, item_id: f.itemId, name: f.name })
   const courant = crumbs[crumbs.length - 1]
   const creer = () => {
@@ -394,6 +422,22 @@ export default function MonDrive({ profile, onError, onSucces }) {
                     </div>
                   )}
                 </div>
+              ))}
+            </div>
+          )}
+          {/* ── Rattachés automatiquement (30 j) → possibilité d'annuler ── */}
+          {autoRattaches.length > 0 && (
+            <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>✅ Rattachés automatiquement ({autoRattaches.length})</div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>30 derniers jours. « Annuler » retire le document du chantier et empêche un nouveau rattachement automatique.</div>
+              {autoRattaches.map(a => (
+                <div key={a.id} style={{ border: '1px solid var(--ink-100)', borderRadius: 8, padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: 'var(--ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📄 {a.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>→ {a.chantier}{a.rattache_le ? ` · ${a.rattache_le.slice(0, 10)}` : ''}</div>
+                  </div>
+                  <button className="btn btn-ghost" style={{ fontSize: 11.5, flexShrink: 0 }} onClick={() => annulerAuto(a.id)}>Annuler</button>
+              </div>
               ))}
             </div>
           )}
