@@ -9,7 +9,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireRole } from '../../../lib/api-auth'
+import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
 import { chantierBaseSegments, devisSousDossier, nettoyerSegment, slugNom } from '../../../lib/drive/taxonomie'
 import { formatNomClient } from '../../../lib/clients'
@@ -34,6 +34,9 @@ export async function POST(request) {
   const { data: devis } = await db.from('devis_artisans')
     .select('id, dossier_id, artisan_id, statut, devis_pdf_path, devis_signe_path').eq('id', devisId).maybeSingle()
   if (!devis) return NextResponse.json({ error: 'Devis introuvable' }, { status: 404 })
+
+  const acces = await assertDossierAccessible(devis.dossier_id, auth.profile)
+  if (acces.error) return acces.error
 
   const statut = devis.statut || 'recu'
   const sousDossier = devisSousDossier(statut)

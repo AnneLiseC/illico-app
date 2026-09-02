@@ -26,8 +26,13 @@ export async function POST(request) {
   const db = admin()
   const { data: inbox } = await db.from('drive_inbox').select('id, user_id').eq('id', body.inbox_id).maybeSingle()
   if (!inbox) return NextResponse.json({ ok: true, nothing: true })
-  if (inbox.user_id !== auth.user.id && auth.profile?.role !== 'admin') {
-    return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+  if (inbox.user_id !== auth.user.id) {
+    const { data: prop } = await db.from('profiles')
+      .select('societe_id, agence_id').eq('id', inbox.user_id).maybeSingle()
+    const memeTenant = auth.profile?.role === 'admin'
+      ? prop?.societe_id === auth.profile.societe_id
+      : prop?.agence_id === auth.profile?.agence_id
+    if (!memeTenant) return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
   }
   await db.from('drive_inbox').update({ statut: 'ignore' }).eq('id', inbox.id)
   return NextResponse.json({ ok: true })

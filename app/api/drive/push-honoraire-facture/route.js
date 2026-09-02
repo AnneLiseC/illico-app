@@ -5,7 +5,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireRole } from '../../../lib/api-auth'
+import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { cheminChantier, nettoyerSegment, slugNom } from '../../../lib/drive/taxonomie'
 import { formatNomClient } from '../../../lib/clients'
 import { pushMirror, mimeFromExt } from '../../../lib/drive/mirror'
@@ -27,6 +27,9 @@ export async function POST(request) {
   const { data: hf } = await db.from('honoraires_factures')
     .select('id, dossier_id, cle, pdf_path, nom').eq('id', hfId).maybeSingle()
   if (!hf) return NextResponse.json({ error: 'Facture honoraire introuvable' }, { status: 404 })
+
+  const acces = await assertDossierAccessible(hf.dossier_id, auth.profile)
+  if (acces.error) return acces.error
   const { data: dossier } = await db.from('dossiers')
     .select('id, created_at, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', hf.dossier_id).maybeSingle()
   if (!dossier) return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })

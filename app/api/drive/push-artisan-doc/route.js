@@ -32,8 +32,9 @@ export async function POST(request) {
 
   const db = admin()
   const { data: artisan } = await db.from('artisans')
-    .select('id, entreprise, kbis_url, decennale_url, qualification_url, rib_url').eq('id', artisanId).maybeSingle()
+    .select('id, entreprise, societe_id, kbis_url, decennale_url, qualification_url, rib_url').eq('id', artisanId).maybeSingle()
   if (!artisan) return NextResponse.json({ error: 'Artisan introuvable' }, { status: 404 })
+  if (artisan.societe_id !== auth.profile?.societe_id) return NextResponse.json({ error: 'Artisan introuvable' }, { status: 404 })
   const filePath = artisan[TYPES[type].champ]
   const ext = (filePath?.split('.').pop() || 'pdf')
   const segments = cheminArtisanGlobal(artisan.entreprise, 'Documents administratif')

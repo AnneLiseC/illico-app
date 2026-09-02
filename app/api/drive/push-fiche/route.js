@@ -8,7 +8,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireRole } from '../../../lib/api-auth'
+import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { cheminArtisanGlobal, cheminChantier, nettoyerSegment } from '../../../lib/drive/taxonomie'
 import { pushMirror, mimeFromExt } from '../../../lib/drive/mirror'
 
@@ -29,6 +29,20 @@ export async function POST(request) {
   const { data: fiche } = await db.from('fiches_techniques')
     .select('id, artisan_id, nom, url').eq('id', ficheId).maybeSingle()
   if (!fiche) return NextResponse.json({ error: 'Fiche introuvable' }, { status: 404 })
+
+  // Cloisonnement tenant : la fiche doit appartenir à un artisan de la société de l'appelant
+  // (artisans société-wide). Sans artisan rattaché → refus.
+  {
+    const { data: art } = fiche.artisan_id
+      ? await db.from('artisans').select('societe_id').eq('id', fiche.artisan_id).maybeSingle()
+      : { data: null }
+    if (!art || art.societe_id !== auth.profile?.societe_id) return NextResponse.json({ error: 'Fiche introuvable' }, { status: 404 })
+  }
+  // Copie chantier : si un dossier est fourni, il doit lui aussi être accessible à l'appelant.
+  if (body.dossier_id) {
+    const acces = await assertDossierAccessible(body.dossier_id, auth.profile)
+    if (acces.error) return acces.error
+  }
   let artisanNom = 'artisan'
   if (fiche.artisan_id) {
     const { data: a } = await db.from('artisans').select('entreprise').eq('id', fiche.artisan_id).maybeSingle()

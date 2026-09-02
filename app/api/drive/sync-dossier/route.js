@@ -15,7 +15,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireRole } from '../../../lib/api-auth'
+import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { POST as pushGeneric } from '../push/route'
 import { POST as pushCr } from '../push-cr/route'
 import { POST as pushDevis } from '../push-devis/route'
@@ -77,6 +77,9 @@ export async function POST(request) {
   let body; try { body = await request.json() } catch { body = {} }
   const dossierId = body.dossier_id
   if (!dossierId) return NextResponse.json({ error: 'dossier_id manquant' }, { status: 400 })
+
+  const acces = await assertDossierAccessible(dossierId, auth.profile)
+  if (acces.error) return acces.error
   const offset = Math.max(0, Number(body.offset) || 0)
   const batch = Math.min(BATCH_MAX, Math.max(1, Number(body.batch) || BATCH_DEFAULT))
 
