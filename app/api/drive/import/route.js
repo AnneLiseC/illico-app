@@ -12,6 +12,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
+import { importerInbox } from '../../../lib/drive/import-inbox'
 
 const CATS = new Set(['compte_rendu', 'plans', 'administratif']) // catégories libres autorisées ; sinon Autres (null)
 
@@ -34,7 +35,7 @@ export async function POST(request) {
   const db = admin()
 
   const { data: inbox } = await db.from('drive_inbox')
-    .select('id, user_id, drive_id, item_id, name, statut').eq('id', inbox_id).maybeSingle()
+    .select('id, user_id, drive_id, item_id, name, statut, parent_path').eq('id', inbox_id).maybeSingle()
   if (!inbox) return NextResponse.json({ error: 'Élément introuvable' }, { status: 404 })
   if (inbox.user_id !== auth.user.id) {
     const { data: prop } = await db.from('profiles')
@@ -62,35 +63,10 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Erreur Drive' }, { status: 500 })
   }
 
-  try {
-    const { buffer, contentType } = await mod.downloadItemContent(token, inbox.drive_id, inbox.item_id)
-    const ext = (inbox.name || '').split('.').pop() || 'bin'
-    const path = `chantiers/${dossier_id}/documents/onedrive_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-
-    const { error: upErr } = await db.storage.from('documents').upload(path, buffer, { contentType })
-    if (upErr) { console.error('[drive/import] storage', upErr.message); return NextResponse.json({ error: 'Copie impossible' }, { status: 502 }) }
-
-    const { data: doc, error: insErr } = await db.from('chantier_documents').insert({
-      dossier_id, nom: inbox.name || 'Document', path,
-      type_mime: contentType, taille: buffer.length,
-      dans_restitution: false, categorie, artisan_id: null,
-    }).select('id').single()
-    if (insErr) {
-      await db.storage.from('documents').remove([path]).catch(() => {})
-      console.error('[drive/import] insert', insErr.message)
-      return NextResponse.json({ error: 'Enregistrement impossible' }, { status: 500 })
-    }
-
-    const origine = compte.fournisseur === 'googledrive' ? 'googledrive' : 'onedrive'
-    await db.from('doc_index').insert({
-      document_id: doc.id, dossier_id, user_id: inbox.user_id,
-      origine, drive_id: inbox.drive_id, item_id: inbox.item_id, path,
-    })
-    await db.from('drive_inbox').update({ statut: 'rattache' }).eq('id', inbox.id)
-
-    return NextResponse.json({ ok: true, document_id: doc.id })
-  } catch (e) {
-    console.error('[drive/import] graph', e)
-    return NextResponse.json({ error: 'Import échoué' }, { status: 502 })
-  }
+  const r = await importerInbox(db, {
+    mod, token, inbox, fournisseur: compte.fournisseur,
+    dossierId: dossier_id, categorie, artisanId: null, auto: false,
+  })
+  if (r.error) return NextResponse.json({ error: r.error }, { status: r.status })
+  return NextResponse.json({ ok: true, document_id: r.document_id })
 }

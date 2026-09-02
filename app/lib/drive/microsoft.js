@@ -186,23 +186,53 @@ export async function moveItem(accessToken, driveId, itemId, newParentId, _oldPa
 // et renvoie { items, deltaLink }. deltaLink=null en entrée → INIT avec token=latest :
 // Graph renvoie un curseur SANS énumérer l'existant (invariant n°2 : pas d'avalanche).
 // deltaLink fourni → seulement les changements depuis.
-export async function deltaQuery(accessToken, driveId, itemId, deltaLink) {
-  let next = deltaLink || (itemId === 'root'
+// PUR et testable : un curseur delta STOCKE qui renvoie ce statut est-il mort ?
+// Graph documente `410 Gone` (resyncRequired) pour un jeton delta perime, mais OneDrive
+// GRAND PUBLIC renvoie aussi `404` dans ce cas — constate en prod le 02/09 : le dossier
+// surveille existait toujours (l'app y ecrivait encore), seul le curseur etait invalide.
+// 400 couvre le curseur malforme. On ne resynchronise QUE si un curseur etait stocke :
+// un echec sur l'URL d'init n'est pas un curseur mort, c'est une vraie panne (droits,
+// dossier supprime, reseau) et doit remonter.
+export function curseurMort(status) {
+  return status === 404 || status === 410 || status === 400
+}
+
+// Construit l'URL d'INIT : token=latest → curseur SANS enumerer l'existant (invariant n°2).
+function urlInitDelta(driveId, itemId) {
+  return itemId === 'root'
     ? `${GRAPH}/drives/${driveId}/root/delta?token=latest`
-    : `${GRAPH}/drives/${driveId}/items/${itemId}/delta?token=latest`)
+    : `${GRAPH}/drives/${driveId}/items/${itemId}/delta?token=latest`
+}
+
+export async function deltaQuery(accessToken, driveId, itemId, deltaLink) {
+  const urlInit = urlInitDelta(driveId, itemId)
+  let next = deltaLink || urlInit
+  let depuisCurseur = !!deltaLink   // on est parti d'un curseur stocke
+  let resync = false                // un seul reessai, jamais deux (sinon boucle infinie)
   const items = []
   let finalDelta = null
   let guard = 0
   while (next && guard++ < 200) {
     const res = await graphFetch(accessToken, next)
-    if (!res.ok) throw new Error(`delta_failed_${res.status}`)
+    if (!res.ok) {
+      // Curseur stocke mort → UN SEUL reessai depuis l'init, puis on repart de zero.
+      if (depuisCurseur && !resync && curseurMort(res.status)) {
+        console.error(`[drive/microsoft] curseur delta mort (${res.status}) → resynchronisation`)
+        resync = true
+        depuisCurseur = false
+        items.length = 0
+        next = urlInit
+        continue
+      }
+      throw new Error(`delta_failed_${res.status}`)
+    }
     const data = await res.json()
     for (const it of (data.value || [])) items.push(it)
     if (data['@odata.nextLink']) { next = data['@odata.nextLink']; continue }
     finalDelta = data['@odata.deltaLink'] || null
     next = null
   }
-  return { items, deltaLink: finalDelta }
+  return { items, deltaLink: finalDelta, resync }
 }
 
 // Détection ENTRANTE (inbox). Interface commune avec google-drive.pullInbox :
@@ -212,12 +242,17 @@ export async function deltaQuery(accessToken, driveId, itemId, deltaLink) {
 //   - sinon → changements depuis le curseur, filtrés aux FICHIERS (hors dossiers/suppr.).
 //   files = [{ itemId, name, parentPath, webUrl }] ; cursor = deltaLink à persister.
 export async function pullInbox(accessToken, driveId, rootItemId, cursor) {
-  const { items, deltaLink } = await deltaQuery(accessToken, driveId, rootItemId, cursor)
-  const init = !cursor
+  const { items, deltaLink, resync } = await deltaQuery(accessToken, driveId, rootItemId, cursor)
+  // Une resynchronisation repart de `token=latest` : Graph ne renvoie AUCUN item existant.
+  // On la traite donc exactement comme une init — sinon on inserait une liste vide comme
+  // si c'etaient des changements. `resync` est remonte pour que le cron le SIGNALE : une
+  // resynchronisation qui se repete a chaque passage veut dire que la racine est devenue
+  // inatteignable et qu'il faut reconnecter le Drive, pas s'auto-reparer en silence.
+  const init = !cursor || resync
   const files = init ? [] : items
     .filter(it => !it.deleted && !it.folder && it.file)
     .map(it => ({ itemId: it.id, name: it.name || null, parentPath: it.parentReference?.path || null, webUrl: it.webUrl || null }))
-  return { files, cursor: deltaLink || cursor || null, init }
+  return { files, cursor: deltaLink || cursor || null, init, resync }
 }
 
 // Télécharge le contenu d'un item (driveId, itemId). Renvoie { buffer, contentType }.
