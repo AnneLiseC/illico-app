@@ -1,6 +1,7 @@
 // app/api/drive/push-devis/route.js
 // POST { devis_id } — pousse le PDF d'un devis dans le OneDrive de la référente, rangé
-// selon son STATUT : recu → Devis/Reçus, accepte → Devis/Signés, refuse → Devis/Refusés.
+// selon son STATUT : recu → Devis/1. Recus, en_attente → 2. Presentes, accepte → 3. Signes,
+// refuse → 4. Refuses (circuit a 4 etapes du _MODELE DOSSIER CLIENT, 02/09).
 // MOVE-AWARE : à chaque appel on relit le statut ; si le devis était déjà miroité, on
 // supprime l'ancien item avant de reposer le fichier → il « se déplace » de dossier quand
 // le statut change (footgun tranché : le statut Batilis fait foi, jamais le glisser-déposer).
@@ -12,6 +13,7 @@ import { NextResponse } from 'next/server'
 import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
 import { chantierBaseSegments, devisSousDossier, nettoyerSegment, slugNom } from '../../../lib/drive/taxonomie'
+import { suffixeCollisionDossier } from '../../../lib/drive/collisions'
 import { formatNomClient } from '../../../lib/clients'
 
 let _admin
@@ -48,7 +50,7 @@ export async function POST(request) {
 
   // Dossier + référente + Drive
   const { data: dossier } = await db.from('dossiers')
-    .select('id, created_at, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', devis.dossier_id).maybeSingle()
+    .select('id, created_at, date_premier_rdv, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', devis.dossier_id).maybeSingle()
   if (!dossier?.referente_id) return NextResponse.json({ skipped: true, reason: 'no_referente' })
 
   const compte = await loadDriveCompte(db, dossier.referente_id)
@@ -90,7 +92,8 @@ export async function POST(request) {
     const base = estSigne ? 'Devis_signe' : 'Devis'
     const fileName = `${nettoyerSegment(`${base}_${clientSlug}_${artisanSlug}`)}.pdf`
     const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
-    const segments = [...chantierBaseSegments(dossier.statut, dossier.created_at, client?.nom, { dateFin }), '3. Devis', sousDossier].map(nettoyerSegment)
+    const suffixe = await suffixeCollisionDossier(db, dossier)
+    const segments = [...chantierBaseSegments(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, { dateFin, nom2: client?.nom2, suffixe }), '3. Devis', sousDossier].map(nettoyerSegment)
 
     // Déjà miroité → on supprime l'ancien item (le statut/dossier a pu changer) avant de reposer.
     if (existing) { try { await mod.deleteItem(token, existing.drive_id, existing.item_id) } catch { /* best effort */ } }

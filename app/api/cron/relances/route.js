@@ -469,5 +469,6 @@ export async function GET(req) {
     log.push(`[8] Désactivation accès : ${data ?? 0} compte(s) désactivé(s)`)
   } catch (e) { errors.push(`[8] désactivation accès : ${e.message}`) }
 
-  return NextResponse.json({ ok: true, date: todayStr, sent: log, errors: errors.length ? errors : undefined })
+  const enErreur = errors.length > 0
+  return NextResponse.json({ ok: !enErreur, date: todayStr, sent: log, errors: errors.length ? errors : undefined }, { status: enErreur ? 500 : 200 })
 }

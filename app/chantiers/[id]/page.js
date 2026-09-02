@@ -980,11 +980,23 @@ export default function FicheChantier({ params }) {
     const uploadUn = async (fichier) => {
       const estVideo = (fichier.type || '').startsWith('video/') || /\.(mp4|mov|m4v|webm|avi|mkv|3gp)$/i.test(fichier.name)
       if (estVideo && fichier.size > MAX_VIDEO_MO * 1024 * 1024) { tropLourd++; return false }
-      // Vidéo : envoyée telle quelle (pas de conversion). Photo : HEIC iPhone → JPEG.
-      const f = estVideo ? fichier : await heicToJpegFile(fichier)
-      const ext = (f.name.split('.').pop() || (estVideo ? 'mp4' : 'jpg')).toLowerCase()
+      // Vidéo : envoyée telle quelle (pas de conversion). Photo : compression JPEG
+      // (redimension 1600px + HEIC→JPEG géré en amont par compressImageToBlob) —
+      // même traitement que CRGenerationModal / CRVisitesPanel. Échec de compression
+      // (format illisible…) → cette photo compte en échec, sans casser le lot.
+      let f, ext, contentType
+      if (estVideo) {
+        f = fichier
+        ext = (fichier.name.split('.').pop() || 'mp4').toLowerCase()
+        contentType = fichier.type || undefined
+      } else {
+        try { f = await compressImageToBlob(fichier) }
+        catch { return false }
+        ext = 'jpg'
+        contentType = 'image/jpeg'
+      }
       const chemin = `chantiers/${id}/${categorie}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-      const { error: uploadError } = await supabase.storage.from('photos').upload(chemin, f, { contentType: f.type || undefined })
+      const { error: uploadError } = await supabase.storage.from('photos').upload(chemin, f, { contentType })
       if (uploadError) return false
       // nom = nom d'ORIGINE du fichier (avant conversion HEIC→JPEG) pour la détection de doublons.
       const { data: photoInseree, error: insertErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie, uploaded_by: profile?.id, type_media: estVideo ? 'video' : 'photo', nom: fichier.name }).select('id').single()

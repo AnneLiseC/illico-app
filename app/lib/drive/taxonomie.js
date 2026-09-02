@@ -7,10 +7,10 @@
 //     │     └── AAAA-MM-JJ NOM/                       (nom client en MAJUSCULES ; date = création du dossier)
 //     │           1. Administratif/                    (contrat, admin client, factures honoraires)
 //     │           2. Comptes rendus/
-//     │           3. Devis/{1. Reçus, 2. Signés, 3. Refusés}/
+//     │           3. Devis/{1. Recus, 2. Presentes, 3. Signes, 4. Refuses}/
 //     │           4. Documents artisans/<Artisan>/{ (PV, attestations, acomptes…), Factures/, Autre/ }
-//     │           5. Plans & techniques/               (plans, estimations, fiches techniques liées au chantier)
-//     │           6. Photos/{1. Avant, 2. Pendant, 3. Après, 4. Maquette}/
+//     │           5. Plans & techniques/               (plans, estimations, fiches techniques, MAQUETTES)
+//     │           6. Photos/{1. Avant, 2. Pendant, 3. Apres}/  +  7. Echanges/ (manuel, l'appli n'y ecrit jamais)
 //   02_ARTISANS/
 //     └── <Artisan>/{ Documents administratif/, Fiches techniques/ }   (catalogue complet de l'artisan)
 //
@@ -28,10 +28,20 @@ export function dateDossier(createdAt) {
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : '0000-00-00'
 }
 
-// Nom du dossier client : « AAAA-MM-JJ NOM » (NOM en MAJUSCULES ; fallback neutre).
-export function nomDossierChantier(createdAt, clientNom) {
-  const nom = (clientNom || 'CLIENT').trim().toUpperCase()
-  return `${dateDossier(createdAt)} ${nom}`.trim()
+// Patronyme du dossier : « NOM » seul, ou « NOM-NOM2 » pour un couple (2e titulaire
+// renseigné ET différent du 1er, comparaison en MAJUSCULES). Espaces de début/fin
+// coupés (un dossier OneDrive finissant par une espace pose problème). Fallback « CLIENT ».
+export function patronymeDossier(nom, nom2) {
+  const a = String(nom || '').trim().toUpperCase()
+  const b = String(nom2 || '').trim().toUpperCase()
+  const base = (b && b !== a) ? `${a}-${b}` : a
+  return base || 'CLIENT'
+}
+
+// Nom du dossier client : « AAAA-MM-JJ NOM » (ou « …NOM-NOM2 » pour un couple).
+export function nomDossierChantier(createdAt, clientNom, clientNom2, suffixe) {
+  const nom = patronymeDossier(clientNom, clientNom2)
+  return `${dateDossier(createdAt)} ${nom}${suffixe || ''}`.trim()
 }
 
 // Bucket de statut → segments. 'annule' → « 3. Sans suite » ; 'termine' → « 2. Terminés/<année> »
@@ -47,15 +57,21 @@ export function bucketSegments(statut, { dateFin, createdAt } = {}) {
 }
 
 // Sous-dossier Devis selon le statut du devis.
+// Circuit a 4 etapes du _MODELE DOSSIER CLIENT (02/09) : un devis n'existe qu'a UN endroit
+// a la fois, il se deplace au fil du circuit. Noms SANS accent = dossiers reels du OneDrive.
 export function devisSousDossier(statutDevis) {
-  if (statutDevis === 'accepte' || statutDevis === 'signe') return '2. Signés'
-  if (statutDevis === 'refuse') return '3. Refusés'
-  return '1. Reçus'
+  if (statutDevis === 'accepte' || statutDevis === 'signe') return '3. Signes'
+  if (statutDevis === 'refuse') return '4. Refuses'
+  if (statutDevis === 'en_attente') return '2. Presentes'   // presente au client, decision en attente
+  return '1. Recus'                                          // recu de l'artisan, pas encore presente
 }
 
 // Libellé de sous-dossier photo (numéroté) selon la catégorie de prise de vue.
-const PHOTO_CAT_LABEL = { avant: '1. Avant', pendant: '2. Pendant', apres: '3. Après', maquette: '4. Maquette' }
+// Noms SANS accent (dossiers reels). La MAQUETTE n'est pas une photo de chantier : c'est un
+// livrable technique, elle part dans « 5. Plans & techniques » (arbitrage 02/09).
+const PHOTO_CAT_LABEL = { avant: '1. Avant', pendant: '2. Pendant', apres: '3. Apres' }
 export function photoSousDossiers(categoriePhoto) {
+  if (categoriePhoto === 'maquette') return ['5. Plans & techniques']
   return ['6. Photos', PHOTO_CAT_LABEL[categoriePhoto] || 'Autres']
 }
 
@@ -105,7 +121,7 @@ export function slugNom(s) {
 
 // Segments de base du dossier chantier : 01_CLIENTS/<bucket>/AAAA-MM-JJ NOM (NON nettoyés).
 export function chantierBaseSegments(statut, createdAt, clientNom, opts = {}) {
-  return [RACINE_CLIENTS, ...bucketSegments(statut, { dateFin: opts.dateFin, createdAt }), nomDossierChantier(createdAt, clientNom)]
+  return [RACINE_CLIENTS, ...bucketSegments(statut, { dateFin: opts.dateFin, createdAt }), nomDossierChantier(createdAt, clientNom, opts.nom2, opts.suffixe)]
 }
 
 // Chemin complet d'un DOCUMENT chantier.

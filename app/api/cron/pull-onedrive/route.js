@@ -78,5 +78,6 @@ export async function GET(req) {
     rapport.push(r)
   }
 
-  return NextResponse.json({ ok: true, comptes: rapport.length, rapport })
+  const enErreur = rapport.some(r => r.erreur)
+  return NextResponse.json({ ok: !enErreur, comptes: rapport.length, rapport }, { status: enErreur ? 500 : 200 })
 }

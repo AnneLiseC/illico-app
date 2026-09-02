@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { RACINE_CLIENTS, RACINE_ARTISANS, dateDossier, nomDossierChantier, bucketSegments, devisSousDossier, sousDossiers, photoSousDossiers, nettoyerSegment, chantierBaseSegments, cheminChantier, cheminChantierPhoto, cheminArtisanGlobal } from '../drive/taxonomie.js'
+import { RACINE_CLIENTS, RACINE_ARTISANS, dateDossier, nomDossierChantier, bucketSegments, devisSousDossier, sousDossiers, photoSousDossiers, nettoyerSegment, chantierBaseSegments, cheminChantier, cheminChantierPhoto, cheminArtisanGlobal, patronymeDossier } from '../drive/taxonomie.js'
+import { suffixeDepuisGroupe } from '../drive/collisions.js'
 
 describe('drive/taxonomie', () => {
   it('racines — 01_CLIENTS / 02_ARTISANS', () => {
@@ -30,11 +31,13 @@ describe('drive/taxonomie', () => {
   })
 
   it('devisSousDossier — statut devis → sous-dossier Devis', () => {
-    expect(devisSousDossier('accepte')).toBe('2. Signés')
-    expect(devisSousDossier('signe')).toBe('2. Signés')
-    expect(devisSousDossier('refuse')).toBe('3. Refusés')
-    expect(devisSousDossier('recu')).toBe('1. Reçus')
-    expect(devisSousDossier(null)).toBe('1. Reçus')
+    // Circuit a 4 etapes du _MODELE DOSSIER CLIENT (02/09), noms SANS accent.
+    expect(devisSousDossier('accepte')).toBe('3. Signes')
+    expect(devisSousDossier('signe')).toBe('3. Signes')
+    expect(devisSousDossier('refuse')).toBe('4. Refuses')
+    expect(devisSousDossier('en_attente')).toBe('2. Presentes')
+    expect(devisSousDossier('recu')).toBe('1. Recus')
+    expect(devisSousDossier(null)).toBe('1. Recus')
   })
 
   it('sousDossiers — mapping catégorie → arbo', () => {
@@ -58,8 +61,9 @@ describe('drive/taxonomie', () => {
   it('photoSousDossiers — 6. Photos/<catégorie numérotée>', () => {
     expect(photoSousDossiers('avant')).toEqual(['6. Photos', '1. Avant'])
     expect(photoSousDossiers('pendant')).toEqual(['6. Photos', '2. Pendant'])
-    expect(photoSousDossiers('apres')).toEqual(['6. Photos', '3. Après'])
-    expect(photoSousDossiers('maquette')).toEqual(['6. Photos', '4. Maquette'])
+    expect(photoSousDossiers('apres')).toEqual(['6. Photos', '3. Apres'])
+    // La maquette est un livrable technique, pas une photo de chantier (arbitrage 02/09).
+    expect(photoSousDossiers('maquette')).toEqual(['5. Plans & techniques'])
     expect(photoSousDossiers(null)).toEqual(['6. Photos', 'Autres'])
   })
 
@@ -102,5 +106,87 @@ describe('drive/taxonomie', () => {
       .toEqual(['02_ARTISANS', 'Toiture-Sud', 'Documents administratif'])
     expect(cheminArtisanGlobal(null, 'Fiches techniques'))
       .toEqual(['02_ARTISANS', 'Sans artisan', 'Fiches techniques'])
+  })
+
+  it('patronymeDossier — NOM seul, ou NOM-NOM2 pour un couple', () => {
+    expect(patronymeDossier('Ziat', 'Lefevre')).toBe('ZIAT-LEFEVRE')
+    expect(patronymeDossier('Dupont', null)).toBe('DUPONT')
+    expect(patronymeDossier('Dupont', '')).toBe('DUPONT')
+    // meme nom, casse differente -> pas de doublon NOM-NOM
+    expect(patronymeDossier('Brunet', 'brunet')).toBe('BRUNET')
+    // espaces de fin coupes (valeurs reelles « Teppe », « Joel »)
+    expect(patronymeDossier('Teppe ', null)).toBe('TEPPE')
+    expect(patronymeDossier('Ziat ', 'Lefevre ')).toBe('ZIAT-LEFEVRE')
+    expect(patronymeDossier(null, null)).toBe('CLIENT')
+  })
+
+  it('nomDossierChantier — couple + date metier fournie par l appelant', () => {
+    // la date passee est la date metier choisie en amont (date_premier_rdv || created_at)
+    expect(nomDossierChantier('2026-03-12T00:00:00', 'Ziat', 'Lefevre')).toBe('2026-03-12 ZIAT-LEFEVRE')
+    expect(nomDossierChantier('2026-03-12', 'Teppe ', ' ')).toBe('2026-03-12 TEPPE')
+    // retrocompat : sans nom2 -> NOM seul
+    expect(nomDossierChantier('2026-07-19T00:00:00', 'Guerteau')).toBe('2026-07-19 GUERTEAU')
+  })
+
+  it('chantierBaseSegments — couple via opts.nom2', () => {
+    expect(chantierBaseSegments('en_cours', '2026-03-12T00:00:00', 'Ziat', { nom2: 'Lefevre' }))
+      .toEqual(['01_CLIENTS', '1. En cours', '2026-03-12 ZIAT-LEFEVRE'])
+    expect(chantierBaseSegments('en_cours', '2026-03-12T00:00:00', 'Ziat'))
+      .toEqual(['01_CLIENTS', '1. En cours', '2026-03-12 ZIAT'])
+  })
+
+  it('nomDossierChantier — suffixe anti-collision accole au nom', () => {
+    expect(nomDossierChantier('2026-03-12', 'Ziat', 'Lefevre', '_1')).toBe('2026-03-12 ZIAT-LEFEVRE_1')
+    expect(nomDossierChantier('2026-03-12', 'Dupont', null, '')).toBe('2026-03-12 DUPONT')
+  })
+
+  it('chantierBaseSegments — suffixe via opts.suffixe', () => {
+    expect(chantierBaseSegments('en_cours', '2026-03-12', 'Tundidor', { suffixe: '_1' }))
+      .toEqual(['01_CLIENTS', '1. En cours', '2026-03-12 TUNDIDOR_1'])
+  })
+})
+
+describe('drive/collisions — suffixe anti-collision (pur)', () => {
+  it('client a un seul dossier -> aucun suffixe (regression la plus probable)', () => {
+    const d = { id: 'a', created_at: '2026-01-05', date_premier_rdv: '2026-06-01' }
+    expect(suffixeDepuisGroupe([d], d)).toBe('')
+  })
+
+  it('collision -> premier (created_at le plus ancien) nu, suivant _1', () => {
+    // cas reel ZIAT-LEFEVRE (2026-AM-010 / 2026-AM-011)
+    const g = [
+      { id: 'z1', reference: '2026-AM-010', created_at: '2026-01-05T09:00:00', date_premier_rdv: '2026-06-01' },
+      { id: 'z2', reference: '2026-AM-011', created_at: '2026-01-06T09:00:00', date_premier_rdv: '2026-06-01' },
+    ]
+    expect(suffixeDepuisGroupe(g, g[0])).toBe('')
+    expect(suffixeDepuisGroupe(g, g[1])).toBe('_1')
+  })
+
+  it('cle = created_at, PAS reference (prefixes AM/CT ne doivent pas decider)', () => {
+    const g = [
+      { id: 'x', reference: '2026-AM-010', created_at: '2026-01-10', date_premier_rdv: '2026-06-01' },
+      { id: 'y', reference: '2026-CT-041', created_at: '2026-01-05', date_premier_rdv: '2026-06-01' },
+    ]
+    // y est le plus ancien -> nu ; x -> _1 (l'inverse d'un tri par reference)
+    expect(suffixeDepuisGroupe(g, g[1])).toBe('')
+    expect(suffixeDepuisGroupe(g, g[0])).toBe('_1')
+  })
+
+  it('dates metier differentes -> pas de collision', () => {
+    const g = [
+      { id: 'a', created_at: '2026-01-05', date_premier_rdv: '2026-06-01' },
+      { id: 'b', created_at: '2026-01-06', date_premier_rdv: '2026-07-15' },
+    ]
+    expect(suffixeDepuisGroupe(g, g[0])).toBe('')
+    expect(suffixeDepuisGroupe(g, g[1])).toBe('')
+  })
+
+  it('date metier via created_at quand date_premier_rdv absent', () => {
+    const g = [
+      { id: 'a', created_at: '2026-03-12T08:00:00' },
+      { id: 'b', created_at: '2026-03-12T20:00:00' },
+    ]
+    expect(suffixeDepuisGroupe(g, g[0])).toBe('')
+    expect(suffixeDepuisGroupe(g, g[1])).toBe('_1')
   })
 })

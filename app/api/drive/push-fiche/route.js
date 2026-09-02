@@ -10,6 +10,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { cheminArtisanGlobal, cheminChantier, nettoyerSegment } from '../../../lib/drive/taxonomie'
+import { suffixeCollisionDossier } from '../../../lib/drive/collisions'
 import { pushMirror, mimeFromExt } from '../../../lib/drive/mirror'
 
 let _admin
@@ -69,11 +70,12 @@ export async function POST(request) {
   let clientCopy = null
   if (body.dossier_id && fiche.url) {
     const { data: dossier } = await db.from('dossiers')
-      .select('id, created_at, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', body.dossier_id).maybeSingle()
+      .select('id, created_at, date_premier_rdv, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', body.dossier_id).maybeSingle()
     if (dossier?.referente_id) {
-      const { data: client } = await db.from('clients').select('nom').eq('id', dossier.client_id).maybeSingle()
+      const { data: client } = await db.from('clients').select('nom, nom2').eq('id', dossier.client_id).maybeSingle()
       const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
-      const cSeg = cheminChantier(dossier.statut, dossier.created_at, client?.nom, 'fiche_technique', null, { dateFin })
+      const suffixe = await suffixeCollisionDossier(db, dossier)
+      const cSeg = cheminChantier(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, 'fiche_technique', null, { dateFin, nom2: client?.nom2, suffixe })
       try {
         const cr = await pushMirror(db, {
           ownerUserId: dossier.referente_id,
