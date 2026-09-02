@@ -17,6 +17,7 @@ import { buildCRDocument } from '../../../lib/pdf/crDocument.js'
 import { stripEmojiPdf } from '../../../lib/pdf/stripEmoji.js'
 import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
 import { cheminChantier, nettoyerSegment, dateDossier, slugNom } from '../../../lib/drive/taxonomie'
+import { suffixeCollisionDossier } from '../../../lib/drive/collisions'
 import { formatNomClient } from '../../../lib/clients'
 
 let _admin
@@ -110,7 +111,8 @@ export async function POST(request) {
     const crDate = dateDossier(cr.date_visite || cr.created_at)
     const fileName = `${nettoyerSegment(`${crDate}_CR_${clientSlug}`)}.pdf`
     const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
-    const segments = cheminChantier(dossier.statut, dossier.created_at, clientNom, 'compte_rendu', null, { dateFin })
+    const suffixe = await suffixeCollisionDossier(db, dossier)
+    const segments = cheminChantier(dossier.statut, dossier.date_premier_rdv || dossier.created_at, clientNom, 'compte_rendu', null, { dateFin, nom2: dossier.client?.nom2, suffixe })
 
     // Déjà miroité → on supprime l'ancien item (le nom a pu changer) avant de remplacer.
     const { data: dejaIdx } = await db.from('doc_index').select('id, item_id, drive_id').eq('cr_id', crId).maybeSingle()

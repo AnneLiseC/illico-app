@@ -16,6 +16,7 @@ import { NextResponse } from 'next/server'
 import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
 import { RACINE_CLIENTS, bucketSegments, nomDossierChantier, nettoyerSegment } from '../../../lib/drive/taxonomie'
+import { suffixeCollisionDossier } from '../../../lib/drive/collisions'
 
 const BUCKETS = ['1. En cours', '2. Terminés', '3. Sans suite']
 
@@ -40,7 +41,7 @@ export async function POST(request) {
   const db = admin()
 
   const { data: dossier } = await db.from('dossiers')
-    .select('id, created_at, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', dossierId).maybeSingle()
+    .select('id, created_at, date_premier_rdv, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', dossierId).maybeSingle()
   if (!dossier) return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
   if (!dossier.referente_id) return NextResponse.json({ skipped: true, reason: 'no_referente' })
 
@@ -60,11 +61,12 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Erreur Drive' }, { status: 500 })
   }
 
-  const { data: client } = await db.from('clients').select('nom').eq('id', dossier.client_id).maybeSingle()
-  const folderName = nettoyerSegment(nomDossierChantier(dossier.created_at, client?.nom))
+  const { data: client } = await db.from('clients').select('nom, nom2').eq('id', dossier.client_id).maybeSingle()
+  const suffixe = await suffixeCollisionDossier(db, dossier)
+  const folderName = nettoyerSegment(nomDossierChantier(dossier.date_premier_rdv || dossier.created_at, client?.nom, client?.nom2, suffixe))
   // Segments cibles depuis la racine 01_CLIENTS (ex. ['1. En cours'] ou ['2. Terminés','2026']).
   const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
-  const targetBucketSegs = bucketSegments(dossier.statut, { dateFin, createdAt: dossier.created_at }).map(nettoyerSegment)
+  const targetBucketSegs = bucketSegments(dossier.statut, { dateFin, createdAt: dossier.date_premier_rdv || dossier.created_at }).map(nettoyerSegment)
   const targetPathSegs = targetBucketSegs.join('/')
 
   try {

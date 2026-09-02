@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { chantierBaseSegments, sousDossiers, nettoyerSegment, slugNom } from '../../../lib/drive/taxonomie'
+import { suffixeCollisionDossier } from '../../../lib/drive/collisions'
 import { formatNomClient } from '../../../lib/clients'
 import { pushMirror, mimeFromExt } from '../../../lib/drive/mirror'
 
@@ -30,7 +31,7 @@ export async function POST(request) {
   const acces = await assertDossierAccessible(facture.dossier_id, auth.profile)
   if (acces.error) return acces.error
   const { data: dossier } = await db.from('dossiers')
-    .select('id, created_at, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', facture.dossier_id).maybeSingle()
+    .select('id, created_at, date_premier_rdv, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', facture.dossier_id).maybeSingle()
   if (!dossier) return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
   const { data: client } = await db.from('clients').select('*').eq('id', dossier.client_id).maybeSingle()
   let artisanNom = 'artisan'
@@ -40,7 +41,8 @@ export async function POST(request) {
   }
   const ext = (facture.pdf_path?.split('.').pop() || 'pdf')
   const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
-  const segments = [...chantierBaseSegments(dossier.statut, dossier.created_at, client?.nom, { dateFin }), ...sousDossiers('facture_artisan', artisanNom)].map(nettoyerSegment)
+  const suffixe = await suffixeCollisionDossier(db, dossier)
+  const segments = [...chantierBaseSegments(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, { dateFin, nom2: client?.nom2, suffixe }), ...sousDossiers('facture_artisan', artisanNom)].map(nettoyerSegment)
   const clientSlug = slugNom(formatNomClient(client, { civilite: false }))
   const artisanSlug = slugNom(artisanNom)
 

@@ -16,6 +16,7 @@ import { NextResponse } from 'next/server'
 import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
 import { cheminChantier, cheminChantierPhoto, slugNom } from '../../../lib/drive/taxonomie'
+import { suffixeCollisionDossier } from '../../../lib/drive/collisions'
 import { formatNomClient } from '../../../lib/clients'
 
 let _admin
@@ -58,7 +59,7 @@ export async function POST(request) {
 
   // ── Dossier + référente + son Drive ──
   const { data: dossier } = await db.from('dossiers')
-    .select('id, created_at, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', src.dossierId).maybeSingle()
+    .select('id, created_at, date_premier_rdv, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', src.dossierId).maybeSingle()
   if (!dossier) return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
   if (!dossier.referente_id) return NextResponse.json({ skipped: true, reason: 'no_referente' })
 
@@ -81,9 +82,10 @@ export async function POST(request) {
   // ── Chemin cible (avec bucket de statut) ──
   const { data: client } = await db.from('clients').select('*').eq('id', dossier.client_id).maybeSingle()
   const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+  const suffixe = await suffixeCollisionDossier(db, dossier)
   let segments
   if (src.kind === 'photo') {
-    segments = cheminChantierPhoto(dossier.statut, dossier.created_at, client?.nom, src.categorie, { dateFin })
+    segments = cheminChantierPhoto(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, src.categorie, { dateFin, nom2: client?.nom2, suffixe })
     // Nom déterministe : <client>_<catégorie>_<n>.<ext>. n = rang de la photo dans sa catégorie
     // (ordre de création stable) → renommage propre, fini l'UUID.
     const clientSlug = slugNom(formatNomClient(client, { civilite: false }))
@@ -103,7 +105,7 @@ export async function POST(request) {
       const { data: a } = await db.from('artisans').select('entreprise').eq('id', src.artisanId).maybeSingle()
       artisanNom = a?.entreprise || null
     }
-    segments = cheminChantier(dossier.statut, dossier.created_at, client?.nom, src.categorie, artisanNom, { dateFin })
+    segments = cheminChantier(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, src.categorie, artisanNom, { dateFin, nom2: client?.nom2, suffixe })
   }
 
   try {
