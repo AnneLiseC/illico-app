@@ -12,7 +12,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { renderToBuffer } from '@react-pdf/renderer'
 import '../../../lib/pdf/fonts.js'
-import { requireRole } from '../../../lib/api-auth'
+import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { buildCRDocument } from '../../../lib/pdf/crDocument.js'
 import { stripEmojiPdf } from '../../../lib/pdf/stripEmoji.js'
 import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
@@ -48,6 +48,9 @@ export async function POST(request) {
     .select('id, dossier_id, contenu_final, photos_jointes, type_visite, created_at, date_visite')
     .eq('id', crId).maybeSingle()
   if (!cr) return NextResponse.json({ error: 'CR introuvable' }, { status: 404 })
+
+  const acces = await assertDossierAccessible(cr.dossier_id, auth.profile)
+  if (acces.error) return acces.error
 
   // Dossier RICHE (client, référente, agence) pour le rendu PDF.
   const { data: dossier } = await db.from('dossiers')

@@ -4,7 +4,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireRole } from '../../../lib/api-auth'
+import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { chantierBaseSegments, sousDossiers, nettoyerSegment, slugNom } from '../../../lib/drive/taxonomie'
 import { formatNomClient } from '../../../lib/clients'
 import { pushMirror, mimeFromExt } from '../../../lib/drive/mirror'
@@ -21,6 +21,9 @@ export async function POST(request) {
   let body; try { body = await request.json() } catch { body = {} }
   const dossierId = body.dossier_id
   if (!dossierId) return NextResponse.json({ error: 'dossier_id manquant' }, { status: 400 })
+
+  const acces = await assertDossierAccessible(dossierId, auth.profile)
+  if (acces.error) return acces.error
 
   const db = admin()
   const { data: dossier } = await db.from('dossiers')

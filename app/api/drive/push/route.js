@@ -13,7 +13,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireRole } from '../../../lib/api-auth'
+import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
 import { cheminChantier, cheminChantierPhoto, slugNom } from '../../../lib/drive/taxonomie'
 import { formatNomClient } from '../../../lib/clients'
@@ -52,6 +52,9 @@ export async function POST(request) {
   } else {
     return NextResponse.json({ error: 'document_id ou photo_id requis' }, { status: 400 })
   }
+
+  const acces = await assertDossierAccessible(src.dossierId, auth.profile)
+  if (acces.error) return acces.error
 
   // ── Dossier + référente + son Drive ──
   const { data: dossier } = await db.from('dossiers')

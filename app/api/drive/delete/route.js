@@ -8,7 +8,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireRole } from '../../../lib/api-auth'
+import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
 
 let _admin
@@ -26,7 +26,7 @@ export async function POST(request) {
   const db = admin()
 
   // Cible par document_id, photo_id OU cr_id.
-  let q = db.from('doc_index').select('id, drive_id, item_id, user_id, origine')
+  let q = db.from('doc_index').select('id, drive_id, item_id, user_id, origine, dossier_id, artisan_id')
   if (body.document_id) q = q.eq('document_id', body.document_id)
   else if (body.photo_id) q = q.eq('photo_id', body.photo_id)
   else if (body.cr_id) q = q.eq('cr_id', body.cr_id)
@@ -41,6 +41,18 @@ export async function POST(request) {
 
   const { data: idx } = await q.maybeSingle()
   if (!idx) return NextResponse.json({ ok: true, nothing: true }) // jamais miroité → rien à faire
+
+  // Cloisonnement tenant : la ligne résolue doit appartenir au tenant de l'appelant.
+  // Dossier-scopée → contrôle par dossier_id ; artisan/fiche sans dossier → société de l'artisan.
+  if (idx.dossier_id) {
+    const acces = await assertDossierAccessible(idx.dossier_id, auth.profile)
+    if (acces.error) return acces.error
+  } else if (idx.artisan_id) {
+    const { data: art } = await db.from('artisans').select('societe_id').eq('id', idx.artisan_id).maybeSingle()
+    if (!art || art.societe_id !== auth.profile?.societe_id) return NextResponse.json({ error: 'Introuvable' }, { status: 404 })
+  } else {
+    return NextResponse.json({ error: 'Introuvable' }, { status: 404 })
+  }
 
   // Fichier NÉ dans le drive externe (origine='onedrive' = OneDrive OU Google Drive) :
   // le drive en est le MAÎTRE. On ne supprime JAMAIS le master depuis l'app — on retire

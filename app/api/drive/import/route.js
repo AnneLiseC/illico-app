@@ -10,7 +10,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireRole } from '../../../lib/api-auth'
+import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { driveModule, loadDriveCompte } from '../../../lib/drive/dispatch'
 
 const CATS = new Set(['compte_rendu', 'plans', 'administratif']) // catégories libres autorisées ; sinon Autres (null)
@@ -36,9 +36,17 @@ export async function POST(request) {
   const { data: inbox } = await db.from('drive_inbox')
     .select('id, user_id, drive_id, item_id, name, statut').eq('id', inbox_id).maybeSingle()
   if (!inbox) return NextResponse.json({ error: 'Élément introuvable' }, { status: 404 })
-  if (inbox.user_id !== auth.user.id && auth.profile?.role !== 'admin') {
-    return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+  if (inbox.user_id !== auth.user.id) {
+    const { data: prop } = await db.from('profiles')
+      .select('societe_id, agence_id').eq('id', inbox.user_id).maybeSingle()
+    const memeTenant = auth.profile?.role === 'admin'
+      ? prop?.societe_id === auth.profile.societe_id
+      : prop?.agence_id === auth.profile?.agence_id
+    if (!memeTenant) return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
   }
+
+  const acces = await assertDossierAccessible(dossier_id, auth.profile)
+  if (acces.error) return acces.error
   if (inbox.statut !== 'a_rattacher') return NextResponse.json({ ok: true, already: true })
 
   const compte = await loadDriveCompte(db, inbox.user_id)

@@ -148,7 +148,7 @@ export default function Statistiques() {
           date_fin_chantier, date_limite_devis, date_cloture,
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
           client:clients(prenom, nom, apporteur_pourcentage, apporteur_base),
-          devis_artisans(id, montant_ht, montant_ttc, commission_pourcentage, statut, date_reception, date_signature, artisan:artisans(id, entreprise, metier, partenaire)),
+          devis_artisans(id, montant_ht, montant_ttc, commission_pourcentage, statut, date_reception, date_signature, hors_honoraires, artisan:artisans(id, entreprise, metier, partenaire)),
           suivi_financier(*)
         `).order('created_at', { ascending: false }),
         supabase.from('objectifs_ca').select('*'),

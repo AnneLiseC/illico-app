@@ -166,10 +166,10 @@ export default function Dashboard() {
         supabase.from('dossiers').select(`
           id, reference, statut, date_limite_devis, date_signature_contrat,
           frais_statut, frais_consultation, part_agente, frais_part_agente,
-          honoraires_amo_taux, taux_courtage, typologie, created_at, archive, agence_id, date_demarrage_chantier, contrat_signe, apporteur_actif,
+          honoraires_amo_taux, taux_courtage, typologie, created_at, archive, agence_id, date_demarrage_chantier, date_fin_chantier, contrat_signe, apporteur_actif,
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role, frais_part_agente_defaut),
           client:clients(prenom, nom, apporteur_pourcentage, apporteur_base),
-          devis_artisans(id, montant_ht, montant_ttc, commission_pourcentage, statut, date_signature, artisan:artisans(id, entreprise)),
+          devis_artisans(id, montant_ht, montant_ttc, commission_pourcentage, statut, date_signature, hors_honoraires, artisan:artisans(id, entreprise)),
           rendez_vous(type_rdv, date_heure),
           suivi_financier(*)
         `).eq('referente_id', profile.id).order('created_at', { ascending: false }),
