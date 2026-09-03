@@ -4,14 +4,21 @@
 // Outlook connecté. Remplace l'ancien envoi app-only (client_credentials), devenu
 // impossible : Microsoft a coupé l'auth basique/app-only sur les comptes perso.
 //
-// Signature stable : sendEmail({ to, subject, html, attachments? }). SERVEUR UNIQUEMENT.
+// Signature stable : sendEmail({ to, subject, html, replyTo?, attachments? }).
+// SERVEUR UNIQUEMENT.
 // attachments (optionnel) : [{ filename, contentBytes(base64), contentType }].
+//
+// replyTo (optionnel) : l'expéditeur TECHNIQUE est toujours la boîte connectée — Graph
+// ne sait pas écrire « au nom de » quelqu'un d'autre. Le replyTo est donc le seul levier
+// pour qu'une RÉPONSE arrive chez la bonne personne : la référente du dossier pour les
+// mails clients et artisans, l'admin de la société pour la décennale. C'est la Décision 2
+// du cahier des charges v6.
 
 import { getSenderAccessToken } from './email-sender'
 
 const GRAPH = 'https://graph.microsoft.com/v1.0'
 
-export async function sendEmail({ to, subject, html, attachments }) {
+export async function sendEmail({ to, subject, html, replyTo, attachments }) {
   if (!to) throw new Error('Destinataire manquant')
 
   const token = await getSenderAccessToken()
@@ -20,6 +27,9 @@ export async function sendEmail({ to, subject, html, attachments }) {
     subject,
     body: { contentType: 'HTML', content: html },
     toRecipients: [{ emailAddress: { address: to } }],
+  }
+  if (replyTo) {
+    message.replyTo = [{ emailAddress: { address: replyTo } }]
   }
   if (Array.isArray(attachments) && attachments.length) {
     message.attachments = attachments.map(a => ({

@@ -2,14 +2,22 @@
 // Déclenché par Vercel Cron (vercel.json) à 08h00 UTC chaque jour
 // Sécurisé par CRON_SECRET en header Authorization
 //
-// Chaque email est envoyé DEPUIS la boîte de la référente du dossier (@illico-travaux.com).
-// Les notifications internes ciblent uniquement la référente concernée.
+// EXPÉDITEUR — l'ancien commentaire annonçait un envoi « depuis la boîte de la référente ».
+// C'est impossible : Graph envoie depuis la boîte connectée et ne sait pas écrire au nom
+// d'un autre. Un essai du 03/09 l'a confirmé côté illiCO — le locataire Entra refuse à ses
+// utilisateurs de connecter leur boîte sans approbation d'un administrateur. On passe donc
+// par `replyTo` : l'expéditeur technique est la boîte BATILIS, la RÉPONSE part chez la
+// bonne personne. Voir docs/cadrage_relances_notifications.md § 3 bis.
+//
+// GARDE-FOU — le mode ESSAI est le DÉFAUT (lib/relances-envoi.js) : aucun mail ne part
+// vers un vrai destinataire tant que RELANCES_ENVOI=reel n'est pas posé. Un oubli de
+// configuration laisse le robinet fermé, il ne peut pas l'ouvrir.
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { checkBearerSecret } from '../../../lib/http-auth'
-// import { sendEmail } from '../../../lib/email' // TODO: activer après config HEXAOM (admin consent Azure)
-const sendEmail = async ({ to, subject }) => { /* emails désactivés temporairement */ }
+import { sendEmail } from '../../../lib/email'
+import { preparerEnvoi, modeEnvoi } from '../../../lib/relances-envoi'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -69,6 +77,29 @@ async function notifyUser(userId, { type, titre, message, dossier_id }) {
   await getSupabaseAdmin().from('notifications').insert({ user_id: userId, type, titre, message, dossier_id: dossier_id || null })
 }
 
+// Tous les utilisateurs (admin + agentes) d'une société — pour les notifications
+// qui concernent tout le monde, comme l'expiration d'une décennale.
+async function membresSociete(societeId) {
+  if (!societeId) return []
+  const { data } = await getSupabaseAdmin()
+    .from('profiles').select('id').eq('societe_id', societeId).in('role', ['admin', 'agente'])
+  return (data || []).map(p => p.id)
+}
+
+// Envoi passé par le garde-fou : en mode essai, tout part vers l'adresse d'essai avec
+// l'objet préfixé du destinataire réel. Renvoie une ligne de journal (jamais d'exception
+// pour un simple « non envoyé » : le mode essai sans adresse n'est pas une erreur).
+async function envoyer(log, tag, { to, subject, html, replyTo }) {
+  const plan = preparerEnvoi({ to, subject })
+  if (!plan.envoyer) {
+    log.push(`[${tag}] NON ENVOYÉ (${plan.raison}) — destinataire réel ${plan.reel || '—'}`)
+    return false
+  }
+  await sendEmail({ to: plan.to, subject: plan.subject, html, replyTo: replyTo || undefined })
+  log.push(`[${tag}] ${plan.to}${plan.to !== plan.reel ? ` (essai, réel ${plan.reel})` : ''}`)
+  return true
+}
+
 export async function GET(req) {
   if (!checkBearerSecret(req, process.env.CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -78,8 +109,8 @@ export async function GET(req) {
   const errors = []
   const todayStr = today()
   const in7 = dateInDays(7)
-  const in30 = dateInDays(30)
-  const yesterday = dateInDays(-1)
+  const in14 = dateInDays(14)   // décennale : mail à l'artisan (décision du 03/09)
+  const in15 = dateInDays(15)   // décennale : notification interne, la veille du mail
   const tomorrow = dateInDays(1)
 
   // ─────────────────────────────────────────────────────────────
@@ -102,9 +133,9 @@ export async function GET(req) {
       if (!artisan?.email) continue
       const ref = d.dossiers?.reference || d.dossier_id
       const referente = d.dossiers?.profiles
-      await sendEmail({
+      await envoyer(log, '1', {
         to: artisan.email,
-        from: referente?.email,
+        replyTo: referente?.email,
         subject: `Rappel — devis à remettre avant le ${new Date(d.date_limite).toLocaleDateString('fr-FR')}`,
         html: `
           <p>Bonjour ${prenomNom(artisan) || artisan.entreprise},</p>
@@ -115,7 +146,6 @@ export async function GET(req) {
           ${signatureHtml(referente)}
         `,
       })
-      log.push(`[1] Email artisan ${artisan.email} — dossier ${ref}`)
     }
   } catch (e) { errors.push(`[1] ${e.message}`) }
 
@@ -145,61 +175,70 @@ export async function GET(req) {
   // ─────────────────────────────────────────────────────────────
   // 3. Demande d'acompte — UN email par dossier, liste complète
   //    artisans + AMO le cas échéant
+  //
+  //    DÉCLENCHEUR (décision du 03/09) : J+5 après la DATE DE SIGNATURE du devis, et
+  //    non plus la date d'échéance de la ligne de suivi. La signature est le fait
+  //    métier ; l'échéance était une donnée saisie à la main, donc absente la plupart
+  //    du temps.
+  //
+  //    CONTENU : uniquement les acomptes NON RÉGLÉS. Une case déjà cochée ne figure
+  //    pas dans le mail — on ne réclame pas ce qui est payé. Si tout est réglé, aucun
+  //    mail ne part : il n'y a rien à demander.
   // ─────────────────────────────────────────────────────────────
   try {
-    // Acomptes artisans dus aujourd'hui
-    const { data: lignesArtisans } = await getSupabaseAdmin()
-      .from('suivi_financier')
-      .select(`
-        id, dossier_id, montant_ttc, artisan_id,
-        artisans(id, entreprise, paiement_direct),
-        dossiers(id, reference, referente_id, agence_id,
-          agences(ville),
+    const { data: devisSignes } = await getSupabaseAdmin()
+      .from('devis_artisans')
+      .select('id, dossier_id')
+      .eq('statut', 'accepte')
+      .eq('date_signature', dateInDays(-5))
+
+    const dossiersConcernes = [...new Set((devisSignes || []).map(d => d.dossier_id).filter(Boolean))]
+
+    for (const dossierId of dossiersConcernes) {
+      const { data: dossier } = await getSupabaseAdmin()
+        .from('dossiers')
+        .select(`
+          id, reference, agences(ville),
           profiles!referente_id(email, prenom, nom, telephone, role),
-          clients(email, nom, prenom, civilite, nom2, prenom2))
-      `)
-      .eq('type_echeance', 'acompte_artisan')
-      .eq('statut_client', 'en_attente')
-      .eq('date_echeance', todayStr)
+          clients(email, nom, prenom, civilite, nom2, prenom2)
+        `)
+        .eq('id', dossierId).maybeSingle()
 
-    // Acomptes AMO/courtage dus aujourd'hui (même email que les artisans)
-    const { data: lignesAmo } = await getSupabaseAdmin()
-      .from('suivi_financier')
-      .select('dossier_id, montant_ttc, type_echeance')
-      .in('type_echeance', ['acompte_amo', 'honoraires_courtage'])
-      .eq('statut_client', 'en_attente')
-      .eq('date_echeance', todayStr)
+      const client = dossier?.clients
+      const referente = dossier?.profiles
+      if (!client?.email) continue
 
-    const amoParDossier = {}
-    for (const a of lignesAmo || []) {
-      amoParDossier[a.dossier_id] = (amoParDossier[a.dossier_id] || 0) + Number(a.montant_ttc || 0)
-    }
+      // Acomptes artisans encore dus sur CE dossier (statut client ≠ réglé).
+      const { data: lignesArtisans } = await getSupabaseAdmin()
+        .from('suivi_financier')
+        .select('id, montant_ttc, artisan_id, artisans(id, entreprise, paiement_direct)')
+        .eq('dossier_id', dossierId)
+        .eq('type_echeance', 'acompte_artisan')
+        .eq('statut_client', 'en_attente')
 
-    // Regrouper les artisans par dossier
-    const dossiersMap = {}
-    for (const ligne of lignesArtisans || []) {
-      const did = ligne.dossier_id
-      if (!dossiersMap[did]) {
-        dossiersMap[did] = {
-          dossier: ligne.dossiers,
-          client: ligne.dossiers?.clients,
-          referente: ligne.dossiers?.profiles,
-          artisans: [],
-        }
-      }
-      dossiersMap[did].artisans.push({
+      // Acompte AMO / courtage encore dû sur CE dossier (même mail que les artisans).
+      const { data: lignesAmo } = await getSupabaseAdmin()
+        .from('suivi_financier')
+        .select('montant_ttc, type_echeance')
+        .eq('dossier_id', dossierId)
+        .in('type_echeance', ['acompte_amo', 'honoraires_courtage'])
+        .eq('statut_client', 'en_attente')
+
+      const artisans = (lignesArtisans || []).map(ligne => ({
         artisan_id: ligne.artisan_id,
         entreprise: ligne.artisans?.entreprise,
         montant_ttc: ligne.montant_ttc,
         paiement_direct: ligne.artisans?.paiement_direct,
-      })
-    }
-
-    for (const [dossierId, data] of Object.entries(dossiersMap)) {
-      const { client, referente, dossier, artisans } = data
-      if (!client?.email) continue
+      }))
+      const montantAmoDu = (lignesAmo || []).reduce((s, a) => s + Number(a.montant_ttc || 0), 0)
 
       const ref = dossier?.reference || dossierId
+
+      // Tout est déjà encaissé → rien à réclamer, pas de mail.
+      if (artisans.length === 0 && !montantAmoDu) {
+        log.push(`[3] Dossier ${ref} — tous les acomptes réglés, aucun mail`)
+        continue
+      }
 
       // Trier les artisans par date_debut d'intervention
       const { data: interventions } = await getSupabaseAdmin()
@@ -224,7 +263,7 @@ export async function GET(req) {
 
       const clientNoms = nomsVirement(client)
       const salutation = salutationClient(client)
-      const montantAmo = amoParDossier[dossierId]
+      const montantAmo = montantAmoDu
       const agenceVille = dossier?.agences?.ville || ''
 
       // Construction du HTML
@@ -280,20 +319,75 @@ export async function GET(req) {
         ${signatureHtml(referente)}
       `
 
-      await sendEmail({
+      await envoyer(log, '3', {
         to: client.email,
-        from: referente?.email,
+        replyTo: referente?.email,
         subject: `Demande d'acompte — dossier ${ref}`,
         html,
       })
-      log.push(`[3] Email client ${client.email} — acompte dossier ${ref} (${artisans.length} artisan(s), de ${referente?.email})`)
     }
   } catch (e) { errors.push(`[3] ${e.message}`) }
 
   // ─────────────────────────────────────────────────────────────
-  // 4. Facture finale non réglée — relance 7 jours après échéance
+  // 3 bis. Garde-fou de la demande d'acompte — notification interne à J+4
+  //
+  //   Le mail de demande d'acompte part à J+5 après signature. La veille, on vérifie
+  //   que le suivi financier est COMPLET : chaque devis signé du dossier doit avoir sa
+  //   ligne d'acompte. S'il en manque une, le mail listerait un artisan de moins que
+  //   la réalité — c'est exactement l'oubli de saisie qu'on veut attraper.
+  //
+  //   Si le suivi est complet : AUCUNE notification. On ne prévient pas que tout va
+  //   bien (décision du 03/09). Et dans les deux cas, le mail part le lendemain.
   // ─────────────────────────────────────────────────────────────
   try {
+    const { data: devisVeille } = await getSupabaseAdmin()
+      .from('devis_artisans')
+      .select('id, dossier_id')
+      .eq('statut', 'accepte')
+      .eq('date_signature', dateInDays(-4))
+
+    const dossiersVeille = [...new Set((devisVeille || []).map(d => d.dossier_id).filter(Boolean))]
+
+    for (const dossierId of dossiersVeille) {
+      // TOUS les devis signés du dossier, pas seulement ceux signés la veille :
+      // un suivi incomplet peut porter sur un devis signé le mois dernier.
+      const [{ data: tousDevis }, { data: lignes }, { data: dossier }] = await Promise.all([
+        getSupabaseAdmin().from('devis_artisans').select('id').eq('dossier_id', dossierId).eq('statut', 'accepte'),
+        getSupabaseAdmin().from('suivi_financier').select('devis_id, artisan_id')
+          .eq('dossier_id', dossierId).eq('type_echeance', 'acompte_artisan'),
+        getSupabaseAdmin().from('dossiers').select('id, reference, referente_id, clients(nom, prenom)').eq('id', dossierId).maybeSingle(),
+      ])
+
+      const nbDevis = (tousDevis || []).length
+      const nbLignes = (lignes || []).length
+      if (nbLignes >= nbDevis) continue // suivi complet → silence
+
+      if (!dossier?.referente_id) continue
+      const nomClient = [dossier?.clients?.prenom, dossier?.clients?.nom].filter(Boolean).join(' ') || dossier?.reference
+      await notifyUser(dossier.referente_id, {
+        type: 'acompte_a_verifier',
+        titre: 'Demande d\'acompte demain',
+        message: `Le mail pour le paiement de l'acompte de ${nomClient} part demain, vérifie le suivi financier (${nbLignes} ligne(s) d'acompte pour ${nbDevis} devis signé(s)).`,
+        dossier_id: dossierId,
+      })
+      log.push(`[3bis] Notification référente — dossier ${dossier.reference} (${nbLignes}/${nbDevis})`)
+    }
+  } catch (e) { errors.push(`[3bis] ${e.message}`) }
+
+  // ─────────────────────────────────────────────────────────────
+  // 4. Facture finale non réglée — relance 7 jours après échéance
+  //
+  //    ⏸ MISE DE CÔTÉ (décision du 03/09) : « il faut la réception de la facture ET le
+  //    règlement client, pas de date préprogrammée, ça dépend des chantiers ». Le
+  //    déclencheur actuel (J+7 après une échéance saisie à la main) ne correspond pas
+  //    au métier. Le code reste en place, désactivé par un drapeau explicite plutôt
+  //    que supprimé : il sera rebranché après cadrage, pas réécrit.
+  // ─────────────────────────────────────────────────────────────
+  const FACTURE_FINALE_ACTIVE = false
+  try {
+    if (!FACTURE_FINALE_ACTIVE) {
+      log.push('[4] Relance facture finale — désactivée, en attente de cadrage')
+    } else {
     const { data: factures } = await getSupabaseAdmin()
       .from('suivi_financier')
       .select(`
@@ -311,9 +405,9 @@ export async function GET(req) {
       const ref = f.dossiers?.reference || f.dossier_id
       const referente = f.dossiers?.profiles
       const echeance = new Date(f.date_echeance).toLocaleDateString('fr-FR')
-      await sendEmail({
+      await envoyer(log, '4', {
         to: client.email,
-        from: referente?.email,
+        replyTo: referente?.email,
         subject: `Rappel — facture finale en attente de règlement — dossier ${ref}`,
         html: `
           <p>Bonjour ${salutationClient(client)},</p>
@@ -324,18 +418,24 @@ export async function GET(req) {
           ${signatureHtml(referente)}
         `,
       })
-      log.push(`[4] Email client ${client.email} — facture finale dossier ${ref}`)
+    }
     }
   } catch (e) { errors.push(`[4] ${e.message}`) }
 
   // ─────────────────────────────────────────────────────────────
-  // 5. Rappel RDV client — J-1
+  // 5. Rappel RDV — J-1, au client ET à l'artisan DU rendez-vous
+  //
+  //    « Les artisans concernés » = `rendez_vous.artisan_id`, l'artisan du rendez-vous
+  //    lui-même (décision du 03/09) — PAS les intervenants du chantier ce jour-là.
+  //    Conséquence assumée : un rendez-vous de suivi sans artisan désigné ne prévient
+  //    aucun artisan.
   // ─────────────────────────────────────────────────────────────
   try {
     const { data: rdvs } = await getSupabaseAdmin()
       .from('rendez_vous')
       .select(`
-        id, dossier_id, type_rdv, date_heure,
+        id, dossier_id, type_rdv, date_heure, artisan_id,
+        artisans(email, entreprise, nom, prenom),
         dossiers(reference, adresse_chantier, profiles!referente_id(email, prenom, nom, telephone, role),
           clients(email, nom, prenom, civilite, nom2))
       `)
@@ -344,37 +444,56 @@ export async function GET(req) {
 
     for (const rdv of rdvs || []) {
       const client = rdv.dossiers?.clients
-      if (!client?.email) continue
+      const artisan = rdv.artisans
       const ref = rdv.dossiers?.reference || rdv.dossier_id
       const referente = rdv.dossiers?.profiles
       const heureRdv = new Date(rdv.date_heure).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
       const dateRdv = new Date(rdv.date_heure).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-      await sendEmail({
-        to: client.email,
-        from: referente?.email,
-        subject: `Rappel de votre rendez-vous demain — dossier ${ref}`,
-        html: `
-          <p>Bonjour ${salutationClient(client)},</p>
-          <p>Nous vous rappelons votre rendez-vous <strong>${rdv.type_rdv || ''}</strong> prévu :</p>
-          <p>📅 <strong>${dateRdv} à ${heureRdv}</strong>${rdv.dossiers?.adresse_chantier ? `<br>📍 ${rdv.dossiers.adresse_chantier}` : ''}</p>
-          <p>En cas d'empêchement, merci de nous contacter dès que possible.</p>
-          <p>Cordialement,</p>
-          ${signatureHtml(referente)}
-        `,
-      })
-      log.push(`[5] Email client ${client.email} — RDV dossier ${ref}`)
+      const lieuHtml = rdv.dossiers?.adresse_chantier ? `<br>📍 ${rdv.dossiers.adresse_chantier}` : ''
+
+      if (client?.email) {
+        await envoyer(log, '5', {
+          to: client.email,
+          replyTo: referente?.email,
+          subject: `Rappel de votre rendez-vous demain — dossier ${ref}`,
+          html: `
+            <p>Bonjour ${salutationClient(client)},</p>
+            <p>Nous vous rappelons votre rendez-vous <strong>${rdv.type_rdv || ''}</strong> prévu :</p>
+            <p>📅 <strong>${dateRdv} à ${heureRdv}</strong>${lieuHtml}</p>
+            <p>En cas d'empêchement, merci de nous contacter dès que possible.</p>
+            <p>Cordialement,</p>
+            ${signatureHtml(referente)}
+          `,
+        })
+      }
+
+      if (artisan?.email) {
+        await envoyer(log, '5', {
+          to: artisan.email,
+          replyTo: referente?.email,
+          subject: `Rappel — rendez-vous demain sur le dossier ${ref}`,
+          html: `
+            <p>Bonjour ${prenomNom(artisan) || artisan.entreprise},</p>
+            <p>Nous vous rappelons le rendez-vous <strong>${rdv.type_rdv || ''}</strong> prévu :</p>
+            <p>📅 <strong>${dateRdv} à ${heureRdv}</strong>${lieuHtml}</p>
+            <p>En cas d'empêchement, merci de nous prévenir dès que possible.</p>
+            <p>Cordialement,</p>
+            ${signatureHtml(referente)}
+          `,
+        })
+      }
     }
   } catch (e) { errors.push(`[5] ${e.message}`) }
 
   // ─────────────────────────────────────────────────────────────
-  // 6. Décennale artisan expirante dans 30 jours
+  // 6. Décennale artisan expirante dans 14 jours (décision du 03/09 — 30 auparavant)
   //    → boîte générale (pas rattaché à un dossier précis)
   // ─────────────────────────────────────────────────────────────
   try {
     const { data: artisans } = await getSupabaseAdmin()
       .from('artisans')
       .select('id, email, entreprise, nom, prenom, decennale_expiration, societe_id')
-      .eq('decennale_expiration', in30)
+      .eq('decennale_expiration', in14)
 
     // L'artisan est société-wide (pas d'agence). On signe au niveau société :
     // admin de la société comme expéditeur + villes de ses agences dans la signature.
@@ -404,10 +523,10 @@ export async function GET(req) {
       const expDate = new Date(a.decennale_expiration).toLocaleDateString('fr-FR')
       const { admin, villes } = await chargerSociete(a.societe_id)
       const signatureVilles = villes.length ? ` ${villes.join(' - ')}` : ''
-      await sendEmail({
+      await envoyer(log, '6', {
         to: a.email,
-        from: admin?.email,
-        subject: `Votre assurance décennale expire dans 30 jours`,
+        replyTo: admin?.email,   // la décennale est une affaire de société → le franchisé
+        subject: `Votre assurance décennale expire dans 14 jours`,
         html: `
           <p>Bonjour ${prenomNom(a) || a.entreprise},</p>
           <p>Nous vous informons que votre assurance décennale arrive à expiration le <strong>${expDate}</strong>.</p>
@@ -416,47 +535,47 @@ export async function GET(req) {
           <p>Cordialement,<br>L'équipe illiCO travaux${signatureVilles}</p>
         `,
       })
-      log.push(`[6] Email artisan ${a.email} — décennale expire ${expDate}`)
     }
   } catch (e) { errors.push(`[6] ${e.message}`) }
 
   // ─────────────────────────────────────────────────────────────
-  // 7. Nouveau compte rendu validé — email client AMO
+  // 6 bis. Décennale — notification interne la VEILLE du mail (J-15)
+  //    Destinataires : TOUT LE MONDE dans la société (décision du 03/09). Un artisan
+  //    n'appartient pas à une agente : n'importe qui peut avoir besoin de le savoir
+  //    avant de le placer sur un chantier.
   // ─────────────────────────────────────────────────────────────
   try {
-    const { data: crs } = await getSupabaseAdmin()
-      .from('comptes_rendus')
-      .select(`
-        id, dossier_id, type_visite, date_visite,
-        dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role),
-          clients(email, nom, prenom, civilite, nom2))
-      `)
-      .eq('valide', true)
-      .gte('created_at', `${yesterday}T00:00:00`)
-      .lt('created_at', `${todayStr}T00:00:00`)
+    const { data: artisansVeille } = await getSupabaseAdmin()
+      .from('artisans')
+      .select('id, entreprise, nom, prenom, decennale_expiration, societe_id')
+      .eq('decennale_expiration', in15)
 
-    for (const cr of crs || []) {
-      const client = cr.dossiers?.clients
-      if (!client?.email) continue
-      const ref = cr.dossiers?.reference || cr.dossier_id
-      const referente = cr.dossiers?.profiles
-      const dateVisite = cr.date_visite ? new Date(cr.date_visite).toLocaleDateString('fr-FR') : ''
-      await sendEmail({
-        to: client.email,
-        from: referente?.email,
-        subject: `Votre compte rendu de visite est disponible — dossier ${ref}`,
-        html: `
-          <p>Bonjour ${salutationClient(client)},</p>
-          <p>Le compte rendu de ${cr.type_visite || 'visite'}${dateVisite ? ` du ${dateVisite}` : ''}
-          relatif à votre dossier <strong>${ref}</strong> est désormais disponible.</p>
-          <p>Vous pouvez le consulter en vous connectant à votre espace client.</p>
-          <p>Cordialement,</p>
-          ${signatureHtml(referente)}
-        `,
-      })
-      log.push(`[7] Email client ${client.email} — CR dossier ${ref}`)
+    const membresCache = {}
+    for (const a of artisansVeille || []) {
+      if (!a.societe_id) continue
+      if (!membresCache[a.societe_id]) membresCache[a.societe_id] = await membresSociete(a.societe_id)
+      const expDate = new Date(a.decennale_expiration).toLocaleDateString('fr-FR')
+      const nom = a.entreprise || prenomNom(a) || 'un artisan'
+      for (const userId of membresCache[a.societe_id]) {
+        await notifyUser(userId, {
+          type: 'decennale_expire',
+          titre: 'Décennale — relance demain',
+          message: `Le mail pour la nouvelle décennale de ${nom} part demain (expiration le ${expDate}).`,
+        })
+      }
+      log.push(`[6bis] Notification société — décennale ${nom} (${membresCache[a.societe_id].length} destinataire(s))`)
     }
-  } catch (e) { errors.push(`[7] ${e.message}`) }
+  } catch (e) { errors.push(`[6bis] ${e.message}`) }
+
+  // ─────────────────────────────────────────────────────────────
+  // 7. Nouveau compte rendu validé — SUPPRIMÉ le 03/09
+  //
+  //    Un compte rendu n'est pas une relance : c'est un ENVOI, et il a son moment —
+  //    le clic sur « Publier au client ». Le mail part donc désormais depuis cette
+  //    action, immédiatement, au lieu d'attendre le cron du lendemain matin.
+  //    (Et la diffusion du PDF aux artisans garde sa route dédiée,
+  //     POST /api/cr/visite-diffuser, déclenchée à part.)
+  // ─────────────────────────────────────────────────────────────
 
   // ─────────────────────────────────────────────────────────────
   // 8. Désactivation des accès client expirés depuis +14j
@@ -470,5 +589,10 @@ export async function GET(req) {
   } catch (e) { errors.push(`[8] désactivation accès : ${e.message}`) }
 
   const enErreur = errors.length > 0
-  return NextResponse.json({ ok: !enErreur, date: todayStr, sent: log, errors: errors.length ? errors : undefined }, { status: enErreur ? 500 : 200 })
+  // `mode` en clair dans la réponse : en lisant le journal Vercel, on sait tout de suite
+  // si les mails sont partis pour de vrai ou s'ils ont été redirigés vers la boîte d'essai.
+  return NextResponse.json(
+    { ok: !enErreur, mode: modeEnvoi(), date: todayStr, sent: log, errors: errors.length ? errors : undefined },
+    { status: enErreur ? 500 : 200 }
+  )
 }
