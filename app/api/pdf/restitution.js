@@ -577,20 +577,34 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
 }
 
 // ── Génère un résumé IA du projet via l'API Anthropic ──
-async function generateResumeProjet({ crR1, description, devisNotes }) {
+//
+// CHANGEMENT DU 03/09 (demande d'Anne-Lise) : le résumé s'appuie désormais sur TOUS les
+// comptes rendus du dossier, plus seulement sur celui de la première visite. Un dossier
+// de restitution se remet en fin de chantier — le résumé doit raconter le projet tel
+// qu'il s'est déroulé, pas tel qu'il avait été envisagé au premier rendez-vous. Les
+// comptes rendus arrivent dans leur ordre chronologique, chacun étiqueté de son type de
+// visite, pour que le modèle puisse lire le déroulé.
+async function generateResumeProjet({ comptesRendus, description, devisNotes }) {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return null
 
   const parts = []
   if (description) parts.push(`Description du projet : ${description}`)
-  if (crR1?.contenu_final) parts.push(`Compte-rendu de première visite (R1) :\n${crR1.contenu_final}`)
+
+  for (const cr of (comptesRendus || []).filter(c => c?.contenu_final)) {
+    const etiquette = cr.type_visite
+      ? `Compte rendu de visite (${String(cr.type_visite).toUpperCase()})`
+      : 'Compte rendu de visite'
+    parts.push(`${etiquette} :\n${cr.contenu_final}`)
+  }
+
   const notes = (devisNotes || []).filter(Boolean)
   if (notes.length > 0) parts.push(`Descriptions des devis artisans :\n- ${notes.join('\n- ')}`)
 
   if (parts.length === 0) return null
 
-  const prompt = `Tu es un assistant pour illiCO travaux, une société de courtage en travaux et assistance à maîtrise d'ouvrage dans le bâtiment. 
-  À partir des éléments ci-dessous, rédige un résumé professionnel et synthétique du projet de rénovation. Le résumé doit être clair, fluide, en français, sans bullet points, en 3 à 5 phrases maximum. Ne mentionne pas les artisans ni les montants. Parle du projet du point de vue du client.
+  const prompt = `Tu es un assistant pour illiCO travaux, une société de courtage en travaux et assistance à maîtrise d'ouvrage dans le bâtiment.
+  À partir des éléments ci-dessous, rédige un résumé professionnel et synthétique du projet de rénovation. Les comptes rendus sont donnés dans l'ordre chronologique : appuie-toi sur l'ensemble du déroulé, et non sur la seule première visite. Le résumé doit être clair, fluide, en français, sans bullet points, en 3 à 5 phrases maximum. Ne mentionne pas les artisans ni les montants. Parle du projet du point de vue du client.
 
 ${parts.join('\n\n')}
 
@@ -803,14 +817,17 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     loadSep(SEP_KBIS), loadSep(SEP_QUALIFICATION),
   ])
 
-  // Charger CR R1
+  // Charger TOUS les comptes rendus, dans l'ordre chronologique (03/09 : le résumé ne
+  // s'appuie plus sur le seul R1). Ces mêmes lignes entrent dans l'empreinte du cache,
+  // côté route — sans quoi corriger un compte rendu ne rafraîchirait pas le dossier.
   const { data: crsData } = await supabaseAdmin.from('comptes_rendus')
     .select('id, type_visite, contenu_final').eq('dossier_id', dossier.id).order('created_at')
-  const crR1 = crsData?.find(cr => cr.type_visite === 'r1') || null
 
   // Générer le résumé IA
   const devisNotes = (devisActifs || []).map(d => d.notes).filter(Boolean)
-  const resumeGenere = await generateResumeProjet({ crR1, description: dossier.description, devisNotes })
+  const resumeGenere = await generateResumeProjet({
+    comptesRendus: crsData || [], description: dossier.description, devisNotes,
+  })
 
   // Générer les pages de contenu (descriptif + récap)
   const contentBuffer = isPreSignature

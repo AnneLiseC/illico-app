@@ -1674,7 +1674,9 @@ export default function FicheChantier({ params }) {
     setErreur('')
     const f = await heicToJpegFile(fichier)   // photo iPhone (HEIC) du contrat → JPEG
     const ext = f.name.split('.').pop()
-    const chemin = `chantiers/${id}/contrat/contrat.${ext}`
+    // Chemin HORODATÉ : un contrat remplacé doit changer de chemin, sinon l'empreinte
+    // du cache PDF ne bouge pas et l'ancienne version continue de partir. (R10)
+    const chemin = `chantiers/${id}/contrat/contrat-${Date.now()}.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, f, { upsert: true })
     if (error) { setErreur('Erreur upload : ' + error.message); setUploadingContrat(false); return }
     // Auto-signature : déposer le PDF du contrat coche le mandat (sauf s'il l'est déjà).
@@ -1827,7 +1829,7 @@ export default function FicheChantier({ params }) {
       // E4 — upload PDF si fourni à la création
       if (nouvelleFacture.fichier) {
         const ext = nouvelleFacture.fichier.name.split('.').pop()
-        const chemin = `chantiers/${id}/factures/${factureInseree.id}.${ext}`
+        const chemin = `chantiers/${id}/factures/${factureInseree.id}-${Date.now()}.${ext}`
         const { error: uploadErr } = await supabase.storage.from('documents').upload(chemin, nouvelleFacture.fichier)
         if (uploadErr) uploadFactureOk = false
         else { await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureInseree.id); pousserFactureDrive(factureInseree.id) }
@@ -1919,7 +1921,8 @@ export default function FicheChantier({ params }) {
     if (!fichier) return
     setUploadingFacturePdf(factureId)
     const ext = fichier.name.split('.').pop()
-    const chemin = `chantiers/${id}/factures/${factureId}.${ext}`
+    // Horodaté (R10) : le remplacement d'une facture doit invalider le cache.
+    const chemin = `chantiers/${id}/factures/${factureId}-${Date.now()}.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (!error) {
       const { error: updErr } = await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureId)
@@ -2115,7 +2118,8 @@ export default function FicheChantier({ params }) {
     if (!fichier) return
     setUploadingHonoFacture(cle)
     const ext = fichier.name.split('.').pop()
-    const chemin = `chantiers/${id}/honoraires/${cle}.${ext}`
+    // Horodaté (R10).
+    const chemin = `chantiers/${id}/honoraires/${cle}-${Date.now()}.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (error) { setErreur('Erreur upload : ' + error.message); setUploadingHonoFacture(null); return }
     const { data: row, error: upErr } = await supabase.from('honoraires_factures')
@@ -2265,7 +2269,7 @@ export default function FicheChantier({ params }) {
         // Devis signé → « devis_signes/<id> » + colonne devis_signe_path ; sinon chemin
         // versionné du devis + devis_pdf_path.
         const cheminDevis = estSigne
-          ? `chantiers/${id}/devis_signes/${devisInsere[0].id}.${ext}`
+          ? `chantiers/${id}/devis_signes/${devisInsere[0].id}-${Date.now()}.${ext}`
           : `chantiers/${id}/devis/${devisInsere[0].id}/${Date.now()}.${ext}`
         const { error: uploadError } = await supabase.storage.from('documents').upload(cheminDevis, form.fichier, estSigne ? { upsert: true } : undefined)
         if (uploadError) uploadDevisOk = false
@@ -2409,7 +2413,8 @@ export default function FicheChantier({ params }) {
     if (!fichier) return
     setUploadingDoc(devisId)
     const ext = fichier.name.split('.').pop()
-    const chemin = `chantiers/${id}/devis_signes/${devisId}.${ext}`
+    // Horodaté (R10) : un devis signé re-déposé (scan corrigé) doit invalider le cache.
+    const chemin = `chantiers/${id}/devis_signes/${devisId}-${Date.now()}.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (!error) {
       const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_signe_path: chemin }).eq('id', devisId)
@@ -2457,7 +2462,8 @@ export default function FicheChantier({ params }) {
     if (!fichier) return
     setUploadingDoc(devisId)
     const ext = fichier.name.split('.').pop()
-    const chemin = `chantiers/${id}/pv/${devisId}.${ext}`
+    // Horodaté (R10) : un PV re-déposé doit invalider le cache.
+    const chemin = `chantiers/${id}/pv/${devisId}-${Date.now()}.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (!error) {
       const { error: pathErr } = await supabase.from('devis_artisans').update({ pv_path: chemin }).eq('id', devisId)
@@ -2595,7 +2601,12 @@ export default function FicheChantier({ params }) {
     }).catch(() => {})
   }
 
-    const generatePDF = async (type, crId = null) => {
+    // `forcer` = soupape manuelle : refabriquer un document même s'il est en cache.
+    // Elle ne devrait presque jamais servir depuis que l'empreinte couvre la date
+    // d'édition, les comptes rendus et les chemins horodatés — mais un document suspect
+    // doit toujours pouvoir être relancé sans passer par la base. (R14)
+    // Déclenchée par Maj+clic sur le bouton PDF.
+    const generatePDF = async (type, crId = null, forcer = false) => {
     const key = crId ? `cr-${crId}` : type
     setGeneratingPDF(key)
     // Ouvre l'onglet TOUT DE SUITE (dans le geste de clic) → le PDF s'affichera dedans sans être
@@ -2606,7 +2617,7 @@ export default function FicheChantier({ params }) {
     try {
       const res = await apiFetch('/api/pdf', {
         method: 'POST',
-        body: JSON.stringify({ dossierId: id, type, crId }),
+        body: JSON.stringify({ dossierId: id, type, crId, regenerer: forcer }),
       })
       if (!res.ok) {
         const err = await res.json()
@@ -3312,11 +3323,16 @@ export default function FicheChantier({ params }) {
       await removeFolderContents('documents', `chantiers/${id}/documents`)
       await removeFolderContents('documents', `chantiers/${id}/contrat`)
       await removeFolderContents('documents', `chantiers/${id}/cr`)
-      // Cache des documents générés (documents_cache) : la LIGNE tombe par ON DELETE
-      // CASCADE, mais le PDF rangé dans le Storage, lui, resterait orphelin. C'est
-      // exactement le « contrat implicite » noté dans la boussole — toute nouvelle
-      // table fille qui pose un fichier doit ajouter son préfixe ici.
-      await removeFolderContents('documents', `cache/${id}`)
+      // Cache des documents générés : la LIGNE tombe par ON DELETE CASCADE, mais le PDF
+      // rangé dans le Storage resterait orphelin.
+      //
+      // ⚠️ CE BALAYAGE NE PEUT PAS SE FAIRE D'ICI. Les règles de stockage ne couvrent pas
+      // le préfixe `cache/` — l'appel était donc refusé EN SILENCE, et les récapitulatifs
+      // financiers de chantiers supprimés survivaient indéfiniment. La purge passe par une
+      // route serveur en service_role, seule identité autorisée sur ce préfixe. (R15)
+      try {
+        await apiFetch('/api/pdf/purge', { method: 'POST', body: JSON.stringify({ dossierId: id }) })
+      } catch { /* purge best-effort : ne doit pas empêcher la suppression du chantier */ }
 
       // 4) Supprimer le dossier chantier — les tables filles tombent par ON DELETE CASCADE
       const { error: dossierErr } = await supabase
@@ -3451,15 +3467,15 @@ export default function FicheChantier({ params }) {
             </>
           )}
           <div style={{flex:1}}/>
-          <button onClick={() => generatePDF('recapitulatif_prev')} disabled={!!generatingPDF}
+          <button onClick={(e) => generatePDF('recapitulatif_prev', null, e.shiftKey)} title="Maj+clic : forcer la refabrication du document" disabled={!!generatingPDF}
             className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
             <DlIcon /> {generatingPDF === 'recapitulatif_prev' ? '...' : 'Récap. financier'}
           </button>
-          <button onClick={() => generatePDF('recapitulatif')} disabled={!!generatingPDF}
+          <button onClick={(e) => generatePDF('recapitulatif', null, e.shiftKey)} title="Maj+clic : forcer la refabrication du document" disabled={!!generatingPDF}
             className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
             <DlIcon /> {generatingPDF === 'recapitulatif' ? '...' : 'Suivi financier'}
           </button>
-          <button onClick={() => generatePDF('dossier_suivi')} disabled={!!generatingPDF}
+          <button onClick={(e) => generatePDF('dossier_suivi', null, e.shiftKey)} title="Maj+clic : forcer la refabrication du document" disabled={!!generatingPDF}
             className="btn btn-ghost" style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
             <DocIcon /> {generatingPDF === 'dossier_suivi' ? '...' : 'Dossier de suivi'}
           </button>

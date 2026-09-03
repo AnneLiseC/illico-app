@@ -4,11 +4,45 @@
 // puis renvoie vers /super-admin. Protégé par le state signé HMAC (pas de bearer ici).
 
 import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { verifyState } from '../../../../lib/oauth-state'
 import { saveSenderTokens, EMAIL_SCOPE } from '../../../../lib/email-sender'
+import { isSuperAdminEmail } from '../../../../lib/super-admin'
 
 function authority() {
   return `https://login.microsoftonline.com/${process.env.MICROSOFT_TENANT || 'consumers'}`
+}
+
+let _admin
+function db() {
+  if (!_admin) _admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return _admin
+}
+
+// ⚠️ POURQUOI CE CONTRÔLE EXISTE (R17 de l'audit du 03/09)
+//
+// Le `state` signé prouve DEUX choses : qu'il vient bien de nous, et QUI l'a demandé.
+// Il ne prouve PAS que ce « qui » a le droit de reposer la boîte d'envoi de toute la
+// plateforme — et cette route-là fait exactement ça.
+//
+// Le trou : /api/auth/microsoft (connexion d'un agenda personnel) délivre un state
+// valide, signé du MÊME secret, à n'importe quel admin ou agente. Ce state était
+// accepté ici. Une agente pouvait donc récupérer son state d'agenda, reconstruire
+// l'URL d'autorisation Microsoft vers CE callback, consentir avec son compte — et
+// devenir l'expéditrice de toute la plateforme, donc destinataire des liens de
+// réinitialisation de mot de passe de TOUS les tenants.
+//
+// Le remède ne peut pas être « faire confiance au state » : il faut recharger
+// l'utilisateur côté serveur et revérifier son identité, comme le fait
+// requireSuperAdmin sur les autres routes /api/super-admin/*.
+async function estSuperAdmin(uid) {
+  try {
+    const { data, error } = await db().auth.admin.getUserById(uid)
+    if (error || !data?.user?.email) return false
+    return isSuperAdminEmail(data.user.email, process.env.SUPER_ADMIN_EMAILS)
+  } catch {
+    return false   // fail-closed : dans le doute, on refuse.
+  }
 }
 
 export async function GET(request) {
@@ -23,6 +57,9 @@ export async function GET(request) {
 
   const uid = verifyState(state)
   if (!uid) return back('email=error&reason=state')
+
+  // Le state dit QUI. Lui seul ne dit pas si cette personne a le droit d'être ici.
+  if (!(await estSuperAdmin(uid))) return back('email=error&reason=acces')
 
   try {
     // 1. Échange code → tokens.
