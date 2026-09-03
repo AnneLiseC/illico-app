@@ -91,9 +91,11 @@ export async function POST(request) {
     const artisanSlug = slugNom(artisanNom)
     const base = estSigne ? 'Devis_signe' : 'Devis'
     const fileName = `${nettoyerSegment(`${base}_${clientSlug}_${artisanSlug}`)}.pdf`
-    const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+    // Annee de classement : la CLOTURE d'abord (le clic), puis la fin de chantier (cf. taxonomie).
+  const dateCloture = dossier.date_cloture || null
+  const dateFin = dossier.date_fin_chantier || null
     const suffixe = await suffixeCollisionDossier(db, dossier)
-    const segments = [...chantierBaseSegments(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, { dateFin, nom2: client?.nom2, suffixe }), '3. Devis', sousDossier].map(nettoyerSegment)
+    const segments = [...chantierBaseSegments(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, { dateCloture, dateFin, nom2: client?.nom2, suffixe }), '3. Devis', sousDossier].map(nettoyerSegment)
 
     // Déjà miroité → on supprime l'ancien item (le statut/dossier a pu changer) avant de reposer.
     if (existing) { try { await mod.deleteItem(token, existing.drive_id, existing.item_id) } catch { /* best effort */ } }

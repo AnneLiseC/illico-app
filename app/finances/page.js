@@ -16,7 +16,7 @@ import { supabase } from '../lib/supabase'
 import { formatNomClient } from '../lib/clients'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { calculateDossierFinance, getActiveDevis, getSignedDevis, calculateSoldeAmoReel, DEFAULT_PART_AGENTE } from '../lib/finance'
+import { calculateDossierFinance, getActiveDevis, getSignedDevis, calculateSoldeAmoReel, DEFAULT_PART_AGENTE, TVA_FRAIS } from '../lib/finance'
 import { calcStatut } from '../lib/dossiers'
 import { Avatar } from '../components/shared'
 
@@ -308,8 +308,10 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
   const facturesAg  = facturesAgente.filter(f => f.agente_id === agenteSelectionnee)
   const redevAg     = redevancesAgente
   const [moisDeplie, setMoisDeplie] = useState(null)
-  // TTC = HT + 20 % de TVA (facturation de prestation de service).
-  const ttc = (n) => round2((n || 0) * 1.2)
+  // TTC = HT + TVA de prestation de service. Le taux vient de finance.js (TVA_FRAIS),
+  // il n'est PAS réécrit ici : un taux en dur dans une page est un taux qui ne suivra pas
+  // le jour où il change, et l'écart ne se verrait que sur la facture d'une agente.
+  const ttc = (n) => round2((n || 0) * TVA_FRAIS)
 
   // Montants F1/F2 calculés EN LIVE (source unique : agrégerParPaiement → finance.js).
   // Le snapshot factures_agente ne sert plus qu'à lire le statut + le PDF (read-only ici).

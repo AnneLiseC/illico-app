@@ -65,8 +65,10 @@ export async function POST(request) {
   const suffixe = await suffixeCollisionDossier(db, dossier)
   const folderName = nettoyerSegment(nomDossierChantier(dossier.date_premier_rdv || dossier.created_at, client?.nom, client?.nom2, suffixe))
   // Segments cibles depuis la racine 01_CLIENTS (ex. ['1. En cours'] ou ['2. Terminés','2026']).
-  const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
-  const targetBucketSegs = bucketSegments(dossier.statut, { dateFin, createdAt: dossier.date_premier_rdv || dossier.created_at }).map(nettoyerSegment)
+  // Annee de classement : la CLOTURE d'abord (le clic), puis la fin de chantier (cf. taxonomie).
+  const dateCloture = dossier.date_cloture || null
+  const dateFin = dossier.date_fin_chantier || null
+  const targetBucketSegs = bucketSegments(dossier.statut, { dateCloture, dateFin, createdAt: dossier.date_premier_rdv || dossier.created_at }).map(nettoyerSegment)
   const targetPathSegs = targetBucketSegs.join('/')
 
   try {

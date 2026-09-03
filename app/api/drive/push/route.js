@@ -81,11 +81,13 @@ export async function POST(request) {
 
   // ── Chemin cible (avec bucket de statut) ──
   const { data: client } = await db.from('clients').select('*').eq('id', dossier.client_id).maybeSingle()
-  const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+  // Annee de classement : la CLOTURE d'abord (le clic), puis la fin de chantier (cf. taxonomie).
+  const dateCloture = dossier.date_cloture || null
+  const dateFin = dossier.date_fin_chantier || null
   const suffixe = await suffixeCollisionDossier(db, dossier)
   let segments
   if (src.kind === 'photo') {
-    segments = cheminChantierPhoto(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, src.categorie, { dateFin, nom2: client?.nom2, suffixe })
+    segments = cheminChantierPhoto(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, src.categorie, { dateCloture, dateFin, nom2: client?.nom2, suffixe })
     // Nom déterministe : <client>_<catégorie>_<n>.<ext>. n = rang de la photo dans sa catégorie
     // (ordre de création stable) → renommage propre, fini l'UUID.
     const clientSlug = slugNom(formatNomClient(client, { civilite: false }))
@@ -105,7 +107,7 @@ export async function POST(request) {
       const { data: a } = await db.from('artisans').select('entreprise').eq('id', src.artisanId).maybeSingle()
       artisanNom = a?.entreprise || null
     }
-    segments = cheminChantier(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, src.categorie, artisanNom, { dateFin, nom2: client?.nom2, suffixe })
+    segments = cheminChantier(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, src.categorie, artisanNom, { dateCloture, dateFin, nom2: client?.nom2, suffixe })
   }
 
   try {

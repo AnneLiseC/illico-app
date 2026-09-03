@@ -5,7 +5,40 @@
 // le statut des frais (offerts = 0 ; rembourse = pas de double-comptage).
 
 import { describe, it, expect } from 'vitest'
-import { computeFactureClient } from '../ca-reel.js'
+import { computeFactureClient, fraisEncaisses } from '../ca-reel.js'
+
+// Le critere « frais encaisses » doit etre IDENTIQUE a celui de la page Finances, sinon un
+// meme dossier affiche deux montants selon la page. Corrige le 02/09 : 'rembourse' etait
+// ignore par le CA reel alors qu'il l'est bien — 1 050 EUR manquants en production.
+describe('fraisEncaisses — le critere partage avec la page Finances', () => {
+  const suiviRegle = [{ type_echeance: 'frais_consultation', statut_client: 'regle' }]
+
+  it("statut 'regle' -> encaisses, meme sans ligne de suivi", () => {
+    expect(fraisEncaisses({ frais_statut: 'regle' }, [])).toBe(true)
+  })
+
+  it("statut 'rembourse' + suivi recu -> encaisses (LE cas qui manquait)", () => {
+    expect(fraisEncaisses({ frais_statut: 'rembourse' }, suiviRegle)).toBe(true)
+  })
+
+  it("statut 'rembourse' SANS suivi recu -> pas encaisses", () => {
+    expect(fraisEncaisses({ frais_statut: 'rembourse' }, [])).toBe(false)
+  })
+
+  it("'offerts' sans suivi -> pas encaisses", () => {
+    expect(fraisEncaisses({ frais_statut: 'offerts' }, [])).toBe(false)
+  })
+
+  it('une ligne de suivi d un AUTRE type ne compte pas', () => {
+    expect(fraisEncaisses({ frais_statut: 'offerts' },
+      [{ type_echeance: 'honoraires_courtage', statut_client: 'regle' }])).toBe(false)
+  })
+
+  it('dossier ou suivi absents -> pas encaisses, jamais d exception', () => {
+    expect(fraisEncaisses(null, null)).toBe(false)
+    expect(fraisEncaisses(undefined, undefined)).toBe(false)
+  })
+})
 
 // Dossier courtage : 1 devis signé 10 000 HT / 11 000 TTC, taux courtage 6 %,
 // frais de consultation 600 TTC (= 500 HT), contrat signé le 15/03/2025.

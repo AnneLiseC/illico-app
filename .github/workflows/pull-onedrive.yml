@@ -1,19 +1,18 @@
-# .github/workflows/pull-onedrive.yml
-# Poller ENTRANT OneDrive -> BATILIS (détection des fichiers déposés à la main).
-# Même principe que pull-recurrents.yml : GitHub Actions (gratuit) pour une cadence fine,
-# le plan Vercel Hobby limitant les crons natifs. Cadence best-effort GitHub.
+# ⚠ DÉSACTIVÉ le 02/09 — ce cron vit désormais dans vercel.json.
 #
-# ⚠️ INERTE tant que :
-#   1) ce workflow n'est pas sur la branche PAR DÉFAUT (les schedules ne tournent que là) ;
-#   2) les secrets repo ne sont pas définis (les MÊMES que les autres pulls) :
-#        APP_BASE_URL = URL de prod (ex. https://illico-app-pied.vercel.app)  [PAS de / final]
-#        CRON_SECRET  = même valeur que la variable d'env Vercel CRON_SECRET
+# POURQUOI. Ces workflows existaient parce que le plan Vercel Hobby limitait les crons
+# natifs. Le compte est passé en Pro : Vercel peut porter les quatre cadences lui-même.
+# Les garder revenait à lancer DEUX fois le même travail — `pull-onedrive` tournait
+# toutes les 15 min ici ET toutes les 30 min côté Vercel, soit ~1 440 exécutions
+# inutiles par mois, et deux pollers concurrents sur le même curseur delta.
+#
+# Le déclencheur `schedule` est retiré ; `workflow_dispatch` reste pour un lancement
+# manuel de dépannage. CE FICHIER PEUT ÊTRE SUPPRIMÉ — le pont n'a pas le droit de
+# supprimer, il ne peut que le neutraliser.
 
-name: Pull OneDrive (déposés -> à rattacher)
+name: Pull OneDrive (DÉSACTIVÉ — voir vercel.json)
 
 on:
-  schedule:
-    - cron: '*/15 * * * *'   # ~15 min (best-effort)
   workflow_dispatch:
 
 jobs:

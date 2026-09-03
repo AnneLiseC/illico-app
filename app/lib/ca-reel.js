@@ -3,7 +3,7 @@
 //
 // Critères de reconnaissance IDENTIQUES à la page Finances (la vérité, = ce qui
 // est arrivé sur les comptes) :
-//   • frais       → dossier.frais_statut === 'regle'
+//   • frais       → fraisEncaisses() : statut 'regle' OU ligne de suivi frais reçue
 //   • courtage    → suivi honoraires_courtage.statut_client === 'regle'
 //   • solde AMO   → tranches encaissées, sinon solde_amo.statut_client === 'regle'
 //   • commissions → suivi acompte_artisan.statut_illico === 'recu'
@@ -27,6 +27,19 @@ export const normDossier = (d) => ({
   } : null,
 })
 
+// FRAIS ENCAISSÉS — critère COMPLET, identique à celui de la page Finances.
+// Corrigé le 02/09 : ce fichier ne testait que `frais_statut === 'regle'` et ratait donc
+// le statut **'rembourse'** — des frais bel et bien encaissés (payés d'avance par le client,
+// puis déduits du courtage par finance.js). Résultat mesuré en base ce jour-là : 1 050 €
+// (BRUNET 500 €, LEULIER 550 €) comptés dans Finances mais absents du CA réel du tableau
+// de bord et des statistiques. Le même dossier affichait donc deux montants différents
+// selon la page — exactement l'écart que cet audit cherchait.
+// Un dossier 'offerts' dont la ligne de suivi est marquée reçue passe aussi ce test, mais
+// ses frais valent 0 : la somme est inchangée.
+export const fraisEncaisses = (dossier, suivi) =>
+  dossier?.frais_statut === 'regle' ||
+  (suivi || []).some(s => s.type_echeance === 'frais_consultation' && s.statut_client === 'regle')
+
 // mode 'agence' = net (parts agentes incluses) ; 'societe' = net − parts agentes.
 export function computeCAMensuel(dossiers, annee, mode = 'agence') {
   const soc = mode === 'societe'
@@ -42,7 +55,7 @@ export function computeCAMensuel(dossiers, annee, mode = 'agence') {
     const nd = normDossier(d)
     const fin = calculateDossierFinance(nd)
     const suivi = d.suivi_financier || []
-    if (nd.frais_statut === 'regle') {
+    if (fraisEncaisses(nd, suivi)) {
       const sf = suivi.find(s => s.type_echeance === 'frais_consultation')
       add(sf?.date_paiement || nd.date_signature_contrat, fin.frais.net, fin.frais.parts.agente)
     }
@@ -95,7 +108,7 @@ export function computeRoyalties(dossiers, annee) {
     const nd = normDossier(d)
     const fin = calculateDossierFinance(nd)
     const suivi = d.suivi_financier || []
-    if (nd.frais_statut === 'regle') {
+    if (fraisEncaisses(nd, suivi)) {
       const sf = suivi.find(s => s.type_echeance === 'frais_consultation')
       add(sf?.date_paiement || nd.date_signature_contrat, fin.frais.royalties, 'frais')
     }
@@ -129,7 +142,7 @@ export function computeCABreakdown(dossiers, annee) {
     const nd = normDossier(d)
     const fin = calculateDossierFinance(nd)
     const suivi = d.suivi_financier || []
-    if (nd.frais_statut === 'regle') {
+    if (fraisEncaisses(nd, suivi)) {
       const sf = suivi.find(s => s.type_echeance === 'frais_consultation')
       if (inYear(sf?.date_paiement || nd.date_signature_contrat)) b.frais += fin.frais.net
     }
