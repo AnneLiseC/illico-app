@@ -440,11 +440,12 @@ Reste hors staff : C7 espace-client + RLS client → BLOC ESPACE CLIENT dédié 
     Testé : BNI ancien remonte seul (27 occ.), re-run 0 doublon.
   - B8 Cron « tous-tenants » (service_role, toutes cibles google actives de toutes sociétés,
     isolation d'erreur par cible). Auth Bearer CRON_SECRET.
-    → 2 rythmes : incrémental 15 min via GITHUB ACTIONS (.github/workflows/pull-calendar.yml,
-      Vercel Hobby ne fait pas le 15 min) ; récurrents 1×/jour 03:00 via VERCEL CRON (vercel.json).
-    Secrets : CRON_SECRET (Vercel prod + GitHub repo, même valeur) + APP_BASE_URL (GitHub, url prod
-    sans / final). Vercel Hobby = 2 crons quotidiens max → on est PILE à la limite (relances 08:00 +
-    récurrents 03:00).
+    → 2 rythmes : incrémental 15 min et récurrents 1×/heure, les deux via VERCEL CRON (vercel.json).
+    [MAJ 02/09] Les trois workflows GitHub (pull-calendar, pull-onedrive, pull-recurrents) ont été
+    SUPPRIMÉS : ils existaient à cause du plan Hobby, or le compte est passé Pro. pull-onedrive
+    tournait des DEUX côtés (15 min ici, 30 min là) = deux collecteurs concurrents sur le même
+    curseur, ~1 440 exécutions inutiles/mois. Un seul ordonnanceur désormais : vercel.json, 4 crons.
+    Secret : CRON_SECRET (Vercel prod). APP_BASE_URL n'est plus nécessaire côté GitHub.
 
   SQL appliqués (prod) : etage3_lotA (cible_sync_state), etage3_lotC_check_status, etage3_sync_floor,
   etage3_B5_google_etag. Nettoyages : cleanup_rdv_test_B5, drop_backups (10/07).
