@@ -21,12 +21,53 @@ function round2(value) {
   return Math.round((toNumber(value) + Number.EPSILON) * 100) / 100
 }
 
-function normalizePercent(value, fallback = 0) {
-  const n = toNumber(value, fallback)
+// ─────────────────────────────────────────────────────────────────────────────
+// UNITÉS DES TAUX — R20 de l'audit du 03/09
+//
+// CE QU'IL Y AVAIT AVANT : une heuristique unique, `normalizePercent`, qui devinait
+// l'unité — « au-dessus de 1, c'est des points, sinon c'est une fraction ». Elle a rendu
+// service tant qu'une seule personne saisissait, mais elle porte une faute mathématique
+// inévitable : un taux AMO de 1 %, valeur parfaitement légitime et autorisée par la
+// contrainte SQL `dossiers_honoraires_amo_points`, était lu 100 %. Un apporteur à 0,5 %
+// était lu 50 %.
+//
+// POURQUOI ON PEUT S'EN PASSER : chaque colonne a UNE unité, et deux d'entre elles sont
+// déjà imposées par une contrainte en base.
+//
+//   colonne                              unité      contrainte SQL
+//   dossiers.taux_courtage               fraction   dossiers_taux_courtage_fraction (0..1)
+//   dossiers.honoraires_amo_taux         points     dossiers_honoraires_amo_points (0, 1..100)
+//   dossiers.part_agente                 fraction   (ajoutée le 03/09)
+//   dossiers.frais_part_agente           fraction   (ajoutée le 03/09)
+//   devis_artisans.commission_pourcentage fraction  (ajoutée le 03/09)
+//   clients.apporteur_pourcentage        points     (ajoutée le 03/09)
+//
+// Vérifié sur la base le 03/09 avant d'écrire ces lignes : 49 dossiers, 110 devis,
+// 4 apporteurs — AUCUNE valeur ne contredit sa colonne. Le remplacement est donc neutre
+// sur tout l'existant : il ne change aucun chiffre déjà calculé, il supprime le piège.
+//
+// La règle à retenir, et à tenir : l'unité se lit dans la COLONNE, jamais dans la valeur.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Les deux fonctions rendent TOUJOURS une fraction (0,09 = 9 %), et leur `fallback`
+// s'exprime dans cette même unité de sortie. C'est volontaire : le reste du module
+// calcule en fractions, et une valeur de repli exprimée dans l'unité d'entrée serait
+// exactement le genre de piège que cette réserve corrige.
+
+// Colonne stockée en FRACTION : 0,06 = 6 %.
+function fraction(value, fallback = 0) {
+  if (value === null || value === undefined || value === '') return fallback
+  const n = toNumber(value, NaN)
   if (!Number.isFinite(n)) return fallback
-  if (n > 1) return n / 100
-  if (n < 0) return 0
-  return n
+  return n < 0 ? 0 : n
+}
+
+// Colonne stockée en POINTS DE POURCENTAGE : 9 → 9 %, 1 → 1 %, 0,5 → 0,5 %.
+function points(value, fallback = 0) {
+  if (value === null || value === undefined || value === '') return fallback
+  const n = toNumber(value, NaN)
+  if (!Number.isFinite(n)) return fallback
+  return n < 0 ? 0 : n / 100
 }
 
 function split(amount, partAgente) {
@@ -45,17 +86,19 @@ function isTruthyDate(value) {
 
 export function getPartAgente(dossier) {
   const v = dossier?.part_agente
-  if (v !== undefined && v !== null) return normalizePercent(v, 0)
+  if (v !== undefined && v !== null) return fraction(v, 0)
   if (dossier?.referente?.role === 'admin') return 0
   return DEFAULT_PART_AGENTE
 }
 
 export function getTauxCourtage(dossier) {
-  return normalizePercent(dossier?.taux_courtage, COURTAGE_STANDARD)
+  return fraction(dossier?.taux_courtage, COURTAGE_STANDARD)
 }
 
+// `taux_amo` (champ de travail) et `honoraires_amo_taux` (colonne) portent la MÊME
+// unité : des points. Le repli est déjà une fraction, comme la sortie.
 export function getTauxAmo(dossier) {
-  return normalizePercent(dossier?.taux_amo ?? dossier?.honoraires_amo_taux, AMO_STANDARD)
+  return points(dossier?.taux_amo ?? dossier?.honoraires_amo_taux, AMO_STANDARD)
 }
 
 function getDevisList(dossier) {
@@ -220,7 +263,7 @@ export function calculateCourtageTS(dossier) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function calculateFraisFinance(dossier) {
-  const fraisPartAgente = dossier?.frais_part_agente != null ? normalizePercent(dossier.frais_part_agente) : dossier?.referente?.frais_part_agente_defaut != null ? normalizePercent(dossier.referente.frais_part_agente_defaut): getPartAgente(dossier)
+  const fraisPartAgente = dossier?.frais_part_agente != null ? fraction(dossier.frais_part_agente) : dossier?.referente?.frais_part_agente_defaut != null ? fraction(dossier.referente.frais_part_agente_defaut): getPartAgente(dossier)
   const fraisTTC  = round2(toNumber(dossier?.frais_consultation))
   const fraisHT   = round2(fraisTTC / TVA_FRAIS)
   const royalties = round2(fraisHT * ROYALTIES_RATE)
@@ -245,7 +288,7 @@ export function calculateDevisFinance(devis, dossier = {}) {
   const montantTTC = round2(
     devis?.montant_ttc != null ? toNumber(devis.montant_ttc) : montantHT * TVA_TRAVAUX
   )
-  const commissionPct  = normalizePercent(devis?.commission_pourcentage, 0)
+  const commissionPct  = fraction(devis?.commission_pourcentage, 0)
   const comHT          = round2(montantHT * commissionPct)
   const royaltiesType2 = round2(comHT * ROYALTIES_RATE)
   const netCom         = round2(comHT - royaltiesType2)
@@ -550,7 +593,9 @@ export function calculateHonorairesRecuAccepte(dossier) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function calculateApporteurFinance(dossier) {
-  const tauxApporteur = normalizePercent(
+  // L'apporteur est saisi en POINTS par l'utilisateur (« 5 » pour 5 %). Sous
+  // l'heuristique, un apporteur à 0,5 % était lu 50 % du chantier.
+  const tauxApporteur = points(
     dossier?.apporteur_pourcentage ?? dossier?.client?.apporteur_pourcentage, 0
   )
   // Mode lu sur le VRAI champ client (`apporteur_base`), valeur cible 'total_chantier_ht'.

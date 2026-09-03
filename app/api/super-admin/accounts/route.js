@@ -31,12 +31,23 @@ export async function GET(request) {
       return NextResponse.json({ error: (socErr || agErr || profErr).message }, { status: 500 })
     }
 
+    // Qui ne s'est JAMAIS connecté ? L'information ne vit pas dans `profiles` mais dans
+    // auth.users. Elle est décisive pour l'éditrice : un compte créé mais jamais activé,
+    // c'est presque toujours une invitation qui n'est pas arrivée — et le seul geste
+    // utile est de la renvoyer. (R6)
+    let jamaisConnecte = new Set()
+    try {
+      const { data: liste } = await db.auth.admin.listUsers({ perPage: 1000 })
+      jamaisConnecte = new Set((liste?.users || []).filter(u => !u.last_sign_in_at).map(u => u.id))
+    } catch { /* information de confort : son absence ne casse pas l'annuaire */ }
+
     // Groupage société → { agences, comptes }.
     const parSociete = (societes || []).map(s => ({
       id: s.id,
       nom_societe: s.nom_societe,
       agences: (agences || []).filter(a => a.societe_id === s.id),
-      comptes: (profiles || []).filter(p => p.societe_id === s.id),
+      comptes: (profiles || []).filter(p => p.societe_id === s.id)
+        .map(p => ({ ...p, jamais_connecte: jamaisConnecte.has(p.id) })),
     }))
 
     return NextResponse.json({ societes: parSociete })

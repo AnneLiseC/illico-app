@@ -18,6 +18,7 @@ export default function SuperAdmin() {
   const [chargement, setChargement] = useState(true)
   const [busyId, setBusyId]       = useState(null)   // id de demande en cours (valider/rejeter)
   const [busyCompte, setBusyCompte] = useState(null) // id de compte en cours (désactiver/réactiver)
+  const [busyRenvoi, setBusyRenvoi] = useState(null)  // email en cours de renvoi d'invitation (R6)
   const [erreur, setErreur]       = useState('')
   const [succes, setSucces]       = useState('')
 
@@ -94,6 +95,25 @@ export default function SuperAdmin() {
 
   // Désactive / réactive un compte. Confirmation à la désactivation (cascade
   // société si franchisé). Jamais de suppression définitive.
+  // R6 — renvoyer son lien d'activation à un compte jamais connecté.
+  // La route refuse si la personne s'est déjà connectée : on affiche alors son message
+  // tel quel, il explique quoi faire à la place.
+  const renvoyerInvitation = async (c) => {
+    setBusyRenvoi(c.email); setErreur(''); setSucces('')
+    try {
+      const res = await apiFetch('/api/super-admin/renvoyer-invitation', {
+        method: 'POST', body: JSON.stringify({ email: c.email }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) setErreur(d.error || "Le renvoi a échoué.")
+      else setSucces(`Invitation renvoyée à ${c.email}.`)
+    } catch (e) {
+      setErreur(e?.message || 'Le renvoi a échoué.')
+    } finally {
+      setBusyRenvoi(null)
+    }
+  }
+
   const basculerCompte = async (c) => {
     const activer = c.actif === false   // inactif aujourd'hui → on réactive
     if (!activer) {
@@ -261,8 +281,23 @@ export default function SuperAdmin() {
                             </span>
                             {ag && <span style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>{ag.nom}</span>}
                             {c.actif === false && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-500)' }}>· désactivé</span>}
+                            {/* R6 — un compte jamais connecté, c'est presque toujours une
+                                invitation qui n'est pas arrivée. Le dire, et proposer le
+                                seul geste utile : la renvoyer. */}
+                            {c.jamais_connecte && (
+                              <span style={{ padding: '1px 8px', borderRadius: 99, fontSize: 11, fontWeight: 700, background: 'rgba(217,119,6,0.12)', color: '#b45309' }}>
+                                jamais connecté
+                              </span>
+                            )}
+                            {c.jamais_connecte && (
+                              <button className="btn btn-ghost"
+                                style={{ marginLeft: 'auto', fontSize: 11.5, padding: '3px 10px', opacity: busyRenvoi === c.email ? 0.5 : 1 }}
+                                onClick={() => renvoyerInvitation(c)} disabled={busyRenvoi === c.email}>
+                                {busyRenvoi === c.email ? 'Envoi…' : "Renvoyer l'invitation"}
+                              </button>
+                            )}
                             <button className="btn btn-ghost"
-                              style={{ marginLeft: 'auto', fontSize: 11.5, padding: '3px 10px', opacity: busyCompte === c.id ? 0.5 : 1,
+                              style={{ marginLeft: c.jamais_connecte ? 0 : 'auto', fontSize: 11.5, padding: '3px 10px', opacity: busyCompte === c.id ? 0.5 : 1,
                                 color: c.actif === false ? '#15803d' : 'var(--bad)',
                                 borderColor: c.actif === false ? 'rgba(22,163,74,0.3)' : 'rgba(239,68,68,0.3)' }}
                               onClick={() => basculerCompte(c)} disabled={busyCompte === c.id}>
