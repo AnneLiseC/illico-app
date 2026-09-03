@@ -49,5 +49,19 @@ export async function GET(req) {
     }
   }
 
-  return NextResponse.json({ ok: true, canal: 'incremental', cibles: (cibles || []).length, resultats })
+  // R9 — UN CRON QUI ÉCHOUE DOIT RENVOYER UN ÉCHEC.
+  //
+  // Ce `ok: true` était inconditionnel : chaque cible en erreur était isolée — ce qui est
+  // la bonne conduite, une cible cassée ne doit pas arrêter les autres — mais le cron
+  // rendait quand même 200. Vercel voyait un succès, l'alerte ne partait pas, et personne
+  // n'apprenait que les agendas ne se synchronisaient plus. C'est exactement le motif des
+  // 1 710 exécutions ratées à l'identique de cet été.
+  //
+  // Les deux autres crons avaient été corrigés le 2 septembre ; ces deux-là avaient été
+  // oubliés. Isolation conservée, verdict rétabli.
+  const enErreur = resultats.some(r => r.erreur)
+  return NextResponse.json(
+    { ok: !enErreur, canal: 'incremental', cibles: (cibles || []).length, resultats },
+    { status: enErreur ? 500 : 200 },
+  )
 }

@@ -48,6 +48,8 @@ export default function Parametres() {
   const [uploadingKbis, setUploadingKbis] = useState(null)
   const [uploadingRib, setUploadingRib]   = useState(false)
   const [uploadingKbisFranchise, setUploadingKbisFranchise] = useState(false)
+  const [exportEnCours, setExportEnCours] = useState(false)   // export des données (R9)
+  const [exportInfo, setExportInfo]     = useState('')
   const [section, setSection]             = useState('profil')
   // Mode « compact » (mobile) : la sidebar 240px devient une barre d'onglets scrollable.
   const [compact, setCompact]             = useState(false)
@@ -383,6 +385,37 @@ export default function Parametres() {
     if (!ribCourant) return
     const { data } = await supabase.storage.from('documents').createSignedUrl(ribCourant, 3600)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  // R9 — export complet des données de la société.
+  // Le téléchargement passe par un blob : la route est en POST et exige un jeton, on ne
+  // peut donc pas se contenter d'un lien. Le compte rendu affiché ensuite (tables et
+  // lignes) est lu dans les en-têtes de la réponse — sans lui, l'utilisateur ne sait pas
+  // si son archive est complète ou vide.
+  const exporterDonnees = async () => {
+    setExportEnCours(true); setExportInfo(''); setErreur('')
+    try {
+      const res = await apiFetch('/api/export-societe', { method: 'POST', body: JSON.stringify({}) })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        setErreur(d.error || "L'export a échoué.")
+        return
+      }
+      const onglets = res.headers.get('X-Export-Onglets')
+      const lignes = res.headers.get('X-Export-Lignes')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = (res.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1] || 'export.xlsx'
+      a.click()
+      URL.revokeObjectURL(url)
+      setExportInfo(onglets ? `Classeur téléchargé : ${onglets} onglets, ${lignes} lignes. Le premier onglet explique ce qu'il contient.` : 'Classeur téléchargé.')
+    } catch (e) {
+      setErreur(e?.message || "L'export a échoué.")
+    } finally {
+      setExportEnCours(false)
+    }
   }
 
   const uploadKbisFranchise = async (fichier) => {
@@ -824,6 +857,27 @@ export default function Parametres() {
                     </label>
                   )}
                 </div>
+              </div>
+
+              {/* ── Export des données (R9) ──
+                  La réversibilité : la garantie qu'un franchisé peut partir avec ce qui
+                  lui appartient. Elle se promet dans un contrat — un client qui paie a le
+                  droit de la vérifier avant de signer, pas au moment où il s'en va. */}
+              <div style={{marginTop:8, paddingTop:20, borderTop:'1px solid var(--ink-100)'}}>
+                <h3 style={{fontSize:15, fontWeight:700, color:'var(--ink-900)', margin:0}}>Export de vos données</h3>
+                <p style={{fontSize:12.5, color:'var(--ink-500)', margin:'6px 0 14px', maxWidth:560}}>
+                  Un classeur Excel contenant tout ce qui appartient à votre société — clients,
+                  chantiers, devis, artisans, rendez-vous, suivi financier, comptes rendus — avec
+                  un onglet par sujet. Les fichiers eux-mêmes (photos, PDF) ne sont pas inclus :
+                  le classeur en donne les chemins.
+                </p>
+                <button className="btn btn-ghost" onClick={exporterDonnees} disabled={exportEnCours}
+                  style={{fontSize:13, opacity: exportEnCours ? 0.5 : 1}}>
+                  {exportEnCours ? 'Préparation du classeur…' : 'Télécharger l\'export complet'}
+                </button>
+                {exportInfo && (
+                  <div style={{marginTop:10, fontSize:12.5, color:'var(--ink-600)'}}>{exportInfo}</div>
+                )}
               </div>
             </div>
           )}
