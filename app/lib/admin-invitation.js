@@ -55,7 +55,10 @@ export async function inviteFranchiseAdmin({ email: rawEmail, invited_by = null 
     throw httpError('Cet email a déjà créé sa société (déjà onboardé).', 409)
   }
   if (existing?.some(r => r.statut === 'en_attente')) {
-    throw httpError('Cet email a déjà une invitation en attente.', 409)
+    // R6 — le message doit nommer la sortie. Auparavant il fermait la porte sans dire
+    // qu'il en existait une autre, et la seule issue connue était de supprimer la ligne
+    // en base à la main.
+    throw httpError("Cet email a déjà une invitation en attente. Utilise « Renvoyer l'invitation » dans l'annuaire des comptes plutôt que d'en créer une seconde.", 409)
   }
 
   // Déjà admin d'une société existante ?
