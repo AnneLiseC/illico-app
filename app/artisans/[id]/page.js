@@ -45,6 +45,19 @@ const STATUT_STYLE = {
   a_modifier:{ bg:'rgba(124,58,237,0.1)',  c:'#7c3aed',  label:'À modifier' },
 }
 
+// Ordre d'affichage des devis : ce qui est acquis d'abord, ce qui est mort en dernier.
+// Un statut inconnu tombe en fin de liste plutôt que de s'intercaler au hasard.
+const ORDRE_STATUT = { accepte: 0, recu: 1, en_attente: 2, a_modifier: 3, refuse: 4 }
+const rangStatut = (s) => (ORDRE_STATUT[s] !== undefined ? ORDRE_STATUT[s] : 9)
+
+// Libellés des documents officiels — partagés entre l'affichage et l'historique.
+const DOCS_OFFICIELS = [
+  { key:'kbis',          label:'Kbis',          champ:'kbis_url',          accept:'.pdf' },
+  { key:'decennale',     label:'Décennale',     champ:'decennale_url',     accept:'.pdf' },
+  { key:'qualification', label:'Qualification', champ:'qualification_url', accept:'.pdf' },
+  { key:'rib',           label:'RIB',           champ:'rib_url',           accept:'.pdf' },
+]
+
 export default function FicheArtisan({ params }) {
   const { id } = use(params)
   const [artisan, setArtisan] = useState(null)
@@ -61,6 +74,8 @@ export default function FicheArtisan({ params }) {
   const [fichesExpand, setFichesExpand] = useState(false)
   const [specialites, setSpecialites] = useState([])   // [{ id, nom }] rattachées à l'artisan
   const [specBusy, setSpecBusy] = useState(false)
+  const [historique, setHistorique] = useState([])     // artisan_documents, du plus récent au plus ancien
+  const [histoOuvert, setHistoOuvert] = useState({})   // { [type]: bool }
   const router = useRouter()
   const { user, profile, initialized } = useAuth()
 
@@ -79,11 +94,22 @@ export default function FicheArtisan({ params }) {
       setFichesTechniques(fichesData || [])
       setLoading(false)
       chargerSpecialites()
+      chargerHistorique()
     }
     init()
   }, [initialized, user?.id, id, router])
 
   const set = (champ, valeur) => setArtisan(a => ({ ...a, [champ]: valeur }))
+
+  // Historique des documents officiels — le plus récent d'abord, dates inconnues en fin
+  // (versions reprises de l'existant, dont la date de dépôt n'a jamais été enregistrée).
+  const chargerHistorique = async () => {
+    const { data } = await supabase.from('artisan_documents')
+      .select('id, type, path, nom_fichier, date_expiration, uploaded_at')
+      .eq('artisan_id', id)
+      .order('uploaded_at', { ascending: false, nullsFirst: false })
+    setHistorique(data || [])
+  }
 
   const chargerSpecialites = async () => {
     const { data } = await supabase.from('artisans_specialites')
@@ -135,19 +161,41 @@ export default function FicheArtisan({ params }) {
     setSaving(false)
   }
 
+  // Dépôt d'un document officiel.
+  //
+  // ⚠ AVANT LE 03/09 : le chemin était DÉTERMINISTE (`artisans/<id>/decennale.pdf`)
+  // avec `upsert: true`. Déposer une nouvelle décennale ÉCRASAIT physiquement le PDF
+  // précédent dans le Storage — impossible ensuite de prouver quelle attestation était
+  // valide à l'ouverture d'un chantier. Le chemin porte désormais un horodatage, comme
+  // le faisaient déjà les fiches techniques, et chaque version est consignée dans
+  // `artisan_documents`. Rien n'écrase plus rien.
   const uploadFichier = async (fichier, type) => {
     setUploadEnCours(u => ({ ...u, [type]: true })); setErreur('')
-    const ext = fichier.name.split('.').pop()
-    const chemin = `artisans/${id}/${type}.${ext}`
-    const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
+    const ext = (fichier.name.split('.').pop() || 'pdf').toLowerCase()
+    const chemin = `artisans/${id}/${type}-${Date.now()}.${ext}`
+    const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, fichier)
     if (uploadError) { setErreur('Erreur upload : ' + uploadError.message); setUploadEnCours(u => ({ ...u, [type]: false })); return }
+
     const champ = type === 'kbis' ? 'kbis_url' : type === 'decennale' ? 'decennale_url' : type === 'qualification' ? 'qualification_url' : 'rib_url'
     const { error } = await supabase.from('artisans').update({ [champ]: chemin }).eq('id', id)
     if (error) { setErreur('Erreur : ' + error.message); setUploadEnCours(u => ({ ...u, [type]: false })); return }
+
+    // Trace de version. Un échec ici ne doit PAS faire croire à un échec de dépôt :
+    // le document est en place et la fiche à jour. On le signale sans tout annuler.
+    const expiration = type === 'decennale' ? (artisan.decennale_expiration || null)
+      : type === 'qualification' ? (artisan.qualification_expiration || null) : null
+    const { error: histoError } = await supabase.from('artisan_documents').insert({
+      artisan_id: id, type, path: chemin, nom_fichier: fichier.name,
+      date_expiration: expiration, uploaded_at: new Date().toISOString(),
+      uploaded_by: profile?.id || null,
+    })
+
     // Miroir OneDrive → Artisans/<Artisan>/Documents administratif
     apiFetch('/api/drive/push-artisan-doc', { method: 'POST', body: JSON.stringify({ artisan_id: id, type }) }).catch(() => {})
     setArtisan(a => ({ ...a, [champ]: chemin }))
-    setSucces(`${type} uploadé ✓`)
+    await chargerHistorique()
+    if (histoError) setErreur('Document déposé, mais l\'historique n\'a pas été enregistré : ' + histoError.message)
+    else setSucces(`${type} déposé ✓`)
     setUploadEnCours(u => ({ ...u, [type]: false }))
   }
 
@@ -204,11 +252,23 @@ export default function FicheArtisan({ params }) {
   if (!artisan) return <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-500)'}}>Artisan introuvable</div>
 
   const allDevis = artisan.devis_artisans || []
-  const devisListe = profile?.role === 'admin'
+  const devisListe = (profile?.role === 'admin'
     ? allDevis
     : allDevis.filter(dv => dv.dossier?.referente_id === profile?.id)
+  ).slice().sort((a, b) => {
+    const r = rangStatut(a.statut) - rangStatut(b.statut)
+    return r !== 0 ? r : (b.montant_ht || 0) - (a.montant_ht || 0)  // à statut égal, le plus gros d'abord
+  })
   const nbDevis = devisListe.length
-  const caHT = devisListe.reduce((s, dv) => s + (dv.montant_ht || 0), 0)
+
+  // TRAVAUX ACCEPTÉS — et non « CA cumulé ».
+  // Avant le 03/09 cette somme prenait TOUS les devis : reçus, en attente, à modifier
+  // ET REFUSÉS. Mesure faite en base ce jour-là : 17 artisans sur 26 affichaient un
+  // chiffre faux, pour 851 389 € HT de surestimation totale. Un artisan qui n'avait
+  // jamais rien signé apparaissait à 158 953 €. Seuls les devis « accepté » comptent.
+  const devisAcceptes = devisListe.filter(dv => dv.statut === 'accepte')
+  const travauxAcceptesHT = devisAcceptes.reduce((s, dv) => s + (dv.montant_ht || 0), 0)
+  const nbAcceptes = devisAcceptes.length
   const devisAvecCom = devisListe.filter(dv => dv.commission_pourcentage > 0)
   const comMoyenne = devisAvecCom.length > 0
     ? Math.round(devisAvecCom.reduce((s, dv) => s + dv.commission_pourcentage, 0) / devisAvecCom.length * 100)
@@ -285,7 +345,7 @@ export default function FicheArtisan({ params }) {
       {/* ── 4 KPIs ── */}
       <div className="kpi-grid">
         <KpiCard label="Devis fournis" value={nbDevis} />
-        <KpiCard label="CA cumulé HT" value={caHT > 0 ? fmtEur(caHT) : '—'} color="var(--brand-800)" />
+        <KpiCard label="Travaux acceptés HT" value={travauxAcceptesHT > 0 ? fmtEur(travauxAcceptesHT) : '—'} color="var(--brand-800)" />
         <KpiCard label="Commission moyenne" value={comMoyenne > 0 ? `${comMoyenne} %` : '—'} />
         <KpiCard label="Décennale" value={<DecBadge artisan={artisan}/>} />
       </div>
@@ -395,7 +455,9 @@ export default function FicheArtisan({ params }) {
           <div style={{padding:'14px 20px', borderBottom:'1px solid var(--ink-100)', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
             <div>
               <div style={{fontWeight:700, fontSize:14, color:'var(--ink-900)'}}>Devis par chantier</div>
-              <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{nbDevis} devis au total</div>
+              <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>
+                {nbDevis} devis · {nbAcceptes} accepté{nbAcceptes > 1 ? 's' : ''}
+              </div>
             </div>
           </div>
           {nbDevis === 0 ? (
@@ -440,34 +502,62 @@ export default function FicheArtisan({ params }) {
             <div style={{padding:'14px 20px', borderBottom:'1px solid var(--ink-100)'}}>
               <div style={{fontWeight:700, fontSize:14, color:'var(--ink-900)'}}>Documents officiels</div>
             </div>
-            {[
-              { key:'kbis',          label:'Kbis',          champ:'kbis_url',          accept:'.pdf' },
-              { key:'decennale',     label:'Décennale',     champ:'decennale_url',     accept:'.pdf' },
-              { key:'qualification', label:'Qualification', champ:'qualification_url', accept:'.pdf' },
-              { key:'rib',           label:'RIB',           champ:'rib_url',           accept:'.pdf' },
-            ].map(doc => (
-              <div key={doc.key} style={{padding:'12px 20px', borderTop:'1px solid var(--ink-100)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10}}>
-                <div style={{display:'flex', alignItems:'center', gap:10}}>
-                  <div style={{width:32, height:32, borderRadius:8, background: artisan[doc.champ] ? 'var(--brand-50)' : 'var(--surface-2)', color: artisan[doc.champ] ? 'var(--brand-800)' : 'var(--ink-300)', display:'grid', placeItems:'center', flexShrink:0}}>
-                    <DocIcon size={14}/>
+            {DOCS_OFFICIELS.map(doc => {
+              // Versions PRÉCÉDENTES : tout l'historique de ce type, sauf le document
+              // courant. Le courant est déjà affiché juste au-dessus par « Voir ».
+              const precedentes = historique.filter(h => h.type === doc.key && h.path !== artisan[doc.champ])
+              const ouvert = !!histoOuvert[doc.key]
+              return (
+              <div key={doc.key} style={{padding:'12px 20px', borderTop:'1px solid var(--ink-100)'}}>
+                <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:10}}>
+                  <div style={{display:'flex', alignItems:'center', gap:10}}>
+                    <div style={{width:32, height:32, borderRadius:8, background: artisan[doc.champ] ? 'var(--brand-50)' : 'var(--surface-2)', color: artisan[doc.champ] ? 'var(--brand-800)' : 'var(--ink-300)', display:'grid', placeItems:'center', flexShrink:0}}>
+                      <DocIcon size={14}/>
+                    </div>
+                    <div>
+                      <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)'}}>{doc.label}</div>
+                      <div style={{fontSize:11, color: artisan[doc.champ] ? '#15803d' : 'var(--ink-300)'}}>{artisan[doc.champ] ? 'Déposé' : 'Manquant'}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{fontSize:13, fontWeight:600, color:'var(--ink-900)'}}>{doc.label}</div>
-                    <div style={{fontSize:11, color: artisan[doc.champ] ? '#15803d' : 'var(--ink-300)'}}>{artisan[doc.champ] ? 'Uploadé' : 'Manquant'}</div>
+                  <div style={{display:'flex', gap:6, alignItems:'center'}}>
+                    {artisan[doc.champ] && (
+                      <button className="btn btn-ghost" style={{fontSize:11.5, padding:'3px 9px'}} onClick={() => ouvrirDocument(artisan[doc.champ])}>Voir</button>
+                    )}
+                    <label style={{fontSize:11.5, padding:'3px 9px', borderRadius:6, border:'1px solid var(--ink-200)', cursor:'pointer', color: UploadEnCours[doc.key] ? 'var(--ink-300)' : 'var(--brand-700)', background:'transparent'}}>
+                      {UploadEnCours[doc.key] ? '…' : artisan[doc.champ] ? 'Remplacer' : '+ Ajouter'}
+                      <input type="file" accept={doc.accept} style={{display:'none'}} disabled={!!UploadEnCours[doc.key]}
+                        onChange={e => e.target.files[0] && uploadFichier(e.target.files[0], doc.key)} />
+                    </label>
                   </div>
                 </div>
-                <div style={{display:'flex', gap:6, alignItems:'center'}}>
-                  {artisan[doc.champ] && (
-                    <button className="btn btn-ghost" style={{fontSize:11.5, padding:'3px 9px'}} onClick={() => ouvrirDocument(artisan[doc.champ])}>Voir</button>
-                  )}
-                  <label style={{fontSize:11.5, padding:'3px 9px', borderRadius:6, border:'1px solid var(--ink-200)', cursor:'pointer', color: UploadEnCours[doc.key] ? 'var(--ink-300)' : 'var(--brand-700)', background:'transparent'}}>
-                    {UploadEnCours[doc.key] ? '…' : artisan[doc.champ] ? 'Remplacer' : '+ Ajouter'}
-                    <input type="file" accept={doc.accept} style={{display:'none'}} disabled={!!UploadEnCours[doc.key]}
-                      onChange={e => e.target.files[0] && uploadFichier(e.target.files[0], doc.key)} />
-                  </label>
-                </div>
+
+                {precedentes.length > 0 && (
+                  <div style={{marginTop:8, paddingLeft:42}}>
+                    <button type="button" onClick={() => setHistoOuvert(o => ({ ...o, [doc.key]: !ouvert }))}
+                      style={{background:'none', border:'none', padding:0, cursor:'pointer', fontSize:11.5, color:'var(--ink-500)'}}>
+                      {ouvert ? '▾' : '▸'} {precedentes.length} version{precedentes.length > 1 ? 's' : ''} précédente{precedentes.length > 1 ? 's' : ''}
+                    </button>
+                    {ouvert && precedentes.map(h => (
+                      <div key={h.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginTop:6}}>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:11.5, color:'var(--ink-700)'}} className="clip-1">
+                            {h.uploaded_at
+                              ? `Déposé le ${fmtDate(h.uploaded_at)}`
+                              : 'Déposé avant le suivi des versions — date inconnue'}
+                          </div>
+                          {h.date_expiration && (
+                            <div style={{fontSize:11, color:'var(--ink-500)'}}>Valable jusqu&apos;au {fmtDate(h.date_expiration)}</div>
+                          )}
+                        </div>
+                        <button className="btn btn-ghost" style={{fontSize:11, padding:'2px 8px', flexShrink:0}}
+                          onClick={() => ouvrirDocument(h.path)}>Voir</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))}
+              )
+            })}
           </div>
 
           {/* Fiches techniques */}
