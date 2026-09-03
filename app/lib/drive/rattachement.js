@@ -52,9 +52,13 @@ export function nomAttendu(dossier, client, suffixe) {
 
 // Segments de bucket attendus ('1. En cours' | '2. Terminés',<annee> | '3. Sans suite').
 export function bucketAttendu(dossier) {
-  const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+  // MEME cascade que les routes qui ecrivent : cloture d'abord, puis fin de chantier, puis
+  // date metier. Si la lecture et l'ecriture divergent ici, un fichier range au bon endroit
+  // ne serait plus reconnu — c'est tout l'interet de passer par bucketSegments.
   return bucketSegments(dossier.statut, {
-    dateFin, createdAt: dossier.date_premier_rdv || dossier.created_at,
+    dateCloture: dossier.date_cloture || null,
+    dateFin: dossier.date_fin_chantier || null,
+    createdAt: dossier.date_premier_rdv || dossier.created_at,
   }).map(nettoyerSegment)
 }
 

@@ -21,13 +21,23 @@ describe('drive/taxonomie', () => {
   })
 
   it('bucketSegments — statut dossier → bucket 01_CLIENTS', () => {
-    expect(bucketSegments('annule')).toEqual(['3. Sans suite'])
+    // Les DEUX etats clos portent une annee depuis le 02/09.
+    expect(bucketSegments('annule', { createdAt: '2026-03-04' })).toEqual(['3. Sans suite', '2026'])
     expect(bucketSegments('en_cours')).toEqual(['1. En cours'])
     expect(bucketSegments(null)).toEqual(['1. En cours'])
     expect(bucketSegments(undefined)).toEqual(['1. En cours'])
     // Terminés → année de fin de chantier si fournie, sinon année de création.
     expect(bucketSegments('termine', { dateFin: '2025-12-01', createdAt: '2026-07-19T00:00:00' })).toEqual(['2. Terminés', '2025'])
     expect(bucketSegments('termine', { createdAt: '2026-07-19T00:00:00' })).toEqual(['2. Terminés', '2026'])
+
+    // ANNEE DE CLOTURE : la date du clic prime sur la fin de chantier. Un chantier dont les
+    // travaux se terminent en decembre mais qu'on cloture en janvier est classe en JANVIER.
+    expect(bucketSegments('termine', { dateCloture: '2027-01-08', dateFin: '2026-12-20', createdAt: '2026-02-01' }))
+      .toEqual(['2. Terminés', '2027'])
+    expect(bucketSegments('annule', { dateCloture: '2026-07-02', createdAt: '2025-11-30' }))
+      .toEqual(['3. Sans suite', '2026'])
+    // Repli quand la cloture n'a pas ete enregistree (dossiers clos avant la colonne).
+    expect(bucketSegments('annule', { createdAt: '2025-09-18' })).toEqual(['3. Sans suite', '2025'])
   })
 
   it('devisSousDossier — statut devis → sous-dossier Devis', () => {
@@ -79,7 +89,7 @@ describe('drive/taxonomie', () => {
     expect(chantierBaseSegments('termine', '2026-07-25T00:00:00', 'Dupont', { dateFin: '2026-08-01' }))
       .toEqual(['01_CLIENTS', '2. Terminés', '2026', '2026-07-25 DUPONT'])
     expect(chantierBaseSegments('annule', '2026-07-25T00:00:00', 'Durand'))
-      .toEqual(['01_CLIENTS', '3. Sans suite', '2026-07-25 DURAND'])
+      .toEqual(['01_CLIENTS', '3. Sans suite', '2026', '2026-07-25 DURAND'])
   })
 
   it('cheminChantier — document dans le bon bucket', () => {
@@ -96,7 +106,7 @@ describe('drive/taxonomie', () => {
     expect(cheminChantierPhoto('en_cours', '2026-07-20T00:00:00', 'Martin', 'avant'))
       .toEqual(['01_CLIENTS', '1. En cours', '2026-07-20 MARTIN', '6. Photos', '1. Avant'])
     expect(cheminChantierPhoto('annule', '2026-07-25T00:00:00', 'Durand', null))
-      .toEqual(['01_CLIENTS', '3. Sans suite', '2026-07-25 DURAND', '6. Photos', 'Autres'])
+      .toEqual(['01_CLIENTS', '3. Sans suite', '2026', '2026-07-25 DURAND', '6. Photos', 'Autres'])
   })
 
   it('cheminArtisanGlobal — 02_ARTISANS/<Artisan>/<sous-dossier>', () => {

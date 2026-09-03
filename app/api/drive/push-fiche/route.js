@@ -73,9 +73,11 @@ export async function POST(request) {
       .select('id, created_at, date_premier_rdv, client_id, referente_id, statut, date_fin_chantier, date_cloture').eq('id', body.dossier_id).maybeSingle()
     if (dossier?.referente_id) {
       const { data: client } = await db.from('clients').select('nom, nom2').eq('id', dossier.client_id).maybeSingle()
-      const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+      // Annee de classement : la CLOTURE d'abord (le clic), puis la fin de chantier (cf. taxonomie).
+  const dateCloture = dossier.date_cloture || null
+  const dateFin = dossier.date_fin_chantier || null
       const suffixe = await suffixeCollisionDossier(db, dossier)
-      const cSeg = cheminChantier(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, 'fiche_technique', null, { dateFin, nom2: client?.nom2, suffixe })
+      const cSeg = cheminChantier(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, 'fiche_technique', null, { dateCloture, dateFin, nom2: client?.nom2, suffixe })
       try {
         const cr = await pushMirror(db, {
           ownerUserId: dossier.referente_id,

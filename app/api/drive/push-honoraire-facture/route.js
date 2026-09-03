@@ -41,9 +41,11 @@ export async function POST(request) {
   // honoraires (elles partagent le dossier « 1. Administratif » → nom déterministe unique requis).
   const clientSlug = slugNom(formatNomClient(client, { civilite: false }))
   const cleSlug = hf.cle === 'courtage' ? 'courtage' : 'solde'
-  const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+  // Annee de classement : la CLOTURE d'abord (le clic), puis la fin de chantier (cf. taxonomie).
+  const dateCloture = dossier.date_cloture || null
+  const dateFin = dossier.date_fin_chantier || null
   const suffixe = await suffixeCollisionDossier(db, dossier)
-  const segments = cheminChantier(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, 'facture_honoraire', null, { dateFin, nom2: client?.nom2, suffixe })
+  const segments = cheminChantier(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, 'facture_honoraire', null, { dateCloture, dateFin, nom2: client?.nom2, suffixe })
 
   const r = await pushMirror(db, {
     ownerUserId: dossier.referente_id,

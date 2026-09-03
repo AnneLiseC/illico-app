@@ -110,9 +110,11 @@ export async function POST(request) {
     const clientSlug = slugNom(formatNomClient(dossier.client, { civilite: false }))
     const crDate = dateDossier(cr.date_visite || cr.created_at)
     const fileName = `${nettoyerSegment(`${crDate}_CR_${clientSlug}`)}.pdf`
-    const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+    // Annee de classement : la CLOTURE d'abord (le clic), puis la fin de chantier (cf. taxonomie).
+  const dateCloture = dossier.date_cloture || null
+  const dateFin = dossier.date_fin_chantier || null
     const suffixe = await suffixeCollisionDossier(db, dossier)
-    const segments = cheminChantier(dossier.statut, dossier.date_premier_rdv || dossier.created_at, clientNom, 'compte_rendu', null, { dateFin, nom2: dossier.client?.nom2, suffixe })
+    const segments = cheminChantier(dossier.statut, dossier.date_premier_rdv || dossier.created_at, clientNom, 'compte_rendu', null, { dateCloture, dateFin, nom2: dossier.client?.nom2, suffixe })
 
     // Déjà miroité → on supprime l'ancien item (le nom a pu changer) avant de remplacer.
     const { data: dejaIdx } = await db.from('doc_index').select('id, item_id, drive_id').eq('cr_id', crId).maybeSingle()

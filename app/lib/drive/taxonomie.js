@@ -3,7 +3,7 @@
 // Google Drive — taxonomie commune). Arborescence CIBLE (modèle illiCO 2026) :
 //
 //   01_CLIENTS/
-//     ├── 1. En cours/ | 2. Terminés/<année>/ | 3. Sans suite/
+//     ├── 1. En cours/ | 2. Terminés/<année>/ | 3. Sans suite/<année>/   (année = clôture)
 //     │     └── AAAA-MM-JJ NOM/                       (nom client en MAJUSCULES ; date = création du dossier)
 //     │           1. Administratif/                    (contrat, admin client, factures honoraires)
 //     │           2. Comptes rendus/
@@ -44,15 +44,24 @@ export function nomDossierChantier(createdAt, clientNom, clientNom2, suffixe) {
   return `${dateDossier(createdAt)} ${nom}${suffixe || ''}`.trim()
 }
 
-// Bucket de statut → segments. 'annule' → « 3. Sans suite » ; 'termine' → « 2. Terminés/<année> »
-// (année = date de fin de chantier si fournie, sinon année de création) ; sinon « 1. En cours ».
-export function bucketSegments(statut, { dateFin, createdAt } = {}) {
-  if (statut === 'annule') return ['3. Sans suite']
-  if (statut === 'termine') {
-    const src = String(dateFin || createdAt || '')
-    const y = /^\d{4}/.test(src) ? src.slice(0, 4) : '0000'
-    return ['2. Terminés', y]
-  }
+// ANNEE DE CLASSEMENT d'un dossier clos (arbitrage 02/09). Un chantier termine ou sans suite
+// est range sous son ANNEE DE CLOTURE — la date du clic qui l'a clos — et non l'annee ou les
+// travaux se sont arretes ni celle du 1er rendez-vous. Cascade :
+//   date_cloture (le clic, source de verite) → date_fin_chantier → date metier du dossier.
+// Le repli existe parce que date_cloture est vide sur les dossiers clos AVANT que la colonne
+// soit branchee ; sans lui, ceux-la n'auraient aucune annee.
+function anneeCloture(dateCloture, dateFin, createdAt) {
+  const src = String(dateCloture || dateFin || createdAt || '')
+  return /^\d{4}/.test(src) ? src.slice(0, 4) : '0000'
+}
+
+// Bucket de statut → segments. Les DEUX etats clos portent un niveau annee :
+//   'annule'  → « 3. Sans suite/<annee> »   (niveau ajoute le 02/09)
+//   'termine' → « 2. Terminés/<annee> »
+//   sinon     → « 1. En cours »
+export function bucketSegments(statut, { dateCloture, dateFin, createdAt } = {}) {
+  if (statut === 'annule')  return ['3. Sans suite', anneeCloture(dateCloture, dateFin, createdAt)]
+  if (statut === 'termine') return ['2. Terminés',   anneeCloture(dateCloture, dateFin, createdAt)]
   return ['1. En cours']
 }
 

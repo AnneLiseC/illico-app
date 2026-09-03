@@ -2191,15 +2191,30 @@ export default function FicheChantier({ params }) {
       if (!form.artisan_id) return false
       const today = new Date().toISOString().slice(0, 10)
       // Le PDF fourni est-il le devis SIGNÉ ? (choix dans la modale.) Si oui → rangé dans
-      // « Devis signé » (devis_signe_path) et le devis passe en signé/accepté (date du jour).
+      // « Devis signé » (devis_signe_path) et le devis passe en signé/accepté.
       const estSigne = !!form.fichier && form.pdf_type === 'signe'
+      // DATE DE SIGNATURE — on la DEMANDE, on ne la suppose pas (corrigé le 02/09).
+      // Avant : `date_signature = aujourd'hui`, sans rien demander. Juste quand la saisie a
+      // lieu le jour même, FAUX dès qu'on rattrape un devis ancien — et invisible. Constaté
+      // en base : 2 devis reçus en avril datés du 28 août, sur un chantier clos depuis juillet,
+      // qui avaient créé deux échéances d'acompte au mauvais mois.
+      // Le pré-remplissage est la date de RÉCEPTION (le devis est signé après avoir été reçu),
+      // et non aujourd'hui. Annuler ne bloque jamais la création : on retombe sur la réception,
+      // puis sur aujourd'hui en dernier recours.
+      let dateSignatureDevis = null
+      if (estSigne) {
+        const defaut = form.date_reception || today
+        const [aD, mD, jD] = String(defaut).slice(0, 10).split('-')
+        const saisie = prompt('Date de signature du devis (JJ/MM/AAAA) :', `${jD}/${mD}/${aD}`)
+        dateSignatureDevis = parseDateFR(saisie) || form.date_reception || today
+      }
       const prochainOrdre = devis.length > 0 ? Math.max(...devis.map(d => d.ordre ?? 0)) + 1 : 1
       const { data: devisInsere, error } = await supabase.from('devis_artisans').insert({
         ...payload,
         dossier_id: id,
         artisan_id: form.artisan_id,
         statut: estSigne ? 'accepte' : ((form.date_reception || form.fichier) ? 'recu' : 'en_attente'),
-        date_signature: estSigne ? today : null,
+        date_signature: dateSignatureDevis,
         ordre: prochainOrdre,
       }).select()
       if (error) { setErreur('Erreur : ' + error.message); return false }

@@ -41,9 +41,11 @@ export async function POST(request) {
     artisanNom = a?.entreprise || 'artisan'
   }
   const ext = (devis.pv_path?.split('.').pop() || 'pdf')
-  const dateFin = dossier.date_fin_chantier || dossier.date_cloture || null
+  // Annee de classement : la CLOTURE d'abord (le clic), puis la fin de chantier (cf. taxonomie).
+  const dateCloture = dossier.date_cloture || null
+  const dateFin = dossier.date_fin_chantier || null
   const suffixe = await suffixeCollisionDossier(db, dossier)
-  const segments = [...chantierBaseSegments(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, { dateFin, nom2: client?.nom2, suffixe }), ...sousDossiers('pv_reception', artisanNom)].map(nettoyerSegment)
+  const segments = [...chantierBaseSegments(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, { dateCloture, dateFin, nom2: client?.nom2, suffixe }), ...sousDossiers('pv_reception', artisanNom)].map(nettoyerSegment)
   const clientSlug = slugNom(formatNomClient(client, { civilite: false }))
   const artisanSlug = slugNom(artisanNom)
 
