@@ -31,6 +31,26 @@ export class DriveReconnectError extends Error {
   constructor(msg = 'reconnect') { super(msg); this.reconnect = true }
 }
 
+// R22 — un Drive déconnecté ne DOIT plus être silencieux.
+//
+// Les routes d'envoi répondaient `200 { skipped: 'reconnect' }`, et les quatorze appels
+// de l'interface sont en `.catch(() => {})` sans jamais lire la réponse. Résultat : le
+// franchisé croyait son archivage à jour alors qu'il était arrêté depuis la dernière
+// expiration de consentement Microsoft.
+//
+// On prévient donc ici, au seul endroit par où passe TOUTE demande de jeton — une
+// notification interne par utilisateur et par jour, qui ne dépend d'aucune boîte
+// d'envoi. Best-effort et non bloquant : prévenir ne doit jamais faire échouer autre
+// chose que ce qui échouait déjà.
+async function prevenirReconnexion(compte) {
+  try {
+    if (!compte?.user_id) return
+    const { signalerReconnexionDrive } = await import('../notifications-internes.js')
+    const nom = compte.fournisseur === 'googledrive' ? 'Google Drive' : 'OneDrive'
+    await signalerReconnexionDrive(compte.user_id, nom)
+  } catch { /* la notification est un plus, jamais un prérequis */ }
+}
+
 // `compte` doit contenir : id, access_token(chiffré), refresh_token(chiffré), expiry_date(ms).
 export async function getValidAccessToken(compte) {
   const SKEW = 60_000
@@ -38,7 +58,7 @@ export async function getValidAccessToken(compte) {
   if (access && compte.expiry_date && compte.expiry_date - SKEW > Date.now()) return access
 
   const refresh = compte.refresh_token ? decrypt(compte.refresh_token) : null
-  if (!refresh) throw new DriveReconnectError()
+  if (!refresh) { await prevenirReconnexion(compte); throw new DriveReconnectError() }
 
   const res = await fetch(`${authority()}/oauth2/v2.0/token`, {
     method: 'POST',
@@ -54,6 +74,7 @@ export async function getValidAccessToken(compte) {
   const tok = await res.json()
   if (!res.ok || !tok.access_token) {
     console.error('[drive] refresh KO', tok?.error, tok?.error_description)
+    await prevenirReconnexion(compte)
     throw new DriveReconnectError()
   }
 
