@@ -58,8 +58,21 @@ describe('getPartAgente', () => {
   it('utilise part_agente si présent', () => {
     expect(getPartAgente({ part_agente: 0.4 })).toBe(0.4)
   })
-  it('normalise un pourcentage entier (40 -> 0.4)', () => {
-    expect(getPartAgente({ part_agente: 40 })).toBe(0.4)
+  // R20 — CE TEST A CHANGÉ DE SENS le 03/09, et c'est le point important.
+  //
+  // Il vérifiait auparavant que `part_agente: 40` était compris comme 40 %. C'était
+  // l'ancienne heuristique « au-dessus de 1, c'est des points » — pratique, mais fausse
+  // par construction : elle rendait impossible un taux inférieur ou égal à 1 %.
+  //
+  // La colonne `dossiers.part_agente` est une FRACTION. Vérifié en base le 03/09 :
+  // 49 dossiers, valeurs de 0 à 0,6, aucune au-dessus de 1. L'interface écrit bien une
+  // fraction. Une valeur de 40 dans cette colonne serait une donnée aberrante, pas un
+  // pourcentage à deviner — et elle est désormais interdite par une contrainte SQL.
+  it('lit une FRACTION, sans deviner : 0,4 = 40 %', () => {
+    expect(getPartAgente({ part_agente: 0.4 })).toBe(0.4)
+  })
+  it('une part à 1 vaut 100 %, pas 1 %', () => {
+    expect(getPartAgente({ part_agente: 1 })).toBe(1)
   })
   it('référent admin sans part_agente -> 0', () => {
     expect(getPartAgente({ referente: { role: 'admin' } })).toBe(0)
@@ -74,9 +87,19 @@ describe('getTauxCourtage / getTauxAmo', () => {
     expect(getTauxCourtage({ taux_courtage: 0.04 })).toBe(0.04)
     expect(getTauxCourtage({})).toBe(COURTAGE_STANDARD)
   })
-  it('amo : honoraires_amo_taux en % normalisé, défaut 9%', () => {
+  it('amo : honoraires_amo_taux en POINTS, défaut 9%', () => {
     expect(getTauxAmo({ honoraires_amo_taux: 9 })).toBe(0.09)
     expect(getTauxAmo({})).toBe(AMO_STANDARD)
+  })
+
+  // Le piège que l'ancienne heuristique ne pouvait PAS éviter : « au-dessus de 1 → des
+  // points, sinon une fraction » lisait 1 comme 100 % et 0,5 comme 50 %. Sur un dossier
+  // AMO à 400 000 € de travaux, l'écart entre 1 % et 100 % est de 396 000 €.
+  it('un taux AMO de 1 % vaut bien 1 %, et non 100 %', () => {
+    expect(getTauxAmo({ honoraires_amo_taux: 1 })).toBe(0.01)
+  })
+  it('un taux AMO de 0,5 % vaut bien 0,5 %, et non 50 %', () => {
+    expect(getTauxAmo({ honoraires_amo_taux: 0.5 })).toBe(0.005)
   })
 })
 
@@ -112,8 +135,11 @@ describe('calculateFraisFinance', () => {
 
 // ── Commission par devis ──────────────────────────────────────────────────────
 describe('calculateDevisFinance', () => {
+  // `commission_pourcentage` est stockée en FRACTION : buildDevisPayload divise la
+  // saisie par 100 avant écriture, et la modale remultiplie pour l'affichage. Vérifié
+  // en base le 03/09 : 110 devis, valeurs de 0 à 0,16.
   it('commission 10% sur 10000 HT -> comHT 1000, net 950, split 475/475', () => {
-    const r = calculateDevisFinance(devis({ commission_pourcentage: 10 }), dossier())
+    const r = calculateDevisFinance(devis({ commission_pourcentage: 0.10 }), dossier())
     expect(r.comHT).toBe(1000)           // 10000 * 0.10 (base HT)
     expect(r.royaltiesType2).toBe(50)
     expect(r.netCom).toBe(950)
@@ -137,8 +163,8 @@ describe('calculateDevisFinance', () => {
 describe('calculateCommissionsFinance', () => {
   it('agrège les devis actifs et somme les parts', () => {
     const d = dossier({ devis_artisans: [
-      devis({ id: 'a', montant_ht: 10000, commission_pourcentage: 10 }),
-      devis({ id: 'b', montant_ht: 5000, commission_pourcentage: 10 }),
+      devis({ id: 'a', montant_ht: 10000, commission_pourcentage: 0.10 }),
+      devis({ id: 'b', montant_ht: 5000, commission_pourcentage: 0.10 }),
     ] })
     const c = calculateCommissionsFinance(d)
     expect(c.comHT).toBe(1500)           // 1000 + 500
@@ -279,7 +305,7 @@ describe('finance — merad', () => {
   it('merad → la commission artisan (commission_pourcentage) est bien calculée', () => {
     const c = calculateCommissionsFinance(dossier({
       typologie: 'merad',
-      devis_artisans: [devis({ montant_ht: 10000, commission_pourcentage: 15, statut: 'accepte' })],
+      devis_artisans: [devis({ montant_ht: 10000, commission_pourcentage: 0.15, statut: 'accepte' })],
     }))
     expect(c.comHT).toBe(1500)   // 10000 × 15%
   })

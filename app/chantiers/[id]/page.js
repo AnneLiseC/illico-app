@@ -1483,10 +1483,15 @@ export default function FicheChantier({ params }) {
       }
       const lignesIncluses = (sim.lignes || []).filter(l => l.inclus)
       const totalTTC = lignesIncluses.reduce((s, l) => s + montantLigne(l), 0)
+      // R21 — même règle qu'à l'écran et que dans finance.js : un devis exonéré compte
+      // dans le total des travaux, jamais dans l'assiette des honoraires.
+      const assiette = lignesIncluses
+        .filter(l => devisById[l.devis_artisan_id]?.hors_honoraires !== true)
+        .reduce((s, l) => s + montantLigne(l), 0)
       const tauxC = Number(sim.taux_courtage) || 0
       const tauxA = Number(sim.taux_amo) || 0
-      const honC = totalTTC * tauxC / 100
-      const honA = totalTTC * tauxA / 100
+      const honC = assiette * tauxC / 100
+      const honA = assiette * tauxA / 100
 
       // Les polices standard (Helvetica) n'encodent que le WinAnsi : on remplace
       // les caractères hors jeu (€, tirets longs, guillemets typographiques…).
@@ -1517,7 +1522,12 @@ export default function FicheChantier({ params }) {
       const rule = () => page.drawLine({ start: { x: M, y }, end: { x: M + W, y }, thickness: 0.75, color: line })
 
       // En-tête
-      text('Récapitulatif financier', M, 20, fontB, brand)
+      // R21 — CE DOCUMENT N'EST PAS le « Récapitulatif financier » officiel produit par
+      // /api/pdf. Deux documents de même nom et de portée différente finissent toujours
+      // par être comparés ligne à ligne, puis soupçonnés. Celui-ci est une SIMULATION
+      // avant signature : deux scénarios côte à côte, sans frais de consultation, sans
+      // remise, sans travaux supplémentaires. Son titre doit le dire.
+      text('Comparatif de devis - simulation', M, 20, fontB, brand)
       y -= 22
       text(sim.nom || 'Simulation', M, 13, fontB, ink)
       y -= 26
@@ -1569,7 +1579,9 @@ export default function FicheChantier({ params }) {
       const href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
       const a = document.createElement('a')
       a.href = href
-      a.download = `Recap_${nomFichierClient(dossier)}_${(sim.nom || 'sim').replace(/[^\w-]+/g, '_')}.pdf`
+      // « Recap_… » était le préfixe du Récapitulatif financier officiel : deux fichiers
+      // homonymes dans le dossier de téléchargement, pour deux documents différents. (R21)
+      a.download = `Comparatif_${nomFichierClient(dossier)}_${(sim.nom || 'sim').replace(/[^\w-]+/g, '_')}.pdf`
       a.click()
       URL.revokeObjectURL(href)
     } catch (e) {
@@ -5717,11 +5729,27 @@ export default function FicheChantier({ params }) {
           return Number(devisById[l.devis_artisan_id]?.montant_ttc) || 0   // sinon montant courant (live)
         }
         const ligneFor = (sim, devisId) => (sim.lignes || []).find(l => l.devis_artisan_id === devisId)
+
+        // R21 — UN DEVIS EXONÉRÉ NE DOIT PAS PORTER D'HONORAIRES.
+        //
+        // `finance.js` sort les devis cochés « sans commission ni honoraires » de
+        // l'assiette (devisAssietteHonoraires) tout en les gardant dans le TOTAL
+        // CHANTIER : le client paie les travaux, mais pas d'honoraires dessus. Le
+        // comparateur, lui, appliquait le taux à TOUTES les lignes incluses.
+        //
+        // Ce n'était pas théorique : sur 2026-AM-002, deux devis exonérés (308 € et
+        // 880 € TTC) entraient dans l'assiette de plusieurs simulations. Le client
+        // voyait des honoraires calculés sur 1 188 € qu'il ne doit pas.
+        const estExonere = (l) => devisById[l.devis_artisan_id]?.hors_honoraires === true
         const totauxSim = (sim) => {
-          const totalTTC = (sim.lignes || []).filter(l => l.inclus).reduce((s, l) => s + montantLigne(l), 0)
-          const honCourtage = totalTTC * (Number(sim.taux_courtage) || 0) / 100
-          const honAMO      = totalTTC * (Number(sim.taux_amo) || 0) / 100
-          return { totalTTC, honCourtage, honAMO, totalCourtage: totalTTC + honCourtage, totalAMO: totalTTC + honAMO }
+          const incluses = (sim.lignes || []).filter(l => l.inclus)
+          // Total chantier : TOUT ce qui est inclus, exonéré compris.
+          const totalTTC = incluses.reduce((s, l) => s + montantLigne(l), 0)
+          // Assiette honoraires : la même chose MOINS les devis exonérés.
+          const assiette = incluses.filter(l => !estExonere(l)).reduce((s, l) => s + montantLigne(l), 0)
+          const honCourtage = assiette * (Number(sim.taux_courtage) || 0) / 100
+          const honAMO      = assiette * (Number(sim.taux_amo) || 0) / 100
+          return { totalTTC, assiette, honCourtage, honAMO, totalCourtage: totalTTC + honCourtage, totalAMO: totalTTC + honAMO }
         }
 
         // Frise : bases figées (chronologiques) + simulations manuelles. La dernière

@@ -71,11 +71,23 @@ export async function requireRole(request, roles) {
 export async function assertDossierAccessible(dossierId, profile) {
   if (!dossierId) return { error: NextResponse.json({ error: 'dossier_id manquant' }, { status: 400 }) }
   const { data: dossier, error } = await getSupabaseAdmin()
-    .from('dossiers').select('id, societe_id, agence_id, client_id').eq('id', dossierId).maybeSingle()
+    .from('dossiers').select('id, societe_id, agence_id, client_id, referente_id').eq('id', dossierId).maybeSingle()
   if (error) return { error: NextResponse.json({ error: error.message }, { status: 500 }) }
   if (!dossier) return { error: NextResponse.json({ error: 'Dossier non trouvé' }, { status: 404 }) }
+  // R23 — le périmètre des routes doit dire la MÊME chose que la règle d'accès en base.
+  //
+  // La règle `dossiers_scope` de Postgres exige, pour une agente, `referente_id = auth.uid()`
+  // ET la bonne agence. Les routes, elles, ne testaient que l'agence : une agente pouvait
+  // donc agir par l'API sur les dossiers de ses collègues, ce que l'interface lui interdit
+  // déjà. Décision d'Anne-Lise (03/09) : « un agent n'a pas à agir sur les dossiers de ses
+  // collègues ; par contre l'admin a visu et peut agir sur les dossiers de ses agents. »
+  // C'est exactement la règle en base — on s'aligne dessus, on n'en invente pas une autre.
+  //
+  // Impact vérifié avant d'écrire : les deux agentes existantes sont dans des agences
+  // différentes et sont référentes de leurs propres dossiers ; la RLS les empêchait déjà
+  // de LIRE ceux des autres. Le resserrement ne retire donc aucun accès réellement utilisé.
   const ok = profile?.role === 'admin' ? dossier.societe_id === profile.societe_id
-    : profile?.role === 'agente' ? dossier.agence_id === profile.agence_id
+    : profile?.role === 'agente' ? (dossier.agence_id === profile.agence_id && dossier.referente_id === profile.id)
     : profile?.role === 'client' ? (!!profile.client_id && dossier.client_id === profile.client_id)
     : false
   if (!ok) return { error: NextResponse.json({ error: 'Dossier non trouvé' }, { status: 404 }) }
