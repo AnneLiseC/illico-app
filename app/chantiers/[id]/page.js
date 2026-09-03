@@ -23,10 +23,10 @@ const CRGenerationModal = dynamic(() => import('../../components/chantier/CRGene
 const LotsPanel = dynamic(() => import('../../components/chantier/LotsPanel'), { ssr: false })
 const CRVisitesPanel = dynamic(() => import('../../components/chantier/CRVisitesPanel'), { ssr: false })
 
-// Nouveau système CR (liste de visites → page par visite). L'ANCIEN panneau CR + ses
-// modales (wizard IA, CR manuel) sont CONSERVÉS mais masqués (flag ci-dessous) : on y
-// puisera des fonctions pour 1c-2/1c-3, on supprimera une fois le nouveau prouvé.
-const CR_LEGACY_VISIBLE = false
+// Système CR : liste de visites → page par visite (CRVisitesPanel). L'ancien panneau a
+// été supprimé le 03/09 avec son drapeau `CR_LEGACY_VISIBLE`, devenu une constante fausse
+// qui ne masquait plus rien d'utile. La modale « CR manuel » et ses fonctions RESTENT :
+// le nouveau panneau les rappelle par `onCreerAncien` / `onEditerAncien`.
 import { compressImageToBlob, heicToJpegFile } from '../../lib/images'
 import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
 import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../../lib/cibles'
@@ -3312,6 +3312,11 @@ export default function FicheChantier({ params }) {
       await removeFolderContents('documents', `chantiers/${id}/documents`)
       await removeFolderContents('documents', `chantiers/${id}/contrat`)
       await removeFolderContents('documents', `chantiers/${id}/cr`)
+      // Cache des documents générés (documents_cache) : la LIGNE tombe par ON DELETE
+      // CASCADE, mais le PDF rangé dans le Storage, lui, resterait orphelin. C'est
+      // exactement le « contrat implicite » noté dans la boussole — toute nouvelle
+      // table fille qui pose un fichier doit ajouter son préfixe ici.
+      await removeFolderContents('documents', `cache/${id}`)
 
       // 4) Supprimer le dossier chantier — les tables filles tombent par ON DELETE CASCADE
       const { error: dossierErr } = await supabase
@@ -6254,215 +6259,21 @@ export default function FicheChantier({ params }) {
       {/* Lots / sous-lots + Gantt : désormais intégrés dans l'onglet Planning (plus d'onglet dédié). */}
 
       {/* ── RAPPORTS DE VISITE — NOUVEAU système (liste de visites → page par visite) ── */}
-      {onglet === 'cr' && !CR_LEGACY_VISIBLE && (
+      {onglet === 'cr' && (
         <CRVisitesPanel id={id} setErreur={setErreur} setSucces={setSucces} setAnnot={setAnnot}
           onCreerAncien={() => setCrModal(true)} onEditerAncien={editerCR} onPdfProse={(crId) => generatePDF('cr', crId)} refreshKey={crVersion} />
       )}
 
-      {/* ── COMPTES-RENDUS (ANCIEN — conservé mais masqué via CR_LEGACY_VISIBLE) ── */}
-      {CR_LEGACY_VISIBLE && onglet === 'cr' && (() => {
-        const typeMeta = {
-          r1:        { color: 'var(--ink-900)', label: 'R1', long: 'R1 — Visite technique' },
-          r2:        { color: '#16a34a', label: 'R2', long: 'R2 — Visite artisans' },
-          r3:        { color: '#f59e0b', label: 'R3', long: 'R3 — Présentation devis' },
-          suivi:     { color: '#94a3b8', label: 'Suivi', long: 'Suivi de chantier' },
-          reception: { color: '#16a34a', label: 'Récept.', long: 'Réception' },
-        }
-        return (
-        <div className="cr-grid" style={{display:'grid', gridTemplateColumns:'1fr 320px', gap:18}}>
+      {/* ── ANCIEN PANNEAU DE COMPTES RENDUS — SUPPRIMÉ le 03/09 ──
+          203 lignes d'interface masquées par `CR_LEGACY_VISIBLE = false` depuis le
+          passage au nouveau système de visites, et donc téléchargées par chaque
+          utilisateur à chaque ouverture de fiche sans jamais être affichées.
 
-          {/* Liste CR */}
-          <div className="card" style={{padding:0, overflow:'hidden'}}>
-            <div style={{padding:'14px 22px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid var(--ink-200)', gap:8, flexWrap:'wrap'}}>
-              <div>
-                <h2 className="page" style={{fontSize:15}}>Rapports de visite</h2>
-                <div className="subtitle" style={{marginTop:4}}>
- RV · les RV publiés sont visibles dans l&apos;espace client
-                </div>
-              </div>
-              <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-                <button onClick={() => { setCrEditId(null); setCrManuelForm({ type_visite: '', date_visite: '', contenu: '', intervenants: '', photos: [] }); setCrManuelModal(true) }} className="btn btn-ghost" style={{fontSize:12.5}}>
-                  <PlusIcon /> CR manuel
-                </button>
-                <button onClick={() => { setCrModal(true) }} className="btn btn-primary" style={{fontSize:12.5}}>
-                  ✨ Générer avec l&apos;IA
-                </button>
-              </div>
-            </div>
-
-            <div style={{padding:'14px 22px', display:'flex', flexDirection:'column', gap:14}}>
-              {comptesRendus.length === 0 && (
-                <div style={{padding:30, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>
-                  Aucun rapport de visite pour le moment
-                </div>
-              )}
-              {comptesRendus.map(cr => {
-                const meta = typeMeta[cr.type_visite] || { color: '#94a3b8', label: cr.type_visite, long: cr.type_visite }
-                const fmtD = cr.date_visite ? new Date(cr.date_visite).toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'numeric' }) : null
-                const apercu = stripMarkdown(cr.contenu_final)
-                return (
-                  <div key={cr.id} style={{
-                    padding:16, border:'1px solid var(--ink-200)', borderRadius:12, background:'#fff', position:'relative',
-                  }}>
-                    <div style={{display:'flex', gap:10, alignItems:'center', marginBottom:10, flexWrap:'wrap'}}>
-                      <span style={{
-                        padding:'2px 8px', borderRadius:6, fontSize:11, fontWeight:800,
-                        background: meta.color, color:'#fff', letterSpacing:0.04,
-                      }}>{meta.label}</span>
-                      <span style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>{meta.long}</span>
-                      <div style={{flex:1}} />
-                      <button onClick={() => toggleValide(cr.id, !cr.valide)}
-                        style={{
-                          padding:'3px 10px', borderRadius:99, fontSize:11, fontWeight:700,
-                          border:'none', cursor:'pointer',
-                          background: cr.valide ? 'rgba(22,163,74,0.12)' : 'rgba(148,163,184,0.18)',
-                          color: cr.valide ? '#15803d' : 'var(--ink-600)',
-                        }}>
-                        {cr.valide ? '✓ Visible client' : 'Brouillon'}
-                      </button>
-                      {fmtD && (
-                        <span className="tnum" style={{fontSize:11.5, color:'var(--ink-500)'}}>{fmtD}</span>
-                      )}
-                    </div>
-                    {cr.contenu_final && (crOuvert === cr.id ? (
-                      <div>
-                        <MarkdownCR text={cr.contenu_final} variant="staff" />
-                        <button onClick={() => setCrOuvert(null)} className="btn btn-ghost" style={{padding:'3px 10px', fontSize:11, marginTop:8}}>
-                          ▲ Replier
-                        </button>
-                      </div>
-                    ) : (
-                      <p className="clip-2" onClick={() => setCrOuvert(cr.id)} title="Voir le CR complet"
-                        style={{fontSize:13, color:'var(--ink-700)', lineHeight:1.55, margin:0, cursor:'pointer'}}>
-                        {apercu.slice(0, 200)}{apercu.length > 200 ? '…' : ''} <span style={{color:'var(--ink-500)'}}>▼</span>
-                      </p>
-                    ))}
-                    <div style={{
-                      display:'flex', gap:8, marginTop:12, paddingTop:10,
-                      borderTop:'1px solid var(--ink-100)', fontSize:11, color:'var(--ink-500)',
-                      alignItems:'center', flexWrap:'wrap',
-                    }}>
-                      <div style={{flex:1}} />
-                      <button onClick={() => editerCR(cr)} className="btn btn-ghost" style={{padding:'3px 10px', fontSize:11}}>
-                        ✎ Modifier
-                      </button>
-                      {cr.contenu_final && (
-                        <button onClick={() => generatePDF('cr', cr.id)} disabled={generatingPDF === `cr-${cr.id}`}
-                          className="btn btn-ghost" style={{padding:'3px 10px', fontSize:11}}>
-                          <DlIcon /> {generatingPDF === `cr-${cr.id}` ? 'Génération…' : 'PDF'}
-                        </button>
-                      )}
-                      <button onClick={() => supprimerCR(cr.id)} className="btn btn-ghost" style={{padding:'3px 10px', fontSize:11, color:'#b91c1c'}}>
-                        × Supprimer
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* ── Section : documents uploadés marqués compte-rendu (Lot 3) ──
-                Vue additionnelle (pas une fusion) : on liste les chantier_documents
-                tagués 'compte_rendu', distincts des CR générés ci-dessus. Filtre
-                réactif sur le state `documents` → dé-taguer fait disparaître la ligne. */}
-            {(() => {
-              const docTypeLabel = (doc) => {
-                const m = (doc.type_mime || '').toLowerCase()
-                const n = (doc.nom || '').toLowerCase()
-                if (m.includes('pdf') || n.endsWith('.pdf')) return 'pdf'
-                if (m.startsWith('image') || /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(n)) return 'image'
-                if (m.includes('word') || /\.(doc|docx)$/i.test(n)) return 'word'
-                if (m.includes('excel') || /\.(xls|xlsx)$/i.test(n)) return 'tableur'
-                return 'fichier'
-              }
-              const docsCR = documents.filter(d => d.categorie === 'compte_rendu')
-              return (
-                <div style={{borderTop:'1px solid var(--ink-200)', padding:'14px 22px'}}>
-                  <h3 className="page" style={{fontSize:13.5}}>Documents joints marqués rapport de visite</h3>
-                  <div className="eyebrow" style={{marginTop:4, marginBottom:10}}>
-                    Fichiers uploadés dans l&apos;onglet Documents et tagués RV ({docsCR.length})
-                  </div>
-                  {docsCR.length === 0 ? (
-                    <div style={{fontSize:12.5, color:'var(--ink-500)'}}>
-                      Aucun document marqué rapport de visite — taguez un fichier depuis l&apos;onglet Documents (bouton « RV »).
-                    </div>
-                  ) : docsCR.map(doc => (
-                    <div key={doc.id} className="row-hover" style={{
-                      display:'flex', alignItems:'center', gap:12, padding:'10px 6px', borderBottom:'1px solid var(--ink-100)',
-                    }}>
-                      <div style={{width:32, height:32, borderRadius:8, background:'rgba(99,102,241,0.12)', color:'var(--ink-900)', display:'grid', placeItems:'center', flex:'0 0 32px'}}>
-                        <DocIcon />
-                      </div>
-                      <button onClick={() => ouvrirDocument(doc.path, doc.nom)} className="clip-1" style={{
-                        flex:1, minWidth:0, fontSize:13, fontWeight:600, color:'var(--ink-900)',
-                        background:'none', border:'none', cursor:'pointer', padding:0, textAlign:'left',
-                      }}>
-                        {doc.nom}
-                      </button>
-                      <span style={{fontSize:11, color:'var(--ink-500)', textTransform:'uppercase', letterSpacing:0.04}}>{docTypeLabel(doc)}</span>
-                      <button onClick={() => ouvrirDocument(doc.path, doc.nom)} className="btn btn-ghost" style={{padding:'4px 8px'}} title="Voir">
-                        <EyeIcon />
-                      </button>
-                      <button onClick={() => toggleCategorieCR(doc.id, false)} className="btn btn-ghost"
-                        style={{padding:'4px 8px', fontSize:11, fontWeight:700, color:'var(--ink-900)'}}
-                        title="Retirer de la catégorie Rapport de visite">
-                        ✓ RV
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )
-            })()}
-          </div>
-
-          {/* Sidebar IA */}
-          <div style={{display:'flex', flexDirection:'column', gap:14}}>
-            <div className="card" style={{padding:18, background:'linear-gradient(135deg, rgba(99,102,241,0.06), rgba(79,70,229,0.02))'}}>
-              <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10}}>
-                <div style={{
-                  width:32, height:32, borderRadius:8, background:'#6366f1', color:'#fff',
-                  display:'grid', placeItems:'center', fontSize:16,
-                }}>✨</div>
-                <span style={{fontSize:14, fontWeight:700, color:'var(--ink-900)'}}>CR généré par IA</span>
-              </div>
-              <ol style={{paddingLeft:20, fontSize:12.5, color:'var(--ink-700)', lineHeight:1.6, margin:0}}>
-                <li>Configure (type, date, intervenants)</li>
-                <li>Dépose tes notes + photos + vocal</li>
-                <li>Relis et valide le rendu structuré</li>
-              </ol>
-              <button onClick={() => { setCrModal(true) }} className="btn btn-primary" style={{marginTop:14, width:'100%', justifyContent:'center'}}>
-                ✨ Démarrer
-              </button>
-            </div>
-
-            <div className="card" style={{padding:18}}>
-              <div className="eyebrow" style={{marginBottom:10}}>Documents joignables au CR</div>
-              {documents.length === 0 ? (
-                <div style={{fontSize:12, color:'var(--ink-500)'}}>Aucun document — ajoute des fichiers dans l&apos;onglet Documents.</div>
-              ) : (
-                <div style={{display:'flex', flexDirection:'column', gap:8, fontSize:12.5, color:'var(--ink-700)'}}>
-                  {documents.slice(0, 6).map(doc => (
-                    <label key={doc.id} style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer'}}>
-                      <input type="checkbox" checked={doc.dans_restitution || false}
-                        onChange={e => toggleDansRestitution(doc.id, e.target.checked)}
-                        style={{accentColor:'#6366f1'}} />
-                      <DocIcon />
-                      <span className="clip-1" style={{flex:1, minWidth:0}}>{doc.nom}</span>
-                    </label>
-                  ))}
-                  {documents.length > 6 && (
-                    <button onClick={() => setOnglet('documents')} className="btn btn-ghost" style={{fontSize:11, padding:'4px 8px', alignSelf:'flex-start'}}>
-                      Voir les {documents.length - 6} autres
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-        </div>
-        )
-      })()}
+          ⚠ CE QUI RESTE, ET QUI EST BIEN VIVANT : la modale « CR manuel »
+          (`crManuelModal`) et ses fonctions (`editerCR`, `sauvegarderCRManuel`).
+          Le NOUVEAU panneau les rappelle par ses props `onCreerAncien` et
+          `onEditerAncien` — ce n'est donc PAS du code mort, malgré son nom.
+          Récupérable dans l'historique git si besoin. */}
 
       {/* ── MODAL CR SANS IA ── */}
       {crManuelModal && (
