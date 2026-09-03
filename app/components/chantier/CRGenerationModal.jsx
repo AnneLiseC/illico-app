@@ -266,7 +266,7 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
               setCrModal(false)
             }}
             width="min(1600px, 97vw)"
-            maxH="96vh"
+            maxH="min(94dvh, 96vh)"
           >
             <div style={{padding:24, display:'flex', flexDirection:'column', gap:16}}>
 

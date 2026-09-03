@@ -336,12 +336,31 @@ const SYNC_DRIVE_MSG = {
   fournisseur: '⚠ Fournisseur Drive non reconnu pour la référente.',
 }
 
+// iPhone / iPad, y compris iPadOS 13+ qui se fait passer pour un Macintosh (seul son
+// écran tactile le trahit). Renvoie false côté serveur : à n'appeler que depuis un
+// composant monté après interaction, jamais dans du rendu serveur.
+function estAppareilIOS() {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1)
+}
+
 // ─── Visionneuse de document (PDF / image) ────────────────────────────────────
 function DocViewer({ url, nom, onClose }) {
   // Libère les blob URLs quand la visionneuse se ferme
   useEffect(() => {
     return () => { if (url?.startsWith('blob:')) URL.revokeObjectURL(url) }
   }, [url])
+
+  // iOS n'affiche pas un PDF dans une <iframe> : Safari rend un cadre blanc, ou la
+  // première page sans défilement. Ce n'est pas contournable côté application, le moteur
+  // refuse.
+  //
+  // Détection calculée PENDANT LE RENDU, sans état ni effet — c'est possible et sûr ici
+  // parce que cette visionneuse n'est montée qu'après un clic : elle n'existe jamais dans
+  // le HTML rendu côté serveur, donc aucun risque de divergence à l'hydratation.
+  // iPadOS 13+ se déclare « Macintosh » ; le seul signe qui le trahit est l'écran tactile.
+  const surIOS = estAppareilIOS()
 
   if (!url) return null
   const nomFichier = nom || url.split('/').pop() || 'Document'
@@ -408,6 +427,28 @@ function DocViewer({ url, nom, onClose }) {
           <div style={{width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={url} alt={nomFichier} style={{maxWidth:'100%', maxHeight:'100%', objectFit:'contain', borderRadius:8, boxShadow:'0 20px 60px rgba(0,0,0,0.5)'}} />
+          </div>
+        ) : surIOS ? (
+          // Plutôt qu'un cadre vide qui promet un document, on envoie au lecteur natif,
+          // qui sait l'afficher. Bouton de 48 px de haut : la cible tactile recommandée.
+          <div style={{height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, padding:28, textAlign:'center'}}>
+            <div style={{fontSize:40, lineHeight:1}}>📄</div>
+            <div className="clip-2" style={{color:'#e2e8f0', fontSize:15, fontWeight:600, maxWidth:340}}>{nomFichier}</div>
+            <a
+              href={url} target="_blank" rel="noreferrer"
+              onClick={e => e.stopPropagation()}
+              style={{
+                display:'inline-flex', alignItems:'center', gap:8, fontSize:15, fontWeight:700,
+                color:'#0f172a', background:'#fff', padding:'14px 26px', borderRadius:12,
+                textDecoration:'none', minHeight:48,
+              }}
+            >
+              Ouvrir le document
+            </a>
+            <p style={{color:'rgba(255,255,255,0.55)', fontSize:12.5, maxWidth:320, lineHeight:1.5, margin:0}}>
+              Sur iPhone et iPad, les PDF s&apos;ouvrent dans le lecteur de Safari.
+              Reviens ensuite au chantier avec la flèche de retour.
+            </p>
           </div>
         ) : (
           <iframe

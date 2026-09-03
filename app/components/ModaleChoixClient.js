@@ -42,7 +42,7 @@ export default function ModaleChoixClient({ open, onClose }) {
       subtitle="Choisis un client existant ou crée-en un nouveau."
       onClose={onClose}
       width={480}
-      maxH="85vh"
+      maxH="min(85dvh, 88vh)"
       footer={<>
         <button onClick={onClose} className="btn btn-ghost" style={{flex:1, height:40, justifyContent:'center'}}>
           Annuler
