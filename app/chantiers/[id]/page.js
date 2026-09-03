@@ -1395,22 +1395,57 @@ export default function FicheChantier({ params }) {
       // Un devis refusé reste visible dans la base mais EXCLU du total (inclus:false) :
       // la base courante reflète ainsi les devis retenus, pas les abandonnés.
       const refuses = new Set((das || []).filter(d => d.statut === 'refuse').map(d => d.id))
-      const { data: vs } = await supabase.from('devis_versions')
+      const { data: vs, error: errVs } = await supabase.from('devis_versions')
         .select('id, devis_artisan_id').in('devis_artisan_id', devisIds).eq('est_courante', true)
+      if (errVs) { console.error('creerBaseComparateur (versions) :', errVs.message); return }
+
+      // ─── LA BASE À 0 ─────────────────────────────────────────────────────────
+      // Les lignes n'étaient construites qu'à partir des VERSIONS courantes. Un devis
+      // sans version courante — créé avant le versionnage, ou dont l'archivage a échoué
+      // en silence — ne produisait aucune ligne. Quand AUCUN devis n'avait de version,
+      // la base était quand même créée : zéro ligne, total 0 €. Et comme elle devenait
+      // « base courante », elle chassait la précédente, qui, elle, était bonne.
+      //
+      // C'est ce qui s'est produit sur un de tes deux dossiers 2026-AM-001 : « Base 1 »,
+      // base courante, zéro ligne, 0 €.
+      //
+      // On construit désormais une ligne par DEVIS. Épinglée sur sa version courante
+      // quand elle existe ; sinon `devis_version_id` reste nul et `montantLigne` lit le
+      // montant vivant du devis — ce qu'il sait déjà faire.
+      const versionParDevis = new Map((vs || []).map(v => [v.devis_artisan_id, v.id]))
+      const lignesAInserer = devisIds.map(devisId => ({
+        devis_artisan_id: devisId,
+        devis_version_id: versionParDevis.get(devisId) || null,
+        inclus: !refuses.has(devisId),
+        montant_ttc_override: null,
+      }))
+      // Garde-fou : jamais de base vide. Une base sans ligne n'apporte rien et détrône
+      // la précédente.
+      if (lignesAInserer.length === 0) return
+
       const { data: bases } = await supabase.from('comparateur_simulations')
         .select('id').eq('dossier_id', id).eq('type', 'base')
       const num = (bases?.length || 0) + 1
-      await supabase.from('comparateur_simulations').update({ est_base_courante: false })
-        .eq('dossier_id', id).eq('est_base_courante', true)
-      const { data: base } = await supabase.from('comparateur_simulations')
-        .insert({ dossier_id: id, nom: `Base ${num}`, type: 'base', est_base_courante: true, taux_courtage: COURTAGE_STANDARD * 100, taux_amo: AMO_STANDARD * 100 })
+
+      const { data: base, error: errBase } = await supabase.from('comparateur_simulations')
+        .insert({ dossier_id: id, nom: `Base ${num}`, type: 'base', est_base_courante: false, taux_courtage: COURTAGE_STANDARD * 100, taux_amo: AMO_STANDARD * 100 })
         .select().single()
-      if (!base) return
-      const lignes = (vs || []).map(v => ({
-        simulation_id: base.id, devis_artisan_id: v.devis_artisan_id,
-        devis_version_id: v.id, inclus: !refuses.has(v.devis_artisan_id), montant_ttc_override: null,
-      }))
-      if (lignes.length) await supabase.from('comparateur_lignes').insert(lignes)
+      if (errBase || !base) { console.error('creerBaseComparateur (base) :', errBase?.message); return }
+
+      const { error: errLignes } = await supabase.from('comparateur_lignes')
+        .insert(lignesAInserer.map(l => ({ ...l, simulation_id: base.id })))
+      if (errLignes) {
+        // La base est née vide : on la retire plutôt que de la laisser afficher 0 €.
+        console.error('creerBaseComparateur (lignes) :', errLignes.message)
+        await supabase.from('comparateur_simulations').delete().eq('id', base.id)
+        return
+      }
+
+      // ORDRE VOULU : on ne détrône l'ancienne base qu'une fois la nouvelle REMPLIE.
+      // Une panne au milieu laisse deux bases valides, jamais une base vide en vitrine.
+      await supabase.from('comparateur_simulations').update({ est_base_courante: false })
+        .eq('dossier_id', id).eq('est_base_courante', true).neq('id', base.id)
+      await supabase.from('comparateur_simulations').update({ est_base_courante: true }).eq('id', base.id)
     } catch (e) { console.error('creerBaseComparateur :', e?.message) }
   }
 
@@ -1490,8 +1525,23 @@ export default function FicheChantier({ params }) {
         .reduce((s, l) => s + montantLigne(l), 0)
       const tauxC = Number(sim.taux_courtage) || 0
       const tauxA = Number(sim.taux_amo) || 0
-      const honC = assiette * tauxC / 100
+
+      // Frais de consultation : encaissés après le PREMIER rendez-vous, donc déjà réglés
+      // quand ce comparatif est présenté. « offerts » → zéro ; « remboursé » → déduits
+      // des honoraires de courtage (mêmes règles que finance.js).
+      const fraisStatutPdf = dossier?.frais_statut
+      const fraisTTCPdf    = fraisStatutPdf === 'offerts' ? 0 : (Number(dossier?.frais_consultation) || 0)
+      const fraisDeduitsPdf = fraisStatutPdf === 'rembourse' ? (Number(dossier?.frais_consultation) || 0) : 0
+
+      const honC = Math.max(0, assiette * tauxC / 100 - fraisDeduitsPdf)
       const honA = assiette * tauxA / 100
+
+      // Un taux abaissé est une REMISE : le document doit la nommer, sinon le client
+      // ne voit pas ce qui lui a été accordé.
+      const stdC = Math.max(0, assiette * (COURTAGE_STANDARD * 100) / 100 - fraisDeduitsPdf)
+      const stdA = assiette * (AMO_STANDARD * 100) / 100
+      const remiseC = Math.max(0, stdC - honC)
+      const remiseA = Math.max(0, stdA - honA)
 
       // Les polices standard (Helvetica) n'encodent que le WinAnsi : on remplace
       // les caractères hors jeu (€, tirets longs, guillemets typographiques…).
@@ -1525,8 +1575,9 @@ export default function FicheChantier({ params }) {
       // R21 — CE DOCUMENT N'EST PAS le « Récapitulatif financier » officiel produit par
       // /api/pdf. Deux documents de même nom et de portée différente finissent toujours
       // par être comparés ligne à ligne, puis soupçonnés. Celui-ci est une SIMULATION
-      // avant signature : deux scénarios côte à côte, sans frais de consultation, sans
-      // remise, sans travaux supplémentaires. Son titre doit le dire.
+      // avant signature : deux scénarios côte à côte, frais de consultation et remise
+      // compris, mais sans travaux supplémentaires ni bascule TS-1, qui n'existent pas
+      // encore à ce stade. Son titre doit le dire.
       text('Comparatif de devis - simulation', M, 20, fontB, brand)
       y -= 22
       text(sim.nom || 'Simulation', M, 13, fontB, ink)
@@ -1566,14 +1617,27 @@ export default function FicheChantier({ params }) {
         right(eur(val), M + W, opts.big ? 11.5 : 10.5, opts.bold ? fontB : font, opts.color || ink)
         y -= opts.big ? 22 : 18
       }
+      const vert = rgb(0.08, 0.5, 0.24)
       ligneTotal('Total travaux TTC', totalTTC, { bold: true })
+      if (fraisTTCPdf > 0) {
+        ligneTotal(
+          fraisStatutPdf === 'rembourse'
+            ? 'Frais de consultation (deduits des honoraires)'
+            : 'Frais de consultation',
+          fraisTTCPdf,
+        )
+      }
+      if (remiseC > 0.005) ligneTotal(`Honoraires courtage - tarif standard (${COURTAGE_STANDARD * 100}%)`, stdC, { color: grey })
       ligneTotal(`Honoraires courtage (${tauxC}%)`, honC)
+      if (remiseC > 0.005) ligneTotal('Remise accordee sur le courtage', -remiseC, { color: vert })
+      if (remiseA > 0.005) ligneTotal(`Honoraires AMO - tarif standard (${AMO_STANDARD * 100}%)`, stdA, { color: grey })
       ligneTotal(`Honoraires AMO (${tauxA}%)`, honA)
+      if (remiseA > 0.005) ligneTotal('Remise accordee sur l\'AMO', -remiseA, { color: vert })
       y -= 4
       rule()
       y -= 20
-      ligneTotal('Total chantier — courtage', totalTTC + honC, { bold: true, big: true, color: brand })
-      ligneTotal('Total chantier — AMO', totalTTC + honA, { bold: true, big: true, color: brand })
+      ligneTotal('Total chantier — courtage', totalTTC + honC + fraisTTCPdf, { bold: true, big: true, color: brand })
+      ligneTotal('Total chantier — AMO', totalTTC + honA + fraisTTCPdf, { bold: true, big: true, color: brand })
 
       const bytes = await pdf.save()
       const href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
@@ -5741,15 +5805,45 @@ export default function FicheChantier({ params }) {
         // 880 € TTC) entraient dans l'assiette de plusieurs simulations. Le client
         // voyait des honoraires calculés sur 1 188 € qu'il ne doit pas.
         const estExonere = (l) => devisById[l.devis_artisan_id]?.hors_honoraires === true
+        // Frais de consultation : ils sont encaissés APRÈS le premier rendez-vous, donc
+        // bien avant la signature des devis. Ils ont leur place dans une simulation
+        // d'avant-signature — le client les a déjà payés quand tu lui présentes ce
+        // tableau. Mêmes règles que finance.js : « offerts » → zéro ; « remboursé » →
+        // déduits des honoraires de courtage, donc neutres pour le client au total.
+        const fraisStatut = dossier?.frais_statut
+        const fraisTTC    = fraisStatut === 'offerts' ? 0 : (Number(dossier?.frais_consultation) || 0)
+        const fraisDeduits = fraisStatut === 'rembourse' ? (Number(dossier?.frais_consultation) || 0) : 0
+
+        // Baisser un taux dans une simulation EST une remise commerciale : le tableau
+        // doit la nommer, comme le fait le récapitulatif officiel. Référence = le tarif
+        // standard du réseau.
+        const STD_COURTAGE = COURTAGE_STANDARD * 100
+        const STD_AMO      = AMO_STANDARD * 100
+
         const totauxSim = (sim) => {
           const incluses = (sim.lignes || []).filter(l => l.inclus)
           // Total chantier : TOUT ce qui est inclus, exonéré compris.
           const totalTTC = incluses.reduce((s, l) => s + montantLigne(l), 0)
           // Assiette honoraires : la même chose MOINS les devis exonérés.
           const assiette = incluses.filter(l => !estExonere(l)).reduce((s, l) => s + montantLigne(l), 0)
-          const honCourtage = assiette * (Number(sim.taux_courtage) || 0) / 100
-          const honAMO      = assiette * (Number(sim.taux_amo) || 0) / 100
-          return { totalTTC, assiette, honCourtage, honAMO, totalCourtage: totalTTC + honCourtage, totalAMO: totalTTC + honAMO }
+
+          const tauxC = Number(sim.taux_courtage) || 0
+          const tauxA = Number(sim.taux_amo) || 0
+          const honCourtage = Math.max(0, assiette * tauxC / 100 - fraisDeduits)
+          const honAMO      = assiette * tauxA / 100
+
+          // Remise = ce que le tarif standard aurait coûté, moins ce qui est demandé.
+          const stdCourtage = Math.max(0, assiette * STD_COURTAGE / 100 - fraisDeduits)
+          const stdAMO      = assiette * STD_AMO / 100
+          const remiseCourtage = Math.max(0, stdCourtage - honCourtage)
+          const remiseAMO      = Math.max(0, stdAMO - honAMO)
+
+          return {
+            totalTTC, assiette, fraisTTC, honCourtage, honAMO,
+            stdCourtage, stdAMO, remiseCourtage, remiseAMO, tauxC, tauxA,
+            totalCourtage: totalTTC + honCourtage + fraisTTC,
+            totalAMO:      totalTTC + honAMO + fraisTTC,
+          }
         }
 
         // Frise : bases figées (chronologiques) + simulations manuelles. La dernière
@@ -5886,14 +5980,53 @@ export default function FicheChantier({ params }) {
                     <td style={{...tdStyle, textAlign:'left', fontWeight:700}}>Total TTC</td>
                     {colonnes.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700}} className="tnum">{fmt(totauxSim(sim).totalTTC)}</td>)}
                   </tr>
+                  {fraisTTC > 0 && (
+                    <tr style={{borderTop:'1px solid var(--ink-100)'}}>
+                      <td style={{...tdStyle, textAlign:'left'}}>
+                        Frais de consultation
+                        {fraisStatut === 'rembourse' && <span style={{fontSize:10.5, color:'var(--ink-500)'}}> · déduits des honoraires</span>}
+                      </td>
+                      {colonnes.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(fraisTTC)}</td>)}
+                    </tr>
+                  )}
                   <tr style={{borderTop:'1px solid var(--ink-100)'}}>
                     <td style={{...tdStyle, textAlign:'left'}}>Honoraires courtage</td>
-                    {colonnes.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honCourtage)}</td>)}
+                    {colonnes.map(sim => {
+                      const t = totauxSim(sim)
+                      return (
+                        <td key={sim.id} style={tdStyle} className="tnum">
+                          {t.remiseCourtage > 0.005 && (
+                            <span style={{textDecoration:'line-through', color:'var(--ink-400)', marginRight:6, fontSize:11.5}}>{fmt(t.stdCourtage)}</span>
+                          )}
+                          {fmt(t.honCourtage)}
+                        </td>
+                      )
+                    })}
                   </tr>
                   <tr>
                     <td style={{...tdStyle, textAlign:'left'}}>Honoraires AMO</td>
-                    {colonnes.map(sim => <td key={sim.id} style={tdStyle} className="tnum">{fmt(totauxSim(sim).honAMO)}</td>)}
+                    {colonnes.map(sim => {
+                      const t = totauxSim(sim)
+                      return (
+                        <td key={sim.id} style={tdStyle} className="tnum">
+                          {t.remiseAMO > 0.005 && (
+                            <span style={{textDecoration:'line-through', color:'var(--ink-400)', marginRight:6, fontSize:11.5}}>{fmt(t.stdAMO)}</span>
+                          )}
+                          {fmt(t.honAMO)}
+                        </td>
+                      )
+                    })}
                   </tr>
+                  {colonnes.some(sim => totauxSim(sim).remiseCourtage > 0.005 || totauxSim(sim).remiseAMO > 0.005) && (
+                    <tr>
+                      <td style={{...tdStyle, textAlign:'left', color:'#15803d'}}>Remise accordée</td>
+                      {colonnes.map(sim => {
+                        const t = totauxSim(sim)
+                        const r = Math.max(t.remiseCourtage, t.remiseAMO)
+                        return <td key={sim.id} style={{...tdStyle, color: r > 0.005 ? '#15803d' : 'var(--ink-400)'}} className="tnum">{r > 0.005 ? `− ${fmt(r)}` : '—'}</td>
+                      })}
+                    </tr>
+                  )}
                   <tr style={{borderTop:'1px solid var(--ink-200)'}}>
                     <td style={{...tdStyle, textAlign:'left', fontWeight:700, color:'var(--ink-900)'}}>Total chantier courtage</td>
                     {colonnes.map(sim => <td key={sim.id} style={{...tdStyle, fontWeight:700, color:'var(--ink-900)'}} className="tnum">{fmt(totauxSim(sim).totalCourtage)}</td>)}
