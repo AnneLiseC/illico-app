@@ -36,6 +36,7 @@ import { requireUser } from '../../lib/api-auth'
 import RecapHonoraires from '../../lib/pdf/RecapHonoraires.js'
 import { stripEmojiPdf } from '../../lib/pdf/stripEmoji.js'
 import { buildCRDocument } from '../../lib/pdf/crDocument.js' // extrait ici (réutilisé par /api/drive/push-cr)
+import { empreinteDe, lireCache, ecrireCache } from '../../lib/pdf/cache.js'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -294,7 +295,7 @@ export async function POST(request) {
   const auth = await requireUser(request)
   if (auth.error) return auth.error
   try {
-    const { dossierId, type, crId, devisId } = await request.json()
+    const { dossierId, type, crId, devisId, regenerer } = await request.json()
 
     if (!dossierId || !type) {
       return NextResponse.json({ error: 'Paramètres manquants' }, { status: 400 })
@@ -342,6 +343,27 @@ export async function POST(request) {
     let pdfBuffer
     let cr = null
 
+    // ── CACHE DES DOCUMENTS ────────────────────────────────────────────────
+    // Règle retenue le 03/09 : « dès qu'une modification pourrait toucher le PDF,
+    // on le relance ». L'empreinte est donc le CONTENU lui-même — on hache les
+    // données qui composent le document. Un champ change, l'empreinte change, le
+    // document est refait. On assume de régénérer parfois pour rien.
+    //
+    // `regenerer: true` dans le corps de la requête force la refabrication : soupape
+    // manuelle, pour ne jamais être prisonnier du cache en cas de doute.
+    const db = getSupabaseAdmin()
+    let servisDuCache = false
+    const avecCache = async (cle, donnees, produire) => {
+      const empreinte = empreinteDe(donnees)
+      if (!regenerer) {
+        const enCache = await lireCache(db, { dossierId, type, cle, empreinte })
+        if (enCache) { servisDuCache = true; return enCache }
+      }
+      const buffer = await produire()
+      await ecrireCache(db, { dossierId, type, cle, empreinte, buffer })
+      return buffer
+    }
+
     if (type === 'recapitulatif_prev') {
       // Recap_Financier = doc client remis en réel : charger le vrai suivi_financier
       // pour que getPivotCourtage voie le pivot et applique la TS-1 (cohérence avec
@@ -350,8 +372,9 @@ export async function POST(request) {
       const { data: suiviFinancier, error: suiviError } = await getSupabaseAdmin()
         .from('suivi_financier').select('*').eq('dossier_id', dossierId)
       if (suiviError) return NextResponse.json({ error: suiviError.message }, { status: 500 })
-      const doc = buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], factures: [], preview: true })
-      pdfBuffer = await renderToBuffer(doc)
+      pdfBuffer = await avecCache(null,
+        { dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], preview: true },
+        () => renderToBuffer(buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], factures: [], preview: true })))
 
     } else if (type === 'recapitulatif') {
       const { data: suiviFinancier, error: suiviError } = await getSupabaseAdmin()
@@ -360,8 +383,9 @@ export async function POST(request) {
       const { data: factures, error: facturesError } = await getSupabaseAdmin()
         .from('factures_artisans').select('*').eq('dossier_id', dossierId).order('date_paiement')
       if (facturesError) return NextResponse.json({ error: facturesError.message }, { status: 500 })
-      const doc = buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], factures: factures || [] })
-      pdfBuffer = await renderToBuffer(doc)
+      pdfBuffer = await avecCache(null,
+        { dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], factures: factures || [] },
+        () => renderToBuffer(buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], factures: factures || [] })))
 
     } else if (type === 'dossier_suivi') {
       const { data: devisComplets } = await getSupabaseAdmin()
@@ -394,6 +418,25 @@ export async function POST(request) {
       const { data: suiviFinancier } = await getSupabaseAdmin()
         .from('suivi_financier').select('*').eq('dossier_id', dossierId)
 
+      // RIB + KBIS de l'admin franchisé — lu avant l'empreinte, il entre dans le document.
+      const { data: adminFranchise } = await getSupabaseAdmin()
+        .from('profiles')
+        .select('id, prenom, nom, rib_url, kbis_url')
+        .eq('societe_id', dossier.societe_id)
+        .eq('role', 'admin')
+        .maybeSingle()
+
+      // Empreinte sur les MÉTADONNÉES uniquement (identifiants, chemins, montants,
+      // dates) : il serait absurde de télécharger les photos pour décider s'il faut
+      // les télécharger. Ajouter, retirer ou remplacer une photo change sa ligne en
+      // base, donc l'empreinte.
+      pdfBuffer = await avecCache(null, {
+        dossier, devis: devisComplets || [], photos: photos || [],
+        interventions: interventions || [], fichesTech: fichesTech || [],
+        docsRestitution: docsRestitution || [], factures: factures || [],
+        suiviFinancier: suiviFinancier || [], adminFranchise: adminFranchise || null,
+      }, async () => {
+
       const photosWithBase64 = await Promise.all((photos || []).map(async (photo) => {
         try {
           const { data: fileData } = await getSupabaseAdmin().storage.from('photos').download(photo.url)
@@ -405,15 +448,7 @@ export async function POST(request) {
         return photo
       }))
 
-      // RIB + KBIS de l'admin franchisé de la société du dossier (pour la restitution).
-      const { data: adminFranchise } = await getSupabaseAdmin()
-        .from('profiles')
-        .select('id, prenom, nom, rib_url, kbis_url')
-        .eq('societe_id', dossier.societe_id)
-        .eq('role', 'admin')
-        .maybeSingle()
-
-      pdfBuffer = await buildDossierSuivi({
+      return await buildDossierSuivi({
         dossier,
         devis: devisComplets || [],
         photos: photosWithBase64,
@@ -425,6 +460,7 @@ export async function POST(request) {
         adminFranchise: adminFranchise || null,
         logo: getLogoBase64(),
         supabaseAdmin: getSupabaseAdmin(),
+      })
       })
 
     } else if (type === 'cr') {
@@ -454,6 +490,13 @@ export async function POST(request) {
         .from('photos').select('id, url').eq('dossier_id', dossierId)
       const idParChemin = new Map((photosDossier || []).map(p => [p.url, p.id]))
 
+      // Empreinte sur les métadonnées : contenu du CR, dossier, et la LISTE des photos
+      // jointes (chemins). Le téléchargement des photos est la partie coûteuse — il
+      // passe donc à l'intérieur de la fabrication, après la décision de cache.
+      pdfBuffer = await avecCache(crId,
+        { dossier, cr, sections, photos: crData.photos_jointes || [] },
+        async () => {
+
       const photosJointes = await Promise.all((crData.photos_jointes || []).map(async (path) => {
         const id = idParChemin.get(path) ?? null
         try {
@@ -466,8 +509,8 @@ export async function POST(request) {
         return { id, path }
       }))
 
-      const doc = buildCRDocument({ dossier, cr, sections, logo: getLogoBase64(), photos: photosJointes })
-      pdfBuffer = await renderToBuffer(doc)
+      return await renderToBuffer(buildCRDocument({ dossier, cr, sections, logo: getLogoBase64(), photos: photosJointes }))
+      })
 
     } else if (type === 'devis') {
       // Devis SIGNÉ : fichier STOCKÉ (bucket documents), pas généré. Servi via
@@ -530,10 +573,15 @@ export async function POST(request) {
 
     // En-tête robuste aux accents/espaces : fallback ASCII + version UTF-8 (RFC 5987).
     const asciiName = filename.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '')
+    // En-tête de diagnostic : « cache » si le document a été servi tel quel,
+    // « genere » s'il vient d'être fabriqué. Visible dans l'onglet Réseau du
+    // navigateur — c'est ce qui permet de VÉRIFIER que le cache fonctionne, au lieu
+    // de le supposer parce que ça semble plus rapide.
     return new Response(pdfBuffer, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        'X-Document-Source': servisDuCache ? 'cache' : 'genere',
       },
     })
   } catch (err) {
