@@ -203,20 +203,40 @@ export default function MonDrive({ profile, onError, onSucces }) {
     ]
     const total = jobs.length
     setRattrapage({ done: 0, total })
-    let envoyes = 0, sautes = 0, echecs = 0
+    // R22 — `skipped` N'EST PAS « déjà présent ».
+    //
+    // Il couvre aussi `reconnect` (le compte Drive est déconnecté), `no_root`,
+    // `no_referente` et `fournisseur`. En les comptant comme des fichiers déjà en place,
+    // cet écran affichait « 312 déjà présent(s), 0 échec(s) » alors que RIEN n'était
+    // parti et que le jeton était mort. Un écran qui affirme exactement le contraire de
+    // la vérité est pire qu'un écran muet : il empêche de chercher.
+    let envoyes = 0, dejaLa = 0, sautes = 0, echecs = 0, deconnecte = false
     for (let i = 0; i < jobs.length; i++) {
       const [url, payload] = jobs[i]
       try {
         const r = await apiFetch(url, { method: 'POST', body: JSON.stringify(payload) })
         const d = await r.json().catch(() => ({}))
-        if (d.already || d.skipped) sautes++
+        if (d.reason === 'reconnect') { deconnecte = true; echecs++ }
+        else if (d.already) dejaLa++
+        else if (d.skipped) sautes++
         else if (d.ok) envoyes++
         else echecs++
       } catch { echecs++ }
       setRattrapage({ done: i + 1, total })
     }
     setRattrapage(null)
-    onSucces?.(`Rattrapage OneDrive : ${envoyes} envoyé(s), ${sautes} déjà présent(s), ${echecs} échec(s)`)
+
+    if (deconnecte) {
+      onError?.('Rattrapage impossible : le compte Drive est déconnecté. Reconnecte-le ci-dessus, puis relance le rattrapage.')
+      return
+    }
+    const details = [
+      `${envoyes} envoyé(s)`,
+      `${dejaLa} déjà présent(s)`,
+      ...(sautes > 0 ? [`${sautes} non applicable(s)`] : []),
+      `${echecs} échec(s)`,
+    ].join(', ')
+    onSucces?.(`Rattrapage OneDrive : ${details}`)
   }
 
   const importer = async () => {

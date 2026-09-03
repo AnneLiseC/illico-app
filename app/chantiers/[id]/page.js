@@ -2625,6 +2625,19 @@ export default function FicheChantier({ params }) {
         win?.close()
         return
       }
+      // Pièces que le serveur n'a pas pu intégrer au document (R16) ou calcul en échec
+      // (R18). Le PDF est produit quand même — c'est mieux que rien — mais il ne doit
+      // JAMAIS partir au client sans que quelqu'un l'ait su.
+      const brut = res.headers.get('X-Document-Anomalies')
+      if (brut) {
+        try {
+          const manquantes = JSON.parse(decodeURIComponent(brut))
+          if (manquantes.length > 0) {
+            setErreur(`⚠️ Document incomplet — ${manquantes.length} pièce(s) n'ont pas pu être intégrée(s) : ${manquantes.join(', ')}. Vérifie ces documents avant de l'envoyer au client.`)
+          }
+        } catch { setErreur('⚠️ Document incomplet : des pièces n\'ont pas pu être intégrées.') }
+      }
+
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       if (win) win.location.href = url

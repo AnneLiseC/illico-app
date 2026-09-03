@@ -116,7 +116,7 @@ const styles = StyleSheet.create({
 })
 
 // ── RÉCAPITULATIF FINANCIER CLIENT ──
-function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = false }) {
+function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = false, anomalies = null }) {
   const client = dossier.client
   const nomClient = formatNomClient(client, { civilite: true, withRepresentant: true })
   const referente = dossier.referente
@@ -265,7 +265,7 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
         ) : null}
 
         {/* ── Suivi paiements (final uniquement) ── */}
-        {preview ? null : (buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier }) || null)}
+        {preview ? null : (buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier, anomalies }) || null)}
 
         {/* ── Honoraires illiCO (composant partagé) ── */}
         <RecapHonoraires dossier={dossier} devis={devis} suiviFinancier={suiviFinancier} preview={preview} />
@@ -281,9 +281,9 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
 }
             
 
-function buildRecapitulatifDocument({ dossier, devis, suiviFinancier, factures, preview = false }) 
+function buildRecapitulatifDocument({ dossier, devis, suiviFinancier, factures, preview = false, anomalies = null })
 {
-  return React.createElement(RecapitulatifPDF, { dossier, devis, suiviFinancier, factures, preview })
+  return React.createElement(RecapitulatifPDF, { dossier, devis, suiviFinancier, factures, preview, anomalies })
 }
 
 
@@ -353,6 +353,8 @@ export async function POST(request) {
     // manuelle, pour ne jamais être prisonnier du cache en cas de doute.
     const db = getSupabaseAdmin()
     let servisDuCache = false
+    // Pièces manquantes ou calculs en échec remontés par le générateur (R16, R18).
+    let anomaliesDoc = []
     const avecCache = async (cle, donnees, produire) => {
       // La date d'édition est IMPRIMÉE sur le document et calculée au rendu. Sans elle
       // dans l'empreinte, un document servi trois semaines plus tard porte la date de sa
@@ -363,8 +365,19 @@ export async function POST(request) {
         const enCache = await lireCache(db, { dossierId, type, cle, empreinte })
         if (enCache) { servisDuCache = true; return enCache }
       }
-      const buffer = await produire()
-      await ecrireCache(db, { dossierId, type, cle, empreinte, buffer })
+      // `produire()` rend soit un Buffer, soit { buffer, anomalies } quand le générateur
+      // sait dire ce qui lui a manqué.
+      const produit = await produire()
+      const buffer = Buffer.isBuffer(produit) ? produit : produit.buffer
+      anomaliesDoc = Buffer.isBuffer(produit) ? [] : (produit.anomalies || [])
+
+      // ⚠️ ON NE MET PAS UN DOCUMENT INCOMPLET EN CACHE. Sans cette règle, un incident de
+      // trente secondes sur le Storage devenait l'état PERMANENT du document : la version
+      // amputée était resservie à l'identique jusqu'à ce qu'une donnée bouge par hasard.
+      // Un document incomplet doit rester une anomalie passagère. (R16)
+      if (anomaliesDoc.length === 0) {
+        await ecrireCache(db, { dossierId, type, cle, empreinte, buffer })
+      }
       return buffer
     }
 
@@ -378,7 +391,11 @@ export async function POST(request) {
       if (suiviError) return NextResponse.json({ error: suiviError.message }, { status: 500 })
       pdfBuffer = await avecCache(null,
         { dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], preview: true },
-        () => renderToBuffer(buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], factures: [], preview: true })))
+        async () => {
+          const anomalies = []
+          const buffer = await renderToBuffer(buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], factures: [], preview: true, anomalies }))
+          return { buffer, anomalies }
+        })
 
     } else if (type === 'recapitulatif') {
       const { data: suiviFinancier, error: suiviError } = await getSupabaseAdmin()
@@ -389,7 +406,11 @@ export async function POST(request) {
       if (facturesError) return NextResponse.json({ error: facturesError.message }, { status: 500 })
       pdfBuffer = await avecCache(null,
         { dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], factures: factures || [] },
-        () => renderToBuffer(buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], factures: factures || [] })))
+        async () => {
+          const anomalies = []
+          const buffer = await renderToBuffer(buildRecapitulatifDocument({ dossier, devis: devis || [], suiviFinancier: suiviFinancier || [], factures: factures || [], anomalies }))
+          return { buffer, anomalies }
+        })
 
     } else if (type === 'dossier_suivi') {
       const { data: devisComplets } = await getSupabaseAdmin()
@@ -635,6 +656,12 @@ export async function POST(request) {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
         'X-Document-Source': servisDuCache ? 'cache' : 'genere',
+        // Pièces absentes du document, listées pour que l'interface puisse le DIRE.
+        // Un dossier de restitution sans l'attestation décennale d'un artisan est un
+        // défaut de preuve d'assurance : il ne doit pas partir sans que personne le sache.
+        ...(anomaliesDoc.length > 0 ? {
+          'X-Document-Anomalies': encodeURIComponent(JSON.stringify(anomaliesDoc.slice(0, 20))),
+        } : {}),
       },
     })
   } catch (err) {

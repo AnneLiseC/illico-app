@@ -170,7 +170,20 @@ export default function SuperAdmin() {
 
         {/* Demandes d'agents à valider */}
         <div className="card" style={{ padding: 24 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--ink-900)', marginBottom: 4 }}>Demandes d&apos;agents</div>
+          {/* R5 — le compteur rend la file d'attente visible SANS avoir à la lire.
+              La notification par courriel part de la boîte d'envoi unique : si elle est
+              déconnectée, l'échec est avalé et la demande dort. Ici, la file se voit. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--ink-900)' }}>Demandes d&apos;agents</div>
+            {enAttente.length > 0 && (
+              <span style={{
+                fontSize: 12, fontWeight: 700, lineHeight: 1, padding: '5px 9px', borderRadius: 999,
+                background: 'rgba(217,119,6,0.12)', color: '#b45309', border: '1px solid rgba(217,119,6,0.3)',
+              }}>
+                {enAttente.length} en attente
+              </span>
+            )}
+          </div>
           <div style={{ fontSize: 12.5, color: 'var(--ink-500)', marginBottom: 16 }}>Valider = le compte est créé et l&apos;invitation envoyée. Les redevances et parts sont réglées ensuite par le franchisé.</div>
 
           {chargement ? (

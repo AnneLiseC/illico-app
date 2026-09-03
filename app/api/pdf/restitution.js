@@ -119,7 +119,7 @@ function Ftr({ ref: r, agenceNom }) {
 // ── Construit la section "Suivi des paiements" pour les PDFs financiers ──
 // Option A anti-doublon : les factures_artisans sont la source de vérité comptable.
 // L'acompte suivi_financier n'est affiché QUE si aucune facture n'existe pour le devis.
-export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier, dossier }) {
+export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier, dossier, anomalies = null }) {
   const fraisTTC = toNum(dossier.frais_consultation)
   const suiviFrais = (suiviFinancier || []).find(s => s.type_echeance === 'frais_consultation')
 
@@ -179,16 +179,28 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
         honoLignes.push({ libelle: 'Acompte AMO', date: dateDe(acompte), montant: toNum(acompte.montant_ttc), paye: estPaye(acompte) })
       }
       // Solde AMO attendu = base × taux (mêmes règles que l'écran, remise incluse).
-      let soldeAttendu = 0
-      try { soldeAttendu = toNum(calculateHonorairesFinance({ ...dossier, devis_artisans: devisList, suivi_financier: suiviFinancier })?.soldeAmo?.ttc) } catch { soldeAttendu = 0 }
+      // R18 — le `catch { soldeAttendu = 0 }` d'origine était le pire des deux mondes :
+      // quand le calcul levait, le document retombait sur « encaissé + en attente », ce
+      // qui annonce au client qu'il n'a PLUS RIEN À RÉGLER alors que le solde peut être
+      // de plusieurs milliers d'euros. Un échec de calcul n'est pas un solde nul.
+      // On distingue donc les deux : `null` = on ne sait pas, et on le signale.
+      let soldeAttendu = null
+      try {
+        soldeAttendu = toNum(calculateHonorairesFinance({ ...dossier, devis_artisans: devisList, suivi_financier: suiviFinancier })?.soldeAmo?.ttc)
+      } catch {
+        soldeAttendu = null
+        if (anomalies) anomalies.push('solde AMO non calculable — montant restant dû à vérifier')
+      }
       const tranches = (suiviFinancier || [])
         .filter(s => s.type_echeance === 'solde_amo_paiement' && toNum(s.montant_ttc) > 0)
         .sort((a, b) => new Date(a.date_paiement || a.created_at || 0) - new Date(b.date_paiement || b.created_at || 0))
-      if (soldeAttendu > 0 || tranches.length > 0) {
+      if ((soldeAttendu !== null && soldeAttendu > 0) || tranches.length > 0) {
         const encaisse  = tranches.filter(estPaye).reduce((s, t) => s + toNum(t.montant_ttc), 0)
         const enAttente = tranches.filter(t => !estPaye(t)).reduce((s, t) => s + toNum(t.montant_ttc), 0)
         soldeAmoInfo = {
-          attendu: soldeAttendu > 0 ? soldeAttendu : (encaisse + enAttente),
+          // Le repli « encaissé + en attente » ne s'applique QUE si le calcul a réussi et
+          // rendu 0 — jamais s'il a échoué.
+          attendu: (soldeAttendu !== null && soldeAttendu > 0) ? soldeAttendu : (encaisse + enAttente),
           encaisse, enAttente,
           versements: tranches.map((s, i) => ({ libelle: `Facture intermédiaire ${i + 1}`, date: dateDe(s), montant: toNum(s.montant_ttc), paye: estPaye(s) })),
         }
@@ -392,7 +404,7 @@ async function makeCoverPage({ nomRef, telRef, agence }) {
 }
 
 // ── Génère les pages de contenu ──
-async function buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo, resumeGenere }) {
+async function buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo, resumeGenere, anomalies = null }) {
   const client = dossier.client
   const ref = dossier.referente
   const nomClient = formatNomClient(client, { civilite: true, withRepresentant: true })
@@ -518,7 +530,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
   pages.push(
     React.createElement(Page, { key: 'suivi-paiements', size: 'A4', style: CS.page },
       React.createElement(Hdr, { title: 'Suivi des paiements', sub: `${dossier.reference} — ${nomClient}`, logo }),
-      buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier }),
+      buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier, anomalies }),
       React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
     )
   )
@@ -633,12 +645,29 @@ Résumé :`
 }
 
 // ── Télécharger un PDF depuis Supabase Storage ──
-async function downloadPDF(supabaseAdmin, bucket, path) {
+//
+// R16 — CE QUI A CHANGÉ LE 03/09. Cette fonction rendait `null` sur toute erreur, et
+// l'appelant se contentait de ne rien ajouter. Douze pièces en dépendent : devis signés,
+// factures artisans, PV de réception, factures d'honoraires, qualifications, fiches
+// techniques, Kbis et ATTESTATIONS DÉCENNALES des artisans, Kbis et RIB du franchisé.
+// Un incident de stockage, un chemin périmé ou un PDF illisible faisait disparaître la
+// pièce ; le dossier s'assemblait, se nommait correctement, et partait au client sans
+// l'attestation décennale de son maçon.
+//
+// Elle rend toujours `null` — un document incomplet vaut mieux que pas de document du
+// tout — mais elle INSCRIT désormais la pièce manquante dans `anomalies`. La route s'en
+// sert pour deux choses : ne PAS mettre ce document en cache (sinon l'incident devient
+// permanent), et prévenir l'utilisateur.
+async function downloadPDF(supabaseAdmin, bucket, path, anomalies = null, libelle = null) {
   try {
     const { data, error } = await supabaseAdmin.storage.from(bucket).download(path)
-    if (error || !data) return null
+    if (error || !data) {
+      if (anomalies) anomalies.push(libelle || `pièce introuvable (${path})`)
+      return null
+    }
     return Buffer.from(await data.arrayBuffer())
   } catch {
+    if (anomalies) anomalies.push(libelle || `pièce illisible (${path})`)
     return null
   }
 }
@@ -775,6 +804,10 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
 //   - en_cours_chantier → devis signés + KBIS/assurances + FT
 //   - termine → restitution complète avec photos, planning, etc.
 export async function buildDossierSuivi({ dossier, devis, photos, interventions, fichesTech, docsRestitution, factures, suiviFinancier, adminFranchise, logo, supabaseAdmin }) {
+  // Collecteur des pièces qui n'ont pas pu être intégrées (R16) et des calculs qui ont
+  // échoué (R18). Rendu à l'appelant avec le PDF : la route s'en sert pour refuser de
+  // mettre un document incomplet en cache, et pour prévenir l'utilisateur.
+  const anomalies = []
   const statut = dossier.statut || 'en_cours_chantier'
   const isPreSignature = ['a_contacter', 'a_relancer', 'devis_en_attente', 'devis_a_modifier'].includes(statut)
   const isTermine = statut === 'termine'
@@ -832,7 +865,7 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   // Générer les pages de contenu (descriptif + récap)
   const contentBuffer = isPreSignature
     ? await buildR3ContentPDF({ dossier, devisR3: devisActifs, logo, resumeGenere })
-    : await buildContentPDF({ dossier, devis: devisActifs, photos, interventions, factures, suiviFinancier, logo, resumeGenere })
+    : await buildContentPDF({ dossier, devis: devisActifs, photos, interventions, factures, suiviFinancier, logo, resumeGenere, anomalies })
   const contentPdf = await PDFDocument.load(contentBuffer)
 
   const final = await PDFDocument.create()
@@ -846,7 +879,10 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     const [p] = await final.copyPages(contentPdf, [cIdx++])
     final.addPage(p)
   }
-  const addExternalPDF = async (buf) => {
+  // `buf` nul = le téléchargement a déjà inscrit l'anomalie. Ici on n'inscrit que
+  // l'échec de FUSION : la pièce existe mais pdf-lib n'a pas su la lire (PDF chiffré,
+  // fichier corrompu). Dans les deux cas la pièce manque au dossier. (R16)
+  const addExternalPDF = async (buf, libelle = null) => {
     if (!buf) return
     try {
       const ext = await PDFDocument.load(buf)
@@ -856,17 +892,20 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
         if (width > height) p.setRotation(degrees(90))
         final.addPage(p)
       })
-    } catch {}
+    } catch {
+      anomalies.push(libelle ? `${libelle} — fichier illisible` : 'pièce illisible')
+    }
   }
   // Ajoute une pièce document : PDF (fusionné) OU image jpg/png (posée pleine page A4).
   // Les autres formats (heic/webp) sont ignorés silencieusement (limite pdf-lib).
   const addDocumentPiece = async (doc) => {
-    const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path)
+    const nomDoc = doc.nom || 'document'
+    const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path, anomalies, nomDoc)
     if (!buf) return
     const mime = (doc.type_mime || '').toLowerCase()
     const nom = (doc.nom || '').toLowerCase()
     const estImage = mime.startsWith('image/') || /\.(jpe?g|png)$/.test(nom)
-    if (!estImage) { await addExternalPDF(buf); return }
+    if (!estImage) { await addExternalPDF(buf, nomDoc); return }
     try {
       const estPng = mime.includes('png') || nom.endsWith('.png')
       const img = estPng ? await final.embedPng(buf) : await final.embedJpg(buf)
@@ -907,34 +946,38 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     for (const d of devisR3) {
       const pathDevis = d.devis_signe_path || d.devis_pdf_path
       if (pathDevis) {
-        const buf = await downloadPDF(supabaseAdmin, 'documents', pathDevis)
-        await addExternalPDF(buf)
+        const libelle = `devis ${d.artisan?.entreprise || d.id}`
+        const buf = await downloadPDF(supabaseAdmin, 'documents', pathDevis, anomalies, libelle)
+        await addExternalPDF(buf, libelle)
       }
       const facturesDevis = (factures || []).filter(f => f.devis_id === d.id)
       for (const f of facturesDevis) {
         if (f.pdf_path) {
-          const buf = await downloadPDF(supabaseAdmin, 'documents', f.pdf_path)
-          await addExternalPDF(buf)
+          const libelle = `facture artisan ${d.artisan?.entreprise || ''}`.trim()
+          const buf = await downloadPDF(supabaseAdmin, 'documents', f.pdf_path, anomalies, libelle)
+          await addExternalPDF(buf, libelle)
         }
       }
       // PV de réception du devis (devis_artisans.pv_path) : rattachement EXACT au devis.
       if (d.pv_path) {
-        const buf = await downloadPDF(supabaseAdmin, 'documents', d.pv_path)
-        await addExternalPDF(buf)
+        const libelle = `PV de réception ${d.artisan?.entreprise || ''}`.trim()
+        const buf = await downloadPDF(supabaseAdmin, 'documents', d.pv_path, anomalies, libelle)
+        await addExternalPDF(buf, libelle)
       }
     }
     // Factures honoraires (CTP→client) — chantier_documents categorie='facture_honoraire'
     // cochés dans_restitution. Bloc séparé (vient de docsRestitution, pas factures_artisans).
     for (const d of facturesHonoraires) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', d.path)
-      await addExternalPDF(buf)
+      const buf = await downloadPDF(supabaseAdmin, 'documents', d.path, anomalies, "facture d'honoraires")
+      await addExternalPDF(buf, "facture d'honoraires")
     }
   } else {
     for (const d of devisR3) {
       const path = d.devis_signe_path || d.devis_pdf_path
       if (path) {
-        const buf = await downloadPDF(supabaseAdmin, 'documents', path)
-        await addExternalPDF(buf)
+        const libelle = `devis ${d.artisan?.entreprise || d.id}`
+        const buf = await downloadPDF(supabaseAdmin, 'documents', path, anomalies, libelle)
+        await addExternalPDF(buf, libelle)
       }
     }
   }
@@ -948,8 +991,9 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
       const urlQ = d.artisan?.qualification_url
       if (urlQ && !vusQualif.has(urlQ)) {
         vusQualif.add(urlQ)
-        const buf = await downloadPDF(supabaseAdmin, 'documents', urlQ)
-        await addExternalPDF(buf)
+        const libelle = `qualification ${d.artisan?.entreprise || ''}`.trim()
+        const buf = await downloadPDF(supabaseAdmin, 'documents', urlQ, anomalies, libelle)
+        await addExternalPDF(buf, libelle)
       }
     }
   }
@@ -983,8 +1027,9 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     for (const ft of (fichesTech || [])) {
       const url = ft.fiche?.url || ft.url
       if (url) {
-        const buf = await downloadPDF(supabaseAdmin, 'documents', url)
-        await addExternalPDF(buf)
+        const libelle = `fiche technique ${ft.fiche?.nom || ''}`.trim()
+        const buf = await downloadPDF(supabaseAdmin, 'documents', url, anomalies, libelle)
+        await addExternalPDF(buf, libelle)
       }
     }
   }
@@ -999,13 +1044,15 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
       const art = d.artisan || {}
       if (art.kbis_url && !vusDocs.has(art.kbis_url)) {
         vusDocs.add(art.kbis_url)
-        const buf = await downloadPDF(supabaseAdmin, 'documents', art.kbis_url)
-        await addExternalPDF(buf)
+        const libelle = `Kbis ${art.entreprise || 'artisan'}`
+        const buf = await downloadPDF(supabaseAdmin, 'documents', art.kbis_url, anomalies, libelle)
+        await addExternalPDF(buf, libelle)
       }
       if (art.decennale_url && !vusDocs.has(art.decennale_url)) {
         vusDocs.add(art.decennale_url)
-        const buf = await downloadPDF(supabaseAdmin, 'documents', art.decennale_url)
-        await addExternalPDF(buf)
+        const libelle = `attestation décennale ${art.entreprise || 'artisan'}`
+        const buf = await downloadPDF(supabaseAdmin, 'documents', art.decennale_url, anomalies, libelle)
+        await addExternalPDF(buf, libelle)
       }
     }
   }
@@ -1014,12 +1061,12 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   // MERAD (courtage à distance) : pas de KBIS CTP dans la restitution.
   if (!isPreSignature) {
     if (dossier.typologie !== 'merad' && adminFranchise?.kbis_url) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', adminFranchise.kbis_url)
-      await addExternalPDF(buf)
+      const buf = await downloadPDF(supabaseAdmin, 'documents', adminFranchise.kbis_url, anomalies, 'Kbis de la franchise')
+      await addExternalPDF(buf, 'Kbis de la franchise')
     }
     if (adminFranchise?.rib_url) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', adminFranchise.rib_url)
-      await addExternalPDF(buf)
+      const buf = await downloadPDF(supabaseAdmin, 'documents', adminFranchise.rib_url, anomalies, 'RIB de la franchise')
+      await addExternalPDF(buf, 'RIB de la franchise')
     }
   }
 
@@ -1027,11 +1074,12 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   //    et hors plans/vues/coupes/3D, déjà placés dans la section Illustrations) ──
   if (autresDocsRest.length > 0) {
     for (const doc of autresDocsRest) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path)
-      await addExternalPDF(buf)
+      const libelle = doc.nom || 'document du chantier'
+      const buf = await downloadPDF(supabaseAdmin, 'documents', doc.path, anomalies, libelle)
+      await addExternalPDF(buf, libelle)
     }
   }
 
   const bytes = await final.save()
-  return Buffer.from(bytes)
+  return { buffer: Buffer.from(bytes), anomalies }
 }

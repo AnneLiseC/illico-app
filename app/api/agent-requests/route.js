@@ -14,8 +14,9 @@ import { NextResponse } from 'next/server'
 import { requireRole } from '../../lib/api-auth'
 import { isAllowedStaffEmail } from '../../lib/email-validation'
 import { validateAgentIdentity } from '../../lib/agent-provisioning'
-import { parseEmailList } from '../../lib/super-admin'
+import { parseEmailList, isSuperAdminEmail } from '../../lib/super-admin'
 import { sendEmail } from '../../lib/email'
+import { notifierUtilisateur } from '../../lib/notifications-internes'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -45,6 +46,26 @@ async function notifierEditrice({ prenom, nom, email, societeNom, agenceNom, dem
   await Promise.all(destinataires.map(to =>
     sendEmail({ to, subject: `Batilis — Demande d'agent : ${prenom} ${nom}`, html }).catch(() => {})
   ))
+
+  // R5 — LE COURRIEL NE SUFFIT PAS. Il part de la boîte d'envoi unique de la plateforme ;
+  // si elle est déconnectée, l'échec est avalé (`.catch(() => {})` ci-dessus) et la
+  // demande dort en base sans que personne ne l'apprenne. Or c'est exactement le moment
+  // où l'on a besoin d'être prévenu : un franchisé attend l'ouverture de ses comptes.
+  //
+  // On double donc par une notification INTERNE, qui ne dépend d'aucune boîte d'envoi.
+  // Le compte super-admin n'a volontairement aucun profil (décision D4) — sans importance
+  // ici : la règle d'accès des notifications porte sur `auth.uid()`, pas sur le profil.
+  try {
+    const { data: comptes } = await getSupabaseAdmin().auth.admin.listUsers({ perPage: 200 })
+    const cibles = (comptes?.users || []).filter(u => isSuperAdminEmail(u.email, process.env.SUPER_ADMIN_EMAILS))
+    await Promise.all(cibles.map(u => notifierUtilisateur({
+      userId: u.id,
+      type: 'demande_agent',
+      titre: "Demande d'agent à valider",
+      message: `${prenom} ${nom} (${email}) — ${societeNom || 'société inconnue'}, demandé par ${demandeurNom || '—'}. À valider dans l'espace créatrice.`,
+      fenetreHeures: 0,   // chaque demande compte : jamais de déduplication ici.
+    })))
+  } catch { /* notification best-effort */ }
 }
 
 export async function POST(request) {
