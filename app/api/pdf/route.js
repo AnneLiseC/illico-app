@@ -418,13 +418,37 @@ export async function POST(request) {
       const { data: suiviFinancier } = await getSupabaseAdmin()
         .from('suivi_financier').select('*').eq('dossier_id', dossierId)
 
-      // RIB + KBIS de l'admin franchisé — lu avant l'empreinte, il entre dans le document.
-      const { data: adminFranchise } = await getSupabaseAdmin()
+      // RIB + KBIS du franchisé — lu avant l'empreinte, il entre dans le document.
+      //
+      // ⚠ `maybeSingle()` SANS `limit` échouait dès qu'une société avait DEUX admins
+      // (deux associés) : PostgREST refuse « plusieurs lignes pour un objet unique »,
+      // l'erreur n'était pas lue, et le dossier de restitution partait SANS le RIB ni
+      // le Kbis, en silence. Ordre explicite + limite : le résultat est désormais
+      // stable et ne peut plus disparaître.
+      //
+      // Ce profil ne sert plus qu'à NOMMER le franchisé sur le document, et de repli
+      // pour les sociétés qui n'ont pas encore leurs propres fichiers (bloc suivant).
+      const { data: adminProfil } = await getSupabaseAdmin()
         .from('profiles')
         .select('id, prenom, nom, rib_url, kbis_url')
         .eq('societe_id', dossier.societe_id)
         .eq('role', 'admin')
+        .order('created_at', { ascending: true })
+        .limit(1)
         .maybeSingle()
+
+      // Les documents d'ENTREPRISE sont lus sur la SOCIÉTÉ, plus sur une personne :
+      // un RIB de franchise ne doit dépendre ni du nombre d'associés, ni de qui a
+      // cliqué sur le bouton. Repli sur le profil de l'admin le plus ancien tant que
+      // la société n'a pas ses propres fichiers — aucun document ne se dégrade.
+      const { data: societeDocs } = await getSupabaseAdmin()
+        .from('societes').select('rib_url, kbis_url').eq('id', dossier.societe_id).maybeSingle()
+
+      const adminFranchise = adminProfil ? {
+        ...adminProfil,
+        rib_url:  societeDocs?.rib_url  || adminProfil.rib_url  || null,
+        kbis_url: societeDocs?.kbis_url || adminProfil.kbis_url || null,
+      } : (societeDocs ? { id: null, prenom: null, nom: null, ...societeDocs } : null)
 
       // Empreinte sur les MÉTADONNÉES uniquement (identifiants, chemins, montants,
       // dates) : il serait absurde de télécharger les photos pour décider s'il faut
