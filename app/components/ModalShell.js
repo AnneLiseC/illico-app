@@ -13,19 +13,36 @@ import { useEffect } from 'react'
 //   maxH       : hauteur max (défaut '90vh')
 //   footer     : contenu du pied (boutons), aligné à droite
 //   children   : corps
-export default function ModalShell({ title, subtitle, onClose, width = 580, maxH = '90vh', children, footer }) {
+export default function ModalShell({ title, subtitle, onClose, width = 580, maxH, children, footer }) {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose && onClose() }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
+
+  // HAUTEUR — `vh` ment sur mobile. Sur iOS comme sur Android, 100vh vaut la hauteur
+  // de l'écran SANS la barre d'adresse : une carte à 90vh dépasse donc le visible dès
+  // que la barre est affichée. `dvh` mesure ce qu'on voit vraiment. `min()` garde un
+  // repli utilisable pour les navigateurs qui ignorent `dvh`.
+  const hauteurMax = maxH || 'min(90dvh, 92vh)'
+
+  // CENTRAGE — `place-items:center` sur un conteneur qui défile est un piège connu :
+  // dès que l'enfant dépasse, le centrage pousse SON HAUT au-dessus de la zone
+  // défilable, et ce haut devient inatteignable. On voit du gris, on fait défiler,
+  // la modale reste hors de portée — et sur téléphone le bouton « fermer », qui est
+  // tout en haut, part avec elle. D'où « un enfer pour sortir de la modale ».
+  // `align-items:flex-start` + `margin:auto` fait les deux : centré quand ça tient,
+  // atteignable par le haut quand ça déborde.
   return (
     <div style={{
       position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:200,
-      display:'grid', placeItems:'center', padding:20, overflow:'auto',
+      display:'flex', alignItems:'flex-start', justifyContent:'center',
+      padding:'20px 20px max(20px, env(safe-area-inset-bottom))',
+      overflow:'auto', WebkitOverflowScrolling:'touch',
     }}>
       <div className="card" style={{
-        padding:0, maxWidth:width, width:'100%', maxHeight:maxH,
+        padding:0, maxWidth:width, width:'100%', maxHeight:hauteurMax,
+        margin:'auto',   // centre verticalement sans rendre le haut inatteignable
         overflow:'hidden', display:'flex', flexDirection:'column',
       }}>
         {(title || subtitle) && (
