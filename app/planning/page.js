@@ -425,12 +425,40 @@ export default function Planning() {
     lastAutoCibleRdv.current = ''; lastAutoCibleInt.current = ''
   }
 
-  const pushToGoogle = (type, id) => {
+  // R4 — LA RÉPONSE DE LA POUSSÉE EST DÉSORMAIS LUE.
+  //
+  // Cet appel était en `.catch(() => {})` sans jamais regarder ce que le serveur
+  // répondait. Or la route répond `{ success: true, skipped: true, reason: 'sans cible' }`
+  // quand aucun calendrier n'est choisi, et `'cible non poussable'` quand le compte
+  // OAuth de la cible n'a plus de jeton. Dans les deux cas l'événement n'arrive nulle
+  // part, et l'utilisateur voyait son rendez-vous se créer normalement.
+  //
+  // Un « succès » qui ne fait rien doit se dire. L'enregistrement dans BATILIS a bien
+  // eu lieu — c'est la copie vers l'agenda qui n'a pas été faite : le message doit
+  // distinguer les deux, sinon il fait croire à une perte de données.
+  const pushToGoogle = async (type, id) => {
     if (!googleConnected || !id) return
-    apiFetch('/api/google/calendar/push', {
-      method: 'POST',
-      body: JSON.stringify({ type, id }),
-    }).catch(() => {})
+    const quoi = type === 'rdv' ? 'Le rendez-vous est enregistré' : "L'intervention est enregistrée"
+    try {
+      const res = await apiFetch('/api/google/calendar/push', {
+        method: 'POST',
+        body: JSON.stringify({ type, id }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setErreur(`${quoi}, mais la copie vers l'agenda a échoué. Réessaie depuis la fiche.`)
+        return
+      }
+      if (d?.skipped) {
+        setErreur(
+          d.reason === 'cible non poussable'
+            ? `${quoi}, mais le compte du calendrier choisi demande une reconnexion : rien n'est parti dans l'agenda. Reconnecte-le dans Paramètres.`
+            : `${quoi}, mais aucun calendrier n'est choisi : il n'apparaîtra dans aucun agenda. Choisis un calendrier dans Paramètres, puis rouvre la fiche pour l'y rattacher.`
+        )
+      }
+    } catch {
+      setErreur(`${quoi}, mais la copie vers l'agenda n'a pas pu être lancée.`)
+    }
   }
 
   // portee : 'un' (cette occurrence) | 'serie' (toute la série) | undefined (demander).
@@ -481,8 +509,8 @@ export default function Planning() {
       if (error) { setErreur(error.message); setSaving(false); return }
       savedId = data?.id
     }
-    pushToGoogle('rdv', savedId)
     fermerModal(); setSaving(false)
+    await pushToGoogle('rdv', savedId)   // après la fermeture : le message reste visible sur la page
     chargerTout()
   }
 
@@ -505,8 +533,8 @@ export default function Planning() {
       if (error) { setErreur(error.message); setSaving(false); return }
       savedId = data?.id
     }
-    pushToGoogle('intervention', savedId)
     fermerModal(); setSaving(false)
+    await pushToGoogle('intervention', savedId)
     chargerTout()
   }
 
@@ -601,13 +629,21 @@ export default function Planning() {
             // Indicateur passif : le push est désormais automatique à chaque sauvegarde
             // (lot 4c). Plus de bouton de synchronisation complète (la route /sync POST
             // reste pour l'étage 3 pull, mais n'est plus déclenchée depuis l'UI).
-            <span className="btn btn-ghost" style={{display:'inline-flex', alignItems:'center', gap:10, cursor:'default'}}>
+            // R4 — la pastille était VERTE dès qu'un jeton existait, alors qu'un compte
+            // connecté SANS calendrier cible ne pousse rien. Vert voulait dire « ça
+            // marche » et c'était faux. Sans cible, la pastille passe en orange et le
+            // dit — c'est le seul endroit où l'utilisateur regarde avant de créer.
+            <span className="btn btn-ghost" style={{display:'inline-flex', alignItems:'center', gap:10, cursor:'default'}}
+                  title={cibles.length === 0 ? "Compte connecté, mais aucun calendrier n'est choisi : rien ne part dans l'agenda." : undefined}>
               {(fournisseursConnectes.length ? fournisseursConnectes : ['calendrier']).map(f => (
                 <span key={f} style={{display:'inline-flex', alignItems:'center', gap:5}}>
-                  <span style={{width:6, height:6, borderRadius:'50%', background:'#15803d', flexShrink:0}}/>
+                  <span style={{width:6, height:6, borderRadius:'50%', background: cibles.length === 0 ? '#d97706' : '#15803d', flexShrink:0}}/>
                   {f === 'google' ? 'Google' : f === 'icloud' ? 'iCloud' : 'Connecté'}
                 </span>
               ))}
+              {cibles.length === 0 && (
+                <span style={{fontSize:11.5, fontWeight:600, color:'#b45309'}}>· aucun agenda choisi</span>
+              )}
             </span>
           ) : (
             <button
@@ -975,13 +1011,26 @@ export default function Planning() {
                       {dossiersRdvModale.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
                     </select>
                   </div>}
-                  {/* Sélecteur de calendrier (cible) — visible pour tout le monde */}
-                  {cibles.length > 0 && <div><label className={labelCls}>Calendrier</label>
-                    <select value={formRdv.cible_id} onChange={e => setFormRdv(f => ({ ...f, cible_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
-                      <option value="">— Choisir un calendrier —</option>
-                      {cibles.map(c => <option key={c.id} value={c.id}>{libelleCible(c)}</option>)}
-                    </select>
-                  </div>}
+{/* R4 — LE SÉLECTEUR RESTE VISIBLE MÊME SANS CALENDRIER CONFIGURÉ.
+                      Auparavant `cibles.length > 0` le masquait entièrement : un compte
+                      fraîchement connecté à Google voyait « connecté avec succès », créait
+                      des rendez-vous, et RIEN n'arrivait dans son agenda — la route de
+                      poussée répond `success: true, skipped: 'sans cible'`. Aucun écran ne
+                      le disait, et le réglage qui aurait corrigé le problème était caché.
+                      Un champ vide qui explique ce qui manque vaut mieux qu'un champ absent. */}
+                  <div><label className={labelCls}>Calendrier</label>
+                    {cibles.length > 0 ? (
+                      <select value={formRdv.cible_id} onChange={e => setFormRdv(f => ({ ...f, cible_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
+                        <option value="">— Aucun : ce rendez-vous ne partira dans aucun agenda —</option>
+                        {cibles.map(c => <option key={c.id} value={c.id}>{libelleCible(c)}</option>)}
+                      </select>
+                    ) : (
+                      <div style={{marginTop:6, padding:'10px 12px', borderRadius:8, background:'rgba(217,119,6,0.08)', border:'1px solid rgba(217,119,6,0.3)', fontSize:12.5, color:'#92400e'}}>
+                        Aucun calendrier n&apos;est configuré : ce rendez-vous restera dans BATILIS et n&apos;apparaîtra dans aucun agenda.{' '}
+                        <a href="/parametres" style={{color:'#92400e', fontWeight:600, textDecoration:'underline'}}>Choisir un calendrier dans Paramètres</a>
+                      </div>
+                    )}
+                  </div>
                   <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
                     <div><label className={labelCls}>Date et heure *</label><input type="datetime-local" value={formRdv.date_heure} onChange={e => setFormRdv(f => ({ ...f, date_heure: e.target.value }))} className={inputCls} style={{marginTop:6}}/></div>
                     <div><label className={labelCls}>Durée</label>
@@ -1027,13 +1076,20 @@ export default function Planning() {
                       {dossiersIntModale.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
                     </select>
                   </div>}
-                  {/* Sélecteur de calendrier (cible) — visible aussi en édition */}
-                  {cibles.length > 0 && <div><label className={labelCls}>Calendrier</label>
-                    <select value={formIntervention.cible_id} onChange={e => setFormIntervention(f => ({ ...f, cible_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
-                      <option value="">— Choisir un calendrier —</option>
-                      {cibles.map(c => <option key={c.id} value={c.id}>{libelleCible(c)}</option>)}
-                    </select>
-                  </div>}
+                  {/* Même règle que pour les rendez-vous : jamais masqué. (R4) */}
+                  <div><label className={labelCls}>Calendrier</label>
+                    {cibles.length > 0 ? (
+                      <select value={formIntervention.cible_id} onChange={e => setFormIntervention(f => ({ ...f, cible_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
+                        <option value="">— Aucun : cette intervention ne partira dans aucun agenda —</option>
+                        {cibles.map(c => <option key={c.id} value={c.id}>{libelleCible(c)}</option>)}
+                      </select>
+                    ) : (
+                      <div style={{marginTop:6, padding:'10px 12px', borderRadius:8, background:'rgba(217,119,6,0.08)', border:'1px solid rgba(217,119,6,0.3)', fontSize:12.5, color:'#92400e'}}>
+                        Aucun calendrier n&apos;est configuré : cette intervention restera dans BATILIS et n&apos;apparaîtra dans aucun agenda.{' '}
+                        <a href="/parametres" style={{color:'#92400e', fontWeight:600, textDecoration:'underline'}}>Choisir un calendrier dans Paramètres</a>
+                      </div>
+                    )}
+                  </div>
                   <div><label className={labelCls}>Artisan *</label>
                     <select value={formIntervention.artisan_id} onChange={e => setFormIntervention(f => ({ ...f, artisan_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir —</option>
