@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { empreinteDe, cheminCache } from '../pdf/cache.js'
+import { empreinteDe, cheminCache, jourDEdition } from '../pdf/cache.js'
 
 // L'empreinte est le cœur du cache : elle décide si un document est refait ou servi tel
 // quel. Deux exigences opposées, et les deux comptent autant :
@@ -22,6 +22,16 @@ describe('empreinteDe — stable quand rien ne change', () => {
 
   it("insensible au nombre écrit en texte — '1250.00' et 1250 sont le même montant", () => {
     expect(empreinteDe({ m: 1250 })).toBe(empreinteDe({ m: '1250' }))
+    // La forme RÉELLEMENT renvoyée par PostgREST pour un numeric : décimales incluses.
+    // L'ancien test ne l'exerçait pas, et cette forme-là n'était pas normalisée.
+    expect(empreinteDe({ m: 1250 })).toBe(empreinteDe({ m: '1250.00' }))
+    expect(empreinteDe({ m: 0.5 })).toBe(empreinteDe({ m: '0.50' }))
+  })
+
+  it('ne touche PAS aux identifiants et aux dates qui ressemblent à des nombres', () => {
+    // Une référence ou une date ne doit jamais être « normalisée » comme un montant.
+    expect(empreinteDe({ r: '2026-AM-001' })).not.toBe(empreinteDe({ r: '2026-AM-1' }))
+    expect(empreinteDe({ d: '2026-09-03' })).toBe(empreinteDe({ d: '2026-09-03' }))
   })
 
   it('sensible à l\'ordre des LISTES — deux devis inversés, c\'est un autre document', () => {
@@ -65,5 +75,35 @@ describe('cheminCache', () => {
   })
   it('neutralise les caractères qui n\'ont rien à faire dans un chemin', () => {
     expect(cheminCache('abc', 'cr', '../../secret')).toBe('cache/abc/cr-secret.pdf')
+  })
+
+  // Deux versions d'un même document ne doivent JAMAIS partager un fichier : c'est ce
+  // qui permettait à deux générations concurrentes de lier la mauvaise empreinte au
+  // mauvais contenu, définitivement.
+  it('deux empreintes différentes donnent deux fichiers différents', () => {
+    const a = cheminCache('abc', 'dossier_suivi', null, 'a'.repeat(64))
+    const b = cheminCache('abc', 'dossier_suivi', null, 'b'.repeat(64))
+    expect(a).not.toBe(b)
+    expect(a).toContain('cache/abc/dossier_suivi-')
+  })
+  it('la même empreinte donne le même fichier — l\'écriture est idempotente', () => {
+    const e = 'c'.repeat(64)
+    expect(cheminCache('abc', 'cr', 'cr1', e)).toBe(cheminCache('abc', 'cr', 'cr1', e))
+  })
+})
+
+describe('jourDEdition', () => {
+  // La date d'édition est imprimée sur le document. Sans elle dans l'empreinte, un
+  // document servi trois semaines plus tard porte la date de sa première fabrication.
+  it('rend une date au format AAAA-MM-JJ', () => {
+    expect(jourDEdition(new Date('2026-09-03T15:42:00Z'))).toBe('2026-09-03')
+  })
+  it('ne change pas au cours de la même journée', () => {
+    expect(jourDEdition(new Date('2026-09-03T00:01:00Z')))
+      .toBe(jourDEdition(new Date('2026-09-03T23:59:00Z')))
+  })
+  it('change d\'un jour sur l\'autre — le document se refait', () => {
+    expect(jourDEdition(new Date('2026-09-03T23:59:00Z')))
+      .not.toBe(jourDEdition(new Date('2026-09-04T00:01:00Z')))
   })
 })

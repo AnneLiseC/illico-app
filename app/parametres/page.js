@@ -360,7 +360,11 @@ export default function Parametres() {
   const uploadRib = async (fichier) => {
     if (!profile) return
     setUploadingRib(true)
-    const chemin = ribFranchise ? `rib/societe-${profile.societe_id}.pdf` : `rib/${profile.id}.pdf`
+    // Chemin HORODATÉ : le RIB entre dans le dossier de restitution, dont le cache est
+    // indexé sur les CHEMINS des pièces. Un chemin fixe signifiait qu'un changement de
+    // banque n'invalidait rien et que l'ancien RIB continuait de partir. (R10)
+    const marque = Date.now()
+    const chemin = ribFranchise ? `rib/societe-${profile.societe_id}-${marque}.pdf` : `rib/${profile.id}-${marque}.pdf`
     const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true, contentType: 'application/pdf' })
     if (uploadError) { setErreur('Erreur upload RIB : ' + uploadError.message); setUploadingRib(false); return }
     const { error } = ribFranchise
@@ -387,7 +391,9 @@ export default function Parametres() {
     const f = await heicToJpegFile(fichier)   // photo iPhone (HEIC) du KBIS → JPEG
     const ext = f.name.split('.').pop()
     // Même règle que le RIB : pour un admin, le Kbis est un document d'ENTREPRISE.
-    const chemin = ribFranchise ? `kbis/societe-${profile.societe_id}.${ext}` : `kbis/${profile.id}.${ext}`
+    // Horodaté, même raison que le RIB. (R10)
+    const marqueK = Date.now()
+    const chemin = ribFranchise ? `kbis/societe-${profile.societe_id}-${marqueK}.${ext}` : `kbis/${profile.id}-${marqueK}.${ext}`
     const { error: uploadError } = await supabase.storage
       .from('documents').upload(chemin, f, { upsert: true })
     if (uploadError) { setErreur('Erreur upload KBIS : ' + uploadError.message); setUploadingKbisFranchise(false); return }

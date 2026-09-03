@@ -36,7 +36,7 @@ import { requireUser } from '../../lib/api-auth'
 import RecapHonoraires from '../../lib/pdf/RecapHonoraires.js'
 import { stripEmojiPdf } from '../../lib/pdf/stripEmoji.js'
 import { buildCRDocument } from '../../lib/pdf/crDocument.js' // extrait ici (réutilisé par /api/drive/push-cr)
-import { empreinteDe, lireCache, ecrireCache } from '../../lib/pdf/cache.js'
+import { empreinteDe, lireCache, ecrireCache, jourDEdition } from '../../lib/pdf/cache.js'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -354,7 +354,11 @@ export async function POST(request) {
     const db = getSupabaseAdmin()
     let servisDuCache = false
     const avecCache = async (cle, donnees, produire) => {
-      const empreinte = empreinteDe(donnees)
+      // La date d'édition est IMPRIMÉE sur le document et calculée au rendu. Sans elle
+      // dans l'empreinte, un document servi trois semaines plus tard porte la date de sa
+      // première fabrication — et sur une pièce remise au client, cette mention fait foi.
+      // Ajoutée ici, en un seul endroit, pour les quatre types de documents. (R13)
+      const empreinte = empreinteDe({ ...donnees, jourDEdition: jourDEdition() })
       if (!regenerer) {
         const enCache = await lireCache(db, { dossierId, type, cle, empreinte })
         if (enCache) { servisDuCache = true; return enCache }
@@ -390,7 +394,12 @@ export async function POST(request) {
     } else if (type === 'dossier_suivi') {
       const { data: devisComplets } = await getSupabaseAdmin()
         .from('devis_artisans')
-        .select('*, artisan:artisans(id, entreprise, metier, kbis_url, decennale_url, decennale_expiration)')
+        // ⚠️ `qualification_url` est INDISPENSABLE ici : restitution.js teste
+        // `d.artisan?.qualification_url` pour décider d'inclure le séparateur et les
+        // attestations de qualification. La colonne manquait à ce select, donc la
+        // condition était TOUJOURS fausse : la section Qualifications n'est jamais
+        // partie dans un dossier de restitution, depuis l'origine. (R17)
+        .select('*, artisan:artisans(id, entreprise, metier, kbis_url, decennale_url, decennale_expiration, qualification_url)')
         .eq('dossier_id', dossierId).order('ordre', { nullsFirst: false }).order('created_at')
 
       const { data: photos } = await getSupabaseAdmin()
@@ -450,15 +459,26 @@ export async function POST(request) {
         kbis_url: societeDocs?.kbis_url || adminProfil.kbis_url || null,
       } : (societeDocs ? { id: null, prenom: null, nom: null, ...societeDocs } : null)
 
+      // Les COMPTES RENDUS entrent dans l'empreinte : le résumé du projet imprimé en
+      // tête du dossier est rédigé à partir d'eux (voir restitution.js). Ils étaient
+      // lus par le générateur sans entrer dans l'empreinte — corriger un compte rendu
+      // ne rafraîchissait donc pas le dossier en cache. (R11)
+      const { data: crsEmpreinte } = await getSupabaseAdmin()
+        .from('comptes_rendus').select('id, type_visite, contenu_final')
+        .eq('dossier_id', dossierId).order('created_at')
+
       // Empreinte sur les MÉTADONNÉES uniquement (identifiants, chemins, montants,
       // dates) : il serait absurde de télécharger les photos pour décider s'il faut
       // les télécharger. Ajouter, retirer ou remplacer une photo change sa ligne en
-      // base, donc l'empreinte.
+      // base, donc l'empreinte. Les chemins des pièces jointes (RIB, Kbis, devis signé,
+      // PV, facture) sont désormais horodatés à l'envoi : un fichier remplacé change de
+      // chemin, donc d'empreinte. (R10)
       pdfBuffer = await avecCache(null, {
         dossier, devis: devisComplets || [], photos: photos || [],
         interventions: interventions || [], fichesTech: fichesTech || [],
         docsRestitution: docsRestitution || [], factures: factures || [],
         suiviFinancier: suiviFinancier || [], adminFranchise: adminFranchise || null,
+        comptesRendus: crsEmpreinte || [],
       }, async () => {
 
       const photosWithBase64 = await Promise.all((photos || []).map(async (photo) => {
@@ -517,8 +537,17 @@ export async function POST(request) {
       // Empreinte sur les métadonnées : contenu du CR, dossier, et la LISTE des photos
       // jointes (chemins). Le téléchargement des photos est la partie coûteuse — il
       // passe donc à l'intérieur de la fabrication, après la décision de cache.
+      //
+      // La correspondance chemin → id entre AUSSI dans l'empreinte : les repères
+      // [[photo:ID]] du texte pointent sur l'id de la photo, pas sur son chemin. Une
+      // photo recréée au même chemin change d'id et disparaissait du corps du compte
+      // rendu, sans que l'empreinte bouge. (R11)
       pdfBuffer = await avecCache(crId,
-        { dossier, cr, sections, photos: crData.photos_jointes || [] },
+        {
+          dossier, cr, sections,
+          photos: crData.photos_jointes || [],
+          reperes: (photosDossier || []).map(p => [p.url, p.id]).sort(),
+        },
         async () => {
 
       const photosJointes = await Promise.all((crData.photos_jointes || []).map(async (path) => {
