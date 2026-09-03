@@ -505,8 +505,12 @@ export async function GET(req) {
       let admin = null, villes = []
       try {
         const [{ data: adm }, { data: ags }] = await Promise.all([
+          // `limit(1)` SANS ordre laissait Postgres libre de rendre l'un ou l'autre
+          // admin quand une société en compte deux : le destinataire de réponse aurait
+          // pu changer d'un mois sur l'autre. Ordre explicite = choix stable.
           getSupabaseAdmin().from('profiles').select('email, prenom, nom')
-            .eq('role', 'admin').eq('societe_id', societeId).limit(1).maybeSingle(),
+            .eq('role', 'admin').eq('societe_id', societeId)
+            .order('created_at', { ascending: true }).limit(1).maybeSingle(),
           getSupabaseAdmin().from('agences').select('ville').eq('societe_id', societeId),
         ])
         admin = adm || null

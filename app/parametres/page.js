@@ -106,7 +106,7 @@ export default function Parametres() {
   const chargerAgence = async (societeId) => {
     if (!societeId) return
     const [{ data: soc }, { data: ags }] = await Promise.all([
-      supabase.from('societes').select('nom_societe, siret, rcs').eq('id', societeId).single(),
+      supabase.from('societes').select('nom_societe, siret, rcs, rib_url, kbis_url').eq('id', societeId).single(),
       supabase.from('agences').select('id, code, nom, ville, adresse, code_postal, telephone, email, responsable_nom, logo_path').eq('societe_id', societeId).order('code'),
     ])
     setSociete(soc || null)
@@ -348,20 +348,36 @@ export default function Parametres() {
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
+  // RIB — DEUX propriétaires possibles, et ce n'est pas un détail :
+  //   · ADMIN   → le RIB de la FRANCHISE, document d'ENTREPRISE, rangé sur `societes`.
+  //               C'est celui que le client voit sur le dossier de restitution. Il ne
+  //               doit dépendre ni du nombre d'associés, ni de qui l'a téléversé.
+  //   · AGENTE  → son RIB PERSONNEL, rangé sur son profil, pour sa facturation vers CTP.
+  const ribFranchise = profile?.role === 'admin'
+  const ribCourant = ribFranchise ? societe?.rib_url : profile?.rib_url
+  const kbisCourant = ribFranchise ? societe?.kbis_url : profile?.kbis_url
+
   const uploadRib = async (fichier) => {
     if (!profile) return
     setUploadingRib(true)
-    const chemin = `rib/${profile.id}.pdf`
+    const chemin = ribFranchise ? `rib/societe-${profile.societe_id}.pdf` : `rib/${profile.id}.pdf`
     const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true, contentType: 'application/pdf' })
     if (uploadError) { setErreur('Erreur upload RIB : ' + uploadError.message); setUploadingRib(false); return }
-    const { error } = await supabase.from('profiles').update({ rib_url: chemin }).eq('id', profile.id)
-    if (error) { setErreur('Erreur sauvegarde RIB : ' + error.message) } else { setSucces('RIB uploadé ✓'); setProfile(p => ({ ...p, rib_url: chemin })) }
+    const { error } = ribFranchise
+      ? await supabase.from('societes').update({ rib_url: chemin }).eq('id', profile.societe_id)
+      : await supabase.from('profiles').update({ rib_url: chemin }).eq('id', profile.id)
+    if (error) { setErreur('Erreur sauvegarde RIB : ' + error.message) }
+    else {
+      setSucces('RIB uploadé ✓')
+      if (ribFranchise) setSociete(s => ({ ...s, rib_url: chemin }))
+      else setProfile(p => ({ ...p, rib_url: chemin }))
+    }
     setUploadingRib(false)
   }
 
   const voirRib = async () => {
-    if (!profile?.rib_url) return
-    const { data } = await supabase.storage.from('documents').createSignedUrl(profile.rib_url, 3600)
+    if (!ribCourant) return
+    const { data } = await supabase.storage.from('documents').createSignedUrl(ribCourant, 3600)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
@@ -370,19 +386,26 @@ export default function Parametres() {
     setUploadingKbisFranchise(true)
     const f = await heicToJpegFile(fichier)   // photo iPhone (HEIC) du KBIS → JPEG
     const ext = f.name.split('.').pop()
-    const chemin = `kbis/${profile.id}.${ext}`
+    // Même règle que le RIB : pour un admin, le Kbis est un document d'ENTREPRISE.
+    const chemin = ribFranchise ? `kbis/societe-${profile.societe_id}.${ext}` : `kbis/${profile.id}.${ext}`
     const { error: uploadError } = await supabase.storage
       .from('documents').upload(chemin, f, { upsert: true })
     if (uploadError) { setErreur('Erreur upload KBIS : ' + uploadError.message); setUploadingKbisFranchise(false); return }
-    const { error } = await supabase.from('profiles').update({ kbis_url: chemin }).eq('id', profile.id)
+    const { error } = ribFranchise
+      ? await supabase.from('societes').update({ kbis_url: chemin }).eq('id', profile.societe_id)
+      : await supabase.from('profiles').update({ kbis_url: chemin }).eq('id', profile.id)
     if (error) { setErreur('Erreur sauvegarde KBIS : ' + error.message) }
-    else { setSucces('KBIS uploadé ✓'); setProfile(p => ({ ...p, kbis_url: chemin })) }
+    else {
+      setSucces('KBIS uploadé ✓')
+      if (ribFranchise) setSociete(s => ({ ...s, kbis_url: chemin }))
+      else setProfile(p => ({ ...p, kbis_url: chemin }))
+    }
     setUploadingKbisFranchise(false)
   }
 
   const voirKbisFranchise = async () => {
-    if (!profile?.kbis_url) return
-    const { data } = await supabase.storage.from('documents').createSignedUrl(profile.kbis_url, 3600)
+    if (!kbisCourant) return
+    const { data } = await supabase.storage.from('documents').createSignedUrl(kbisCourant, 3600)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
   }
 
@@ -749,15 +772,15 @@ export default function Parametres() {
                 <p style={{color:'var(--ink-500)', fontSize:13}}>Documents PDF utilisés pour les automations par email.</p>
               </div>
               <div style={{display:'flex', flexDirection:'column', gap:10, maxWidth:520}}>
-                <div style={{padding:'14px 18px', border:'1px solid', borderColor: profile?.rib_url ? 'var(--ink-200)' : 'rgba(245,158,11,0.3)', borderRadius:12, display:'flex', justifyContent:'space-between', alignItems:'center', gap:14}}>
+                <div style={{padding:'14px 18px', border:'1px solid', borderColor: ribCourant ? 'var(--ink-200)' : 'rgba(245,158,11,0.3)', borderRadius:12, display:'flex', justifyContent:'space-between', alignItems:'center', gap:14}}>
                   <div style={{display:'flex', alignItems:'center', gap:12}}>
-                    <div style={{width:36, height:36, borderRadius:8, background: profile?.rib_url ? 'var(--brand-50)' : 'rgba(245,158,11,0.12)', color: profile?.rib_url ? 'var(--brand-800)' : '#a16207', display:'grid', placeItems:'center', fontSize:18}}>📄</div>
+                    <div style={{width:36, height:36, borderRadius:8, background: ribCourant ? 'var(--brand-50)' : 'rgba(245,158,11,0.12)', color: ribCourant ? 'var(--brand-800)' : '#a16207', display:'grid', placeItems:'center', fontSize:18}}>📄</div>
                     <div>
                       <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>RIB franchisé</div>
-                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{profile?.rib_url ? 'Fichier uploadé' : 'Aucun fichier'}</div>
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{ribCourant ? 'Fichier uploadé' : 'Aucun fichier'}</div>
                     </div>
                   </div>
-                  {profile?.rib_url ? (
+                  {ribCourant ? (
                     <div style={{display:'flex', gap:8}}>
                       <button className="btn btn-ghost" style={{fontSize:12}} onClick={voirRib}>Voir</button>
                       <label className="btn btn-ghost" style={{fontSize:12, cursor:'pointer', opacity: uploadingRib ? 0.5 : 1}}>
@@ -772,15 +795,15 @@ export default function Parametres() {
                     </label>
                   )}
                 </div>
-                <div style={{padding:'14px 18px', border:'1px solid', borderColor: profile?.kbis_url ? 'var(--ink-200)' : 'rgba(245,158,11,0.3)', borderRadius:12, display:'flex', justifyContent:'space-between', alignItems:'center', gap:14}}>
+                <div style={{padding:'14px 18px', border:'1px solid', borderColor: kbisCourant ? 'var(--ink-200)' : 'rgba(245,158,11,0.3)', borderRadius:12, display:'flex', justifyContent:'space-between', alignItems:'center', gap:14}}>
                   <div style={{display:'flex', alignItems:'center', gap:12}}>
-                    <div style={{width:36, height:36, borderRadius:8, background: profile?.kbis_url ? 'var(--brand-50)' : 'rgba(245,158,11,0.12)', color: profile?.kbis_url ? 'var(--brand-800)' : '#a16207', display:'grid', placeItems:'center', fontSize:18}}>📄</div>
+                    <div style={{width:36, height:36, borderRadius:8, background: kbisCourant ? 'var(--brand-50)' : 'rgba(245,158,11,0.12)', color: kbisCourant ? 'var(--brand-800)' : '#a16207', display:'grid', placeItems:'center', fontSize:18}}>📄</div>
                     <div>
                       <div style={{fontSize:13.5, fontWeight:700, color:'var(--ink-900)'}}>KBIS franchisé</div>
-                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{profile?.kbis_url ? 'Fichier uploadé' : 'Aucun fichier'}</div>
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>{kbisCourant ? 'Fichier uploadé' : 'Aucun fichier'}</div>
                     </div>
                   </div>
-                  {profile?.kbis_url ? (
+                  {kbisCourant ? (
                     <div style={{display:'flex', gap:8}}>
                       <button className="btn btn-ghost" style={{fontSize:12}} onClick={voirKbisFranchise}>Voir</button>
                       <label className="btn btn-ghost" style={{fontSize:12, cursor:'pointer', opacity: uploadingKbisFranchise ? 0.5 : 1}}>

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../lib/auth-context'
+import { chercherDoublons } from '../../lib/doublons'
 
 const FORMES_JURIDIQUES = ['SCI', 'SARL', 'EURL', 'SAS', 'SASU', 'SA', 'SNC', 'SCEA', 'SCM', 'auto-entrepreneur / micro-entreprise', 'EI']
 
@@ -11,6 +12,11 @@ export default function NouveauClient() {
   const [profiles, setProfiles] = useState([])
   const [loading, setLoading] = useState(false)
   const [erreur, setErreur] = useState('')
+  // Doublons repérés à la saisie : on SIGNALE, on ne bloque pas. Deux personnes peuvent
+  // porter le même nom, et refuser la création serait pire que le doublon. `forcer` est
+  // posé quand l'utilisatrice a vu la liste et choisi de créer quand même.
+  const [doublons, setDoublons] = useState(null)
+  const [forcer, setForcer] = useState(false)
   const router = useRouter()
 
   const [form, setForm] = useState({
@@ -120,6 +126,35 @@ export default function NouveauClient() {
     const nomFinal = estPro
       ? `${form.forme_juridique ? form.forme_juridique + ' ' : ''}${form.raison_sociale}`.trim()
       : form.nom
+
+    // ── Détection de doublon (cahier des charges v6 §4) ──────────────────
+    // Requête ÉTROITE : on ne charge pas tout le fichier clients pour comparer, on ne
+    // demande que ceux qui partagent le nom, l'e-mail ou le téléphone. La RLS limite
+    // déjà au périmètre de l'utilisatrice.
+    if (!forcer) {
+      const filtres = [`nom.ilike.${nomFinal.trim()}`]
+      if (form.email) filtres.push(`email.ilike.${form.email.trim()}`)
+      if (form.telephone) filtres.push(`telephone.ilike.%${form.telephone.replace(/\D+/g, '').slice(-6)}%`)
+      const { data: candidats } = await supabase
+        .from('clients')
+        .select('id, nom, prenom, email, email2, telephone, telephone2, adresse')
+        .eq('archive', false)
+        .or(filtres.join(','))
+        .limit(50)
+
+      const trouves = chercherDoublons({
+        nom: nomFinal, prenom: estPro ? '' : form.prenom,
+        email: form.email, email2: form.email2,
+        telephone: form.telephone, telephone2: form.telephone2,
+        adresse: form.adresse,
+      }, candidats || [])
+
+      if (trouves.length > 0) {
+        setDoublons(trouves)
+        setLoading(false)
+        return
+      }
+    }
 
     const { data, error } = await supabase.from('clients').insert({
       civilite: form.civilite,
@@ -509,6 +544,52 @@ export default function NouveauClient() {
           </div>
 
           {erreur && <p className="text-red-500 text-sm">{erreur}</p>}
+
+          {/* Doublon repéré : on montre ce qui existe déjà et on laisse choisir.
+              Jamais de blocage — deux personnes peuvent porter le même nom, et un
+              client peut légitimement avoir plusieurs chantiers. */}
+          {doublons && doublons.length > 0 && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3">
+              <p className="text-sm font-semibold text-amber-900">
+                {doublons.length === 1 ? 'Un client existant ressemble à celui-ci' : `${doublons.length} clients existants ressemblent à celui-ci`}
+              </p>
+              <ul className="space-y-2">
+                {doublons.map(({ client, motifs, certitude }) => (
+                  <li key={client.id} className="flex items-start justify-between gap-3 rounded-md bg-white/70 p-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {[client.prenom, client.nom].filter(Boolean).join(' ')}
+                      </p>
+                      <p className="text-xs text-gray-600">
+                        {certitude === 'certain' ? '⚠ ' : ''}{motifs.map(m => m.libelle).join(' · ')}
+                        {client.email ? ` — ${client.email}` : ''}
+                      </p>
+                    </div>
+                    <button type="button"
+                      onClick={() => router.push(`/chantiers/nouveau?client=${client.id}`)}
+                      className="shrink-0 rounded-md border border-amber-400 px-3 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100">
+                      Utiliser ce client
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button type="button"
+                  onClick={() => { setDoublons(null); setForcer(true) }}
+                  className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">
+                  Ce n&apos;est pas le même — créer quand même
+                </button>
+                <button type="button" onClick={() => setDoublons(null)}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50">
+                  Corriger la saisie
+                </button>
+              </div>
+              <p className="text-xs text-amber-800">
+                Un même client peut avoir plusieurs chantiers : dans ce cas, choisis
+                « Utiliser ce client » plutôt que d&apos;en créer un second.
+              </p>
+            </div>
+          )}
 
           <div className="flex gap-3">
             <button
