@@ -750,7 +750,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
               </div>
             ))}
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-600)', marginTop: 8 }}>Ne se reportent pas — clôturées / actées ({hist.fermees.length})</div>
-            <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: -4 }}>Elles restent sur leur CR et ne sont pas reprises automatiquement — « Remettre » pour l'afficher dans ce CR.</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-500)', marginTop: -4 }}>Elles restent sur leur CR et ne sont pas reprises automatiquement — « Remettre » pour l&apos;afficher dans ce CR.</div>
             {hist.fermees.length === 0 && <div style={{ fontSize: 11.5, color: 'var(--ink-400)' }}>Aucune.</div>}
             {hist.fermees.map(a => {
               const s = STATUT_MAP[a.statut]

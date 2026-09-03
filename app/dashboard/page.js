@@ -243,8 +243,14 @@ export default function Dashboard() {
     return Math.ceil((((date - yearStart) / 86400000) + 1) / 7)
   }
   const semaine = getWeekNumber(today)
+  // `Date.now()` lu à CHAQUE rendu rendait cette fonction impure : deux rendus
+  // successifs pouvaient afficher deux valeurs différentes pour la même donnée, sans
+  // qu'aucune donnée ait changé. On fige l'instant de référence au montage : les
+  // libellés « il y a 20 min » restent stables tant que la page n'est pas rechargée,
+  // ce qui est le comportement attendu d'un tableau de bord.
+  const maintenant = today.getTime()
   const relTime = (dateStr) => {
-    const diff = (Date.now() - new Date(dateStr)) / 1000
+    const diff = (maintenant - new Date(dateStr)) / 1000
     if (diff < 3600) return `il y a ${Math.round(diff / 60)} min`
     if (diff < 86400) return `il y a ${Math.round(diff / 3600)}h`
     if (diff < 86400 * 7) return `il y a ${Math.round(diff / 86400)}j`
