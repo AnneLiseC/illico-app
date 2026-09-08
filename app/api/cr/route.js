@@ -7,9 +7,27 @@ import heicConvert from 'heic-convert'
 import { requireRole } from '../../lib/api-auth'
 import { formatNomClient } from '../../lib/clients'
 
-// Le traitement des images + l'appel Claude peuvent être longs : on autorise
-// jusqu'à 120 s (l'API route transcribe monte déjà à 300 s sur ce plan Vercel).
-export const maxDuration = 120
+// Le traitement des images + l'appel Claude peuvent être longs.
+//
+// ⚠️ 504 DU 08/09 — CE PLAFOND ÉTAIT LA CAUSE. Un compte rendu bâti sur 29 documents a
+// échoué en « Vercel Runtime Timeout Error: Task timed out after 120 seconds ». Les
+// journaux de production disent exactement ce qui s'est passé :
+//
+//     CR: 9 média(s) ignoré(s) (limite 20 / 18 Mo)
+//     CR: échec appel Claude (timeout), tentative 1
+//     Vercel Runtime Timeout Error: Task timed out after 120 seconds
+//
+// Le budget des tentatives DÉPASSAIT le budget de la fonction : trois tentatives à 90 s
+// plus les pauses font jusqu'à 272 s, dans une fonction qui s'arrête à 120 s. La
+// deuxième tentative ne pouvait donc JAMAIS aboutir — elle garantissait au contraire le
+// 504, en consommant les secondes restantes. Et l'utilisateur ne recevait aucun message :
+// une erreur de passerelle, pas une réponse de l'application.
+//
+// 300 s est le maximum du plan Pro ; `transcribe` et `actions/consolider` l'utilisent
+// déjà. Le vrai correctif n'est pas ce nombre mais l'échéance plus bas : les tentatives
+// tiennent désormais DANS le budget, et l'application répond avant que la plateforme ne
+// la coupe.
+export const maxDuration = 300
 
 // ── Garde-fous génération CR ──────────────────────────────────────────────
 // Bornent le payload envoyé à Claude : sans ça, une grosse série de photos fait
@@ -18,9 +36,16 @@ export const maxDuration = 120
 // et signalés à l'utilisateur (jamais tronqué en silence).
 const CR_MAX_MEDIAS = 20                      // nb max d'images + PDF joints
 const CR_MAX_MEDIA_BYTES = 18 * 1024 * 1024   // budget cumulé (longueur base64), marge sous la limite API
-// Appel Claude : timeout par tentative + retries sur erreurs transitoires (surcharge, réseau).
-const CR_CLAUDE_TIMEOUT_MS = 90_000
-const CR_CLAUDE_RETRIES = 2                    // 3 tentatives au total
+// Appel Claude : retries sur erreurs transitoires (surcharge, réseau), bornés par une
+// ÉCHÉANCE globale plutôt que par un timeout fixe par tentative.
+//
+// La règle : on ne lance jamais une tentative qui ne peut pas finir. C'est ce qui
+// manquait — un timeout par tentative ignore le temps déjà consommé, donc il peut
+// promettre une seconde chance que la plateforme tuera de toute façon.
+const CR_BUDGET_MS = 270_000                   // marge de 30 s sous maxDuration=300
+const CR_CLAUDE_TIMEOUT_MAX_MS = 120_000       // plafond d'une tentative
+const CR_CLAUDE_TIMEOUT_MIN_MS = 25_000        // en dessous, une tentative n'a aucune chance
+const CR_CLAUDE_RETRIES = 2                    // 3 tentatives au total, SI le budget le permet
 const CR_RETRIABLE_STATUS = new Set([408, 429, 500, 502, 503, 504, 529])
 
 let _supabaseAdmin
@@ -274,6 +299,10 @@ export function buildUserPrompt({ dossier, devis, typeVisite, dateVisite, interv
 }
 
 export async function POST(request) {
+  // Départ du chronomètre AVANT tout travail : le téléchargement et la conversion des
+  // pièces consomment le même budget que l'appel à l'IA, et c'est justement ce que
+  // l'ancien timeout par tentative ignorait. (504 du 08/09)
+  const departRequete = Date.now()
   const auth = await requireRole(request, ['admin', 'agente'])
   if (auth.error) return auth.error
   try {
@@ -458,10 +487,25 @@ export async function POST(request) {
 
     let claudeRes = null
     let derniereErreur = null
+    let budgetEpuise = false
     for (let tentative = 0; tentative <= CR_CLAUDE_RETRIES; tentative++) {
       if (tentative > 0) await new Promise(r => setTimeout(r, 800 * 2 ** (tentative - 1)))   // backoff 0,8s puis 1,6s
+
+      // ── L'ÉCHÉANCE ──
+      // Le temps déjà passé à télécharger, convertir et encoder les pièces compte dans
+      // le budget de la fonction. On donne à cette tentative ce qui RESTE, jamais plus.
+      // S'il ne reste pas de quoi aboutir, on s'arrête ici et on répond — mieux vaut un
+      // message clair à 2 minutes qu'une erreur de passerelle à 5.
+      const restant = CR_BUDGET_MS - (Date.now() - departRequete)
+      if (restant < CR_CLAUDE_TIMEOUT_MIN_MS) {
+        budgetEpuise = true
+        console.warn(`CR: budget épuisé avant la tentative ${tentative + 1} (${Math.round(restant / 1000)} s restantes)`)
+        break
+      }
+      const delaiTentative = Math.min(restant, CR_CLAUDE_TIMEOUT_MAX_MS)
+
       const ctrl = new AbortController()
-      const minuteur = setTimeout(() => ctrl.abort(), CR_CLAUDE_TIMEOUT_MS)
+      const minuteur = setTimeout(() => ctrl.abort(), delaiTentative)
       try {
         const res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -490,7 +534,20 @@ export async function POST(request) {
     }
 
     if (!claudeRes) {
-      return NextResponse.json({ error: `Service IA indisponible (${derniereErreur?.message || 'timeout'}). Réessaie dans un instant.` }, { status: 503 })
+      // Distinguer les deux échecs : « le service est occupé, réessaie » ne dit pas quoi
+      // faire quand le vrai problème est le VOLUME. Sur 29 documents, réessayer à
+      // l'identique échouera à l'identique — il faut réduire, et le message doit le dire.
+      if (budgetEpuise || derniereErreur?.name === 'AbortError') {
+        const nb = mediaCount
+        return NextResponse.json({
+          error: `Le compte rendu n'a pas pu être produit dans le temps imparti : `
+            + `${nb} pièce(s) jointe(s), c'est trop pour une seule génération. `
+            + `Décoche les documents les moins utiles — les photos et les devis de la visite `
+            + `suffisent en général — puis relance. Le texte déjà saisi est conservé.`,
+          cause: 'volume',
+        }, { status: 503 })
+      }
+      return NextResponse.json({ error: `Service IA indisponible (${derniereErreur?.message || 'erreur réseau'}). Réessaie dans un instant.` }, { status: 503 })
     }
     if (!claudeRes.ok) {
       const err = await claudeRes.json().catch(() => ({}))

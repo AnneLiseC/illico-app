@@ -10,6 +10,10 @@ import { apiFetch } from '../../lib/api-auth-client'
 import { compressImageToBlob } from '../../lib/images'
 import { lierOuCreerRdvVisite } from '../../lib/rdvVisite'
 import { Badge } from '../shared'
+
+// Doit rester aligné sur CR_MAX_MEDIAS dans app/api/cr/route.js. Le serveur reste
+// l'autorité — cette constante ne sert qu'à prévenir l'utilisateur AVANT l'attente.
+const CR_MAX_PIECES = 20
 import ModalShell from '../ModalShell'
 
 // ModalField : dupliqué ici (composant trivial) pour éviter un import croisé avec la page.
@@ -55,6 +59,25 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
     const notesCombinees = [crNotes, crVocalTexte, crAudioTexte].filter(Boolean).join('\n\n')
     if (!notesCombinees.trim() && crImages.length === 0 && crPhotosDossier.length === 0) return
     if (crGenEnCoursRef.current) return    // garde anti-double-clic (appel /api/cr facturé)
+
+    // ⚠️ PRÉVENIR AVANT, PAS APRÈS. (504 du 08/09)
+    // Un compte rendu lancé sur 29 pièces a échoué après deux minutes d'attente, sur une
+    // erreur de passerelle sans message. L'API borne à 20 pièces et le signalait — mais
+    // APRÈS coup, une fois le temps passé. Le dire avant coûte une seconde et évite
+    // l'attente inutile.
+    const nbPieces = crImages.length + crPhotosDossier.length + crDocsSelectionnes.length
+    if (nbPieces > CR_MAX_PIECES) {
+      const ok = window.confirm(
+        `${nbPieces} pièces sont sélectionnées. L'IA n'en traite que ${CR_MAX_PIECES} : `
+        + `les ${nbPieces - CR_MAX_PIECES} dernières seront ignorées, et la génération `
+        + `risque de dépasser le temps imparti.\n\n`
+        + `Mieux vaut décocher les documents les moins utiles — les photos de la visite et `
+        + `les devis concernés suffisent en général.\n\n`
+        + `Lancer quand même ?`
+      )
+      if (!ok) return
+    }
+
     crGenEnCoursRef.current = true
     setCrGenerating(true)
     setErreur('')
@@ -77,8 +100,22 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
       // Vérifier res.ok AVANT res.json() : une erreur serveur peut renvoyer du texte/HTML,
       // pas du JSON → res.json() lèverait un SyntaxError qui masque la vraie erreur.
       if (!res.ok) {
+        // Le serveur renvoie un message lisible quand il peut (503 avec `error`) ; il ne
+        // renvoie du HTML que lorsque la PLATEFORME a coupé — un 504 de passerelle. Dans
+        // ce cas l'utilisateur ne doit pas lire un extrait de HTML, mais savoir quoi faire.
         const brut = await res.text().catch(() => '')
-        setErreur(`Erreur génération CR (${res.status}) : ${(brut.slice(0, 200) || 'réessayez plus tard')}`)
+        let message = ''
+        try { message = JSON.parse(brut)?.error || '' } catch { /* pas du JSON */ }
+        if (message) {
+          setErreur(message)
+        } else if (res.status === 504 || res.status === 502) {
+          setErreur(
+            `La génération a dépassé le temps imparti (${nbPieces} pièce(s) jointe(s)). `
+            + `Décoche les documents les moins utiles et relance — tes notes sont conservées.`
+          )
+        } else {
+          setErreur(`Erreur génération CR (${res.status}) : ${(brut.slice(0, 200) || 'réessayez plus tard')}`)
+        }
         return
       }
       const data = await res.json()
