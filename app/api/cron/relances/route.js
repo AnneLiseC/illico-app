@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server'
 import { checkBearerSecret } from '../../../lib/http-auth'
 import { sendEmail } from '../../../lib/email'
 import { preparerEnvoi, modeEnvoi } from '../../../lib/relances-envoi'
+import { salutationClient, nomClientPourArtisan, libelleRdv, destinatairesRappel, heureRdvFR, dateRdvFR } from '../../../lib/relances-texte'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -45,15 +46,9 @@ function roleLabel(role) {
   return role === 'admin' ? "Responsable d'Agence" : "Assistante à Maîtrise d'Ouvrage"
 }
 
-// Salutation client : "Mme Guerteau, M. Eppinger" ou "M. Chambonnière"
-function salutationClient(client) {
-  const parts = []
-  if (client.civilite || client.nom) {
-    parts.push(`${client.civilite ? client.civilite + ' ' : ''}${client.nom || ''}`.trim())
-  }
-  if (client.nom2) parts.push(client.nom2)
-  return parts.join(', ')
-}
+// Salutation client et intitulé de rendez-vous : voir lib/relances-texte.js — extraits
+// là-bas le 09/09 pour être testés. L'ancienne version répétait le patronyme quand les
+// deux conjoints portent le même nom (« M. et Mme Brunet, Brunet »).
 
 // Noms pour référence de virement : "GUERTEAU-EPPINGER" ou "CHAMBONNIERE"
 function nomsVirement(client) {
@@ -434,8 +429,9 @@ export async function GET(req) {
     const { data: rdvs } = await getSupabaseAdmin()
       .from('rendez_vous')
       .select(`
-        id, dossier_id, type_rdv, date_heure, artisan_id,
+        id, dossier_id, type_rdv, titre, date_heure, artisan_id, prevenir_client,
         artisans(email, entreprise, nom, prenom),
+        rendez_vous_artisans(artisans(email, entreprise, nom, prenom)),
         dossiers(reference, adresse_chantier, profiles!referente_id(email, prenom, nom, telephone, role),
           clients(email, nom, prenom, civilite, nom2))
       `)
@@ -444,22 +440,52 @@ export async function GET(req) {
 
     for (const rdv of rdvs || []) {
       const client = rdv.dossiers?.clients
-      const artisan = rdv.artisans
       const ref = rdv.dossiers?.reference || rdv.dossier_id
       const referente = rdv.dossiers?.profiles
-      const heureRdv = new Date(rdv.date_heure).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-      const dateRdv = new Date(rdv.date_heure).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      // ⚠️ Heure de PARIS, pas celle du serveur. Vercel tourne en UTC : sans fuseau
+      // explicite, les rappels annonçaient 07:00 pour un rendez-vous de 09:00.
+      const heureRdv = heureRdvFR(rdv.date_heure)
+      const dateRdv = dateRdvFR(rdv.date_heure)
       const lieuHtml = rdv.dossiers?.adresse_chantier ? `<br>📍 ${rdv.dossiers.adresse_chantier}` : ''
+      const destinataires = destinatairesRappel(rdv)
 
-      if (client?.email) {
+      // TOUS les artisans conviés, pas seulement l'artisan principal : une réunion de
+      // chantier à deux entreprises devait pouvoir les prévenir toutes les deux.
+      //
+      // Repli sur `artisan_id` quand la liaison est vide : un chemin d'écriture qui
+      // oublierait de la remplir ne doit jamais faire DISPARAÎTRE un rappel. Le repli
+      // est la position sûre, pas la position normale.
+      const artisansLies = (rdv.rendez_vous_artisans || [])
+        .map(l => l.artisans)
+        .filter(a => a?.email)
+      const artisansConvies = artisansLies.length > 0
+        ? artisansLies
+        : (rdv.artisans?.email ? [rdv.artisans] : [])
+
+      // Dédoublonnage par adresse : le principal figure aussi dans la liaison depuis la
+      // reprise du 09/09, et deux mails identiques valent pire qu'un.
+      const parEmail = new Map()
+      for (const a of artisansConvies) if (!parEmail.has(a.email)) parEmail.set(a.email, a)
+      const artisans = [...parEmail.values()]
+
+      const entreprises = artisans.map(a => a.entreprise).filter(Boolean).join(' et ')
+      const nomClient = nomClientPourArtisan(client)
+
+      // L'intitulé est sur SA PROPRE LIGNE, pas au milieu de la phrase. Deux raisons :
+      // il peut être absent (type `autres` sans titre saisi), et hors de la phrase il
+      // n'a plus d'accord de genre à respecter — « visite prévuE » contre « rendez-vous
+      // prévU » était une faute qui serait revenue au premier type ajouté.
+      const intituleHtml = (libelle) => (libelle ? `<strong>${libelle}</strong><br>` : '')
+
+      if (client?.email && destinataires.client) {
         await envoyer(log, '5', {
           to: client.email,
           replyTo: referente?.email,
           subject: `Rappel de votre rendez-vous demain — dossier ${ref}`,
           html: `
             <p>Bonjour ${salutationClient(client)},</p>
-            <p>Nous vous rappelons votre rendez-vous <strong>${rdv.type_rdv || ''}</strong> prévu :</p>
-            <p>📅 <strong>${dateRdv} à ${heureRdv}</strong>${lieuHtml}</p>
+            <p>Nous vous rappelons ce rendez-vous :</p>
+            <p>${intituleHtml(libelleRdv(rdv, 'client', entreprises))}📅 <strong>${dateRdv} à ${heureRdv}</strong>${lieuHtml}</p>
             <p>En cas d'empêchement, merci de nous contacter dès que possible.</p>
             <p>Cordialement,</p>
             ${signatureHtml(referente)}
@@ -467,20 +493,22 @@ export async function GET(req) {
         })
       }
 
-      if (artisan?.email) {
-        await envoyer(log, '5', {
-          to: artisan.email,
-          replyTo: referente?.email,
-          subject: `Rappel — rendez-vous demain sur le dossier ${ref}`,
-          html: `
-            <p>Bonjour ${prenomNom(artisan) || artisan.entreprise},</p>
-            <p>Nous vous rappelons le rendez-vous <strong>${rdv.type_rdv || ''}</strong> prévu :</p>
-            <p>📅 <strong>${dateRdv} à ${heureRdv}</strong>${lieuHtml}</p>
-            <p>En cas d'empêchement, merci de nous prévenir dès que possible.</p>
-            <p>Cordialement,</p>
-            ${signatureHtml(referente)}
-          `,
-        })
+      if (destinataires.artisan) {
+        for (const artisan of artisans) {
+          await envoyer(log, '5', {
+            to: artisan.email,
+            replyTo: referente?.email,
+            subject: `Rappel — rendez-vous demain sur le dossier ${ref}`,
+            html: `
+              <p>Bonjour ${prenomNom(artisan) || artisan.entreprise},</p>
+              <p>Nous vous rappelons ce rendez-vous :</p>
+              <p>${intituleHtml(libelleRdv(rdv, 'artisan', nomClient))}📅 <strong>${dateRdv} à ${heureRdv}</strong>${lieuHtml}</p>
+              <p>En cas d'empêchement, merci de nous prévenir dès que possible.</p>
+              <p>Cordialement,</p>
+              ${signatureHtml(referente)}
+            `,
+          })
+        }
       }
     }
   } catch (e) { errors.push(`[5] ${e.message}`) }

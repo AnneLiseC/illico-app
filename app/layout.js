@@ -1,6 +1,4 @@
 import { Manrope, JetBrains_Mono } from "next/font/google"
-import { SpeedInsights } from "@vercel/speed-insights/next"
-import { Analytics } from "@vercel/analytics/react"
 import "./globals.css"
 import NavBar from "./components/navbar"
 import { AuthProvider } from "./lib/auth-context"
@@ -54,8 +52,21 @@ export default function RootLayout({ children }) {
             </div>
           </OnboardingGuard>
         </AuthProvider>
-        <SpeedInsights />
-        <Analytics />
+        {/* ⚠️ <SpeedInsights /> et <Analytics /> RETIRÉS le 09/09.
+            Deux faits constatés sur le poste de Marine, en production :
+              · « [Vercel Web Analytics] Failed to load script » — Web Analytics n'est
+                PAS activé sur le projet Vercel, le script part donc en 404 pour tout
+                le monde, tous les jours, pour rien ;
+              · « Cannot read properties of undefined (reading 'startTime') » dans
+                reportAllChanges — web-vitals, embarqué par Speed Insights, lève une
+                exception NON RATTRAPÉE quand une extension du navigateur interfère
+                avec son chargement.
+            Un outil de mesure qui jette une erreur dans la page qu'il mesure est un
+            mauvais échange : on ne mesurait rien, et on ajoutait une panne possible
+            chez chaque utilisateur équipé d'un bloqueur — c'est-à-dire beaucoup.
+            Pour les remettre : activer d'abord Web Analytics et Speed Insights côté
+            Vercel, puis vérifier la console avec un bloqueur actif AVANT de déployer.
+            La surveillance qui compte est ailleurs : UptimeRobot sur /api/sante. */}
       </body>
     </html>
   )

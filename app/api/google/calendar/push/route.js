@@ -74,7 +74,7 @@ export async function POST(request) {
     if (type === 'rdv') {
       const { data: rdv } = await getSupabaseAdmin()
         .from('rendez_vous')
-        .select('*, dossier:dossiers(id, reference, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)')
+        .select('*, dossier:dossiers(id, reference, client:clients(civilite, prenom, nom)), artisan:artisans!rendez_vous_artisan_id_fkey(id, entreprise)')
         .eq('id', id)
         .single()
 

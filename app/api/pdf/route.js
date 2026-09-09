@@ -134,7 +134,10 @@ function RecapitulatifPDF({ dossier, devis, suiviFinancier, factures, preview = 
   const fraisStatut = dossier.frais_statut
   const fraisInTable = fraisTTC > 0 && fraisStatut !== 'offerts' && fraisStatut !== 'rembourse'
   const fraisOfferts = fraisStatut === 'offerts' && fraisTTC > 0
-  const dateAuj = new Date().toLocaleDateString('fr-FR')
+  // Fuseau explicite : Vercel tourne en UTC, donc entre minuit et 2 h du matin
+  // heure de Paris le document se serait daté de la VEILLE. C'est la mention
+  // « établi le » remise au client, elle fait foi. (09/09)
+  const dateAuj = new Date().toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' })
 
   const totalFraisTable = fraisInTable ? fraisTTC : 0
   const totalTTCAvecFrais = totalDevisTTCSignes + totalFraisTable

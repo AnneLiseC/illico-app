@@ -410,7 +410,10 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
   const nomClient = formatNomClient(client, { civilite: true, withRepresentant: true })
   const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
   const nomRef = getNomRef(ref)
-  const dateAuj = new Date().toLocaleDateString('fr-FR')
+  // Fuseau explicite : Vercel tourne en UTC, donc entre minuit et 2 h du matin
+  // heure de Paris le document se serait daté de la VEILLE. C'est la mention
+  // « établi le » remise au client, elle fait foi. (09/09)
+  const dateAuj = new Date().toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' })
 
   const devisAcceptes = (devis || []).filter(d => d.statut === 'accepte')
   const totalHT  = devisAcceptes.reduce((s, d) => s + toNum(d.montant_ht), 0)
@@ -714,7 +717,10 @@ async function buildR3ContentPDF({ dossier, devisR3, logo, resumeGenere }) {
   const nomClient = formatNomClient(client, { civilite: true, withRepresentant: true })
   const TYPO = { courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo', merad: 'MERAD', audit_energetique: 'Audit énergétique', studio_jardin: 'Studio de jardin' }
   const nomRef = getNomRef(ref)
-  const dateAuj = new Date().toLocaleDateString('fr-FR')
+  // Fuseau explicite : Vercel tourne en UTC, donc entre minuit et 2 h du matin
+  // heure de Paris le document se serait daté de la VEILLE. C'est la mention
+  // « établi le » remise au client, elle fait foi. (09/09)
+  const dateAuj = new Date().toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' })
 
   const totalHT  = devisR3.reduce((s, d) => s + toNum(d.montant_ht), 0)
   const totalTTC = devisR3.reduce((s, d) => s + toNum(d.montant_ttc), 0)
