@@ -13,6 +13,8 @@ import { apiFetch } from '../lib/api-auth-client'
 import { parisLocalToInstant, instantToParisLocal } from '../lib/dates'
 import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../lib/cibles'
 import ModalShell from '../components/ModalShell'
+import { synchroniserArtisansRdv, valeurPrevenirClient, idsArtisansDepuisRdv } from '../lib/rdvArtisans'
+import { prevenirClientParDefaut } from '../lib/relances-texte'
 
 // ─── PALETTE illiCO TRAVAUX ───────────────────────────────────────────────────
 const COLORS = {
@@ -109,7 +111,7 @@ export default function Planning() {
 
   const chargerTout = async () => {
     const [rdvRes, intRes, dosRes, artRes, devRes, agRes, agencesRes, ciblesRes] = await Promise.all([
-      supabase.from('rendez_vous').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_heure'),
+      supabase.from('rendez_vous').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom)), artisan:artisans!rendez_vous_artisan_id_fkey(id, entreprise), rendez_vous_artisans(artisan_id)').order('date_heure'),
       supabase.from('interventions_artisans').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_debut'),
       supabase.from('dossiers').select('id, reference, referente_id, agence_id, date_demarrage_chantier, date_demarrage_chantier_manuel, date_fin_chantier, client:clients(civilite, prenom, nom)').order('reference'),
       supabase.from('artisans').select('id, entreprise').order('entreprise'),
@@ -412,7 +414,7 @@ export default function Planning() {
   const handleEventClick = (info) => {
     const { type, data, cfg } = info.event.extendedProps
     setElementSelectionne({ type, data, cfg }); setModalType(type); setModeEdition(false)
-    if (type === 'rdv') setFormRdv({ dossier_id: data.dossier_id, type_rdv: data.type_rdv, date_heure: data.date_heure ? instantToParisLocal(data.date_heure) : '', duree_minutes: data.duree_minutes || 60, artisan_id: data.artisan_id || '', notes: data.notes || '', titre: data.titre || '', agence_id: data.agence_id || '', cible_id: data.cible_id || '' })
+    if (type === 'rdv') setFormRdv({ dossier_id: data.dossier_id, type_rdv: data.type_rdv, date_heure: data.date_heure ? instantToParisLocal(data.date_heure) : '', duree_minutes: data.duree_minutes || 60, artisan_id: data.artisan_id || '', artisans_ids: idsArtisansDepuisRdv(data), prevenir_client: data.prevenir_client ?? null, notes: data.notes || '', titre: data.titre || '', agence_id: data.agence_id || '', cible_id: data.cible_id || '' })
     else if (type === 'intervention') setFormIntervention({ dossier_id: data.dossier_id, artisan_id: data.artisan_id, type_intervention: data.type_intervention, date_debut: data.date_debut || '', date_fin: data.date_fin || '', jours_specifiques: data.jours_specifiques || [], notes: data.notes || '', agence_id: data.agence_id || '', cible_id: data.cible_id || '' })
     else if (type === 'date_cle') setFormDateCle({ date_demarrage_chantier_manuel: data.date_demarrage_chantier_manuel || '', date_fin_chantier: data.date_fin_chantier || '' })
     setModalOuvert(true)
@@ -420,7 +422,7 @@ export default function Planning() {
 
   const fermerModal = () => {
     setModalOuvert(false); setElementSelectionne(null); setModeEdition(false); setErreur(''); setDemandeSuppr(false); setDemandeModif(false)
-    setFormRdv({ dossier_id: '', type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', agence_id: '', cible_id: '' })
+    setFormRdv({ dossier_id: '', type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', artisans_ids: [], prevenir_client: null, notes: '', titre: '', agence_id: '', cible_id: '' })
     setFormIntervention({ dossier_id: '', artisan_id: '', type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', agence_id: '', cible_id: '' })
     lastAutoCibleRdv.current = ''; lastAutoCibleInt.current = ''
   }
@@ -474,7 +476,12 @@ export default function Planning() {
     if (portee === 'serie') {
       setSaving(true); setErreur('')
       const base = baseRecurrente(elementSelectionne.data.google_event_id)
-      const meta = { type_rdv: formRdv.type_rdv, artisan_id: formRdv.artisan_id || null, notes: formRdv.notes || null }
+      // `formRdv.artisan_id` n'est plus tenu à jour depuis le 09/09 : la saisie passe par
+      // `artisans_ids`. Sans ce changement, modifier une série remettait l'artisan à null.
+      // La table de liaison n'est PAS propagée à la série : elle se règle occurrence par
+      // occurrence, comme les autres champs propres à une date.
+      const meta = { type_rdv: formRdv.type_rdv, artisan_id: (formRdv.artisans_ids || [])[0] || null, notes: formRdv.notes || null,
+        prevenir_client: valeurPrevenirClient(formRdv.prevenir_client, prevenirClientParDefaut(formRdv.type_rdv)) }
       const { error } = await supabase.from('rendez_vous').update(meta).like('google_event_id', escapeLike(base) + '\\_%')
       if (error) { setErreur(error.message); setSaving(false); return }
       fermerModal(); setSaving(false); chargerTout()
@@ -499,7 +506,9 @@ export default function Planning() {
       ? (dossiers.find(d => d.id === formRdv.dossier_id)?.agence_id || null)
       : (formRdv.agence_id || agenceActive || null)
     // date_heure : la saisie <input datetime-local> est en heure de Paris -> convertir en instant UTC pour la colonne timestamptz (le garde `if (!formRdv.date_heure) return` ci-dessus protège le cas vide)
-    const payload = { type_rdv: formRdv.type_rdv, date_heure: parisLocalToInstant(formRdv.date_heure), duree_minutes: parseInt(formRdv.duree_minutes), artisan_id: formRdv.artisan_id || null, notes: formRdv.notes || null, titre: formRdv.type_rdv === 'autres' ? (formRdv.titre || null) : null, agence_id, cible_id: formRdv.cible_id || null }
+    // `artisan_id` = le PREMIER convié : la synchro d'agenda et la poussée Google lisent
+    // encore cette colonne, elles ne connaissent pas la table de liaison.
+    const payload = { type_rdv: formRdv.type_rdv, date_heure: parisLocalToInstant(formRdv.date_heure), duree_minutes: parseInt(formRdv.duree_minutes), artisan_id: (formRdv.artisans_ids || [])[0] || null, prevenir_client: valeurPrevenirClient(formRdv.prevenir_client, prevenirClientParDefaut(formRdv.type_rdv)), notes: formRdv.notes || null, titre: formRdv.type_rdv === 'autres' ? (formRdv.titre || null) : null, agence_id, cible_id: formRdv.cible_id || null }
     let savedId = elementSelectionne?.data?.id
     if (elementSelectionne?.type === 'rdv' && modeEdition) {
       const { error } = await supabase.from('rendez_vous').update(payload).eq('id', savedId)
@@ -509,6 +518,10 @@ export default function Planning() {
       if (error) { setErreur(error.message); setSaving(false); return }
       savedId = data?.id
     }
+    // La liaison s'écrit après : en création elle a besoin de l'id fraîchement rendu.
+    // Un échec ici ne remet pas le rendez-vous en cause — il est enregistré.
+    const lien = await synchroniserArtisansRdv(supabase, savedId, formRdv.artisans_ids)
+    if (!lien.ok) setErreur('Rendez-vous enregistré, mais les entreprises conviées n\'ont pas été enregistrées : ' + lien.erreur)
     fermerModal(); setSaving(false)
     await pushToGoogle('rdv', savedId)   // après la fermeture : le message reste visible sur la page
     chargerTout()
@@ -1039,15 +1052,55 @@ export default function Planning() {
                       </select>
                     </div>
                   </div>
-                  {['visite_technique_artisan', 'reception'].includes(formRdv.type_rdv) && <div><label className={labelCls}>Artisan</label>
-                    <select value={formRdv.artisan_id} onChange={e => setFormRdv(f => ({ ...f, artisan_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
-                      <option value="">— Choisir —</option>
-                      {artisansRdvModale.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
-                    </select>
-                    {formRdv.type_rdv === 'reception' && formRdv.dossier_id && artisansRdvModale.length === 0 && (
-                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Aucun artisan avec devis signé sur ce chantier</div>
+                  {/* Entreprises conviées — PLUSIEURS depuis le 09/09. Avec un sélecteur
+                      unique, une réunion de chantier à deux entreprises n'en prévenait
+                      aucune. Affiché sur tous les types : un RDV « Autre » convie souvent
+                      des artisans sans que le client soit présent. */}
+                  <div><label className={labelCls}>Entreprises conviées</label>
+                    {artisansRdvModale.length === 0 ? (
+                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:6}}>
+                        {formRdv.type_rdv === 'reception' && formRdv.dossier_id
+                          ? 'Aucun artisan avec devis signé sur ce chantier'
+                          : 'Aucun artisan disponible'}
+                      </div>
+                    ) : (
+                      <div style={{display:'flex', flexDirection:'column', gap:6, marginTop:6, maxHeight:150, overflowY:'auto'}}>
+                        {artisansRdvModale.map(a => {
+                          const choisis = formRdv.artisans_ids || []
+                          return (
+                            <label key={a.id} style={{display:'flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer'}}>
+                              <input type="checkbox" checked={choisis.includes(a.id)}
+                                onChange={() => setFormRdv(f => {
+                                  const actuels = f.artisans_ids || []
+                                  return { ...f, artisans_ids: actuels.includes(a.id) ? actuels.filter(x => x !== a.id) : [...actuels, a.id] }
+                                })} />
+                              <span>{a.entreprise}</span>
+                            </label>
+                          )
+                        })}
+                        {(formRdv.artisans_ids || []).length > 1 && (
+                          <div style={{fontSize:11.5, color:'var(--ink-500)'}}>Chacune recevra son rappel la veille.</div>
+                        )}
+                      </div>
                     )}
-                  </div>}
+                  </div>
+
+                  {/* Rappel au client — le type ne donne qu'un DÉFAUT : une visite
+                      d'artisan peut se faire en présence du client, un suivi aussi.
+                      Tant que la case n'est pas touchée, la ligne reste à NULL en base. */}
+                  <div><label className={labelCls}>Rappel au client</label>
+                    {(() => {
+                      const defaut = prevenirClientParDefaut(formRdv.type_rdv)
+                      const coche = formRdv.prevenir_client ?? defaut
+                      return (
+                        <label style={{display:'flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer', marginTop:6}}>
+                          <input type="checkbox" checked={coche}
+                            onChange={e => setFormRdv(f => ({ ...f, prevenir_client: e.target.checked }))} />
+                          <span>Prévenir le client la veille{coche === defaut ? ' (défaut pour ce type)' : ''}</span>
+                        </label>
+                      )
+                    })()}
+                  </div>
                   <div><label className={labelCls}>Notes</label><textarea value={formRdv.notes} onChange={e => setFormRdv(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} style={{marginTop:6}}/></div>
                   <div style={{display:'flex', gap:8, paddingTop:4}}>
                     <button onClick={fermerModal} className="btn btn-ghost" style={{flex:1}}>Annuler</button>

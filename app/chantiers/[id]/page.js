@@ -32,6 +32,8 @@ import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToPari
 import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../../lib/cibles'
 import { buildInviteMailto } from '../../lib/inviteMail'
 import { calculerExpiration } from '../../lib/expiration'
+import { synchroniserArtisansRdv, valeurPrevenirClient, idsArtisansDepuisRdv } from '../../lib/rdvArtisans'
+import { prevenirClientParDefaut } from '../../lib/relances-texte'
 
 // Liste des entités supprimées avec un chantier — source unique des 2 libellés
 // (confirm de suppression + sous-titre du bouton), pour éviter qu'ils divergent.
@@ -687,6 +689,12 @@ async function signerPhotos(rows) {
 export default function FicheChantier({ params }) {
   const { id } = use(params)
   const [dossier, setDossier] = useState(null)
+  // Pourquoi le dossier est absent. « Chantier introuvable » couvrait trois causes
+  // opposées — dossier inexistant, requête en échec, session expirée — sans jamais dire
+  // laquelle. Le 09/09, ça a coûté une heure de recherche à l'aveugle sur un chantier
+  // qui, en base, était parfaitement lisible par son admin. Un message muet fait perdre
+  // plus de temps qu'une erreur laide.
+  const [erreurChargement, setErreurChargement] = useState(null)
   const [client, setClient] = useState(null)
   const [profile, setProfile] = useState(null)
   const [prenomAdmin, setPrenomAdmin] = useState('—')
@@ -833,7 +841,7 @@ export default function FicheChantier({ params }) {
   const [interventionEnEdition, setInterventionEnEdition] = useState(null)
   const [modalInterventionOuvert, setModalInterventionOuvert] = useState(false)
   const [interventionsDossier, setInterventionsDossier] = useState([])
-  const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client', cible_id: '' })
+  const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', artisans_ids: [], prevenir_client: null, notes: '', titre: '', lieu: 'client', cible_id: '' })
   const [modalCreerIntervOuvert, setModalCreerIntervOuvert] = useState(false)
   const [nouvIntervArtisanId, setNouvIntervArtisanId] = useState(null)
   const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client', cible_id: '' })
@@ -878,7 +886,7 @@ export default function FicheChantier({ params }) {
           referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role),
           client:clients(*),
           devis_artisans(*, artisan:artisans(id, entreprise, metier, partenaire, paiement_direct)),
-          rendez_vous(*, artisan:artisans(id, entreprise)),
+          rendez_vous(*, artisan:artisans!rendez_vous_artisan_id_fkey(id, entreprise)),
           interventions_artisans(*, artisan:artisans(id, entreprise, metier)),
           suivi_financier(*),
           chantier_fiches_techniques(*, fiche:fiches_techniques(id, nom, description))
@@ -896,6 +904,17 @@ export default function FicheChantier({ params }) {
       const profData = profRes.data
       setProfile(profData)
       const d = dossierRes.data
+      if (!d) {
+        // PGRST116 = « aucune ligne » sur un .single() : le dossier n'existe pas, ou la
+        // RLS le masque. Tout autre code est une VRAIE panne (embed ambigu, droits,
+        // réseau) et doit se voir, pas se déguiser en « introuvable ».
+        const err = dossierRes.error
+        setErreurChargement(
+          !err || err.code === 'PGRST116'
+            ? { titre: 'Chantier introuvable', detail: "Il n'existe pas, ou il n'est pas dans votre périmètre." }
+            : { titre: 'Ce chantier n\'a pas pu être chargé', detail: `${err.message}${err.code ? ` (${err.code})` : ''}`, indice: err.hint || null }
+        )
+      }
       setCibles(ciblesRes.data || [])
 
       setDossier(d)
@@ -1126,7 +1145,7 @@ export default function FicheChantier({ params }) {
   }
 
   const chargerRdvsDossier = async () => {
-    const { data } = await supabase.from('rendez_vous').select('*, artisan:artisans(id, entreprise)').eq('dossier_id', id).order('date_heure')
+    const { data } = await supabase.from('rendez_vous').select('*, artisan:artisans!rendez_vous_artisan_id_fkey(id, entreprise), rendez_vous_artisans(artisan_id)').eq('dossier_id', id).order('date_heure')
     setRdvsDossier(data || [])
     const { data: intData } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise, metier)').eq('dossier_id', id).order('date_debut')
     setInterventionsDossier(intData || [])
@@ -1146,17 +1165,26 @@ export default function FicheChantier({ params }) {
   const sauvegarderRdvDossier = async () => {
     const { data, error } = await supabase.from('rendez_vous').insert({
       dossier_id: id, type_rdv: nouveauRdvDossier.type_rdv, date_heure: parisLocalToInstant(nouveauRdvDossier.date_heure),
-      duree_minutes: parseInt(nouveauRdvDossier.duree_minutes), artisan_id: nouveauRdvDossier.artisan_id || null, notes: nouveauRdvDossier.notes || null,
+      duree_minutes: parseInt(nouveauRdvDossier.duree_minutes),
+      // L'artisan principal reste le PREMIER de la liste : la synchro d'agenda et la
+      // poussée Google lisent encore cette colonne, elles ne connaissent pas la liaison.
+      artisan_id: (nouveauRdvDossier.artisans_ids || [])[0] || null,
+      prevenir_client: valeurPrevenirClient(nouveauRdvDossier.prevenir_client, prevenirClientParDefaut(nouveauRdvDossier.type_rdv)),
+      notes: nouveauRdvDossier.notes || null,
       titre: nouveauRdvDossier.type_rdv === 'autres' ? (nouveauRdvDossier.titre || null) : null,
       lieu: nouveauRdvDossier.lieu || 'client',
       agence_id: dossier?.agence_id || null,   // agence du dossier (le trigger fait foi, envoyé par cohérence)
       cible_id: nouveauRdvDossier.cible_id || null,   // calendrier cible (lot 4a) — résolu au push
     }).select('id').single()
     if (!error) {
+      // La liaison s'écrit APRÈS l'insertion : elle a besoin de l'id. Un échec ici ne
+      // remet pas le rendez-vous en cause — il est créé —, on le dit et on continue.
+      const lien = await synchroniserArtisansRdv(supabase, data?.id, nouveauRdvDossier.artisans_ids)
+      if (!lien.ok) setErreur('RDV créé, mais les entreprises conviées n\'ont pas été enregistrées : ' + lien.erreur)
       pushToGoogle('rdv', data?.id)   // non bloquant
       await chargerRdvsDossier()
       setModalRdvOuvert(false)
-      setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', notes: '', titre: '', lieu: 'client', cible_id: '' })
+      setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', artisans_ids: [], prevenir_client: null, notes: '', titre: '', lieu: 'client', cible_id: '' })
       setSucces('RDV créé ✓')
     } else { setErreur('Erreur : ' + error.message) }
   }
@@ -1187,12 +1215,17 @@ export default function FicheChantier({ params }) {
     if (!rdvEnEdition) return
     const { error } = await supabase.from('rendez_vous').update({
       type_rdv: rdvEnEdition.type_rdv, date_heure: parisLocalToInstant(rdvEnEdition.date_heure),
-      duree_minutes: parseInt(rdvEnEdition.duree_minutes), artisan_id: rdvEnEdition.artisan_id || null, notes: rdvEnEdition.notes || null,
+      duree_minutes: parseInt(rdvEnEdition.duree_minutes),
+      artisan_id: (rdvEnEdition.artisans_ids || [])[0] || null,
+      prevenir_client: valeurPrevenirClient(rdvEnEdition.prevenir_client, prevenirClientParDefaut(rdvEnEdition.type_rdv)),
+      notes: rdvEnEdition.notes || null,
       titre: rdvEnEdition.type_rdv === 'autres' ? (rdvEnEdition.titre || null) : null,
       lieu: rdvEnEdition.lieu || 'client',
       cible_id: rdvEnEdition.cible_id || null,   // calendrier cible (lot 4a) — résolu au push
     }).eq('id', rdvEnEdition.id)
     if (error) { setErreur('Erreur : ' + error.message); return }
+    const lien = await synchroniserArtisansRdv(supabase, rdvEnEdition.id, rdvEnEdition.artisans_ids)
+    if (!lien.ok) setErreur('RDV modifié, mais les entreprises conviées n\'ont pas été enregistrées : ' + lien.erreur)
     pushToGoogle('rdv', rdvEnEdition.id)   // non bloquant
     await chargerRdvsDossier()
     setModalRdvOuvert(false)
@@ -3312,7 +3345,23 @@ export default function FicheChantier({ params }) {
   }
 
   if (loading) return <div className="page-loading" />
-  if (!dossier) return <div style={{paddingTop:96,textAlign:'center',color:'var(--ink-500)'}}>Chantier introuvable</div>
+  if (!dossier) return (
+    <div style={{paddingTop:96, textAlign:'center', color:'var(--ink-500)', padding:'96px 24px 24px'}}>
+      <div style={{fontSize:15, fontWeight:600, color:'var(--ink-900)', marginBottom:8}}>
+        {erreurChargement?.titre || 'Chantier introuvable'}
+      </div>
+      <div style={{fontSize:13, maxWidth:520, margin:'0 auto'}}>
+        {erreurChargement?.detail || "Il n'existe pas, ou il n'est pas dans votre périmètre."}
+      </div>
+      {erreurChargement?.indice && (
+        <div style={{fontSize:12, marginTop:8, maxWidth:520, margin:'8px auto 0'}}>{erreurChargement.indice}</div>
+      )}
+      <div style={{fontSize:12, marginTop:16}}>
+        Si le chantier existe bien, déconnectez-vous puis reconnectez-vous : une session
+        expirée produit la même page.
+      </div>
+    </div>
+  )
 
   // En-tête chantier : pas de civilité (ex. un client « SARL OPTICA » ne doit pas
   // s'afficher « Mme SARL OPTICA »). La civilité reste utilisée ailleurs (fiche client…).
@@ -6109,7 +6158,7 @@ export default function FicheChantier({ params }) {
                       </div>
                     </div>
                     <div style={{display:'flex', gap:4}}>
-                      <button onClick={() => { setRdvEnEdition({ ...r, date_heure: instantToParisLocal(r.date_heure) }); setModalRdvOuvert(true) }}
+                      <button onClick={() => { setRdvEnEdition({ ...r, date_heure: instantToParisLocal(r.date_heure), artisans_ids: idsArtisansDepuisRdv(r) }); setModalRdvOuvert(true) }}
                         className="btn btn-ghost" style={{padding:'4px 6px'}} title="Modifier">
                         <EditIcon />
                       </button>
@@ -6238,20 +6287,59 @@ export default function FicheChantier({ params }) {
                   </ModalField>
                 </div>
 
-                {['visite_technique_artisan', 'reception'].includes(form.type_rdv) && (
-                  <ModalField label="Artisan présent">
-                    <select className="input"
-                      value={form.artisan_id || ''}
-                      onChange={e => setForm({ artisan_id: e.target.value })}
-                      style={{height:38, padding:'0 12px', fontSize:13}}>
-                      <option value="">— Choisir —</option>
-                      {(form.type_rdv === 'reception' ? artisansReceptionList : artisans).map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
-                    </select>
-                    {form.type_rdv === 'reception' && artisansReceptionList.length === 0 && (
-                      <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:4}}>Aucun artisan avec devis signé sur ce chantier</div>
-                    )}
-                  </ModalField>
-                )}
+                {/* Entreprises conviées — PLUSIEURS depuis le 09/09. Une réunion de
+                    chantier à deux entreprises devait pouvoir les prévenir toutes les
+                    deux ; avec un sélecteur unique, aucune ne recevait de rappel.
+                    Affiché sur TOUS les types : une réunion « Autre » convie souvent
+                    des artisans sans que le client soit là. */}
+                <ModalField label="Entreprises conviées">
+                  {(() => {
+                    const liste = form.type_rdv === 'reception' ? artisansReceptionList : artisans
+                    const choisis = form.artisans_ids || []
+                    const basculer = (aid) => setForm(f => {
+                      const actuels = f.artisans_ids || []
+                      return { artisans_ids: actuels.includes(aid) ? actuels.filter(x => x !== aid) : [...actuels, aid] }
+                    })
+                    if (liste.length === 0) {
+                      return <div style={{fontSize:11.5, color:'var(--ink-500)'}}>
+                        {form.type_rdv === 'reception' ? 'Aucun artisan avec devis signé sur ce chantier' : 'Aucun artisan sur ce chantier'}
+                      </div>
+                    }
+                    return (
+                      <div style={{display:'flex', flexDirection:'column', gap:6, maxHeight:150, overflowY:'auto'}}>
+                        {liste.map(a => (
+                          <label key={a.id} style={{display:'flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer'}}>
+                            <input type="checkbox" checked={choisis.includes(a.id)} onChange={() => basculer(a.id)} />
+                            <span>{a.entreprise}</span>
+                          </label>
+                        ))}
+                        {choisis.length > 1 && (
+                          <div style={{fontSize:11.5, color:'var(--ink-500)'}}>
+                            Chacune recevra son rappel la veille.
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+                </ModalField>
+
+                {/* Prévenir le client — le TYPE ne donne qu'un défaut. « Des fois on peut
+                    l'attendre » : une visite d'artisan peut se faire en sa présence, un
+                    suivi aussi. Tant que la case n'est pas touchée, la ligne reste à NULL
+                    en base et suit la règle métier. */}
+                <ModalField label="Rappel au client">
+                  {(() => {
+                    const defaut = prevenirClientParDefaut(form.type_rdv)
+                    const coche = form.prevenir_client ?? defaut
+                    return (
+                      <label style={{display:'flex', alignItems:'center', gap:8, fontSize:13, cursor:'pointer'}}>
+                        <input type="checkbox" checked={coche}
+                          onChange={e => setForm({ prevenir_client: e.target.checked })} />
+                        <span>Prévenir le client la veille{coche === defaut ? ' (défaut pour ce type)' : ''}</span>
+                      </label>
+                    )
+                  })()}
+                </ModalField>
 
                 <ModalField label="Notes">
                   <textarea className="input"
