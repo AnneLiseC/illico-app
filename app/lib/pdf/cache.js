@@ -51,6 +51,24 @@ import crypto from 'crypto'
 export const BUCKET_CACHE = 'documents'
 export const PREFIXE_CACHE = 'cache'
 
+// ⚠️ VERSION DU GÉNÉRATEUR — À INCRÉMENTER À CHAQUE FOIS QUE LA MISE EN PAGE CHANGE.
+//
+// Le trou trouvé le 09/09 : l'empreinte ne portait QUE les données. Une correction de
+// mise en page déployée à 11 h ne changeait donc aucune empreinte, et les documents déjà
+// fabriqués le matin continuaient d'être servis tels quels jusqu'au lendemain — la date
+// d'édition étant la seule chose qui les faisait expirer.
+//
+// Concrètement : le dossier 2026-CT-044 a été fabriqué à 09 h 49, la correction déployée
+// après, et le dossier régénéré a resservi la version d'avant. Le correctif marchait ;
+// il n'avait jamais été exécuté. Sans le présent verrou, ça se reproduirait à CHAQUE
+// correction de PDF — y compris chez un franchisé, qui n'aurait aucun moyen de le voir.
+//
+// Historique :
+//   1 — état d'origine
+//   2 — 09/09 : stade déduit des devis, Kbis/RIB de la franchise en présentation,
+//       page « Suivi des paiements » conditionnelle, nettoyage du résumé
+export const VERSION_GENERATEUR = 2
+
 // Sérialisation STABLE : deux objets équivalents doivent produire la même chaîne, quel
 // que soit l'ordre des clés renvoyé par PostgREST. Sans ça, l'empreinte changerait au
 // hasard et le cache ne servirait jamais à rien.
