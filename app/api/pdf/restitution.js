@@ -404,7 +404,7 @@ async function makeCoverPage({ nomRef, telRef, agence }) {
 }
 
 // ── Génère les pages de contenu ──
-async function buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo, resumeGenere, anomalies = null }) {
+async function buildContentPDF({ dossier, devis, photos, interventions, factures, suiviFinancier, logo, resumeGenere, anomalies = null, afficherSuivi = true }) {
   const client = dossier.client
   const ref = dossier.referente
   const nomClient = formatNomClient(client, { civilite: true, withRepresentant: true })
@@ -527,13 +527,18 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
   )
 
   // ── Suivi des paiements (page séparée) ──
-  pages.push(
-    React.createElement(Page, { key: 'suivi-paiements', size: 'A4', style: CS.page },
-      React.createElement(Hdr, { title: 'Suivi des paiements', sub: `${dossier.reference} — ${nomClient}`, logo }),
-      buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier, anomalies }),
-      React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
+  // ⚠️ `afficherSuivi` DOIT valoir la même chose ici et dans buildDossierSuivi : cette
+  // page est copiée par index. En pousser une que l'appelant ne consomme pas décalerait
+  // toutes les suivantes — les photos se retrouveraient à la place du planning.
+  if (afficherSuivi) {
+    pages.push(
+      React.createElement(Page, { key: 'suivi-paiements', size: 'A4', style: CS.page },
+        React.createElement(Hdr, { title: 'Suivi des paiements', sub: `${dossier.reference} — ${nomClient}`, logo }),
+        buildSuiviPaiementsSection({ devisList: devisAcceptes, factures, suiviFinancier, dossier, anomalies }),
+        React.createElement(Ftr, { ref: dossier.reference, agenceNom: dossier.agence?.nom }),
+      )
     )
-  )
+  }
 
   // ── Planning (AMO) ──
   if (isAMO && (interventions || []).length > 0) {
@@ -618,6 +623,8 @@ async function generateResumeProjet({ comptesRendus, description, devisNotes }) 
   const prompt = `Tu es un assistant pour illiCO travaux, une société de courtage en travaux et assistance à maîtrise d'ouvrage dans le bâtiment.
   À partir des éléments ci-dessous, rédige un résumé professionnel et synthétique du projet de rénovation. Les comptes rendus sont donnés dans l'ordre chronologique : appuie-toi sur l'ensemble du déroulé, et non sur la seule première visite. Le résumé doit être clair, fluide, en français, sans bullet points, en 3 à 5 phrases maximum. Ne mentionne pas les artisans ni les montants. Parle du projet du point de vue du client.
 
+CONTRAINTE DE FORME : réponds UNIQUEMENT par le texte du résumé. Pas de titre, pas de markdown, pas de dièse, pas d'astérisque, pas de mention du numéro de dossier — ce texte est inséré dans un document qui porte déjà son titre.
+
 ${parts.join('\n\n')}
 
 Résumé :`
@@ -638,10 +645,36 @@ Résumé :`
     })
     if (!response.ok) return null
     const data = await response.json()
-    return data.content?.[0]?.text?.trim() || null
+    return nettoyerResume(data.content?.[0]?.text) || null
   } catch {
     return null
   }
+}
+
+// Le résumé est inséré tel quel dans un PDF, qui ne sait pas lire le markdown.
+//
+// CONSTATÉ LE 09/09 sur le dossier 2026-CT-044 : sous le titre « Résumé du projet »
+// s'affichait, en toutes lettres, « # Résumé du projet de rénovation - Dossier
+// 2026-CT-044 ». Le modèle avait ajouté un titre en markdown ; le dièse et le titre
+// étaient imprimés littéralement, en double du titre de section juste au-dessus.
+//
+// Deux garde-fous plutôt qu'un : la consigne demande de ne pas mettre de titre, et ce
+// nettoyage retire ce qui passerait quand même. Une consigne n'est pas une garantie.
+export function nettoyerResume(texte) {
+  if (!texte) return null
+  const nettoye = String(texte)
+    .split('\n')
+    // Une ligne de titre markdown (« # … ») n'a rien à faire ici : la section porte
+    // déjà son titre.
+    .filter(l => !/^\s{0,3}#{1,6}\s/.test(l))
+    .join('\n')
+    .replace(/\*\*(.+?)\*\*/g, '$1')     // gras
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/(^|[^\w*])\*([^*\n]+?)\*(?![\w*])/g, '$1$2')   // italique
+    .replace(/^\s*[-–—]\s+/gm, '')       // puces résiduelles
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  return nettoye || null
 }
 
 // ── Télécharger un PDF depuis Supabase Storage ──
@@ -809,9 +842,35 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   // mettre un document incomplet en cache, et pour prévenir l'utilisateur.
   const anomalies = []
   const statut = dossier.statut || 'en_cours_chantier'
-  const isPreSignature = ['a_contacter', 'a_relancer', 'devis_en_attente', 'devis_a_modifier'].includes(statut)
   const isTermine = statut === 'termine'
   const isAMO = dossier.typologie === 'amo'
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // LE STADE SE DÉDUIT DES DEVIS — correction du 09/09
+  //
+  // Ce test lisait `dossier.statut` et le comparait à
+  // ['a_contacter','a_relancer','devis_en_attente','devis_a_modifier'].
+  // Or la contrainte `dossiers_statut_manuel_check` n'autorise QUE trois valeurs dans
+  // cette colonne : NULL, 'annule' et 'termine'. Vérifié en base le 09/09 : 33 dossiers
+  // à NULL, 8 annulés, 9 terminés — et pas une seule des quatre valeurs testées.
+  //
+  // `isPreSignature` était donc TOUJOURS faux, et tout ce qui en dépendait n'a jamais
+  // fonctionné : `buildR3ContentPDF`, cent vingt lignes écrites pour la présentation des
+  // devis, n'a jamais été exécuté une seule fois en production.
+  //
+  // Ce que ça produisait, constaté sur le dossier 2026-CT-044 (trois devis reçus,
+  // 52 585 € au total, aucun signé) :
+  //   · le récapitulatif financier n'affichait QUE les frais de consultation, parce
+  //     qu'il se limitait aux devis acceptés — les 52 585 € étaient invisibles ;
+  //   · le suivi des paiements était joint alors que rien n'est signé ;
+  //   · le séparateur « KBIS - Assurances » était suivi directement du RIB de la
+  //     franchise, sans un seul document d'artisan.
+  //
+  // La règle est désormais celle du métier, dite par Anne-Lise : tant qu'aucun devis
+  // n'est signé, on est en présentation de devis. Un dossier terminé reste post-signature
+  // quoi qu'il arrive.
+  const aDevisSigne = (devis || []).some(d => d.statut === 'accepte')
+  const isPreSignature = !isTermine && !aDevisSigne
 
   // Filtrage devis selon le stade
   const devisR3 = (devis || []).filter(d => d.statut === 'recu' || d.statut === 'accepte')
@@ -820,7 +879,10 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
 
   const photosMaquette = (photos || []).filter(p => p.categorie === 'maquette')
   const hasFichesTech = (fichesTech || []).length > 0
-  const hasQualif = devisAcceptes.some(d => d.artisan?.qualification_url)
+  // Qualifications (Qualibat, RGE) : même raisonnement que les Kbis et les décennales.
+  // Le client choisit une entreprise au moment où on lui présente les devis — c'est là
+  // qu'il doit pouvoir vérifier ses qualifications, pas après avoir signé. (09/09)
+  const hasQualif = devisActifs.some(d => d.artisan?.qualification_url)
 
   // Factures honoraires (CTP→client) : à embarquer dans le bloc Factures, pas
   // dans le bloc générique « autres documents ». categorie='facture_honoraire'.
@@ -863,9 +925,21 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   })
 
   // Générer les pages de contenu (descriptif + récap)
+  // ── Faut-il une page « Suivi des paiements » ? ──
+  //
+  // « Un suivi financier pour juste les frais de consultation, c'est chiant » (09/09) —
+  // et c'est juste : une page entière, avec son titre et son en-tête, pour une seule
+  // ligne de 150 € déjà réglée, n'apprend rien au client et allonge le dossier.
+  //
+  // Elle n'apparaît donc que s'il y a autre chose à suivre : une échéance qui n'est pas
+  // les frais, une facture d'artisan, ou un devis signé — donc des acomptes à venir.
+  const suiviHorsFrais = (suiviFinancier || []).some(s => s?.type_echeance !== 'frais_consultation')
+  const afficherSuivi = !isPreSignature
+    && (suiviHorsFrais || (factures || []).length > 0 || devisAcceptes.length > 0)
+
   const contentBuffer = isPreSignature
     ? await buildR3ContentPDF({ dossier, devisR3: devisActifs, logo, resumeGenere })
-    : await buildContentPDF({ dossier, devis: devisActifs, photos, interventions, factures, suiviFinancier, logo, resumeGenere, anomalies })
+    : await buildContentPDF({ dossier, devis: devisActifs, photos, interventions, factures, suiviFinancier, logo, resumeGenere, anomalies, afficherSuivi })
   const contentPdf = await PDFDocument.load(contentBuffer)
 
   const final = await PDFDocument.create()
@@ -933,7 +1007,7 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   // ── Récapitulatif financier ──
   await addSep(sepRecap)
   await addContent()  // page récap financier
-  if (!isPreSignature) {
+  if (afficherSuivi) {
     await addContent()  // page suivi des paiements
   }
 
@@ -984,10 +1058,10 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
 
   // ── Qualifications (si présentes et stade post-signature) ──
   // Dédoublonnage : une qualification par artisan, même s'il est sur plusieurs lots.
-  if (!isPreSignature && hasQualif) {
+  if (hasQualif) {
     await addSep(sepQualification)
     const vusQualif = new Set()
-    for (const d of devisAcceptes) {
+    for (const d of devisActifs) {
       const urlQ = d.artisan?.qualification_url
       if (urlQ && !vusQualif.has(urlQ)) {
         vusQualif.add(urlQ)
@@ -1034,39 +1108,54 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     }
   }
 
-  // ── KBIS + Assurances (post-signature) ──
-  // Dédoublonnage : un même artisan présent sur plusieurs lots/devis ne voit son
-  // KBIS et sa décennale inclus qu'UNE seule fois (dédoublonnage par chemin de fichier).
-  if (!isPreSignature) {
-    await addSep(sepKbis)
-    const vusDocs = new Set()
-    for (const d of devisAcceptes) {
-      const art = d.artisan || {}
-      if (art.kbis_url && !vusDocs.has(art.kbis_url)) {
-        vusDocs.add(art.kbis_url)
-        const libelle = `Kbis ${art.entreprise || 'artisan'}`
-        const buf = await downloadPDF(supabaseAdmin, 'documents', art.kbis_url, anomalies, libelle)
-        await addExternalPDF(buf, libelle)
-      }
-      if (art.decennale_url && !vusDocs.has(art.decennale_url)) {
-        vusDocs.add(art.decennale_url)
-        const libelle = `attestation décennale ${art.entreprise || 'artisan'}`
-        const buf = await downloadPDF(supabaseAdmin, 'documents', art.decennale_url, anomalies, libelle)
-        await addExternalPDF(buf, libelle)
-      }
+  // ── KBIS + Assurances (artisans ET franchise) — À TOUS LES STADES ──
+  //
+  // CHANGEMENT DU 09/09 (demande d'Anne-Lise). Cette section était réservée à
+  // l'après-signature. Or c'est au moment de PRÉSENTER les devis que le client en a le
+  // plus besoin : on lui demande de choisir une entreprise, il doit pouvoir vérifier
+  // qu'elle est immatriculée et assurée avant de signer, pas après. Un dossier de
+  // présentation sans Kbis ni décennale revient à faire choisir à l'aveugle.
+  //
+  // Le périmètre suit `devisActifs`, c'est-à-dire EXACTEMENT les devis présents dans ce
+  // document : avant signature les devis reçus et acceptés, après signature les seuls
+  // acceptés. Une entreprise dont le devis a été refusé n'a donc pas à y figurer.
+  //
+  // Dédoublonnage : un même artisan présent sur plusieurs lots ne voit son Kbis et sa
+  // décennale inclus qu'UNE fois (par chemin de fichier).
+  //
+  // Le séparateur n'est posé QUE s'il y a au moins une pièce à mettre derrière. Avant,
+  // il était ajouté d'office : un dossier dont aucun artisan n'avait déposé ses documents
+  // se terminait par une page « Kbis et assurances » suivie de rien.
+  const docsArtisans = []
+  const vusDocs = new Set()
+  for (const d of devisActifs) {
+    const art = d.artisan || {}
+    if (art.kbis_url && !vusDocs.has(art.kbis_url)) {
+      vusDocs.add(art.kbis_url)
+      docsArtisans.push({ url: art.kbis_url, libelle: `Kbis ${art.entreprise || 'artisan'}` })
+    }
+    if (art.decennale_url && !vusDocs.has(art.decennale_url)) {
+      vusDocs.add(art.decennale_url)
+      docsArtisans.push({ url: art.decennale_url, libelle: `attestation décennale ${art.entreprise || 'artisan'}` })
     }
   }
+  // Les documents de la FRANCHISE ferment la même section : c'est la même question pour
+  // le client — « à qui ai-je affaire, et qui est assuré ». Ils rejoignent donc la même
+  // liste, et le séparateur est posé une seule fois, pour l'ensemble.
+  //
+  // MERAD (courtage à distance) : pas de Kbis CTP dans la restitution.
+  if (dossier.typologie !== 'merad' && adminFranchise?.kbis_url) {
+    docsArtisans.push({ url: adminFranchise.kbis_url, libelle: 'Kbis de la franchise' })
+  }
+  if (adminFranchise?.rib_url) {
+    docsArtisans.push({ url: adminFranchise.rib_url, libelle: 'RIB de la franchise' })
+  }
 
-  // ── KBIS + RIB du franchisé (admin de la société) — post-signature, sans séparateur. Non bloquant. ──
-  // MERAD (courtage à distance) : pas de KBIS CTP dans la restitution.
-  if (!isPreSignature) {
-    if (dossier.typologie !== 'merad' && adminFranchise?.kbis_url) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', adminFranchise.kbis_url, anomalies, 'Kbis de la franchise')
-      await addExternalPDF(buf, 'Kbis de la franchise')
-    }
-    if (adminFranchise?.rib_url) {
-      const buf = await downloadPDF(supabaseAdmin, 'documents', adminFranchise.rib_url, anomalies, 'RIB de la franchise')
-      await addExternalPDF(buf, 'RIB de la franchise')
+  if (docsArtisans.length > 0) {
+    await addSep(sepKbis)
+    for (const doc of docsArtisans) {
+      const buf = await downloadPDF(supabaseAdmin, 'documents', doc.url, anomalies, doc.libelle)
+      await addExternalPDF(buf, doc.libelle)
     }
   }
 
