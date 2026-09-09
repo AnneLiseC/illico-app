@@ -36,7 +36,7 @@ import { requireUser } from '../../lib/api-auth'
 import RecapHonoraires from '../../lib/pdf/RecapHonoraires.js'
 import { stripEmojiPdf } from '../../lib/pdf/stripEmoji.js'
 import { buildCRDocument } from '../../lib/pdf/crDocument.js' // extrait ici (réutilisé par /api/drive/push-cr)
-import { empreinteDe, lireCache, ecrireCache, jourDEdition } from '../../lib/pdf/cache.js'
+import { empreinteDe, lireCache, ecrireCache, jourDEdition, VERSION_GENERATEUR } from '../../lib/pdf/cache.js'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -360,7 +360,17 @@ export async function POST(request) {
       // dans l'empreinte, un document servi trois semaines plus tard porte la date de sa
       // première fabrication — et sur une pièce remise au client, cette mention fait foi.
       // Ajoutée ici, en un seul endroit, pour les quatre types de documents. (R13)
-      const empreinte = empreinteDe({ ...donnees, jourDEdition: jourDEdition() })
+      //
+      // `VERSION_GENERATEUR` ferme le trou du 09/09 : sans elle, une correction de mise
+      // en page ne changeait AUCUNE empreinte, et les documents déjà fabriqués dans la
+      // journée étaient resservis dans leur ancienne version. Le correctif semblait ne
+      // pas marcher, alors qu'il n'avait pas été exécuté. Incrémenter la constante suffit
+      // désormais à périmer tous les documents d'un coup.
+      const empreinte = empreinteDe({
+        ...donnees,
+        jourDEdition: jourDEdition(),
+        versionGenerateur: VERSION_GENERATEUR,
+      })
       if (!regenerer) {
         const enCache = await lireCache(db, { dossierId, type, cle, empreinte })
         if (enCache) { servisDuCache = true; return enCache }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { empreinteDe, cheminCache, jourDEdition } from '../pdf/cache.js'
+import { empreinteDe, cheminCache, jourDEdition, VERSION_GENERATEUR } from '../pdf/cache.js'
 
 // L'empreinte est le cœur du cache : elle décide si un document est refait ou servi tel
 // quel. Deux exigences opposées, et les deux comptent autant :
@@ -105,5 +105,38 @@ describe('jourDEdition', () => {
   it('change d\'un jour sur l\'autre — le document se refait', () => {
     expect(jourDEdition(new Date('2026-09-03T23:59:00Z')))
       .not.toBe(jourDEdition(new Date('2026-09-04T00:01:00Z')))
+  })
+})
+
+// ── La version du générateur ───────────────────────────────────────────────
+//
+// Le trou du 09/09, et le seul qui rendait un correctif INVISIBLE. L'empreinte ne
+// portait que les données : corriger la mise en page ne périmait rien, et les documents
+// fabriqués plus tôt dans la journée continuaient de sortir dans leur ancienne version.
+// Le dossier 2026-CT-044, refait après le déploiement, a resservi celui de 09 h 49.
+//
+// Le risque n'est pas de perdre une minute à régénérer : c'est de croire qu'un correctif
+// ne marche pas, ou pire, de laisser un franchisé remettre à son client un document dont
+// on a corrigé le défaut le matin même.
+describe('version du générateur dans l\'empreinte', () => {
+  const donnees = { dossier: { id: 'x' }, devis: [{ id: 'd1' }] }
+  const empreinteAvec = (v) => empreinteDe({ ...donnees, jourDEdition: '2026-09-09', versionGenerateur: v })
+
+  it('périme TOUS les documents quand la mise en page change', () => {
+    expect(empreinteAvec(1)).not.toBe(empreinteAvec(2))
+  })
+
+  it('ne périme rien tant que la version ne bouge pas — sinon le cache ne sert à rien', () => {
+    expect(empreinteAvec(2)).toBe(empreinteAvec(2))
+  })
+
+  it('est bien une valeur, pas un oubli : une empreinte sans version diffère', () => {
+    // La régression à empêcher : retirer la clé de l'appel « parce que ça marche pareil ».
+    expect(empreinteDe({ ...donnees, jourDEdition: '2026-09-09' })).not.toBe(empreinteAvec(2))
+  })
+
+  it('la constante existe et est un entier — elle sert de compteur, pas de libellé', () => {
+    expect(Number.isInteger(VERSION_GENERATEUR)).toBe(true)
+    expect(VERSION_GENERATEUR).toBeGreaterThanOrEqual(2)
   })
 })
