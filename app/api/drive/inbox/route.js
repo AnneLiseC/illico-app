@@ -1,7 +1,12 @@
 // app/api/drive/inbox/route.js
-// POST { inbox_id, action:'ignore' } — écarte un fichier détecté de la liste « à rattacher »
-// (statut='ignore'). Le fichier reste dans OneDrive ; on arrête juste de le proposer.
-// Écriture via service role (drive_inbox n'a qu'une policy de lecture), scoping par owner.
+// POST { inbox_id | inbox_ids[], action:'ignore' } — écarte des fichiers détectés de la liste
+// « à rattacher » (statut='ignore'). Le fichier reste dans le Drive ; on arrête juste de le
+// proposer. Écriture via service role (drive_inbox n'a qu'une policy de lecture), scoping par owner.
+//
+// LE LOT N'EST PAS UN CONFORT (10/09). Une liste de 1294 lignes ne se traite pas à raison d'un
+// clic par fichier : elle ne se traite pas du tout, et elle finit par être ignorée en bloc —
+// y compris les quelques fichiers qui, eux, méritaient un geste. Un dossier entier écarté
+// d'un seul geste, c'est ce qui rend la liste à nouveau lisible, donc utile.
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
@@ -19,21 +24,33 @@ export async function POST(request) {
 
   let body
   try { body = await request.json() } catch { body = {} }
-  if (!body.inbox_id || body.action !== 'ignore') {
+  // Un id seul ou une liste : la route accepte les deux pour ne pas casser l'appel unitaire.
+  const ids = Array.isArray(body.inbox_ids) ? body.inbox_ids.filter(Boolean) : (body.inbox_id ? [body.inbox_id] : [])
+  if (ids.length === 0 || ids.length > 500 || body.action !== 'ignore') {
     return NextResponse.json({ error: 'Paramètres invalides' }, { status: 400 })
   }
 
   const db = admin()
-  const { data: inbox } = await db.from('drive_inbox').select('id, user_id').eq('id', body.inbox_id).maybeSingle()
-  if (!inbox) return NextResponse.json({ ok: true, nothing: true })
-  if (inbox.user_id !== auth.user.id) {
-    const { data: prop } = await db.from('profiles')
-      .select('societe_id, agence_id').eq('id', inbox.user_id).maybeSingle()
-    const memeTenant = auth.profile?.role === 'admin'
-      ? prop?.societe_id === auth.profile.societe_id
-      : prop?.agence_id === auth.profile?.agence_id
-    if (!memeTenant) return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+  const { data: lignes } = await db.from('drive_inbox').select('id, user_id').in('id', ids)
+  if (!lignes || lignes.length === 0) return NextResponse.json({ ok: true, nothing: true })
+
+  // Le contrôle d'accès porte sur CHAQUE ligne, pas sur la première : un lot est un endroit
+  // commode pour glisser l'id d'un autre tenant au milieu d'ids légitimes.
+  const proprietaires = [...new Set(lignes.map(l => l.user_id))].filter(u => u !== auth.user.id)
+  if (proprietaires.length > 0) {
+    const { data: profs } = await db.from('profiles').select('id, societe_id, agence_id').in('id', proprietaires)
+    const parId = new Map((profs || []).map(p => [p.id, p]))
+    const autorise = (userId) => {
+      if (userId === auth.user.id) return true
+      const prop = parId.get(userId)
+      return auth.profile?.role === 'admin'
+        ? prop?.societe_id === auth.profile.societe_id
+        : prop?.agence_id === auth.profile?.agence_id
+    }
+    if (lignes.some(l => !autorise(l.user_id))) return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
   }
-  await db.from('drive_inbox').update({ statut: 'ignore' }).eq('id', inbox.id)
-  return NextResponse.json({ ok: true })
+
+  const { error } = await db.from('drive_inbox').update({ statut: 'ignore' }).in('id', lignes.map(l => l.id))
+  if (error) return NextResponse.json({ error: 'Mise à jour impossible' }, { status: 500 })
+  return NextResponse.json({ ok: true, ignores: lignes.length })
 }

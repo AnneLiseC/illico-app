@@ -5,9 +5,17 @@
 // côté Google). Interface commune → une seule boucle.
 //
 // Les FICHIERS nouvellement apparus qui NE viennent PAS de l'app (item_id inconnu de doc_index
-// → invariant n°1 anti-écho) sont listés dans drive_inbox (« à rattacher »). AUCUN rattachement
-// automatique ici. 1re passe d'un compte = init (token/startPageToken mémorisé sans importer
-// l'existant → invariant n°2). Curseur persisté dans comptes_oauth.drive_delta_link.
+// → invariant n°1 anti-écho) sont soit rattachés automatiquement quand le chemin les désigne
+// sans ambiguïté, soit listés dans drive_inbox (« à rattacher »). 1re passe d'un compte = init
+// (token/startPageToken mémorisé sans importer l'existant → invariant n°2). Curseur persisté
+// dans comptes_oauth.drive_delta_link.
+//
+// ⚠️ L'INIT NE PROTÈGE QUE LA PREMIÈRE PASSE. Ne pas énumérer l'existant évite l'avalanche au
+// branchement, mais un fichier ancien DÉPLACÉ redevient un « changement » pour Graph. Le
+// 10/09, un rangement du OneDrive a donc fait remonter tout le back-catalogue d'un coup :
+// 1158 lignes en un passage. D'où les deux garde-fous ajoutés ce jour-là — le PÉRIMÈTRE
+// (lib/drive/rattachement.js : ce qu'aucun clic humain ne peut finir n'entre pas dans la
+// liste) et le BUDGET (ci-dessous : on importe ce qu'on peut, on reprend au passage suivant).
 //
 // Auth : Bearer CRON_SECRET. (Non planifié dans vercel.json : activer la fréquence quand prêt.)
 
@@ -18,9 +26,21 @@ import { driveModule } from '../../../lib/drive/dispatch'
 import { deciderRattachement } from '../../../lib/drive/rattachement'
 import { suffixeCollisionDossier } from '../../../lib/drive/collisions'
 import { nettoyerSegment } from '../../../lib/drive/taxonomie'
-import { importerInbox, estEchoNom } from '../../../lib/drive/import-inbox'
+import { importerInbox, importerInboxPhoto, estEchoNom } from '../../../lib/drive/import-inbox'
 
 const DRIVE_FOURNISSEURS = ['microsoft', 'googledrive']
+
+// Chaque import télécharge un fichier puis le ré-uploade : ~1 à 3 s pièce, davantage pour une
+// photo de 5 Mo. Un rangement du Drive peut en présenter plusieurs centaines d'un coup (le
+// 10/09 : 1158 fichiers en un passage). Sans budget, la fonction meurt en plein import et
+// laisse des lignes verrouillées le temps du relâchement.
+//
+// On s'arrête donc net à BUDGET_MS et on reprend au passage suivant — le cron tourne toutes
+// les 15 minutes, un rattrapage de 300 fichiers se fait tout seul en une heure ou deux, sans
+// que personne n'ait à surveiller quoi que ce soit. La détection, elle, n'est jamais
+// interrompue : ce qui n'a pas été importé reste 'a_rattacher' et sera repris tel quel.
+export const maxDuration = 60
+const BUDGET_MS = 50_000
 
 let _admin
 function admin() {
@@ -33,6 +53,7 @@ export async function GET(req) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const db = admin()
+  const debut = Date.now()
 
   const { data: comptes } = await db.from('comptes_oauth')
     .select('id, user_id, fournisseur, access_token, refresh_token, expiry_date, drive_root_drive_id, drive_root_id, drive_delta_link')
@@ -41,7 +62,7 @@ export async function GET(req) {
 
   const rapport = []
   for (const compte of (comptes || [])) {
-    const r = { user_id: compte.user_id, fournisseur: compte.fournisseur, detectes: 0, rattaches: 0, echos: 0, rattach_echecs: 0 }
+    const r = { user_id: compte.user_id, fournisseur: compte.fournisseur, detectes: 0, rattaches: 0, photos: 0, hors_perimetre: 0, echos: 0, rattach_echecs: 0 }
     const mod = driveModule(compte.fournisseur)
     if (!mod) { r.erreur = 'fournisseur'; rapport.push(r); continue }
 
@@ -102,9 +123,19 @@ export async function GET(req) {
         name: f.name || null, parent_path: f.parentPath || null, web_url: f.webUrl || null,
       }
 
-      const decision = deciderRattachement(f.parentPath || '', candidats, artisansParNom)
+      const decision = deciderRattachement(f.parentPath || '', candidats, artisansParNom, f.name)
 
-      if (decision.dossier_id) {
+      // HORS PÉRIMÈTRE : rien à décider, jamais. Fichier hors 01_CLIENTS, dossier de travail
+      // manuel (7. Echanges), devis (table à part), brouillon de rangement (_A_TRIER…).
+      // On ne crée pas de ligne, et on retire celle qui traînerait d'avant ce filtre —
+      // c'est ce qui vide la liste des 655 lignes que personne ne pouvait traiter.
+      if (decision.aLister === false) {
+        if (dejaInbox) await db.from('drive_inbox').update({ statut: 'ignore' }).eq('id', dejaInbox.id)
+        r.hors_perimetre++
+        continue
+      }
+
+      if (decision.destination) {
         // Garde-fou nom-de-fichier : écho d'un doc déjà en base pour ce dossier ? (pushMirror
         // recrée l'item quand le chemin change → nouvel item_id.) Si oui → ignore, pas de doublon.
         const { data: memes } = await db.from('doc_index').select('path').eq('dossier_id', decision.dossier_id)
@@ -114,19 +145,34 @@ export async function GET(req) {
           r.echos++
           continue
         }
+
+        // Budget épuisé : on LAISSE le fichier en 'a_rattacher' et on reprendra au passage
+        // suivant. Détecter est instantané, importer ne l'est pas — mieux vaut une liste
+        // qui se vide en deux heures qu'une fonction tuée en plein téléchargement.
+        if (Date.now() - debut > BUDGET_MS) {
+          if (!dejaInbox) await db.from('drive_inbox').insert({ ...baseRow, statut: 'a_rattacher' })
+          r.reportes = (r.reportes || 0) + 1
+          continue
+        }
+
         // Ligne cible : réutilise la ligne a_rattacher existante, sinon en insère une.
         let ligne = dejaInbox
         if (!ligne) {
           const { data: ins } = await db.from('drive_inbox').insert({ ...baseRow, statut: 'a_rattacher' }).select('id').single()
           ligne = ins
         }
-        const res = await importerInbox(db, {
-          mod, token,
-          inbox: { id: ligne.id, drive_id: compte.drive_root_drive_id, item_id: f.itemId, name: f.name || null, user_id: compte.user_id, parent_path: f.parentPath || null },
-          fournisseur: compte.fournisseur,
-          dossierId: decision.dossier_id, categorie: decision.categorie, artisanId: decision.artisan_id, auto: true,
-        })
-        if (res.ok) r.rattaches++
+        const inbox = {
+          id: ligne.id, drive_id: compte.drive_root_drive_id, item_id: f.itemId,
+          name: f.name || null, user_id: compte.user_id, parent_path: f.parentPath || null,
+        }
+        const commun = { mod, token, inbox, fournisseur: compte.fournisseur, dossierId: decision.dossier_id, auto: true }
+
+        const res = decision.destination === 'photos'
+          ? await importerInboxPhoto(db, { ...commun, categoriePhoto: decision.categorie_photo })
+          : await importerInbox(db, { ...commun, categorie: decision.categorie, artisanId: decision.artisan_id })
+
+        if (res.ok) { r.rattaches++; if (decision.destination === 'photos') r.photos++ }
+        else if (res.skipped) r.echos++
         else r.rattach_echecs++
         continue
       }
@@ -142,7 +188,8 @@ export async function GET(req) {
 
   const enErreur = rapport.some(r => r.erreur)
   const rattaches_total = rapport.reduce((s, r) => s + (r.rattaches || 0), 0)
+  const reportes_total = rapport.reduce((s, r) => s + (r.reportes || 0), 0)
   const raisons_total = {}
   for (const r of rapport) for (const [k, v] of Object.entries(r.raisons || {})) raisons_total[k] = (raisons_total[k] || 0) + v
-  return NextResponse.json({ ok: !enErreur, comptes: rapport.length, rattaches_total, raisons_total, rapport }, { status: enErreur ? 500 : 200 })
+  return NextResponse.json({ ok: !enErreur, comptes: rapport.length, rattaches_total, reportes_total, raisons_total, rapport }, { status: enErreur ? 500 : 200 })
 }
