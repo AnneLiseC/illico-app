@@ -27,7 +27,14 @@ export default function Parametres() {
   const { profile: authProfile, initialized, fetchProfile, agenceActive, agences: agencesCtx, refreshAgences } = useAuth()
   const [profile, setProfile]             = useState(null)
 
+  const [loading, setLoading]             = useState(true)
+  const [agentes, setAgentes]             = useState([])
+  const [societe, setSociete]             = useState(null)
+
   // ── Grille de commission apporteur (par société) ──────────────────────────
+  // ⚠️ DOIT rester APRÈS la déclaration de `societe` : le useMemo ci-dessous la lit, et
+  // un `const` n'existe pas avant sa ligne. Placé plus haut, le build de production
+  // échoue sur « Cannot access 'H' before initialization » — constaté le 10/09.
   // Saisie en TEXTE, une ligne « seuil : taux ». Un tableau de champs aurait imposé
   // des boutons d'ajout et de suppression pour trois lignes qu'on modifie deux fois
   // par an. La validation est dans lib/apporteur.js, testée, et nomme la ligne fautive.
@@ -38,9 +45,6 @@ export default function Parametres() {
   useEffect(() => { setGrilleTexte(grilleInitiale) }, [grilleInitiale])
   const grilleModifiee = grilleTexte !== grilleInitiale
 
-  const [loading, setLoading]             = useState(true)
-  const [agentes, setAgentes]             = useState([])
-  const [societe, setSociete]             = useState(null)
   const [agences, setAgences]             = useState([])
   const [objectifs, setObjectifs]         = useState([])
   const [objAgenceVal, setObjAgenceVal]   = useState('')
