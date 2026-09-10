@@ -34,6 +34,7 @@ import { buildInviteMailto } from '../../lib/inviteMail'
 import { calculerExpiration } from '../../lib/expiration'
 import { synchroniserArtisansRdv, valeurPrevenirClient, idsArtisansDepuisRdv } from '../../lib/rdvArtisans'
 import { prevenirClientParDefaut } from '../../lib/relances-texte'
+import { tauxSelonGrille, expliquerGrille } from '../../lib/apporteur'
 
 // Liste des entités supprimées avec un chantier — source unique des 2 libellés
 // (confirm de suppression + sous-titre du bouton), pour éviter qu'ils divergent.
@@ -698,6 +699,10 @@ export default function FicheChantier({ params }) {
   const [client, setClient] = useState(null)
   const [profile, setProfile] = useState(null)
   const [prenomAdmin, setPrenomAdmin] = useState('—')
+  // Grille de commission apporteur de la société — sert à PROPOSER un taux, jamais à
+  // l'imposer. Chargée hors du chemin critique : elle n'entre dans aucun calcul, elle
+  // n'éclaire qu'une saisie.
+  const [grilleApporteur, setGrilleApporteur] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [generatingPDF, setGeneratingPDF] = useState(null) // 'recapitulatif' | 'dossier_fin'
@@ -941,6 +946,10 @@ export default function FicheChantier({ params }) {
       if (profData?.role === 'admin') {
         supabase.from('profiles').select('prenom, nom').eq('role', 'admin').order('prenom').limit(1).maybeSingle()
           .then(({ data }) => { if (data) setPrenomAdmin(data.prenom || '—') })
+      }
+      if (profData?.societe_id) {
+        supabase.from('societes').select('grille_apporteur').eq('id', profData.societe_id).maybeSingle()
+          .then(({ data }) => setGrilleApporteur(data?.grille_apporteur || null))
       }
 
       // Enfants LOURDS (markdown des CR, messages, factures, documents) : sortis de
@@ -4232,9 +4241,17 @@ export default function FicheChantier({ params }) {
                   Apporteur{client.apporteur_nom ? ` · ${client.apporteur_nom}` : ''} <span style={{color:'var(--ink-500)', fontWeight:400, fontSize:13}}>(coût)</span>
                 </h2>
                 <div style={{fontSize:12, color:'var(--ink-500)'}}>
-                  {client.apporteur_pourcentage != null && client.apporteur_pourcentage !== ''
-                    ? <>{parseFloat(client.apporteur_pourcentage)}% · {client.apporteur_base === 'total_chantier' ? 'sur total chantier HT' : 'par devis signé'}</>
-                    : <span style={{color:'#b45309'}}>taux à définir, coût non calculé</span>}
+                  {(() => {
+                    // Le taux qui S'APPLIQUE est celui du chantier ; à défaut, celui du client.
+                    const tauxEffectif = dossier.apporteur_pourcentage ?? client.apporteur_pourcentage
+                    const base = client.apporteur_base === 'honoraires' ? 'sur les honoraires'
+                      : client.apporteur_base === 'total_chantier' ? 'sur total chantier HT'
+                      : 'par devis signé'
+                    return tauxEffectif != null && tauxEffectif !== ''
+                      ? <>{parseFloat(tauxEffectif)} % · {base}
+                          {dossier.apporteur_pourcentage != null && <span style={{color:'var(--ink-400)'}}> · propre à ce chantier</span>}</>
+                      : <span style={{color:'#b45309'}}>taux à définir, coût non calculé</span>
+                  })()}
                 </div>
               </div>
               <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer'}}>
@@ -4253,6 +4270,66 @@ export default function FicheChantier({ params }) {
                 </span>
               </label>
             </div>
+
+            {/* ── Taux de CE chantier ────────────────────────────────────────
+                Les paliers dépendent du montant des travaux : le même apporteur
+                n'est pas rémunéré pareil sur un chantier à 15 000 € et un à
+                120 000 €. Le taux du client ne pouvait pas exprimer ça.
+                La grille PROPOSE, elle n'impose pas — le bonus « locaux
+                professionnels » se décide au cas par cas, en regardant le local. */}
+            {dossier.apporteur_actif && (() => {
+              const totalTTC = totalDevisTTCSignes
+              const propose = tauxSelonGrille(grilleApporteur, totalTTC)
+              const phrase = expliquerGrille(grilleApporteur, totalTTC)
+              const valeur = dossier.apporteur_pourcentage ?? ''
+              return (
+                <div style={{marginTop:16, paddingTop:16, borderTop:'1px solid var(--ink-100)', display:'flex', flexDirection:'column', gap:8}}>
+                  <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
+                    <span style={{fontSize:12.5, color:'var(--ink-700)', fontWeight:600}}>Taux pour ce chantier</span>
+                    <input type="number" step="0.1" min="0" max="100" className="input"
+                      value={valeur}
+                      placeholder={client.apporteur_pourcentage != null ? String(parseFloat(client.apporteur_pourcentage)) : '—'}
+                      onChange={e => set('apporteur_pourcentage', e.target.value === '' ? null : e.target.value)}
+                      onBlur={async e => {
+                        const brut = e.target.value
+                        const v = brut === '' ? null : parseFloat(brut)
+                        if (v !== null && (!Number.isFinite(v) || v < 0 || v > 100)) {
+                          setErreur('Le taux apporteur doit être un nombre entre 0 et 100.')
+                          set('apporteur_pourcentage', null)
+                          return
+                        }
+                        const { error } = await supabase.from('dossiers')
+                          .update({ apporteur_pourcentage: v }).eq('id', id)
+                        if (error) setErreur('Erreur : ' + error.message)
+                        else setSucces('Taux apporteur enregistré ✓')
+                      }}
+                      style={{width:88, height:32, fontSize:13, textAlign:'right'}} />
+                    <span style={{fontSize:12.5, color:'var(--ink-500)'}}>%</span>
+                    {propose != null && String(valeur) !== String(propose.taux) && (
+                      <button className="btn btn-ghost" style={{fontSize:12, padding:'4px 10px'}}
+                        onClick={async () => {
+                          set('apporteur_pourcentage', propose.taux)
+                          const { error } = await supabase.from('dossiers')
+                            .update({ apporteur_pourcentage: propose.taux }).eq('id', id)
+                          if (error) setErreur('Erreur : ' + error.message)
+                          else setSucces('Taux de la grille appliqué ✓')
+                        }}>
+                        Appliquer {propose.taux} %
+                      </button>
+                    )}
+                  </div>
+                  {phrase && (
+                    <div style={{fontSize:12, color:'var(--ink-500)'}}>
+                      {phrase} Total des devis signés : <span className="tnum">{fmt(totalTTC)}</span> TTC.
+                    </div>
+                  )}
+                  <div style={{fontSize:11.5, color:'var(--ink-400)'}}>
+                    Laisser vide pour utiliser le taux du client. Un bonus (locaux
+                    professionnels…) se saisit directement dans le taux.
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )}
 
