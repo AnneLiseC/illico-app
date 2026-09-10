@@ -1,7 +1,7 @@
 From 55efcc0d4b0ceb216dd075bb1bc4b1abcde1092c Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 10 Sep 2026 16:27:56 +0000
-Subject: [PATCH 1/2] =?UTF-8?q?Drive=20:=20rattachements=20en=20parall?=
+Subject: [PATCH 1/3] =?UTF-8?q?Drive=20:=20rattachements=20en=20parall?=
  =?UTF-8?q?=C3=A8le,=20et=20l'=C3=A9cran=20ne=20se=20bloque=20plus?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -335,7 +335,7 @@ index bb2afa1..4f6cf1e 100644
 From d6d05f475888f727b89e04a4cd3558a7e81b932d Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 10 Sep 2026 16:36:11 +0000
-Subject: [PATCH 2/2] Drive : lire tout le chemin (facture artisan, maquette)
+Subject: [PATCH 2/3] Drive : lire tout le chemin (facture artisan, maquette)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -541,6 +541,416 @@ index c5de28d..4e45bf4 100644
    }
  
    if (!(premier in CATEGORIE_PAR_DOSSIER)) return refus(`sous_dossier_inconnu:${premier}`)
+-- 
+2.43.0
+
+
+From f6148f62334a65889fbd105834ff50cc4786fb5e Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 10 Sep 2026 16:50:00 +0000
+Subject: [PATCH 3/3] =?UTF-8?q?Drive=20:=20le=20test=20d'aller-retour,=20e?=
+ =?UTF-8?q?t=20les=20trois=20d=C3=A9fauts=20qu'il=20a=20trouv=C3=A9s?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Trois fois de suite le même défaut a été trouvé À LA MAIN : l'écriture crée un
+niveau de dossier, la relecture l'ignore, les fichiers tombent en « Autres ».
+Photos, factures d'artisans, maquettes. Chaque fois c'est un humain qui l'a vu.
+
+drive-aller-retour.test.js traite écriture et lecture comme une fonction et sa
+réciproque : pour CHAQUE catégorie, cheminChantier() → deciderRattachement()
+doit rendre la catégorie de départ, ou déclarer sa perte avec sa raison. Un
+test de couverture exige que toutes les catégories de taxonomie.js figurent au
+tableau : en ajouter une sans décider de sa relecture casse la suite.
+
+Ce que le test a trouvé, que personne n'avait vu :
+
+1. photoSousDossiers('maquette') écrivait à la RACINE de « 5. Plans &
+   techniques » — indiscernable d'un plan, d'une estimation ou d'une fiche
+   technique. Une maquette poussée par l'appli revenait en document « plans »
+   et disparaissait de la galerie. Elle a maintenant son sous-dossier, celui
+   que le Drive contenait déjà, créé à la main.
+
+2. move-chantier réécrivait doc_index et oubliait drive_inbox : clore un
+   chantier depuis l'appli rendait indécidables tous ses fichiers en attente
+   (bucket du chemin ≠ bucket du chantier). Même défaut que le dossier reclassé
+   à la main le 10/09 — 44 fichiers bloqués — mais déclenché par l'appli.
+
+3. L'anti-doublon des photos comparait (dossier, nom). La même « IMG_0104.jpeg »
+   en « Avant » et en « Après » est légitime : la seconde était écartée en
+   silence, et le dossier de restitution perdait une image. Critère corrigé en
+   (dossier, catégorie, nom).
+
+Les pertes qui restent sont déclarées, pas subies : cinq catégories écrivent à
+la racine du dossier artisan, trois dans « 5. Plans & techniques », deux dans
+« 1. Administratif ». Aucune relecture ne peut les distinguer — l'information
+est perdue au rangement. Les séparer demande des sous-dossiers, donc une
+décision d'organisation, pas une décision technique.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TvWpp16odX6J4r6qgBVj4Q
+---
+ app/api/drive/move-chantier/route.js         |  25 ++++
+ app/lib/__tests__/drive-aller-retour.test.js | 150 +++++++++++++++++++
+ app/lib/__tests__/drive-rattachement.test.js |  25 ++++
+ app/lib/__tests__/drive-taxonomie.test.js    |   6 +-
+ app/lib/drive/import-inbox.js                |   9 +-
+ app/lib/drive/rattachement.js                |  22 +++
+ app/lib/drive/taxonomie.js                   |  29 +++-
+ 7 files changed, 262 insertions(+), 4 deletions(-)
+ create mode 100644 app/lib/__tests__/drive-aller-retour.test.js
+
+diff --git a/app/api/drive/move-chantier/route.js b/app/api/drive/move-chantier/route.js
+index b9db21f..3d0d515 100644
+--- a/app/api/drive/move-chantier/route.js
++++ b/app/api/drive/move-chantier/route.js
+@@ -114,6 +114,31 @@ export async function POST(request) {
+       }
+     }
+ 
++    // 5. MÊME réécriture pour les fichiers encore « à rattacher ».
++    //
++    // Sans cette étape, clore un chantier depuis l'appli rendait indécidables tous ses
++    // fichiers en attente : le dossier partait vers « 2. Terminés/<année> » pendant que
++    // drive_inbox gardait « 1. En cours ». Le rattachement compare le bucket du chemin à
++    // celui du chantier — deux valeurs devenues incohérentes, donc plus aucune
++    // correspondance, en silence.
++    //
++    // Constaté le 10/09 sur un dossier reclassé À LA MAIN (44 fichiers bloqués). Le même
++    // défaut existait, déclenché par l'appli elle-même, à chaque changement de statut :
++    // doc_index était réécrit juste au-dessus, drive_inbox était oublié.
++    const { data: enAttente } = await db.from('drive_inbox')
++      // Le Drive appartient à la référente du dossier : c'est sous SON user_id que les
++      // lignes inbox sont enregistrées. (`loadDriveCompte` ne remonte pas user_id.)
++      .select('id, parent_path').eq('user_id', dossier.referente_id).eq('statut', 'a_rattacher')
++    const ancien = `${RACINE_CLIENTS}/${found.segs.join('/')}/${folderName}`
++    const nouveau = `${RACINE_CLIENTS}/${targetPathSegs}/${folderName}`
++    for (const ligne of (enAttente || [])) {
++      const i = (ligne.parent_path || '').indexOf(ancien)
++      if (i === -1) continue
++      await db.from('drive_inbox')
++        .update({ parent_path: ligne.parent_path.slice(0, i) + nouveau + ligne.parent_path.slice(i + ancien.length) })
++        .eq('id', ligne.id)
++    }
++
+     return NextResponse.json({ ok: true, moved: true, from: found.segs.join('/'), to: targetPathSegs })
+   } catch (e) {
+     console.error('[drive/move-chantier] move', e)
+diff --git a/app/lib/__tests__/drive-aller-retour.test.js b/app/lib/__tests__/drive-aller-retour.test.js
+new file mode 100644
+index 0000000..40389e3
+--- /dev/null
++++ b/app/lib/__tests__/drive-aller-retour.test.js
+@@ -0,0 +1,150 @@
++import { describe, it, expect } from 'vitest'
++import {
++  CATEGORIES_DOCUMENT, CATEGORIES_PHOTO,
++  cheminChantier, cheminChantierPhoto,
++} from '../drive/taxonomie.js'
++import { deciderRattachement } from '../drive/rattachement.js'
++
++// ═══════════════════════════════════════════════════════════════════════════════════════
++// L'ALLER-RETOUR : ce que l'appli ÉCRIT dans le Drive, sait-elle le RELIRE ?
++//
++// POURQUOI CE FICHIER EXISTE
++//
++// Le 10/09, trois défauts de relecture ont été trouvés l'un après l'autre, à la main, par
++// l'utilisatrice :
++//   · les photos rangées dans « 6. Photos » n'avaient aucune destination ;
++//   · une facture rangée dans « <Artisan>/Factures » arrivait en « Autres » ;
++//   · une maquette rangée dans « 5. Plans & techniques/maquette » était relue comme un plan.
++// Trois fois le MÊME défaut : l'écriture crée un niveau de dossier, la relecture l'ignore.
++// Et trois fois, c'est un humain qui l'a vu, pas le code.
++//
++// Ce test rend ce défaut impossible à commettre en silence. Il traite l'écriture et la
++// lecture comme ce qu'elles sont — une fonction et sa réciproque — et exige que la
++// composition des deux soit l'identité, ou que la perte soit DÉCLARÉE ici, avec sa raison.
++//
++// Le second test, celui qui compte le plus, vérifie que le tableau ci-dessous couvre
++// TOUTES les catégories connues de la taxonomie. Ajouter une catégorie d'écriture sans
++// décider de sa relecture fait échouer la suite. On ne peut plus oublier : on peut
++// seulement décider, et l'écrire.
++// ═══════════════════════════════════════════════════════════════════════════════════════
++
++const DOSSIER = { id: 'd1', statut: null, date_premier_rdv: '2026-06-09', created_at: '2026-06-22' }
++const CLIENT = { nom: 'Barloy', nom2: 'Teppe' }
++const CANDIDATS = [{ dossier: DOSSIER, client: CLIENT, suffixe: '' }]
++const ARTISAN = 'MJ RENOVATION'
++const ARTISANS = new Map([[ARTISAN, 'a-mj']])
++const PREFIXE = '/drives/59B2EBA7CDFE3599/root:/Illico Travaux/ANNELISE/'
++
++// Le chemin Graph d'un fichier écrit par l'appli, tel que le poller le verra.
++const cheminEcrit = (segments) => PREFIXE + segments.join('/')
++
++// ── Ce que la relecture doit rendre, catégorie par catégorie ──────────────────────────
++//
++// `attendu` = la catégorie que le rattachement doit retrouver.
++// `perte`   = présent UNIQUEMENT quand la relecture NE PEUT PAS être exacte, avec la
++//             raison. Une perte n'est pas un bug tant qu'elle est un choix assumé — mais
++//             elle doit être écrite ici pour rester un choix, et non un oubli.
++const DOCUMENTS = [
++  { categorie: 'compte_rendu', attendu: 'compte_rendu' },
++  { categorie: 'administratif', attendu: 'administratif' },
++  { categorie: 'plans', attendu: 'plans' },
++  { categorie: 'facture_artisan', attendu: 'facture_artisan', artisan: true },
++  { categorie: 'autre_artisan', attendu: 'autre_artisan', artisan: true },
++
++  // ── Pertes assumées ────────────────────────────────────────────────────────────────
++  // Elles ont toutes la même cause : PLUSIEURS catégories écrivent dans le MÊME dossier.
++  // Aucune relecture ne peut les distinguer — l'information est perdue au rangement, pas
++  // à la lecture. Les corriger demanderait de créer des sous-dossiers dans le Drive, ce
++  // qui est une décision d'organisation, pas une décision technique.
++  { categorie: 'facture_honoraire', attendu: 'administratif',
++    perte: 'écrit dans « 1. Administratif », comme administratif' },
++  { categorie: 'estimation', attendu: 'plans',
++    perte: 'écrit dans « 5. Plans & techniques », comme plans et fiche_technique' },
++  { categorie: 'fiche_technique', attendu: 'plans',
++    perte: 'écrit dans « 5. Plans & techniques », comme plans et estimation' },
++  { categorie: 'attestation_demarrage', attendu: null, artisan: true,
++    perte: 'écrit à la racine de l\'artisan, comme 4 autres catégories' },
++  { categorie: 'deblocage_acompte', attendu: null, artisan: true,
++    perte: 'écrit à la racine de l\'artisan, comme 4 autres catégories' },
++  { categorie: 'avis_virement', attendu: null, artisan: true,
++    perte: 'écrit à la racine de l\'artisan, comme 4 autres catégories' },
++  { categorie: 'pv_reception', attendu: null, artisan: true,
++    perte: 'écrit à la racine de l\'artisan, comme 4 autres catégories' },
++  { categorie: 'attestation_chantier', attendu: null, artisan: true,
++    perte: 'écrit à la racine de l\'artisan, comme 4 autres catégories' },
++]
++
++const PHOTOS = [
++  { categorie: 'avant', attendu: 'avant' },
++  { categorie: 'pendant', attendu: 'pendant' },
++  { categorie: 'apres', attendu: 'apres' },
++  // La maquette n'est pas rangée dans « 6. Photos » mais dans « 5. Plans & techniques »
++  // (arbitrage du 02/09). Elle se relit quand même : le sous-dossier s'appelle « maquette ».
++  { categorie: 'maquette', attendu: 'maquette' },
++]
++
++describe('aller-retour DOCUMENTS : écrire puis relire', () => {
++  for (const cas of DOCUMENTS) {
++    const nom = cas.perte
++      ? `${cas.categorie} → « ${cas.attendu ?? 'Autres'} » (perte assumée : ${cas.perte})`
++      : `${cas.categorie} se relit à l'identique`
++    it(nom, () => {
++      const segments = cheminChantier(
++        DOSSIER.statut, DOSSIER.date_premier_rdv, CLIENT.nom, cas.categorie,
++        cas.artisan ? ARTISAN : null, { nom2: CLIENT.nom2, suffixe: '' },
++      )
++      const decision = deciderRattachement(cheminEcrit(segments), CANDIDATS, ARTISANS, 'doc.pdf')
++
++      expect(decision.destination, `« ${cas.categorie} » n'est plus rattaché du tout`).toBe('documents')
++      expect(decision.dossier_id).toBe('d1')
++      expect(decision.categorie).toBe(cas.attendu)
++      // Un document d'artisan sans artisan_id est invisible dans la fiche chantier : la
++      // section « Documents artisans » ne montre que ceux qui en ont un.
++      if (cas.artisan) expect(decision.artisan_id, 'artisan perdu en route').toBe('a-mj')
++    })
++  }
++})
++
++describe('aller-retour PHOTOS : écrire puis relire', () => {
++  for (const cas of PHOTOS) {
++    it(`${cas.categorie} se relit à l'identique`, () => {
++      const segments = cheminChantierPhoto(
++        DOSSIER.statut, DOSSIER.date_premier_rdv, CLIENT.nom, cas.categorie,
++        { nom2: CLIENT.nom2, suffixe: '' },
++      )
++      const decision = deciderRattachement(cheminEcrit(segments), CANDIDATS, ARTISANS, 'photo.jpg')
++      expect(decision.destination, `« ${cas.categorie} » n'atterrit pas dans la table photos`).toBe('photos')
++      expect(decision.categorie_photo).toBe(cas.attendu)
++    })
++  }
++})
++
++// ── LE test : la couverture ────────────────────────────────────────────────────────────
++//
++// Celui-ci ne vérifie pas un comportement, il vérifie qu'on n'a rien oublié. C'est le seul
++// qui aurait attrapé les trois défauts du 10/09 SANS qu'on ait eu l'idée de les chercher.
++describe('couverture : aucune catégorie ne peut être ajoutée sans décider de sa relecture', () => {
++  it('toutes les catégories de document sont couvertes', () => {
++    const couvertes = DOCUMENTS.map(c => c.categorie).sort()
++    const attendues = [...CATEGORIES_DOCUMENT].sort()
++    // Message explicite : si ça casse, c'est qu'une catégorie a été ajoutée à l'écriture
++    // sans qu'on dise ce que la lecture doit en faire. Ajoute-la ci-dessus — avec `attendu`
++    // si elle se relit, avec `perte` et sa raison si elle ne le peut pas.
++    expect(couvertes).toEqual(attendues)
++  })
++
++  it('toutes les catégories de photo sont couvertes', () => {
++    expect(PHOTOS.map(c => c.categorie).sort()).toEqual([...CATEGORIES_PHOTO].sort())
++  })
++
++  it('les pertes sont NOMMÉES, jamais silencieuses', () => {
++    // Une catégorie relue autrement qu'à l'identique doit porter une explication. Sans
++    // cette règle, il suffirait d'aligner `attendu` sur le comportement observé pour faire
++    // taire le test — ce qui est exactement la façon de transformer un bug en « normal ».
++    for (const cas of DOCUMENTS) {
++      if (cas.attendu !== cas.categorie) {
++        expect(cas.perte, `« ${cas.categorie} » n'est pas relu à l'identique et ne dit pas pourquoi`).toBeTruthy()
++      }
++    }
++  })
++})
+diff --git a/app/lib/__tests__/drive-rattachement.test.js b/app/lib/__tests__/drive-rattachement.test.js
+index f9d6c3f..39ef4d6 100644
+--- a/app/lib/__tests__/drive-rattachement.test.js
++++ b/app/lib/__tests__/drive-rattachement.test.js
+@@ -95,6 +95,31 @@ describe('deciderRattachement — les photos vont dans la table photos', () => {
+     expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/6. Photos/3. Après`, 'a.jpg').categorie_photo).toBe('apres')
+   })
+ 
++  it('une MAQUETTE est une photo, meme rangee dans « 5. Plans & techniques »', () => {
++    // Le Drive contient bien un sous-dossier « maquette » : le classement etait fait, c'est
++    // la relecture qui l'ignorait et les rangeait en documents « plans ».
++    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/maquette`, 'vue3d.jpg'))
++      .toEqual({ destination: 'photos', dossier_id: 'barloy', categorie_photo: 'maquette' })
++    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/Maquettes`, 'a.png').categorie_photo)
++      .toBe('maquette')
++  })
++
++  it('un PDF dans le dossier maquette reste un DOCUMENT', () => {
++    // La table photos n'affiche pas un PDF. Mieux vaut un plan bien rangé qu'une photo
++    // fantome dans la galerie.
++    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/maquette`, 'plan.pdf'))
++      .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: 'plans', artisan_id: null })
++  })
++
++  it('les sous-dossiers libres sous « 5. Plans & techniques » restent des plans', () => {
++    // « sdb wc », « Plan cuisine », « LAPEYRE », « moodboard »… : elle range par piece ou par
++    // fournisseur. Aucune categorie de l'appli ne leur correspond, et c'est tres bien : le
++    // niveau 1 suffit a decider, le niveau 2 est son organisation a elle.
++    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/sdb wc`, 'a.jpg').categorie).toBe('plans')
++    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/moodboard`, 'a.jpg').categorie).toBe('plans')
++    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/1. Administratif/PLU_ABF_CADASTRE`, 'a.pdf').categorie).toBe('administratif')
++  })
++
+   it('ne DEVINE pas la categorie : une photo sans categorie reste a la main', () => {
+     // 175 photos sont posees a la racine de « 6. Photos ». Les classer en « Avant » par
+     // defaut fausserait le dossier de restitution du client, sans que ca se voie.
+diff --git a/app/lib/__tests__/drive-taxonomie.test.js b/app/lib/__tests__/drive-taxonomie.test.js
+index ccaceeb..2129cb8 100644
+--- a/app/lib/__tests__/drive-taxonomie.test.js
++++ b/app/lib/__tests__/drive-taxonomie.test.js
+@@ -72,8 +72,10 @@ describe('drive/taxonomie', () => {
+     expect(photoSousDossiers('avant')).toEqual(['6. Photos', '1. Avant'])
+     expect(photoSousDossiers('pendant')).toEqual(['6. Photos', '2. Pendant'])
+     expect(photoSousDossiers('apres')).toEqual(['6. Photos', '3. Apres'])
+-    // La maquette est un livrable technique, pas une photo de chantier (arbitrage 02/09).
+-    expect(photoSousDossiers('maquette')).toEqual(['5. Plans & techniques'])
++    // La maquette est un livrable technique, pas une photo de chantier (arbitrage 02/09) —
++    // mais elle a son SOUS-DOSSIER, sans quoi elle est indiscernable d'un plan à la
++    // relecture et disparaît de la galerie du chantier (cf. drive-aller-retour.test.js).
++    expect(photoSousDossiers('maquette')).toEqual(['5. Plans & techniques', 'maquette'])
+     expect(photoSousDossiers(null)).toEqual(['6. Photos', 'Autres'])
+   })
+ 
+diff --git a/app/lib/drive/import-inbox.js b/app/lib/drive/import-inbox.js
+index 8a0a3c2..125985c 100644
+--- a/app/lib/drive/import-inbox.js
++++ b/app/lib/drive/import-inbox.js
+@@ -131,9 +131,16 @@ export async function importerInboxPhoto(db, {
+   mod, token, inbox, fournisseur, dossierId, categoriePhoto, auto = false,
+ }) {
+   // Doublon AVANT la prise : inutile de verrouiller une ligne pour la relâcher aussitôt.
++  //
++  // Le critère est (dossier, CATÉGORIE, nom), pas (dossier, nom). Le Drive range les photos
++  // par étape : le même « IMG_0104.jpeg » peut légitimement exister en « Avant » et en
++  // « Après » — c'est même le cas d'usage type, la même pièce photographiée deux fois avec
++  // un nom d'appareil identique. Sur le seul nom, la seconde aurait été silencieusement
++  // écartée, et la comparaison avant/après du dossier de restitution aurait perdu une image
++  // sans que rien ne le dise.
+   const nom = inbox.name || 'photo'
+   const { data: deja } = await db.from('photos')
+-    .select('id').eq('dossier_id', dossierId).eq('nom', nom).limit(1)
++    .select('id').eq('dossier_id', dossierId).eq('categorie', categoriePhoto).eq('nom', nom).limit(1)
+   if (deja && deja.length > 0) {
+     // La photo est déjà dans l'appli : la ligne inbox n'a plus lieu d'être proposée.
+     await db.from('drive_inbox').update({ statut: 'ignore' }).eq('id', inbox.id).then(() => {}, () => {})
+diff --git a/app/lib/drive/rattachement.js b/app/lib/drive/rattachement.js
+index 4e45bf4..4c8e443 100644
+--- a/app/lib/drive/rattachement.js
++++ b/app/lib/drive/rattachement.js
+@@ -103,6 +103,15 @@ export function estImage(nomFichier) {
+ // On ne devine RIEN au-dela : un dossier photo sans categorie lisible (ou une photo posee
+ // a la racine de « 6. Photos ») reste a la main. Classer 175 photos en « Avant » par
+ // defaut fausserait le dossier de restitution du client, silencieusement.
++// Sous-dossier « maquette » / « maquettes », quelle que soit la casse ou l'accentuation.
++// Même tolérance que pour les étapes de photos : le dossier est nommé à la main.
++export function estMaquette(segment) {
++  const s = String(segment || '')
++    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
++    .toLowerCase().replace(/^[_\s]*\d+\s*[.)\-]?\s*/, '').trim()
++  return s === 'maquette' || s === 'maquettes' || s.startsWith('maquette ')
++}
++
+ export function categoriePhotoDepuisDossier(segment) {
+   const s = String(segment || '')
+     .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+@@ -226,6 +235,19 @@ export function deciderRattachement(parentPath, candidats, artisansParNom = new
+     return { destination: 'documents', dossier_id: dossier.id, categorie, artisan_id: artisanId }
+   }
+ 
++  // ── Maquettes ─────────────────────────────────────────────────────────────────────
++  // Une maquette est une PHOTO (photos.categorie = 'maquette'), rangée dans
++  // « 5. Plans & techniques » et non dans « 6. Photos » — c'est le livrable technique,
++  // pas une prise de vue (arbitrage du 02/09).
++  //
++  // On ne la devine pas depuis le dossier de niveau 1, qui contient aussi des plans, des
++  // estimations et des fiches techniques. Mais quand un sous-dossier s'appelle « maquette »,
++  // il n'y a plus rien à deviner : c'est écrit. Le Drive en contient un, avec 6 fichiers,
++  // et le code les rangeait en documents « plans » — alors que le classement était fait.
++  if (premier === '5. Plans & techniques' && estMaquette(sous[1]) && estImage(nomFichier)) {
++    return { destination: 'photos', dossier_id: dossier.id, categorie_photo: 'maquette' }
++  }
++
+   if (!(premier in CATEGORIE_PAR_DOSSIER)) return refus(`sous_dossier_inconnu:${premier}`)
+   return { destination: 'documents', dossier_id: dossier.id, categorie: CATEGORIE_PAR_DOSSIER[premier], artisan_id: null }
+ }
+diff --git a/app/lib/drive/taxonomie.js b/app/lib/drive/taxonomie.js
+index 6732ccb..57f8c92 100644
+--- a/app/lib/drive/taxonomie.js
++++ b/app/lib/drive/taxonomie.js
+@@ -80,10 +80,37 @@ export function devisSousDossier(statutDevis) {
+ // livrable technique, elle part dans « 5. Plans & techniques » (arbitrage 02/09).
+ const PHOTO_CAT_LABEL = { avant: '1. Avant', pendant: '2. Pendant', apres: '3. Apres' }
+ export function photoSousDossiers(categoriePhoto) {
+-  if (categoriePhoto === 'maquette') return ['5. Plans & techniques']
++  // La MAQUETTE reste hors de « 6. Photos » : c'est un livrable technique, pas une prise de
++  // vue (arbitrage du 02/09). Mais elle va dans un SOUS-DOSSIER « maquette », et pas en vrac
++  // dans « 5. Plans & techniques ».
++  //
++  // Ce niveau n'est pas cosmétique, c'est ce qui rend la maquette RELISIBLE. Écrite à la
++  // racine, elle était indiscernable d'un plan, d'une estimation ou d'une fiche technique :
++  // relue, elle revenait en document « plans », et la galerie du chantier la perdait. Défaut
++  // trouvé le 10/09 par le test d'aller-retour, pas à l'usage — et le Drive contenait DÉJÀ un
++  // dossier « maquette » créé à la main : l'appli ne faisait que ne pas suivre la convention
++  // de la maison.
++  if (categoriePhoto === 'maquette') return ['5. Plans & techniques', 'maquette']
+   return ['6. Photos', PHOTO_CAT_LABEL[categoriePhoto] || 'Autres']
+ }
+ 
++// TOUTES les catégories que l'appli sait écrire dans le Drive, et toutes les catégories de
++// prise de vue. Listes exportées pour une seule raison, qui vaut d'être dite : le test
++// d'ALLER-RETOUR (drive-aller-retour.test.js) s'en sert pour exiger qu'AUCUNE catégorie ne
++// soit ajoutée sans qu'on ait décidé, noir sur blanc, ce que la relecture doit en faire.
++//
++// Sans ce garde-fou, on ajoute une catégorie côté écriture, on oublie la lecture, et les
++// fichiers concernés atterrissent en « Autres » sans que rien ne le signale — c'est
++// exactement ce qui est arrivé aux factures d'artisans et aux maquettes.
++export const CATEGORIES_DOCUMENT = [
++  'compte_rendu',
++  'attestation_demarrage', 'deblocage_acompte', 'avis_virement', 'pv_reception', 'attestation_chantier',
++  'facture_artisan', 'autre_artisan',
++  'plans', 'estimation', 'fiche_technique',
++  'facture_honoraire', 'administratif',
++]
++export const CATEGORIES_PHOTO = ['avant', 'pendant', 'apres', 'maquette']
++
+ // Sous-dossier(s) cible selon la catégorie du document. Renvoie un tableau de segments.
+ export function sousDossiers(categorie, artisanNom) {
+   const artisan = (artisanNom || 'Sans artisan').trim()
 -- 
 2.43.0
 
