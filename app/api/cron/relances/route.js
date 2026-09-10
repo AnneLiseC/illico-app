@@ -84,13 +84,55 @@ async function membresSociete(societeId) {
 // Envoi passé par le garde-fou : en mode essai, tout part vers l'adresse d'essai avec
 // l'objet préfixé du destinataire réel. Renvoie une ligne de journal (jamais d'exception
 // pour un simple « non envoyé » : le mode essai sans adresse n'est pas une erreur).
-async function envoyer(log, tag, { to, subject, html, replyTo }) {
+//
+// ANTI-DOUBLON (10/09) — `cle` rend l'envoi IDEMPOTENT. Sans elle, le comportement est
+// celui d'avant : on envoie, sans mémoire. Avec elle :
+//
+//   1. on RÉSERVE la place dans `relances_envoyees` AVANT d'envoyer. L'insertion est le
+//      verrou : la contrainte UNIQUE rejette la seconde tentative, y compris si deux
+//      exécutions du cron se chevauchent. Vérifier puis envoyer aurait laissé la fenêtre
+//      ouverte entre les deux ;
+//   2. si l'envoi échoue ensuite, on LIBÈRE la réservation. Sinon un incident réseau
+//      d'une seconde condamnerait le rappel pour toujours — et ne pas prévenir un client
+//      d'un rendez-vous est bien pire que le prévenir deux fois.
+//
+// Le destinataire enregistré est le destinataire RÉEL, jamais l'adresse d'essai : les
+// essais se comportent ainsi exactement comme la production.
+async function envoyer(log, tag, { to, subject, html, replyTo, cle }) {
   const plan = preparerEnvoi({ to, subject })
   if (!plan.envoyer) {
     log.push(`[${tag}] NON ENVOYÉ (${plan.raison}) — destinataire réel ${plan.reel || '—'}`)
     return false
   }
-  await sendEmail({ to: plan.to, subject: plan.subject, html, replyTo: replyTo || undefined })
+
+  let reserve = false
+  if (cle) {
+    const { error } = await getSupabaseAdmin().from('relances_envoyees')
+      .insert({ bloc: String(tag), cle, destinataire: plan.reel || plan.to })
+    if (error) {
+      // 23505 = conflit d'unicité → ce rappel est déjà parti. Tout autre code est une
+      // panne du journal : on envoie quand même. Un journal en panne ne doit pas
+      // supprimer des rappels, il doit seulement cesser de protéger.
+      if (error.code === '23505') {
+        log.push(`[${tag}] DÉJÀ ENVOYÉ (${cle}) — ignoré`)
+        return false
+      }
+      log.push(`[${tag}] journal indisponible (${error.message}) — envoi quand même`)
+    } else {
+      reserve = true
+    }
+  }
+
+  try {
+    await sendEmail({ to: plan.to, subject: plan.subject, html, replyTo: replyTo || undefined })
+  } catch (e) {
+    if (reserve) {
+      await getSupabaseAdmin().from('relances_envoyees')
+        .delete().eq('bloc', String(tag)).eq('cle', cle).eq('destinataire', plan.reel || plan.to)
+    }
+    throw e
+  }
+
   log.push(`[${tag}] ${plan.to}${plan.to !== plan.reel ? ` (essai, réel ${plan.reel})` : ''}`)
   return true
 }
@@ -129,6 +171,9 @@ export async function GET(req) {
       const ref = d.dossiers?.reference || d.dossier_id
       const referente = d.dossiers?.profiles
       await envoyer(log, '1', {
+        // La date limite entre dans la clé : la repousser vaut nouvelle échéance,
+        // donc nouveau rappel légitime.
+        cle: `devis-limite:${d.id}:${d.date_limite}`,
         to: artisan.email,
         replyTo: referente?.email,
         subject: `Rappel — devis à remettre avant le ${new Date(d.date_limite).toLocaleDateString('fr-FR')}`,
@@ -315,6 +360,11 @@ export async function GET(req) {
       `
 
       await envoyer(log, '3', {
+        // ⚠️ PAS de clé anti-doublon ici, et c'est un choix, pas un oubli. Ce bloc
+        // regroupe TOUS les devis signés du dossier dans un seul mail : son contenu
+        // change quand un devis s'ajoute, alors qu'une clé « dossier + date » le
+        // figerait. Poser une clé sans avoir cadré la récurrence attendue risquerait de
+        // supprimer une demande d'acompte légitime — bien pire qu'un doublon.
         to: client.email,
         replyTo: referente?.email,
         subject: `Demande d'acompte — dossier ${ref}`,
@@ -479,6 +529,10 @@ export async function GET(req) {
 
       if (client?.email && destinataires.client) {
         await envoyer(log, '5', {
+          // L'HEURE du rendez-vous entre dans la clé : un report change la clé, donc un
+          // nouveau rappel part. Sans elle, un rendez-vous déplacé n'aurait plus jamais
+          // été rappelé — le client se serait présenté au mauvais moment, ou pas du tout.
+          cle: `rdv:${rdv.id}:${rdv.date_heure}:client`,
           to: client.email,
           replyTo: referente?.email,
           subject: `Rappel de votre rendez-vous demain — dossier ${ref}`,
@@ -496,6 +550,9 @@ export async function GET(req) {
       if (destinataires.artisan) {
         for (const artisan of artisans) {
           await envoyer(log, '5', {
+            // L'artisan est dans la clé : sur une réunion à deux entreprises, chacune a
+            // droit à son rappel, et le passage de l'une ne doit pas bâillonner l'autre.
+            cle: `rdv:${rdv.id}:${rdv.date_heure}:artisan:${artisan.email}`,
             to: artisan.email,
             replyTo: referente?.email,
             subject: `Rappel — rendez-vous demain sur le dossier ${ref}`,
@@ -556,6 +613,9 @@ export async function GET(req) {
       const { admin, villes } = await chargerSociete(a.societe_id)
       const signatureVilles = villes.length ? ` ${villes.join(' - ')}` : ''
       await envoyer(log, '6', {
+        // La date d'expiration entre dans la clé : une décennale renouvelée porte une
+        // nouvelle date, donc l'artisan sera bien re-prévenu l'année suivante.
+        cle: `decennale:${a.id}:${a.decennale_expiration}`,
         to: a.email,
         replyTo: admin?.email,   // la décennale est une affaire de société → le franchisé
         subject: `Votre assurance décennale expire dans 14 jours`,

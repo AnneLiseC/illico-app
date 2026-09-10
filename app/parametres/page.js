@@ -1,6 +1,6 @@
 // app/parametres/page.js
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
@@ -10,6 +10,7 @@ import MonDrive from '../components/MonDrive'
 import ModalShell from '../components/ModalShell'
 import { heicToJpegFile } from '../lib/images'
 import { DOCS_RGPD } from '../lib/legal'
+import { grilleVersTexte, texteVersGrille, normaliserGrille } from '../lib/apporteur'
 
 const LS = { display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5 }
 
@@ -25,6 +26,18 @@ const NOTIFS = [
 export default function Parametres() {
   const { profile: authProfile, initialized, fetchProfile, agenceActive, agences: agencesCtx, refreshAgences } = useAuth()
   const [profile, setProfile]             = useState(null)
+
+  // ── Grille de commission apporteur (par société) ──────────────────────────
+  // Saisie en TEXTE, une ligne « seuil : taux ». Un tableau de champs aurait imposé
+  // des boutons d'ajout et de suppression pour trois lignes qu'on modifie deux fois
+  // par an. La validation est dans lib/apporteur.js, testée, et nomme la ligne fautive.
+  const [grilleTexte, setGrilleTexte]   = useState('')
+  const [grilleMsg, setGrilleMsg]       = useState(null)   // { tone, lignes[] }
+  const [grilleSaving, setGrilleSaving] = useState(false)
+  const grilleInitiale = useMemo(() => grilleVersTexte(societe?.grille_apporteur), [societe?.grille_apporteur])
+  useEffect(() => { setGrilleTexte(grilleInitiale) }, [grilleInitiale])
+  const grilleModifiee = grilleTexte !== grilleInitiale
+
   const [loading, setLoading]             = useState(true)
   const [agentes, setAgentes]             = useState([])
   const [societe, setSociete]             = useState(null)
@@ -108,7 +121,7 @@ export default function Parametres() {
   const chargerAgence = async (societeId) => {
     if (!societeId) return
     const [{ data: soc }, { data: ags }] = await Promise.all([
-      supabase.from('societes').select('nom_societe, siret, rcs, rib_url, kbis_url').eq('id', societeId).single(),
+      supabase.from('societes').select('nom_societe, siret, rcs, rib_url, kbis_url, grille_apporteur').eq('id', societeId).single(),
       supabase.from('agences').select('id, code, nom, ville, adresse, code_postal, telephone, email, responsable_nom, logo_path').eq('societe_id', societeId).order('code'),
     ])
     setSociete(soc || null)
@@ -482,6 +495,22 @@ export default function Parametres() {
 
   if (loading) return <div className="page-loading" />
 
+  const enregistrerGrille = async () => {
+    const { grille, erreurs } = texteVersGrille(grilleTexte)
+    // Les avertissements (grille décroissante) n'empêchent PAS d'enregistrer : c'est sa
+    // politique commerciale, pas la nôtre. Seules les lignes illisibles bloquent.
+    const bloquantes = erreurs.filter(e => !e.startsWith('Attention'))
+    if (bloquantes.length > 0) { setGrilleMsg({ tone: 'bad', lignes: bloquantes }); return }
+    setGrilleSaving(true)
+    const { error } = await supabase.from('societes')
+      .update({ grille_apporteur: grille.paliers.length ? grille : null })
+      .eq('id', profile.societe_id)
+    setGrilleSaving(false)
+    if (error) { setGrilleMsg({ tone: 'bad', lignes: ['Erreur : ' + error.message] }); return }
+    setSociete(s => ({ ...s, grille_apporteur: grille.paliers.length ? grille : null }))
+    setGrilleMsg({ tone: erreurs.length ? 'warn' : 'ok', lignes: erreurs.length ? erreurs : ['Grille enregistrée.'] })
+  }
+
   const NAV = [
     { k:'profil',       l:'Profil franchisé' },
     { k:'agence',       l:'Agence' },
@@ -761,6 +790,64 @@ export default function Parametres() {
               <div>
                 <h2 className="page" style={{fontSize:18, marginBottom:4}}>Parts & royalties</h2>
                 <p style={{color:'var(--ink-500)', fontSize:13}}>Répartitions commission, frais et redevances par agent. Cliquez &quot;Modifier&quot; pour éditer.</p>
+              </div>
+
+              {/* ── Grille de commission apporteur ──────────────────────────────
+                  Propre à CETTE société : rien n'est écrit en dur dans le logiciel.
+                  Elle ne fait que PROPOSER un taux sur la fiche chantier ; l'agente
+                  garde la main, notamment pour les bonus qui se décident au cas par
+                  cas (locaux professionnels). */}
+              <div style={{padding:'18px 20px', border:'1px solid var(--ink-200)', borderRadius:12, display:'flex', flexDirection:'column', gap:12, maxWidth:680}}>
+                <div>
+                  <div style={{fontSize:14, fontWeight:700, color:'var(--ink-900)', marginBottom:4}}>Grille de commission apporteur</div>
+                  <p style={{color:'var(--ink-500)', fontSize:13, margin:0}}>
+                    Une ligne par palier, sous la forme <strong>montant de travaux : taux</strong>.
+                    Le montant se compare au total des devis <strong>signés TTC</strong>, le taux
+                    s&apos;exprime en pourcentage. Laisser vide si votre agence n&apos;a pas de grille.
+                  </p>
+                </div>
+
+                <textarea
+                  value={grilleTexte}
+                  onChange={e => { setGrilleTexte(e.target.value); setGrilleMsg(null) }}
+                  rows={5}
+                  spellCheck={false}
+                  placeholder={'10000 : 5\n50000 : 7\n100000 : 10'}
+                  className="input"
+                  style={{fontFamily:'ui-monospace, Menlo, monospace', fontSize:13, lineHeight:1.7, padding:12, minHeight:120, resize:'vertical'}} />
+
+                <div style={{fontSize:12, color:'var(--ink-500)'}}>
+                  Exemple : <code>50000 : 7</code> se lit « 7 % des honoraires à partir de 50 000 € de travaux ».
+                  En dessous du plus petit palier, aucune commission n&apos;est proposée.
+                </div>
+
+                {grilleMsg && (
+                  <div style={{
+                    fontSize:12.5, borderRadius:8, padding:'9px 12px',
+                    background: grilleMsg.tone === 'bad' ? 'rgba(239,68,68,0.06)' : grilleMsg.tone === 'warn' ? 'rgba(245,158,11,0.08)' : 'rgba(22,163,74,0.07)',
+                    border: `1px solid ${grilleMsg.tone === 'bad' ? 'rgba(239,68,68,0.25)' : grilleMsg.tone === 'warn' ? 'rgba(245,158,11,0.3)' : 'rgba(22,163,74,0.25)'}`,
+                    color: grilleMsg.tone === 'bad' ? '#b91c1c' : grilleMsg.tone === 'warn' ? '#92400e' : '#15803d',
+                  }}>
+                    {grilleMsg.lignes.map((l, i) => <div key={i}>{l}</div>)}
+                  </div>
+                )}
+
+                <div style={{display:'flex', alignItems:'center', gap:10}}>
+                  <button className="btn btn-primary" style={{fontSize:13}}
+                    disabled={!grilleModifiee || grilleSaving}
+                    onClick={enregistrerGrille}>
+                    {grilleSaving ? 'Enregistrement…' : 'Enregistrer la grille'}
+                  </button>
+                  {grilleModifiee && !grilleSaving && (
+                    <button className="btn btn-ghost" style={{fontSize:12}}
+                      onClick={() => { setGrilleTexte(grilleInitiale); setGrilleMsg(null) }}>Annuler</button>
+                  )}
+                  {!grilleModifiee && normaliserGrille(societe?.grille_apporteur).length > 0 && (
+                    <span style={{fontSize:12, color:'var(--ink-500)'}}>
+                      {normaliserGrille(societe?.grille_apporteur).length} palier(s) enregistré(s).
+                    </span>
+                  )}
+                </div>
               </div>
               {agentes.length === 0 ? (
                 <p style={{textAlign:'center', color:'var(--ink-500)', fontSize:13, paddingTop:24}}>Aucun agent</p>

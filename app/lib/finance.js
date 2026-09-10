@@ -598,11 +598,22 @@ export function calculateApporteurFinance(dossier) {
   const tauxApporteur = points(
     dossier?.apporteur_pourcentage ?? dossier?.client?.apporteur_pourcentage, 0
   )
-  // Mode lu sur le VRAI champ client (`apporteur_base`), valeur cible 'total_chantier_ht'.
+  // Mode lu sur le VRAI champ client (`apporteur_base`).
   // (Corrige le bug : l'ancien code lisait `apporteur_mode` et comparait à 'total_chantier'
   //  → toujours faux → 'total chantier HT' inatteignable.)
-  const mode       = dossier?.client?.apporteur_base === 'total_chantier'
-    ? 'total_chantier_ht' : 'par_devis'
+  //
+  // TROIS bases possibles selon le partenaire (10/09) :
+  //   · 'honoraires'      → % de CE QUE L'AGENCE FACTURE. C'est la base de la grille par
+  //                         paliers de Martigues. Pour un dossier AMO : courtage + solde
+  //                         AMO ; pour un courtage : le courtage seul.
+  //   · 'total_chantier'  → % du total des devis signés, en une ligne ;
+  //   · défaut            → % de chaque devis signé, ligne par ligne.
+  // NULL reste 'par_devis' : 42 clients sont dans ce cas et ne doivent pas changer de
+  // calcul du jour au lendemain.
+  const baseClient = dossier?.client?.apporteur_base
+  const mode       = baseClient === 'honoraires' ? 'honoraires'
+    : baseClient === 'total_chantier' ? 'total_chantier_ht'
+    : 'par_devis'
   const partAgente = getPartAgente(dossier)
   const actif      = dossier?.apporteur_actif === true
   const tauxDefini = tauxApporteur > 0
@@ -627,7 +638,35 @@ export function calculateApporteurFinance(dossier) {
   )
 
   let lines = []
-  if (mode === 'total_chantier_ht') {
+  if (mode === 'honoraires') {
+    // La commission porte sur les honoraires HT de l'agence, pas sur les travaux.
+    // HT comme tout le module apporteur : l'apporteur est un partenaire professionnel,
+    // il facture hors taxes.
+    const hono   = calculateHonorairesFinance(dossier)
+    const baseHT = round2(
+      toNumber(hono?.courtage?.ht) +
+      (dossier?.typologie === 'amo' ? toNumber(hono?.soldeAmo?.ht) : 0)
+    )
+    const totalHT = round2(baseHT * tauxApporteur)
+    const parts   = split(totalHT, partAgente)
+    // « Réel » = ce qui est effectivement encaissé. Le courtage suit le déblocage des
+    // acomptes, exactement comme dans les deux autres modes : on ne verse pas une
+    // commission sur des honoraires qu'on n'a pas encore perçus.
+    const partDebloquee = (() => {
+      const totalSigne = round2(signed.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
+      if (totalSigne <= 0) return 0
+      const debloque = round2(signed.filter(dv => estDebloque(dv.id))
+        .reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
+      return debloque / totalSigne
+    })()
+    const totalHTReel = round2(totalHT * partDebloquee)
+    const partsReel   = split(totalHTReel, partAgente)
+    lines = [{
+      type: 'honoraires', baseHT, totalHT,
+      agente: parts.agente, admin: parts.admin,
+      agenteReel: partsReel.agente, adminReel: partsReel.admin,
+    }]
+  } else if (mode === 'total_chantier_ht') {
     const baseHT      = round2(signed.reduce((s, dv) => s + toNumber(dv.montant_ht), 0))
     const totalHT     = round2(baseHT * tauxApporteur)
     const parts       = split(totalHT, partAgente)
