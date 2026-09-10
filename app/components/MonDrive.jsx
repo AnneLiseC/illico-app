@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { apiFetch } from '../lib/api-auth-client'
 
@@ -11,6 +11,7 @@ import { apiFetch } from '../lib/api-auth-client'
 //
 // Props : profile, onError, onSucces (pilotent le bandeau de la page hôte).
 
+const MAX_LIGNES = 200   // plafond d'affichage de la liste fichier par fichier (cf. usage)
 const cardStyle = { padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }
 const labelStyle = { fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', display: 'block', marginBottom: 5 }
 
@@ -33,6 +34,9 @@ export default function MonDrive({ profile, onError, onSucces }) {
   const [rForm, setRForm] = useState({ dossier_id: '', categorie: '' })
   const [importing, setImporting] = useState(false)
   const [autoRattaches, setAutoRattaches] = useState([])  // rattachés auto (30 j), annulables
+  const [groupeOuvert, setGroupeOuvert] = useState(null)  // chemin du groupe déplié
+  const [gForm, setGForm] = useState({ dossier_id: '', categorie: '', categorie_photo: '' })
+  const [lot, setLot] = useState(null)                    // { fait, total } pendant un traitement de groupe
 
   const charger = useCallback(async () => {
     if (!profile) return
@@ -87,6 +91,32 @@ export default function MonDrive({ profile, onError, onSucces }) {
     const qs = params.toString()
     window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Traitement par DOSSIER, pas par fichier ────────────────────────────────────────────
+  //
+  // Les fichiers déposés arrivent par paquets : un rangement du Drive, un dossier photo
+  // entier, un export de maquettes. Un même dossier appelle presque toujours la MÊME
+  // décision — « toutes ces photos sont des « avant » de ce chantier », « ce dossier
+  // d'exports SketchUp, je n'en veux pas ». Les regrouper, c'est transformer 200 clics en un.
+  //
+  // Le tri met les gros paquets en tête : c'est là que le temps se gagne.
+  const groupes = useMemo(() => {
+    const par = new Map()
+    for (const it of inbox) {
+      const cle = (it.parent_path || '').replace(/^.*root:/, '') || '(racine du Drive)'
+      if (!par.has(cle)) par.set(cle, [])
+      par.get(cle).push(it)
+    }
+    return [...par.entries()]
+      .map(([chemin, fichiers]) => ({
+        chemin, fichiers,
+        // Un dossier photo se reconnaît à son chemin : on propose alors les catégories de
+        // prise de vue au lieu des catégories de document.
+        estPhotos: /(^|\/)_?\d*\.?\s*6\. Photos(\/|$)/.test(chemin) || /(^|\/)6\. Photos(\/|$)/.test(chemin),
+      }))
+      .sort((a, b) => b.fichiers.length - a.fichiers.length)
+  }, [inbox])
+
 
   if (!profile) return null
 
@@ -264,6 +294,87 @@ export default function MonDrive({ profile, onError, onSucces }) {
     } catch { /* ignore */ }
   }
 
+  // Rejoue la règle de rattachement sur les lignes déjà détectées. Utile après chaque
+  // amélioration de la règle : le poller, lui, ne repassera jamais sur un fichier qui n'a
+  // pas bougé dans le Drive (cf. l'en-tête de /api/drive/inbox-rejouer).
+  const rejouer = async () => {
+    onError?.(''); onSucces?.('')
+    let offset = 0, rattaches = 0, photos = 0, ecartes = 0, echecs = 0
+    setLot({ fait: 0, total: inbox.length })
+    try {
+      for (let garde = 0; garde < 200; garde++) {
+        const res = await apiFetch('/api/drive/inbox-rejouer', { method: 'POST', body: JSON.stringify({ offset }) })
+        const d = await res.json().catch(() => ({}))
+        if (!res.ok || !d.ok) { onError?.(d.error || 'Reprise impossible'); break }
+        rattaches += d.rattaches || 0; photos += d.photos || 0
+        ecartes += d.ecartes || 0; echecs += d.echecs || 0
+        offset = d.prochain_offset || 0
+        setLot({ fait: Math.max(0, inbox.length - (d.restant ?? 0)), total: inbox.length })
+        if (d.done) break
+      }
+      const details = [
+        `${rattaches} rattaché(s)${photos ? ` (dont ${photos} photo(s))` : ''}`,
+        ...(ecartes > 0 ? [`${ecartes} écarté(s)`] : []),
+        ...(echecs > 0 ? [`${echecs} échec(s)`] : []),
+      ].join(', ')
+      onSucces?.(`Reprise terminée : ${details}`)
+    } catch { onError?.('Reprise impossible') }
+    setLot(null)
+    charger()
+  }
+
+  const ignorerGroupe = async (groupe) => {
+    onError?.(''); onSucces?.('')
+    try {
+      const res = await apiFetch('/api/drive/inbox', {
+        method: 'POST',
+        body: JSON.stringify({ inbox_ids: groupe.fichiers.map(f => f.id), action: 'ignore' }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (res.ok && d.ok) { onSucces?.(`${d.ignores || groupe.fichiers.length} fichier(s) écarté(s) de la liste ✓`); charger() }
+      else onError?.(d.error || 'Impossible d\'écarter ces fichiers')
+    } catch { onError?.('Impossible d\'écarter ces fichiers') }
+  }
+
+  // Rattachement de tout un dossier. Un appel par fichier — chacun télécharge puis ré-uploade,
+  // il n'y a pas de raccourci — mais UNE seule décision humaine, et une progression visible.
+  // Un échec isolé (fichier supprimé du Drive entre-temps) ne doit pas arrêter le reste : on
+  // compte, on continue, et on dit combien à la fin.
+  const rattacherGroupe = async (groupe) => {
+    if (!gForm.dossier_id) return
+    onError?.(''); onSucces?.('')
+    const total = groupe.fichiers.length
+    setLot({ fait: 0, total })
+    let ok = 0, deja = 0, echecs = 0
+    for (const [i, f] of groupe.fichiers.entries()) {
+      try {
+        const res = await apiFetch('/api/drive/import', {
+          method: 'POST',
+          body: JSON.stringify({
+            inbox_id: f.id, dossier_id: gForm.dossier_id,
+            ...(groupe.estPhotos && gForm.categorie_photo
+              ? { categorie_photo: gForm.categorie_photo }
+              : { categorie: gForm.categorie || null }),
+          }),
+        })
+        const d = await res.json().catch(() => ({}))
+        if (res.ok && d.ok) { if (d.deja) deja++; else ok++ }
+        else echecs++
+      } catch { echecs++ }
+      setLot({ fait: i + 1, total })
+    }
+    setLot(null)
+    setGroupeOuvert(null)
+    setGForm({ dossier_id: '', categorie: '', categorie_photo: '' })
+    const details = [
+      `${ok} rattaché(s)`,
+      ...(deja > 0 ? [`${deja} déjà présent(s)`] : []),
+      ...(echecs > 0 ? [`${echecs} échec(s)`] : []),
+    ].join(', ')
+    onSucces?.(`Dossier traité : ${details}`)
+    charger()
+  }
+
   const annulerAuto = async (id) => {
     onError?.(''); onSucces?.('')
     try {
@@ -411,8 +522,78 @@ export default function MonDrive({ profile, onError, onSucces }) {
           {/* ── Fichiers déposés dans le Drive → à rattacher à un chantier ── */}
           {inbox.length > 0 && (
             <div style={{ borderTop: '1px solid var(--ink-100)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>📥 Fichiers déposés à rattacher ({inbox.length})</div>
-              {inbox.map(it => (
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink-800)' }}>
+                📥 Fichiers déposés à rattacher ({inbox.length}) · {groupes.length} dossier(s)
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-500)' }}>
+                Regroupés par dossier du Drive : un même dossier appelle presque toujours la même décision.
+              </div>
+              <div>
+                <button className="btn btn-ghost" style={{ fontSize: 11.5 }} disabled={!!lot} onClick={rejouer}>
+                  {lot ? `Reprise… ${lot.fait}/${lot.total}` : '↻ Rattacher tout ce qui est bien rangé'}
+                </button>
+              </div>
+
+              {groupes.map(g => (
+                <div key={g.chemin} style={{ border: '1px solid var(--ink-100)', borderRadius: 8, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, color: 'var(--ink-900)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {g.estPhotos ? '🖼️' : '📁'} {g.chemin}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--ink-500)' }}>
+                        {g.fichiers.length} fichier(s) · {g.fichiers.slice(0, 3).map(f => f.name).join(', ')}{g.fichiers.length > 3 ? '…' : ''}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button className="btn btn-ghost" style={{ fontSize: 11.5 }} disabled={!!lot}
+                        onClick={() => { setGroupeOuvert(groupeOuvert === g.chemin ? null : g.chemin); setGForm({ dossier_id: '', categorie: '', categorie_photo: g.estPhotos ? 'avant' : '' }) }}>
+                        Tout rattacher
+                      </button>
+                      <button className="btn btn-ghost" style={{ fontSize: 11.5 }} disabled={!!lot} onClick={() => ignorerGroupe(g)}>
+                        Tout ignorer
+                      </button>
+                    </div>
+                  </div>
+
+                  {groupeOuvert === g.chemin && (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <select className="input" style={{ height: 38, flex: 1, minWidth: 180 }} value={gForm.dossier_id} onChange={e => setGForm(f => ({ ...f, dossier_id: e.target.value }))}>
+                        <option value="">— Chantier —</option>
+                        {dossiersRef.map(d => <option key={d.id} value={d.id}>{(d.created_at || '').slice(0, 10)} {d.client?.nom || ''}</option>)}
+                      </select>
+                      {g.estPhotos ? (
+                        <select className="input" style={{ height: 38 }} value={gForm.categorie_photo} onChange={e => setGForm(f => ({ ...f, categorie_photo: e.target.value }))}>
+                          <option value="avant">Photos AVANT</option>
+                          <option value="pendant">Photos PENDANT</option>
+                          <option value="apres">Photos APRÈS</option>
+                        </select>
+                      ) : (
+                        <select className="input" style={{ height: 38 }} value={gForm.categorie} onChange={e => setGForm(f => ({ ...f, categorie: e.target.value }))}>
+                          <option value="">Autres</option>
+                          <option value="compte_rendu">Rapport de visite</option>
+                          <option value="plans">Plans</option>
+                          <option value="administratif">Administratif</option>
+                        </select>
+                      )}
+                      <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={!!lot || !gForm.dossier_id} onClick={() => rattacherGroupe(g)}>
+                        {lot ? `${lot.fait}/${lot.total}…` : `Rattacher les ${g.fichiers.length}`}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              <details style={{ marginTop: 4 }}>
+                <summary style={{ fontSize: 11.5, color: 'var(--ink-500)', cursor: 'pointer' }}>
+                  Voir fichier par fichier{inbox.length > MAX_LIGNES ? ` (${MAX_LIGNES} premiers sur ${inbox.length})` : ''}
+                </summary>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+              {/* Plafond d'affichage : React construit le DOM même à l'intérieur d'un <details>
+                  fermé. 1294 lignes, c'est un écran qui rame avant même d'être ouvert — et
+                  personne ne parcourt 1294 lignes à la main de toute façon. Le travail se fait
+                  par dossier au-dessus ; cette liste sert à vérifier un cas précis. */}
+              {inbox.slice(0, MAX_LIGNES).map(it => (
                 <div key={it.id} style={{ border: '1px solid var(--ink-100)', borderRadius: 8, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <div style={{ minWidth: 0 }}>
@@ -443,6 +624,8 @@ export default function MonDrive({ profile, onError, onSucces }) {
                   )}
                 </div>
               ))}
+                </div>
+              </details>
             </div>
           )}
           {/* ── Rattachés automatiquement (30 j) → possibilité d'annuler ── */}
