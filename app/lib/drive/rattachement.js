@@ -65,6 +65,13 @@ const CATEGORIE_PAR_DOSSIER = {
   '5. Plans & techniques': 'plans',
 }
 
+// 3e niveau sous « 4. Documents artisans/<Artisan>/ ». Ces deux dossiers-là sont écrits par
+// une catégorie et une seule (cf. sousDossiers), donc ils se relisent sans ambiguïté.
+const CATEGORIE_PAR_DOSSIER_ARTISAN = {
+  'Factures': 'facture_artisan',
+  'Autre': 'autre_artisan',
+}
+
 // Sous-dossiers dont l'appli n'est PAS la destination, et qui n'ont donc rien a faire dans
 // une liste de taches :
 //   '3. Devis'                 : table devis_artisans, circuit propre (cf. en-tete).
@@ -206,7 +213,17 @@ export function deciderRattachement(parentPath, candidats, artisansParNom = new 
     if (!nomArtisan) return { destination: 'documents', dossier_id: dossier.id, categorie: null, artisan_id: null }
     const artisanId = artisansParNom.get(nomArtisan)
     if (!artisanId) return refus(`artisan_inconnu:${nomArtisan}`)
-    return { destination: 'documents', dossier_id: dossier.id, categorie: null, artisan_id: artisanId }
+    // Le 3e niveau porte la NATURE du document, et il faut le lire : l'écriture crée
+    // « <artisan>/Factures » pour une facture et « <artisan>/Autre » pour le reste
+    // (cf. sousDossiers). Ignorer ce niveau revenait à ranger une facture d'artisan en
+    // « Autres » alors que le Drive l'avait classée — la taxonomie n'a pas été construite
+    // pour être relue à moitié.
+    //
+    // À la RACINE de l'artisan, en revanche, on ne tranche pas : cinq catégories y écrivent
+    // (attestation de démarrage, déblocage d'acompte, avis de virement, PV de réception,
+    // attestation de fin). Le dossier ne les distingue pas, donc le rattachement non plus.
+    const categorie = CATEGORIE_PAR_DOSSIER_ARTISAN[sous[2]] ?? null
+    return { destination: 'documents', dossier_id: dossier.id, categorie, artisan_id: artisanId }
   }
 
   if (!(premier in CATEGORIE_PAR_DOSSIER)) return refus(`sous_dossier_inconnu:${premier}`)

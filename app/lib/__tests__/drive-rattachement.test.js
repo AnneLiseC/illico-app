@@ -43,8 +43,21 @@ describe('deciderRattachement — ce qui se rattache tout seul', () => {
       .toEqual({ destination: 'documents', dossier_id: 'epp', categorie: 'administratif', artisan_id: null })
   })
 
-  it("une facture d'artisan connu : l'artisan est resolu depuis le nom du dossier", () => {
+  it("une facture d'artisan : l'artisan ET la nature sont lus dans le chemin", () => {
+    // « on n'a pas fait tous les dossiers pour rien » : le 3e niveau porte la categorie.
+    // La ranger en « Autres » alors que le Drive l'avait classee, c'est relire la taxonomie
+    // a moitie.
     expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/4. Documents artisans/MJ RENOVATION/Factures`))
+      .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: 'facture_artisan', artisan_id: 'a-mj' })
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/4. Documents artisans/MJ RENOVATION/Autre`))
+      .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: 'autre_artisan', artisan_id: 'a-mj' })
+  })
+
+  it("a la RACINE de l'artisan, la nature reste indecidable — et on ne l'invente pas", () => {
+    // Cinq categories ecrivent a cet endroit (attestation de demarrage, deblocage d'acompte,
+    // avis de virement, PV de reception, attestation de fin) : le dossier ne les distingue
+    // pas, donc le rattachement non plus. L'artisan, lui, est certain.
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/4. Documents artisans/MJ RENOVATION`))
       .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: null, artisan_id: 'a-mj' })
   })
 

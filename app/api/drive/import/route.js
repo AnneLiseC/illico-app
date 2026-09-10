@@ -22,7 +22,15 @@ import { importerInbox, importerInboxPhoto } from '../../../lib/drive/import-inb
 import { estImage } from '../../../lib/drive/rattachement'
 
 const CATS = new Set(['compte_rendu', 'plans', 'administratif']) // catégories libres autorisées ; sinon Autres (null)
-const CATS_PHOTO = new Set(['avant', 'pendant', 'apres'])
+// Catégories de la table photos. « maquette » en fait partie et n'est PAS une prise de vue :
+// c'est un livrable technique, rangé dans « 5. Plans & techniques » du Drive et non dans
+// « 6. Photos » (arbitrage du 02/09, cf. photoSousDossiers). D'où deux conséquences :
+//   · le rattachement AUTOMATIQUE ne la déduira jamais d'un chemin — « 5. Plans & techniques »
+//     contient aussi des plans, des estimations, des fiches techniques ; une image qui s'y
+//     trouve n'est pas forcément une maquette, et on ne devine pas ;
+//   · elle doit donc être proposée à la MAIN, y compris sur un dossier qui n'est pas un
+//     dossier photo — sinon elle resterait inatteignable là où elle est réellement rangée.
+const CATS_PHOTO = new Set(['avant', 'pendant', 'apres', 'maquette'])
 
 let _admin
 function admin() {

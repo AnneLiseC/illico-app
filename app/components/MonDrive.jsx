@@ -37,7 +37,10 @@ export default function MonDrive({ profile, onError, onSucces }) {
   const [importing, setImporting] = useState(false)
   const [autoRattaches, setAutoRattaches] = useState([])  // rattachés auto (30 j), annulables
   const [groupeOuvert, setGroupeOuvert] = useState(null)  // chemin du groupe déplié
-  const [gForm, setGForm] = useState({ dossier_id: '', categorie: '', categorie_photo: '' })
+  // `dest` encode la destination choisie : 'doc:<categorie>' ou 'photo:<categorie>'.
+  // Un seul champ plutôt que deux, pour que le menu puisse mélanger documents et photos
+  // (la maquette est une photo rangée dans un dossier de plans — cf. le menu).
+  const [gForm, setGForm] = useState({ dossier_id: '', dest: 'doc:' })
   // UN lot par dossier, pas un lot global. Chaque dossier avance de son côté, et rien
   // n'empêche d'en lancer un deuxième pendant que le premier tourne : côté serveur, chaque
   // ligne est prise par un verrou atomique (compare-and-swap sur drive_inbox.statut), donc
@@ -365,16 +368,15 @@ export default function MonDrive({ profile, onError, onSucces }) {
   const rattacherGroupe = async (groupe) => {
     const dossierId = gForm.dossier_id
     if (!dossierId) return
-    const corps = groupe.estPhotos && gForm.categorie_photo
-      ? { categorie_photo: gForm.categorie_photo }
-      : { categorie: gForm.categorie || null }
+    const [genre, cat] = String(gForm.dest || 'doc:').split(':')
+    const corps = genre === 'photo' ? { categorie_photo: cat } : { categorie: cat || null }
     onError?.(''); onSucces?.('')
     const total = groupe.fichiers.length
     majLot(groupe.chemin, { fait: 0, total })
     // Le formulaire est rendu tout de suite : la décision est prise, l'attente ne doit pas
     // confisquer l'écran.
     setGroupeOuvert(null)
-    setGForm({ dossier_id: '', categorie: '', categorie_photo: '' })
+    setGForm({ dossier_id: '', dest: 'doc:' })
 
     let ok = 0, deja = 0, echecs = 0, faits = 0
     const traiter = async (f) => {
@@ -580,7 +582,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
                         </span>
                       ) : (<>
                         <button className="btn btn-ghost" style={{ fontSize: 11.5 }}
-                          onClick={() => { setGroupeOuvert(groupeOuvert === g.chemin ? null : g.chemin); setGForm({ dossier_id: '', categorie: '', categorie_photo: g.estPhotos ? 'avant' : '' }) }}>
+                          onClick={() => { setGroupeOuvert(groupeOuvert === g.chemin ? null : g.chemin); setGForm({ dossier_id: '', dest: g.estPhotos ? 'photo:avant' : 'doc:' }) }}>
                           Tout rattacher
                         </button>
                         <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => ignorerGroupe(g)}>
@@ -596,20 +598,28 @@ export default function MonDrive({ profile, onError, onSucces }) {
                         <option value="">— Chantier —</option>
                         {dossiersRef.map(d => <option key={d.id} value={d.id}>{(d.created_at || '').slice(0, 10)} {d.client?.nom || ''}</option>)}
                       </select>
-                      {g.estPhotos ? (
-                        <select className="input" style={{ height: 38 }} value={gForm.categorie_photo} onChange={e => setGForm(f => ({ ...f, categorie_photo: e.target.value }))}>
-                          <option value="avant">Photos AVANT</option>
-                          <option value="pendant">Photos PENDANT</option>
-                          <option value="apres">Photos APRÈS</option>
-                        </select>
-                      ) : (
-                        <select className="input" style={{ height: 38 }} value={gForm.categorie} onChange={e => setGForm(f => ({ ...f, categorie: e.target.value }))}>
-                          <option value="">Autres</option>
-                          <option value="compte_rendu">Rapport de visite</option>
-                          <option value="plans">Plans</option>
-                          <option value="administratif">Administratif</option>
-                        </select>
-                      )}
+                      {/* UN seul menu pour les deux destinations. Séparer « dossier photo » et
+                          « dossier document » sur le chemin marchait tant que chaque nature
+                          restait à sa place — mais la MAQUETTE est une photo rangée dans
+                          « 5. Plans & techniques », donc dans un dossier qui n'a rien d'un
+                          dossier photo. Avec deux menus, elle était inatteignable là où elle
+                          se trouve réellement. Le chemin ne décide plus que du choix par
+                          DÉFAUT ; la destination reste ouverte. */}
+                      <select className="input" style={{ height: 38 }} value={gForm.dest}
+                        onChange={e => setGForm(f => ({ ...f, dest: e.target.value }))}>
+                        <optgroup label="Documents">
+                          <option value="doc:">Autres</option>
+                          <option value="doc:compte_rendu">Rapport de visite</option>
+                          <option value="doc:plans">Plans</option>
+                          <option value="doc:administratif">Administratif</option>
+                        </optgroup>
+                        <optgroup label="Photos">
+                          <option value="photo:avant">Photos AVANT</option>
+                          <option value="photo:pendant">Photos PENDANT</option>
+                          <option value="photo:apres">Photos APRÈS</option>
+                          <option value="photo:maquette">Maquettes</option>
+                        </optgroup>
+                      </select>
                       <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={!gForm.dossier_id} onClick={() => rattacherGroupe(g)}>
                         Rattacher les {g.fichiers.length}
                       </button>
