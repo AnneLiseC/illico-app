@@ -24,6 +24,7 @@ const SYSTEM_PROMPT = `Tu es un assistant d'extraction de données pour une cour
 
 Réponds STRICTEMENT par un objet JSON (aucun texte autour, pas de balises markdown) avec ces clés :
 {
+  "numero_devis": chaîne|null,      // référence du devis imprimée par l'entreprise (ex: "DEV-2026-0412", "D25-118"). PAS le numéro de client, PAS le numéro de facture, PAS le SIRET.
   "montant_ht": nombre|null,        // total HT en euros (nombre, sans symbole)
   "montant_tva": nombre|null,       // montant de la TVA en euros
   "taux_tva": nombre|null,          // taux de TVA en % si indiqué (ex: 10, 20, 5.5)
@@ -39,7 +40,8 @@ RÈGLES :
 - Lis les lignes HT, TVA et TTC. S'il n'y a PAS de TVA (franchise en base, "TVA non applicable art. 293 B du CGI"), alors HT et TTC sont ÉGAUX.
 - Les montants sont des nombres décimaux (point décimal), sans espace ni symbole €.
 - Ne prends que le TOTAL du devis (pas les sous-totaux par ligne) pour montant_ht/ttc.
-- "description" doit décrire les travaux prévus (le périmètre), pas recopier le devis en entier.`
+- "description" doit décrire les travaux prévus (le périmètre), pas recopier le devis en entier.
+- "numero_devis" : recopie la référence EXACTEMENT comme elle est imprimée, préfixe compris. Si le document porte plusieurs numéros, prends celui présenté comme la référence DU DEVIS. Dans le doute, null — une référence inventée est pire qu'une case vide, elle serait recopiée dans le suivi financier.`
 
 // Extrait le premier objet JSON d'une réponse (tolère un éventuel enrobage).
 function parseJsonSafe(text) {
