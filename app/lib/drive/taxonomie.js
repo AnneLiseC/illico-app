@@ -80,9 +80,36 @@ export function devisSousDossier(statutDevis) {
 // livrable technique, elle part dans « 5. Plans & techniques » (arbitrage 02/09).
 const PHOTO_CAT_LABEL = { avant: '1. Avant', pendant: '2. Pendant', apres: '3. Apres' }
 export function photoSousDossiers(categoriePhoto) {
-  if (categoriePhoto === 'maquette') return ['5. Plans & techniques']
+  // La MAQUETTE reste hors de « 6. Photos » : c'est un livrable technique, pas une prise de
+  // vue (arbitrage du 02/09). Mais elle va dans un SOUS-DOSSIER « maquette », et pas en vrac
+  // dans « 5. Plans & techniques ».
+  //
+  // Ce niveau n'est pas cosmétique, c'est ce qui rend la maquette RELISIBLE. Écrite à la
+  // racine, elle était indiscernable d'un plan, d'une estimation ou d'une fiche technique :
+  // relue, elle revenait en document « plans », et la galerie du chantier la perdait. Défaut
+  // trouvé le 10/09 par le test d'aller-retour, pas à l'usage — et le Drive contenait DÉJÀ un
+  // dossier « maquette » créé à la main : l'appli ne faisait que ne pas suivre la convention
+  // de la maison.
+  if (categoriePhoto === 'maquette') return ['5. Plans & techniques', 'maquette']
   return ['6. Photos', PHOTO_CAT_LABEL[categoriePhoto] || 'Autres']
 }
+
+// TOUTES les catégories que l'appli sait écrire dans le Drive, et toutes les catégories de
+// prise de vue. Listes exportées pour une seule raison, qui vaut d'être dite : le test
+// d'ALLER-RETOUR (drive-aller-retour.test.js) s'en sert pour exiger qu'AUCUNE catégorie ne
+// soit ajoutée sans qu'on ait décidé, noir sur blanc, ce que la relecture doit en faire.
+//
+// Sans ce garde-fou, on ajoute une catégorie côté écriture, on oublie la lecture, et les
+// fichiers concernés atterrissent en « Autres » sans que rien ne le signale — c'est
+// exactement ce qui est arrivé aux factures d'artisans et aux maquettes.
+export const CATEGORIES_DOCUMENT = [
+  'compte_rendu',
+  'attestation_demarrage', 'deblocage_acompte', 'avis_virement', 'pv_reception', 'attestation_chantier',
+  'facture_artisan', 'autre_artisan',
+  'plans', 'estimation', 'fiche_technique',
+  'facture_honoraire', 'administratif',
+]
+export const CATEGORIES_PHOTO = ['avant', 'pendant', 'apres', 'maquette']
 
 // Sous-dossier(s) cible selon la catégorie du document. Renvoie un tableau de segments.
 export function sousDossiers(categorie, artisanNom) {

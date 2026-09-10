@@ -131,9 +131,16 @@ export async function importerInboxPhoto(db, {
   mod, token, inbox, fournisseur, dossierId, categoriePhoto, auto = false,
 }) {
   // Doublon AVANT la prise : inutile de verrouiller une ligne pour la relâcher aussitôt.
+  //
+  // Le critère est (dossier, CATÉGORIE, nom), pas (dossier, nom). Le Drive range les photos
+  // par étape : le même « IMG_0104.jpeg » peut légitimement exister en « Avant » et en
+  // « Après » — c'est même le cas d'usage type, la même pièce photographiée deux fois avec
+  // un nom d'appareil identique. Sur le seul nom, la seconde aurait été silencieusement
+  // écartée, et la comparaison avant/après du dossier de restitution aurait perdu une image
+  // sans que rien ne le dise.
   const nom = inbox.name || 'photo'
   const { data: deja } = await db.from('photos')
-    .select('id').eq('dossier_id', dossierId).eq('nom', nom).limit(1)
+    .select('id').eq('dossier_id', dossierId).eq('categorie', categoriePhoto).eq('nom', nom).limit(1)
   if (deja && deja.length > 0) {
     // La photo est déjà dans l'appli : la ligne inbox n'a plus lieu d'être proposée.
     await db.from('drive_inbox').update({ statut: 'ignore' }).eq('id', inbox.id).then(() => {}, () => {})

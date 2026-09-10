@@ -72,8 +72,10 @@ describe('drive/taxonomie', () => {
     expect(photoSousDossiers('avant')).toEqual(['6. Photos', '1. Avant'])
     expect(photoSousDossiers('pendant')).toEqual(['6. Photos', '2. Pendant'])
     expect(photoSousDossiers('apres')).toEqual(['6. Photos', '3. Apres'])
-    // La maquette est un livrable technique, pas une photo de chantier (arbitrage 02/09).
-    expect(photoSousDossiers('maquette')).toEqual(['5. Plans & techniques'])
+    // La maquette est un livrable technique, pas une photo de chantier (arbitrage 02/09) —
+    // mais elle a son SOUS-DOSSIER, sans quoi elle est indiscernable d'un plan à la
+    // relecture et disparaît de la galerie du chantier (cf. drive-aller-retour.test.js).
+    expect(photoSousDossiers('maquette')).toEqual(['5. Plans & techniques', 'maquette'])
     expect(photoSousDossiers(null)).toEqual(['6. Photos', 'Autres'])
   })
 

@@ -114,6 +114,31 @@ export async function POST(request) {
       }
     }
 
+    // 5. MÊME réécriture pour les fichiers encore « à rattacher ».
+    //
+    // Sans cette étape, clore un chantier depuis l'appli rendait indécidables tous ses
+    // fichiers en attente : le dossier partait vers « 2. Terminés/<année> » pendant que
+    // drive_inbox gardait « 1. En cours ». Le rattachement compare le bucket du chemin à
+    // celui du chantier — deux valeurs devenues incohérentes, donc plus aucune
+    // correspondance, en silence.
+    //
+    // Constaté le 10/09 sur un dossier reclassé À LA MAIN (44 fichiers bloqués). Le même
+    // défaut existait, déclenché par l'appli elle-même, à chaque changement de statut :
+    // doc_index était réécrit juste au-dessus, drive_inbox était oublié.
+    const { data: enAttente } = await db.from('drive_inbox')
+      // Le Drive appartient à la référente du dossier : c'est sous SON user_id que les
+      // lignes inbox sont enregistrées. (`loadDriveCompte` ne remonte pas user_id.)
+      .select('id, parent_path').eq('user_id', dossier.referente_id).eq('statut', 'a_rattacher')
+    const ancien = `${RACINE_CLIENTS}/${found.segs.join('/')}/${folderName}`
+    const nouveau = `${RACINE_CLIENTS}/${targetPathSegs}/${folderName}`
+    for (const ligne of (enAttente || [])) {
+      const i = (ligne.parent_path || '').indexOf(ancien)
+      if (i === -1) continue
+      await db.from('drive_inbox')
+        .update({ parent_path: ligne.parent_path.slice(0, i) + nouveau + ligne.parent_path.slice(i + ancien.length) })
+        .eq('id', ligne.id)
+    }
+
     return NextResponse.json({ ok: true, moved: true, from: found.segs.join('/'), to: targetPathSegs })
   } catch (e) {
     console.error('[drive/move-chantier] move', e)

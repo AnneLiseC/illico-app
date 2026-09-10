@@ -103,6 +103,15 @@ export function estImage(nomFichier) {
 // On ne devine RIEN au-dela : un dossier photo sans categorie lisible (ou une photo posee
 // a la racine de « 6. Photos ») reste a la main. Classer 175 photos en « Avant » par
 // defaut fausserait le dossier de restitution du client, silencieusement.
+// Sous-dossier « maquette » / « maquettes », quelle que soit la casse ou l'accentuation.
+// Même tolérance que pour les étapes de photos : le dossier est nommé à la main.
+export function estMaquette(segment) {
+  const s = String(segment || '')
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .toLowerCase().replace(/^[_\s]*\d+\s*[.)\-]?\s*/, '').trim()
+  return s === 'maquette' || s === 'maquettes' || s.startsWith('maquette ')
+}
+
 export function categoriePhotoDepuisDossier(segment) {
   const s = String(segment || '')
     .normalize('NFD').replace(/\p{Diacritic}/gu, '')
@@ -224,6 +233,19 @@ export function deciderRattachement(parentPath, candidats, artisansParNom = new 
     // attestation de fin). Le dossier ne les distingue pas, donc le rattachement non plus.
     const categorie = CATEGORIE_PAR_DOSSIER_ARTISAN[sous[2]] ?? null
     return { destination: 'documents', dossier_id: dossier.id, categorie, artisan_id: artisanId }
+  }
+
+  // ── Maquettes ─────────────────────────────────────────────────────────────────────
+  // Une maquette est une PHOTO (photos.categorie = 'maquette'), rangée dans
+  // « 5. Plans & techniques » et non dans « 6. Photos » — c'est le livrable technique,
+  // pas une prise de vue (arbitrage du 02/09).
+  //
+  // On ne la devine pas depuis le dossier de niveau 1, qui contient aussi des plans, des
+  // estimations et des fiches techniques. Mais quand un sous-dossier s'appelle « maquette »,
+  // il n'y a plus rien à deviner : c'est écrit. Le Drive en contient un, avec 6 fichiers,
+  // et le code les rangeait en documents « plans » — alors que le classement était fait.
+  if (premier === '5. Plans & techniques' && estMaquette(sous[1]) && estImage(nomFichier)) {
+    return { destination: 'photos', dossier_id: dossier.id, categorie_photo: 'maquette' }
   }
 
   if (!(premier in CATEGORIE_PAR_DOSSIER)) return refus(`sous_dossier_inconnu:${premier}`)

@@ -95,6 +95,31 @@ describe('deciderRattachement — les photos vont dans la table photos', () => {
     expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/6. Photos/3. Après`, 'a.jpg').categorie_photo).toBe('apres')
   })
 
+  it('une MAQUETTE est une photo, meme rangee dans « 5. Plans & techniques »', () => {
+    // Le Drive contient bien un sous-dossier « maquette » : le classement etait fait, c'est
+    // la relecture qui l'ignorait et les rangeait en documents « plans ».
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/maquette`, 'vue3d.jpg'))
+      .toEqual({ destination: 'photos', dossier_id: 'barloy', categorie_photo: 'maquette' })
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/Maquettes`, 'a.png').categorie_photo)
+      .toBe('maquette')
+  })
+
+  it('un PDF dans le dossier maquette reste un DOCUMENT', () => {
+    // La table photos n'affiche pas un PDF. Mieux vaut un plan bien rangé qu'une photo
+    // fantome dans la galerie.
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/maquette`, 'plan.pdf'))
+      .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: 'plans', artisan_id: null })
+  })
+
+  it('les sous-dossiers libres sous « 5. Plans & techniques » restent des plans', () => {
+    // « sdb wc », « Plan cuisine », « LAPEYRE », « moodboard »… : elle range par piece ou par
+    // fournisseur. Aucune categorie de l'appli ne leur correspond, et c'est tres bien : le
+    // niveau 1 suffit a decider, le niveau 2 est son organisation a elle.
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/sdb wc`, 'a.jpg').categorie).toBe('plans')
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/moodboard`, 'a.jpg').categorie).toBe('plans')
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/1. Administratif/PLU_ABF_CADASTRE`, 'a.pdf').categorie).toBe('administratif')
+  })
+
   it('ne DEVINE pas la categorie : une photo sans categorie reste a la main', () => {
     // 175 photos sont posees a la racine de « 6. Photos ». Les classer en « Avant » par
     // defaut fausserait le dossier de restitution du client, sans que ca se voie.
