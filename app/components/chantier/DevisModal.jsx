@@ -11,6 +11,7 @@ export default function DevisModal({ open, devis, onClose, onSave, onAutofill, a
   const isEdit = !!devis
   const initForm = () => ({
     artisan_id: devis?.artisan_id || '',
+    numero_devis: devis?.numero_devis ?? '',
     montant_ht: devis?.montant_ht ?? '',
     montant_ttc: devis?.montant_ttc ?? '',
     ttc_manuel: devis?.ttc_manuel ?? false,
@@ -51,6 +52,8 @@ export default function DevisModal({ open, devis, onClose, onSave, onAutofill, a
     let artisanNote = null
     setForm(f => {
       const next = { ...f }
+      // On ne PIÉTINE pas une saisie manuelle : si elle a déjà tapé le numéro, il gagne.
+      if (ex.numero_devis && !String(f.numero_devis || '').trim()) next.numero_devis = ex.numero_devis
       if (ex.montant_ht != null) next.montant_ht = String(ex.montant_ht)
       if (ex.montant_ttc != null) { next.montant_ttc = String(ex.montant_ttc); next.ttc_manuel = true }
       if (ex.date_reception) next.date_reception = ex.date_reception
@@ -173,6 +176,20 @@ export default function DevisModal({ open, devis, onClose, onSave, onAutofill, a
               </select>
             </div>
           )}
+
+          {/* Numéro du devis — la référence imprimée par l'entreprise, pas le rang sur
+              le chantier. Facultative : beaucoup de devis arrivent sans, et un champ
+              obligatoire bloquerait la saisie pour une donnée de confort. */}
+          <div>
+            <label className="eyebrow" style={{display:'block', marginBottom:6}}>
+              N° du devis <span style={{color:'var(--ink-500)', fontWeight:400, textTransform:'none'}}>facultatif · tel qu&apos;imprimé par l&apos;entreprise</span>
+            </label>
+            <input type="text" className="input" maxLength={40}
+              value={form.numero_devis}
+              onChange={e => set('numero_devis', e.target.value)}
+              placeholder="DEV-2026-0412"
+              style={{height:40, width:'100%'}} />
+          </div>
 
           <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
             <div>

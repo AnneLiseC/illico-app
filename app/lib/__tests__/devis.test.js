@@ -4,7 +4,7 @@
 // rapprochement d'artisan par nom.
 
 import { describe, it, expect } from 'vitest'
-import { buildDevisPayload, normaliserExtractionDevis, matchArtisanParNom } from '../devis'
+import { buildDevisPayload, normaliserExtractionDevis, matchArtisanParNom, nettoyerNumeroDevis } from '../devis'
 
 describe('buildDevisPayload', () => {
   it('convertit la commission en décimale et lit les montants', () => {
@@ -101,5 +101,58 @@ describe('matchArtisanParNom', () => {
   it('aucun match → id vide', () => {
     expect(matchArtisanParNom('Menuiserie Martin', artisans)).toEqual({ id: '', exact: false })
     expect(matchArtisanParNom('', artisans)).toEqual({ id: '', exact: false })
+  })
+})
+
+// ── Numéro de devis (10/09) ────────────────────────────────────────────────
+//
+// La référence imprimée par l'entreprise, affichée dans le suivi financier à côté du
+// nom de l'artisan et du montant TTC. Texte libre : chaque entreprise numérote à sa
+// façon, et toute contrainte de format finirait par rejeter un devis valide.
+describe('numéro de devis', () => {
+  it('accepte les formats les plus variés, sans rien normaliser', () => {
+    for (const n of ['DEV-2026-0412', 'D25-118', '2026/07/14', '00412', 'Devis n°7 bis']) {
+      expect(nettoyerNumeroDevis(n)).toBe(n)
+    }
+  })
+
+  it('rend null sur du vide plutôt qu\'une chaîne vide', () => {
+    // Sinon l'affichage montrerait « Devis n°  » avec un blanc à la place du numéro.
+    expect(nettoyerNumeroDevis('')).toBe(null)
+    expect(nettoyerNumeroDevis('   ')).toBe(null)
+    expect(nettoyerNumeroDevis(null)).toBe(null)
+    expect(nettoyerNumeroDevis(undefined)).toBe(null)
+  })
+
+  it('rogne les espaces parasites du copier-coller', () => {
+    expect(nettoyerNumeroDevis('  DEV-2026-0412  ')).toBe('DEV-2026-0412')
+    expect(nettoyerNumeroDevis('DEV   2026')).toBe('DEV 2026')
+  })
+
+  it('borne la longueur — une extraction IA qui déraille ne doit pas polluer l\'écran', () => {
+    // Le risque réel : l'IA se trompe de zone du PDF et renvoie un paragraphe, qui
+    // s'afficherait ensuite sur chaque ligne du suivi financier.
+    const long = 'X'.repeat(500)
+    expect(nettoyerNumeroDevis(long).length).toBe(40)
+  })
+
+  it('entre dans le payload enregistré', () => {
+    const p = buildDevisPayload({ numero_devis: ' DEV-2026-0412 ', montant_ht: '1000', montant_ttc: '1100', acompte_pourcentage: 30 })
+    expect(p.numero_devis).toBe('DEV-2026-0412')
+  })
+
+  it('vaut null dans le payload quand la case est laissée vide — le champ est facultatif', () => {
+    const p = buildDevisPayload({ montant_ht: '1000', montant_ttc: '1100', acompte_pourcentage: 30 })
+    expect(p.numero_devis).toBe(null)
+  })
+
+  it('est repris de l\'extraction du PDF quand l\'IA le lit', () => {
+    expect(normaliserExtractionDevis({ numero_devis: 'D25-118', montant_ht: 1000 }).numero_devis).toBe('D25-118')
+  })
+
+  it('ne fabrique pas de numéro quand l\'IA n\'en trouve pas', () => {
+    // Une référence inventée serait recopiée telle quelle dans le suivi financier.
+    expect(normaliserExtractionDevis({ montant_ht: 1000 }).numero_devis).toBe(null)
+    expect(normaliserExtractionDevis({ numero_devis: '', montant_ht: 1000 }).numero_devis).toBe(null)
   })
 })

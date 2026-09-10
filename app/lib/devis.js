@@ -17,6 +17,10 @@ export function buildDevisPayload(form) {
     ? (form.acompte_montant_fixe !== '' && Number.isFinite(parseFloat(form.acompte_montant_fixe)) ? parseFloat(form.acompte_montant_fixe) : null)
     : null
   return {
+    // Référence imprimée par l'entreprise. Texte libre nettoyé : une saisie vide ou
+    // faite d'espaces doit valoir NULL, pas une chaîne vide — sinon l'affichage
+    // montrerait « Devis  » avec un blanc à la place du numéro.
+    numero_devis: nettoyerNumeroDevis(form.numero_devis),
     montant_ht: form.montant_ht !== '' ? parseFloat(form.montant_ht) : null,
     montant_ttc: form.montant_ttc !== '' ? parseFloat(form.montant_ttc) : null,
     ttc_manuel: form.ttc_manuel ?? false,
@@ -31,6 +35,26 @@ export function buildDevisPayload(form) {
     acompte_pourcentage: acomptePct,
     acompte_montant_fixe: acompteMontant,
   }
+}
+
+/**
+ * Nettoie un numéro de devis saisi ou extrait d'un PDF.
+ *
+ * Volontairement permissif sur la FORME — chaque entreprise numérote à sa façon — mais
+ * strict sur deux points : jamais de chaîne vide (NULL à la place), et une longueur
+ * bornée. La borne n'est pas cosmétique : sans elle, une extraction IA qui se trompe de
+ * zone du PDF pourrait déverser un paragraphe entier dans la colonne, et ce paragraphe
+ * s'afficherait ensuite à chaque ligne du suivi financier.
+ *
+ * @param {*} v
+ * @returns {string|null}
+ */
+export function nettoyerNumeroDevis(v) {
+  if (v == null) return null
+  const t = String(v).replace(/\s+/g, ' ').trim()
+  if (!t) return null
+  // Un vrai numéro de devis est court. Au-delà, c'est que ce n'en est pas un.
+  return t.slice(0, 40)
 }
 
 // Nombre robuste : accepte "1 234,56 €", "1234.56", 1234.56 → 1234.56. Sinon null.
@@ -73,6 +97,7 @@ export function normaliserExtractionDevis(raw) {
     montant_tva: tva,
     montant_ttc: ttc,
     taux_tva: taux,
+    numero_devis: nettoyerNumeroDevis(raw?.numero_devis),
     date_reception: toDateISO(raw?.date_reception),
     date_limite: toDateISO(raw?.date_limite),
     description: raw?.description ? String(raw.description).trim().slice(0, 2000) : null,

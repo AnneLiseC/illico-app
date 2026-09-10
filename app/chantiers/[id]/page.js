@@ -2141,7 +2141,7 @@ export default function FicheChantier({ params }) {
   // de contenu, on fige un snapshot dans devis_versions. Garde anti-doublon : rien
   // n'est créé si l'état courant est identique à la dernière version courante.
   const CHAMPS_VERSION = [
-    'montant_ht','montant_ttc','ttc_manuel','commission_pourcentage',
+    'numero_devis','montant_ht','montant_ttc','ttc_manuel','commission_pourcentage',
     'acompte_pourcentage','acompte_montant_fixe','statut','notes',
     'date_reception','date_limite','devis_pdf_path',
   ]
@@ -4448,6 +4448,9 @@ export default function FicheChantier({ params }) {
                       {/* Montants */}
                       <div className="devis-info-block">
                         <div className="devis-info-title">Montants</div>
+                        {d.numero_devis && (
+                          <div className="devis-kv"><span>N° du devis</span><span style={{fontWeight:600, color:'var(--ink-900)'}}>{d.numero_devis}</span></div>
+                        )}
                         <div className="devis-kv"><span>Montant HT</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.montant_ht ? fmt(d.montant_ht) : '—'}</span></div>
                         <div className="devis-kv"><span>Montant TTC</span><span className="tnum" style={{fontWeight:600, color:'var(--ink-900)'}}>{d.montant_ttc ? fmt(d.montant_ttc) : '—'}</span></div>
                         <div className="devis-kv" style={{alignItems:'center'}}>
@@ -5037,7 +5040,18 @@ export default function FicheChantier({ params }) {
                     const formOuvert   = ajouterFacture === dv.id
                     return (
                       <div key={`ech-${dv.id}`} className="suivi-devis-row">
-                        <div className="suivi-devis-name">{dv.artisan?.entreprise || '—'}</div>
+                        {/* Nom de l'entreprise + référence du devis + montant TTC (10/09).
+                            L'entreprise seule ne suffisait pas à identifier la ligne quand
+                            un même artisan porte deux devis sur le chantier, ni à la
+                            rapprocher du document papier. */}
+                        <div className="suivi-devis-name">
+                          <div>{dv.artisan?.entreprise || '—'}</div>
+                          <div style={{fontSize:11.5, fontWeight:500, color:'var(--ink-500)', marginTop:2, display:'flex', gap:6, flexWrap:'wrap', alignItems:'baseline'}}>
+                            {dv.numero_devis && <span>Devis n° {dv.numero_devis}</span>}
+                            {dv.numero_devis && <span aria-hidden="true">·</span>}
+                            <span className="tnum" style={{fontWeight:700, color:'var(--ink-800)'}}>{fmt(dv.montant_ttc || 0)} TTC</span>
+                          </div>
+                        </div>
 
                         {/* Acompte client + facture(s) d'acompte rattachée(s) */}
                         <div className="suivi-devis-cell" style={{display:'flex', flexDirection:'column', gap:'var(--space-3)'}}>
