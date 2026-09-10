@@ -115,8 +115,19 @@ export async function GET(req) {
       // Ligne inbox existante (re-détection). Déjà tranchée (rattachée/ignorée) OU refus
       // humain explicite (refuse_auto, posé par « Annuler ») → la décision humaine prime.
       const { data: dejaInbox } = await db.from('drive_inbox')
-        .select('id, statut, refuse_auto').eq('user_id', compte.user_id).eq('item_id', f.itemId).maybeSingle()
+        .select('id, statut, refuse_auto, parent_path').eq('user_id', compte.user_id).eq('item_id', f.itemId).maybeSingle()
       if (dejaInbox && (dejaInbox.statut !== 'a_rattacher' || dejaInbox.refuse_auto)) continue
+
+      // Le fichier a BOUGÉ depuis sa détection : on rafraîchit le chemin mémorisé. Sans ça,
+      // la ligne garde l'ancien emplacement et devient indécidable — cas réel du 10/09 : un
+      // dossier client reclassé de « 3. Sans suite/2025 » vers « /2026 » ; ses 44 fichiers
+      // continuaient d'être jugés sur leur ancien chemin, donc de ne correspondre à aucun
+      // chantier. C'est aussi ce chemin que l'écran utilise pour regrouper la liste.
+      if (dejaInbox && f.parentPath && f.parentPath !== dejaInbox.parent_path) {
+        await db.from('drive_inbox')
+          .update({ parent_path: f.parentPath, name: f.name || null, web_url: f.webUrl || null })
+          .eq('id', dejaInbox.id)
+      }
 
       const baseRow = {
         user_id: compte.user_id, drive_id: compte.drive_root_drive_id, item_id: f.itemId,

@@ -29,6 +29,11 @@ import { importerInbox, importerInboxPhoto } from '../../../lib/drive/import-inb
 export const maxDuration = 60
 const BUDGET_MS = 45_000
 const LOT = 60          // lignes examinées par appel — la plupart ne coûtent qu'une décision
+// Imports simultanés. Décider est instantané, importer non : un fichier de 5 Mo, c'est un
+// téléchargement Graph puis un envoi Storage. En série, 200 photos tiennent plusieurs minutes.
+// La limite reste basse : le Storage a déjà répondu 544 sur une salve, et un rattachement à
+// moitié fait coûte plus cher que quelques secondes de plus.
+const PARALLELE = 4
 
 let _admin
 function admin() {
@@ -83,10 +88,12 @@ export async function POST(request) {
     .order('created_at', { ascending: true }).range(offset, offset + LOT - 1)
 
   let rattaches = 0, photos = 0, ecartes = 0, echecs = 0, laisses = 0, vus = 0
-  for (const ligne of (lignes || [])) {
-    if (Date.now() - debut > BUDGET_MS) break
-    vus++
 
+  // La DÉCISION est pure et instantanée : on la prend pour toute la file d'abord, ce qui
+  // sépare nettement le travail gratuit (trier) du travail coûteux (télécharger).
+  const aImporter = []
+  for (const ligne of (lignes || [])) {
+    vus++
     // Refus humain explicite (bouton « Annuler ») : la décision de l'utilisatrice prime,
     // y compris sur une règle améliorée.
     if (ligne.refuse_auto) { laisses++; continue }
@@ -99,27 +106,50 @@ export async function POST(request) {
       continue
     }
     if (!decision.destination) { laisses++; continue }
+    aImporter.push({ ligne, decision })
+  }
 
-    const commun = { mod, token, inbox: ligne, fournisseur: compte.fournisseur, dossierId: decision.dossier_id, auto: true }
-    const res = decision.destination === 'photos'
-      ? await importerInboxPhoto(db, { ...commun, categoriePhoto: decision.categorie_photo })
-      : await importerInbox(db, { ...commun, categorie: decision.categorie, artisanId: decision.artisan_id })
-
-    if (res.ok) { rattaches++; if (decision.destination === 'photos') photos++ }
-    else if (res.skipped) ecartes++
-    else echecs++
+  // Les imports, eux, partent par paquets de PARALLELE. Le budget se vérifie entre deux
+  // paquets : on ne coupe jamais un import en cours, et ce qui n'a pas été fait reste
+  // 'a_rattacher' pour l'appel suivant.
+  let tentes = 0
+  for (let i = 0; i < aImporter.length; i += PARALLELE) {
+    if (Date.now() - debut > BUDGET_MS) break
+    const paquet = aImporter.slice(i, i + PARALLELE)
+    tentes += paquet.length
+    const resultats = await Promise.all(paquet.map(({ ligne, decision }) => {
+      const commun = { mod, token, inbox: ligne, fournisseur: compte.fournisseur, dossierId: decision.dossier_id, auto: true }
+      return decision.destination === 'photos'
+        ? importerInboxPhoto(db, { ...commun, categoriePhoto: decision.categorie_photo })
+        : importerInbox(db, { ...commun, categorie: decision.categorie, artisanId: decision.artisan_id })
+    }))
+    for (const [j, res] of resultats.entries()) {
+      if (res.ok) { rattaches++; if (paquet[j].decision.destination === 'photos') photos++ }
+      else if (res.skipped) ecartes++
+      else echecs++
+    }
   }
 
   const { count: restant } = await db.from('drive_inbox')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId).eq('statut', 'a_rattacher')
 
-  // Fin de file : on a examiné tout ce que la requête a rendu, et elle en rendait moins
-  // qu'un lot complet. Tant que le budget coupe le lot en deux, on n'est pas au bout.
-  const done = vus === (lignes || []).length && (lignes || []).length < LOT
+  // Fin de file : le lot complet a été traité (imports compris) ET la requête rendait moins
+  // qu'un lot plein. Si le budget a coupé les imports, on n'est pas au bout — même si la
+  // file paraissait courte.
+  const complet = tentes === aImporter.length
+  const done = complet && (lignes || []).length < LOT
+
+  // Curseur. Budget coupé → on RENVOIE LE MÊME offset : les lignes déjà traitées ont quitté
+  // la file, donc relire au même endroit avance réellement, sans risquer de sauter une ligne
+  // non tentée. Lot complet → on avance du nombre de lignes restées en place.
+  //
+  // C'est volontairement prudent : relire quelques lignes coûte une décision pure, sauter
+  // une ligne la laisse invisible pour toujours — le poller, lui, ne la représentera jamais.
+  const prochain_offset = complet ? offset + laisses : offset
 
   return NextResponse.json({
     ok: true, done, vus, rattaches, photos, ecartes, echecs, laisses,
-    prochain_offset: offset + laisses, restant: restant ?? 0,
+    prochain_offset, restant: restant ?? 0,
   })
 }

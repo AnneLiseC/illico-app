@@ -12,6 +12,8 @@ import { apiFetch } from '../lib/api-auth-client'
 // Props : profile, onError, onSucces (pilotent le bandeau de la page hôte).
 
 const MAX_LIGNES = 200   // plafond d'affichage de la liste fichier par fichier (cf. usage)
+const PARALLELE = 4      // imports simultanés dans un même dossier (cf. rattacherGroupe)
+const CLE_REPRISE = '__reprise__'
 const cardStyle = { padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }
 const labelStyle = { fontSize: 12, fontWeight: 600, color: 'var(--ink-600)', display: 'block', marginBottom: 5 }
 
@@ -36,7 +38,16 @@ export default function MonDrive({ profile, onError, onSucces }) {
   const [autoRattaches, setAutoRattaches] = useState([])  // rattachés auto (30 j), annulables
   const [groupeOuvert, setGroupeOuvert] = useState(null)  // chemin du groupe déplié
   const [gForm, setGForm] = useState({ dossier_id: '', categorie: '', categorie_photo: '' })
-  const [lot, setLot] = useState(null)                    // { fait, total } pendant un traitement de groupe
+  // UN lot par dossier, pas un lot global. Chaque dossier avance de son côté, et rien
+  // n'empêche d'en lancer un deuxième pendant que le premier tourne : côté serveur, chaque
+  // ligne est prise par un verrou atomique (compare-and-swap sur drive_inbox.statut), donc
+  // deux traitements simultanés ne peuvent pas importer le même fichier deux fois.
+  // Clé = chemin du dossier, ou REPRISE pour le bouton « tout ce qui est bien rangé ».
+  const [lots, setLots] = useState({})                    // { [cle]: { fait, total } }
+  const majLot = (cle, valeur) => setLots(l => {
+    if (valeur === null) { const { [cle]: _, ...reste } = l; return reste }
+    return { ...l, [cle]: valeur }
+  })
 
   const charger = useCallback(async () => {
     if (!profile) return
@@ -300,7 +311,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
   const rejouer = async () => {
     onError?.(''); onSucces?.('')
     let offset = 0, rattaches = 0, photos = 0, ecartes = 0, echecs = 0
-    setLot({ fait: 0, total: inbox.length })
+    majLot(CLE_REPRISE, { fait: 0, total: inbox.length })
     try {
       for (let garde = 0; garde < 200; garde++) {
         const res = await apiFetch('/api/drive/inbox-rejouer', { method: 'POST', body: JSON.stringify({ offset }) })
@@ -309,7 +320,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
         rattaches += d.rattaches || 0; photos += d.photos || 0
         ecartes += d.ecartes || 0; echecs += d.echecs || 0
         offset = d.prochain_offset || 0
-        setLot({ fait: Math.max(0, inbox.length - (d.restant ?? 0)), total: inbox.length })
+        majLot(CLE_REPRISE, { fait: Math.max(0, inbox.length - (d.restant ?? 0)), total: inbox.length })
         if (d.done) break
       }
       const details = [
@@ -319,7 +330,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
       ].join(', ')
       onSucces?.(`Reprise terminée : ${details}`)
     } catch { onError?.('Reprise impossible') }
-    setLot(null)
+    majLot(CLE_REPRISE, null)
     charger()
   }
 
@@ -340,32 +351,49 @@ export default function MonDrive({ profile, onError, onSucces }) {
   // il n'y a pas de raccourci — mais UNE seule décision humaine, et une progression visible.
   // Un échec isolé (fichier supprimé du Drive entre-temps) ne doit pas arrêter le reste : on
   // compte, on continue, et on dit combien à la fin.
+  //
+  // PAR PAQUETS, ET SANS BLOQUER LE RESTE DE L'ÉCRAN. Un dossier de 200 photos traité un
+  // fichier à la fois, c'est plusieurs minutes à regarder une barre — pendant lesquelles les
+  // autres dossiers étaient inaccessibles. Deux changements : les fichiers d'un même dossier
+  // partent par paquets de PARALLELE, et le formulaire n'est verrouillé que pour CE
+  // dossier-là. On peut donc en lancer trois de suite sans attendre.
+  //
+  // Pourquoi une limite basse plutôt que tout d'un coup : le Storage a déjà répondu 544 sur
+  // une salve de signatures d'URL (cf. la grille de photos, tranches de 6). Une centaine de
+  // téléchargements Graph simultanés se ferait jeter de la même manière, et un rattachement
+  // à moitié fait est plus pénible qu'un rattachement un peu plus lent.
   const rattacherGroupe = async (groupe) => {
-    if (!gForm.dossier_id) return
+    const dossierId = gForm.dossier_id
+    if (!dossierId) return
+    const corps = groupe.estPhotos && gForm.categorie_photo
+      ? { categorie_photo: gForm.categorie_photo }
+      : { categorie: gForm.categorie || null }
     onError?.(''); onSucces?.('')
     const total = groupe.fichiers.length
-    setLot({ fait: 0, total })
-    let ok = 0, deja = 0, echecs = 0
-    for (const [i, f] of groupe.fichiers.entries()) {
+    majLot(groupe.chemin, { fait: 0, total })
+    // Le formulaire est rendu tout de suite : la décision est prise, l'attente ne doit pas
+    // confisquer l'écran.
+    setGroupeOuvert(null)
+    setGForm({ dossier_id: '', categorie: '', categorie_photo: '' })
+
+    let ok = 0, deja = 0, echecs = 0, faits = 0
+    const traiter = async (f) => {
       try {
         const res = await apiFetch('/api/drive/import', {
           method: 'POST',
-          body: JSON.stringify({
-            inbox_id: f.id, dossier_id: gForm.dossier_id,
-            ...(groupe.estPhotos && gForm.categorie_photo
-              ? { categorie_photo: gForm.categorie_photo }
-              : { categorie: gForm.categorie || null }),
-          }),
+          body: JSON.stringify({ inbox_id: f.id, dossier_id: dossierId, ...corps }),
         })
         const d = await res.json().catch(() => ({}))
         if (res.ok && d.ok) { if (d.deja) deja++; else ok++ }
         else echecs++
       } catch { echecs++ }
-      setLot({ fait: i + 1, total })
+      faits++
+      majLot(groupe.chemin, { fait: faits, total })
     }
-    setLot(null)
-    setGroupeOuvert(null)
-    setGForm({ dossier_id: '', categorie: '', categorie_photo: '' })
+    for (let i = 0; i < groupe.fichiers.length; i += PARALLELE) {
+      await Promise.all(groupe.fichiers.slice(i, i + PARALLELE).map(traiter))
+    }
+    majLot(groupe.chemin, null)
     const details = [
       `${ok} rattaché(s)`,
       ...(deja > 0 ? [`${deja} déjà présent(s)`] : []),
@@ -529,8 +557,8 @@ export default function MonDrive({ profile, onError, onSucces }) {
                 Regroupés par dossier du Drive : un même dossier appelle presque toujours la même décision.
               </div>
               <div>
-                <button className="btn btn-ghost" style={{ fontSize: 11.5 }} disabled={!!lot} onClick={rejouer}>
-                  {lot ? `Reprise… ${lot.fait}/${lot.total}` : '↻ Rattacher tout ce qui est bien rangé'}
+                <button className="btn btn-ghost" style={{ fontSize: 11.5 }} disabled={!!lots[CLE_REPRISE]} onClick={rejouer}>
+                  {lots[CLE_REPRISE] ? `Reprise… ${lots[CLE_REPRISE].fait}/${lots[CLE_REPRISE].total}` : '↻ Rattacher tout ce qui est bien rangé'}
                 </button>
               </div>
 
@@ -546,13 +574,19 @@ export default function MonDrive({ profile, onError, onSucces }) {
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      <button className="btn btn-ghost" style={{ fontSize: 11.5 }} disabled={!!lot}
-                        onClick={() => { setGroupeOuvert(groupeOuvert === g.chemin ? null : g.chemin); setGForm({ dossier_id: '', categorie: '', categorie_photo: g.estPhotos ? 'avant' : '' }) }}>
-                        Tout rattacher
-                      </button>
-                      <button className="btn btn-ghost" style={{ fontSize: 11.5 }} disabled={!!lot} onClick={() => ignorerGroupe(g)}>
-                        Tout ignorer
-                      </button>
+                      {lots[g.chemin] ? (
+                        <span style={{ fontSize: 11.5, color: 'var(--ink-600)', whiteSpace: 'nowrap' }}>
+                          Rattachement… {lots[g.chemin].fait}/{lots[g.chemin].total}
+                        </span>
+                      ) : (<>
+                        <button className="btn btn-ghost" style={{ fontSize: 11.5 }}
+                          onClick={() => { setGroupeOuvert(groupeOuvert === g.chemin ? null : g.chemin); setGForm({ dossier_id: '', categorie: '', categorie_photo: g.estPhotos ? 'avant' : '' }) }}>
+                          Tout rattacher
+                        </button>
+                        <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => ignorerGroupe(g)}>
+                          Tout ignorer
+                        </button>
+                      </>)}
                     </div>
                   </div>
 
@@ -576,8 +610,8 @@ export default function MonDrive({ profile, onError, onSucces }) {
                           <option value="administratif">Administratif</option>
                         </select>
                       )}
-                      <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={!!lot || !gForm.dossier_id} onClick={() => rattacherGroupe(g)}>
-                        {lot ? `${lot.fait}/${lot.total}…` : `Rattacher les ${g.fichiers.length}`}
+                      <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={!gForm.dossier_id} onClick={() => rattacherGroupe(g)}>
+                        Rattacher les {g.fichiers.length}
                       </button>
                     </div>
                   )}
