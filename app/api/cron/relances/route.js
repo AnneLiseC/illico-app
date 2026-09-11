@@ -19,6 +19,7 @@ import { checkBearerSecret } from '../../../lib/http-auth'
 import { sendEmail } from '../../../lib/email'
 import { preparerEnvoi, modeEnvoi } from '../../../lib/relances-envoi'
 import { salutationClient, nomClientPourArtisan, libelleRdv, destinatairesRappel, heureRdvFR, dateRdvFR } from '../../../lib/relances-texte'
+import { signatureComplete } from '../../../lib/email-signature'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -55,16 +56,38 @@ function nomsVirement(client) {
   return [client.nom, client.nom2].filter(Boolean).map(n => n.toUpperCase()).join('-')
 }
 
-function signatureHtml(referente) {
-  if (!referente) return '<p><em>illiCO travaux</em></p>'
-  return `
-    <p style="margin-top:24px; font-size:13px; line-height:1.6;">
-      <strong>${prenomNom(referente).toUpperCase()}</strong><br>
-      ${roleLabel(referente.role)}<br>
-      ${referente.telephone ? referente.telephone + '<br>' : ''}
-      ${referente.email || ''}
-    </p>
-  `
+// Agences chargées UNE fois chacune : le cron traite des dizaines de dossiers et la
+// plupart partagent la même agence. Un cache mémoire évite autant de requêtes que de mails.
+const _agences = new Map()
+async function agenceDe(agenceId) {
+  if (!agenceId) return null
+  if (_agences.has(agenceId)) return _agences.get(agenceId)
+  const { data } = await getSupabaseAdmin().from('agences')
+    .select('nom, adresse, code_postal, ville, telephone').eq('id', agenceId).maybeSingle()
+  _agences.set(agenceId, data || null)
+  return data || null
+}
+
+// Signature d'un mail métier : la personne qui suit le dossier, PUIS son agence.
+//
+// Ce qui change le 11/09 — l'agence apparaît sous la référente (nom, adresse, téléphone).
+// Un client à qui l'on demande un acompte doit pouvoir vérifier à qui il envoie son
+// argent ; un portable seul ne le lui dit pas. Et le repli n'est plus « illiCO travaux »
+// tout court : quand la référente manque, c'est l'AGENCE qui signe, pas un anonyme.
+//
+// Le texte des mails, lui, n'est pas touché : il était juste.
+//
+// `agence` est chargée par l'appelant (une requête par dossier, mise en cache) — la
+// fonction reste purement de la mise en forme.
+async function signatureHtml(referente) {
+  const agence = await agenceDe(referente?.agence_id)
+  const html = signatureComplete({
+    personne: referente,
+    agence,
+    roleLabel: referente ? roleLabel(referente.role) : null,
+    formule: null,   // les textes disent déjà « Cordialement, » juste au-dessus
+  })
+  return html || ''
 }
 
 async function notifyUser(userId, { type, titre, message, dossier_id }) {
@@ -159,7 +182,7 @@ export async function GET(req) {
       .select(`
         id, dossier_id, date_limite,
         artisans(email, entreprise, nom, prenom),
-        dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role))
+        dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role, agence_id))
       `)
       .is('date_reception', null)
       .not('statut', 'in', '("accepte","refuse")')
@@ -183,7 +206,7 @@ export async function GET(req) {
           au plus tard le <strong>${new Date(d.date_limite).toLocaleDateString('fr-FR')}</strong>.</p>
           <p>Merci de nous l'adresser dès que possible.</p>
           <p>Cordialement,</p>
-          ${signatureHtml(referente)}
+          ${await signatureHtml(referente)}
         `,
       })
     }
@@ -239,7 +262,7 @@ export async function GET(req) {
         .from('dossiers')
         .select(`
           id, reference, agences(ville),
-          profiles!referente_id(email, prenom, nom, telephone, role),
+          profiles!referente_id(email, prenom, nom, telephone, role, agence_id),
           clients(email, nom, prenom, civilite, nom2, prenom2)
         `)
         .eq('id', dossierId).maybeSingle()
@@ -356,7 +379,7 @@ export async function GET(req) {
         <br>
         <p>Je reste bien entendu à votre disposition si vous avez la moindre question.</p>
         <p>Bien cordialement,</p>
-        ${signatureHtml(referente)}
+        ${await signatureHtml(referente)}
       `
 
       await envoyer(log, '3', {
@@ -437,7 +460,7 @@ export async function GET(req) {
       .from('suivi_financier')
       .select(`
         id, dossier_id, montant_ttc, date_echeance,
-        dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role),
+        dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role, agence_id),
           clients(email, nom, prenom, civilite, nom2))
       `)
       .eq('type_echeance', 'facture_finale')
@@ -460,7 +483,7 @@ export async function GET(req) {
           relative au dossier <strong>${ref}</strong>, dont l'échéance était le <strong>${echeance}</strong>, n'a pas encore été réglée.</p>
           <p>Nous vous remercions de bien vouloir procéder au règlement dans les meilleurs délais.</p>
           <p>Cordialement,</p>
-          ${signatureHtml(referente)}
+          ${await signatureHtml(referente)}
         `,
       })
     }
@@ -482,7 +505,7 @@ export async function GET(req) {
         id, dossier_id, type_rdv, titre, date_heure, artisan_id, prevenir_client,
         artisans(email, entreprise, nom, prenom),
         rendez_vous_artisans(artisans(email, entreprise, nom, prenom)),
-        dossiers(reference, adresse_chantier, profiles!referente_id(email, prenom, nom, telephone, role),
+        dossiers(reference, adresse_chantier, profiles!referente_id(email, prenom, nom, telephone, role, agence_id),
           clients(email, nom, prenom, civilite, nom2))
       `)
       .gte('date_heure', `${tomorrow}T00:00:00`)
@@ -542,7 +565,7 @@ export async function GET(req) {
             <p>${intituleHtml(libelleRdv(rdv, 'client', entreprises))}📅 <strong>${dateRdv} à ${heureRdv}</strong>${lieuHtml}</p>
             <p>En cas d'empêchement, merci de nous contacter dès que possible.</p>
             <p>Cordialement,</p>
-            ${signatureHtml(referente)}
+            ${await signatureHtml(referente)}
           `,
         })
       }
@@ -562,7 +585,7 @@ export async function GET(req) {
               <p>${intituleHtml(libelleRdv(rdv, 'artisan', nomClient))}📅 <strong>${dateRdv} à ${heureRdv}</strong>${lieuHtml}</p>
               <p>En cas d'empêchement, merci de nous prévenir dès que possible.</p>
               <p>Cordialement,</p>
-              ${signatureHtml(referente)}
+              ${await signatureHtml(referente)}
             `,
           })
         }
