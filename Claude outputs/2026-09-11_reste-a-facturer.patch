@@ -1,0 +1,884 @@
+From 8bd239f9501facefc6a011be23d6cadc16bd53e8 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 10 Sep 2026 16:36:11 +0000
+Subject: [PATCH 1/3] Drive : lire tout le chemin (facture artisan, maquette)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+« On n'a pas fait tous les dossiers pour rien. » La taxonomie écrit trois
+niveaux sous un artisan et la relecture n'en lisait que deux : une facture
+rangée dans « 4. Documents artisans/<E>/Factures » arrivait en « Autres »,
+alors que le Drive l'avait déjà classée.
+
+- rattachement.js : le 3e niveau donne la catégorie — « Factures » →
+  facture_artisan, « Autre » → autre_artisan. À la RACINE de l'artisan on ne
+  tranche toujours pas : cinq catégories y écrivent, le dossier ne les
+  distingue pas, donc le rattachement non plus.
+- « maquette » ajoutée aux catégories photo du rattachement manuel. Elle n'est
+  pas une prise de vue : c'est un livrable rangé dans « 5. Plans & techniques »
+  (arbitrage du 02/09), donc dans un dossier qui n'a rien d'un dossier photo.
+  Deux menus séparés la rendaient inatteignable là où elle se trouve.
+- MonDrive : un seul menu de destination (Documents / Photos) au lieu de deux
+  menus choisis d'après le chemin. Le chemin ne décide plus que du DÉFAUT.
+- Le rattachement automatique ne déduira jamais une maquette : « 5. Plans &
+  techniques » contient aussi plans, estimations et fiches techniques — une
+  image qui s'y trouve n'est pas forcément une maquette, et on ne devine pas.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TvWpp16odX6J4r6qgBVj4Q
+---
+ app/api/drive/import/route.js                | 10 +++-
+ app/components/MonDrive.jsx                  | 50 ++++++++++++--------
+ app/lib/__tests__/drive-rattachement.test.js | 15 +++++-
+ app/lib/drive/rattachement.js                | 19 +++++++-
+ 4 files changed, 71 insertions(+), 23 deletions(-)
+
+diff --git a/app/api/drive/import/route.js b/app/api/drive/import/route.js
+index a1d8fc1..889d9a5 100644
+--- a/app/api/drive/import/route.js
++++ b/app/api/drive/import/route.js
+@@ -22,7 +22,15 @@ import { importerInbox, importerInboxPhoto } from '../../../lib/drive/import-inb
+ import { estImage } from '../../../lib/drive/rattachement'
+ 
+ const CATS = new Set(['compte_rendu', 'plans', 'administratif']) // catégories libres autorisées ; sinon Autres (null)
+-const CATS_PHOTO = new Set(['avant', 'pendant', 'apres'])
++// Catégories de la table photos. « maquette » en fait partie et n'est PAS une prise de vue :
++// c'est un livrable technique, rangé dans « 5. Plans & techniques » du Drive et non dans
++// « 6. Photos » (arbitrage du 02/09, cf. photoSousDossiers). D'où deux conséquences :
++//   · le rattachement AUTOMATIQUE ne la déduira jamais d'un chemin — « 5. Plans & techniques »
++//     contient aussi des plans, des estimations, des fiches techniques ; une image qui s'y
++//     trouve n'est pas forcément une maquette, et on ne devine pas ;
++//   · elle doit donc être proposée à la MAIN, y compris sur un dossier qui n'est pas un
++//     dossier photo — sinon elle resterait inatteignable là où elle est réellement rangée.
++const CATS_PHOTO = new Set(['avant', 'pendant', 'apres', 'maquette'])
+ 
+ let _admin
+ function admin() {
+diff --git a/app/components/MonDrive.jsx b/app/components/MonDrive.jsx
+index 4f6cf1e..33a67b7 100644
+--- a/app/components/MonDrive.jsx
++++ b/app/components/MonDrive.jsx
+@@ -37,7 +37,10 @@ export default function MonDrive({ profile, onError, onSucces }) {
+   const [importing, setImporting] = useState(false)
+   const [autoRattaches, setAutoRattaches] = useState([])  // rattachés auto (30 j), annulables
+   const [groupeOuvert, setGroupeOuvert] = useState(null)  // chemin du groupe déplié
+-  const [gForm, setGForm] = useState({ dossier_id: '', categorie: '', categorie_photo: '' })
++  // `dest` encode la destination choisie : 'doc:<categorie>' ou 'photo:<categorie>'.
++  // Un seul champ plutôt que deux, pour que le menu puisse mélanger documents et photos
++  // (la maquette est une photo rangée dans un dossier de plans — cf. le menu).
++  const [gForm, setGForm] = useState({ dossier_id: '', dest: 'doc:' })
+   // UN lot par dossier, pas un lot global. Chaque dossier avance de son côté, et rien
+   // n'empêche d'en lancer un deuxième pendant que le premier tourne : côté serveur, chaque
+   // ligne est prise par un verrou atomique (compare-and-swap sur drive_inbox.statut), donc
+@@ -365,16 +368,15 @@ export default function MonDrive({ profile, onError, onSucces }) {
+   const rattacherGroupe = async (groupe) => {
+     const dossierId = gForm.dossier_id
+     if (!dossierId) return
+-    const corps = groupe.estPhotos && gForm.categorie_photo
+-      ? { categorie_photo: gForm.categorie_photo }
+-      : { categorie: gForm.categorie || null }
++    const [genre, cat] = String(gForm.dest || 'doc:').split(':')
++    const corps = genre === 'photo' ? { categorie_photo: cat } : { categorie: cat || null }
+     onError?.(''); onSucces?.('')
+     const total = groupe.fichiers.length
+     majLot(groupe.chemin, { fait: 0, total })
+     // Le formulaire est rendu tout de suite : la décision est prise, l'attente ne doit pas
+     // confisquer l'écran.
+     setGroupeOuvert(null)
+-    setGForm({ dossier_id: '', categorie: '', categorie_photo: '' })
++    setGForm({ dossier_id: '', dest: 'doc:' })
+ 
+     let ok = 0, deja = 0, echecs = 0, faits = 0
+     const traiter = async (f) => {
+@@ -580,7 +582,7 @@ export default function MonDrive({ profile, onError, onSucces }) {
+                         </span>
+                       ) : (<>
+                         <button className="btn btn-ghost" style={{ fontSize: 11.5 }}
+-                          onClick={() => { setGroupeOuvert(groupeOuvert === g.chemin ? null : g.chemin); setGForm({ dossier_id: '', categorie: '', categorie_photo: g.estPhotos ? 'avant' : '' }) }}>
++                          onClick={() => { setGroupeOuvert(groupeOuvert === g.chemin ? null : g.chemin); setGForm({ dossier_id: '', dest: g.estPhotos ? 'photo:avant' : 'doc:' }) }}>
+                           Tout rattacher
+                         </button>
+                         <button className="btn btn-ghost" style={{ fontSize: 11.5 }} onClick={() => ignorerGroupe(g)}>
+@@ -596,20 +598,28 @@ export default function MonDrive({ profile, onError, onSucces }) {
+                         <option value="">— Chantier —</option>
+                         {dossiersRef.map(d => <option key={d.id} value={d.id}>{(d.created_at || '').slice(0, 10)} {d.client?.nom || ''}</option>)}
+                       </select>
+-                      {g.estPhotos ? (
+-                        <select className="input" style={{ height: 38 }} value={gForm.categorie_photo} onChange={e => setGForm(f => ({ ...f, categorie_photo: e.target.value }))}>
+-                          <option value="avant">Photos AVANT</option>
+-                          <option value="pendant">Photos PENDANT</option>
+-                          <option value="apres">Photos APRÈS</option>
+-                        </select>
+-                      ) : (
+-                        <select className="input" style={{ height: 38 }} value={gForm.categorie} onChange={e => setGForm(f => ({ ...f, categorie: e.target.value }))}>
+-                          <option value="">Autres</option>
+-                          <option value="compte_rendu">Rapport de visite</option>
+-                          <option value="plans">Plans</option>
+-                          <option value="administratif">Administratif</option>
+-                        </select>
+-                      )}
++                      {/* UN seul menu pour les deux destinations. Séparer « dossier photo » et
++                          « dossier document » sur le chemin marchait tant que chaque nature
++                          restait à sa place — mais la MAQUETTE est une photo rangée dans
++                          « 5. Plans & techniques », donc dans un dossier qui n'a rien d'un
++                          dossier photo. Avec deux menus, elle était inatteignable là où elle
++                          se trouve réellement. Le chemin ne décide plus que du choix par
++                          DÉFAUT ; la destination reste ouverte. */}
++                      <select className="input" style={{ height: 38 }} value={gForm.dest}
++                        onChange={e => setGForm(f => ({ ...f, dest: e.target.value }))}>
++                        <optgroup label="Documents">
++                          <option value="doc:">Autres</option>
++                          <option value="doc:compte_rendu">Rapport de visite</option>
++                          <option value="doc:plans">Plans</option>
++                          <option value="doc:administratif">Administratif</option>
++                        </optgroup>
++                        <optgroup label="Photos">
++                          <option value="photo:avant">Photos AVANT</option>
++                          <option value="photo:pendant">Photos PENDANT</option>
++                          <option value="photo:apres">Photos APRÈS</option>
++                          <option value="photo:maquette">Maquettes</option>
++                        </optgroup>
++                      </select>
+                       <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={!gForm.dossier_id} onClick={() => rattacherGroupe(g)}>
+                         Rattacher les {g.fichiers.length}
+                       </button>
+diff --git a/app/lib/__tests__/drive-rattachement.test.js b/app/lib/__tests__/drive-rattachement.test.js
+index 9582151..f9d6c3f 100644
+--- a/app/lib/__tests__/drive-rattachement.test.js
++++ b/app/lib/__tests__/drive-rattachement.test.js
+@@ -43,8 +43,21 @@ describe('deciderRattachement — ce qui se rattache tout seul', () => {
+       .toEqual({ destination: 'documents', dossier_id: 'epp', categorie: 'administratif', artisan_id: null })
+   })
+ 
+-  it("une facture d'artisan connu : l'artisan est resolu depuis le nom du dossier", () => {
++  it("une facture d'artisan : l'artisan ET la nature sont lus dans le chemin", () => {
++    // « on n'a pas fait tous les dossiers pour rien » : le 3e niveau porte la categorie.
++    // La ranger en « Autres » alors que le Drive l'avait classee, c'est relire la taxonomie
++    // a moitie.
+     expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/4. Documents artisans/MJ RENOVATION/Factures`))
++      .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: 'facture_artisan', artisan_id: 'a-mj' })
++    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/4. Documents artisans/MJ RENOVATION/Autre`))
++      .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: 'autre_artisan', artisan_id: 'a-mj' })
++  })
++
++  it("a la RACINE de l'artisan, la nature reste indecidable — et on ne l'invente pas", () => {
++    // Cinq categories ecrivent a cet endroit (attestation de demarrage, deblocage d'acompte,
++    // avis de virement, PV de reception, attestation de fin) : le dossier ne les distingue
++    // pas, donc le rattachement non plus. L'artisan, lui, est certain.
++    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/4. Documents artisans/MJ RENOVATION`))
+       .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: null, artisan_id: 'a-mj' })
+   })
+ 
+diff --git a/app/lib/drive/rattachement.js b/app/lib/drive/rattachement.js
+index c5de28d..4e45bf4 100644
+--- a/app/lib/drive/rattachement.js
++++ b/app/lib/drive/rattachement.js
+@@ -65,6 +65,13 @@ const CATEGORIE_PAR_DOSSIER = {
+   '5. Plans & techniques': 'plans',
+ }
+ 
++// 3e niveau sous « 4. Documents artisans/<Artisan>/ ». Ces deux dossiers-là sont écrits par
++// une catégorie et une seule (cf. sousDossiers), donc ils se relisent sans ambiguïté.
++const CATEGORIE_PAR_DOSSIER_ARTISAN = {
++  'Factures': 'facture_artisan',
++  'Autre': 'autre_artisan',
++}
++
+ // Sous-dossiers dont l'appli n'est PAS la destination, et qui n'ont donc rien a faire dans
+ // une liste de taches :
+ //   '3. Devis'                 : table devis_artisans, circuit propre (cf. en-tete).
+@@ -206,7 +213,17 @@ export function deciderRattachement(parentPath, candidats, artisansParNom = new
+     if (!nomArtisan) return { destination: 'documents', dossier_id: dossier.id, categorie: null, artisan_id: null }
+     const artisanId = artisansParNom.get(nomArtisan)
+     if (!artisanId) return refus(`artisan_inconnu:${nomArtisan}`)
+-    return { destination: 'documents', dossier_id: dossier.id, categorie: null, artisan_id: artisanId }
++    // Le 3e niveau porte la NATURE du document, et il faut le lire : l'écriture crée
++    // « <artisan>/Factures » pour une facture et « <artisan>/Autre » pour le reste
++    // (cf. sousDossiers). Ignorer ce niveau revenait à ranger une facture d'artisan en
++    // « Autres » alors que le Drive l'avait classée — la taxonomie n'a pas été construite
++    // pour être relue à moitié.
++    //
++    // À la RACINE de l'artisan, en revanche, on ne tranche pas : cinq catégories y écrivent
++    // (attestation de démarrage, déblocage d'acompte, avis de virement, PV de réception,
++    // attestation de fin). Le dossier ne les distingue pas, donc le rattachement non plus.
++    const categorie = CATEGORIE_PAR_DOSSIER_ARTISAN[sous[2]] ?? null
++    return { destination: 'documents', dossier_id: dossier.id, categorie, artisan_id: artisanId }
+   }
+ 
+   if (!(premier in CATEGORIE_PAR_DOSSIER)) return refus(`sous_dossier_inconnu:${premier}`)
+-- 
+2.43.0
+
+
+From ebb0dd1436a67924ac92aa4964164e3abacf75fe Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 10 Sep 2026 16:50:00 +0000
+Subject: [PATCH 2/3] =?UTF-8?q?Drive=20:=20le=20test=20d'aller-retour,=20e?=
+ =?UTF-8?q?t=20les=20trois=20d=C3=A9fauts=20qu'il=20a=20trouv=C3=A9s?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Trois fois de suite le même défaut a été trouvé À LA MAIN : l'écriture crée un
+niveau de dossier, la relecture l'ignore, les fichiers tombent en « Autres ».
+Photos, factures d'artisans, maquettes. Chaque fois c'est un humain qui l'a vu.
+
+drive-aller-retour.test.js traite écriture et lecture comme une fonction et sa
+réciproque : pour CHAQUE catégorie, cheminChantier() → deciderRattachement()
+doit rendre la catégorie de départ, ou déclarer sa perte avec sa raison. Un
+test de couverture exige que toutes les catégories de taxonomie.js figurent au
+tableau : en ajouter une sans décider de sa relecture casse la suite.
+
+Ce que le test a trouvé, que personne n'avait vu :
+
+1. photoSousDossiers('maquette') écrivait à la RACINE de « 5. Plans &
+   techniques » — indiscernable d'un plan, d'une estimation ou d'une fiche
+   technique. Une maquette poussée par l'appli revenait en document « plans »
+   et disparaissait de la galerie. Elle a maintenant son sous-dossier, celui
+   que le Drive contenait déjà, créé à la main.
+
+2. move-chantier réécrivait doc_index et oubliait drive_inbox : clore un
+   chantier depuis l'appli rendait indécidables tous ses fichiers en attente
+   (bucket du chemin ≠ bucket du chantier). Même défaut que le dossier reclassé
+   à la main le 10/09 — 44 fichiers bloqués — mais déclenché par l'appli.
+
+3. L'anti-doublon des photos comparait (dossier, nom). La même « IMG_0104.jpeg »
+   en « Avant » et en « Après » est légitime : la seconde était écartée en
+   silence, et le dossier de restitution perdait une image. Critère corrigé en
+   (dossier, catégorie, nom).
+
+Les pertes qui restent sont déclarées, pas subies : cinq catégories écrivent à
+la racine du dossier artisan, trois dans « 5. Plans & techniques », deux dans
+« 1. Administratif ». Aucune relecture ne peut les distinguer — l'information
+est perdue au rangement. Les séparer demande des sous-dossiers, donc une
+décision d'organisation, pas une décision technique.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TvWpp16odX6J4r6qgBVj4Q
+---
+ app/api/drive/move-chantier/route.js         |  25 ++++
+ app/lib/__tests__/drive-aller-retour.test.js | 150 +++++++++++++++++++
+ app/lib/__tests__/drive-rattachement.test.js |  25 ++++
+ app/lib/__tests__/drive-taxonomie.test.js    |   6 +-
+ app/lib/drive/import-inbox.js                |   9 +-
+ app/lib/drive/rattachement.js                |  22 +++
+ app/lib/drive/taxonomie.js                   |  29 +++-
+ 7 files changed, 262 insertions(+), 4 deletions(-)
+ create mode 100644 app/lib/__tests__/drive-aller-retour.test.js
+
+diff --git a/app/api/drive/move-chantier/route.js b/app/api/drive/move-chantier/route.js
+index b9db21f..3d0d515 100644
+--- a/app/api/drive/move-chantier/route.js
++++ b/app/api/drive/move-chantier/route.js
+@@ -114,6 +114,31 @@ export async function POST(request) {
+       }
+     }
+ 
++    // 5. MÊME réécriture pour les fichiers encore « à rattacher ».
++    //
++    // Sans cette étape, clore un chantier depuis l'appli rendait indécidables tous ses
++    // fichiers en attente : le dossier partait vers « 2. Terminés/<année> » pendant que
++    // drive_inbox gardait « 1. En cours ». Le rattachement compare le bucket du chemin à
++    // celui du chantier — deux valeurs devenues incohérentes, donc plus aucune
++    // correspondance, en silence.
++    //
++    // Constaté le 10/09 sur un dossier reclassé À LA MAIN (44 fichiers bloqués). Le même
++    // défaut existait, déclenché par l'appli elle-même, à chaque changement de statut :
++    // doc_index était réécrit juste au-dessus, drive_inbox était oublié.
++    const { data: enAttente } = await db.from('drive_inbox')
++      // Le Drive appartient à la référente du dossier : c'est sous SON user_id que les
++      // lignes inbox sont enregistrées. (`loadDriveCompte` ne remonte pas user_id.)
++      .select('id, parent_path').eq('user_id', dossier.referente_id).eq('statut', 'a_rattacher')
++    const ancien = `${RACINE_CLIENTS}/${found.segs.join('/')}/${folderName}`
++    const nouveau = `${RACINE_CLIENTS}/${targetPathSegs}/${folderName}`
++    for (const ligne of (enAttente || [])) {
++      const i = (ligne.parent_path || '').indexOf(ancien)
++      if (i === -1) continue
++      await db.from('drive_inbox')
++        .update({ parent_path: ligne.parent_path.slice(0, i) + nouveau + ligne.parent_path.slice(i + ancien.length) })
++        .eq('id', ligne.id)
++    }
++
+     return NextResponse.json({ ok: true, moved: true, from: found.segs.join('/'), to: targetPathSegs })
+   } catch (e) {
+     console.error('[drive/move-chantier] move', e)
+diff --git a/app/lib/__tests__/drive-aller-retour.test.js b/app/lib/__tests__/drive-aller-retour.test.js
+new file mode 100644
+index 0000000..40389e3
+--- /dev/null
++++ b/app/lib/__tests__/drive-aller-retour.test.js
+@@ -0,0 +1,150 @@
++import { describe, it, expect } from 'vitest'
++import {
++  CATEGORIES_DOCUMENT, CATEGORIES_PHOTO,
++  cheminChantier, cheminChantierPhoto,
++} from '../drive/taxonomie.js'
++import { deciderRattachement } from '../drive/rattachement.js'
++
++// ═══════════════════════════════════════════════════════════════════════════════════════
++// L'ALLER-RETOUR : ce que l'appli ÉCRIT dans le Drive, sait-elle le RELIRE ?
++//
++// POURQUOI CE FICHIER EXISTE
++//
++// Le 10/09, trois défauts de relecture ont été trouvés l'un après l'autre, à la main, par
++// l'utilisatrice :
++//   · les photos rangées dans « 6. Photos » n'avaient aucune destination ;
++//   · une facture rangée dans « <Artisan>/Factures » arrivait en « Autres » ;
++//   · une maquette rangée dans « 5. Plans & techniques/maquette » était relue comme un plan.
++// Trois fois le MÊME défaut : l'écriture crée un niveau de dossier, la relecture l'ignore.
++// Et trois fois, c'est un humain qui l'a vu, pas le code.
++//
++// Ce test rend ce défaut impossible à commettre en silence. Il traite l'écriture et la
++// lecture comme ce qu'elles sont — une fonction et sa réciproque — et exige que la
++// composition des deux soit l'identité, ou que la perte soit DÉCLARÉE ici, avec sa raison.
++//
++// Le second test, celui qui compte le plus, vérifie que le tableau ci-dessous couvre
++// TOUTES les catégories connues de la taxonomie. Ajouter une catégorie d'écriture sans
++// décider de sa relecture fait échouer la suite. On ne peut plus oublier : on peut
++// seulement décider, et l'écrire.
++// ═══════════════════════════════════════════════════════════════════════════════════════
++
++const DOSSIER = { id: 'd1', statut: null, date_premier_rdv: '2026-06-09', created_at: '2026-06-22' }
++const CLIENT = { nom: 'Barloy', nom2: 'Teppe' }
++const CANDIDATS = [{ dossier: DOSSIER, client: CLIENT, suffixe: '' }]
++const ARTISAN = 'MJ RENOVATION'
++const ARTISANS = new Map([[ARTISAN, 'a-mj']])
++const PREFIXE = '/drives/59B2EBA7CDFE3599/root:/Illico Travaux/ANNELISE/'
++
++// Le chemin Graph d'un fichier écrit par l'appli, tel que le poller le verra.
++const cheminEcrit = (segments) => PREFIXE + segments.join('/')
++
++// ── Ce que la relecture doit rendre, catégorie par catégorie ──────────────────────────
++//
++// `attendu` = la catégorie que le rattachement doit retrouver.
++// `perte`   = présent UNIQUEMENT quand la relecture NE PEUT PAS être exacte, avec la
++//             raison. Une perte n'est pas un bug tant qu'elle est un choix assumé — mais
++//             elle doit être écrite ici pour rester un choix, et non un oubli.
++const DOCUMENTS = [
++  { categorie: 'compte_rendu', attendu: 'compte_rendu' },
++  { categorie: 'administratif', attendu: 'administratif' },
++  { categorie: 'plans', attendu: 'plans' },
++  { categorie: 'facture_artisan', attendu: 'facture_artisan', artisan: true },
++  { categorie: 'autre_artisan', attendu: 'autre_artisan', artisan: true },
++
++  // ── Pertes assumées ────────────────────────────────────────────────────────────────
++  // Elles ont toutes la même cause : PLUSIEURS catégories écrivent dans le MÊME dossier.
++  // Aucune relecture ne peut les distinguer — l'information est perdue au rangement, pas
++  // à la lecture. Les corriger demanderait de créer des sous-dossiers dans le Drive, ce
++  // qui est une décision d'organisation, pas une décision technique.
++  { categorie: 'facture_honoraire', attendu: 'administratif',
++    perte: 'écrit dans « 1. Administratif », comme administratif' },
++  { categorie: 'estimation', attendu: 'plans',
++    perte: 'écrit dans « 5. Plans & techniques », comme plans et fiche_technique' },
++  { categorie: 'fiche_technique', attendu: 'plans',
++    perte: 'écrit dans « 5. Plans & techniques », comme plans et estimation' },
++  { categorie: 'attestation_demarrage', attendu: null, artisan: true,
++    perte: 'écrit à la racine de l\'artisan, comme 4 autres catégories' },
++  { categorie: 'deblocage_acompte', attendu: null, artisan: true,
++    perte: 'écrit à la racine de l\'artisan, comme 4 autres catégories' },
++  { categorie: 'avis_virement', attendu: null, artisan: true,
++    perte: 'écrit à la racine de l\'artisan, comme 4 autres catégories' },
++  { categorie: 'pv_reception', attendu: null, artisan: true,
++    perte: 'écrit à la racine de l\'artisan, comme 4 autres catégories' },
++  { categorie: 'attestation_chantier', attendu: null, artisan: true,
++    perte: 'écrit à la racine de l\'artisan, comme 4 autres catégories' },
++]
++
++const PHOTOS = [
++  { categorie: 'avant', attendu: 'avant' },
++  { categorie: 'pendant', attendu: 'pendant' },
++  { categorie: 'apres', attendu: 'apres' },
++  // La maquette n'est pas rangée dans « 6. Photos » mais dans « 5. Plans & techniques »
++  // (arbitrage du 02/09). Elle se relit quand même : le sous-dossier s'appelle « maquette ».
++  { categorie: 'maquette', attendu: 'maquette' },
++]
++
++describe('aller-retour DOCUMENTS : écrire puis relire', () => {
++  for (const cas of DOCUMENTS) {
++    const nom = cas.perte
++      ? `${cas.categorie} → « ${cas.attendu ?? 'Autres'} » (perte assumée : ${cas.perte})`
++      : `${cas.categorie} se relit à l'identique`
++    it(nom, () => {
++      const segments = cheminChantier(
++        DOSSIER.statut, DOSSIER.date_premier_rdv, CLIENT.nom, cas.categorie,
++        cas.artisan ? ARTISAN : null, { nom2: CLIENT.nom2, suffixe: '' },
++      )
++      const decision = deciderRattachement(cheminEcrit(segments), CANDIDATS, ARTISANS, 'doc.pdf')
++
++      expect(decision.destination, `« ${cas.categorie} » n'est plus rattaché du tout`).toBe('documents')
++      expect(decision.dossier_id).toBe('d1')
++      expect(decision.categorie).toBe(cas.attendu)
++      // Un document d'artisan sans artisan_id est invisible dans la fiche chantier : la
++      // section « Documents artisans » ne montre que ceux qui en ont un.
++      if (cas.artisan) expect(decision.artisan_id, 'artisan perdu en route').toBe('a-mj')
++    })
++  }
++})
++
++describe('aller-retour PHOTOS : écrire puis relire', () => {
++  for (const cas of PHOTOS) {
++    it(`${cas.categorie} se relit à l'identique`, () => {
++      const segments = cheminChantierPhoto(
++        DOSSIER.statut, DOSSIER.date_premier_rdv, CLIENT.nom, cas.categorie,
++        { nom2: CLIENT.nom2, suffixe: '' },
++      )
++      const decision = deciderRattachement(cheminEcrit(segments), CANDIDATS, ARTISANS, 'photo.jpg')
++      expect(decision.destination, `« ${cas.categorie} » n'atterrit pas dans la table photos`).toBe('photos')
++      expect(decision.categorie_photo).toBe(cas.attendu)
++    })
++  }
++})
++
++// ── LE test : la couverture ────────────────────────────────────────────────────────────
++//
++// Celui-ci ne vérifie pas un comportement, il vérifie qu'on n'a rien oublié. C'est le seul
++// qui aurait attrapé les trois défauts du 10/09 SANS qu'on ait eu l'idée de les chercher.
++describe('couverture : aucune catégorie ne peut être ajoutée sans décider de sa relecture', () => {
++  it('toutes les catégories de document sont couvertes', () => {
++    const couvertes = DOCUMENTS.map(c => c.categorie).sort()
++    const attendues = [...CATEGORIES_DOCUMENT].sort()
++    // Message explicite : si ça casse, c'est qu'une catégorie a été ajoutée à l'écriture
++    // sans qu'on dise ce que la lecture doit en faire. Ajoute-la ci-dessus — avec `attendu`
++    // si elle se relit, avec `perte` et sa raison si elle ne le peut pas.
++    expect(couvertes).toEqual(attendues)
++  })
++
++  it('toutes les catégories de photo sont couvertes', () => {
++    expect(PHOTOS.map(c => c.categorie).sort()).toEqual([...CATEGORIES_PHOTO].sort())
++  })
++
++  it('les pertes sont NOMMÉES, jamais silencieuses', () => {
++    // Une catégorie relue autrement qu'à l'identique doit porter une explication. Sans
++    // cette règle, il suffirait d'aligner `attendu` sur le comportement observé pour faire
++    // taire le test — ce qui est exactement la façon de transformer un bug en « normal ».
++    for (const cas of DOCUMENTS) {
++      if (cas.attendu !== cas.categorie) {
++        expect(cas.perte, `« ${cas.categorie} » n'est pas relu à l'identique et ne dit pas pourquoi`).toBeTruthy()
++      }
++    }
++  })
++})
+diff --git a/app/lib/__tests__/drive-rattachement.test.js b/app/lib/__tests__/drive-rattachement.test.js
+index f9d6c3f..39ef4d6 100644
+--- a/app/lib/__tests__/drive-rattachement.test.js
++++ b/app/lib/__tests__/drive-rattachement.test.js
+@@ -95,6 +95,31 @@ describe('deciderRattachement — les photos vont dans la table photos', () => {
+     expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/6. Photos/3. Après`, 'a.jpg').categorie_photo).toBe('apres')
+   })
+ 
++  it('une MAQUETTE est une photo, meme rangee dans « 5. Plans & techniques »', () => {
++    // Le Drive contient bien un sous-dossier « maquette » : le classement etait fait, c'est
++    // la relecture qui l'ignorait et les rangeait en documents « plans ».
++    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/maquette`, 'vue3d.jpg'))
++      .toEqual({ destination: 'photos', dossier_id: 'barloy', categorie_photo: 'maquette' })
++    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/Maquettes`, 'a.png').categorie_photo)
++      .toBe('maquette')
++  })
++
++  it('un PDF dans le dossier maquette reste un DOCUMENT', () => {
++    // La table photos n'affiche pas un PDF. Mieux vaut un plan bien rangé qu'une photo
++    // fantome dans la galerie.
++    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/maquette`, 'plan.pdf'))
++      .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: 'plans', artisan_id: null })
++  })
++
++  it('les sous-dossiers libres sous « 5. Plans & techniques » restent des plans', () => {
++    // « sdb wc », « Plan cuisine », « LAPEYRE », « moodboard »… : elle range par piece ou par
++    // fournisseur. Aucune categorie de l'appli ne leur correspond, et c'est tres bien : le
++    // niveau 1 suffit a decider, le niveau 2 est son organisation a elle.
++    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/sdb wc`, 'a.jpg').categorie).toBe('plans')
++    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/moodboard`, 'a.jpg').categorie).toBe('plans')
++    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/1. Administratif/PLU_ABF_CADASTRE`, 'a.pdf').categorie).toBe('administratif')
++  })
++
+   it('ne DEVINE pas la categorie : une photo sans categorie reste a la main', () => {
+     // 175 photos sont posees a la racine de « 6. Photos ». Les classer en « Avant » par
+     // defaut fausserait le dossier de restitution du client, sans que ca se voie.
+diff --git a/app/lib/__tests__/drive-taxonomie.test.js b/app/lib/__tests__/drive-taxonomie.test.js
+index ccaceeb..2129cb8 100644
+--- a/app/lib/__tests__/drive-taxonomie.test.js
++++ b/app/lib/__tests__/drive-taxonomie.test.js
+@@ -72,8 +72,10 @@ describe('drive/taxonomie', () => {
+     expect(photoSousDossiers('avant')).toEqual(['6. Photos', '1. Avant'])
+     expect(photoSousDossiers('pendant')).toEqual(['6. Photos', '2. Pendant'])
+     expect(photoSousDossiers('apres')).toEqual(['6. Photos', '3. Apres'])
+-    // La maquette est un livrable technique, pas une photo de chantier (arbitrage 02/09).
+-    expect(photoSousDossiers('maquette')).toEqual(['5. Plans & techniques'])
++    // La maquette est un livrable technique, pas une photo de chantier (arbitrage 02/09) —
++    // mais elle a son SOUS-DOSSIER, sans quoi elle est indiscernable d'un plan à la
++    // relecture et disparaît de la galerie du chantier (cf. drive-aller-retour.test.js).
++    expect(photoSousDossiers('maquette')).toEqual(['5. Plans & techniques', 'maquette'])
+     expect(photoSousDossiers(null)).toEqual(['6. Photos', 'Autres'])
+   })
+ 
+diff --git a/app/lib/drive/import-inbox.js b/app/lib/drive/import-inbox.js
+index 8a0a3c2..125985c 100644
+--- a/app/lib/drive/import-inbox.js
++++ b/app/lib/drive/import-inbox.js
+@@ -131,9 +131,16 @@ export async function importerInboxPhoto(db, {
+   mod, token, inbox, fournisseur, dossierId, categoriePhoto, auto = false,
+ }) {
+   // Doublon AVANT la prise : inutile de verrouiller une ligne pour la relâcher aussitôt.
++  //
++  // Le critère est (dossier, CATÉGORIE, nom), pas (dossier, nom). Le Drive range les photos
++  // par étape : le même « IMG_0104.jpeg » peut légitimement exister en « Avant » et en
++  // « Après » — c'est même le cas d'usage type, la même pièce photographiée deux fois avec
++  // un nom d'appareil identique. Sur le seul nom, la seconde aurait été silencieusement
++  // écartée, et la comparaison avant/après du dossier de restitution aurait perdu une image
++  // sans que rien ne le dise.
+   const nom = inbox.name || 'photo'
+   const { data: deja } = await db.from('photos')
+-    .select('id').eq('dossier_id', dossierId).eq('nom', nom).limit(1)
++    .select('id').eq('dossier_id', dossierId).eq('categorie', categoriePhoto).eq('nom', nom).limit(1)
+   if (deja && deja.length > 0) {
+     // La photo est déjà dans l'appli : la ligne inbox n'a plus lieu d'être proposée.
+     await db.from('drive_inbox').update({ statut: 'ignore' }).eq('id', inbox.id).then(() => {}, () => {})
+diff --git a/app/lib/drive/rattachement.js b/app/lib/drive/rattachement.js
+index 4e45bf4..4c8e443 100644
+--- a/app/lib/drive/rattachement.js
++++ b/app/lib/drive/rattachement.js
+@@ -103,6 +103,15 @@ export function estImage(nomFichier) {
+ // On ne devine RIEN au-dela : un dossier photo sans categorie lisible (ou une photo posee
+ // a la racine de « 6. Photos ») reste a la main. Classer 175 photos en « Avant » par
+ // defaut fausserait le dossier de restitution du client, silencieusement.
++// Sous-dossier « maquette » / « maquettes », quelle que soit la casse ou l'accentuation.
++// Même tolérance que pour les étapes de photos : le dossier est nommé à la main.
++export function estMaquette(segment) {
++  const s = String(segment || '')
++    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
++    .toLowerCase().replace(/^[_\s]*\d+\s*[.)\-]?\s*/, '').trim()
++  return s === 'maquette' || s === 'maquettes' || s.startsWith('maquette ')
++}
++
+ export function categoriePhotoDepuisDossier(segment) {
+   const s = String(segment || '')
+     .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+@@ -226,6 +235,19 @@ export function deciderRattachement(parentPath, candidats, artisansParNom = new
+     return { destination: 'documents', dossier_id: dossier.id, categorie, artisan_id: artisanId }
+   }
+ 
++  // ── Maquettes ─────────────────────────────────────────────────────────────────────
++  // Une maquette est une PHOTO (photos.categorie = 'maquette'), rangée dans
++  // « 5. Plans & techniques » et non dans « 6. Photos » — c'est le livrable technique,
++  // pas une prise de vue (arbitrage du 02/09).
++  //
++  // On ne la devine pas depuis le dossier de niveau 1, qui contient aussi des plans, des
++  // estimations et des fiches techniques. Mais quand un sous-dossier s'appelle « maquette »,
++  // il n'y a plus rien à deviner : c'est écrit. Le Drive en contient un, avec 6 fichiers,
++  // et le code les rangeait en documents « plans » — alors que le classement était fait.
++  if (premier === '5. Plans & techniques' && estMaquette(sous[1]) && estImage(nomFichier)) {
++    return { destination: 'photos', dossier_id: dossier.id, categorie_photo: 'maquette' }
++  }
++
+   if (!(premier in CATEGORIE_PAR_DOSSIER)) return refus(`sous_dossier_inconnu:${premier}`)
+   return { destination: 'documents', dossier_id: dossier.id, categorie: CATEGORIE_PAR_DOSSIER[premier], artisan_id: null }
+ }
+diff --git a/app/lib/drive/taxonomie.js b/app/lib/drive/taxonomie.js
+index 6732ccb..57f8c92 100644
+--- a/app/lib/drive/taxonomie.js
++++ b/app/lib/drive/taxonomie.js
+@@ -80,10 +80,37 @@ export function devisSousDossier(statutDevis) {
+ // livrable technique, elle part dans « 5. Plans & techniques » (arbitrage 02/09).
+ const PHOTO_CAT_LABEL = { avant: '1. Avant', pendant: '2. Pendant', apres: '3. Apres' }
+ export function photoSousDossiers(categoriePhoto) {
+-  if (categoriePhoto === 'maquette') return ['5. Plans & techniques']
++  // La MAQUETTE reste hors de « 6. Photos » : c'est un livrable technique, pas une prise de
++  // vue (arbitrage du 02/09). Mais elle va dans un SOUS-DOSSIER « maquette », et pas en vrac
++  // dans « 5. Plans & techniques ».
++  //
++  // Ce niveau n'est pas cosmétique, c'est ce qui rend la maquette RELISIBLE. Écrite à la
++  // racine, elle était indiscernable d'un plan, d'une estimation ou d'une fiche technique :
++  // relue, elle revenait en document « plans », et la galerie du chantier la perdait. Défaut
++  // trouvé le 10/09 par le test d'aller-retour, pas à l'usage — et le Drive contenait DÉJÀ un
++  // dossier « maquette » créé à la main : l'appli ne faisait que ne pas suivre la convention
++  // de la maison.
++  if (categoriePhoto === 'maquette') return ['5. Plans & techniques', 'maquette']
+   return ['6. Photos', PHOTO_CAT_LABEL[categoriePhoto] || 'Autres']
+ }
+ 
++// TOUTES les catégories que l'appli sait écrire dans le Drive, et toutes les catégories de
++// prise de vue. Listes exportées pour une seule raison, qui vaut d'être dite : le test
++// d'ALLER-RETOUR (drive-aller-retour.test.js) s'en sert pour exiger qu'AUCUNE catégorie ne
++// soit ajoutée sans qu'on ait décidé, noir sur blanc, ce que la relecture doit en faire.
++//
++// Sans ce garde-fou, on ajoute une catégorie côté écriture, on oublie la lecture, et les
++// fichiers concernés atterrissent en « Autres » sans que rien ne le signale — c'est
++// exactement ce qui est arrivé aux factures d'artisans et aux maquettes.
++export const CATEGORIES_DOCUMENT = [
++  'compte_rendu',
++  'attestation_demarrage', 'deblocage_acompte', 'avis_virement', 'pv_reception', 'attestation_chantier',
++  'facture_artisan', 'autre_artisan',
++  'plans', 'estimation', 'fiche_technique',
++  'facture_honoraire', 'administratif',
++]
++export const CATEGORIES_PHOTO = ['avant', 'pendant', 'apres', 'maquette']
++
+ // Sous-dossier(s) cible selon la catégorie du document. Renvoie un tableau de segments.
+ export function sousDossiers(categorie, artisanNom) {
+   const artisan = (artisanNom || 'Sans artisan').trim()
+-- 
+2.43.0
+
+
+From f70a103c51bf36becddb4863bac78bd45686435c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 11 Sep 2026 09:52:23 +0000
+Subject: [PATCH 3/3] =?UTF-8?q?Suivi=20financier=20:=20un=20acompte=20enca?=
+ =?UTF-8?q?iss=C3=A9=20compte=20comme=20factur=C3=A9?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+L'écran portait DEUX définitions du mot « facturé ». Le compteur ne comptait que
+les lignes factures_artisans ; la facture de solde, elle, était saisie à la main
+à « devis − acompte ». Après chaque « Facturer le solde », il restait donc
+exactement le montant de l'acompte — sur un acompte pourtant coché « Réglé ».
+Pire, le bouton pré-remplissait ce montant faux, d'où un calcul refait à la main
+à chaque facture.
+
+Constaté sur deux devis réels : LS TRAVAUX 8 613 € (solde 6 029,10 facturé,
+« reste » 2 583,90 = l'acompte) et ALPILLES 2 222,88 € (solde 1 332,34 facturé,
+« reste » 890,54 = l'acompte).
+
+Règle retenue, dictée par le terrain : « des artisans ne nous fournissent pas
+toujours de facture, c'est pour ça que ça doit être compté ». Le compteur mesure
+ce qui RESTE DÛ, pas le nombre de pièces comptables reçues.
+
+- finance.js : resteAFacturerDevis(), pure et testée. Une règle d'argent enfouie
+  dans du JSX ne se vérifie pas.
+- La part NON couverte de l'acompte est déduite, jamais l'acompte entier : quand
+  l'artisan a bien émis sa facture d'acompte, la déduire une 2e fois offrirait le
+  montant deux fois au client. Testé.
+- L'écran distingue « ✓ Entièrement facturé » de « ✓ Soldé · acompte de X sans
+  facture » : plus rien n'est dû, mais une pièce manque — c'est ce qu'il reste à
+  réclamer à l'artisan, autant le dire au lieu de l'effacer.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TvWpp16odX6J4r6qgBVj4Q
+---
+ app/chantiers/[id]/page.js                 | 44 ++++++++++-
+ app/lib/__tests__/reste-a-facturer.test.js | 89 ++++++++++++++++++++++
+ app/lib/finance.js                         | 39 ++++++++++
+ 3 files changed, 168 insertions(+), 4 deletions(-)
+ create mode 100644 app/lib/__tests__/reste-a-facturer.test.js
+
+diff --git a/app/chantiers/[id]/page.js b/app/chantiers/[id]/page.js
+index bd2a1a8..fff81b8 100644
+--- a/app/chantiers/[id]/page.js
++++ b/app/chantiers/[id]/page.js
+@@ -8,7 +8,7 @@ import { formatNomClient } from '../../lib/clients'
+ import { useRouter } from 'next/navigation'
+ import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
+ import { calculerAvancement, calculerEtapes, ETAPES_LABELS, detecterCategorie } from '../../lib/dossiers'
+-import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
++import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, resteAFacturerDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
+ import { apiFetch } from '../../lib/api-auth-client'
+ import { lierOuCreerRdvVisite } from '../../lib/rdvVisite'
+ import { buildDevisPayload } from '../../lib/devis'
+@@ -5107,13 +5107,40 @@ export default function FicheChantier({ params }) {
+                     const acompteMontant = finDv.acompte
+                     const comDevisHT = finDv.comHT
+                     // Factures artisan de ce devis : acompte(s) sous « Acompte client »,
+-                    // le reste en « Autres factures ». Reste à facturer = devis TTC − factures.
++                    // le reste en « Autres factures ».
+                     const factsDevis   = factures.filter(f => f.devis_id === dv.id)
+                     const estAcompte   = (f) => (f.libelle || '').toLowerCase().includes('acompte')
+                     const factsAcompte = factsDevis.filter(estAcompte)
+                     const factsAutres  = factsDevis.filter(f => !estAcompte(f))
+                     const totalFacture = factsDevis.reduce((s, f) => s + (Number(f.montant_ttc) || 0), 0)
+-                    const resteAFacturer = Math.max(0, (Number(dv.montant_ttc) || 0) - totalFacture)
++
++                    // UN ACOMPTE ENCAISSÉ COMPTE COMME FACTURÉ (11/09).
++                    //
++                    // Deux définitions du mot « facturé » cohabitaient dans cet écran : le
++                    // compteur ne comptait que les lignes factures_artisans, tandis que la
++                    // facture de solde, elle, était saisie à la main à « devis − acompte ».
++                    // Après chaque « Facturer le solde » il restait donc EXACTEMENT le montant
++                    // de l'acompte — sur un acompte pourtant coché « Réglé ». Le formulaire
++                    // pré-remplissait même le mauvais montant, d'où un calcul refait à la main
++                    // à chaque facture.
++                    //
++                    // Règle retenue, dictée par le terrain : « des artisans ne nous fournissent
++                    // pas toujours de facture, c'est pour ça que ça doit être compté ». Ce
++                    // compteur mesure donc ce qui RESTE DÛ, pas le nombre de pièces reçues.
++                    //
++                    // On soustrait la part NON COUVERTE de l'acompte, jamais l'acompte entier :
++                    // si l'artisan a bien émis sa facture d'acompte, elle est déjà dans
++                    // totalFacture, et la déduire une seconde fois offrirait le montant deux
++                    // fois. Le Math.max ramène ce cas à zéro.
++                    // Le calcul lui-même vit dans finance.js, avec ses tests : c'est de
++                    // l'argent, et une règle d'argent enfouie dans du JSX ne se vérifie pas.
++                    const { reste: resteAFacturer, acompteNonFacture } = resteAFacturerDevis({
++                      devisTTC: dv.montant_ttc,
++                      totalFactureTTC: totalFacture,
++                      totalFactAcompteTTC: factsAcompte.reduce((s, f) => s + (Number(f.montant_ttc) || 0), 0),
++                      acompteTTC: acompteMontant,
++                      acompteEncaisse: sf?.statut_client === 'regle',
++                    })
+                     const formOuvert   = ajouterFacture === dv.id
+                     return (
+                       <div key={`ech-${dv.id}`} className="suivi-devis-row">
+@@ -5166,7 +5193,16 @@ export default function FicheChantier({ params }) {
+                             <span className="tnum" style={resteAFacturer > 0
+                               ? {fontSize:'var(--text-xs)', fontWeight:800, color:'var(--warn-strong)', background:'rgba(194,65,12,0.09)', padding:'2px 10px', borderRadius:99}
+                               : {fontSize:'var(--text-xs)', fontWeight:600, color:'var(--ok-strong)'}}>
+-                              {resteAFacturer > 0 ? `Reste à facturer : ${fmt(resteAFacturer)}` : '✓ Entièrement facturé'}
++                              {/* « Soldé » et « entièrement facturé » ne sont pas la même
++                                  chose : quand l'acompte a été encaissé sans facture de
++                                  l'artisan, plus rien n'est dû, mais une pièce comptable
++                                  manque. On le dit au lieu de l'effacer — c'est ce qu'il
++                                  reste à réclamer à l'artisan. */}
++                              {resteAFacturer > 0
++                                ? `Reste à facturer : ${fmt(resteAFacturer)}`
++                                : acompteNonFacture > 0
++                                  ? `✓ Soldé · acompte de ${fmt(acompteNonFacture)} sans facture`
++                                  : '✓ Entièrement facturé'}
+                             </span>
+                           </div>
+                           {factsAutres.map(ligneFacture)}
+diff --git a/app/lib/__tests__/reste-a-facturer.test.js b/app/lib/__tests__/reste-a-facturer.test.js
+new file mode 100644
+index 0000000..d966e1e
+--- /dev/null
++++ b/app/lib/__tests__/reste-a-facturer.test.js
+@@ -0,0 +1,89 @@
++import { describe, it, expect } from 'vitest'
++import { resteAFacturerDevis } from '../finance.js'
++
++// Le « reste à facturer » décide de ce qu'on redemande au client. Se tromper ici, c'est
++// facturer deux fois un acompte déjà encaissé — ou oublier de facturer un solde.
++//
++// Le défaut corrigé le 11/09 : l'écran portait DEUX définitions du mot « facturé ». Le
++// compteur ne comptait que les factures enregistrées ; la facture de solde, elle, était
++// saisie à la main à « devis − acompte ». Après chaque solde, il restait donc exactement
++// le montant de l'acompte — sur un acompte pourtant coché « Réglé ».
++
++describe('reste à facturer — les deux devis réels du 11/09', () => {
++  it('LS TRAVAUX : 8 613 € de devis, solde de 6 029,10 € facturé, acompte encaissé', () => {
++    // L'écran affichait « Reste à facturer : 2 583,90 € », soit très exactement l'acompte
++    // déjà encaissé. Plus rien n'est dû.
++    const r = resteAFacturerDevis({
++      devisTTC: 8613, totalFactureTTC: 6029.10, totalFactAcompteTTC: 0,
++      acompteTTC: 2583.90, acompteEncaisse: true,
++    })
++    expect(r.reste).toBe(0)
++    expect(r.acompteNonFacture).toBeCloseTo(2583.90, 2)
++  })
++
++  it('ALPILLES : 2 222,88 € de devis, solde de 1 332,34 € facturé, acompte encaissé', () => {
++    const r = resteAFacturerDevis({
++      devisTTC: 2222.88, totalFactureTTC: 1332.34, totalFactAcompteTTC: 0,
++      acompteTTC: 890.54, acompteEncaisse: true,
++    })
++    expect(r.reste).toBe(0)
++    expect(r.acompteNonFacture).toBeCloseTo(890.54, 2)
++  })
++})
++
++describe('reste à facturer — ce qu\'il ne faut surtout pas déduire deux fois', () => {
++  it('acompte encaissé ET facturé : on ne déduit rien de plus', () => {
++    // Le cas du 3e devis LS TRAVAUX, qui a bien sa « Facture acompte » de 2 596 €. Déduire
++    // l'acompte une seconde fois offrirait 2 596 € au client, en silence.
++    const r = resteAFacturerDevis({
++      devisTTC: 6490, totalFactureTTC: 2596, totalFactAcompteTTC: 2596,
++      acompteTTC: 2596, acompteEncaisse: true,
++    })
++    expect(r.reste).toBe(3894)
++    expect(r.acompteNonFacture).toBe(0)
++  })
++
++  it('facture d\'acompte PARTIELLE : seule la part non couverte est déduite', () => {
++    const r = resteAFacturerDevis({
++      devisTTC: 10000, totalFactureTTC: 1000, totalFactAcompteTTC: 1000,
++      acompteTTC: 3000, acompteEncaisse: true,
++    })
++    // 10 000 − 1 000 facturé − 2 000 d'acompte encaissé sans facture.
++    expect(r.reste).toBe(7000)
++    expect(r.acompteNonFacture).toBe(2000)
++  })
++
++  it('acompte PAS encore encaissé : il reste entièrement à facturer', () => {
++    // Tant que la case « Réglé » n'est pas cochée, rien n'a été encaissé : on ne déduit rien.
++    const r = resteAFacturerDevis({
++      devisTTC: 8613, totalFactureTTC: 0, totalFactAcompteTTC: 0,
++      acompteTTC: 2583.90, acompteEncaisse: false,
++    })
++    expect(r.reste).toBe(8613)
++    expect(r.acompteNonFacture).toBe(0)
++  })
++})
++
++describe('reste à facturer — bornes et données douteuses', () => {
++  it('ne descend jamais sous zéro, même sur-facturé', () => {
++    const r = resteAFacturerDevis({
++      devisTTC: 1000, totalFactureTTC: 1500, totalFactAcompteTTC: 0,
++      acompteTTC: 300, acompteEncaisse: true,
++    })
++    expect(r.reste).toBe(0)
++  })
++
++  it('des montants absents ou illisibles ne produisent pas NaN à l\'écran', () => {
++    expect(resteAFacturerDevis({}).reste).toBe(0)
++    expect(resteAFacturerDevis({ devisTTC: null, totalFactureTTC: undefined }).reste).toBe(0)
++    expect(resteAFacturerDevis({ devisTTC: '8613', totalFactureTTC: 'abc' }).reste).toBe(8613)
++  })
++
++  it('arrondit au centime — pas de « reste à facturer : 0,004 € »', () => {
++    const r = resteAFacturerDevis({
++      devisTTC: 1000, totalFactureTTC: 333.333, totalFactAcompteTTC: 0,
++      acompteTTC: 333.333, acompteEncaisse: true,
++    })
++    expect(r.reste).toBe(333.34)
++  })
++})
+diff --git a/app/lib/finance.js b/app/lib/finance.js
+index b046517..fc3448a 100644
+--- a/app/lib/finance.js
++++ b/app/lib/finance.js
+@@ -757,3 +757,42 @@ export function calculateDossierFinance(dossier) {
+     },
+   }
+ }
++
++/**
++ * RESTE À FACTURER sur un devis — et pourquoi l'acompte encaissé en fait partie.
++ *
++ * Le suivi financier portait deux définitions contradictoires du mot « facturé » : le
++ * compteur ne comptait que les lignes `factures_artisans`, alors que la facture de solde
++ * était saisie à la main à « devis − acompte ». Après chaque « Facturer le solde » il
++ * restait donc exactement le montant de l'acompte — sur un acompte pourtant coché
++ * « Réglé » — et le formulaire pré-remplissait le mauvais montant.
++ *
++ * RÈGLE (11/09, dictée par le terrain) : « des artisans ne nous fournissent pas toujours
++ * de facture, c'est pour ça que ça doit être compté. » Ce que ce calcul mesure est donc ce
++ * qui RESTE DÛ par le client, pas le nombre de pièces comptables reçues. Un acompte
++ * encaissé est un montant qui ne sera pas redemandé, avec ou sans facture en face.
++ *
++ * On retire la part NON COUVERTE de l'acompte, jamais l'acompte entier : quand l'artisan a
++ * bien émis sa facture d'acompte, elle figure déjà dans les factures, et la déduire une
++ * seconde fois offrirait le montant deux fois au client.
++ *
++ * @param {object} p
++ * @param {number} p.devisTTC          montant TTC du devis
++ * @param {number} p.totalFactureTTC   somme de TOUTES les factures du devis (acompte compris)
++ * @param {number} p.totalFactAcompteTTC somme des seules factures d'acompte
++ * @param {number} p.acompteTTC        acompte théorique du devis
++ * @param {boolean} p.acompteEncaisse  l'acompte client est-il coché « réglé »
++ * @returns {{ reste:number, acompteNonFacture:number }}
++ *   `acompteNonFacture` > 0 signale un encaissement SANS pièce comptable en face : l'écran
++ *   le dit au lieu d'afficher « entièrement facturé », pour qu'on sache quoi réclamer.
++ */
++export function resteAFacturerDevis({
++  devisTTC = 0, totalFactureTTC = 0, totalFactAcompteTTC = 0, acompteTTC = 0, acompteEncaisse = false,
++}) {
++  const nb = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
++  const acompteNonFacture = acompteEncaisse
++    ? Math.max(0, round2(nb(acompteTTC) - nb(totalFactAcompteTTC)))
++    : 0
++  const reste = Math.max(0, round2(nb(devisTTC) - nb(totalFactureTTC) - acompteNonFacture))
++  return { reste, acompteNonFacture }
++}
+-- 
+2.43.0
+
