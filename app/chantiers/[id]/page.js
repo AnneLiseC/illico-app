@@ -1936,6 +1936,7 @@ export default function FicheChantier({ params }) {
       artisan_id: artisanId,
       montant_ttc: parseFloat(nouvelleFacture.montant_ttc),
       date_paiement: nouvelleFacture.date_paiement || null,
+      date_echeance: nouvelleFacture.date_echeance || null,
       statut: nouvelleFacture.statut,
       libelle: libelleFinal
     }).select().single()
@@ -4978,7 +4979,7 @@ export default function FicheChantier({ params }) {
         const boutonFacturer = (dv, libelle, montant, texte, primary = false) => (
           <button onClick={() => {
             setAjouterFacture(dv.id)
-            setNouvelleFacture({ montant_ttc: montant > 0 ? montant.toFixed(2) : '', date_paiement: '', statut: 'en_attente', fichier: null, libelle, libelle_autre: '' })
+            setNouvelleFacture({ montant_ttc: montant > 0 ? montant.toFixed(2) : '', date_paiement: '', date_echeance: '', statut: 'en_attente', fichier: null, libelle, libelle_autre: '' })
           }}
             style={primary
               ? {fontSize:'var(--text-xs)', fontWeight:700, color:'#fff', border:'1px solid #4f46e5', padding:'var(--space-2) var(--space-6)', borderRadius:6, background:'#4f46e5', cursor:'pointer', alignSelf:'flex-start'}
@@ -4999,6 +5000,16 @@ export default function FicheChantier({ params }) {
               <ModalField label="Date de paiement">
                 <input type="date" className="input" value={nouvelleFacture.date_paiement}
                   onChange={e => setNouvelleFacture(f => ({ ...f, date_paiement: e.target.value }))}
+                  style={{height:32, padding:'0 10px', fontSize:'var(--text-sm)'}} />
+              </ModalField>
+            </div>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'var(--space-3)'}}>
+              {/* L'ÉCHÉANCE COMMANDE LA RELANCE, et rien d'autre. Laissée vide, la facture
+                  ne sera jamais relancée automatiquement : on ne réclame pas d'argent sur
+                  une date inventée. C'est un choix explicite, pas un oubli du logiciel. */}
+              <ModalField label="Échéance (déclenche la relance)">
+                <input type="date" className="input" value={nouvelleFacture.date_echeance || ''}
+                  onChange={e => setNouvelleFacture(f => ({ ...f, date_echeance: e.target.value }))}
                   style={{height:32, padding:'0 10px', fontSize:'var(--text-sm)'}} />
               </ModalField>
             </div>
