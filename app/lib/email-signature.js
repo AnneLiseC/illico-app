@@ -77,6 +77,47 @@ export function signatureAgence(agence, opts = {}) {
 }
 
 /**
+ * Signature COMPLÈTE : la personne qui suit le dossier, puis son agence.
+ *
+ * Les relances signaient déjà avec la référente (nom, rôle, téléphone, email) — c'est
+ * bien, c'est ce qui rend un mail humain. Il manquait l'agence en dessous : un client qui
+ * reçoit une demande d'acompte doit pouvoir vérifier À QUI il envoie de l'argent, et un
+ * numéro de portable seul ne le lui dit pas.
+ *
+ * Et surtout, le repli quand la référente est inconnue était `illiCO travaux` tout court —
+ * l'anonymat exact qu'on cherche à supprimer. Ici, l'agence prend le relais.
+ *
+ * @param {object} p
+ * @param {object} [p.personne]  { prenom, nom, role, telephone, email } — référente ou admin
+ * @param {object} [p.agence]    ligne `agences`
+ * @param {string} [p.roleLabel] libellé du rôle déjà traduit (le cron a le sien)
+ */
+export function signatureComplete({ personne, agence, roleLabel, formule } = {}) {
+  const nomPersonne = [personne?.prenom, personne?.nom].map(v => String(v || '').trim()).filter(Boolean).join(' ')
+  const telPersonne = telephoneLisible(personne?.telephone)
+
+  const blocPersonne = nomPersonne ? [
+    `<div style="font-weight:700;color:#0f172a">${echapper(nomPersonne.toUpperCase())}</div>`,
+    roleLabel ? `<div>${echapper(roleLabel)}</div>` : '',
+    telPersonne ? `<div>${echapper(telPersonne)}</div>` : '',
+    personne?.email ? `<div><a href="mailto:${echapper(personne.email)}" style="color:#4f46e5;text-decoration:none">${echapper(personne.email)}</a></div>` : '',
+  ].filter(Boolean).join('') : ''
+
+  const sigAgence = signatureAgence(agence, { formule: null })
+  // Ni personne ni agence : on ne signe pas plutôt que de signer « illiCO travaux » —
+  // une signature anonyme n'apprend rien au destinataire et fait perdre confiance.
+  if (!blocPersonne && !sigAgence) return ''
+
+  const formuleHtml = formule === null ? '' : `<p style="margin:16px 0 8px">${echapper(formule || 'Cordialement,')}</p>`
+  return formuleHtml
+    + `<div style="font-size:13px;line-height:1.6;color:#475569;border-top:1px solid #e2e8f0;padding-top:12px;margin-top:8px">`
+    + blocPersonne
+    + (blocPersonne && sigAgence ? '<div style="height:10px"></div>' : '')
+    + (sigAgence ? sigAgence.replace(/^<div style="font-size:13px[^"]*">/, '<div>') : '')
+    + `</div>`
+}
+
+/**
  * Enveloppe un contenu dans le gabarit commun : corps lisible + signature de l'agence.
  *
  * Un seul gabarit pour tous les mails métier, pour que le jour où l'on corrige une

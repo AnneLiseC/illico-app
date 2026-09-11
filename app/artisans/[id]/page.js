@@ -383,6 +383,18 @@ export default function FicheArtisan({ params }) {
           </div>
           <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
             <div>
+              {/* La civilité sert aux MAILS : « Bonjour M. MARCHAND ». Elle n'est jamais
+                  déduite du prénom — l'automatisme se trompe sur un prénom mixte ou
+                  étranger, et il se trompe dans un mail signé de l'agence. Non renseignée,
+                  le mail se rabat sur le nom, puis sur l'entreprise. */}
+              <label style={{display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5}}>Civilité</label>
+              <select className="input" value={artisan.civilite || ''} onChange={e => set('civilite', e.target.value || null)}>
+                <option value="">— non renseignée —</option>
+                <option value="M.">M.</option>
+                <option value="Mme">Mme</option>
+              </select>
+            </div>
+            <div>
               <label style={{display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5}}>Prénom contact</label>
               <input className="input" value={artisan.prenom || ''} onChange={e => set('prenom', e.target.value)} />
             </div>

@@ -18,7 +18,8 @@ import { NextResponse } from 'next/server'
 import { checkBearerSecret } from '../../../lib/http-auth'
 import { sendEmail } from '../../../lib/email'
 import { preparerEnvoi, modeEnvoi } from '../../../lib/relances-envoi'
-import { salutationClient, nomClientPourArtisan, libelleRdv, destinatairesRappel, heureRdvFR, dateRdvFR } from '../../../lib/relances-texte'
+import { salutationClient, nomClientPourArtisan, libelleRdv, destinatairesRappel, heureRdvFR, dateRdvFR, adresseArtisan } from '../../../lib/relances-texte'
+import { signatureComplete } from '../../../lib/email-signature'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -51,20 +52,51 @@ function roleLabel(role) {
 // deux conjoints portent le même nom (« M. et Mme Brunet, Brunet »).
 
 // Noms pour référence de virement : "GUERTEAU-EPPINGER" ou "CHAMBONNIERE"
+// Nom d'un dossier tel qu'on en parle À VOIX HAUTE : « le dossier BRUNET ». La référence
+// interne (« 2026-AM-002 ») ne dit rien à un artisan qui suit cinq chantiers, ni à un
+// client qui n'en a qu'un. Même règle que les dossiers du Drive. (11/09)
+function nomDossierClient(client, repli) {
+  const noms = [client?.nom, client?.nom2].filter(Boolean).map(n => String(n).trim().toUpperCase())
+  const uniques = [...new Set(noms)]
+  return uniques.length ? uniques.join('-') : (repli || '')
+}
+
 function nomsVirement(client) {
   return [client.nom, client.nom2].filter(Boolean).map(n => n.toUpperCase()).join('-')
 }
 
-function signatureHtml(referente) {
-  if (!referente) return '<p><em>illiCO travaux</em></p>'
-  return `
-    <p style="margin-top:24px; font-size:13px; line-height:1.6;">
-      <strong>${prenomNom(referente).toUpperCase()}</strong><br>
-      ${roleLabel(referente.role)}<br>
-      ${referente.telephone ? referente.telephone + '<br>' : ''}
-      ${referente.email || ''}
-    </p>
-  `
+// Agences chargées UNE fois chacune : le cron traite des dizaines de dossiers et la
+// plupart partagent la même agence. Un cache mémoire évite autant de requêtes que de mails.
+const _agences = new Map()
+async function agenceDe(agenceId) {
+  if (!agenceId) return null
+  if (_agences.has(agenceId)) return _agences.get(agenceId)
+  const { data } = await getSupabaseAdmin().from('agences')
+    .select('nom, adresse, code_postal, ville, telephone').eq('id', agenceId).maybeSingle()
+  _agences.set(agenceId, data || null)
+  return data || null
+}
+
+// Signature d'un mail métier : la personne qui suit le dossier, PUIS son agence.
+//
+// Ce qui change le 11/09 — l'agence apparaît sous la référente (nom, adresse, téléphone).
+// Un client à qui l'on demande un acompte doit pouvoir vérifier à qui il envoie son
+// argent ; un portable seul ne le lui dit pas. Et le repli n'est plus « illiCO travaux »
+// tout court : quand la référente manque, c'est l'AGENCE qui signe, pas un anonyme.
+//
+// Le texte des mails, lui, n'est pas touché : il était juste.
+//
+// `agence` est chargée par l'appelant (une requête par dossier, mise en cache) — la
+// fonction reste purement de la mise en forme.
+async function signatureHtml(referente) {
+  const agence = await agenceDe(referente?.agence_id)
+  const html = signatureComplete({
+    personne: referente,
+    agence,
+    roleLabel: referente ? roleLabel(referente.role) : null,
+    formule: null,   // les textes disent déjà « Cordialement, » juste au-dessus
+  })
+  return html || ''
 }
 
 async function notifyUser(userId, { type, titre, message, dossier_id }) {
@@ -158,8 +190,8 @@ export async function GET(req) {
       .from('devis_artisans')
       .select(`
         id, dossier_id, date_limite,
-        artisans(email, entreprise, nom, prenom),
-        dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role))
+        artisans(email, entreprise, nom, prenom, civilite),
+        dossiers(reference, clients(nom, nom2), profiles!referente_id(email, prenom, nom, telephone, role, agence_id))
       `)
       .is('date_reception', null)
       .not('statut', 'in', '("accepte","refuse")')
@@ -169,6 +201,7 @@ export async function GET(req) {
       const artisan = d.artisans
       if (!artisan?.email) continue
       const ref = d.dossiers?.reference || d.dossier_id
+      const nomDossier = nomDossierClient(d.dossiers?.clients, ref)
       const referente = d.dossiers?.profiles
       await envoyer(log, '1', {
         // La date limite entre dans la clé : la repousser vaut nouvelle échéance,
@@ -176,14 +209,16 @@ export async function GET(req) {
         cle: `devis-limite:${d.id}:${d.date_limite}`,
         to: artisan.email,
         replyTo: referente?.email,
-        subject: `Rappel — devis à remettre avant le ${new Date(d.date_limite).toLocaleDateString('fr-FR')}`,
+        // Le dossier se désigne par le NOM DU CLIENT, pas par sa référence interne :
+        // « 2026-AM-002 » ne dit rien à un artisan qui suit cinq chantiers. (11/09)
+        subject: `Relance devis, dossier ${nomDossier}`,
         html: `
-          <p>Bonjour ${prenomNom(artisan) || artisan.entreprise},</p>
-          <p>Nous vous rappelons que votre devis pour le dossier <strong>${ref}</strong> doit nous être transmis
-          au plus tard le <strong>${new Date(d.date_limite).toLocaleDateString('fr-FR')}</strong>.</p>
+          <p>Bonjour ${adresseArtisan(artisan) || ''},</p>
+          <p>Nous n'avons pas encore reçu votre devis pour le dossier <strong>${nomDossier}</strong>,
+          attendu au plus tard le <strong>${new Date(d.date_limite).toLocaleDateString('fr-FR')}</strong>.</p>
           <p>Merci de nous l'adresser dès que possible.</p>
           <p>Cordialement,</p>
-          ${signatureHtml(referente)}
+          ${await signatureHtml(referente)}
         `,
       })
     }
@@ -238,8 +273,8 @@ export async function GET(req) {
       const { data: dossier } = await getSupabaseAdmin()
         .from('dossiers')
         .select(`
-          id, reference, agences(ville),
-          profiles!referente_id(email, prenom, nom, telephone, role),
+          id, reference, agences(ville, societes(nom_societe)),
+          profiles!referente_id(email, prenom, nom, telephone, role, agence_id),
           clients(email, nom, prenom, civilite, nom2, prenom2)
         `)
         .eq('id', dossierId).maybeSingle()
@@ -305,6 +340,10 @@ export async function GET(req) {
       const salutation = salutationClient(client)
       const montantAmo = montantAmoDu
       const agenceVille = dossier?.agences?.ville || ''
+      // Le RIB joint est celui de la SOCIÉTÉ (le franchisé), pas de l'agence : c'est elle
+      // qui encaisse les honoraires. Repli neutre si le nom n'est pas renseigné, pour ne
+      // pas écrire « le RIB de  » avec un trou au milieu de la phrase.
+      const nomSociete = dossier?.agences?.societes?.nom_societe || 'notre société'
 
       // Construction du HTML
       const rowsHtml = artisansProtect.map(a => `
@@ -318,8 +357,13 @@ export async function GET(req) {
 
       if (artisansProtect.length > 0) {
         html += `
-          <p>Vous trouverez ci-dessous les informations relatives aux acomptes à régler.</p>
-          <p>Les acomptes artisans sont à effectuer sur le compte sécurisé <strong>PROTECTACOMPTE</strong>.</p>
+          <p>Vous trouverez ci-dessous les informations relatives aux acomptes à régler, et en
+          pièces jointes le récapitulatif financier à jour, les RIB des artisans en paiement
+          direct ainsi que le RIB de ${nomSociete}.</p>
+          <p>Les acomptes artisans sont à effectuer sur le RIB du <strong>PROTECTACOMPTE</strong>
+          figurant dans le contrat de prestation signé lors de notre premier rendez-vous.
+          Merci d'effectuer si possible un virement par artisan. Merci de bien vouloir me
+          transmettre une capture d'écran ou l'avis de virement correspondant.</p>
           <br>
           <table style="border-collapse:collapse; font-family:sans-serif; font-size:14px;">
             ${rowsHtml}
@@ -337,9 +381,9 @@ export async function GET(req) {
       for (const a of artisansDirect) {
         html += `
           <br>
-          <p>Concernant <strong>${a.entreprise}</strong>, merci d'effectuer le règlement de
-          <strong>${montantFr(a.montant_ttc)}</strong> directement sur le compte <strong>${a.entreprise}</strong>.
-          Merci de bien vouloir me transmettre une capture d'écran ou l'avis de virement correspondant.</p>
+          <p>Concernant <strong>${a.entreprise}</strong>, le règlement de
+          <strong>${montantFr(a.montant_ttc)}</strong> est à effectuer directement sur son compte,
+          dont vous trouverez le RIB en pièce jointe.</p>
         `
       }
 
@@ -347,7 +391,8 @@ export async function GET(req) {
       if (montantAmo) {
         html += `
           <br>
-          <p>Au sujet de ma prestation, merci de réaliser un acompte de <strong>${montantFr(montantAmo)}</strong>.
+          <p>Au sujet de ma prestation, merci de réaliser un acompte de <strong>${montantFr(montantAmo)}</strong>,
+          à régler sur le RIB de ${nomSociete} joint à ce message.
           Merci de me faire parvenir une capture d'écran ou l'avis de virement lorsque cela sera réalisé.</p>
         `
       }
@@ -356,7 +401,7 @@ export async function GET(req) {
         <br>
         <p>Je reste bien entendu à votre disposition si vous avez la moindre question.</p>
         <p>Bien cordialement,</p>
-        ${signatureHtml(referente)}
+        ${await signatureHtml(referente)}
       `
 
       await envoyer(log, '3', {
@@ -367,7 +412,7 @@ export async function GET(req) {
         // supprimer une demande d'acompte légitime — bien pire qu'un doublon.
         to: client.email,
         replyTo: referente?.email,
-        subject: `Demande d'acompte — dossier ${ref}`,
+        subject: `Demande d'acompte`,
         html,
       })
     }
@@ -437,7 +482,7 @@ export async function GET(req) {
       .from('suivi_financier')
       .select(`
         id, dossier_id, montant_ttc, date_echeance,
-        dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role),
+        dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role, agence_id),
           clients(email, nom, prenom, civilite, nom2))
       `)
       .eq('type_echeance', 'facture_finale')
@@ -460,7 +505,7 @@ export async function GET(req) {
           relative au dossier <strong>${ref}</strong>, dont l'échéance était le <strong>${echeance}</strong>, n'a pas encore été réglée.</p>
           <p>Nous vous remercions de bien vouloir procéder au règlement dans les meilleurs délais.</p>
           <p>Cordialement,</p>
-          ${signatureHtml(referente)}
+          ${await signatureHtml(referente)}
         `,
       })
     }
@@ -480,9 +525,9 @@ export async function GET(req) {
       .from('rendez_vous')
       .select(`
         id, dossier_id, type_rdv, titre, date_heure, artisan_id, prevenir_client,
-        artisans(email, entreprise, nom, prenom),
-        rendez_vous_artisans(artisans(email, entreprise, nom, prenom)),
-        dossiers(reference, adresse_chantier, profiles!referente_id(email, prenom, nom, telephone, role),
+        artisans(email, entreprise, nom, prenom, civilite),
+        rendez_vous_artisans(artisans(email, entreprise, nom, prenom, civilite)),
+        dossiers(reference, adresse_chantier, profiles!referente_id(email, prenom, nom, telephone, role, agence_id),
           clients(email, nom, prenom, civilite, nom2))
       `)
       .gte('date_heure', `${tomorrow}T00:00:00`)
@@ -527,7 +572,7 @@ export async function GET(req) {
       // prévU » était une faute qui serait revenue au premier type ajouté.
       const intituleHtml = (libelle) => (libelle ? `<strong>${libelle}</strong><br>` : '')
 
-      if (client?.email && destinataires.client) {
+      if (client?.email && destinataires.client) {   // `client` est désormais toujours vrai : le garde-fou utile est l'adresse
         await envoyer(log, '5', {
           // L'HEURE du rendez-vous entre dans la clé : un report change la clé, donc un
           // nouveau rappel part. Sans elle, un rendez-vous déplacé n'aurait plus jamais
@@ -535,14 +580,18 @@ export async function GET(req) {
           cle: `rdv:${rdv.id}:${rdv.date_heure}:client`,
           to: client.email,
           replyTo: referente?.email,
-          subject: `Rappel de votre rendez-vous demain — dossier ${ref}`,
+          subject: `Rappel de votre rendez-vous demain`,
           html: `
             <p>Bonjour ${salutationClient(client)},</p>
-            <p>Nous vous rappelons ce rendez-vous :</p>
+            <p>${destinataires.clientPresent
+              ? 'Nous vous rappelons ce rendez-vous :'
+              : 'Nous vous informons de ce rendez-vous sur votre chantier :'}</p>
             <p>${intituleHtml(libelleRdv(rdv, 'client', entreprises))}📅 <strong>${dateRdv} à ${heureRdv}</strong>${lieuHtml}</p>
-            <p>En cas d'empêchement, merci de nous contacter dès que possible.</p>
+            <p>${destinataires.clientPresent
+              ? "En cas d'empêchement, merci de nous contacter dès que possible."
+              : `Nous serons présents sur place${entreprises ? ` avec ${entreprises}` : ''} : votre présence n'est pas nécessaire.`}</p>
             <p>Cordialement,</p>
-            ${signatureHtml(referente)}
+            ${await signatureHtml(referente)}
           `,
         })
       }
@@ -555,14 +604,15 @@ export async function GET(req) {
             cle: `rdv:${rdv.id}:${rdv.date_heure}:artisan:${artisan.email}`,
             to: artisan.email,
             replyTo: referente?.email,
-            subject: `Rappel — rendez-vous demain sur le dossier ${ref}`,
+            subject: `Rappel, rendez-vous demain sur le dossier ${nomDossier}`,
             html: `
               <p>Bonjour ${prenomNom(artisan) || artisan.entreprise},</p>
               <p>Nous vous rappelons ce rendez-vous :</p>
               <p>${intituleHtml(libelleRdv(rdv, 'artisan', nomClient))}📅 <strong>${dateRdv} à ${heureRdv}</strong>${lieuHtml}</p>
+              ${destinataires.clientPresent ? '<p>Le client sera présent.</p>' : ''}
               <p>En cas d'empêchement, merci de nous prévenir dès que possible.</p>
               <p>Cordialement,</p>
-              ${signatureHtml(referente)}
+              ${await signatureHtml(referente)}
             `,
           })
         }
@@ -581,7 +631,9 @@ export async function GET(req) {
       .eq('decennale_expiration', in14)
 
     // L'artisan est société-wide (pas d'agence). On signe au niveau société :
-    // admin de la société comme expéditeur + villes de ses agences dans la signature.
+    // admin de la société : c'est LUI qui signe la relance de décennale (décision du
+    // 11/09) — la décennale est une affaire de société, pas de dossier, et c'est le
+    // franchisé qui décide de garder un artisan à son catalogue.
     // Cache par société pour éviter de refetcher quand plusieurs artisans la partagent.
     const societeCache = {}
     const chargerSociete = async (societeId) => {
@@ -593,7 +645,7 @@ export async function GET(req) {
           // `limit(1)` SANS ordre laissait Postgres libre de rendre l'un ou l'autre
           // admin quand une société en compte deux : le destinataire de réponse aurait
           // pu changer d'un mois sur l'autre. Ordre explicite = choix stable.
-          getSupabaseAdmin().from('profiles').select('email, prenom, nom')
+          getSupabaseAdmin().from('profiles').select('email, prenom, nom, telephone, role, agence_id')
             .eq('role', 'admin').eq('societe_id', societeId)
             .order('created_at', { ascending: true }).limit(1).maybeSingle(),
           getSupabaseAdmin().from('agences').select('ville').eq('societe_id', societeId),
@@ -610,21 +662,21 @@ export async function GET(req) {
     for (const a of artisans || []) {
       if (!a.email) continue
       const expDate = new Date(a.decennale_expiration).toLocaleDateString('fr-FR')
-      const { admin, villes } = await chargerSociete(a.societe_id)
-      const signatureVilles = villes.length ? ` ${villes.join(' - ')}` : ''
+      const { admin } = await chargerSociete(a.societe_id)
       await envoyer(log, '6', {
         // La date d'expiration entre dans la clé : une décennale renouvelée porte une
         // nouvelle date, donc l'artisan sera bien re-prévenu l'année suivante.
         cle: `decennale:${a.id}:${a.decennale_expiration}`,
         to: a.email,
         replyTo: admin?.email,   // la décennale est une affaire de société → le franchisé
-        subject: `Votre assurance décennale expire dans 14 jours`,
+        subject: `Votre assurance décennale expire le ${expDate}`,   // une date ne périme pas dans la boîte de réception, « dans 14 jours » si
         html: `
-          <p>Bonjour ${prenomNom(a) || a.entreprise},</p>
+          <p>Bonjour ${adresseArtisan(a) || ''},</p>
           <p>Nous vous informons que votre assurance décennale arrive à expiration le <strong>${expDate}</strong>.</p>
           <p>Afin de maintenir notre partenariat, merci de renouveler votre assurance et de nous transmettre
           la nouvelle attestation avant cette date.</p>
-          <p>Cordialement,<br>L'équipe illiCO travaux${signatureVilles}</p>
+          <p>Cordialement,</p>
+          ${await signatureHtml(admin)}
         `,
       })
     }

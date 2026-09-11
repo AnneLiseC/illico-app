@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  signatureAgence, adresseUneLigne, telephoneLisible, gabaritEmail, echapper,
+  signatureAgence, signatureComplete, adresseUneLigne, telephoneLisible, gabaritEmail, echapper,
 } from '../email-signature.js'
 
 // Ces mails partent à de VRAIS clients. Une signature fausse ou vide, c'est un client qui
@@ -93,5 +93,46 @@ describe('gabarit commun', () => {
   })
   it('n\'embarque aucune image distante — Outlook les bloque', () => {
     expect(gabaritEmail({ contenu: '<p>x</p>', agence: MARTIGUES })).not.toContain('<img')
+  })
+})
+
+// ── Signature complète : la personne PUIS l'agence ────────────────────────────────────
+//
+// Les relances signaient déjà avec la référente. Ce qui manquait, c'est l'agence en
+// dessous : un client à qui l'on demande un acompte doit pouvoir vérifier à qui il envoie
+// son argent, et un numéro de portable seul ne le lui dit pas.
+describe('signature complète', () => {
+  const REFERENTE = { prenom: 'Anne-Lise', nom: 'Caillet', telephone: '0659810681', email: 'al@exemple.test' }
+
+  it('porte la personne ET son agence', () => {
+    const s = signatureComplete({ personne: REFERENTE, agence: MARTIGUES, roleLabel: 'Courtière en travaux' })
+    expect(s).toContain('ANNE-LISE CAILLET')
+    expect(s).toContain('Courtière en travaux')
+    expect(s).toContain('al@exemple.test')
+    expect(s).toContain('illiCO travaux Martigues')
+    expect(s).toContain('22 RUE RAMADE, 13500 Martigues')
+  })
+
+  it('l\'agence prend le relais quand la personne est inconnue', () => {
+    // C'était le repli « illiCO travaux » tout court : l'anonymat qu'on supprime.
+    const s = signatureComplete({ agence: MARTIGUES })
+    expect(s).toContain('illiCO travaux Martigues')
+    expect(s).not.toContain('undefined')
+  })
+
+  it('la personne suffit quand l\'agence n\'est pas renseignée', () => {
+    expect(signatureComplete({ personne: REFERENTE })).toContain('ANNE-LISE CAILLET')
+  })
+
+  it('ne signe RIEN plutôt que de signer anonymement', () => {
+    // Une signature sans nom n'apprend rien au destinataire et fait perdre confiance.
+    expect(signatureComplete({})).toBe('')
+    expect(signatureComplete({ personne: {}, agence: {} })).toBe('')
+  })
+
+  it('n\'invente pas un rôle qu\'on ne lui a pas donné', () => {
+    const s = signatureComplete({ personne: REFERENTE, agence: MARTIGUES })
+    expect(s).toContain('ANNE-LISE CAILLET')
+    expect(s).not.toContain('undefined')
   })
 })
