@@ -1,10 +1,20 @@
 // app/lib/relances-envoi.js
-// Garde-fou d'envoi des relances automatiques.
+// Garde-fou d'envoi des emails MÉTIER — ceux qui partent à un client ou à un artisan.
 //
-// POURQUOI — le cron de relances écrit à de VRAIS clients et à de VRAIS artisans.
-// Tant que les textes, les déclencheurs et les destinataires n'ont pas été vus en
-// conditions réelles, un envoi direct est une prise de risque inutile : une erreur
-// n'est pas rattrapable une fois le mail parti.
+// POURQUOI — ces mails écrivent à de VRAIS clients et à de VRAIS artisans. Tant que les
+// textes, les déclencheurs et les destinataires n'ont pas été vus en conditions réelles,
+// un envoi direct est une prise de risque inutile : une erreur n'est pas rattrapable une
+// fois le mail parti.
+//
+// PÉRIMÈTRE ÉLARGI LE 11/09 — le garde-fou ne couvrait que les relances. La diffusion des
+// comptes rendus, elle, écrivait directement au client et aux artisans, PDF en pièce
+// jointe : le mail le plus lourd de conséquences était le seul sans filet. Il passe
+// désormais par ici. Les variables d'environnement sont INCHANGÉES (RELANCES_ENVOI,
+// RELANCES_ESSAI_EMAIL) — rien à reconfigurer, un seul interrupteur pour tout le métier.
+//
+// CE QUI N'EST PAS COUVERT, ET DÉLIBÉRÉMENT : les mails PRODUIT — invitation d'un agent ou
+// d'un admin, réinitialisation de mot de passe. Les bloquer en mode essai empêcherait de
+// créer un compte ou d'en récupérer un : le garde-fou deviendrait la panne.
 //
 // PRINCIPE — le mode ESSAI est le DÉFAUT. Il faut un geste délibéré
 // (RELANCES_ENVOI=reel) pour écrire à un vrai destinataire. Un oubli de configuration
