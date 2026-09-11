@@ -20,6 +20,8 @@ import { sendEmail } from '../../../lib/email'
 import { preparerEnvoi, modeEnvoi } from '../../../lib/relances-envoi'
 import { salutationClient, nomClientPourArtisan, libelleRdv, destinatairesRappel, heureRdvFR, dateRdvFR, adresseArtisan } from '../../../lib/relances-texte'
 import { signatureComplete } from '../../../lib/email-signature'
+import { renderToBuffer } from '@react-pdf/renderer'
+import { buildRecapitulatifDocument } from '../../../lib/pdf/recapitulatifDocument.js'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -63,6 +65,29 @@ function nomDossierClient(client, repli) {
 
 function nomsVirement(client) {
   return [client.nom, client.nom2].filter(Boolean).map(n => n.toUpperCase()).join('-')
+}
+
+// ── PIÈCES JOINTES DE LA DEMANDE D'ACOMPTE ───────────────────────────────────────────
+//
+// Le mail annonce « en pièces jointes le récapitulatif financier à jour, les RIB des
+// artisans en paiement direct ainsi que le RIB de <société> ». Tant que rien n'est
+// attaché, cette phrase est un mensonge — et le client cherche une pièce absente.
+//
+// BEST EFFORT ASSUMÉ : une pièce jointe introuvable (RIB pas encore téléversé, fichier
+// supprimé du stockage) ne doit PAS empêcher la demande d'acompte de partir. Le client a
+// besoin des montants ; il réclamera un RIB manquant. L'inverse — pas de mail du tout
+// parce qu'un fichier manque — retarderait un encaissement pour un détail réparable.
+async function pieceJointeStorage(chemin, nomFichier) {
+  if (!chemin) return null
+  try {
+    const { data, error } = await getSupabaseAdmin().storage.from('documents').download(chemin)
+    if (error || !data) return null
+    const buffer = Buffer.from(await data.arrayBuffer())
+    // Graph plafonne un envoi simple autour de 4 Mo : un RIB scanné en haute définition
+    // ferait échouer TOUT le mail, montants compris. On l'écarte plutôt que de tout perdre.
+    if (buffer.length > 3_000_000) return null
+    return { filename: nomFichier, contentBytes: buffer.toString('base64'), contentType: 'application/pdf' }
+  } catch { return null }
 }
 
 // Agences chargées UNE fois chacune : le cron traite des dizaines de dossiers et la
@@ -130,7 +155,7 @@ async function membresSociete(societeId) {
 //
 // Le destinataire enregistré est le destinataire RÉEL, jamais l'adresse d'essai : les
 // essais se comportent ainsi exactement comme la production.
-async function envoyer(log, tag, { to, subject, html, replyTo, cle }) {
+async function envoyer(log, tag, { to, subject, html, replyTo, cle, attachments }) {
   const plan = preparerEnvoi({ to, subject })
   if (!plan.envoyer) {
     log.push(`[${tag}] NON ENVOYÉ (${plan.raison}) — destinataire réel ${plan.reel || '—'}`)
@@ -156,7 +181,7 @@ async function envoyer(log, tag, { to, subject, html, replyTo, cle }) {
   }
 
   try {
-    await sendEmail({ to: plan.to, subject: plan.subject, html, replyTo: replyTo || undefined })
+    await sendEmail({ to: plan.to, subject: plan.subject, html, replyTo: replyTo || undefined, attachments })
   } catch (e) {
     if (reserve) {
       await getSupabaseAdmin().from('relances_envoyees')
@@ -273,7 +298,7 @@ export async function GET(req) {
       const { data: dossier } = await getSupabaseAdmin()
         .from('dossiers')
         .select(`
-          id, reference, agences(ville, societes(nom_societe)),
+          id, reference, agences(ville, societes(nom_societe, rib_url)),
           profiles!referente_id(email, prenom, nom, telephone, role, agence_id),
           clients(email, nom, prenom, civilite, nom2, prenom2)
         `)
@@ -286,7 +311,7 @@ export async function GET(req) {
       // Acomptes artisans encore dus sur CE dossier (statut client ≠ réglé).
       const { data: lignesArtisans } = await getSupabaseAdmin()
         .from('suivi_financier')
-        .select('id, montant_ttc, artisan_id, artisans(id, entreprise, paiement_direct)')
+        .select('id, montant_ttc, artisan_id, artisans(id, entreprise, paiement_direct, rib_url)')
         .eq('dossier_id', dossierId)
         .eq('type_echeance', 'acompte_artisan')
         .eq('statut_client', 'en_attente')
@@ -304,6 +329,7 @@ export async function GET(req) {
         entreprise: ligne.artisans?.entreprise,
         montant_ttc: ligne.montant_ttc,
         paiement_direct: ligne.artisans?.paiement_direct,
+        rib_url: ligne.artisans?.rib_url,
       }))
       const montantAmoDu = (lignesAmo || []).reduce((s, a) => s + Number(a.montant_ttc || 0), 0)
 
@@ -344,6 +370,7 @@ export async function GET(req) {
       // qui encaisse les honoraires. Repli neutre si le nom n'est pas renseigné, pour ne
       // pas écrire « le RIB de  » avec un trou au milieu de la phrase.
       const nomSociete = dossier?.agences?.societes?.nom_societe || 'notre société'
+      const societeRibUrl = dossier?.agences?.societes?.rib_url || null
 
       // Construction du HTML
       const rowsHtml = artisansProtect.map(a => `
@@ -404,7 +431,43 @@ export async function GET(req) {
         ${await signatureHtml(referente)}
       `
 
+      // Les trois pièces annoncées dans le texte, dans l'ordre où il les cite.
+      const pieces = []
+      try {
+        const { data: sfDossier } = await getSupabaseAdmin()
+          .from('suivi_financier').select('*').eq('dossier_id', dossierId)
+        const { data: facturesDossier } = await getSupabaseAdmin()
+          .from('factures_artisans').select('*').eq('dossier_id', dossierId).order('date_paiement')
+        const { data: devisDossier } = await getSupabaseAdmin()
+          .from('devis_artisans').select('*, artisan:artisans(*)').eq('dossier_id', dossierId)
+        const { data: dossierComplet } = await getSupabaseAdmin()
+          .from('dossiers').select('*, client:clients(*), referente:profiles!referente_id(*), agences(*)')
+          .eq('id', dossierId).maybeSingle()
+        if (dossierComplet) {
+          // Rendu À L'INSTANT de l'envoi : « le récapitulatif à jour au moment du mail »
+          // (Anne-Lise, 11/09). Un PDF mis en cache la veille afficherait des montants
+          // périmés à côté de ceux du corps du message.
+          const buffer = await renderToBuffer(buildRecapitulatifDocument({
+            dossier: dossierComplet, devis: devisDossier || [],
+            suiviFinancier: sfDossier || [], factures: facturesDossier || [],
+          }))
+          pieces.push({
+            filename: `Recapitulatif_financier_${clientNoms || 'dossier'}.pdf`,
+            contentBytes: Buffer.from(buffer).toString('base64'),
+            contentType: 'application/pdf',
+          })
+        }
+      } catch (e) { log.push(`[3] recapitulatif non joint : ${e.message}`) }
+
+      for (const a of artisansDirect) {
+        const rib = await pieceJointeStorage(a.rib_url, `RIB_${(a.entreprise || 'artisan').replace(/[^\w -]/g, '')}.pdf`)
+        if (rib) pieces.push(rib)
+      }
+      const ribSociete = await pieceJointeStorage(societeRibUrl, `RIB_${nomSociete.replace(/[^\w -]/g, '')}.pdf`)
+      if (ribSociete) pieces.push(ribSociete)
+
       await envoyer(log, '3', {
+        attachments: pieces.length ? pieces : undefined,
         // ⚠️ PAS de clé anti-doublon ici, et c'est un choix, pas un oubli. Ce bloc
         // regroupe TOUS les devis signés du dossier dans un seul mail : son contenu
         // change quand un devis s'ajoute, alors qu'une clé « dossier + date » le
@@ -465,50 +528,130 @@ export async function GET(req) {
   } catch (e) { errors.push(`[3bis] ${e.message}`) }
 
   // ─────────────────────────────────────────────────────────────
-  // 4. Facture finale non réglée — relance 7 jours après échéance
-  //
-  //    ⏸ MISE DE CÔTÉ (décision du 03/09) : « il faut la réception de la facture ET le
-  //    règlement client, pas de date préprogrammée, ça dépend des chantiers ». Le
-  //    déclencheur actuel (J+7 après une échéance saisie à la main) ne correspond pas
-  //    au métier. Le code reste en place, désactivé par un drapeau explicite plutôt
-  //    que supprimé : il sera rebranché après cadrage, pas réécrit.
   // ─────────────────────────────────────────────────────────────
-  const FACTURE_FINALE_ACTIVE = false
+  // 4. Factures non réglées — relance J+7 après enregistrement
+  //
+  //    LE DÉCLENCHEUR EST LA DATE D'ENREGISTREMENT, pas une échéance devinée.
+  //
+  //    Ce bloc était désactivé depuis le 03/09 : « il faut la réception de la facture ET
+  //    le règlement client, pas de date préprogrammée, ça dépend des chantiers ». La
+  //    version rebranchée le 11/09 respecte cette règle sans rien inventer, parce que le
+  //    flux réel la porte déjà : « on reçoit la facture de l'artisan, on l'envoie au
+  //    client et on la met dans l'application ; quand le client paye on coche réglé ».
+  //
+  //    Donc `created_at` EST la date d'envoi au client, et `statut` porte le règlement.
+  //    Les deux conditions du 03/09 sont réunies sans nouvelle saisie ni nouvel état.
+  //
+  //    L'échéance saisie à la main, quand il y en a une, PRIME sur le délai : une facture
+  //    qui porte « payable au 30/09 » ne se relance pas le 18 parce qu'un compteur de
+  //    sept jours s'est écoulé.
+  //
+  //    UNE SEULE RELANCE par facture (clé anti-doublon). Deux rappels automatiques sur la
+  //    même somme, sans que personne ne décide entre les deux, se lisent comme du
+  //    harcèlement — et c'est au client qu'on écrit, pas à un fournisseur.
+  // ─────────────────────────────────────────────────────────────
+  const DELAI_RELANCE_FACTURE = 7
   try {
-    if (!FACTURE_FINALE_ACTIVE) {
-      log.push('[4] Relance facture finale — désactivée, en attente de cadrage')
-    } else {
-    const { data: factures } = await getSupabaseAdmin()
-      .from('suivi_financier')
+    // ── 4a. Factures des artisans (acompte, situation, solde) ──
+    const { data: facturesArtisans } = await getSupabaseAdmin()
+      .from('factures_artisans')
       .select(`
-        id, dossier_id, montant_ttc, date_echeance,
+        id, dossier_id, montant_ttc, libelle, created_at, date_echeance,
+        artisans(entreprise),
         dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role, agence_id),
           clients(email, nom, prenom, civilite, nom2))
       `)
-      .eq('type_echeance', 'facture_finale')
-      .eq('statut_client', 'en_attente')
-      .lte('date_echeance', dateInDays(-7))
+      .eq('statut', 'en_attente')
 
-    for (const f of factures || []) {
+    for (const f of facturesArtisans || []) {
       const client = f.dossiers?.clients
       if (!client?.email) continue
-      const ref = f.dossiers?.reference || f.dossier_id
+
+      // Échéance effective : celle saisie, sinon enregistrement + 7 jours.
+      const base = f.date_echeance || f.created_at
+      const echeanceEff = new Date(base)
+      if (!f.date_echeance) echeanceEff.setDate(echeanceEff.getDate() + DELAI_RELANCE_FACTURE)
+      if (echeanceEff > new Date()) continue
+
       const referente = f.dossiers?.profiles
-      const echeance = new Date(f.date_echeance).toLocaleDateString('fr-FR')
+      const entreprise = f.artisans?.entreprise || 'votre artisan'
+      // « Facture solde » → « la facture de solde ». Le libellé est saisi librement :
+      // on ne le triture que sur les trois formes connues, sinon on le cite tel quel.
+      const libelleLu = /acompte/i.test(f.libelle) ? "la facture d'acompte"
+        : /situation/i.test(f.libelle) ? 'la facture de situation'
+        : /solde/i.test(f.libelle) ? 'la facture de solde'
+        : `la facture « ${f.libelle || 'sans libellé'} »`
+
       await envoyer(log, '4', {
+        // L'échéance entre dans la clé : la repousser vaut nouvelle échéance, donc
+        // nouveau rappel légitime.
+        cle: `facture-artisan:${f.id}:${echeanceEff.toISOString().slice(0, 10)}`,
         to: client.email,
         replyTo: referente?.email,
-        subject: `Rappel — facture finale en attente de règlement — dossier ${ref}`,
+        subject: `Relance de règlement, facture ${entreprise}`,
         html: `
           <p>Bonjour ${salutationClient(client)},</p>
-          <p>Sauf erreur de notre part, votre facture finale${f.montant_ttc ? ` de <strong>${montantFr(f.montant_ttc)}</strong>` : ''}
-          relative au dossier <strong>${ref}</strong>, dont l'échéance était le <strong>${echeance}</strong>, n'a pas encore été réglée.</p>
-          <p>Nous vous remercions de bien vouloir procéder au règlement dans les meilleurs délais.</p>
+          <p>Sauf erreur de notre part, ${libelleLu} de <strong>${entreprise}</strong>${f.montant_ttc ? `,
+          d'un montant de <strong>${montantFr(f.montant_ttc)}</strong>,` : ','}
+          n'a pas encore été réglée.</p>
+          <p>Nous vous remercions de bien vouloir procéder au règlement dans les meilleurs délais,
+          sur le RIB de ${entreprise} joint à ce message, et de me transmettre l'avis de virement
+          correspondant.</p>
           <p>Cordialement,</p>
           ${await signatureHtml(referente)}
         `,
       })
     }
+
+    // ── 4b. Honoraires de l'agence ──
+    //
+    // Autre famille, autre table : ce que le CLIENT doit à l'agence (courtage, acompte et
+    // solde AMO). Ici `date_echeance` existe déjà dans le modèle ; quand elle est vide, on
+    // applique le même délai depuis la création de la ligne.
+    const LIBELLE_HONORAIRE = {
+      honoraires_courtage: 'nos honoraires de courtage',
+      acompte_amo: "l'acompte de nos honoraires d'assistance à maîtrise d'ouvrage",
+      solde_amo_paiement: "le solde de nos honoraires d'assistance à maîtrise d'ouvrage",
+    }
+    const { data: honoraires } = await getSupabaseAdmin()
+      .from('suivi_financier')
+      .select(`
+        id, dossier_id, montant_ttc, type_echeance, date_echeance, created_at,
+        dossiers(reference, agences(societes(nom_societe)),
+          profiles!referente_id(email, prenom, nom, telephone, role, agence_id),
+          clients(email, nom, prenom, civilite, nom2))
+      `)
+      .in('type_echeance', Object.keys(LIBELLE_HONORAIRE))
+      .eq('statut_client', 'en_attente')
+
+    for (const h of honoraires || []) {
+      const client = h.dossiers?.clients
+      if (!client?.email) continue
+
+      const base = h.date_echeance || h.created_at
+      const echeanceEff = new Date(base)
+      if (!h.date_echeance) echeanceEff.setDate(echeanceEff.getDate() + DELAI_RELANCE_FACTURE)
+      if (echeanceEff > new Date()) continue
+
+      const referente = h.dossiers?.profiles
+      const societe = h.dossiers?.agences?.societes?.nom_societe || 'notre société'
+
+      await envoyer(log, '4', {
+        cle: `honoraire:${h.id}:${echeanceEff.toISOString().slice(0, 10)}`,
+        to: client.email,
+        replyTo: referente?.email,
+        subject: `Relance de règlement, honoraires`,
+        html: `
+          <p>Bonjour ${salutationClient(client)},</p>
+          <p>Sauf erreur de notre part, <strong>${LIBELLE_HONORAIRE[h.type_echeance]}</strong>${h.montant_ttc ? `,
+          d'un montant de <strong>${montantFr(h.montant_ttc)}</strong>,` : ','}
+          n'a pas encore été réglé.</p>
+          <p>Nous vous remercions de bien vouloir procéder au règlement dans les meilleurs délais,
+          sur le RIB de ${societe} joint à ce message.</p>
+          <p>Cordialement,</p>
+          ${await signatureHtml(referente)}
+        `,
+      })
     }
   } catch (e) { errors.push(`[4] ${e.message}`) }
 
