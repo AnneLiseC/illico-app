@@ -12,6 +12,7 @@ import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { genererVisitePDF } from '../../../lib/pdf/genererVisite.js'
 import { sendEmail } from '../../../lib/email'
 import { formatNomClient } from '../../../lib/clients.js'
+import { adresseArtisan } from '../../../lib/relances-texte'
 
 export const maxDuration = 60
 
@@ -63,7 +64,12 @@ export async function POST(request) {
 
   const clientNom = formatNomClient(dossier.client, { civilite: false }) || 'client'
   const nomFichier = (base) => `${base}_Visite_${visite.numero_visite || ''}.pdf`.replace('__', '_')
-  const sujet = `Rapport de visite ${visite.numero_visite || ''} — ${clientNom}`.trim()
+  // Objet : le NOM du client seul, sans civilité ni tiret cadratin. C'est ce qui permet
+  // de retrouver le mail dans une boîte de réception, pas une formule de politesse.
+  const nomSeul = [dossier.client?.nom, dossier.client?.nom2]
+    .filter(Boolean).map(n => String(n).trim().toUpperCase())
+  const sujet = `Rapport de visite ${visite.numero_visite || ''}, ${[...new Set(nomSeul)].join('-') || clientNom}`
+    .replace(/\s+,/, ',').trim()
 
   const envoyes = []
   const erreurs = []
@@ -74,7 +80,7 @@ export async function POST(request) {
     const artisanIds = [...new Set((lots || []).map(l => l.artisan_id).filter(Boolean))]
     let artisansById = {}
     if (artisanIds.length) {
-      const { data: arts } = await db.from('artisans').select('id, entreprise, email').in('id', artisanIds)
+      const { data: arts } = await db.from('artisans').select('id, entreprise, email, nom, civilite').in('id', artisanIds)
       artisansById = Object.fromEntries((arts || []).map(a => [a.id, a]))
     }
     const dejaFait = new Set()
@@ -97,7 +103,7 @@ export async function POST(request) {
           subject: envoi.subject,
           html: gabaritEmail({
             agence,
-            contenu: `<p>Bonjour,</p><p>Veuillez trouver ci-joint le rapport de la visite de chantier ${visite.numero_visite || ''} concernant le chantier de ${clientNom}.</p>`,
+            contenu: `<p>Bonjour ${adresseArtisan(artisan) || ''},</p><p>Veuillez trouver ci-joint le rapport de la visite de chantier n° ${visite.numero_visite || ''} concernant le chantier de ${clientNom}.</p>`,
           }),
           attachments: [{ filename: nomFichier(artisan.entreprise || 'CR'), contentBytes: b64(buffer), contentType: 'application/pdf' }],
         })
@@ -124,7 +130,7 @@ export async function POST(request) {
             subject: envoi.subject,
             html: gabaritEmail({
               agence,
-              contenu: `<p>Bonjour,</p><p>Un rapport de visite de votre chantier est disponible. Vous le trouverez en pièce jointe, et également dans votre espace client.</p>`,
+              contenu: `<p>Bonjour ${formatNomClient(dossier.client) || ''},</p><p>Un rapport de visite de votre chantier est disponible. Vous le trouverez en pièce jointe, et également dans votre espace client.</p>`,
             }),
             attachments: [{ filename: nomFichier('CR'), contentBytes: b64(buffer), contentType: 'application/pdf' }],
           })

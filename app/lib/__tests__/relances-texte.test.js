@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   salutationClient, nomClientPourArtisan, libelleRdv, destinatairesRappel,
-  prevenirClientParDefaut, heureRdvFR, dateRdvFR,
+  prevenirClientParDefaut, heureRdvFR, dateRdvFR, adresseArtisan,
 } from '../relances-texte.js'
 
 // Ces mails partent à des CLIENTS et à des ARTISANS. Une faute s'y voit immédiatement et
@@ -93,35 +93,47 @@ describe('intitulé du rendez-vous', () => {
 
 // ── Qui reçoit le rappel ────────────────────────────────────────────────────
 //
-// Règle posée par Anne-Lise le 09/09 : le client n'est prévenu que des rendez-vous où
-// SA présence est attendue. Sur une visite technique d'artisan ou un point de suivi, il
-// est souvent absent et déjà au courant qu'on passe.
+// Règle RÉVISÉE le 11/09 : `prevenir_client` répond à « le client VIENT », pas à « faut-il
+// lui écrire ». Il est informé dans les deux cas ; c'est le TEXTE qui change. Avant, un
+// rendez-vous non coché ne lui disait rien et il découvrait des intervenants chez lui.
 describe('destinataires du rappel', () => {
-  it('prévient le client des rendez-vous où on l\'attend, par défaut', () => {
-    for (const type of ['visite_technique_client', 'presentation_devis', 'etude', 'reception']) {
+  it('le client est TOUJOURS informé, quel que soit le type', () => {
+    for (const type of ['visite_technique_client', 'presentation_devis', 'etude', 'reception',
+      'visite_technique_artisan', 'suivi', 'autres', 'type_inconnu']) {
       expect(destinatairesRappel({ type_rdv: type }).client).toBe(true)
     }
   })
 
-  it('ne dérange pas le client par défaut sur une visite d\'artisan ni un suivi', () => {
-    expect(destinatairesRappel({ type_rdv: 'visite_technique_artisan' }).client).toBe(false)
-    expect(destinatairesRappel({ type_rdv: 'suivi' }).client).toBe(false)
-    expect(destinatairesRappel({ type_rdv: 'autres' }).client).toBe(false)
+  it('sa PRÉSENCE, elle, suit le type par défaut', () => {
+    for (const type of ['visite_technique_client', 'presentation_devis', 'etude', 'reception']) {
+      expect(destinatairesRappel({ type_rdv: type }).clientPresent).toBe(true)
+    }
+    for (const type of ['visite_technique_artisan', 'suivi', 'autres']) {
+      expect(destinatairesRappel({ type_rdv: type }).clientPresent).toBe(false)
+    }
   })
 
   // « Des fois on peut l'attendre pour les rdv » — le type ne peut pas décider seul.
   it('le choix explicite de l\'agente PRIME sur le défaut du type', () => {
-    expect(destinatairesRappel({ type_rdv: 'visite_technique_artisan', prevenir_client: true }).client).toBe(true)
-    expect(destinatairesRappel({ type_rdv: 'suivi', prevenir_client: true }).client).toBe(true)
-    expect(destinatairesRappel({ type_rdv: 'autres', prevenir_client: true }).client).toBe(true)
-    expect(destinatairesRappel({ type_rdv: 'reception', prevenir_client: false }).client).toBe(false)
+    expect(destinatairesRappel({ type_rdv: 'visite_technique_artisan', prevenir_client: true }).clientPresent).toBe(true)
+    expect(destinatairesRappel({ type_rdv: 'suivi', prevenir_client: true }).clientPresent).toBe(true)
+    expect(destinatairesRappel({ type_rdv: 'autres', prevenir_client: true }).clientPresent).toBe(true)
+    expect(destinatairesRappel({ type_rdv: 'reception', prevenir_client: false }).clientPresent).toBe(false)
+  })
+
+  it('décoché, le client reste informé — il est juste dispensé de venir', () => {
+    // C'est tout l'objet de l'arbitrage du 11/09 : ne plus confondre « pas attendu » et
+    // « pas au courant ».
+    const d = destinatairesRappel({ type_rdv: 'suivi', prevenir_client: false })
+    expect(d.client).toBe(true)
+    expect(d.clientPresent).toBe(false)
   })
 
   it('NULL veut dire « rien de décidé », pas « non »', () => {
     // La distinction porte toute la migration : une colonne NOT NULL DEFAULT false
     // aurait figé la règle métier dans 2 000 lignes de base.
-    expect(destinatairesRappel({ type_rdv: 'reception', prevenir_client: null }).client).toBe(true)
-    expect(destinatairesRappel({ type_rdv: 'reception', prevenir_client: undefined }).client).toBe(true)
+    expect(destinatairesRappel({ type_rdv: 'reception', prevenir_client: null }).clientPresent).toBe(true)
+    expect(destinatairesRappel({ type_rdv: 'reception', prevenir_client: undefined }).clientPresent).toBe(true)
   })
 
   it('prévient l\'artisan de TOUT rendez-vous, `autres` compris', () => {
@@ -131,9 +143,12 @@ describe('destinataires du rappel', () => {
     }
   })
 
-  it('un type inconnu ne réveille pas un mail client par accident', () => {
-    expect(destinatairesRappel({ type_rdv: 'type_ajoute_demain' }).client).toBe(false)
-    expect(destinatairesRappel({}).client).toBe(false)
+  it('un type inconnu n\'attend PAS le client par défaut', () => {
+    // Le sens a changé le 11/09 : le client est informé de tout, mais un type qu'on ne
+    // connaît pas ne peut pas affirmer qu'il doit se déplacer. Le défaut prudent est
+    // « pas attendu », qu'un clic corrige.
+    expect(destinatairesRappel({ type_rdv: 'type_ajoute_demain' }).clientPresent).toBe(false)
+    expect(destinatairesRappel({}).clientPresent).toBe(false)
   })
 
   it('donne le défaut à cocher dans le formulaire', () => {
@@ -201,5 +216,34 @@ describe('heure du rendez-vous', () => {
   it('ne produit pas « Invalid Date » sur une valeur absente', () => {
     expect(heureRdvFR(null)).toBe('')
     expect(dateRdvFR(undefined)).toBe('')
+  })
+})
+
+describe('adresse a un artisan', () => {
+  it('civilite + NOM, sans le prenom', () => {
+    // « Bonjour M. MARCHAND » : on ecrit a un partenaire professionnel.
+    expect(adresseArtisan({ civilite: 'M.', prenom: 'Julien', nom: 'Marchand', entreprise: 'LS TRAVAUX' }))
+      .toBe('M. MARCHAND')
+    expect(adresseArtisan({ civilite: 'Mme', nom: 'Dupont' })).toBe('Mme DUPONT')
+  })
+
+  it('se rabat sur le nom quand la civilite manque', () => {
+    // 41 artisans sont en base sans civilite : le mail doit rester correct.
+    expect(adresseArtisan({ prenom: 'Julien', nom: 'Marchand', entreprise: 'LS TRAVAUX' })).toBe('MARCHAND')
+  })
+
+  it('se rabat sur l\'entreprise quand aucun contact n\'est nomme', () => {
+    expect(adresseArtisan({ entreprise: 'LS TRAVAUX' })).toBe('LS TRAVAUX')
+  })
+
+  it('renvoie null plutot que de produire « Bonjour , »', () => {
+    expect(adresseArtisan({})).toBe(null)
+    expect(adresseArtisan(null)).toBe(null)
+  })
+
+  it('ne DEDUIT jamais la civilite du prenom', () => {
+    // L'automatisme se trompe sur un prenom mixte ou etranger, dans un mail signe de
+    // l'agence. Mieux vaut « MARCHAND » qu'un « Mme » adresse a un homme.
+    expect(adresseArtisan({ prenom: 'Dominique', nom: 'Martin' })).toBe('MARTIN')
   })
 })

@@ -68,21 +68,34 @@ const AVEC_RAPPEL_CLIENT = new Set([
 ])
 
 /**
- * Qui doit recevoir le rappel J-1.
+ * Qui reçoit le rappel J-1, et ce que le rendez-vous attend de lui.
  *
- * Le TYPE ne donne qu'un DÉFAUT. « Des fois on peut l'attendre » (Anne-Lise, 09/09) :
- * une visite technique d'artisan peut se faire en présence du client, un point de suivi
- * aussi. `rendez_vous.prevenir_client` porte la décision explicite et prime — NULL
- * signifie « rien de décidé », donc défaut du type.
+ * CE QUE LA CASE VEUT DIRE (arbitrage du 11/09) : `prevenir_client` répond à « le client
+ * VIENT au rendez-vous », pas à « faut-il lui écrire ». La différence n'est pas de
+ * vocabulaire :
+ *
+ *   · case cochée   → « Nous vous rappelons ce rendez-vous » — il est attendu sur place ;
+ *   · case décochée → « Nous serons présents avec l'entreprise » — il est informé qu'on
+ *                     intervient chez lui, sans avoir à s'organiser pour être là.
+ *
+ * Le client est donc destinataire DANS LES DEUX CAS. C'est un élargissement volontaire :
+ * avant le 11/09, un rendez-vous « non coché » ne lui disait rien du tout, et il
+ * découvrait des intervenants chez lui sans prévenir. Un rendez-vous rattaché à son
+ * dossier se passe sur SON chantier ; le lui taire n'a jamais été un service.
+ *
+ * Le TYPE ne sert plus que de défaut pour PRÉ-COCHER la case à la saisie
+ * (prevenirClientParDefaut), plus à décider qui reçoit quoi.
  *
  * @param {{type_rdv?: string, prevenir_client?: boolean|null}} rdv
- * @returns {{client: boolean, artisan: boolean}}
+ * @returns {{client: boolean, clientPresent: boolean, artisan: boolean}}
  */
 export function destinatairesRappel(rdv) {
   const type = typeof rdv === 'string' ? rdv : rdv?.type_rdv
   const choix = typeof rdv === 'string' ? null : rdv?.prevenir_client
   return {
-    client: typeof choix === 'boolean' ? choix : AVEC_RAPPEL_CLIENT.has(type),
+    // Toujours informé — le texte, lui, dépend de sa présence.
+    client: true,
+    clientPresent: typeof choix === 'boolean' ? choix : AVEC_RAPPEL_CLIENT.has(type),
     // L'artisan est prévenu de tout rendez-vous auquel il est convié, `autres`
     // compris : c'est lui qui se déplace.
     artisan: true,
@@ -219,4 +232,30 @@ export function dateRdvFR(dateHeure) {
   return new Date(dateHeure).toLocaleDateString('fr-FR', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: FUSEAU,
   })
+}
+
+/**
+ * Comment on s'adresse à un ARTISAN dans un mail.
+ *
+ * Décision du 11/09 : « Bonjour M. MARCHAND », pas « Bonjour Julien MARCHAND ». On écrit à
+ * un partenaire professionnel, pas à une connaissance — et le prénom d'un interlocuteur
+ * qu'on croise deux fois par an sonne faux.
+ *
+ * TROIS REPLIS, dans cet ordre, parce qu'un mail ne doit jamais commencer par « Bonjour , » :
+ *   1. civilité + NOM       → « M. MARCHAND »      (le cas normal)
+ *   2. nom seul             → « MARCHAND »          (civilité pas encore renseignée)
+ *   3. nom de l'entreprise  → « LS TRAVAUX »        (aucun contact nommé)
+ * et si même l'entreprise manque, on renvoie null : l'appelant écrit alors « Bonjour, »
+ * tout court, ce qui reste correct.
+ *
+ * La civilité n'est JAMAIS déduite d'un prénom : l'automatisme se trompe sur un prénom
+ * mixte ou étranger, et il se trompe dans un mail signé de l'agence.
+ */
+export function adresseArtisan(artisan) {
+  const civilite = String(artisan?.civilite || '').trim()
+  const nom = String(artisan?.nom || '').trim()
+  const entreprise = String(artisan?.entreprise || '').trim()
+  if (civilite && nom) return `${civilite} ${nom.toUpperCase()}`
+  if (nom) return nom.toUpperCase()
+  return entreprise || null
 }
