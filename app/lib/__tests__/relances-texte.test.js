@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   salutationClient, nomClientPourArtisan, libelleRdv, destinatairesRappel,
-  prevenirClientParDefaut, heureRdvFR, dateRdvFR, adresseArtisan,
+  prevenirClientParDefaut, heureRdvFR, dateRdvFR, adresseArtisan, mentionReglement,
 } from '../relances-texte.js'
 
 // Ces mails partent à des CLIENTS et à des ARTISANS. Une faute s'y voit immédiatement et
@@ -245,5 +245,32 @@ describe('adresse a un artisan', () => {
     // L'automatisme se trompe sur un prenom mixte ou etranger, dans un mail signe de
     // l'agence. Mieux vaut « MARCHAND » qu'un « Mme » adresse a un homme.
     expect(adresseArtisan({ prenom: 'Dominique', nom: 'Martin' })).toBe('MARTIN')
+  })
+})
+
+// ── Où régler : la phrase suit la pièce jointe ────────────────────────────────────────
+//
+// Le défaut du 11/09 : le texte promettait « le RIB joint à ce message » et rien n'était
+// joint. Ces tests figent la règle — on n'annonce jamais une pièce qu'on n'envoie pas.
+describe('mention de règlement', () => {
+  it('annonce le RIB SEULEMENT quand il part vraiment', () => {
+    expect(mentionReglement(true, 'LS TRAVAUX')).toBe('sur le RIB de LS TRAVAUX joint à ce message')
+  })
+
+  it('sans RIB joint, ne promet RIEN et renvoie à la facture', () => {
+    const phrase = mentionReglement(false, 'ALPILLES GENIE CLIMATIQUE')
+    expect(phrase).not.toMatch(/joint/)
+    expect(phrase).toBe('aux coordonnées bancaires figurant sur la facture de ALPILLES GENIE CLIMATIQUE')
+  })
+
+  it('tient debout sans nom de bénéficiaire', () => {
+    expect(mentionReglement(true, '')).toBe('sur le RIB joint à ce message')
+    expect(mentionReglement(false, null)).toBe('aux coordonnées bancaires figurant sur la facture')
+    expect(mentionReglement(false, '   ')).not.toMatch(/undefined|null/)
+  })
+
+  it('sert aussi bien un artisan qu\'une société', () => {
+    expect(mentionReglement(true, 'CONSEIL TRAVAUX PROVENCE - CTP'))
+      .toContain('CONSEIL TRAVAUX PROVENCE - CTP')
   })
 })
