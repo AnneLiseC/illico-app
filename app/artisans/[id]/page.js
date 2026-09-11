@@ -148,8 +148,14 @@ export default function FicheArtisan({ params }) {
     // Un partenaire est toujours en paiement direct.
     const partenaire = artisan.partenaire || false
     const paiementDirect = partenaire || artisan.paiement_direct || false
+    // ⚠️ CETTE LISTE DOIT COUVRIR TOUS LES CHAMPS DU FORMULAIRE.
+    // Le 11/09, `civilite` était présente dans le formulaire mais absente d'ici : on
+    // choisissait « M. », le bouton affichait « Modifications enregistrées ✓ », et RIEN
+    // n'était écrit. Aucune erreur, aucune trace. Ajouter un champ au formulaire sans
+    // l'ajouter ici produit une saisie qui disparaît en silence.
     const { error } = await supabase.from('artisans').update({
       entreprise: artisan.entreprise, nom: artisan.nom, prenom: artisan.prenom,
+      civilite: artisan.civilite || null,
       email: artisan.email, telephone: artisan.telephone,
       code_postal: artisan.code_postal, ville: artisan.ville,
       metier: artisan.metier, decennale_expiration: artisan.decennale_expiration,
