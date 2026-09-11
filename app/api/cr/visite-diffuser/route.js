@@ -6,6 +6,8 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { preparerEnvoi, modeEnvoi, MODE_ESSAI } from '../../../lib/relances-envoi'
+import { gabaritEmail } from '../../../lib/email-signature'
 import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
 import { genererVisitePDF } from '../../../lib/pdf/genererVisite.js'
 import { sendEmail } from '../../../lib/email'
@@ -44,6 +46,21 @@ export async function POST(request) {
     .eq('id', visite.dossier_id).maybeSingle()
   if (!dossier) return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
 
+  // AGENCE du dossier : c'est ELLE qui signe le mail, pas BATILIS. Le client doit savoir
+  // qui lui écrit et qui appeler. La référente reste jointe par le replyTo.
+  let agence = null
+  {
+    const { data: d2 } = await db.from('dossiers').select('referente_id').eq('id', visite.dossier_id).maybeSingle()
+    if (d2?.referente_id) {
+      const { data: prof } = await db.from('profiles').select('agence_id').eq('id', d2.referente_id).maybeSingle()
+      if (prof?.agence_id) {
+        const { data: ag } = await db.from('agences')
+          .select('nom, adresse, code_postal, ville, telephone').eq('id', prof.agence_id).maybeSingle()
+        agence = ag || null
+      }
+    }
+  }
+
   const clientNom = formatNomClient(dossier.client, { civilite: false }) || 'client'
   const nomFichier = (base) => `${base}_Visite_${visite.numero_visite || ''}.pdf`.replace('__', '_')
   const sujet = `Rapport de visite ${visite.numero_visite || ''} — ${clientNom}`.trim()
@@ -69,14 +86,22 @@ export async function POST(request) {
       if (dejaFait.has(cible)) continue
       dejaFait.add(cible)
       try {
+        // GARDE-FOU : en mode essai, le mail part vers l'adresse d'essai avec l'objet
+        // préfixé du vrai destinataire. Rien n'atteint un artisan tant que
+        // RELANCES_ENVOI=reel n'est pas posé.
+        const envoi = preparerEnvoi({ to: artisan.email, subject: sujet })
+        if (!envoi.envoyer) { erreurs.push({ artisan: artisan.entreprise, raison: `non envoyé (${envoi.raison})` }); continue }
         const { buffer } = await genererVisitePDF(db, visiteId, { filtreLotId: filtrerParLot ? lot.id : null })
         await sendEmail({
-          to: artisan.email,
-          subject: sujet,
-          html: `<p>Bonjour,</p><p>Veuillez trouver ci-joint le rapport de la visite de chantier ${visite.numero_visite || ''} concernant le chantier de ${clientNom}.</p><p>Cordialement,<br/>illiCO travaux</p>`,
+          to: envoi.to,
+          subject: envoi.subject,
+          html: gabaritEmail({
+            agence,
+            contenu: `<p>Bonjour,</p><p>Veuillez trouver ci-joint le rapport de la visite de chantier ${visite.numero_visite || ''} concernant le chantier de ${clientNom}.</p>`,
+          }),
           attachments: [{ filename: nomFichier(artisan.entreprise || 'CR'), contentBytes: b64(buffer), contentType: 'application/pdf' }],
         })
-        envoyes.push({ artisan: artisan.entreprise, email: artisan.email })
+        envoyes.push({ artisan: artisan.entreprise, email: envoi.to, reel: envoi.reel })
       } catch (e) {
         erreurs.push({ artisan: artisan.entreprise, raison: e?.message || 'envoi échoué' })
       }
@@ -89,19 +114,30 @@ export async function POST(request) {
       erreurs.push({ client: clientNom, raison: 'pas d’email' })
     } else {
       try {
-        const { buffer } = await genererVisitePDF(db, visiteId, {})
-        await sendEmail({
-          to: dossier.client.email,
-          subject: sujet,
-          html: `<p>Bonjour,</p><p>Un rapport de visite de votre chantier est disponible. Vous le trouverez en pièce jointe, et également dans votre espace client.</p><p>Cordialement,<br/>illiCO travaux</p>`,
-          attachments: [{ filename: nomFichier('CR'), contentBytes: b64(buffer), contentType: 'application/pdf' }],
-        })
-        envoyes.push({ client: clientNom, email: dossier.client.email })
+        const envoi = preparerEnvoi({ to: dossier.client.email, subject: sujet })
+        if (!envoi.envoyer) {
+          erreurs.push({ client: clientNom, raison: `non envoyé (${envoi.raison})` })
+        } else {
+          const { buffer } = await genererVisitePDF(db, visiteId, {})
+          await sendEmail({
+            to: envoi.to,
+            subject: envoi.subject,
+            html: gabaritEmail({
+              agence,
+              contenu: `<p>Bonjour,</p><p>Un rapport de visite de votre chantier est disponible. Vous le trouverez en pièce jointe, et également dans votre espace client.</p>`,
+            }),
+            attachments: [{ filename: nomFichier('CR'), contentBytes: b64(buffer), contentType: 'application/pdf' }],
+          })
+          envoyes.push({ client: clientNom, email: envoi.to, reel: envoi.reel })
+        }
       } catch (e) {
         erreurs.push({ client: clientNom, raison: e?.message || 'envoi échoué' })
       }
     }
   }
 
-  return NextResponse.json({ envoyes, erreurs, total: envoyes.length })
+  // `mode` remonte jusqu'à l'écran : sans lui, on clique « Diffuser », on lit « 3 envoyés »
+  // et on croit que le client a reçu son rapport alors que tout est parti dans la boîte
+  // d'essai. Un garde-fou muet est un piège, pas une protection.
+  return NextResponse.json({ envoyes, erreurs, total: envoyes.length, mode: modeEnvoi() })
 }

@@ -1,0 +1,412 @@
+From 8ab85bb79188e66a197730804e67f2d5ea6e8614 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 11 Sep 2026 10:25:23 +0000
+Subject: [PATCH] Emails : garde-fou sur la diffusion des CR, et signature de
+ l'agence
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+DEUX DÉFAUTS TROUVÉS EN INVENTORIANT LES 8 POINTS D'ENVOI.
+
+1. La diffusion des comptes rendus était le SEUL envoi sans filet. Les relances
+   ont leur mode essai depuis le 09/09 ; la diffusion, elle, écrivait directement
+   au client et aux artisans, PDF en pièce jointe — le mail le plus lourd de
+   conséquences était le seul sans protection. Elle passe par preparerEnvoi().
+   Variables d'env INCHANGÉES (RELANCES_ENVOI, RELANCES_ESSAI_EMAIL) : un seul
+   interrupteur pour tout le métier, rien à reconfigurer.
+
+   Et le mode remonte jusqu'à l'écran : « 3 mails envoyés » en mode essai veut
+   dire « 3 mails dans ta boîte d'essai », pas « le client a son rapport ». Un
+   garde-fou muet est un piège, pas une protection.
+
+   Les mails PRODUIT (invitation, mot de passe) restent hors garde-fou,
+   délibérément : les bloquer empêcherait de créer ou récupérer un compte.
+
+2. Les mails se signaient « Cordialement, illiCO travaux » EN DUR. Sur un produit
+   multi-tenant, le client d'une agence reçoit une signature anonyme, sans savoir
+   qui le contacte ni qui appeler. Les données existaient déjà — `agences` porte
+   nom, adresse, code postal, ville, téléphone.
+
+   lib/email-signature.js : signature composée depuis l'agence du dossier, gabarit
+   HTML commun, fonctions pures et testées (13 tests). Tenue sur une agence à
+   moitié renseignée, échappement HTML, aucune image distante (Outlook les bloque),
+   téléphone reformaté seulement quand le format est reconnu — jamais déformé.
+
+L'expéditeur technique reste unique (contact@batilis-app.fr) : c'est la SIGNATURE
+qui porte l'agence, et le replyTo qui ramène la réponse chez la référente. Aucune
+autre solution sans faire connecter sa boîte à chaque franchisé.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TvWpp16odX6J4r6qgBVj4Q
+---
+ app/api/cr/visite-diffuser/route.js        | 62 +++++++++++---
+ app/components/chantier/CRVisitesPanel.jsx |  8 +-
+ app/lib/__tests__/email-signature.test.js  | 97 ++++++++++++++++++++++
+ app/lib/email-signature.js                 | 91 ++++++++++++++++++++
+ app/lib/relances-envoi.js                  | 20 +++--
+ 5 files changed, 259 insertions(+), 19 deletions(-)
+ create mode 100644 app/lib/__tests__/email-signature.test.js
+ create mode 100644 app/lib/email-signature.js
+
+diff --git a/app/api/cr/visite-diffuser/route.js b/app/api/cr/visite-diffuser/route.js
+index 98b6de2..cb29fb7 100644
+--- a/app/api/cr/visite-diffuser/route.js
++++ b/app/api/cr/visite-diffuser/route.js
+@@ -6,6 +6,8 @@
+ 
+ import { createClient } from '@supabase/supabase-js'
+ import { NextResponse } from 'next/server'
++import { preparerEnvoi, modeEnvoi, MODE_ESSAI } from '../../../lib/relances-envoi'
++import { gabaritEmail } from '../../../lib/email-signature'
+ import { requireRole, assertDossierAccessible } from '../../../lib/api-auth'
+ import { genererVisitePDF } from '../../../lib/pdf/genererVisite.js'
+ import { sendEmail } from '../../../lib/email'
+@@ -44,6 +46,21 @@ export async function POST(request) {
+     .eq('id', visite.dossier_id).maybeSingle()
+   if (!dossier) return NextResponse.json({ error: 'Dossier introuvable' }, { status: 404 })
+ 
++  // AGENCE du dossier : c'est ELLE qui signe le mail, pas BATILIS. Le client doit savoir
++  // qui lui écrit et qui appeler. La référente reste jointe par le replyTo.
++  let agence = null
++  {
++    const { data: d2 } = await db.from('dossiers').select('referente_id').eq('id', visite.dossier_id).maybeSingle()
++    if (d2?.referente_id) {
++      const { data: prof } = await db.from('profiles').select('agence_id').eq('id', d2.referente_id).maybeSingle()
++      if (prof?.agence_id) {
++        const { data: ag } = await db.from('agences')
++          .select('nom, adresse, code_postal, ville, telephone').eq('id', prof.agence_id).maybeSingle()
++        agence = ag || null
++      }
++    }
++  }
++
+   const clientNom = formatNomClient(dossier.client, { civilite: false }) || 'client'
+   const nomFichier = (base) => `${base}_Visite_${visite.numero_visite || ''}.pdf`.replace('__', '_')
+   const sujet = `Rapport de visite ${visite.numero_visite || ''} — ${clientNom}`.trim()
+@@ -69,14 +86,22 @@ export async function POST(request) {
+       if (dejaFait.has(cible)) continue
+       dejaFait.add(cible)
+       try {
++        // GARDE-FOU : en mode essai, le mail part vers l'adresse d'essai avec l'objet
++        // préfixé du vrai destinataire. Rien n'atteint un artisan tant que
++        // RELANCES_ENVOI=reel n'est pas posé.
++        const envoi = preparerEnvoi({ to: artisan.email, subject: sujet })
++        if (!envoi.envoyer) { erreurs.push({ artisan: artisan.entreprise, raison: `non envoyé (${envoi.raison})` }); continue }
+         const { buffer } = await genererVisitePDF(db, visiteId, { filtreLotId: filtrerParLot ? lot.id : null })
+         await sendEmail({
+-          to: artisan.email,
+-          subject: sujet,
+-          html: `<p>Bonjour,</p><p>Veuillez trouver ci-joint le rapport de la visite de chantier ${visite.numero_visite || ''} concernant le chantier de ${clientNom}.</p><p>Cordialement,<br/>illiCO travaux</p>`,
++          to: envoi.to,
++          subject: envoi.subject,
++          html: gabaritEmail({
++            agence,
++            contenu: `<p>Bonjour,</p><p>Veuillez trouver ci-joint le rapport de la visite de chantier ${visite.numero_visite || ''} concernant le chantier de ${clientNom}.</p>`,
++          }),
+           attachments: [{ filename: nomFichier(artisan.entreprise || 'CR'), contentBytes: b64(buffer), contentType: 'application/pdf' }],
+         })
+-        envoyes.push({ artisan: artisan.entreprise, email: artisan.email })
++        envoyes.push({ artisan: artisan.entreprise, email: envoi.to, reel: envoi.reel })
+       } catch (e) {
+         erreurs.push({ artisan: artisan.entreprise, raison: e?.message || 'envoi échoué' })
+       }
+@@ -89,19 +114,30 @@ export async function POST(request) {
+       erreurs.push({ client: clientNom, raison: 'pas d’email' })
+     } else {
+       try {
+-        const { buffer } = await genererVisitePDF(db, visiteId, {})
+-        await sendEmail({
+-          to: dossier.client.email,
+-          subject: sujet,
+-          html: `<p>Bonjour,</p><p>Un rapport de visite de votre chantier est disponible. Vous le trouverez en pièce jointe, et également dans votre espace client.</p><p>Cordialement,<br/>illiCO travaux</p>`,
+-          attachments: [{ filename: nomFichier('CR'), contentBytes: b64(buffer), contentType: 'application/pdf' }],
+-        })
+-        envoyes.push({ client: clientNom, email: dossier.client.email })
++        const envoi = preparerEnvoi({ to: dossier.client.email, subject: sujet })
++        if (!envoi.envoyer) {
++          erreurs.push({ client: clientNom, raison: `non envoyé (${envoi.raison})` })
++        } else {
++          const { buffer } = await genererVisitePDF(db, visiteId, {})
++          await sendEmail({
++            to: envoi.to,
++            subject: envoi.subject,
++            html: gabaritEmail({
++              agence,
++              contenu: `<p>Bonjour,</p><p>Un rapport de visite de votre chantier est disponible. Vous le trouverez en pièce jointe, et également dans votre espace client.</p>`,
++            }),
++            attachments: [{ filename: nomFichier('CR'), contentBytes: b64(buffer), contentType: 'application/pdf' }],
++          })
++          envoyes.push({ client: clientNom, email: envoi.to, reel: envoi.reel })
++        }
+       } catch (e) {
+         erreurs.push({ client: clientNom, raison: e?.message || 'envoi échoué' })
+       }
+     }
+   }
+ 
+-  return NextResponse.json({ envoyes, erreurs, total: envoyes.length })
++  // `mode` remonte jusqu'à l'écran : sans lui, on clique « Diffuser », on lit « 3 envoyés »
++  // et on croit que le client a reçu son rapport alors que tout est parti dans la boîte
++  // d'essai. Un garde-fou muet est un piège, pas une protection.
++  return NextResponse.json({ envoyes, erreurs, total: envoyes.length, mode: modeEnvoi() })
+ }
+diff --git a/app/components/chantier/CRVisitesPanel.jsx b/app/components/chantier/CRVisitesPanel.jsx
+index f6cb0c8..676a85f 100644
+--- a/app/components/chantier/CRVisitesPanel.jsx
++++ b/app/components/chantier/CRVisitesPanel.jsx
+@@ -477,6 +477,8 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
+     if (!n) { setErreur?.('Sélectionne au moins un destinataire.'); return }
+     // Garde-fou : envoi réel de mails → confirmation obligatoire.
+     if (!window.confirm(`Envoyer le rapport de visite par mail à ${n} destinataire(s) MAINTENANT ? Le mail part immédiatement.`)) return
++    // NB : en mode essai (RELANCES_ENVOI ≠ reel), rien n'atteint le client ni les artisans —
++    // le message de retour le dit explicitement.
+     setDiffLoading(true)
+     try {
+       const res = await apiFetch('/api/cr/visite-diffuser', {
+@@ -487,7 +489,11 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
+       if (!res.ok) { setErreur?.(j.error || 'Diffusion impossible.'); return }
+       const envoyes = j.envoyes?.length || 0
+       const erreurs = j.erreurs?.length || 0
+-      if (envoyes) setSucces?.(`${envoyes} mail(s) envoyé(s)${erreurs ? ` · ${erreurs} échec(s)` : ''} ✓`)
++      // Le MODE doit se lire dans le message : « 3 mails envoyés » en mode essai signifie
++      // « 3 mails partis dans ta boîte d'essai », pas « le client a reçu son rapport ».
++      // Sans cette mention, le garde-fou devient un piège — on croit avoir diffusé.
++      const suffixeEssai = j.mode === 'essai' ? ' — MODE ESSAI : rien n\'est parti au client ni aux artisans' : ''
++      if (envoyes) setSucces?.(`${envoyes} mail(s) envoyé(s)${erreurs ? ` · ${erreurs} échec(s)` : ''}${suffixeEssai} ✓`)
+       else setErreur?.(erreurs ? `Aucun envoi — ${erreurs} destinataire(s) en échec (email manquant ?).` : 'Aucun destinataire.')
+       setDiffPanel(false)
+     } catch {
+diff --git a/app/lib/__tests__/email-signature.test.js b/app/lib/__tests__/email-signature.test.js
+new file mode 100644
+index 0000000..dbc200a
+--- /dev/null
++++ b/app/lib/__tests__/email-signature.test.js
+@@ -0,0 +1,97 @@
++import { describe, it, expect } from 'vitest'
++import {
++  signatureAgence, adresseUneLigne, telephoneLisible, gabaritEmail, echapper,
++} from '../email-signature.js'
++
++// Ces mails partent à de VRAIS clients. Une signature fausse ou vide, c'est un client qui
++// ne sait pas qui lui écrit ni qui appeler — sur un dossier de travaux à 50 000 €.
++
++// Les deux agences RÉELLES de la base au 11/09, dont l'une est à moitié renseignée.
++const MARTIGUES = {
++  nom: 'illiCO travaux Martigues', adresse: '22 RUE RAMADE',
++  code_postal: '13500', ville: 'Martigues', telephone: '0659810681',
++}
++const PARIS = {
++  nom: 'illiCO travaux Paris 15', adresse: '24 rue des Volontaires',
++  code_postal: '75015', ville: 'Paris', telephone: '01 39 98 00 15',
++}
++
++describe('adresse sur une ligne', () => {
++  it('assemble rue, code postal et ville', () => {
++    expect(adresseUneLigne(MARTIGUES)).toBe('22 RUE RAMADE, 13500 Martigues')
++  })
++  it('ne laisse pas de virgule orpheline quand un morceau manque', () => {
++    // Une agence à moitié remplie ne doit pas produire « , 13500 » ni « 22 RUE RAMADE, ».
++    expect(adresseUneLigne({ code_postal: '13500', ville: 'Martigues' })).toBe('13500 Martigues')
++    expect(adresseUneLigne({ adresse: '22 RUE RAMADE' })).toBe('22 RUE RAMADE')
++    expect(adresseUneLigne({})).toBe('')
++    expect(adresseUneLigne(null)).toBe('')
++  })
++})
++
++describe('téléphone', () => {
++  it('met en forme un numéro français collé', () => {
++    expect(telephoneLisible('0659810681')).toBe('06 59 81 06 81')
++  })
++  it('laisse intact ce qu\'il ne sait pas formater — jamais déformer un numéro', () => {
++    expect(telephoneLisible('01 39 98 00 15')).toBe('01 39 98 00 15')
++    expect(telephoneLisible('+33 6 59 81 06 81')).toBe('+33 6 59 81 06 81')
++    expect(telephoneLisible('')).toBe('')
++    expect(telephoneLisible(null)).toBe('')
++  })
++})
++
++describe('signature de l\'agence', () => {
++  it('porte le nom, l\'adresse et le téléphone de l\'AGENCE, pas ceux de BATILIS', () => {
++    const s = signatureAgence(MARTIGUES)
++    expect(s).toContain('illiCO travaux Martigues')
++    expect(s).toContain('22 RUE RAMADE, 13500 Martigues')
++    expect(s).toContain('06 59 81 06 81')
++    expect(s).not.toContain('BATILIS')
++  })
++
++  it('distingue deux agences — c\'est tout l\'objet du multi-tenant', () => {
++    expect(signatureAgence(PARIS)).toContain('illiCO travaux Paris 15')
++    expect(signatureAgence(PARIS)).not.toContain('Martigues')
++  })
++
++  it('ne produit RIEN sans agence, plutôt qu\'une signature fantôme', () => {
++    // « Cordialement, » suivi du vide est pire que pas de signature du tout.
++    expect(signatureAgence(null)).toBe('')
++    expect(signatureAgence({})).toBe('')
++    expect(signatureAgence({ telephone: '0659810681' })).toBe('')
++  })
++
++  it('tient debout sur une agence à moitié renseignée', () => {
++    const s = signatureAgence({ nom: 'illiCO travaux Aix' })
++    expect(s).toContain('illiCO travaux Aix')
++    expect(s).toContain('Cordialement')
++  })
++
++  it('échappe le HTML — un nom avec « & » ne doit pas casser le mail', () => {
++    expect(signatureAgence({ nom: 'Dupont & Fils <SARL>' })).toContain('Dupont &amp; Fils &lt;SARL&gt;')
++    expect(echapper(`a"b'c`)).toBe('a&quot;b&#39;c')
++  })
++
++  it('la formule de politesse se retire à la demande', () => {
++    expect(signatureAgence(MARTIGUES, { formule: null })).not.toContain('Cordialement')
++    expect(signatureAgence(MARTIGUES, { formule: 'Bien à vous,' })).toContain('Bien à vous,')
++  })
++})
++
++describe('gabarit commun', () => {
++  it('garde le contenu et ajoute la signature', () => {
++    const html = gabaritEmail({ contenu: '<p>Bonjour,</p>', agence: MARTIGUES })
++    expect(html).toContain('<p>Bonjour,</p>')
++    expect(html).toContain('illiCO travaux Martigues')
++  })
++  it('reste un mail valide sans agence connue', () => {
++    const html = gabaritEmail({ contenu: '<p>Bonjour,</p>' })
++    expect(html).toContain('<p>Bonjour,</p>')
++    expect(html).not.toContain('undefined')
++    expect(html).not.toContain('null')
++  })
++  it('n\'embarque aucune image distante — Outlook les bloque', () => {
++    expect(gabaritEmail({ contenu: '<p>x</p>', agence: MARTIGUES })).not.toContain('<img')
++  })
++})
+diff --git a/app/lib/email-signature.js b/app/lib/email-signature.js
+new file mode 100644
+index 0000000..d67f54d
+--- /dev/null
++++ b/app/lib/email-signature.js
+@@ -0,0 +1,91 @@
++// app/lib/email-signature.js
++// Signature et enveloppe HTML des emails MÉTIER (ceux qui partent à un client ou à un
++// artisan). Fonctions PURES : aucune requête, aucun réseau — testables sans base.
++//
++// POURQUOI L'AGENCE, ET PAS BATILIS (11/09)
++//
++// Les mails se signaient « Cordialement, illiCO travaux » en dur. Sur un produit
++// multi-tenant, c'est faux deux fois : le client d'une agence reçoit une signature
++// anonyme, et rien ne lui dit qui le contacte ni comment joindre quelqu'un. Or les
++// données existent déjà — `agences` porte nom, adresse, code postal, ville, téléphone
++// et responsable. Il ne manquait que de les lire.
++//
++// L'EXPÉDITEUR TECHNIQUE RESTE UNIQUE (contact@batilis-app.fr) : un service d'envoi
++// écrit depuis un domaine vérifié, pas depuis la boîte de chaque franchisé. C'est donc
++// la SIGNATURE qui porte l'identité de l'agence, et le `replyTo` qui ramène la réponse
++// chez la bonne personne — la référente du dossier. Décision confirmée le 11/09 : aucune
++// autre solution n'existe sans faire connecter sa boîte à chaque franchisé, ce qui est
++// ingérable à vendre.
++//
++// Le HTML reste volontairement pauvre — tableaux simples, styles en ligne, aucune image
++// distante. Les clients de messagerie (Outlook en tête) ignorent le CSS externe, et une
++// image distante fait basculer un message en « contenu bloqué ».
++
++// Échappement HTML. Les valeurs viennent de la base, donc de saisies humaines : un nom
++// d'agence contenant « & » ou « < » casserait le rendu, et l'échapper coûte une ligne.
++export function echapper(s) {
++  return String(s ?? '')
++    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
++    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
++}
++
++/**
++ * Adresse postale sur une ligne : « 22 RUE RAMADE, 13500 Martigues ».
++ * Chaque morceau est facultatif — une agence à moitié renseignée ne doit pas produire
++ * « , 13500 » ni une virgule orpheline.
++ */
++export function adresseUneLigne(agence) {
++  const rue = String(agence?.adresse || '').trim()
++  const cpVille = [agence?.code_postal, agence?.ville].map(v => String(v || '').trim()).filter(Boolean).join(' ')
++  return [rue, cpVille].filter(Boolean).join(', ')
++}
++
++/**
++ * Téléphone français en lecture confortable : « 0659810681 » → « 06 59 81 06 81 ».
++ * Tout autre format (numéro déjà espacé, indicatif +33, numéro étranger) est rendu tel
++ * quel : mieux vaut un numéro non reformaté qu'un numéro déformé.
++ */
++export function telephoneLisible(tel) {
++  const brut = String(tel || '').trim()
++  if (/^0\d{9}$/.test(brut)) return brut.match(/\d{2}/g).join(' ')
++  return brut
++}
++
++/**
++ * Signature HTML d'une agence. Renvoie '' si l'agence est inconnue : un bloc vide vaut
++ * mieux qu'une signature fantôme (« Cordialement, » suivi de rien).
++ *
++ * @param {object} agence  ligne `agences` (nom, adresse, code_postal, ville, telephone)
++ * @param {object} [opts]
++ * @param {string} [opts.formule]  formule de politesse ; null pour ne pas en mettre
++ */
++export function signatureAgence(agence, opts = {}) {
++  const nom = String(agence?.nom || '').trim()
++  if (!nom) return ''
++  const formule = opts.formule === null ? '' : (opts.formule || 'Cordialement,')
++  const adresse = adresseUneLigne(agence)
++  const tel = telephoneLisible(agence?.telephone)
++
++  const lignes = [
++    `<div style="font-weight:600;color:#0f172a">${echapper(nom)}</div>`,
++    adresse ? `<div>${echapper(adresse)}</div>` : '',
++    tel ? `<div>Tél. <a href="tel:${echapper(tel.replace(/\s/g, ''))}" style="color:#4f46e5;text-decoration:none">${echapper(tel)}</a></div>` : '',
++  ].filter(Boolean).join('')
++
++  return `${formule ? `<p style="margin:16px 0 8px">${echapper(formule)}</p>` : ''}`
++    + `<div style="font-size:13px;line-height:1.6;color:#475569;border-top:1px solid #e2e8f0;padding-top:12px;margin-top:8px">${lignes}</div>`
++}
++
++/**
++ * Enveloppe un contenu dans le gabarit commun : corps lisible + signature de l'agence.
++ *
++ * Un seul gabarit pour tous les mails métier, pour que le jour où l'on corrige une
++ * largeur ou une couleur, on le fasse à un seul endroit — et non dans quatorze chaînes
++ * de caractères disséminées dans les routes.
++ */
++export function gabaritEmail({ contenu, agence, formule } = {}) {
++  return `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:#0f172a;max-width:560px">`
++    + `${contenu || ''}`
++    + `${signatureAgence(agence, { formule })}`
++    + `</div>`
++}
+diff --git a/app/lib/relances-envoi.js b/app/lib/relances-envoi.js
+index 796b3ea..cb2348b 100644
+--- a/app/lib/relances-envoi.js
++++ b/app/lib/relances-envoi.js
+@@ -1,10 +1,20 @@
+ // app/lib/relances-envoi.js
+-// Garde-fou d'envoi des relances automatiques.
++// Garde-fou d'envoi des emails MÉTIER — ceux qui partent à un client ou à un artisan.
+ //
+-// POURQUOI — le cron de relances écrit à de VRAIS clients et à de VRAIS artisans.
+-// Tant que les textes, les déclencheurs et les destinataires n'ont pas été vus en
+-// conditions réelles, un envoi direct est une prise de risque inutile : une erreur
+-// n'est pas rattrapable une fois le mail parti.
++// POURQUOI — ces mails écrivent à de VRAIS clients et à de VRAIS artisans. Tant que les
++// textes, les déclencheurs et les destinataires n'ont pas été vus en conditions réelles,
++// un envoi direct est une prise de risque inutile : une erreur n'est pas rattrapable une
++// fois le mail parti.
++//
++// PÉRIMÈTRE ÉLARGI LE 11/09 — le garde-fou ne couvrait que les relances. La diffusion des
++// comptes rendus, elle, écrivait directement au client et aux artisans, PDF en pièce
++// jointe : le mail le plus lourd de conséquences était le seul sans filet. Il passe
++// désormais par ici. Les variables d'environnement sont INCHANGÉES (RELANCES_ENVOI,
++// RELANCES_ESSAI_EMAIL) — rien à reconfigurer, un seul interrupteur pour tout le métier.
++//
++// CE QUI N'EST PAS COUVERT, ET DÉLIBÉRÉMENT : les mails PRODUIT — invitation d'un agent ou
++// d'un admin, réinitialisation de mot de passe. Les bloquer en mode essai empêcherait de
++// créer un compte ou d'en récupérer un : le garde-fou deviendrait la panne.
+ //
+ // PRINCIPE — le mode ESSAI est le DÉFAUT. Il faut un geste délibéré
+ // (RELANCES_ENVOI=reel) pour écrire à un vrai destinataire. Un oubli de configuration
+-- 
+2.43.0
+

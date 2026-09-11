@@ -477,6 +477,8 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     if (!n) { setErreur?.('Sélectionne au moins un destinataire.'); return }
     // Garde-fou : envoi réel de mails → confirmation obligatoire.
     if (!window.confirm(`Envoyer le rapport de visite par mail à ${n} destinataire(s) MAINTENANT ? Le mail part immédiatement.`)) return
+    // NB : en mode essai (RELANCES_ENVOI ≠ reel), rien n'atteint le client ni les artisans —
+    // le message de retour le dit explicitement.
     setDiffLoading(true)
     try {
       const res = await apiFetch('/api/cr/visite-diffuser', {
@@ -487,7 +489,11 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
       if (!res.ok) { setErreur?.(j.error || 'Diffusion impossible.'); return }
       const envoyes = j.envoyes?.length || 0
       const erreurs = j.erreurs?.length || 0
-      if (envoyes) setSucces?.(`${envoyes} mail(s) envoyé(s)${erreurs ? ` · ${erreurs} échec(s)` : ''} ✓`)
+      // Le MODE doit se lire dans le message : « 3 mails envoyés » en mode essai signifie
+      // « 3 mails partis dans ta boîte d'essai », pas « le client a reçu son rapport ».
+      // Sans cette mention, le garde-fou devient un piège — on croit avoir diffusé.
+      const suffixeEssai = j.mode === 'essai' ? ' — MODE ESSAI : rien n\'est parti au client ni aux artisans' : ''
+      if (envoyes) setSucces?.(`${envoyes} mail(s) envoyé(s)${erreurs ? ` · ${erreurs} échec(s)` : ''}${suffixeEssai} ✓`)
       else setErreur?.(erreurs ? `Aucun envoi — ${erreurs} destinataire(s) en échec (email manquant ?).` : 'Aucun destinataire.')
       setDiffPanel(false)
     } catch {
