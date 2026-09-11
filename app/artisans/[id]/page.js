@@ -156,6 +156,7 @@ export default function FicheArtisan({ params }) {
     const { error } = await supabase.from('artisans').update({
       entreprise: artisan.entreprise, nom: artisan.nom, prenom: artisan.prenom,
       civilite: artisan.civilite || null,
+      siret: artisan.siret || null,
       email: artisan.email, telephone: artisan.telephone,
       code_postal: artisan.code_postal, ville: artisan.ville,
       metier: artisan.metier, decennale_expiration: artisan.decennale_expiration,
@@ -419,6 +420,17 @@ export default function FicheArtisan({ params }) {
             <div>
               <label style={{display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5}}>Métier</label>
               <input className="input" value={artisan.metier || ''} onChange={e => set('metier', e.target.value)} />
+            </div>
+            <div>
+              {/* SIRET : le seul identifiant qui lève un homonyme et permet de vérifier
+                  qu'une entreprise est toujours immatriculée. Sans lui, un artisan
+                  n'existe en base que par un nom saisi à la main — c'est ainsi que cinq
+                  partenaires radiés sont restés en base sans que personne ne le voie.
+                  Les espaces saisis sont retirés, le stockage est nu (14 chiffres). */}
+              <label style={{display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5}}>SIRET</label>
+              <input className="input" inputMode="numeric" placeholder="14 chiffres"
+                value={artisan.siret || ''}
+                onChange={e => set('siret', e.target.value.replace(/\s/g, '') || null)} />
             </div>
             <div>
               <label style={{display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5}}>Décennale — expiration</label>
