@@ -43,8 +43,21 @@ describe('deciderRattachement — ce qui se rattache tout seul', () => {
       .toEqual({ destination: 'documents', dossier_id: 'epp', categorie: 'administratif', artisan_id: null })
   })
 
-  it("une facture d'artisan connu : l'artisan est resolu depuis le nom du dossier", () => {
+  it("une facture d'artisan : l'artisan ET la nature sont lus dans le chemin", () => {
+    // « on n'a pas fait tous les dossiers pour rien » : le 3e niveau porte la categorie.
+    // La ranger en « Autres » alors que le Drive l'avait classee, c'est relire la taxonomie
+    // a moitie.
     expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/4. Documents artisans/MJ RENOVATION/Factures`))
+      .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: 'facture_artisan', artisan_id: 'a-mj' })
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/4. Documents artisans/MJ RENOVATION/Autre`))
+      .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: 'autre_artisan', artisan_id: 'a-mj' })
+  })
+
+  it("a la RACINE de l'artisan, la nature reste indecidable — et on ne l'invente pas", () => {
+    // Cinq categories ecrivent a cet endroit (attestation de demarrage, deblocage d'acompte,
+    // avis de virement, PV de reception, attestation de fin) : le dossier ne les distingue
+    // pas, donc le rattachement non plus. L'artisan, lui, est certain.
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/4. Documents artisans/MJ RENOVATION`))
       .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: null, artisan_id: 'a-mj' })
   })
 
@@ -80,6 +93,31 @@ describe('deciderRattachement — les photos vont dans la table photos', () => {
     expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/6. Photos/_1. Avant`, 'a.jpg').categorie_photo).toBe('avant')
     expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/6. Photos/_2. Pendant`, 'a.jpg').categorie_photo).toBe('pendant')
     expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/6. Photos/3. Après`, 'a.jpg').categorie_photo).toBe('apres')
+  })
+
+  it('une MAQUETTE est une photo, meme rangee dans « 5. Plans & techniques »', () => {
+    // Le Drive contient bien un sous-dossier « maquette » : le classement etait fait, c'est
+    // la relecture qui l'ignorait et les rangeait en documents « plans ».
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/maquette`, 'vue3d.jpg'))
+      .toEqual({ destination: 'photos', dossier_id: 'barloy', categorie_photo: 'maquette' })
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/Maquettes`, 'a.png').categorie_photo)
+      .toBe('maquette')
+  })
+
+  it('un PDF dans le dossier maquette reste un DOCUMENT', () => {
+    // La table photos n'affiche pas un PDF. Mieux vaut un plan bien rangé qu'une photo
+    // fantome dans la galerie.
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/maquette`, 'plan.pdf'))
+      .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: 'plans', artisan_id: null })
+  })
+
+  it('les sous-dossiers libres sous « 5. Plans & techniques » restent des plans', () => {
+    // « sdb wc », « Plan cuisine », « LAPEYRE », « moodboard »… : elle range par piece ou par
+    // fournisseur. Aucune categorie de l'appli ne leur correspond, et c'est tres bien : le
+    // niveau 1 suffit a decider, le niveau 2 est son organisation a elle.
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/sdb wc`, 'a.jpg').categorie).toBe('plans')
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/5. Plans & techniques/moodboard`, 'a.jpg').categorie).toBe('plans')
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/1. Administratif/PLU_ABF_CADASTRE`, 'a.pdf').categorie).toBe('administratif')
   })
 
   it('ne DEVINE pas la categorie : une photo sans categorie reste a la main', () => {
