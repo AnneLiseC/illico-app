@@ -757,3 +757,42 @@ export function calculateDossierFinance(dossier) {
     },
   }
 }
+
+/**
+ * RESTE À FACTURER sur un devis — et pourquoi l'acompte encaissé en fait partie.
+ *
+ * Le suivi financier portait deux définitions contradictoires du mot « facturé » : le
+ * compteur ne comptait que les lignes `factures_artisans`, alors que la facture de solde
+ * était saisie à la main à « devis − acompte ». Après chaque « Facturer le solde » il
+ * restait donc exactement le montant de l'acompte — sur un acompte pourtant coché
+ * « Réglé » — et le formulaire pré-remplissait le mauvais montant.
+ *
+ * RÈGLE (11/09, dictée par le terrain) : « des artisans ne nous fournissent pas toujours
+ * de facture, c'est pour ça que ça doit être compté. » Ce que ce calcul mesure est donc ce
+ * qui RESTE DÛ par le client, pas le nombre de pièces comptables reçues. Un acompte
+ * encaissé est un montant qui ne sera pas redemandé, avec ou sans facture en face.
+ *
+ * On retire la part NON COUVERTE de l'acompte, jamais l'acompte entier : quand l'artisan a
+ * bien émis sa facture d'acompte, elle figure déjà dans les factures, et la déduire une
+ * seconde fois offrirait le montant deux fois au client.
+ *
+ * @param {object} p
+ * @param {number} p.devisTTC          montant TTC du devis
+ * @param {number} p.totalFactureTTC   somme de TOUTES les factures du devis (acompte compris)
+ * @param {number} p.totalFactAcompteTTC somme des seules factures d'acompte
+ * @param {number} p.acompteTTC        acompte théorique du devis
+ * @param {boolean} p.acompteEncaisse  l'acompte client est-il coché « réglé »
+ * @returns {{ reste:number, acompteNonFacture:number }}
+ *   `acompteNonFacture` > 0 signale un encaissement SANS pièce comptable en face : l'écran
+ *   le dit au lieu d'afficher « entièrement facturé », pour qu'on sache quoi réclamer.
+ */
+export function resteAFacturerDevis({
+  devisTTC = 0, totalFactureTTC = 0, totalFactAcompteTTC = 0, acompteTTC = 0, acompteEncaisse = false,
+}) {
+  const nb = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
+  const acompteNonFacture = acompteEncaisse
+    ? Math.max(0, round2(nb(acompteTTC) - nb(totalFactAcompteTTC)))
+    : 0
+  const reste = Math.max(0, round2(nb(devisTTC) - nb(totalFactureTTC) - acompteNonFacture))
+  return { reste, acompteNonFacture }
+}

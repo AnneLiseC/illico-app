@@ -8,7 +8,7 @@ import { formatNomClient } from '../../lib/clients'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement, calculerEtapes, ETAPES_LABELS, detecterCategorie } from '../../lib/dossiers'
-import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, resteAFacturerDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
 import { apiFetch } from '../../lib/api-auth-client'
 import { lierOuCreerRdvVisite } from '../../lib/rdvVisite'
 import { buildDevisPayload } from '../../lib/devis'
@@ -5107,13 +5107,40 @@ export default function FicheChantier({ params }) {
                     const acompteMontant = finDv.acompte
                     const comDevisHT = finDv.comHT
                     // Factures artisan de ce devis : acompte(s) sous « Acompte client »,
-                    // le reste en « Autres factures ». Reste à facturer = devis TTC − factures.
+                    // le reste en « Autres factures ».
                     const factsDevis   = factures.filter(f => f.devis_id === dv.id)
                     const estAcompte   = (f) => (f.libelle || '').toLowerCase().includes('acompte')
                     const factsAcompte = factsDevis.filter(estAcompte)
                     const factsAutres  = factsDevis.filter(f => !estAcompte(f))
                     const totalFacture = factsDevis.reduce((s, f) => s + (Number(f.montant_ttc) || 0), 0)
-                    const resteAFacturer = Math.max(0, (Number(dv.montant_ttc) || 0) - totalFacture)
+
+                    // UN ACOMPTE ENCAISSÉ COMPTE COMME FACTURÉ (11/09).
+                    //
+                    // Deux définitions du mot « facturé » cohabitaient dans cet écran : le
+                    // compteur ne comptait que les lignes factures_artisans, tandis que la
+                    // facture de solde, elle, était saisie à la main à « devis − acompte ».
+                    // Après chaque « Facturer le solde » il restait donc EXACTEMENT le montant
+                    // de l'acompte — sur un acompte pourtant coché « Réglé ». Le formulaire
+                    // pré-remplissait même le mauvais montant, d'où un calcul refait à la main
+                    // à chaque facture.
+                    //
+                    // Règle retenue, dictée par le terrain : « des artisans ne nous fournissent
+                    // pas toujours de facture, c'est pour ça que ça doit être compté ». Ce
+                    // compteur mesure donc ce qui RESTE DÛ, pas le nombre de pièces reçues.
+                    //
+                    // On soustrait la part NON COUVERTE de l'acompte, jamais l'acompte entier :
+                    // si l'artisan a bien émis sa facture d'acompte, elle est déjà dans
+                    // totalFacture, et la déduire une seconde fois offrirait le montant deux
+                    // fois. Le Math.max ramène ce cas à zéro.
+                    // Le calcul lui-même vit dans finance.js, avec ses tests : c'est de
+                    // l'argent, et une règle d'argent enfouie dans du JSX ne se vérifie pas.
+                    const { reste: resteAFacturer, acompteNonFacture } = resteAFacturerDevis({
+                      devisTTC: dv.montant_ttc,
+                      totalFactureTTC: totalFacture,
+                      totalFactAcompteTTC: factsAcompte.reduce((s, f) => s + (Number(f.montant_ttc) || 0), 0),
+                      acompteTTC: acompteMontant,
+                      acompteEncaisse: sf?.statut_client === 'regle',
+                    })
                     const formOuvert   = ajouterFacture === dv.id
                     return (
                       <div key={`ech-${dv.id}`} className="suivi-devis-row">
@@ -5166,7 +5193,16 @@ export default function FicheChantier({ params }) {
                             <span className="tnum" style={resteAFacturer > 0
                               ? {fontSize:'var(--text-xs)', fontWeight:800, color:'var(--warn-strong)', background:'rgba(194,65,12,0.09)', padding:'2px 10px', borderRadius:99}
                               : {fontSize:'var(--text-xs)', fontWeight:600, color:'var(--ok-strong)'}}>
-                              {resteAFacturer > 0 ? `Reste à facturer : ${fmt(resteAFacturer)}` : '✓ Entièrement facturé'}
+                              {/* « Soldé » et « entièrement facturé » ne sont pas la même
+                                  chose : quand l'acompte a été encaissé sans facture de
+                                  l'artisan, plus rien n'est dû, mais une pièce comptable
+                                  manque. On le dit au lieu de l'effacer — c'est ce qu'il
+                                  reste à réclamer à l'artisan. */}
+                              {resteAFacturer > 0
+                                ? `Reste à facturer : ${fmt(resteAFacturer)}`
+                                : acompteNonFacture > 0
+                                  ? `✓ Soldé · acompte de ${fmt(acompteNonFacture)} sans facture`
+                                  : '✓ Entièrement facturé'}
                             </span>
                           </div>
                           {factsAutres.map(ligneFacture)}
