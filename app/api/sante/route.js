@@ -20,6 +20,7 @@
 // déjà. Un même point d'entrée, deux niveaux de lecture selon qui demande.
 
 import { NextResponse } from 'next/server'
+import { transportEmail } from '../../lib/email'
 import { createClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
@@ -77,6 +78,10 @@ export async function GET(request) {
       reponse.societes = nbSocietes ?? null
       reponse.dernier_document_genere = dernierCache?.genere_le || null
       reponse.mode_relances = String(process.env.RELANCES_ENVOI || 'essai').toLowerCase()
+      // Quel transport achemine réellement le courrier. Sans cette ligne, diagnostiquer un
+      // mail manquant commence par une question à laquelle personne ne sait répondre.
+      reponse.transport_email = transportEmail()
+      reponse.expediteur = process.env.EMAIL_FROM || 'BATILIS <contact@batilis-app.fr>'
       reponse.boite_envoi_configuree = !!process.env.MICROSOFT_CLIENT_ID
     } catch { /* le détail est un bonus, jamais une raison d'échouer */ }
   }
