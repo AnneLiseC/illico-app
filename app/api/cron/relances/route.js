@@ -18,7 +18,7 @@ import { NextResponse } from 'next/server'
 import { checkBearerSecret } from '../../../lib/http-auth'
 import { sendEmail } from '../../../lib/email'
 import { preparerEnvoi, modeEnvoi } from '../../../lib/relances-envoi'
-import { salutationClient, nomClientPourArtisan, libelleRdv, destinatairesRappel, heureRdvFR, dateRdvFR, adresseArtisan } from '../../../lib/relances-texte'
+import { salutationClient, nomClientPourArtisan, libelleRdv, destinatairesRappel, heureRdvFR, dateRdvFR, adresseArtisan, mentionReglement } from '../../../lib/relances-texte'
 import { signatureComplete } from '../../../lib/email-signature'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { buildRecapitulatifDocument } from '../../../lib/pdf/recapitulatifDocument.js'
@@ -549,23 +549,44 @@ export async function GET(req) {
   //    UNE SEULE RELANCE par facture (clé anti-doublon). Deux rappels automatiques sur la
   //    même somme, sans que personne ne décide entre les deux, se lisent comme du
   //    harcèlement — et c'est au client qu'on écrit, pas à un fournisseur.
+  //
+  //    ─── AJOUTS DU 11/09, APRÈS MESURE EN PRODUCTION ───
+  //
+  //    LE RIB EST RÉELLEMENT JOINT. La première version annonçait « sur le RIB de X joint
+  //    à ce message » sans aucune pièce jointe : le texte avait été écrit, l'envoi oublié.
+  //    La phrase est désormais calculée à partir de la pièce jointe constituée
+  //    (`mentionReglement`), jamais en parallèle. Pas de RIB, pas de promesse.
+  //
+  //    4c RAPPORTE CE QUI N'A PAS PU PARTIR. Le `continue` sur un client sans email était
+  //    muet. Mesure du 11/09 sur Martigues : sur trois factures impayées, DEUX étaient
+  //    dans ce cas, dont 3 894 € en souffrance depuis 119 jours. La relance automatique
+  //    donnait donc un sentiment de couverture qu'elle n'avait pas, et personne ne pouvait
+  //    s'en apercevoir. Un trou signalé vaut mieux qu'un trou silencieux.
   // ─────────────────────────────────────────────────────────────
   const DELAI_RELANCE_FACTURE = 7
+
+  // Ce que la relance n'a PAS pu faire, collecté pendant le parcours et rapporté à la
+  // référente en 4c. Sans ce relevé, le saut est totalement silencieux : le 11/09, deux
+  // des trois factures impayées de Martigues étaient dans ce cas, dont 3 894 € en
+  // souffrance depuis 119 jours, et rien nulle part ne le signalait.
+  const empeches = []   // { referenteId, referente, quoi, detail }
+
   try {
     // ── 4a. Factures des artisans (acompte, situation, solde) ──
     const { data: facturesArtisans } = await getSupabaseAdmin()
       .from('factures_artisans')
       .select(`
         id, dossier_id, montant_ttc, libelle, created_at, date_echeance,
-        artisans(entreprise),
-        dossiers(reference, profiles!referente_id(email, prenom, nom, telephone, role, agence_id),
+        artisans(entreprise, rib_url),
+        dossiers(reference, profiles!referente_id(id, email, prenom, nom, telephone, role, agence_id),
           clients(email, nom, prenom, civilite, nom2))
       `)
       .eq('statut', 'en_attente')
 
     for (const f of facturesArtisans || []) {
       const client = f.dossiers?.clients
-      if (!client?.email) continue
+      const referente = f.dossiers?.profiles
+      const entreprise = f.artisans?.entreprise || 'votre artisan'
 
       // Échéance effective : celle saisie, sinon enregistrement + 7 jours.
       const base = f.date_echeance || f.created_at
@@ -573,14 +594,50 @@ export async function GET(req) {
       if (!f.date_echeance) echeanceEff.setDate(echeanceEff.getDate() + DELAI_RELANCE_FACTURE)
       if (echeanceEff > new Date()) continue
 
-      const referente = f.dossiers?.profiles
-      const entreprise = f.artisans?.entreprise || 'votre artisan'
+      // Le client sans adresse : on ne peut rien envoyer, mais on le DIT. L'ordre compte,
+      // ce test vient après le test d'échéance pour ne signaler que ce qui est réellement
+      // relançable aujourd'hui, pas toutes les factures ouvertes du portefeuille.
+      if (!client?.email) {
+        const jours = Math.floor((Date.now() - new Date(f.created_at).getTime()) / 86400000)
+        empeches.push({
+          referenteId: referente?.id, referente,
+          quoi: 'client_sans_email',
+          detail: `${[client?.nom, client?.nom2].filter(Boolean).join(' et ') || f.dossiers?.reference}, facture ${entreprise}`
+            + `${f.montant_ttc ? `, ${montantFr(f.montant_ttc)}` : ''}, en attente depuis ${jours} jour${jours > 1 ? 's' : ''}`,
+        })
+        continue
+      }
+
       // « Facture solde » → « la facture de solde ». Le libellé est saisi librement :
       // on ne le triture que sur les trois formes connues, sinon on le cite tel quel.
       const libelleLu = /acompte/i.test(f.libelle) ? "la facture d'acompte"
         : /situation/i.test(f.libelle) ? 'la facture de situation'
         : /solde/i.test(f.libelle) ? 'la facture de solde'
         : `la facture « ${f.libelle || 'sans libellé'} »`
+
+      // LE RIB EST JOINT, OU LA PHRASE CHANGE.
+      //
+      // Défaut livré le 11/09 : le texte annonçait « sur le RIB de X joint à ce message »
+      // et aucune pièce jointe ne partait. Un client qui cherche un fichier absent
+      // rappelle, ou ne paye pas. Ici la phrase SUIT la pièce jointe, elle ne la précède
+      // jamais : pas de RIB en base, pas de promesse.
+      //
+      // Le repli reste nécessaire même quand tous les RIB seront collectés : un artisan
+      // est toujours créé avant que son RIB n'arrive. L'état « pas encore de RIB » est
+      // permanent dans le temps, même si chaque cas est temporaire.
+      const rib = await pieceJointeStorage(
+        f.artisans?.rib_url, `RIB_${entreprise.replace(/[^\w -]/g, '')}.pdf`)
+      if (!rib) {
+        // Pas de distinction entre « aucun RIB en base » et « fichier introuvable dans le
+        // stockage » : dans les deux cas le client ne reçoit pas de RIB, et c'est cela
+        // qu'il faut signaler. La cause se voit sur la fiche artisan.
+        empeches.push({
+          referenteId: referente?.id, referente,
+          quoi: 'rib_manquant',
+          detail: `${entreprise}, relance envoyée sans RIB`,
+        })
+      }
+      const ouRegler = mentionReglement(Boolean(rib), entreprise)
 
       await envoyer(log, '4', {
         // L'échéance entre dans la clé : la repousser vaut nouvelle échéance, donc
@@ -589,13 +646,14 @@ export async function GET(req) {
         to: client.email,
         replyTo: referente?.email,
         subject: `Relance de règlement, facture ${entreprise}`,
+        attachments: rib ? [rib] : undefined,
         html: `
           <p>Bonjour ${salutationClient(client)},</p>
           <p>Sauf erreur de notre part, ${libelleLu} de <strong>${entreprise}</strong>${f.montant_ttc ? `,
           d'un montant de <strong>${montantFr(f.montant_ttc)}</strong>,` : ','}
           n'a pas encore été réglée.</p>
           <p>Nous vous remercions de bien vouloir procéder au règlement dans les meilleurs délais,
-          sur le RIB de ${entreprise} joint à ce message, et de me transmettre l'avis de virement
+          ${ouRegler}, et de me transmettre l'avis de virement
           correspondant.</p>
           <p>Cordialement,</p>
           ${await signatureHtml(referente)}
@@ -617,8 +675,8 @@ export async function GET(req) {
       .from('suivi_financier')
       .select(`
         id, dossier_id, montant_ttc, type_echeance, date_echeance, created_at,
-        dossiers(reference, agences(societes(nom_societe)),
-          profiles!referente_id(email, prenom, nom, telephone, role, agence_id),
+        dossiers(reference, agences(societes(nom_societe, rib_url)),
+          profiles!referente_id(id, email, prenom, nom, telephone, role, agence_id),
           clients(email, nom, prenom, civilite, nom2))
       `)
       .in('type_echeance', Object.keys(LIBELLE_HONORAIRE))
@@ -626,30 +684,101 @@ export async function GET(req) {
 
     for (const h of honoraires || []) {
       const client = h.dossiers?.clients
-      if (!client?.email) continue
+      const referente = h.dossiers?.profiles
+      const societe = h.dossiers?.agences?.societes?.nom_societe || 'notre société'
 
       const base = h.date_echeance || h.created_at
       const echeanceEff = new Date(base)
       if (!h.date_echeance) echeanceEff.setDate(echeanceEff.getDate() + DELAI_RELANCE_FACTURE)
       if (echeanceEff > new Date()) continue
 
-      const referente = h.dossiers?.profiles
-      const societe = h.dossiers?.agences?.societes?.nom_societe || 'notre société'
+      if (!client?.email) {
+        const jours = Math.floor((Date.now() - new Date(h.created_at).getTime()) / 86400000)
+        empeches.push({
+          referenteId: referente?.id, referente,
+          quoi: 'client_sans_email',
+          detail: `${[client?.nom, client?.nom2].filter(Boolean).join(' et ') || h.dossiers?.reference}, ${LIBELLE_HONORAIRE[h.type_echeance]}`
+            + `${h.montant_ttc ? `, ${montantFr(h.montant_ttc)}` : ''}, en attente depuis ${jours} jour${jours > 1 ? 's' : ''}`,
+        })
+        continue
+      }
+
+      // Même règle qu'en 4a : la phrase suit la pièce jointe.
+      const ribSociete = await pieceJointeStorage(
+        h.dossiers?.agences?.societes?.rib_url, `RIB_${societe.replace(/[^\w -]/g, '')}.pdf`)
+      if (!ribSociete) {
+        empeches.push({
+          referenteId: referente?.id, referente,
+          quoi: 'rib_manquant',
+          detail: `${societe}, relance d'honoraires envoyée sans RIB de la société`,
+        })
+      }
+      const ouRegler = mentionReglement(Boolean(ribSociete), societe)
 
       await envoyer(log, '4', {
         cle: `honoraire:${h.id}:${echeanceEff.toISOString().slice(0, 10)}`,
         to: client.email,
         replyTo: referente?.email,
         subject: `Relance de règlement, honoraires`,
+        attachments: ribSociete ? [ribSociete] : undefined,
         html: `
           <p>Bonjour ${salutationClient(client)},</p>
           <p>Sauf erreur de notre part, <strong>${LIBELLE_HONORAIRE[h.type_echeance]}</strong>${h.montant_ttc ? `,
           d'un montant de <strong>${montantFr(h.montant_ttc)}</strong>,` : ','}
           n'a pas encore été réglé.</p>
           <p>Nous vous remercions de bien vouloir procéder au règlement dans les meilleurs délais,
-          sur le RIB de ${societe} joint à ce message.</p>
+          ${ouRegler}.</p>
           <p>Cordialement,</p>
           ${await signatureHtml(referente)}
+        `,
+      })
+    }
+
+    // ── 4c. Ce qui n'a PAS pu partir, rapporté à la référente ──
+    //
+    // Décision d'Anne-Lise le 11/09 : un client sans adresse email ne doit plus être sauté
+    // en silence. La relance automatique donnait un sentiment de couverture qu'elle
+    // n'avait pas — on croit le portefeuille relancé alors qu'une facture de 3 894 €
+    // dormait depuis 119 jours sans qu'aucun mail ne soit jamais parti.
+    //
+    // UN MAIL PAR RÉFÉRENTE, et seulement les dossiers QU'ELLE suit : en multi-tenant,
+    // la liste des impayés d'une agence n'a rien à faire dans la boîte d'une autre.
+    //
+    // Ce mail ne part QUE s'il y a quelque chose à signaler. Un rapport quotidien vide
+    // finit par ne plus être lu, et le jour où il contient quelque chose, il est ignoré.
+    const parReferente = new Map()
+    for (const e of empeches) {
+      if (!e.referente?.email) continue
+      if (!parReferente.has(e.referenteId)) parReferente.set(e.referenteId, { referente: e.referente, lignes: [] })
+      parReferente.get(e.referenteId).lignes.push(e)
+    }
+
+    for (const [, { referente, lignes }] of parReferente) {
+      const sansEmail = lignes.filter(l => l.quoi === 'client_sans_email').map(l => l.detail)
+      const sansRib = [...new Set(lignes.filter(l => l.quoi === 'rib_manquant').map(l => l.detail))]
+      const bloquantes = sansEmail.length
+
+      const listeHtml = (titre, items) => items.length ? `
+        <p><strong>${titre}</strong></p>
+        <ul>${items.map(i => `<li>${i}</li>`).join('')}</ul>` : ''
+
+      await envoyer(log, '4c', {
+        // Une alerte par référente et par jour. La clé porte la DATE : le même trou
+        // signalé demain est un nouveau rappel légitime, tant qu'il n'est pas comblé.
+        cle: `alerte-relances:${referente.id}:${todayStr}`,
+        to: referente.email,
+        subject: bloquantes
+          ? `BATILIS, ${bloquantes} relance${bloquantes > 1 ? 's' : ''} n'${bloquantes > 1 ? 'ont' : 'a'} pas pu partir ce matin`
+          : `BATILIS, relances envoyées sans RIB`,
+        html: `
+          <p>Bonjour ${referente.prenom || ''},</p>
+          ${listeHtml(
+            "Ces règlements sont en retard, mais aucune relance n'a pu partir : le client n'a pas d'adresse email.",
+            sansEmail)}
+          ${listeHtml(
+            'Ces relances sont parties sans RIB en pièce jointe, faute de RIB enregistré :',
+            sansRib)}
+          <p>Ce message est automatique. Il ne part que les jours où il y a quelque chose à signaler.</p>
         `,
       })
     }

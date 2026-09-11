@@ -259,3 +259,35 @@ export function adresseArtisan(artisan) {
   if (nom) return nom.toUpperCase()
   return entreprise || null
 }
+
+/**
+ * Où le client doit régler, selon qu'un RIB part OU NON en pièce jointe.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * POURQUOI CETTE FONCTION EXISTE SÉPARÉMENT
+ *
+ * Le 11/09, les relances de facture annonçaient « sur le RIB de X joint à ce message »
+ * alors qu'AUCUNE pièce jointe ne partait : le texte avait été écrit, la pièce jointe
+ * oubliée. Rien ne cassait, rien ne remontait dans les journaux, et le client cherchait
+ * un fichier qui n'existait pas.
+ *
+ * La phrase est donc calculée À PARTIR de la pièce jointe réellement constituée, jamais
+ * en parallèle. `ribJoint` n'est pas « y a-t-il un RIB en base », c'est « le fichier
+ * est-il dans le mail ». Un RIB introuvable dans le stockage produit la même phrase
+ * qu'un RIB jamais téléversé, parce que le client vit la même chose.
+ *
+ * Le repli restera nécessaire même quand tous les RIB seront collectés : un artisan est
+ * toujours créé avant que son RIB n'arrive. L'état « pas encore de RIB » est permanent
+ * dans le temps, même si chaque cas est temporaire.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * @param {boolean} ribJoint  le RIB est-il RÉELLEMENT dans les pièces jointes
+ * @param {string}  nom       le bénéficiaire du virement (artisan ou société)
+ */
+export function mentionReglement(ribJoint, nom) {
+  const beneficiaire = String(nom || '').trim()
+  if (ribJoint && beneficiaire) return `sur le RIB de ${beneficiaire} joint à ce message`
+  if (ribJoint) return 'sur le RIB joint à ce message'
+  if (beneficiaire) return `aux coordonnées bancaires figurant sur la facture de ${beneficiaire}`
+  return 'aux coordonnées bancaires figurant sur la facture'
+}
