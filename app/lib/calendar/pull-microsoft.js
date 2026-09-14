@@ -54,6 +54,8 @@ export function normalizeGraphEvent(evt) {
     status: cancelled ? 'cancelled' : 'confirmed',
     summary: evt.subject || '',
     description: (evt.body?.content || evt.bodyPreview || ''),   // porte le marqueur [illico-int:…] → anti-écho
+    // Graph range le lieu sous location.displayName (et non `location` comme Google).
+    location: evt.location?.displayName || '',
     start_utc: s.utc,
     start_raw: s.raw,
     kind: s.kind,

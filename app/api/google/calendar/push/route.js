@@ -74,7 +74,9 @@ export async function POST(request) {
     if (type === 'rdv') {
       const { data: rdv } = await getSupabaseAdmin()
         .from('rendez_vous')
-        .select('*, dossier:dossiers(id, reference, client:clients(civilite, prenom, nom)), artisan:artisans!rendez_vous_artisan_id_fkey(id, entreprise)')
+        // `adresse_chantier` et l'agence : sans elles, lieuRdv() n'a rien à mettre dans le
+        // champ Lieu de l'événement. C'est l'oubli qui rendait ce champ vide partout.
+        .select('*, dossier:dossiers(id, reference, adresse_chantier, client:clients(civilite, prenom, nom)), artisan:artisans!rendez_vous_artisan_id_fkey(id, entreprise), agence:agences(nom, adresse, code_postal, ville)')
         .eq('id', id)
         .single()
 
@@ -109,7 +111,7 @@ export async function POST(request) {
     if (type === 'intervention') {
       const { data: intervention } = await getSupabaseAdmin()
         .from('interventions_artisans')
-        .select('*, dossier:dossiers(id, reference, client:clients(prenom, nom)), artisan:artisans(id, entreprise)')
+        .select('*, dossier:dossiers(id, reference, adresse_chantier, client:clients(prenom, nom)), artisan:artisans(id, entreprise)')
         .eq('id', id)
         .single()
 
@@ -186,6 +188,6 @@ export async function POST(request) {
     return NextResponse.json({ success: true, dryRun: DRY_RUN })
   } catch (err) {
     console.error('Push error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return NextResponse.json({ error: 'La synchronisation du calendrier a échoué.' }, { status: 500 })
   }
 }

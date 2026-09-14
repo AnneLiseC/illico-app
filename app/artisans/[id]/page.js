@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api-auth-client'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../lib/auth-context'
+import { erreurAffichable } from '../../lib/erreurs'
 
 /* ── Inline SVG icons ── */
 function Svg({ size = 16, children }) {
@@ -128,13 +129,13 @@ export default function FicheArtisan({ params }) {
       await chargerSpecialites()
       setSucces(data.specialites?.length ? `${data.specialites.length} spécialité(s) déduite(s) de la décennale ✓` : (data.message || 'Aucune spécialité détectée.'))
     } catch (e) {
-      setErreur('Erreur : ' + (e?.message || 'réessaie'))
+      setErreur(erreurAffichable(e))
     } finally { setSpecBusy(false) }
   }
 
   const retirerSpecialite = async (sid) => {
     const { error } = await supabase.from('artisans_specialites').delete().eq('artisan_id', id).eq('specialite_id', sid)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     setSpecialites(s => s.filter(x => x.id !== sid))
   }
 
@@ -163,7 +164,7 @@ export default function FicheArtisan({ params }) {
       paiement_direct: paiementDirect,
       partenaire,
     }).eq('id', id)
-    if (error) { setErreur('Erreur : ' + error.message) }
+    if (error) { setErreur(erreurAffichable(error)) }
     else { setSucces('Modifications enregistrées ✓'); setMode('lecture') }
     setSaving(false)
   }
@@ -181,11 +182,11 @@ export default function FicheArtisan({ params }) {
     const ext = (fichier.name.split('.').pop() || 'pdf').toLowerCase()
     const chemin = `artisans/${id}/${type}-${Date.now()}.${ext}`
     const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, fichier)
-    if (uploadError) { setErreur('Erreur upload : ' + uploadError.message); setUploadEnCours(u => ({ ...u, [type]: false })); return }
+    if (uploadError) { setErreur(erreurAffichable(uploadError, 'Erreur upload')); setUploadEnCours(u => ({ ...u, [type]: false })); return }
 
     const champ = type === 'kbis' ? 'kbis_url' : type === 'decennale' ? 'decennale_url' : type === 'qualification' ? 'qualification_url' : 'rib_url'
     const { error } = await supabase.from('artisans').update({ [champ]: chemin }).eq('id', id)
-    if (error) { setErreur('Erreur : ' + error.message); setUploadEnCours(u => ({ ...u, [type]: false })); return }
+    if (error) { setErreur(erreurAffichable(error)); setUploadEnCours(u => ({ ...u, [type]: false })); return }
 
     // Trace de version. Un échec ici ne doit PAS faire croire à un échec de dépôt :
     // le document est en place et la fiche à jour. On le signale sans tout annuler.
@@ -201,7 +202,7 @@ export default function FicheArtisan({ params }) {
     apiFetch('/api/drive/push-artisan-doc', { method: 'POST', body: JSON.stringify({ artisan_id: id, type }) }).catch(() => {})
     setArtisan(a => ({ ...a, [champ]: chemin }))
     await chargerHistorique()
-    if (histoError) setErreur('Document déposé, mais l\'historique n\'a pas été enregistré : ' + histoError.message)
+    if (histoError) setErreur(erreurAffichable(histoError, 'Document déposé, mais l\'historique n\'a pas été enregistré'))
     else setSucces(`${type} déposé ✓`)
     setUploadEnCours(u => ({ ...u, [type]: false }))
   }
@@ -219,7 +220,7 @@ export default function FicheArtisan({ params }) {
       else url = chemin
     }
     const { data: nf, error } = await supabase.from('fiches_techniques').insert({ artisan_id: id, nom: nouvelleFiche.nom, description: nouvelleFiche.description || null, url }).select().single()
-    if (error) { setErreur('Erreur : ' + error.message) }
+    if (error) { setErreur(erreurAffichable(error)) }
     else {
       if (url && nf) apiFetch('/api/drive/push-fiche', { method: 'POST', body: JSON.stringify({ fiche_id: nf.id }) }).catch(() => {})  // miroir OneDrive
       await chargerFiches(); setAjouterFiche(false); setNouvelleFiche({ nom: '', description: '', fichier: null }); if (uploadFicheOk) setSucces('Fiche ajoutée ✓'); else setErreur('Fiche ajoutée, mais échec de l\'upload du fichier — réessayez.')
@@ -267,6 +268,27 @@ export default function FicheArtisan({ params }) {
     return r !== 0 ? r : (b.montant_ht || 0) - (a.montant_ht || 0)  // à statut égal, le plus gros d'abord
   })
   const nbDevis = devisListe.length
+
+  // GROUPES PAR STATUT (14/09).
+  //
+  // Le tri par statut existait déjà (ORDRE_STATUT, plus haut), mais il ne se VOYAIT pas :
+  // sur un artisan qui porte vingt devis, l'œil ne perçoit pas un ordre, il voit une liste.
+  // On pose donc un en-tête par statut, avec son compteur.
+  //
+  // Les groupes sont construits À PARTIR de la liste déjà triée : on ne retrie rien ici,
+  // sinon deux règles d'ordre cohabiteraient et divergeraient un jour. Un groupe vide
+  // n'apparaît pas — un en-tête « Refusés · 0 » n'apprend rien.
+  const groupesDevis = devisListe.reduce((acc, dv) => {
+    const cle = STATUT_STYLE[dv.statut] ? dv.statut : 'autre'
+    const dernier = acc[acc.length - 1]
+    if (dernier && dernier.cle === cle) dernier.devis.push(dv)
+    else acc.push({ cle, devis: [dv] })
+    return acc
+  }, [])
+  const LIBELLE_GROUPE = {
+    accepte: 'Acceptés', recu: 'Reçus', en_attente: 'En attente',
+    a_modifier: 'À modifier', refuse: 'Refusés', autre: 'Autre statut',
+  }
 
   // TRAVAUX ACCEPTÉS — et non « CA cumulé ».
   // Avant le 03/09 cette somme prenait TOUS les devis : reçus, en attente, à modifier
@@ -493,7 +515,19 @@ export default function FicheArtisan({ params }) {
           {nbDevis === 0 ? (
             <p style={{padding:32, textAlign:'center', color:'var(--ink-500)', fontSize:13}}>Aucun devis</p>
           ) : (
-            devisListe.map(dv => {
+            groupesDevis.map(groupe => (
+            <div key={`grp-${groupe.cle}`}>
+              {/* En-tête de groupe : le statut et son compteur. Collant en haut de la
+                  liste pour rester lisible quand on fait défiler un gros artisan. */}
+              <div style={{position:'sticky', top:0, zIndex:1, padding:'7px 20px', background:'var(--ink-50, #f6f7f9)',
+                borderTop:'1px solid var(--ink-100)', display:'flex', alignItems:'center', gap:8}}>
+                <span style={{width:7, height:7, borderRadius:99, background:(STATUT_STYLE[groupe.cle]?.c || 'var(--ink-500)'), flexShrink:0}} />
+                <span style={{fontSize:11, fontWeight:800, letterSpacing:'0.04em', textTransform:'uppercase', color:'var(--ink-600)'}}>
+                  {LIBELLE_GROUPE[groupe.cle] || groupe.cle}
+                </span>
+                <span style={{fontSize:11, fontWeight:700, color:'var(--ink-500)'}}>· {groupe.devis.length}</span>
+              </div>
+              {groupe.devis.map(dv => {
               const st = STATUT_STYLE[dv.statut] || { bg:'var(--ink-100)', c:'var(--ink-500)', label: dv.statut }
               const clientNom = [dv.dossier?.client?.civilite, dv.dossier?.client?.prenom, dv.dossier?.client?.nom].filter(Boolean).join(' ')
               return (
@@ -520,7 +554,9 @@ export default function FicheArtisan({ params }) {
                   {(dv.devis_signe_path || dv.dossier?.id) && <ArrowIcon size={12}/>}
                 </div>
               )
-            })
+              })}
+            </div>
+            ))
           )}
         </div>
 

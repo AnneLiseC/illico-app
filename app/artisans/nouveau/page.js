@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../lib/auth-context'
+import { erreurAffichable } from '../../lib/erreurs'
 
 export default function NouvelArtisan() {
   const { user, profile, initialized } = useAuth()
@@ -71,7 +72,7 @@ export default function NouvelArtisan() {
       .single()
 
     if (error) {
-      setErreur('Erreur : ' + error.message)
+      setErreur(erreurAffichable(error))
       setSaving(false)
       return
     }
@@ -101,7 +102,7 @@ export default function NouvelArtisan() {
 
       router.push(`/artisans/${artisanId}`)
     } catch (err) {
-      setErreur('Erreur inattendue : ' + err.message)
+      setErreur(erreurAffichable(err, 'Erreur inattendue'))
       setSaving(false)
     }
   }

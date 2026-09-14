@@ -15,6 +15,7 @@ import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '..
 import ModalShell from '../components/ModalShell'
 import { synchroniserArtisansRdv, valeurPrevenirClient, idsArtisansDepuisRdv } from '../lib/rdvArtisans'
 import { prevenirClientParDefaut } from '../lib/relances-texte'
+import { erreurAffichable } from '../lib/erreurs'
 
 // ─── PALETTE illiCO TRAVAUX ───────────────────────────────────────────────────
 const COLORS = {
@@ -483,7 +484,7 @@ export default function Planning() {
       const meta = { type_rdv: formRdv.type_rdv, artisan_id: (formRdv.artisans_ids || [])[0] || null, notes: formRdv.notes || null,
         prevenir_client: valeurPrevenirClient(formRdv.prevenir_client, prevenirClientParDefaut(formRdv.type_rdv)) }
       const { error } = await supabase.from('rendez_vous').update(meta).like('google_event_id', escapeLike(base) + '\\_%')
-      if (error) { setErreur(error.message); setSaving(false); return }
+      if (error) { setErreur(erreurAffichable(error)); setSaving(false); return }
       fermerModal(); setSaving(false); chargerTout()
       return
     }
@@ -512,10 +513,10 @@ export default function Planning() {
     let savedId = elementSelectionne?.data?.id
     if (elementSelectionne?.type === 'rdv' && modeEdition) {
       const { error } = await supabase.from('rendez_vous').update(payload).eq('id', savedId)
-      if (error) { setErreur(error.message); setSaving(false); return }
+      if (error) { setErreur(erreurAffichable(error)); setSaving(false); return }
     } else {
       const { data, error } = await supabase.from('rendez_vous').insert({ ...payload, dossier_id: formRdv.dossier_id }).select('id').single()
-      if (error) { setErreur(error.message); setSaving(false); return }
+      if (error) { setErreur(erreurAffichable(error)); setSaving(false); return }
       savedId = data?.id
     }
     // La liaison s'écrit après : en création elle a besoin de l'id fraîchement rendu.
@@ -540,10 +541,10 @@ export default function Planning() {
     let savedId = elementSelectionne?.data?.id
     if (elementSelectionne?.type === 'intervention' && modeEdition) {
       const { error } = await supabase.from('interventions_artisans').update(payload).eq('id', savedId)
-      if (error) { setErreur(error.message); setSaving(false); return }
+      if (error) { setErreur(erreurAffichable(error)); setSaving(false); return }
     } else {
       const { data, error } = await supabase.from('interventions_artisans').insert(payload).select('id').single()
-      if (error) { setErreur(error.message); setSaving(false); return }
+      if (error) { setErreur(erreurAffichable(error)); setSaving(false); return }
       savedId = data?.id
     }
     fermerModal(); setSaving(false)
@@ -555,7 +556,7 @@ export default function Planning() {
     if (!elementSelectionne?.data?.id) return
     setSaving(true); setErreur('')
     const { error } = await supabase.from('dossiers').update({ date_demarrage_chantier_manuel: formDateCle.date_demarrage_chantier_manuel || null, date_fin_chantier: formDateCle.date_fin_chantier || null }).eq('id', elementSelectionne.data.id)
-    if (error) { setErreur(error.message); setSaving(false); return }
+    if (error) { setErreur(erreurAffichable(error)); setSaving(false); return }
     pushToGoogle('dossier', elementSelectionne.data.id)
     setDossiers(prev => prev.map(d => d.id === elementSelectionne.data.id ? {
       ...d,
@@ -600,7 +601,7 @@ export default function Planning() {
       // Batilis : toutes les occurrences, par MOTIF sur la base (fiable même si la
       // liste chargée est tronquée à 1000). Underscores échappés (méta LIKE).
       const { error } = await supabase.from('rendez_vous').delete().like('google_event_id', escapeLike(base) + '\\_%')
-      if (error) { setErreur(error.message); return }
+      if (error) { setErreur(erreurAffichable(error)); return }
     } else {
       // Occurrence seule (ou élément non récurrent) — comportement d'origine.
       if (googleConnected && gid) {
@@ -612,7 +613,7 @@ export default function Planning() {
       const { error } = elementSelectionne.type === 'rdv'
         ? await supabase.from('rendez_vous').delete().eq('id', data.id)
         : await supabase.from('interventions_artisans').delete().eq('id', data.id)
-      if (error) { setErreur(error.message); return }
+      if (error) { setErreur(erreurAffichable(error)); return }
     }
     fermerModal()
     chargerTout()

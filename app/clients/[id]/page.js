@@ -6,6 +6,7 @@ import { useAuth } from '../../lib/auth-context'
 import { archiverClient, desarchiverClient, supprimerClient, formatNomClient } from '../../lib/clients'
 import { StatutBadge } from '../../components/shared'
 import { calcStatut } from '../../lib/dossiers'
+import { erreurAffichable } from '../../lib/erreurs'
 
 function Svg({ size = 16, children }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -175,7 +176,7 @@ function FicheClientInner({ params }) {
     }).eq('id', id)
 
     if (error) {
-      setErreur('Erreur : ' + error.message)
+      setErreur(erreurAffichable(error))
     } else if (editParam === 'list') {
       // Édition ouverte depuis la liste → retour à la liste après enregistrement.
       router.push('/clients')
@@ -191,7 +192,7 @@ function FicheClientInner({ params }) {
   const handleArchiver = async () => {
     if (!confirm('Archiver ce client ? Ses dossiers seront masqués des vues opérationnelles (conservés en compta). Réversible.')) return
     const { error } = await archiverClient(supabase, id)
-    if (error) { setErreur(error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     router.push('/clients')
   }
 
@@ -199,7 +200,7 @@ function FicheClientInner({ params }) {
   const handleSupprimer = async () => {
     if (!confirm('Supprimer définitivement ce client ? Cette action est irréversible.')) return
     const { error } = await supprimerClient(supabase, id)
-    if (error) { setErreur(error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     router.push('/clients')
   }
 
@@ -208,7 +209,7 @@ function FicheClientInner({ params }) {
   const handleDesarchiver = async () => {
     if (!confirm('Désarchiver ce client ? Il réapparaîtra dans les vues opérationnelles.')) return
     const { error } = await desarchiverClient(supabase, id)
-    if (error) { setErreur(error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     setClient(c => ({ ...c, archive: false }))
   }
 

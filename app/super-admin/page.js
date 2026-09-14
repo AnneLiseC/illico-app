@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth-context'
 import { apiFetch } from '../lib/api-auth-client'
+import { erreurAffichable } from '../lib/erreurs'
 
 // ESPACE CRÉATRICE (super-admin éditrice). Gardé côté client par l'email
 // (isSuperAdmin) ; la VRAIE sécurité est côté serveur sur les routes
@@ -74,7 +75,7 @@ export default function SuperAdmin() {
       const data = await res.json().catch(() => ({}))
       if (res.ok && data.url) window.location.assign(data.url)
       else setErreur(data.error || "Impossible de démarrer la connexion.")
-    } catch (err) { setErreur(err.message) }
+    } catch (err) { setErreur(erreurAffichable(err)) }
   }
 
   const traiter = async (id, action) => {
@@ -89,7 +90,7 @@ export default function SuperAdmin() {
         else setSucces('Demande rejetée ✓')
         await charger()
       }
-    } catch (err) { setErreur(err.message) }
+    } catch (err) { setErreur(erreurAffichable(err)) }
     setBusyId(null)
   }
 
@@ -108,7 +109,7 @@ export default function SuperAdmin() {
       if (!res.ok) setErreur(d.error || "Le renvoi a échoué.")
       else setSucces(`Invitation renvoyée à ${c.email}.`)
     } catch (e) {
-      setErreur(e?.message || 'Le renvoi a échoué.')
+      setErreur(erreurAffichable(e))
     } finally {
       setBusyRenvoi(null)
     }
@@ -132,7 +133,7 @@ export default function SuperAdmin() {
         setSucces(activer ? `${c.prenom} ${c.nom} réactivé ✓` : `${c.prenom} ${c.nom} désactivé ✓${extra}`)
         await charger()
       }
-    } catch (err) { setErreur(err.message) }
+    } catch (err) { setErreur(erreurAffichable(err)) }
     setBusyCompte(null)
   }
 
@@ -145,7 +146,7 @@ export default function SuperAdmin() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) setErreur(data.error || 'Erreur')
       else { setSucces(data.emailSent ? `Invitation admin envoyée à ${email} ✓` : `Invitation créée pour ${email} ✓ — email NON envoyé (vérifie la boîte d'envoi)`); setInviteEmail('') }
-    } catch (err) { setErreur(err.message) }
+    } catch (err) { setErreur(erreurAffichable(err)) }
     setInviteBusy(false)
   }
 

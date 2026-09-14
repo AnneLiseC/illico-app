@@ -9,7 +9,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { encrypt, decrypt } from './crypto'
 import { graphFetch } from '../drive/microsoft'
-import { rdvBounds, rdvSummary, rdvDescription, interventionSummary, interventionDescription, interventionOccurrences } from './mapping'
+import { rdvBounds, rdvSummary, rdvDescription, interventionSummary, interventionDescription, interventionOccurrences, lieuRdv, lieuIntervention } from './mapping'
 
 const SCOPE = 'offline_access User.Read Calendars.ReadWrite'
 
@@ -104,9 +104,12 @@ function nextDayStr(dateStr) {
 
 export function rdvToGraphEvent(rdv) {
   const { start, end } = rdvBounds(rdv)
+  // Graph nomme le champ `location.displayName` (et non `location` comme Google).
+  const lieu = lieuRdv(rdv)
   return {
     subject: rdvSummary(rdv),
     body: { contentType: 'text', content: rdvDescription(rdv) || '' },
+    ...(lieu ? { location: { displayName: lieu } } : {}),
     start: { dateTime: iso19(start), timeZone: 'UTC' },
     end:   { dateTime: iso19(end),   timeZone: 'UTC' },
   }
@@ -116,6 +119,7 @@ export function rdvToGraphEvent(rdv) {
 // itère les occurrences. Journée entière → isAllDay + bornes Europe/Paris.
 export function interventionToGraphEvents(intervention) {
   const summary = interventionSummary(intervention)
+  const lieu = lieuIntervention(intervention)
   return interventionOccurrences(intervention).map((o) => {
     const date = o.time.date
     return {
@@ -123,6 +127,7 @@ export function interventionToGraphEvents(intervention) {
       body: {
         subject: (o.label || '') + summary,
         body: { contentType: 'text', content: interventionDescription(intervention, o.marker) || '' },
+        ...(lieu ? { location: { displayName: lieu } } : {}),
         isAllDay: true,
         start: { dateTime: `${date}T00:00:00`, timeZone: 'Europe/Paris' },
         end:   { dateTime: `${nextDayStr(date)}T00:00:00`, timeZone: 'Europe/Paris' },

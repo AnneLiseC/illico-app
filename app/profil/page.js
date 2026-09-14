@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth-context'
 import { getObjectifAgente, saveObjectif } from '../lib/objectifs'
 import MesCalendriers from '../components/MesCalendriers'
 import MonDrive from '../components/MonDrive'
+import { erreurAffichable } from '../lib/erreurs'
 
 // Page profil de l'utilisateur connecté (pensée pour les agentes ; l'admin gère
 // tout via /parametres, mais la page reste consultable sans erreur). Réutilise
@@ -78,7 +79,7 @@ export default function Profil() {
   const sauvegarderTel = async () => {
     setSavingTel(true); setError(''); setSucces('')
     const { error } = await supabase.from('profiles').update({ telephone: tel || null }).eq('id', profile.id)
-    if (error) setError('Erreur : ' + error.message)
+    if (error) setError(erreurAffichable(error))
     else { setSucces('Téléphone enregistré ✓'); fetchProfile(user.id) }
     setSavingTel(false)
   }
@@ -91,7 +92,7 @@ export default function Profil() {
       { const m = String(row?.montant ?? ''); setObjMontant(m); setObjInitial(m); setObjExiste(!!row) }
       setSucces('Objectif enregistré ✓')
     } catch (e) {
-      setError('Erreur : ' + e.message)
+      setError(erreurAffichable(e))
     }
     setSavingObj(false)
   }
@@ -108,9 +109,9 @@ export default function Profil() {
     const chemin = `rib/${profile.id}.pdf`
     const { error: upErr } = await supabase.storage.from('documents')
       .upload(chemin, fichier, { upsert: true, contentType: 'application/pdf' })
-    if (upErr) { setError('Erreur upload RIB : ' + upErr.message); setUploadingRib(false); return }
+    if (upErr) { setError(erreurAffichable(upErr, 'Erreur upload RIB')); setUploadingRib(false); return }
     const { error } = await supabase.from('profiles').update({ rib_url: chemin }).eq('id', profile.id)
-    if (error) setError('Erreur sauvegarde RIB : ' + error.message)
+    if (error) setError(erreurAffichable(error, 'Erreur sauvegarde RIB'))
     else { setSucces('RIB enregistré ✓'); fetchProfile(user.id) }
     setUploadingRib(false)
   }
@@ -127,7 +128,7 @@ export default function Profil() {
     if (newPwd !== newPwdConfirm) { setError('Les mots de passe ne correspondent pas'); return }
     setSavingPwd(true)
     const { error } = await supabase.auth.updateUser({ password: newPwd })
-    if (error) setError('Erreur : ' + error.message)
+    if (error) setError(erreurAffichable(error))
     else { setSucces('Mot de passe modifié ✓'); setNewPwd(''); setNewPwdConfirm('') }
     setSavingPwd(false)
   }

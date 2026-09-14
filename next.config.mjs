@@ -15,6 +15,20 @@ const nextConfig = {
   outputFileTracingIncludes: {
     'app/api/pdf/route.js': ['./public/fonts/**'],
   },
+  // CONSOLE DU NAVIGATEUR — nettoyée en production (14/09).
+  //
+  // Précision utile : ce réglage ne ferme AUCUNE faille. Ce qui s'affiche dans la console
+  // du navigateur est de la donnée que l'utilisateur connecté a déjà sous les yeux dans la
+  // page. La vraie fuite était ailleurs, dans les messages d'erreur bruts affichés à
+  // l'écran, qui livraient les noms des tables et des contraintes — réglée par
+  // app/lib/erreurs.js.
+  //
+  // `console.error` est CONSERVÉ : c'est lui qui porte le détail technique dont Anne-Lise
+  // a besoin quand une cliente lui envoie une capture d'écran. Le supprimer rendrait le
+  // diagnostic aveugle, ce qui est exactement le contraire du but.
+  compiler: {
+    removeConsole: { exclude: ['error'] },
+  },
   images: {
     remotePatterns: [
       {

@@ -15,6 +15,7 @@ import { Badge } from '../shared'
 // l'autorité — cette constante ne sert qu'à prévenir l'utilisateur AVANT l'attente.
 const CR_MAX_PIECES = 20
 import ModalShell from '../ModalShell'
+import { erreurAffichable } from '../../lib/erreurs'
 
 // ModalField : dupliqué ici (composant trivial) pour éviter un import croisé avec la page.
 function ModalField({ label, children, required }) {
@@ -127,7 +128,7 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
       setCrSectionsEditees(data.cr.sections.map(s => ({ ...s })))
       setCrEtape(3)
     } catch (e) {
-      setErreur('Erreur réseau lors de la génération du CR : ' + (e?.message || 'réessayez'))
+      setErreur(erreurAffichable(e, 'Erreur réseau lors de la génération du CR'))
     } finally {
       crGenEnCoursRef.current = false
       setCrGenerating(false)
@@ -152,7 +153,7 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
       valide: publier,
     }).select('id').single()
     // Échec de l'insert : on garde la modale ouverte (sections éditées conservées).
-    if (insertErr) { setErreur('Erreur : ' + insertErr.message); setCrSavingFinal(false); return }
+    if (insertErr) { setErreur(erreurAffichable(insertErr)); setCrSavingFinal(false); return }
     // Rattache (ou crée) le RDV de visite correspondant, puis le pousse au calendrier.
     if (crCree?.id) lierOuCreerRdvVisite({ supabase, apiFetch, crId: crCree.id, dossierId: id, agenceId: dossier?.agence_id, typeVisite: crForm.type_visite, dateVisite: crForm.date_visite || null }).catch(() => {})
     const { data } = await supabase.from('comptes_rendus').select('*').eq('dossier_id', id).order('created_at', { ascending: false })
@@ -210,7 +211,7 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
     try {
       const path = `chantiers/${id}/audio/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
       const { error: upErr } = await supabase.storage.from('documents').upload(path, blob, { contentType: blob.type || undefined })
-      if (upErr) { setErreur('Échec de l’envoi de l’audio : ' + upErr.message); return }
+      if (upErr) { setErreur(erreurAffichable(upErr, 'Échec de l’envoi de l’audio')); return }
       const res = await apiFetch('/api/transcribe', {
         method: 'POST',
         body: JSON.stringify({ dossierId: id, audioPath: path }),
@@ -224,7 +225,7 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
       if (data.error) { setErreur('Transcription : ' + data.error); return }
       setCrAudioTexte(prev => [prev, data.transcript].filter(Boolean).join('\n\n'))
     } catch (e) {
-      setErreur('Erreur transcription : ' + (e?.message || 'réessayez'))
+      setErreur(erreurAffichable(e, 'Erreur transcription'))
     } finally {
       setCrTranscribing(false)
     }
@@ -247,7 +248,7 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
       crMediaRec.current = mr
       setCrRecording(true)
     } catch (e) {
-      setErreur('Micro inaccessible — autorisez le micro dans le navigateur. ' + (e?.message || ''))
+      setErreur(erreurAffichable(e, 'Micro inaccessible — autorisez le micro dans le navigateur.'))
     }
   }
 
@@ -486,7 +487,7 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
                           <button title="Annoter" onClick={() => setAnnot({ src: img.url_signee, titre: 'Annoter la photo', onSave: async (blob) => {
                               const path = `chantiers/${id}/cr/${Date.now()}_annot_${Math.random().toString(36).slice(2)}.jpg`
                               const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' })
-                              if (error) { setErreur('Annotation : ' + error.message); setAnnot(null); return }
+                              if (error) { setErreur(erreurAffichable(error, 'Annotation')); setAnnot(null); return }
                               const { data: signed } = await supabase.storage.from('photos').createSignedUrl(path, 3600)
                               try { await supabase.storage.from('photos').remove([img.path]) } catch {}
                               setCrImages(imgs => imgs.map((im, j) => j === i ? { path, url_signee: signed?.signedUrl || '' } : im))
@@ -522,7 +523,7 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
                                 const blob = await compressImageToBlob(file)
                                 const path = `chantiers/${id}/cr/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
                                 const { error: upErr } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' })
-                                if (upErr) { setErreur('Échec de l’envoi d’une photo : ' + upErr.message); continue }
+                                if (upErr) { setErreur(erreurAffichable(upErr, 'Échec de l’envoi d’une photo')); continue }
                                 // Vignette : signed URL comme signerPhotos (bucket privé).
                                 const { data: signed } = await supabase.storage.from('photos').createSignedUrl(path, 3600)
                                 setCrImages(imgs => [...imgs, { path, url_signee: signed?.signedUrl || '' }])

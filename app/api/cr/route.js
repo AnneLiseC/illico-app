@@ -570,6 +570,6 @@ export async function POST(request) {
     return NextResponse.json({ cr: crJSON, avertissement })
   } catch (err) {
     console.error('CR AI error DETAIL:', err.message, err.stack)
-    return NextResponse.json({ error: err.message || 'Erreur serveur' }, { status: 500 })
+    return NextResponse.json({ error: 'La génération du compte rendu a échoué.' }, { status: 500 })
   }
 }

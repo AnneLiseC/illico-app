@@ -45,6 +45,7 @@ function normalizeGoogleEvent(evt) {
     status: evt.status,
     summary: evt.summary,
     description: evt.description || '',   // porte le marqueur [illico-int:…] → anti-écho interventions
+    location: evt.location || '',        // 14/09 : le lieu corrigé à la main doit revenir
     start_utc: s.utc,
     start_raw: s.raw,
     kind: s.kind,

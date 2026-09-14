@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { formatNomClient } from '../../lib/clients'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
+import { erreurAffichable } from '../../lib/erreurs'
 
 function NouveauChantierForm() {
   const [client, setClient] = useState(null)
@@ -100,14 +101,14 @@ function NouveauChantierForm() {
       }).select()
 
       if (error) {
-        setErreur('Erreur : ' + error.message)
+        setErreur(erreurAffichable(error))
       } else if (data?.[0]?.id) {
         router.push(`/chantiers/${data[0].id}`)
       } else {
         setErreur('Erreur : impossible de créer le chantier.')
       }
     } catch (err) {
-      setErreur('Erreur inattendue : ' + err.message)
+      setErreur(erreurAffichable(err, 'Erreur inattendue'))
     } finally {
       setLoading(false)
     }

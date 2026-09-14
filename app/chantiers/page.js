@@ -8,6 +8,7 @@ import { getDossiersByScope, getFilteredDossiers, getCompteurs, calcStatut, calc
 import { calculateDossierFinance } from '../lib/finance'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniMeta } from '../components/shared'
 import ModaleChoixClient from '../components/ModaleChoixClient'
+import { erreurAffichable } from '../lib/erreurs'
 
 /* ── Inline SVG icons ── */
 function Svg({ size = 16, children }) {
@@ -251,14 +252,14 @@ function ChantierPreview({ d, onOpen, onBack, backLabel, isMobile, onRefresh }) 
     setMenuBusy(true)
     const { error } = await supabase.from('dossiers').update({ statut: 'annule' }).eq('id', d.id)
     setMenuBusy(false); setMenuOuvert(false)
-    if (error) { alert('Erreur : ' + error.message); return }
+    if (error) { alert(erreurAffichable(error)); return }
     onRefresh?.()
   }
   const reouvrirChantier = async () => {
     setMenuBusy(true)
     const { error } = await supabase.from('dossiers').update({ statut: null, acces_expire_le: null }).eq('id', d.id)
     setMenuBusy(false); setMenuOuvert(false)
-    if (error) { alert('Erreur : ' + error.message); return }
+    if (error) { alert(erreurAffichable(error)); return }
     onRefresh?.()
   }
   const menuItemStyle = { display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', fontSize: 12.5, background: 'none', border: 'none', cursor: menuBusy ? 'wait' : 'pointer', whiteSpace: 'nowrap' }

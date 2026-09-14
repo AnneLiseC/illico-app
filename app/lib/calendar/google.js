@@ -15,6 +15,7 @@ import { encrypt, decrypt } from './crypto'
 import {
   rdvSummary, rdvDescription, rdvBounds,
   interventionSummary, interventionDescription, interventionOccurrences,
+  lieuRdv, lieuIntervention,
 } from './mapping'
 
 let _supabaseAdmin
@@ -215,9 +216,14 @@ export function rdvToGoogleEvent(rdv) {
   // Habillage JSON Google du mapping partagé (mapping.js). date_heure = instant UTC →
   // dateTime = ISO COMPLET (offset/Z) ; timeZone:'Europe/Paris' ne sert qu'à l'affichage.
   const { start, end } = rdvBounds(rdv)
+  // `location` n'est posé que s'il y a vraiment une adresse : Google affiche le champ dès
+  // qu'il existe, et une ligne « Lieu : » vide sur un rendez-vous client fait plus douter
+  // qu'une absence de ligne.
+  const lieu = lieuRdv(rdv)
   return {
     summary: rdvSummary(rdv),
     description: rdvDescription(rdv),
+    ...(lieu ? { location: lieu } : {}),
     start: { dateTime: start.toISOString(), timeZone: 'Europe/Paris' },
     end: { dateTime: end.toISOString(), timeZone: 'Europe/Paris' },
   }
@@ -240,11 +246,13 @@ function googleTimeFields(time) {
 // '(fin) ') ; le contenu (Entreprise x Client) est commun. Journée entière (googleTimeFields).
 export function interventionToGoogleEvents(intervention) {
   const summary = interventionSummary(intervention)
+  const lieu = lieuIntervention(intervention)
   return interventionOccurrences(intervention).map((o) => ({
     role: o.role,
     body: {
       summary: (o.label || '') + summary,
       description: interventionDescription(intervention, o.marker),
+      ...(lieu ? { location: lieu } : {}),
       ...googleTimeFields(o.time),
     },
   }))
