@@ -10,6 +10,7 @@ import { apiFetch } from '../../lib/api-auth-client'
 import { TYPES_VISITE, ORDRE_TYPES } from '../../lib/crRegles'
 import { libelleStatut } from '../../lib/statutLibelle'
 import { lierOuCreerRdvVisite } from '../../lib/rdvVisite'
+import Portail from '../Portail'
 import BoutonDictee from './BoutonDictee'
 
 // 16 statuts figés (clés = CHECK de la table `actions`), 4 familles couleur + libellé daté.
@@ -1356,11 +1357,13 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
 
       {/* Lightbox : photo en grand, clic n'importe où pour fermer. */}
       {lightbox && (
-        <div onClick={() => setLightbox(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', zIndex: 500, display: 'grid', placeItems: 'center', cursor: 'zoom-out', padding: 20 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={lightbox} alt="" style={{ maxWidth: '95%', maxHeight: '95%', objectFit: 'contain', borderRadius: 8 }} />
-        </div>
+        <Portail>
+          <div onClick={() => setLightbox(null)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', zIndex: 500, display: 'grid', placeItems: 'center', cursor: 'zoom-out', padding: 20 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={lightbox} alt="" style={{ maxWidth: '95%', maxHeight: '95%', objectFit: 'contain', borderRadius: 8 }} />
+          </div>
+        </Portail>
       )}
 
       {picker && (

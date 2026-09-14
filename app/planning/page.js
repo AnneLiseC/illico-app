@@ -16,6 +16,7 @@ import ModalShell from '../components/ModalShell'
 import { synchroniserArtisansRdv, valeurPrevenirClient, idsArtisansDepuisRdv } from '../lib/rdvArtisans'
 import { prevenirClientParDefaut } from '../lib/relances-texte'
 import { erreurAffichable } from '../lib/erreurs'
+import Portail from '../components/Portail'
 
 // ─── PALETTE illiCO TRAVAUX ───────────────────────────────────────────────────
 const COLORS = {
@@ -866,6 +867,7 @@ export default function Planning() {
 
       {/* ── MODAL ──────────────────────────────────────────────────────────── */}
       {demandeSuppr && (
+        <Portail>
         <div onClick={() => setDemandeSuppr(false)} style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:250, display:'grid', placeItems:'center', padding:16}}>
           <div onClick={e => e.stopPropagation()} className="card" style={{maxWidth:360, width:'100%', padding:20}}>
             <h3 style={{fontSize:15, fontWeight:800, color:'var(--ink-900)', margin:0}}>Événement récurrent</h3>
@@ -879,9 +881,11 @@ export default function Planning() {
             </div>
           </div>
         </div>
+        </Portail>
       )}
 
       {demandeModif && (
+        <Portail>
         <div onClick={() => setDemandeModif(false)} style={{position:'fixed', inset:0, background:'rgba(15,39,68,0.55)', zIndex:250, display:'grid', placeItems:'center', padding:16}}>
           <div onClick={e => e.stopPropagation()} className="card" style={{maxWidth:380, width:'100%', padding:20}}>
             <h3 style={{fontSize:15, fontWeight:800, color:'var(--ink-900)', margin:0}}>Événement récurrent</h3>
@@ -895,6 +899,7 @@ export default function Planning() {
             </div>
           </div>
         </div>
+        </Portail>
       )}
 
       {modalOuvert && (
@@ -1244,7 +1249,9 @@ export default function Planning() {
 
       {/* ── QUICK MENU (clic sur une date) ─────────────────────────────────── */}
       {quickMenu && (
-        <>
+        <Portail>
+          {/* Position calculée depuis l'événement de clic, donc en coordonnées du VISIBLE :
+              sous un ancêtre transformé, ce menu s'ouvrait décalé. */}
           <div style={{position:'fixed', inset:0, zIndex:40}} onClick={() => setQuickMenu(null)} />
           <div className="card" style={{position:'fixed', zIndex:50, minWidth:180, overflow:'hidden', padding:0, top: quickMenu.y + 8, left: quickMenu.x}}>
             <div className="eyebrow" style={{padding:'12px 16px 6px'}}>
@@ -1263,7 +1270,7 @@ export default function Planning() {
               Intervention artisan
             </button>
           </div>
-        </>
+        </Portail>
       )}
     </div>
   )
