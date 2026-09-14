@@ -8,6 +8,7 @@ import { getDossiersByScope, getFilteredDossiers, getCompteurs, calcStatut, calc
 import { calculateDossierFinance } from '../lib/finance'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniMeta } from '../components/shared'
 import ModaleChoixClient from '../components/ModaleChoixClient'
+import Portail from '../components/Portail'
 import { erreurAffichable } from '../lib/erreurs'
 
 /* ── Inline SVG icons ── */
@@ -305,7 +306,9 @@ function ChantierPreview({ d, onOpen, onBack, backLabel, isMobile, onRefresh }) 
           <div style={{ marginLeft: 'auto' }}>
             <button ref={menuBtnRef} className="btn btn-ghost" style={{ fontSize: 12, padding: '6px 8px' }} onClick={ouvrirMenu} disabled={menuBusy} title="Plus d'actions"><MoreIcon size={14} /></button>
             {menuOuvert && menuPos && (
-              <>
+              <Portail>
+                {/* Les coordonnées viennent de getBoundingClientRect(), donc du VISIBLE :
+                    sous un ancêtre transformé, le menu s'ouvrait décalé. */}
                 <div onClick={() => setMenuOuvert(false)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
                 <div style={{ position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999, background: '#fff', border: '1px solid var(--ink-200)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', minWidth: 196, overflow: 'hidden' }}>
                   {estArchive ? (
@@ -314,7 +317,7 @@ function ChantierPreview({ d, onOpen, onBack, backLabel, isMobile, onRefresh }) 
                     <button onClick={annulerChantier} disabled={menuBusy} style={{ ...menuItemStyle, color: '#b91c1c' }}>✕ Annuler le chantier</button>
                   )}
                 </div>
-              </>
+              </Portail>
             )}
           </div>
         </div>
@@ -734,12 +737,14 @@ function ChantiersInner() {
 
       {/* Aperçu chantier en modale (déclenché par un clic sur une carte) */}
       {vueCartes && apercuModal && selected && (
+        <Portail>
         <div onClick={() => setApercuModal(false)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 200, display: 'grid', placeItems: 'center', padding: 16 }}>
           <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 560, maxHeight: '88vh', overflow: 'auto', borderRadius: 16 }}>
             <ChantierPreview d={selected} onOpen={(id) => router.push(`/chantiers/${id}`)} onBack={() => setApercuModal(false)} onRefresh={() => { setApercuModal(false); charger() }} backLabel="Fermer" isMobile />
           </div>
         </div>
+        </Portail>
       )}
 
       <ModaleChoixClient open={modaleClient} onClose={() => setModaleClient(false)} />

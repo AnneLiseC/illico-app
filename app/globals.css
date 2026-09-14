@@ -785,13 +785,21 @@ textarea.input { height: auto; min-height: 110px; padding: 10px 12px; line-heigh
   from { transform: translateY(8px); }
   to   { transform: none; }
 }
-.page-enter { animation: page-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+/* PAS de `both` (14/09). `animation-fill-mode: both` garde l'animation EN EFFET après
+   sa fin : l'élément reste alors un bloc conteneur pour ses descendants `position: fixed`,
+   et toutes les modales rendues dans la page se retrouvaient positionnées par rapport à
+   elle au lieu du visible — bande blanche en bas sur grand écran, modale hors champ sur
+   téléphone. L'état final de cette animation est `transform: none`, c'est-à-dire l'état
+   naturel : retirer `both` ne change rien à l'oeil, et rend le bloc conteneur transitoire.
+   Le correctif de fond est le portail de app/components/ModalShell.js. */
+.page-enter { animation: page-enter 300ms cubic-bezier(0.16, 1, 0.3, 1); }
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: none; }
 }
-.fade-in { animation: fadeIn 280ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+/* Même raison que .page-enter ci-dessus : pas de `both`. */
+.fade-in { animation: fadeIn 280ms cubic-bezier(0.16, 1, 0.3, 1); }
 
 /* ─────────────────────────────────────────────────────────────────
    Page loading spinner
@@ -959,6 +967,7 @@ html, body { max-width: 100%; }
    establishing a scroll container that would break `position: sticky`. */
 html { overflow-x: clip; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { overflow-x: clip; }
+
 img, svg, video, canvas { max-width: 100%; }
 
 /* Avoid iOS auto-zoom on focus: inputs must be ≥16px on small screens. */

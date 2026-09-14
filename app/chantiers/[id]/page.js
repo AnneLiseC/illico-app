@@ -36,6 +36,7 @@ import { synchroniserArtisansRdv, valeurPrevenirClient, idsArtisansDepuisRdv } f
 import { prevenirClientParDefaut } from '../../lib/relances-texte'
 import { tauxSelonGrille, expliquerGrille } from '../../lib/apporteur'
 import { erreurAffichable } from '../../lib/erreurs'
+import Portail from '../../components/Portail'
 
 // Liste des entités supprimées avec un chantier — source unique des 2 libellés
 // (confirm de suppression + sous-titre du bouton), pour éviter qu'ils divergent.
@@ -378,6 +379,7 @@ function DocViewer({ url, nom, onClose }) {
     : `${url}${url.includes('?') ? '&' : '?'}download=${encodeURIComponent(nomFichier)}`
 
   return (
+    <Portail>
     <div style={{
       position:'fixed', inset:0, zIndex:300,
       display:'flex', flexDirection:'column', background:'rgba(0,0,0,0.95)',
@@ -463,6 +465,7 @@ function DocViewer({ url, nom, onClose }) {
         )}
       </div>
     </div>
+    </Portail>
   )
 }
 
@@ -5667,6 +5670,7 @@ export default function FicheChantier({ params }) {
               ? `${p.url_signee}${p.url_signee.includes('?') ? '&' : '?'}download=${encodeURIComponent(nomPhoto)}`
               : null
             return (
+            <Portail>
             <div style={{
               position:'fixed', inset:0, background:'rgba(0,0,0,0.92)', zIndex:300,
               display:'flex', alignItems:'center', justifyContent:'center',
@@ -5718,6 +5722,7 @@ export default function FicheChantier({ params }) {
                   fontSize:18,
                 }}>×</button>
             </div>
+            </Portail>
             )
           })()}
 
