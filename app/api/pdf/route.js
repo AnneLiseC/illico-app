@@ -442,6 +442,6 @@ export async function POST(request) {
     })
   } catch (err) {
     console.error('PDF generation error:', err)
-    return NextResponse.json({ error: err.message || 'Erreur PDF' }, { status: 500 })
+    return NextResponse.json({ error: 'La génération du PDF a échoué.' }, { status: 500 })
   }
 }

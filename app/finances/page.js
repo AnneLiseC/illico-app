@@ -19,6 +19,7 @@ import { useAuth } from '../lib/auth-context'
 import { calculateDossierFinance, getActiveDevis, getSignedDevis, calculateSoldeAmoReel, DEFAULT_PART_AGENTE, TVA_FRAIS } from '../lib/finance'
 import { calcStatut } from '../lib/dossiers'
 import { Avatar } from '../components/shared'
+import { erreurAffichable } from '../lib/erreurs'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -405,11 +406,11 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
     const ext = fichier.name.split('.').pop().toLowerCase()
     const chemin = `factures_agente/${agenteSelectionnee}/${f.annee}-${String(f.mois).padStart(2,'0')}-${f.type_facture}.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
-    if (error) { setErreur('Erreur upload : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error, 'Erreur upload')); return }
     try {
       await upsertFactureMoisType(f.mois, f.annee, f.montant||0, f.type_facture, { facture_path: chemin })
       setSucces('Facture uploadée ✓')
-    } catch (e) { setErreur('Erreur enregistrement : ' + e.message) }
+    } catch (e) { setErreur(erreurAffichable(e, 'Erreur enregistrement')) }
   }
 
   // Paiement en plusieurs fois : « reçu » (Σ versements) / « reste » (total − reçu).
@@ -794,7 +795,7 @@ export default function Finances() {
     chargerTout()
       .then(() => setLoading(false))
       .catch((e) => {
-        setErreur('Impossible de charger les données financières (' + (e?.message || e) + '). Rechargez la page.')
+        setErreur(erreurAffichable(e, 'Impossible de charger les données financières'))
         setLoading(false)
       })
   }, [initialized, user?.id, profile?.id, router])
@@ -1200,7 +1201,7 @@ export default function Finances() {
             statut: updates.statut === 'paye' ? 'regle' : 'en_attente',
             date_paiement: updates.statut === 'paye' ? new Date().toISOString().split('T')[0] : null,
           }, { onConflict: 'agente_id,annee,mois' })
-          if (redevErr) setErreur('Redevance : ' + redevErr.message)
+          if (redevErr) setErreur(erreurAffichable(redevErr, 'Redevance'))
         }
       }
 
@@ -1246,7 +1247,7 @@ export default function Finances() {
       const total = round2(Number(fa.montant ?? totalLive))
       await upsertFactureMoisType(mois, annee, total, type, { statut: cumul + 0.01 >= total ? 'paye' : 'facture', montant: total })
       setSucces('Versement enregistré ✓')
-    } catch (e) { setErreur('Versement : ' + e.message) }
+    } catch (e) { setErreur(erreurAffichable(e, 'Versement')) }
   }
 
   const supprimerPaiementFacture = async (paiementId, factureId, mois, annee, type) => {
@@ -1264,7 +1265,7 @@ export default function Finances() {
         await upsertFactureMoisType(mois, annee, total, type, { statut: cumul + 0.01 >= total ? 'paye' : 'facture', montant: total })
       }
       setSucces('Versement supprimé ✓')
-    } catch (e) { setErreur('Suppression versement : ' + e.message) }
+    } catch (e) { setErreur(erreurAffichable(e, 'Suppression versement')) }
   }
 
 

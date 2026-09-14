@@ -81,7 +81,9 @@ export async function GET(req) {
     // faut reconnecter le Drive — d'ou la trace, pour que ca ne redevienne pas invisible.
     if (resync) {
       r.resync = true
-      console.error('[pull-drive] resynchronisation du curseur', compte.fournisseur, compte.user_id)
+      // On trace le FAIT, pas l'identité : l'id du compte OAuth suffit à retrouver la
+      // ligne, l'identifiant utilisateur n'ajoute rien et part chez un tiers.
+      console.error('[pull-drive] resynchronisation du curseur', compte.fournisseur, 'compte', compte.id)
     }
 
     // Mémorise le nouveau curseur.

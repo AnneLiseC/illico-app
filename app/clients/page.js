@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { archiverClient, desarchiverClient, supprimerClient, formatNomClient } from '../lib/clients'
+import { erreurAffichable } from '../lib/erreurs'
 
 /* ── Inline SVG icons ── */
 function Svg({ size = 16, children }) {
@@ -75,7 +76,7 @@ export default function Clients() {
   const handleArchiverListe = async (clientId) => {
     if (!confirm('Archiver ce client ? Ses dossiers seront masqués des vues opérationnelles (conservés en compta). Réversible.')) return
     const { error } = await archiverClient(supabase, clientId)
-    if (error) { alert(error.message); return }
+    if (error) { alert(erreurAffichable(error)); return }
     setClients(prev => prev.filter(c => c.id !== clientId))
   }
 
@@ -83,7 +84,7 @@ export default function Clients() {
   const handleSupprimerListe = async (clientId) => {
     if (!confirm('Supprimer définitivement ce client ? Cette action est irréversible.')) return
     const { error } = await supprimerClient(supabase, clientId)
-    if (error) { alert(error.message); return }
+    if (error) { alert(erreurAffichable(error)); return }
     setClients(prev => prev.filter(c => c.id !== clientId))
   }
 
@@ -92,7 +93,7 @@ export default function Clients() {
   const handleDesarchiverListe = async (clientId) => {
     if (!confirm('Désarchiver ce client ? Il réapparaîtra dans les vues opérationnelles.')) return
     const { error } = await desarchiverClient(supabase, clientId)
-    if (error) { alert(error.message); return }
+    if (error) { alert(erreurAffichable(error)); return }
     setClients(prev => prev.filter(c => c.id !== clientId))
   }
 

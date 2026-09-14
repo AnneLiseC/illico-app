@@ -1149,11 +1149,16 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   // le client — « à qui ai-je affaire, et qui est assuré ». Ils rejoignent donc la même
   // liste, et le séparateur est posé une seule fois, pour l'ensemble.
   //
-  // MERAD (courtage à distance) : pas de Kbis CTP dans la restitution.
-  if (dossier.typologie !== 'merad' && adminFranchise?.kbis_url) {
+  // MERAD (courtage à distance) : AUCUN document de la franchise dans la restitution,
+  // ni Kbis ni RIB. Le 14/09, seul le Kbis était exclu et le RIB partait quand même —
+  // oubli confirmé par Anne-Lise, pas un choix. La condition est désormais posée UNE
+  // fois, au-dessus des deux, pour qu'un troisième document ajouté demain ne puisse pas
+  // rater la règle à son tour.
+  const documentsFranchise = dossier.typologie !== 'merad'
+  if (documentsFranchise && adminFranchise?.kbis_url) {
     docsArtisans.push({ url: adminFranchise.kbis_url, libelle: 'Kbis de la franchise' })
   }
-  if (adminFranchise?.rib_url) {
+  if (documentsFranchise && adminFranchise?.rib_url) {
     docsArtisans.push({ url: adminFranchise.rib_url, libelle: 'RIB de la franchise' })
   }
 

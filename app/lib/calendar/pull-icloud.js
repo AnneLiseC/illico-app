@@ -63,6 +63,7 @@ function objectToNorm(url, etag, vevent) {
   return {
     id: url, etag: etag || null, status, summary: e.summary || '',
     description: e.description || '',   // porte le marqueur [illico-int:…] → anti-écho interventions
+    location: e.location || '',         // LOCATION de l'ICS
     start_utc: s.utc, start_raw: null, kind: s.kind, end_utc: en.utc, isRecurringInstance: false,
   }
 }

@@ -105,3 +105,79 @@ export function interventionOccurrences(intervention) {
     time: { kind: 'allday', date },
   }))
 }
+
+// ── Lieu de l'événement ──────────────────────────────────────────────────────
+//
+// AJOUT DU 14/09. Jusqu'ici AUCUN fournisseur ne remplissait le champ « lieu » d'un
+// événement : ni `location` chez Google, ni chez Graph, ni `LOCATION` dans l'ICS. Un
+// artisan ou une agente qui ouvrait le rendez-vous sur son téléphone n'avait pas l'adresse,
+// donc pas de bouton « Itinéraire », et devait rouvrir BATILIS pour la chercher.
+//
+// ⚠️ FAUX AMI À CONNAÎTRE : `rendez_vous.lieu` n'est PAS une adresse, c'est un TYPE de lieu.
+// En base au 14/09, deux valeurs seulement : 'client' (1 995 rendez-vous) et 'agence' (2).
+// L'adresse réelle vit ailleurs, et c'est `lieu` qui dit où aller la chercher.
+//
+// RÈGLE (validée le 14/09) :
+//   lieu = 'client'  → dossiers.adresse_chantier   (l'adresse du CHANTIER, pas du domicile)
+//   lieu = 'agence'  → l'adresse de l'agence
+//   intervention     → toujours l'adresse du chantier
+//
+// Couverture mesurée avant écriture : 49 dossiers sur 50 portent une adresse de chantier,
+// et ZÉRO rendez-vous « client » n'en manque. Le repli ci-dessous est donc théorique.
+//
+// PAS DE REPLI DEVINÉ. Sans adresse, on renvoie '' et l'appelant omet le champ. Envoyer
+// quelqu'un à l'agence pour un rendez-vous de chantier serait pire que ne rien afficher :
+// un calendrier vide se complète à la main, un calendrier faux fait rouler pour rien.
+
+function adresseChantier(dossier) {
+  return String(dossier?.adresse_chantier || '').trim()
+}
+
+// Nom, rue, code postal et ville sur une ligne. Les morceaux manquants disparaissent sans
+// laisser de virgule orpheline — une adresse à trous reste une adresse lisible.
+function adresseAgence(agence) {
+  if (!agence) return ''
+  const cpVille = [agence.code_postal, agence.ville].filter(Boolean).map(String).map(s => s.trim()).filter(Boolean).join(' ')
+  return [agence.nom, agence.adresse, cpVille]
+    .map(v => String(v || '').trim()).filter(Boolean).join(', ')
+}
+
+// Lieu CALCULÉ à partir du type de rendez-vous. C'est la référence : c'est lui qui part
+// dans les calendriers quand aucune adresse propre n'a été saisie, et c'est lui qui sert
+// au pull à reconnaître une correction humaine (voir lieuRdv ci-dessous).
+export function lieuRdvParDefaut(rdv) {
+  return rdv?.lieu === 'agence'
+    ? adresseAgence(rdv?.agence)
+    : adresseChantier(rdv?.dossier)
+}
+
+// Lieu RÉEL du rendez-vous : l'exception saisie si elle existe, sinon le calcul.
+//
+// `rendez_vous.adresse` (14/09) couvre deux besoins qui n'en font qu'un : un rendez-vous
+// qui ne se tient pas au chantier (showroom, notaire, mairie), et une adresse corrigée
+// depuis l'agenda du téléphone et relue par le pull.
+export function lieuRdv(rdv) {
+  const propre = String(rdv?.adresse || '').trim()
+  return propre || lieuRdvParDefaut(rdv)
+}
+
+// Une adresse venue d'un agenda externe est-elle une VRAIE correction humaine, ou le
+// simple écho de ce qu'on a nous-même poussé ?
+//
+// Sans ce test, le premier pull figerait dans chaque rendez-vous une copie de l'adresse
+// du chantier. Le jour où le chantier déménage, plus rien ne se propagerait : la colonne
+// d'exception aurait silencieusement mangé le calcul qu'elle est censée compléter.
+//
+// La comparaison ignore la casse et les espaces superflus : un agenda qui renvoie
+// « 12 Chemin Des Oliviers,  13500 Martigues » n'a rien corrigé du tout.
+export function estAdresseCorrigee(rdv, adresseRecue) {
+  const recue = String(adresseRecue || '').trim()
+  if (!recue) return false                      // champ vidé : on ne déduit rien
+  const normalise = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim()
+  if (normalise(recue) === normalise(lieuRdvParDefaut(rdv))) return false
+  return normalise(recue) !== normalise(rdv?.adresse)   // déjà enregistrée -> rien à écrire
+}
+
+export function lieuIntervention(intervention) {
+  return adresseChantier(intervention?.dossier)
+}

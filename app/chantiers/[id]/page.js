@@ -35,6 +35,7 @@ import { calculerExpiration } from '../../lib/expiration'
 import { synchroniserArtisansRdv, valeurPrevenirClient, idsArtisansDepuisRdv } from '../../lib/rdvArtisans'
 import { prevenirClientParDefaut } from '../../lib/relances-texte'
 import { tauxSelonGrille, expliquerGrille } from '../../lib/apporteur'
+import { erreurAffichable } from '../../lib/erreurs'
 
 // Liste des entités supprimées avec un chantier — source unique des 2 libellés
 // (confirm de suppression + sous-titre du bouton), pour éviter qu'ils divergent.
@@ -846,7 +847,7 @@ export default function FicheChantier({ params }) {
   const [interventionEnEdition, setInterventionEnEdition] = useState(null)
   const [modalInterventionOuvert, setModalInterventionOuvert] = useState(false)
   const [interventionsDossier, setInterventionsDossier] = useState([])
-  const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', artisans_ids: [], prevenir_client: null, notes: '', titre: '', lieu: 'client', cible_id: '' })
+  const [nouveauRdvDossier, setNouveauRdvDossier] = useState({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', artisans_ids: [], prevenir_client: null, notes: '', titre: '', lieu: 'client', adresse: '', cible_id: '' })
   const [modalCreerIntervOuvert, setModalCreerIntervOuvert] = useState(false)
   const [nouvIntervArtisanId, setNouvIntervArtisanId] = useState(null)
   const [nouvIntervForm, setNouvIntervForm] = useState({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client', cible_id: '' })
@@ -1014,7 +1015,7 @@ export default function FicheChantier({ params }) {
       a.click()
       URL.revokeObjectURL(href)
     } catch (e) {
-      setErreur('Erreur ZIP : ' + e.message)
+      setErreur(erreurAffichable(e, 'Erreur ZIP'))
     }
     setZippingPhotos(false)
   }
@@ -1120,9 +1121,9 @@ export default function FicheChantier({ params }) {
   const enregistrerPhotoAnnotee = async (blob, cat) => {
     const chemin = `chantiers/${id}/${cat}/${Date.now()}_annot_${Math.random().toString(36).slice(2)}.jpg`
     const { error: upErr } = await supabase.storage.from('photos').upload(chemin, blob, { contentType: 'image/jpeg' })
-    if (upErr) { setErreur('Annotation : ' + upErr.message); return }
+    if (upErr) { setErreur(erreurAffichable(upErr, 'Annotation')); return }
     const { data: photoAnnot, error: insErr } = await supabase.from('photos').insert({ dossier_id: id, url: chemin, categorie: cat, uploaded_by: profile?.id, type_media: 'photo' }).select('id').single()
-    if (insErr) { setErreur('Annotation : ' + insErr.message); return }
+    if (insErr) { setErreur(erreurAffichable(insErr, 'Annotation')); return }
     if (photoAnnot?.id) {
       apiFetch('/api/drive/push', {
         method: 'POST', body: JSON.stringify({ photo_id: photoAnnot.id }),
@@ -1143,7 +1144,7 @@ export default function FicheChantier({ params }) {
     const { error: rmErr } = await supabase.storage.from('photos').remove([chemin])
     if (rmErr) console.error('Suppression fichier photo (non bloquant) :', rmErr.message)
     const { error } = await supabase.from('photos').delete().eq('id', photoId)
-    if (error) { setErreur('Erreur : ' + error.message); return false }
+    if (error) { setErreur(erreurAffichable(error)); return false }
     return true
   }
 
@@ -1182,6 +1183,9 @@ export default function FicheChantier({ params }) {
       notes: nouveauRdvDossier.notes || null,
       titre: nouveauRdvDossier.type_rdv === 'autres' ? (nouveauRdvDossier.titre || null) : null,
       lieu: nouveauRdvDossier.lieu || 'client',
+      // '' → null : une chaîne vide passerait le test « une adresse est saisie » et
+      // ferait partir un lieu vide dans les calendriers.
+      adresse: (nouveauRdvDossier.adresse || '').trim() || null,
       agence_id: dossier?.agence_id || null,   // agence du dossier (le trigger fait foi, envoyé par cohérence)
       cible_id: nouveauRdvDossier.cible_id || null,   // calendrier cible (lot 4a) — résolu au push
     }).select('id').single()
@@ -1193,9 +1197,9 @@ export default function FicheChantier({ params }) {
       pushToGoogle('rdv', data?.id)   // non bloquant
       await chargerRdvsDossier()
       setModalRdvOuvert(false)
-      setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', artisans_ids: [], prevenir_client: null, notes: '', titre: '', lieu: 'client', cible_id: '' })
+      setNouveauRdvDossier({ type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', artisans_ids: [], prevenir_client: null, notes: '', titre: '', lieu: 'client', adresse: '', cible_id: '' })
       setSucces('RDV créé ✓')
-    } else { setErreur('Erreur : ' + error.message) }
+    } else { setErreur(erreurAffichable(error)) }
   }
 
   const deleteGoogleEvent = async (googleEventId, cibleId) => {
@@ -1215,7 +1219,7 @@ export default function FicheChantier({ params }) {
     if (!confirm('Supprimer ce RDV ?')) return
     const rdv = rdvsDossier.find(r => r.id === rdvId)
     const { error } = await supabase.from('rendez_vous').delete().eq('id', rdvId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     if (rdv?.google_event_id) await deleteGoogleEvent(rdv.google_event_id, rdv.cible_id)
     await chargerRdvsDossier()
   }
@@ -1230,9 +1234,10 @@ export default function FicheChantier({ params }) {
       notes: rdvEnEdition.notes || null,
       titre: rdvEnEdition.type_rdv === 'autres' ? (rdvEnEdition.titre || null) : null,
       lieu: rdvEnEdition.lieu || 'client',
+      adresse: (rdvEnEdition.adresse || '').trim() || null,
       cible_id: rdvEnEdition.cible_id || null,   // calendrier cible (lot 4a) — résolu au push
     }).eq('id', rdvEnEdition.id)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     const lien = await synchroniserArtisansRdv(supabase, rdvEnEdition.id, rdvEnEdition.artisans_ids)
     if (!lien.ok) setErreur('RDV modifié, mais les entreprises conviées n\'ont pas été enregistrées : ' + lien.erreur)
     pushToGoogle('rdv', rdvEnEdition.id)   // non bloquant
@@ -1262,7 +1267,7 @@ export default function FicheChantier({ params }) {
         cible_id: nouvIntervForm.cible_id || null,   // calendrier cible (lot 4a) — résolu au push
       }
       const { data: intData, error: insertErr } = await supabase.from('interventions_artisans').insert(payload).select('*, artisan:artisans(id, entreprise)')
-      if (insertErr) { setErreur('Erreur : ' + insertErr.message); return }
+      if (insertErr) { setErreur(erreurAffichable(insertErr)); return }
       pushToGoogle('intervention', intData?.[0]?.id)   // push unitaire (lot 4c), non bloquant
       await chargerRdvsDossier()
       setModalCreerIntervOuvert(false)
@@ -1270,7 +1275,7 @@ export default function FicheChantier({ params }) {
       setNouvIntervForm({ type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', heure_debut: '', duree_minutes: 60, lieu: 'client', cible_id: '' })
       setSucces('Intervention planifiée ✓')
     } catch (err) {
-      setErreur('Erreur inattendue : ' + err.message)
+      setErreur(erreurAffichable(err, 'Erreur inattendue'))
     } finally {
       setSaving(false)
     }
@@ -1290,7 +1295,7 @@ export default function FicheChantier({ params }) {
       lieu: interventionEnEdition.lieu || 'client',
       cible_id: interventionEnEdition.cible_id || null,   // calendrier cible (lot 4a) — résolu au push
     }).eq('id', interventionEnEdition.id)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     pushToGoogle('intervention', interventionEnEdition.id)   // non bloquant
     await chargerRdvsDossier()
     setModalInterventionOuvert(false)
@@ -1305,7 +1310,7 @@ export default function FicheChantier({ params }) {
     setInterventionsDossier(prev => prev.map(i => i.id === intId ? { ...i, date_debut, date_fin } : i))
     const { error } = await supabase.from('interventions_artisans')
       .update({ date_debut: date_debut || null, date_fin: date_fin || null }).eq('id', intId)
-    if (error) { setErreur('Erreur : ' + error.message); await chargerRdvsDossier(); return }
+    if (error) { setErreur(erreurAffichable(error)); await chargerRdvsDossier(); return }
     pushToGoogle('intervention', intId)   // resync agenda (non bloquant)
     await chargerRdvsDossier()
   }
@@ -1314,7 +1319,7 @@ export default function FicheChantier({ params }) {
     if (!confirm('Supprimer cette intervention ?')) return
     const intervention = interventionsDossier.find(i => i.id === intId)
     const { error } = await supabase.from('interventions_artisans').delete().eq('id', intId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     if (intervention?.google_event_id) await deleteGoogleEvent(intervention.google_event_id, intervention.cible_id)
     const { data } = await supabase.from('interventions_artisans').select('*, artisan:artisans(id, entreprise, metier)').eq('dossier_id', id).order('date_debut')
     setInterventionsDossier(data || [])
@@ -1353,10 +1358,10 @@ export default function FicheChantier({ params }) {
     if (dejaCochee) {
       const item = fichesTechChantier[artisanId].find(f => f.fiche_technique_id === ficheId)
       const { error } = await supabase.from('chantier_fiches_techniques').delete().eq('id', item.id)
-      if (error) { setErreur('Erreur : ' + error.message); return }
+      if (error) { setErreur(erreurAffichable(error)); return }
     } else {
       const { error } = await supabase.from('chantier_fiches_techniques').insert({ dossier_id: id, fiche_technique_id: ficheId, artisan_id: artisanId })
-      if (error) { setErreur('Erreur : ' + error.message); return }
+      if (error) { setErreur(erreurAffichable(error)); return }
     }
     await chargerFichesTechChantier()
   }
@@ -1506,7 +1511,7 @@ export default function FicheChantier({ params }) {
       .from('comparateur_simulations')
       .insert({ dossier_id: id, nom, taux_courtage: COURTAGE_STANDARD * 100, taux_amo: AMO_STANDARD * 100 })
       .select().single()
-    if (error || !sim) { console.error('ajouterSimulation :', error?.message); setErreur('Impossible d\'ajouter la simulation : ' + (error?.message || 'erreur inconnue')); return }
+    if (error || !sim) { console.error('ajouterSimulation :', error?.message); setErreur(erreurAffichable(error, 'Impossible d\'ajouter la simulation')); return }
     if (devis.length > 0) {
       const lignes = devis.map(d => ({ simulation_id: sim.id, devis_artisan_id: d.id, inclus: true, montant_ttc_override: null }))
       const { error: errL } = await supabase.from('comparateur_lignes').insert(lignes)
@@ -1521,14 +1526,14 @@ export default function FicheChantier({ params }) {
     setSimulations(prev => prev.map(s => s.id === simId ? { ...s, ...payload } : s))
     setEditingTaux(null)
     const { error } = await supabase.from('comparateur_simulations').update(payload).eq('id', simId)
-    if (error) { console.error('saveTaux :', error.message); setErreur('Taux non enregistré : ' + error.message); await chargerComparateur() }
+    if (error) { console.error('saveTaux :', error.message); setErreur(erreurAffichable(error, 'Taux non enregistré')); await chargerComparateur() }
   }
 
   const toggleInclus = async (simId, ligneId, valeur) => {
     setSimulations(prev => prev.map(s => s.id === simId
       ? { ...s, lignes: (s.lignes || []).map(l => l.id === ligneId ? { ...l, inclus: valeur } : l) } : s))
     const { error } = await supabase.from('comparateur_lignes').update({ inclus: valeur }).eq('id', ligneId)
-    if (error) { console.error('toggleInclus :', error.message); setErreur('Modification non enregistrée : ' + error.message); await chargerComparateur() }
+    if (error) { console.error('toggleInclus :', error.message); setErreur(erreurAffichable(error, 'Modification non enregistrée')); await chargerComparateur() }
   }
 
   const saveMontant = async (simId, ligneId, valeur) => {
@@ -1538,7 +1543,7 @@ export default function FicheChantier({ params }) {
       ? { ...s, lignes: (s.lignes || []).map(l => l.id === ligneId ? { ...l, montant_ttc_override: override } : l) } : s))
     setEditingMontant(null)
     const { error } = await supabase.from('comparateur_lignes').update({ montant_ttc_override: override }).eq('id', ligneId)
-    if (error) { console.error('saveMontant :', error.message); setErreur('Montant non enregistré : ' + error.message); await chargerComparateur() }
+    if (error) { console.error('saveMontant :', error.message); setErreur(erreurAffichable(error, 'Montant non enregistré')); await chargerComparateur() }
   }
 
   // Récap financier d'UNE simulation → PDF téléchargeable. Généré côté client
@@ -1691,7 +1696,7 @@ export default function FicheChantier({ params }) {
       a.click()
       URL.revokeObjectURL(href)
     } catch (e) {
-      setErreur('Erreur génération PDF : ' + e.message)
+      setErreur(erreurAffichable(e, 'Erreur génération PDF'))
     } finally {
       setRecapSimId(null)
     }
@@ -1707,14 +1712,14 @@ export default function FicheChantier({ params }) {
           ? { ...l, devis_version_id: vid, montant_ttc_override: vid ? null : l.montant_ttc_override } : l) } : s))
     const payload = vid ? { devis_version_id: vid, montant_ttc_override: null } : { devis_version_id: null }
     const { error } = await supabase.from('comparateur_lignes').update(payload).eq('id', ligneId)
-    if (error) { console.error('saveVersionLigne :', error.message); setErreur('Version non enregistrée : ' + error.message); await chargerComparateur() }
+    if (error) { console.error('saveVersionLigne :', error.message); setErreur(erreurAffichable(error, 'Version non enregistrée')); await chargerComparateur() }
   }
 
   const supprimerSimulation = async (simId) => {
     if (!confirm('Supprimer cette simulation ?')) return
     setSimulations(prev => prev.filter(s => s.id !== simId))   // optimiste (CASCADE supprime les lignes)
     const { error } = await supabase.from('comparateur_simulations').delete().eq('id', simId)
-    if (error) { console.error('supprimerSimulation :', error.message); setErreur('Suppression échouée : ' + error.message); await chargerComparateur() }
+    if (error) { console.error('supprimerSimulation :', error.message); setErreur(erreurAffichable(error, 'Suppression échouée')); await chargerComparateur() }
   }
 
   const deplacerDevis = async (devisId, direction) => {
@@ -1738,7 +1743,7 @@ export default function FicheChantier({ params }) {
   const persistTaux = async (champ, valeur) => {
     const { error } = await supabase.from('dossiers').update({ [champ]: valeur }).eq('id', id)
     if (error) {
-      setErreur('Erreur : ' + error.message)
+      setErreur(erreurAffichable(error))
       const ancien = tauxAvantEditRef.current[champ]
       if (ancien !== undefined) set(champ, ancien)
     }
@@ -1770,7 +1775,7 @@ export default function FicheChantier({ params }) {
     // (valeur === 'annule' : on ne touche pas à l'expiration.)
 
     const { error } = await supabase.from('dossiers').update(payload).eq('id', id)
-    if (error) { setErreur('Erreur : ' + error.message); set('statut', ancien); return }
+    if (error) { setErreur(erreurAffichable(error)); set('statut', ancien); return }
     setDossier(d => ({ ...d, ...payload }))
     setSucces(valeur === 'termine' ? 'Dossier marqué terminé ✓' : valeur === 'annule' ? 'Dossier annulé ✓' : 'Dossier ré-ouvert (statut automatique) ✓')
     // Miroir Drive : déplace le dossier chantier vers le bucket du nouveau statut
@@ -1796,14 +1801,14 @@ export default function FicheChantier({ params }) {
     // du cache PDF ne bouge pas et l'ancienne version continue de partir. (R10)
     const chemin = `chantiers/${id}/contrat/contrat-${Date.now()}.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, f, { upsert: true })
-    if (error) { setErreur('Erreur upload : ' + error.message); setUploadingContrat(false); return }
+    if (error) { setErreur(erreurAffichable(error, 'Erreur upload')); setUploadingContrat(false); return }
     // Auto-signature : déposer le PDF du contrat coche le mandat (sauf s'il l'est déjà).
     const today = new Date().toISOString().slice(0, 10)
     const payload = dossier.contrat_signe
       ? { contrat_url: chemin }
       : { contrat_url: chemin, contrat_signe: true, date_signature_contrat: today }
     const { error: updErr } = await supabase.from('dossiers').update(payload).eq('id', id)
-    if (updErr) { setErreur('Erreur : ' + updErr.message); setUploadingContrat(false); return }
+    if (updErr) { setErreur(erreurAffichable(updErr)); setUploadingContrat(false); return }
     pousserContratDrive()   // miroir OneDrive → Autres/Administratif
     setDossier(d => ({ ...d, ...payload }))
     setSucces('Contrat ajouté ✓')
@@ -1824,7 +1829,7 @@ export default function FicheChantier({ params }) {
     }
     // Retirer le PDF décoche le mandat (symétrique de l'auto-signature à l'upload).
     const { error } = await supabase.from('dossiers').update({ contrat_url: null, contrat_signe: false, date_signature_contrat: null }).eq('id', id)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     setDossier(d => ({ ...d, contrat_url: null, contrat_signe: false, date_signature_contrat: null }))
     setSucces('Document supprimé ✓')
   }
@@ -1878,13 +1883,13 @@ export default function FicheChantier({ params }) {
     const { error: rmErr } = await supabase.storage.from('documents').remove([path])
     if (rmErr) console.error('Suppression fichier document (non bloquant) :', rmErr.message)
     const { error } = await supabase.from('chantier_documents').delete().eq('id', docId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     await chargerDocuments()
   }
 
   const toggleDansRestitution = async (docId, valeur) => {
     const { error } = await supabase.from('chantier_documents').update({ dans_restitution: valeur }).eq('id', docId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     setDocuments(prev => prev.map(d => d.id === docId ? { ...d, dans_restitution: valeur } : d))
   }
 
@@ -1896,7 +1901,7 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.from('chantier_documents').update({ categorie }).eq('id', docId)
     if (error) {
       setDocuments(prev => prev.map(d => d.id === docId ? { ...d, categorie: estCR ? null : 'compte_rendu' } : d))
-      setErreur('Erreur : ' + error.message)
+      setErreur(erreurAffichable(error))
       return
     }
     // La catégorie change le dossier cible → on re-pousse : la route push est move-aware
@@ -1913,7 +1918,7 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.from('chantier_documents').update({ categorie }).eq('id', docId)
     if (error) {
       setDocuments(prev => prev.map(d => d.id === docId ? { ...d, categorie: prevCat } : d))
-      setErreur('Erreur : ' + error.message)
+      setErreur(erreurAffichable(error))
       return
     }
     apiFetch('/api/drive/push', { method: 'POST', body: JSON.stringify({ document_id: docId }) }).catch(() => {})
@@ -1941,7 +1946,7 @@ export default function FicheChantier({ params }) {
       libelle: libelleFinal
     }).select().single()
     // Échec de l'insert : on garde la saisie (pas de reset) pour réessayer.
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
 
     let uploadFactureOk = true
     if (factureInseree) {
@@ -1991,7 +1996,7 @@ export default function FicheChantier({ params }) {
       if (rmErr) console.error('Suppression PDF facture (non bloquant) :', rmErr.message)
     }
     const { error } = await supabase.from('factures_artisans').delete().eq('id', factureId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     await chargerFactures()
   }
 
@@ -2003,7 +2008,7 @@ export default function FicheChantier({ params }) {
       statut: newStatut,
       date_paiement: newStatut === 'paye' ? datePaye : null,
     }).eq('id', factureId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     setFactures(prev => prev.map(f => f.id === factureId ? { ...f, statut: newStatut, date_paiement: newStatut === 'paye' ? datePaye : null } : f))
     // E5 — synchro suivi_financier (acompte_artisan si libellé 'acompte', sinon facture_finale)
     if (facture?.artisan_id) {
@@ -2026,7 +2031,7 @@ export default function FicheChantier({ params }) {
     const d = date || null
     const facture = factures.find(f => f.id === factureId)
     const { error } = await supabase.from('factures_artisans').update({ date_paiement: d }).eq('id', factureId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     setFactures(prev => prev.map(f => f.id === factureId ? { ...f, date_paiement: d } : f))
     if (facture?.statut === 'paye' && facture?.artisan_id && d) {
       const libelle = (facture.libelle || '').toLowerCase()
@@ -2045,11 +2050,11 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (!error) {
       const { error: updErr } = await supabase.from('factures_artisans').update({ pdf_path: chemin }).eq('id', factureId)
-      if (updErr) { setErreur('Erreur : ' + updErr.message); setUploadingFacturePdf(null); return }
+      if (updErr) { setErreur(erreurAffichable(updErr)); setUploadingFacturePdf(null); return }
       pousserFactureDrive(factureId)   // miroir OneDrive
       await chargerFactures()
       setSucces('PDF facture uploadé ✓')
-    } else { setErreur('Erreur upload : ' + error.message) }
+    } else { setErreur(erreurAffichable(error, 'Erreur upload')) }
     setUploadingFacturePdf(null)
   }
 
@@ -2064,7 +2069,7 @@ export default function FicheChantier({ params }) {
       frais_statut: dossier.frais_statut,
       frais_consultation: dossier.frais_consultation === '' ? null : dossier.frais_consultation,
     }).eq('id', id)
-    if (error) { setErreur('Erreur : ' + error.message); setSaving(false); return }
+    if (error) { setErreur(erreurAffichable(error)); setSaving(false); return }
     // Frais « facturés et réglés » → créer/màj la ligne de suivi (parité avec la
     // sauvegarde principale : le suivi financier compte l'encaissement avec une date).
     if (dossier.frais_statut === 'regle') {
@@ -2100,7 +2105,7 @@ export default function FicheChantier({ params }) {
     }).eq('id', id)
 
     if (error) {
-      setErreur('Erreur : ' + error.message)
+      setErreur(erreurAffichable(error))
     } else {
       // Si frais réglés, créer/màj la ligne suivi_financier
       if (dossier.frais_statut === 'regle') {
@@ -2133,7 +2138,7 @@ export default function FicheChantier({ params }) {
         }
         if (fraisErr) {
           // Le dossier EST enregistré ; on reste en édition pour signaler le reliquat.
-          setErreur('Dossier enregistré, mais échec de la ligne de frais : ' + fraisErr.message)
+          setErreur(erreurAffichable(fraisErr, 'Dossier enregistré, mais échec de la ligne de frais'))
           setSaving(false)
           return
         }
@@ -2240,11 +2245,11 @@ export default function FicheChantier({ params }) {
     // Horodaté (R10).
     const chemin = `chantiers/${id}/honoraires/${cle}-${Date.now()}.${ext}`
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
-    if (error) { setErreur('Erreur upload : ' + error.message); setUploadingHonoFacture(null); return }
+    if (error) { setErreur(erreurAffichable(error, 'Erreur upload')); setUploadingHonoFacture(null); return }
     const { data: row, error: upErr } = await supabase.from('honoraires_factures')
       .upsert({ dossier_id: id, cle, pdf_path: chemin, nom: fichier.name, updated_at: new Date().toISOString() }, { onConflict: 'dossier_id,cle' })
       .select().single()
-    if (upErr) { setErreur('Erreur : ' + upErr.message); setUploadingHonoFacture(null); return }
+    if (upErr) { setErreur(erreurAffichable(upErr)); setUploadingHonoFacture(null); return }
     if (row?.id) pousserHonoFactureDrive(row.id)   // miroir OneDrive
     await chargerHonorairesFactures()
     setUploadingHonoFacture(null)
@@ -2258,7 +2263,7 @@ export default function FicheChantier({ params }) {
       if (rmErr) console.error('Suppression PDF honoraire (non bloquant) :', rmErr.message)
     }
     const { error } = await supabase.from('honoraires_factures').delete().eq('id', hf.id)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     await chargerHonorairesFactures()
   }
   // Miroir OneDrive : contrat signé (→ Autres/Administratif), PV de réception
@@ -2283,12 +2288,12 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier)
     if (!error) {
       const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_pdf_path: chemin }).eq('id', devisId)
-      if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
+      if (pathErr) { setErreur(erreurAffichable(pathErr)); setUploadingDoc(null); return }
       await archiverVersionDevis(devisId)   // nouveau PDF = nouvelle version
       await chargerDevis()
       pousserDevisDrive(devisId)
       setSucces('Devis artisan uploadé ✓')
-    } else { setErreur('Erreur upload : ' + error.message) }
+    } else { setErreur(erreurAffichable(error, 'Erreur upload')) }
     setUploadingDoc(null)
   }
 
@@ -2301,7 +2306,7 @@ export default function FicheChantier({ params }) {
     const payload = {}
     for (const c of CHAMPS_VERSION) if (c !== 'statut') payload[c] = version[c] ?? null
     const { error } = await supabase.from('devis_artisans').update(payload).eq('id', devisId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     await supabase.from('devis_versions').update({ est_courante: false }).eq('devis_artisan_id', devisId).eq('est_courante', true)
     await supabase.from('devis_versions').update({ est_courante: true }).eq('id', version.id)
     await chargerDevis()
@@ -2327,7 +2332,7 @@ export default function FicheChantier({ params }) {
       }
     }
     const { error } = await supabase.from('devis_versions').delete().eq('id', version.id)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     await chargerDevis()
     setSucces(`Version v${version.version_num} supprimée ✓`)
   }
@@ -2346,7 +2351,7 @@ export default function FicheChantier({ params }) {
     if (devisModal.devis) {
       // Edit — sur erreur, la modale reste ouverte avec la saisie (return avant fermeture).
       const { error } = await supabase.from('devis_artisans').update(payload).eq('id', devisModal.devis.id)
-      if (error) { setErreur('Erreur : ' + error.message); return false }
+      if (error) { setErreur(erreurAffichable(error)); return false }
       await archiverVersionDevis(devisModal.devis.id)   // snapshot version (no-op si inchangé)
       await chargerDevis()
       setSucces('Devis modifié ✓')
@@ -2381,7 +2386,7 @@ export default function FicheChantier({ params }) {
         date_signature: dateSignatureDevis,
         ordre: prochainOrdre,
       }).select()
-      if (error) { setErreur('Erreur : ' + error.message); return false }
+      if (error) { setErreur(erreurAffichable(error)); return false }
       let uploadDevisOk = true
       if (form.fichier && devisInsere?.[0]) {
         const ext = form.fichier.name.split('.').pop()
@@ -2435,7 +2440,7 @@ export default function FicheChantier({ params }) {
       if (data.avertissement) setSucces('')  // laisse la modale afficher l'avertissement
       return data
     } catch (e) {
-      setErreur(e.message || 'Extraction IA impossible')
+      setErreur(erreurAffichable(e))
       return null
     }
   }
@@ -2470,7 +2475,7 @@ export default function FicheChantier({ params }) {
       p_dossier_id: id,
       p_montant: montantLigneNonPayee,
     })
-    if (error) { setErreur('Erreur TS courtage : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error, 'Erreur TS courtage')); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -2491,7 +2496,7 @@ export default function FicheChantier({ params }) {
     } else {
       ({ error } = await supabase.from('devis_artisans').update({ statut }).eq('id', devisId))
     }
-    if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
+    if (error) { setErreur(erreurAffichable(error)); await chargerDevis(); return }
     // Plus d'auto-push dossiers.statut='devis_a_modifier' : calcStatut le dérive
     // désormais des devis (cascade v2). La colonne ne porte que les overrides
     // manuels (NULL/annule/termine). Persister le calculé la re-périmerait.
@@ -2537,7 +2542,7 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (!error) {
       const { error: pathErr } = await supabase.from('devis_artisans').update({ devis_signe_path: chemin }).eq('id', devisId)
-      if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
+      if (pathErr) { setErreur(erreurAffichable(pathErr)); setUploadingDoc(null); return }
       let statutOk = true
       const devisActuel = devis.find(d => d.id === devisId)
       if (devisActuel && devisActuel.statut !== 'accepte') {
@@ -2559,7 +2564,7 @@ export default function FicheChantier({ params }) {
       if (statutOk) await declencherCourtageTS()
       if (statutOk) setSucces('Devis signé uploadé ✓')
       else setErreur('Devis signé enregistré, mais le statut n\'a pas pu être mis à jour — réessayez.')
-    } else { setErreur('Erreur upload : ' + error.message) }
+    } else { setErreur(erreurAffichable(error, 'Erreur upload')) }
     setUploadingDoc(null)
   }
   const supprimerDevisSigne = async (devisId, path) => {
@@ -2569,7 +2574,7 @@ export default function FicheChantier({ params }) {
     const { error: rmErr } = await supabase.storage.from('documents').remove([path])
     if (rmErr) console.error('Suppression PDF devis signé (non bloquant) :', rmErr.message)
     const { error } = await supabase.from('devis_artisans').update({ devis_signe_path: null }).eq('id', devisId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     await chargerDevis()
     pousserDevisDrive(devisId)  // signé retiré → re-push (Signés depuis le devis reçu, ou selon statut)
     setSucces('Devis signé supprimé ✓')
@@ -2586,11 +2591,11 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
     if (!error) {
       const { error: pathErr } = await supabase.from('devis_artisans').update({ pv_path: chemin }).eq('id', devisId)
-      if (pathErr) { setErreur('Erreur : ' + pathErr.message); setUploadingDoc(null); return }
+      if (pathErr) { setErreur(erreurAffichable(pathErr)); setUploadingDoc(null); return }
       pousserPVDrive(devisId)   // miroir OneDrive → Documents artisans/<Artisan>
       await chargerDevis()
       setSucces('PV uploadé ✓')
-    } else { setErreur('Erreur upload PV : ' + error.message) }
+    } else { setErreur(erreurAffichable(error, 'Erreur upload PV')) }
     setUploadingDoc(null)
   }
   const supprimerPV = async (devisId, path) => {
@@ -2599,7 +2604,7 @@ export default function FicheChantier({ params }) {
     const { error: rmErr } = await supabase.storage.from('documents').remove([path])
     if (rmErr) console.error('Suppression PDF PV (non bloquant) :', rmErr.message)
     const { error } = await supabase.from('devis_artisans').update({ pv_path: null }).eq('id', devisId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     await chargerDevis()
     setSucces('PV supprimé ✓')
   }
@@ -2682,7 +2687,7 @@ export default function FicheChantier({ params }) {
           valide: publier,
         }).select('id').single()
     // Échec : on garde la saisie (modale ouverte) pour réessayer.
-    if (saveErr) { setErreur('Erreur : ' + saveErr.message); setCrManuelSaving(false); return }
+    if (saveErr) { setErreur(erreurAffichable(saveErr)); setCrManuelSaving(false); return }
     // Création uniquement : rattache (ou crée) le RDV de visite + push calendrier.
     if (!crEditId && crSauve?.id) lierOuCreerRdvVisite({ supabase, apiFetch, crId: crSauve.id, dossierId: id, agenceId: dossier?.agence_id, typeVisite: crManuelForm.type_visite || null, dateVisite: crManuelForm.date_visite || null }).catch(() => {})
 
@@ -2705,13 +2710,13 @@ export default function FicheChantier({ params }) {
       })
     } catch { /* non bloquant */ }
     const { error } = await supabase.from('comptes_rendus').delete().eq('id', crId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     setComptesRendus(prev => prev.filter(c => c.id !== crId))
   }
 
   const toggleValide = async (crId, valide) => {
     const { error } = await supabase.from('comptes_rendus').update({ valide }).eq('id', crId)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     setComptesRendus(prev => prev.map(c => c.id === crId ? { ...c, valide } : c))
     // Miroir OneDrive (non bloquant) : CR validé/publié → PDF dans « Comptes rendus/ » ;
     // dé-validé → retiré du Drive.
@@ -2762,7 +2767,7 @@ export default function FicheChantier({ params }) {
       if (win) win.location.href = url
       else window.open(url, '_blank')  // repli si l'onglet initial a été bloqué
     } catch (err) {
-      setErreur('Erreur lors de la génération : ' + err.message)
+      setErreur(erreurAffichable(err, 'Erreur lors de la génération'))
       win?.close()
     } finally {
       setGeneratingPDF(null)
@@ -2861,7 +2866,7 @@ export default function FicheChantier({ params }) {
 
     if (error) {
       setMessages(prev => prev.filter(m => m.id !== tempId))
-      setErreur('Erreur envoi message : ' + error.message)
+      setErreur(erreurAffichable(error, 'Erreur envoi message'))
     } else if (inserted) {
       setMessages(prev => prev.map(m => m.id === tempId ? inserted : m))
     }
@@ -3014,13 +3019,13 @@ export default function FicheChantier({ params }) {
       .eq('dossier_id', id).eq('type_echeance', type).eq('artisan_id', artisanId)
     q = devisId ? q.eq('devis_id', devisId) : q.is('devis_id', null)
     const { data: existing, error: selectErr } = await q.maybeSingle()
-    if (selectErr) { setErreur('Erreur : ' + selectErr.message); return false }
+    if (selectErr) { setErreur(erreurAffichable(selectErr)); return false }
     const { error } = existing
       ? await supabase.from('suivi_financier').update({ [champ]: valeur }).eq('id', existing.id)
       : await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: type, artisan_id: artisanId, devis_id: devisId, [champ]: valeur })
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
-    if (error) { setErreur('Erreur : ' + error.message); return false }
+    if (error) { setErreur(erreurAffichable(error)); return false }
     return true
   }
 
@@ -3066,7 +3071,7 @@ export default function FicheChantier({ params }) {
       .eq('dossier_id', id).eq('type_echeance', 'acompte_artisan').eq('artisan_id', artisanId)
     q = devisId ? q.eq('devis_id', devisId) : q.is('devis_id', null)
     const { data: existing, error: selectErr } = await q.maybeSingle()
-    if (selectErr) { setErreur('Erreur : ' + selectErr.message); return }
+    if (selectErr) { setErreur(erreurAffichable(selectErr)); return }
     const dateEffective = date || new Date().toISOString().slice(0, 10)
     const payload = recu
       ? { statut_illico: 'recu', date_deblocage: dateEffective }
@@ -3077,7 +3082,7 @@ export default function FicheChantier({ params }) {
     } else if (recu) {
       ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'acompte_artisan', artisan_id: artisanId, devis_id: devisId, ...payload }))
     }
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
 
     // Synchro demandée : dater l'« Acompte débloqué » remplit la date de paiement des
     // « Facture acompte » de CE devis qui n'en ont pas encore (on ne clobbe jamais une
@@ -3089,7 +3094,7 @@ export default function FicheChantier({ params }) {
       if (facturesADater.length) {
         const ids = facturesADater.map(f => f.id)
         const { error: factErr } = await supabase.from('factures_artisans').update({ date_paiement: dateEffective }).in('id', ids)
-        if (factErr) { setErreur('Erreur : ' + factErr.message); return }
+        if (factErr) { setErreur(erreurAffichable(factErr)); return }
         setFactures(prev => prev.map(f => ids.includes(f.id) ? { ...f, date_paiement: dateEffective } : f))
       }
     }
@@ -3109,7 +3114,7 @@ export default function FicheChantier({ params }) {
       .eq('dossier_id', id).eq('type_echeance', 'apporteur_agente')
     q = artisanId === null ? q.is('artisan_id', null) : q.eq('artisan_id', artisanId)
     const { data: existing, error: selectErr } = await q.maybeSingle()
-    if (selectErr) { setErreur('Erreur : ' + selectErr.message); return }
+    if (selectErr) { setErreur(erreurAffichable(selectErr)); return }
 
     let error = null
     if (paye) {
@@ -3122,7 +3127,7 @@ export default function FicheChantier({ params }) {
     } else if (existing) {
       ({ error } = await supabase.from('suivi_financier').delete().eq('id', existing.id))
     }
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -3135,7 +3140,7 @@ export default function FicheChantier({ params }) {
   const setFraisRecu = async (recu, date = null) => {
     const { data: existing, error: selErr } = await supabase.from('suivi_financier')
       .select('id').eq('dossier_id', id).eq('type_echeance', 'frais_consultation').is('artisan_id', null).maybeSingle()
-    if (selErr) { setErreur('Erreur : ' + selErr.message); return }
+    if (selErr) { setErreur(erreurAffichable(selErr)); return }
     const dateEff = recu ? (date || new Date().toISOString().slice(0, 10)) : null
     const payload = { statut_client: recu ? 'regle' : 'en_attente', date_paiement: dateEff }
     let error = null
@@ -3144,7 +3149,7 @@ export default function FicheChantier({ params }) {
     } else if (recu) {
       ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'frais_consultation', artisan_id: null, ...payload }))
     }
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -3168,7 +3173,7 @@ export default function FicheChantier({ params }) {
       p_regle: valeur === 'regle',
       p_today: dateEffective,
     })
-    if (error) setErreur('Erreur : ' + error.message)
+    if (error) setErreur(erreurAffichable(error))
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -3182,7 +3187,7 @@ export default function FicheChantier({ params }) {
       ? { statut_client: 'regle', date_paiement: dateEffective }
       : { statut_client: 'en_attente', date_paiement: null }
     const { error } = await supabase.from('suivi_financier').update(payload).eq('id', ligne.id)
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -3200,12 +3205,12 @@ export default function FicheChantier({ params }) {
     const { data: newId, error } = await supabase.rpc('solde_amo_paiement_add', {
       p_dossier_id: id, p_montant: m, p_date: date || new Date().toISOString().slice(0, 10),
     })
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     if (!regle && newId) {
       const { error: upErr } = await supabase.from('suivi_financier')
         .update({ statut_client: 'en_attente', date_paiement: null })
         .eq('id', newId).eq('type_echeance', 'solde_amo_paiement')
-      if (upErr) { setErreur('Erreur : ' + upErr.message) }
+      if (upErr) { setErreur(erreurAffichable(upErr)) }
     }
     if (!dejaDesTranches) {
       await majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'en_attente')
@@ -3227,7 +3232,7 @@ export default function FicheChantier({ params }) {
         date_paiement: versPaye ? (tranche.date_paiement || new Date().toISOString().slice(0, 10)) : (tranche.date_paiement || null),
       })
       .eq('id', tranche.id).eq('type_echeance', 'solde_amo_paiement')
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -3238,7 +3243,7 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.from('suivi_financier')
       .update({ date_paiement: date || null })
       .eq('id', trancheId).eq('type_echeance', 'solde_amo_paiement')
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
   }
@@ -3246,7 +3251,7 @@ export default function FicheChantier({ params }) {
   // Solde AMO échelonné — supprime une tranche par id (RPC lot 1).
   const deleteSoldeAmoPaiement = async (rowId) => {
     const { error } = await supabase.rpc('solde_amo_paiement_delete', { p_id: rowId })
-    if (error) { setErreur('Erreur : ' + error.message); return }
+    if (error) { setErreur(erreurAffichable(error)); return }
     // Facture d'honoraire éventuellement attachée à cette tranche (clé = id de tranche) :
     // on la retire aussi (Drive + storage + ligne) pour ne pas laisser d'orphelin.
     const hfOrphan = honorairesFactures.find(h => h.cle === rowId)
@@ -3279,7 +3284,7 @@ export default function FicheChantier({ params }) {
       p_taux_amo: AMO_STANDARD * 100,
     })
     if (error) {
-      setErreur('Erreur lors de la conversion : ' + error.message)
+      setErreur(erreurAffichable(error, 'Erreur lors de la conversion'))
       setSaving(false)
       return
     }
@@ -3305,7 +3310,7 @@ export default function FicheChantier({ params }) {
       p_dossier_id: id,
     })
     if (error) {
-      setErreur('Erreur lors de la conversion : ' + error.message)
+      setErreur(erreurAffichable(error, 'Erreur lors de la conversion'))
       setSaving(false)
       return
     }
@@ -3337,7 +3342,7 @@ export default function FicheChantier({ params }) {
       p_taux_amo: cible === 'amo' ? AMO_STANDARD * 100 : null,
     })
     if (error) {
-      setErreur('Erreur lors de la bascule : ' + error.message)
+      setErreur(erreurAffichable(error, 'Erreur lors de la bascule'))
       setSaving(false)
       return
     }
@@ -3492,7 +3497,7 @@ export default function FicheChantier({ params }) {
 
       router.push('/chantiers')
     } catch (err) {
-      setErreur('Erreur suppression chantier : ' + err.message)
+      setErreur(erreurAffichable(err, 'Erreur suppression chantier'))
       setSaving(false)
     }
   }
@@ -3799,7 +3804,7 @@ export default function FicheChantier({ params }) {
                       : { contrat_signe: false, date_signature_contrat: null }
                     setDossier(d => ({ ...d, ...payload }))
                     const { error } = await supabase.from('dossiers').update(payload).eq('id', id)
-                    if (error) { setErreur('Erreur : ' + error.message); setDossier(d => ({ ...d, contrat_signe: !v })) }
+                    if (error) { setErreur(erreurAffichable(error)); setDossier(d => ({ ...d, contrat_signe: !v })) }
                   }}
                   style={{width:14, height:14, accentColor:'#4f46e5'}}/>
                 <span style={{fontSize:13, fontWeight:600, color: dossier.contrat_signe ? '#15803d' : 'var(--ink-500)'}}>
@@ -3815,7 +3820,7 @@ export default function FicheChantier({ params }) {
                     const v = e.target.value
                     setDossier(d => ({ ...d, date_signature_contrat: v }))
                     const { error } = await supabase.from('dossiers').update({ date_signature_contrat: v || null }).eq('id', id)
-                    if (error) setErreur('Erreur : ' + error.message)
+                    if (error) setErreur(erreurAffichable(error))
                   }}
                   style={{height:40, width:'100%'}}/>
               </div>
@@ -4263,7 +4268,7 @@ export default function FicheChantier({ params }) {
                     const ancien = dossier.apporteur_actif
                     set('apporteur_actif', v)
                     const { error } = await supabase.from('dossiers').update({ apporteur_actif: v }).eq('id', id)
-                    if (error) { setErreur('Erreur : ' + error.message); set('apporteur_actif', ancien) }
+                    if (error) { setErreur(erreurAffichable(error)); set('apporteur_actif', ancien) }
                   }}
                   style={{width:14, height:14, accentColor:'#4f46e5'}} />
                 <span style={{fontSize:13, fontWeight:600, color: dossier.apporteur_actif ? 'var(--ink-900)' : 'var(--ink-500)'}}>
@@ -4301,7 +4306,7 @@ export default function FicheChantier({ params }) {
                         }
                         const { error } = await supabase.from('dossiers')
                           .update({ apporteur_pourcentage: v }).eq('id', id)
-                        if (error) setErreur('Erreur : ' + error.message)
+                        if (error) setErreur(erreurAffichable(error))
                         else setSucces('Taux apporteur enregistré ✓')
                       }}
                       style={{width:88, height:32, fontSize:13, textAlign:'right'}} />
@@ -4312,7 +4317,7 @@ export default function FicheChantier({ params }) {
                           set('apporteur_pourcentage', propose.taux)
                           const { error } = await supabase.from('dossiers')
                             .update({ apporteur_pourcentage: propose.taux }).eq('id', id)
-                          if (error) setErreur('Erreur : ' + error.message)
+                          if (error) setErreur(erreurAffichable(error))
                           else setSucces('Taux de la grille appliqué ✓')
                         }}>
                         Appliquer {propose.taux} %
@@ -4544,7 +4549,7 @@ export default function FicheChantier({ params }) {
                                   }
                                 }
                                 const { error } = await supabase.from('devis_artisans').update({ acompte_pourcentage: newVal }).eq('id', d.id)
-                                if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
+                                if (error) { setErreur(erreurAffichable(error)); await chargerDevis(); return }
                                 await chargerDevis()
                               }}
                               className="input" style={{height:26, fontSize:11, padding:'0 6px', minWidth:80}}>
@@ -4558,7 +4563,7 @@ export default function FicheChantier({ params }) {
                                 onBlur={async e => {
                                   const v = e.target.value !== '' && Number.isFinite(parseFloat(e.target.value)) ? parseFloat(e.target.value) : null
                                   const { error } = await supabase.from('devis_artisans').update({ acompte_montant_fixe: v }).eq('id', d.id)
-                                  if (error) { setErreur('Erreur : ' + error.message); await chargerDevis(); return }
+                                  if (error) { setErreur(erreurAffichable(error)); await chargerDevis(); return }
                                   await chargerDevis()
                                 }}
                                 className="input" style={{width:96, height:26, fontSize:11, padding:'0 6px'}} />
@@ -4633,7 +4638,7 @@ export default function FicheChantier({ params }) {
                                 const { error: rmErr } = await supabase.storage.from('documents').remove([d.devis_pdf_path])
                                 if (rmErr) console.error('Suppression PDF devis (non bloquant) :', rmErr.message)
                                 const { error } = await supabase.from('devis_artisans').update({ devis_pdf_path: null }).eq('id', d.id)
-                                if (error) { setErreur('Erreur : ' + error.message); return }
+                                if (error) { setErreur(erreurAffichable(error)); return }
                                 await chargerDevis()
                                 pousserDevisDrive(d.id)  // PDF retiré → met à jour/retire la copie Drive
                               }} style={{fontSize:11, color:'#b91c1c', background:'none', border:'none', cursor:'pointer'}}>Supprimer</button>
@@ -6424,6 +6429,22 @@ export default function FicheChantier({ params }) {
                     <LieuPicker value={form.lieu || 'client'} onChange={v => setForm({ lieu: v })} />
                   </ModalField>
                 </div>
+
+                {/* ADRESSE PROPRE AU RENDEZ-VOUS (14/09).
+                    Vide = l'adresse du chantier (ou de l'agence) part dans les calendriers,
+                    et elle suit automatiquement si le chantier déménage. On ne remplit ce
+                    champ QUE pour un rendez-vous qui se tient ailleurs : showroom, notaire,
+                    mairie.
+                    Il est aussi le miroir du pull : une adresse corrigée depuis l'agenda du
+                    téléphone revient ici. Sans ce champ, elle serait enregistrée mais
+                    invisible, et l'écart entre l'agenda et BATILIS resterait inexplicable. */}
+                <ModalField label="Adresse du rendez-vous">
+                  <input className="input" type="text"
+                    value={form.adresse || ''}
+                    onChange={e => setForm({ adresse: e.target.value })}
+                    placeholder={form.lieu === 'agence' ? "Vide = l'adresse de l'agence" : "Vide = l'adresse du chantier"}
+                    style={{height:38, padding:'0 12px', fontSize:13}} />
+                </ModalField>
 
                 {/* Entreprises conviées — PLUSIEURS depuis le 09/09. Une réunion de
                     chantier à deux entreprises devait pouvoir les prévenir toutes les

@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
 import { fmtDateHeureFR, estDansDelaiEdition } from '../lib/dates'
+import { erreurAffichable } from '../lib/erreurs'
 
 export default function MessageriePage() {
   const router = useRouter()
@@ -131,7 +132,7 @@ export default function MessageriePage() {
       lu_agence: true,
     }).select('*, auteur:profiles(prenom, nom, role)').single()
     if (error) {
-      alert('Erreur lors de l\'envoi : ' + error.message)
+      alert(erreurAffichable(error, 'Erreur lors de l\'envoi'))
     } else {
       if (newMsg) setMessages(prev => [...prev, newMsg])
       setReponse('')

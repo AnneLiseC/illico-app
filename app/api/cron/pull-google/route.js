@@ -26,7 +26,10 @@ export async function GET(req) {
     .from('cibles_calendrier')
     .select('id, agenda_nom, calendar_id, agence_id, societe_id, actif, fournisseur')
     .eq('actif', true)   // TOUTES sociétés, TOUS fournisseurs
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[cron][pull] chargement des cibles', error.message)
+    return NextResponse.json({ error: 'Chargement des calendriers impossible.' }, { status: 500 })
+  }
 
   console.log('[cron][pull] cibles actives (toutes sociétés, tous fournisseurs) :', (cibles || []).length)
 

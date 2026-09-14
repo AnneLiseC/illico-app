@@ -22,6 +22,7 @@ import { DRY_RUN } from './google'
 import {
   rdvSummary, rdvDescription, rdvBounds,
   interventionSummary, interventionDescription, interventionOccurrences,
+  lieuRdv, lieuIntervention,
 } from './mapping'
 
 const TZ = 'Europe/Paris'
@@ -33,9 +34,12 @@ const TZ = 'Europe/Paris'
 // convertissent l'heure locale Paris en instant UTC (luxon) ; les périodes sans heure
 // sortent en all-day (DTSTART;VALUE=DATE), end exclusif = lendemain (comme Google).
 
-function icsString({ uid, summary, description, start, end, allDay }) {
+function icsString({ uid, summary, description, location, start, end, allDay }) {
   const cal = ical({ prodId: { company: 'illico-travaux', product: 'illico-app', language: 'FR' } })
-  cal.createEvent({ id: uid, start, end, allDay, summary, description })
+  // `location` n'est transmis que s'il est renseigné : ical-generator écrirait sinon une
+  // ligne LOCATION vide, qu'Apple Agenda affiche comme un lieu — un lieu qui n'existe pas.
+  cal.createEvent({ id: uid, start, end, allDay, summary, description,
+    ...(location ? { location } : {}) })
   return cal.toString()
 }
 
@@ -68,6 +72,7 @@ export function rdvToICS(rdv) {
     uid: `illico-rdv-${rdv.id}@illico-travaux.com`,
     summary: rdvSummary(rdv),
     description: rdvDescription(rdv),
+    location: lieuRdv(rdv),
     start, end, allDay: false,
   })
 }
@@ -77,12 +82,14 @@ export function rdvToICS(rdv) {
 // re-push). Le titre porte le préfixe d'occurrence ('(début) ' / '(fin) '). Journée entière.
 export function interventionToICS(intervention) {
   const summary = interventionSummary(intervention)
+  const lieu = lieuIntervention(intervention)
   return interventionOccurrences(intervention).map((o) => ({
     role: o.role,
     body: icsString({
       uid: `illico-int-${intervention.id}${o.idSuffix}@illico-travaux.com`,
       summary: (o.label || '') + summary,
       description: interventionDescription(intervention, o.marker),
+      location: lieu,
       ...icloudTimeFields(o.time),
     }),
   }))

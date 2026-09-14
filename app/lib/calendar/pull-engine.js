@@ -15,7 +15,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { parseEvent } from './parse-event'
-import { rdvSummary } from './mapping'
+import { rdvSummary, estAdresseCorrigee } from './mapping'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -98,13 +98,23 @@ export async function loadByGid(cibleRow) {
   const PAGE = 1000
   for (let from = 0; ; from += PAGE) {
     const { data: rows, error } = await getSupabaseAdmin()
-      .from('rendez_vous').select('id, google_event_id, google_etag, dossier_id')
+      // `lieu`, `adresse`, l'adresse du chantier et celle de l'agence sont chargées ici
+      // parce que le moteur doit pouvoir RECALCULER le lieu par défaut de chaque rendez-vous.
+      // Sans ce calcul, impossible de distinguer une vraie correction humaine de l'écho de
+      // ce qu'on a nous-même poussé — et on figerait une copie de l'adresse du chantier
+      // dans chaque rendez-vous au premier pull.
+      .from('rendez_vous')
+      .select('id, google_event_id, google_etag, dossier_id, lieu, adresse, dossier:dossiers(adresse_chantier), agence:agences(nom, adresse, code_postal, ville)')
       .eq('cible_id', cibleRow.id).not('google_event_id', 'is', null)
       .order('id', { ascending: true }).range(from, from + PAGE - 1)
     if (error || !rows || rows.length === 0) break
     for (const r of rows) {
       const arr = byGid.get(r.google_event_id) || []
-      arr.push({ id: r.id, etag: r.google_etag, dossier_id: r.dossier_id }); byGid.set(r.google_event_id, arr)
+      arr.push({
+        id: r.id, etag: r.google_etag, dossier_id: r.dossier_id,
+        lieu: r.lieu, adresse: r.adresse, dossier: r.dossier, agence: r.agence,
+      })
+      byGid.set(r.google_event_id, arr)
     }
     if (rows.length < PAGE) break
   }
@@ -198,6 +208,20 @@ export function classifyNormalized(norm, ctx) {
       type_rdv: parsed.type_rdv,
       artisan_id: parsed.artisan_id,
       titre: needsTrame ? null : (norm.summary || ''),
+    }
+    // LIEU CORRIGÉ DEPUIS L'AGENDA (14/09).
+    //
+    // On n'écrit QUE si l'adresse reçue diffère de celle qu'on aurait calculée : sinon on
+    // enregistrerait l'écho de notre propre push, et chaque rendez-vous se figerait une
+    // copie de l'adresse du chantier. Le jour où le chantier déménage, plus rien ne se
+    // propagerait — l'exception aurait mangé la règle.
+    //
+    // Un champ VIDÉ dans l'agenda ne remet rien à zéro : on ne sait pas distinguer
+    // « j'enlève l'adresse » d'un agenda qui ne renvoie simplement pas le champ, et
+    // effacer sur un doute est pire que ne rien faire.
+    if (estAdresseCorrigee(cur, norm.location)) {
+      payload.adresse = String(norm.location).trim()
+      report.lieux_corriges = (report.lieux_corriges || 0) + 1
     }
     if (norm.start_utc) payload.date_heure = norm.start_utc
     if (norm.kind !== 'allday' && norm.start_utc && norm.end_utc) {

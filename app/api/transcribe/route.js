@@ -95,7 +95,8 @@ export async function POST(request) {
     }
     return NextResponse.json({ transcript })
   } catch (err) {
+    // Le détail reste dans les journaux Vercel ; le client reçoit une phrase française.
     console.error('Transcribe error:', err.message, err.stack)
-    return NextResponse.json({ error: err.message || 'Erreur serveur' }, { status: 500 })
+    return NextResponse.json({ error: 'La transcription a échoué.' }, { status: 500 })
   }
 }

@@ -11,6 +11,7 @@ import ModalShell from '../components/ModalShell'
 import { heicToJpegFile } from '../lib/images'
 import { DOCS_RGPD } from '../lib/legal'
 import { grilleVersTexte, texteVersGrille, normaliserGrille } from '../lib/apporteur'
+import { erreurAffichable } from '../lib/erreurs'
 
 const LS = { display:'block', fontSize:12, fontWeight:600, color:'var(--ink-600)', marginBottom:5 }
 
@@ -304,7 +305,7 @@ export default function Parametres() {
       const data = await res.json()
       if (!res.ok) { setErreur(data.error || 'Erreur lors de la désactivation') }
       else { setSucces(`${agenteASupprimer.prenom} ${agenteASupprimer.nom} désactivée ✓`); setModal(false); setAgenteASupprimer(null); await chargerAgentes() }
-    } catch (err) { setErreur(err.message) }
+    } catch (err) { setErreur(erreurAffichable(err)) }
     setSupprimant(false)
   }
 
@@ -316,7 +317,7 @@ export default function Parametres() {
       const data = await res.json()
       if (!res.ok) setErreur(data.error || 'Erreur lors de la réactivation')
       else { setSucces(`${agente.prenom} ${agente.nom} réactivée ✓`); await chargerAgentes() }
-    } catch (err) { setErreur(err.message) }
+    } catch (err) { setErreur(erreurAffichable(err)) }
   }
 
   // Dépose une DEMANDE d'agent (l'éditrice la validera → compte créé + invité).
@@ -330,7 +331,7 @@ export default function Parametres() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setErreur(data.error || 'Erreur') }
       else { setSucces(`Demande envoyée pour ${formDemande.prenom} ${formDemande.nom} ✓`); setModal(false); await chargerDemandes() }
-    } catch (err) { setErreur(err.message) }
+    } catch (err) { setErreur(erreurAffichable(err)) }
     setEnvoiDemande(false)
   }
 
@@ -347,7 +348,7 @@ export default function Parametres() {
         await sauvegarderObjectif('agente', agenteEditee.id, agenteEditee.agence_id, form.objectif !== '' ? form.objectif : 0)
       }
       setSucces('Profil mis à jour ✓'); setModal(false); await chargerAgentes()
-    } catch (err) { setErreur(err.message) }
+    } catch (err) { setErreur(erreurAffichable(err)) }
     setSaving(false)
   }
 
@@ -356,7 +357,7 @@ export default function Parametres() {
     const ext = fichier.name.split('.').pop()
     const chemin = `kbis/${agenteId}.${ext}`
     const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true })
-    if (uploadError) { setErreur('Erreur upload KBIS : ' + uploadError.message); setUploadingKbis(null); return }
+    if (uploadError) { setErreur(erreurAffichable(uploadError, 'Erreur upload KBIS')); setUploadingKbis(null); return }
     const res = await apiFetch('/api/create-agente', { method: 'PATCH', body: JSON.stringify({ id: agenteId, kbis_url: chemin }) })
     if (res.ok) { setSucces('KBIS uploadé ✓'); await chargerAgentes() } else { setErreur('Erreur sauvegarde KBIS') }
     setUploadingKbis(null)
@@ -385,11 +386,11 @@ export default function Parametres() {
     const marque = Date.now()
     const chemin = ribFranchise ? `rib/societe-${profile.societe_id}-${marque}.pdf` : `rib/${profile.id}-${marque}.pdf`
     const { error: uploadError } = await supabase.storage.from('documents').upload(chemin, fichier, { upsert: true, contentType: 'application/pdf' })
-    if (uploadError) { setErreur('Erreur upload RIB : ' + uploadError.message); setUploadingRib(false); return }
+    if (uploadError) { setErreur(erreurAffichable(uploadError, 'Erreur upload RIB')); setUploadingRib(false); return }
     const { error } = ribFranchise
       ? await supabase.from('societes').update({ rib_url: chemin }).eq('id', profile.societe_id)
       : await supabase.from('profiles').update({ rib_url: chemin }).eq('id', profile.id)
-    if (error) { setErreur('Erreur sauvegarde RIB : ' + error.message) }
+    if (error) { setErreur(erreurAffichable(error, 'Erreur sauvegarde RIB')) }
     else {
       setSucces('RIB uploadé ✓')
       if (ribFranchise) setSociete(s => ({ ...s, rib_url: chemin }))
@@ -429,7 +430,7 @@ export default function Parametres() {
       URL.revokeObjectURL(url)
       setExportInfo(onglets ? `Classeur téléchargé : ${onglets} onglets, ${lignes} lignes. Le premier onglet explique ce qu'il contient.` : 'Classeur téléchargé.')
     } catch (e) {
-      setErreur(e?.message || "L'export a échoué.")
+      setErreur(erreurAffichable(e, "L'export a échoué"))
     } finally {
       setExportEnCours(false)
     }
@@ -446,11 +447,11 @@ export default function Parametres() {
     const chemin = ribFranchise ? `kbis/societe-${profile.societe_id}-${marqueK}.${ext}` : `kbis/${profile.id}-${marqueK}.${ext}`
     const { error: uploadError } = await supabase.storage
       .from('documents').upload(chemin, f, { upsert: true })
-    if (uploadError) { setErreur('Erreur upload KBIS : ' + uploadError.message); setUploadingKbisFranchise(false); return }
+    if (uploadError) { setErreur(erreurAffichable(uploadError, 'Erreur upload KBIS')); setUploadingKbisFranchise(false); return }
     const { error } = ribFranchise
       ? await supabase.from('societes').update({ kbis_url: chemin }).eq('id', profile.societe_id)
       : await supabase.from('profiles').update({ kbis_url: chemin }).eq('id', profile.id)
-    if (error) { setErreur('Erreur sauvegarde KBIS : ' + error.message) }
+    if (error) { setErreur(erreurAffichable(error, 'Erreur sauvegarde KBIS')) }
     else {
       setSucces('KBIS uploadé ✓')
       if (ribFranchise) setSociete(s => ({ ...s, kbis_url: chemin }))
@@ -471,7 +472,7 @@ export default function Parametres() {
     const { error } = await supabase.from('profiles')
       .update({ prenom: profile.prenom, nom: profile.nom, telephone: profile.telephone })
       .eq('id', profile.id)
-    if (error) setErreur('Erreur : ' + error.message)
+    if (error) setErreur(erreurAffichable(error))
     else {
       setSucces('Profil enregistré ✓')
       setProfilSnap({ prenom: profile.prenom || '', nom: profile.nom || '', telephone: profile.telephone || '' })
@@ -490,7 +491,7 @@ export default function Parametres() {
     if (newPwd.length < 8) { setErreur('8 caractères minimum'); return }
     setSavingPwd(true); setErreur(''); setSucces('')
     const { error } = await supabase.auth.updateUser({ password: newPwd })
-    if (error) setErreur('Erreur : ' + error.message)
+    if (error) setErreur(erreurAffichable(error))
     else { setSucces('Mot de passe modifié ✓'); setNewPwd(''); setNewPwdConfirm('') }
     setSavingPwd(false)
   }

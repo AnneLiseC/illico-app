@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../../lib/auth-context'
 import { chercherDoublons } from '../../lib/doublons'
+import { erreurAffichable } from '../../lib/erreurs'
 
 const FORMES_JURIDIQUES = ['SCI', 'SARL', 'EURL', 'SAS', 'SASU', 'SA', 'SNC', 'SCEA', 'SCM', 'auto-entrepreneur / micro-entreprise', 'EI']
 
@@ -183,7 +184,7 @@ export default function NouveauClient() {
     }).select()
 
     if (error) {
-      setErreur('Erreur : ' + error.message)
+      setErreur(erreurAffichable(error))
       setLoading(false)
     } else if (data?.[0]?.id) {
       router.push(`/chantiers/nouveau?client=${data[0].id}`)
