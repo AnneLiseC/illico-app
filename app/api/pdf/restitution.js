@@ -604,7 +604,7 @@ async function buildContentPDF({ dossier, devis, photos, interventions, factures
 // qu'il s'est déroulé, pas tel qu'il avait été envisagé au premier rendez-vous. Les
 // comptes rendus arrivent dans leur ordre chronologique, chacun étiqueté de son type de
 // visite, pour que le modèle puisse lire le déroulé.
-async function generateResumeProjet({ comptesRendus, description, devisNotes }) {
+async function generateResumeProjet({ comptesRendus, description, devisNotes, isPreSignature = false }) {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return null
 
@@ -623,8 +623,22 @@ async function generateResumeProjet({ comptesRendus, description, devisNotes }) 
 
   if (parts.length === 0) return null
 
+  // Le TEMPS du récit dépend du stade, et ce n'était pas dit au modèle avant le 16/09.
+  //
+  // Les comptes rendus racontent des visites passées : sans consigne, le modèle en déduit
+  // que les travaux ont eu lieu et rédige au passé composé. Sur le dossier 2026-AM-007,
+  // en pleine présentation de devis, le résumé annonçait au client que son extension
+  // « a permis de créer un véritable espace de vie » et que les travaux « ont été
+  // coordonnés » — alors que rien n'était signé. C'est une promesse écrite, sur un
+  // document remis au client, pour des travaux qui n'ont pas commencé.
+  const consigneStade = isPreSignature
+    ? `STADE DU DOSSIER — PRÉSENTATION DES DEVIS. Aucun devis de travaux n'est signé à ce jour : les travaux ne sont ni commencés, ni engagés. Seules des études préalables ont pu être réalisées. Rédige donc au PRÉSENT et au FUTUR, en décrivant le projet ENVISAGÉ et les travaux PRÉVUS. N'écris JAMAIS qu'un ouvrage a été réalisé, créé, installé, posé ou coordonné, et n'emploie aucune formule laissant entendre que le chantier est fait ou en cours.`
+    : `STADE DU DOSSIER — TRAVAUX ENGAGÉS. Les devis sont signés. Tu peux décrire au passé ce qui a été réalisé, et au présent ou au futur ce qui reste à faire, en te réglant sur ce que disent les comptes rendus.`
+
   const prompt = `Tu es un assistant pour illiCO travaux, une société de courtage en travaux et assistance à maîtrise d'ouvrage dans le bâtiment.
   À partir des éléments ci-dessous, rédige un résumé professionnel et synthétique du projet de rénovation. Les comptes rendus sont donnés dans l'ordre chronologique : appuie-toi sur l'ensemble du déroulé, et non sur la seule première visite. Le résumé doit être clair, fluide, en français, sans bullet points, en 3 à 5 phrases maximum. Ne mentionne pas les artisans ni les montants. Parle du projet du point de vue du client.
+
+${consigneStade}
 
 CONTRAINTE DE FORME : réponds UNIQUEMENT par le texte du résumé. Pas de titre, pas de markdown, pas de dièse, pas d'astérisque, pas de mention du numéro de dossier — ce texte est inséré dans un document qui porte déjà son titre.
 
@@ -875,8 +889,63 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   // La règle est désormais celle du métier, dite par Anne-Lise : tant qu'aucun devis
   // n'est signé, on est en présentation de devis. Un dossier terminé reste post-signature
   // quoi qu'il arrive.
+  // ═══════════════════════════════════════════════════════════════════════════════════
+  // AFFINÉ LE 16/09 — un devis signé ne suffit pas à quitter la présentation.
+  //
+  // La règle précédente (« au moins un devis accepté → post-signature ») se trompait sur
+  // tous les dossiers AMO, et pour une raison de métier : le bureau d'étude ou
+  // l'architecte est TOUJOURS signé en amont, des mois avant les entreprises. Dès que son
+  // devis passait à « accepté », le dossier basculait en post-signature alors qu'on était
+  // encore en train de présenter les devis de travaux au client.
+  //
+  // Constaté sur le dossier 2026-AM-007 : BETATEC (bureau d'étude structure, 1 500 € HT,
+  // signé le 03/06) était le seul devis accepté, face à SIX devis reçus totalisant
+  // 34 714 € HT. Le document produit était faux sur trois plans à la fois —
+  //   · le récapitulatif financier n'affichait que les frais de consultation et le BET,
+  //     les 34 714 € des devis présentés en annexe n'apparaissant nulle part ;
+  //   · la section « KBIS - Assurances » ne contenait que le RIB de la franchise : les
+  //     Kbis et décennales des quatre entreprises qui les avaient déposés étaient exclus,
+  //     alors que c'est précisément sur ces pièces que le client choisit ;
+  //   · le résumé du projet était rédigé au passé, comme des travaux achevés.
+  //
+  // RÈGLE POSÉE PAR ANNE-LISE (16/09), qui est celle du métier :
+  //   « Tant qu'on a des devis en reçus il faut rester sur la première version. Un devis
+  //     signé sur plusieurs reçus c'est toujours avant signature, car un BET ou architecte
+  //     est toujours signé en amont. »
+  //
+  // Donc : il reste au moins un devis EN ATTENTE → on est en présentation, quel que soit
+  // le nombre de devis déjà signés. Un dossier terminé reste post-signature quoi qu'il
+  // arrive.
+  //
+  // GARDE-FOU : LE DÉMARRAGE DU CHANTIER FERME LA PRÉSENTATION.
+  //
+  // Sans lui, un devis resté en « reçu » sur un chantier en cours ramenait tout le
+  // dossier en présentation : plus de suivi des paiements, plus de factures, plus de PV.
+  // Ce n'est pas théorique — deux cas le produisent pour de bon :
+  //   · un devis oublié, qui ne se fera pas et qu'on n'a pas coché « refusé » ;
+  //   · des TRAVAUX SUPPLÉMENTAIRES, devis parfaitement légitime reçu APRÈS le démarrage,
+  //     qui n'a aucune raison de faire reculer le dossier d'un stade.
+  //
+  // La date de démarrage tranche les deux d'un coup : une fois le chantier commencé, on
+  // n'est plus en présentation, quoi qu'il reste en attente. `date_demarrage_chantier_manuel`
+  // prime sur la date calculée, comme partout ailleurs dans l'application.
+  //
+  // CE QUE JE N'AI PAS FAIT, ET POURQUOI. L'autre piste envisagée était de traiter un
+  // « reçu » comme un « refusé » après le démarrage. Écartée : elle ferait DISPARAÎTRE
+  // des annexes un devis de travaux supplémentaires en cours de négociation, alors que
+  // c'est justement un document que le client doit avoir sous les yeux. Avec le
+  // garde-fou ci-dessus, ce devis reste imprimé (il est dans `devisR3`) mais n'entre pas
+  // dans le récapitulatif financier tant qu'il n'est pas signé — ce qui est le bon
+  // traitement : un TS non signé n'est pas une dépense engagée.
+  //
+  // Distinguer un TS d'un devis oublié demanderait un champ « type » sur le devis, qui
+  // n'existe pas en base à ce jour. Le garde-fou s'en passe.
+  // ═══════════════════════════════════════════════════════════════════════════════════
   const aDevisSigne = (devis || []).some(d => d.statut === 'accepte')
-  const isPreSignature = !isTermine && !aDevisSigne
+  const aDevisEnAttente = (devis || []).some(d => d.statut === 'recu')
+  const dateDemarrage = dossier.date_demarrage_chantier_manuel || dossier.date_demarrage_chantier
+  const chantierDemarre = !!dateDemarrage && new Date(dateDemarrage) <= new Date()
+  const isPreSignature = !isTermine && !chantierDemarre && (aDevisEnAttente || !aDevisSigne)
 
   // Filtrage devis selon le stade
   const devisR3 = (devis || []).filter(d => d.statut === 'recu' || d.statut === 'accepte')
@@ -888,7 +957,13 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   // Qualifications (Qualibat, RGE) : même raisonnement que les Kbis et les décennales.
   // Le client choisit une entreprise au moment où on lui présente les devis — c'est là
   // qu'il doit pouvoir vérifier ses qualifications, pas après avoir signé. (09/09)
-  const hasQualif = devisActifs.some(d => d.artisan?.qualification_url)
+  //
+  // `devisR3` et non `devisActifs` : les pièces des entreprises doivent suivre les devis
+  // RÉELLEMENT IMPRIMÉS dans ce document, et les pages de devis, elles, bouclent sur
+  // `devisR3` aux deux stades. Les deux listes coïncident presque toujours depuis la
+  // règle du 16/09 ; elles divergent encore sur un dossier TERMINÉ qui garderait un devis
+  // en attente. Aligner ici ferme définitivement l'écart. (16/09)
+  const hasQualif = devisR3.some(d => d.artisan?.qualification_url)
 
   // Factures honoraires (CTP→client) : à embarquer dans le bloc Factures, pas
   // dans le bloc générique « autres documents ». categorie='facture_honoraire'.
@@ -928,6 +1003,7 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   const devisNotes = (devisActifs || []).map(d => d.notes).filter(Boolean)
   const resumeGenere = await generateResumeProjet({
     comptesRendus: crsData || [], description: dossier.description, devisNotes,
+    isPreSignature,   // le temps du récit suit le stade — voir generateResumeProjet
   })
 
   // Générer les pages de contenu (descriptif + récap)
@@ -1067,7 +1143,7 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   if (hasQualif) {
     await addSep(sepQualification)
     const vusQualif = new Set()
-    for (const d of devisActifs) {
+    for (const d of devisR3) {   // même périmètre que `hasQualif` et que les pages de devis
       const urlQ = d.artisan?.qualification_url
       if (urlQ && !vusQualif.has(urlQ)) {
         vusQualif.add(urlQ)
@@ -1122,7 +1198,7 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   // qu'elle est immatriculée et assurée avant de signer, pas après. Un dossier de
   // présentation sans Kbis ni décennale revient à faire choisir à l'aveugle.
   //
-  // Le périmètre suit `devisActifs`, c'est-à-dire EXACTEMENT les devis présents dans ce
+  // Le périmètre suit `devisR3`, c'est-à-dire EXACTEMENT les devis présents dans ce
   // document : avant signature les devis reçus et acceptés, après signature les seuls
   // acceptés. Une entreprise dont le devis a été refusé n'a donc pas à y figurer.
   //
@@ -1134,7 +1210,7 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   // se terminait par une page « Kbis et assurances » suivie de rien.
   const docsArtisans = []
   const vusDocs = new Set()
-  for (const d of devisActifs) {
+  for (const d of devisR3) {   // les pièces suivent les devis IMPRIMÉS — voir `hasQualif`
     const art = d.artisan || {}
     if (art.kbis_url && !vusDocs.has(art.kbis_url)) {
       vusDocs.add(art.kbis_url)
