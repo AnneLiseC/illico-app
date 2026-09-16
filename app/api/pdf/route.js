@@ -49,7 +49,7 @@ function getSupabaseAdmin() {
 // récapitulatif au mail de demande d'acompte. Une seule définition, deux rendus.
 import {
   BLEU, BLEU_CLAIR, GRIS, GRIS_TEXTE,
-  toNumber, fmt, logoBase64, styles,
+  toNumber, fmt, logoBase64, logoBase64, getLogoBase64, styles,
   buildRecapitulatifDocument,
 } from '../../lib/pdf/recapitulatifDocument.js'
 
