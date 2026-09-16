@@ -1,5 +1,7 @@
 // app/api/transcribe/route.js
-// Transcription d'un audio de visite/RDV en texte (Deepgram Nova-3, français).
+// Transcription d'un audio de visite/RDV en texte (Deepgram Nova-3, français),
+// sur le point d'accès EUROPÉEN et avec exclusion de l'entraînement — voir le bloc
+// de commentaires devant l'appel, plus bas : ces deux points sont contractuels.
 // Étape AMONT du CR : le texte produit alimente `notesBrutes` de /api/cr.
 //
 // Méthode : l'audio est déjà déposé en Storage (bucket `documents`, sous
@@ -69,8 +71,42 @@ export async function POST(request) {
     const params = new URLSearchParams({
       model: 'nova-3', language: 'fr',
       diarize: 'true', punctuate: 'true', smart_format: 'true', utterances: 'true',
+      // ═══════════════════════════════════════════════════════════════════════════════
+      // NE JAMAIS RETIRER CE PARAMÈTRE (16/09).
+      //
+      // Chez Deepgram, la participation au « Model Improvement Program » est le
+      // comportement PAR DÉFAUT : sans ce paramètre, la requête est CONSERVÉE et
+      // peut servir à entraîner leurs modèles. Leur liste de sous-traitants montre
+      // d'ailleurs que de l'audio circule chez des tiers (OpenAI, Anthropic, Fly.io…)
+      // — c'est précisément ce que l'opt-out ferme.
+      //
+      // Avec mip_opt_out=true : zéro conservation. Deepgram ne stocke ni l'audio ni
+      // le transcript après avoir rendu la réponse. Seules les métadonnées d'usage
+      // (durée, modèle, code de retour) restent 90 jours, sans contenu.
+      //
+      // L'exclusion se demande REQUÊTE PAR REQUÊTE. Il n'existe pas, à ce jour, de
+      // réglage de compte qui la rende automatique : ce paramètre EST la garantie.
+      //
+      // Un enregistrement de visite contient la voix du client final. Le retirer
+      // ferait sortir cette voix du périmètre décrit au DPA signé avec le franchisé.
+      // ═══════════════════════════════════════════════════════════════════════════════
+      mip_opt_out: 'true',
     })
-    const dgRes = await fetch(`https://api.deepgram.com/v1/listen?${params}`, {
+    // Point d'accès EUROPÉEN, en dur, et sans variable d'environnement.
+    //
+    // `api.eu.deepgram.com` traite ET stocke dans l'Union européenne, et ne route pas
+    // hors région : si la région est indisponible, la requête ÉCHOUE au lieu de
+    // basculer ailleurs. C'est exactement ce qu'on veut — un repli silencieux vers les
+    // États-Unis annulerait la résidence des données sans que personne s'en aperçoive.
+    //
+    // En dur, et pas dans une variable d'environnement : une variable mal renseignée un
+    // jour de mise en production suffirait à renvoyer la voix des clients hors d'Europe.
+    // La clé d'API, elle, n'est PAS régionale : la même fonctionne sur tous les points
+    // d'accès, il n'y a donc rien d'autre à changer.
+    //
+    // Résidence complète = les DEUX : le point d'accès européen ET mip_opt_out.
+    // L'un sans l'autre ne suffit pas.
+    const dgRes = await fetch(`https://api.eu.deepgram.com/v1/listen?${params}`, {
       method: 'POST',
       headers: {
         'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
