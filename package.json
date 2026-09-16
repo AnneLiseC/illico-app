@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "lint:undef": "eslint --config eslint.undef.config.mjs --no-config-lookup \"app/**/*.js\" \"app/**/*.jsx\" \"*.mjs\"",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -40,6 +41,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "eslint": "^9",
+    "globals": "^14.0.0",
     "eslint-config-next": "^16.2.0",
     "tailwindcss": "^4",
     "vitest": "~3.2.7"

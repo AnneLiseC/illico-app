@@ -35,3 +35,14 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      # Symboles non définis (no-undef) — ajouté le 16/09 après TROIS pannes trouvées le
+      # même jour : getLogoBase64, TVA_FRAIS, nomDossier. Toutes les trois invisibles pour
+      # `next build` et pour les tests, toutes les trois cassaient une fonction en
+      # production. Voir eslint.undef.config.mjs pour le détail.
+      #
+      # Volontairement séparé de `npm run lint` : la config Next remonte déjà des erreurs
+      # de style sur ce dépôt, et une CI rouge en permanence ne sert à rien. Cette étape-ci
+      # est verte aujourd'hui, et ne passera au rouge que pour un symbole qui n'existe pas.
+      - name: Symboles non définis
+        run: npm run lint:undef
