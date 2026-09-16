@@ -876,7 +876,15 @@ export async function GET(req) {
             cle: `rdv:${rdv.id}:${rdv.date_heure}:artisan:${artisan.email}`,
             to: artisan.email,
             replyTo: referente?.email,
-            subject: `Rappel, rendez-vous demain sur le dossier ${nomDossier}`,
+            // `nomDossierClient(client, ref)` et non `nomDossier` : cette variable-là
+            // n'existe QUE dans le bloc des relances de devis (ligne ~229), pas ici.
+            // Elle levait donc `ReferenceError: nomDossier is not defined` à la
+            // construction de l'objet — donc à CHAQUE rappel J-1 destiné à un artisan.
+            // Et comme le catch enveloppe tout le bloc [5], le premier rendez-vous avec
+            // artisan faisait tomber la boucle entière : les rendez-vous suivants
+            // n'étaient plus traités du tout, client compris. Trouvé le 16/09 par le
+            // passage de `no-undef` sur l'ensemble du dépôt.
+            subject: `Rappel, rendez-vous demain sur le dossier ${nomDossierClient(client, ref)}`,
             html: `
               <p>Bonjour ${prenomNom(artisan) || artisan.entreprise},</p>
               <p>Nous vous rappelons ce rendez-vous :</p>
