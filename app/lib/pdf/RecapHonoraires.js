@@ -163,33 +163,38 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
     return out
   }
 
+  // « Total honoraire » sous une ligne unique qui porte déjà le même montant : c'est du
+  // bruit, pas une information. On ne le garde que quand le bloc a plusieurs lignes à
+  // additionner — ventilation des travaux supplémentaires, ou déduction des frais de
+  // consultation. Le bloc AMO, lui, a toujours deux lignes : son total reste. (16/09)
+  const totalCourtageRedondant = !hasTS && remiseFraisConso === 0
+
   // ── Scénario COURTAGE ──
   // « Tarif standard » = prix catalogue BRUT (aucune remise) → totalFraisTable (frais
   // NON déduits). « Votre tarif » = net → fraisComp (remise frais déduite).
   const totalChCourtageStd  = baseTTC + courtageStd + totalFraisTable
   const totalChCourtageReel = baseTTC + courtageReel + fraisComp
   const courtageChildren = [
-    h(Text, { key: 't', style: S.blocTitleC }, `Honoraires illiCO travaux COURTAGE (${pct(COURTAGE_STANDARD)})`),
+    h(Text, { key: 't', style: S.blocTitleC }, `Courtage (${pct(COURTAGE_STANDARD)})`),
   ]
   if (showStdCourtage) {
     courtageChildren.push(
       h(Text, { key: 'ns', style: S.niveau }, 'Tarif standard'),
       ligneHon('Honoraires courtage — à la signature des devis', courtageStd, 'hs'),
-      totalHon(pct(COURTAGE_STANDARD), courtageStd, 'ths'),
       totalChantier('TOTAL CHANTIER si COURTAGE (tarif standard)', totalChCourtageStd, { std: true }, 'tcs'),
       ...(remiseCourtageVal > 0 ? [ligneRemise(`Remise commerciale sur honoraire courtage (${pct(COURTAGE_STANDARD - tauxCourtage)})`, remiseCourtageVal, BLEU, 'rem')] : []),
       ...(offertCourtage > 0 ? [ligneRemise(LBL_OFFERT, offertCourtage, BLEU, 'off')] : []),
       h(Text, { key: 'nr', style: S.niveau }, 'Votre tarif'),
       ...courtageReelLignes('cr'),
       ...(remiseFraisConso > 0 ? [ligneRemise('Remise commerciale sur frais de consultation', remiseFraisConso, VIOLET, 'crf')] : []),
-      totalHon(pct(tauxCourtage), round2(courtageReel - remiseFraisConso), 'thr'),
+      ...(totalCourtageRedondant ? [] : [totalHon(pct(tauxCourtage), round2(courtageReel - remiseFraisConso), 'thr')]),
       totalChantier('TOTAL CHANTIER si COURTAGE', totalChCourtageReel, { bg: BLEU }, 'tcr'),
     )
   } else {
     courtageChildren.push(
       ...courtageReelLignes('cn'),
       ...(remiseFraisConso > 0 ? [ligneRemise('Remise commerciale sur frais de consultation', remiseFraisConso, VIOLET, 'cnf')] : []),
-      totalHon(pct(tauxCourtage), round2(courtageReel - remiseFraisConso), 'thr'),
+      ...(totalCourtageRedondant ? [] : [totalHon(pct(tauxCourtage), round2(courtageReel - remiseFraisConso), 'thr')]),
       totalChantier('TOTAL CHANTIER si COURTAGE', totalChCourtageReel, { bg: BLEU }, 'tcr'),
     )
   }
@@ -214,7 +219,7 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
     const tauxCombineStd  = COURTAGE_STANDARD + AMO_STANDARD
     const tauxCombineReel = tauxCourtage + tauxAmoReel
     const amoChildren = [
-      h(Text, { key: 't', style: S.blocTitleA }, `Honoraires illiCO travaux AMO (${pct(tauxCombineStd)})`),
+      h(Text, { key: 't', style: S.blocTitleA }, `AMO (${pct(tauxCombineStd)}) — courtage inclus`),
     ]
     if (remise) {
       amoChildren.push(
@@ -249,9 +254,21 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
     blocAMO = h(View, { key: 'amo', style: S.blocA }, ...amoChildren)
   }
 
+  // Sur un dossier AMO, le bloc COURTAGE seul n'a pas lieu d'être : l'AMO CONTIENT le
+  // courtage (15 % = 6 % d'acompte + 9 % de solde), ce ne sont pas deux offres au choix.
+  // L'afficher revenait à présenter au client un total moins cher pour une mission qu'il
+  // n'a pas prise — et c'est ce bloc qui faisait déborder la page. Sur un dossier
+  // courtage il reste, avec l'AMO simulé en regard : là, la comparaison a un sens. (16/09)
+  //
+  // `.filter(Boolean)` : @react-pdf ne supporte PAS un enfant `null`, il déréférence
+  // `.props` sans garde. `blocAMO` valait déjà `null` sur un dossier courtage dont aucun
+  // devis n'est en négociation — c'est la deuxième erreur de production du 16/09,
+  // « Cannot read properties of null (reading 'props') ».
   return h(View, { style: S.section },
-    h(Text, { key: 'title', style: S.sectionTitle }, 'Honoraires illiCO travaux'),
-    blocCourtage,
-    blocAMO,
+    ...[
+      h(Text, { key: 'title', style: S.sectionTitle }, 'Honoraires illiCO travaux'),
+      isAMO ? null : blocCourtage,
+      blocAMO,
+    ].filter(Boolean),
   )
 }
