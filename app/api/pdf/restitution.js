@@ -1031,9 +1031,23 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
     const [p] = await final.copyPages(sepPdf, [0])
     final.addPage(p)
   }
-  const addContent = async () => {
-    const [p] = await final.copyPages(contentPdf, [cIdx++])
-    final.addPage(p)
+  // `n` pages de contenu, et jamais au-delà de ce que le document contient.
+  //
+  // ⚠️ CORRIGÉ LE 16/09. Cette fonction copiait UNE page par appel, en supposant que
+  // chaque section du document de contenu tient sur exactement une page. Le
+  // récapitulatif financier ne tient pas cette promesse : dès qu'il y a assez de devis,
+  // @react-pdf le fait déborder sur une deuxième page — et cette page-là n'était jamais
+  // copiée. Elle était produite, puis jetée.
+  //
+  // Constaté sur 2026-AM-007 : le pied de page du contenu annonçait « 2 / 3 » alors que
+  // le dossier final ne portait que deux pages de contenu. La troisième — celle qui
+  // portait le TOTAL CHANTIER si AMO au tarif remisé, donc le chiffre que le client
+  // regarde — manquait au document remis.
+  const addContent = async (n = 1) => {
+    for (let i = 0; i < n && cIdx < contentPdf.getPageCount(); i++) {
+      const [p] = await final.copyPages(contentPdf, [cIdx++])
+      final.addPage(p)
+    }
   }
   // `buf` nul = le téléchargement a déjà inscrit l'anomalie. Ici on n'inscrit que
   // l'échec de FUSION : la pièce existe mais pdf-lib n'a pas su la lire (PDF chiffré,
@@ -1087,8 +1101,16 @@ export async function buildDossierSuivi({ dossier, devis, photos, interventions,
   await addContent()
 
   // ── Récapitulatif financier ──
+  //
+  // En PRÉSENTATION, le récapitulatif est la DERNIÈRE section du document de contenu :
+  // tout ce qui reste lui appartient, quel que soit le nombre de pages qu'il a pris. On
+  // copie donc le reste, au lieu d'une page unique.
+  //
+  // Après signature, il est suivi d'autres sections (suivi, planning, maquettes) qui sont
+  // consommées plus bas : on garde une page, et le débordement éventuel du récapitulatif
+  // reste à traiter — voir la note en fin d'assemblage.
   await addSep(sepRecap)
-  await addContent()  // page récap financier
+  await addContent(isPreSignature ? contentPdf.getPageCount() : 1)
   if (afficherSuivi) {
     await addContent()  // page suivi des paiements
   }

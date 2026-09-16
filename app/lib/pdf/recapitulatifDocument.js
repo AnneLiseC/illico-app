@@ -20,6 +20,13 @@ import fs from 'fs'
 import { Document, Page, Text, View, Image as PdfImage, StyleSheet } from '@react-pdf/renderer'
 import { buildSuiviPaiementsSection } from '../../api/pdf/restitution.js'
 import { formatNomClient } from '../clients.js'
+// TVA_FRAIS est utilisé plus bas (lignes « Frais de consultation » et « Total HT ») et
+// n'était pas importé : `ReferenceError: TVA_FRAIS is not defined` en production le
+// 16/09, sur le récapitulatif financier ET le suivi financier — et aussi sur la pièce
+// jointe de la demande d'acompte, qui construit le même document depuis le cron.
+// Même défaut que `getLogoBase64` : un symbole resté derrière lors du déplacement du
+// code depuis api/pdf/route.js vers lib/pdf/.
+import { TVA_FRAIS } from '../finance.js'
 import RecapHonoraires from './RecapHonoraires.js'
 import './fonts.js'
 
