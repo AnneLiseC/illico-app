@@ -299,7 +299,19 @@ export async function POST(request) {
         factures: factures || [],
         suiviFinancier: suiviFinancier || [],
         adminFranchise: adminFranchise || null,
-        logo: getLogoBase64(),
+        // `logoBase64`, pas `getLogoBase64()` : la constante est déjà importée de
+        // recapitulatifDocument.js et vaut exactement la même chose, lue une fois au
+        // démarrage au lieu d'une fois par PDF.
+        //
+        // ⚠️ RÉGRESSION CORRIGÉE LE 16/09. Le commit 574d57b a sorti le logo de ce
+        // fichier vers recapitulatifDocument.js : il a supprimé la fonction locale
+        // `getLogoBase64` et réimporté SEULEMENT la constante — en laissant ici et
+        // ligne ~365 deux appels à la fonction, devenue introuvable. Résultat :
+        // `ReferenceError: getLogoBase64 is not defined`, donc PLUS AUCUN dossier de
+        // suivi ni PDF de compte rendu généré. Le cache l'a masqué : le générateur
+        // n'est appelé qu'en cas de manque, et l'empreinte contient le jour d'édition,
+        // donc la panne réapparaissait chaque matin, dossier par dossier.
+        logo: logoBase64,
         supabaseAdmin: getSupabaseAdmin(),
       })
       })
@@ -359,7 +371,8 @@ export async function POST(request) {
         return { id, path }
       }))
 
-      return await renderToBuffer(buildCRDocument({ dossier, cr, sections, logo: getLogoBase64(), photos: photosJointes }))
+      // Même correction qu'au bloc `dossier_suivi` : la constante, pas la fonction.
+      return await renderToBuffer(buildCRDocument({ dossier, cr, sections, logo: logoBase64, photos: photosJointes }))
       })
 
     } else if (type === 'devis') {
