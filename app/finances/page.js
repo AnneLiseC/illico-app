@@ -563,7 +563,17 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
           <thead style={{background:'var(--surface-2)'}}>
             <tr>
               {thL('Mois')}
-              <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Agente → Société<div style={{fontSize:11,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>facture F1</div></th>
+              {/* DEUX colonnes depuis le 16/09, et c'est tout l'objet du changement.
+                  Avant, une seule colonne portait le dû CUMULÉ (gain du mois + report du mois
+                  précédent). Additionnée à la main elle donnait 30 675,11 € là où le pied
+                  affichait 23 770,16 € : l'écart de 6 904,95 €, ce sont les reports comptés
+                  deux et trois fois. Personne ne pouvait le deviner en lisant l'écran.
+                  · « Gagné ce mois »  = le gain du mois SEUL. C'est cette colonne qui
+                    s'additionne, et dont la somme tombe sur le total en pied.
+                  · « À facturer »     = gain du mois + report. C'est le montant à réclamer,
+                    celui sur lequel portent le statut et les versements. */}
+              <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>Gagné ce mois<div style={{fontSize:11,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>hors report</div></th>
+              <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em'}}>À facturer<div style={{fontSize:11,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>report inclus · facture F1</div></th>
               <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut</th>
               <th style={{textAlign:'right',padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--ink-500)',textTransform:'uppercase',letterSpacing:'0.05em',borderLeft:'2px solid var(--ink-200)'}}>Société → Agente<div style={{fontSize:11,fontWeight:500,color:'var(--ink-300)',marginTop:2,letterSpacing:0}}>facture F2</div></th>
               <th style={{padding:'12px 16px',textAlign:'center',fontSize:11,fontWeight:700,color:'var(--ink-500)',textTransform:'uppercase'}}>Statut</th>
@@ -589,8 +599,19 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                     <span style={{display:'inline-block',width:14,color:'var(--ink-500)'}}>{isOpen ? '▾' : '▸'}</span>{MOIS[fMois]} {fAnnee}
                     <div style={{fontSize:11,fontWeight:500,color:'var(--ink-500)',marginLeft:14}}>activité de {MOIS[mois]} {annee}</div>
                   </td>
+                  {/* Gain du mois seul — la colonne qui s'additionne. */}
+                  <td style={{padding:'14px 16px',textAlign:'right',fontWeight:500,color:d.montantF1>0.005?'var(--ink-900)':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
+                    {Math.abs(d.montantF1) > 0.005 ? fmt(d.montantF1) : '—'}
+                  </td>
+                  {/* Dû cumulé = ce qu'on réclame ce mois-ci. Le report est rappelé dessous
+                      pour que l'écart avec la colonne de gauche s'explique sans déplier. */}
                   <td style={{padding:'14px 16px',textAlign:'right',fontWeight:600,color:f1m>0.005?'#15803d':f1m<-0.005?'#a16207':'var(--ink-300)',fontVariantNumeric:'tabular-nums'}}>
                     {Math.abs(f1m) > 0.005 ? fmt(f1m) : '—'}
+                    {Math.abs(rep.carryIn) > 0.005 && (
+                      <div style={{fontSize:10.5,fontWeight:500,color:'var(--ink-500)',marginTop:2}}>
+                        {rep.carryIn > 0 ? `dont ${fmt(rep.carryIn)} reporté` : `dont ${fmt(-rep.carryIn)} trop-perçu`}
+                      </div>
+                    )}
                   </td>
                   <td style={{padding:'14px 16px',textAlign:'center'}}>
                     {renderStatutV(f1, 'agente_vers_ctp', annee, mois, f1m, true)}
@@ -604,7 +625,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
                 </tr>
                 {isOpen && (
                   <tr style={{background:'var(--surface-2)'}}>
-                    <td colSpan={5} style={{padding:'4px 16px 16px'}}>
+                    <td colSpan={6} style={{padding:'4px 16px 16px'}}>
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:0,maxWidth:740}}>
                         <div style={{display:'flex',flexDirection:'column',gap:6,paddingRight:24}}>
                           <div className="eyebrow" style={{color:'#15803d'}}>F1 — Agente facture la Société</div>
@@ -639,14 +660,24 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
               )
             })}
             {months.length === 0 && (
-              <tr><td colSpan={5} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-500)'}}>Aucune facturation à afficher</td></tr>
+              <tr><td colSpan={6} style={{padding:'32px 16px',textAlign:'center',color:'var(--ink-500)'}}>Aucune facturation à afficher</td></tr>
             )}
           </tbody>
           {months.length > 0 && (
             <tfoot>
               <tr style={{borderTop:'2px solid var(--ink-200)',background:'var(--surface-2)'}}>
                 <td style={{padding:'14px 16px',fontWeight:800,color:'var(--ink-900)'}}>Total</td>
+                {/* Sous « Gagné ce mois » : la SOMME de la colonne. C'est le seul total de ce
+                    tableau qu'on peut vérifier en additionnant à la main. */}
                 <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#15803d',fontVariantNumeric:'tabular-nums'}}>{fmt(totalF1)}</td>
+                {/* Sous « À facturer » : surtout PAS une somme — additionner des dûs cumulés
+                    compterait chaque report deux fois. Ce qui a un sens ici, c'est le reste
+                    réel à ce jour : total gagné − total reçu. Il vaut toujours le report du
+                    dernier mois, donc la dernière ligne de la colonne du dessus. */}
+                <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#15803d',fontVariantNumeric:'tabular-nums'}}>
+                  {fmt(round2(totalF1 - totalF1Paye))}
+                  <div style={{fontSize:10.5,fontWeight:500,color:'var(--ink-500)',marginTop:2}}>reste à ce jour</div>
+                </td>
                 <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-500)'}}>{fmt(totalF1Paye)} reçu</td>
                 <td style={{padding:'14px 16px',textAlign:'right',fontWeight:800,color:'#b91c1c',fontVariantNumeric:'tabular-nums',borderLeft:'2px solid var(--ink-200)'}}>{fmt(totalF2)}</td>
                 <td style={{padding:'14px 16px',textAlign:'center',fontSize:11,color:'var(--ink-500)'}}>{fmt(totalF2Paye)} reçu</td>
