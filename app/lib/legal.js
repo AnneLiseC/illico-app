@@ -2,25 +2,28 @@
 // Informations légales centralisées, utilisées par les pages PUBLIQUES /confidentialite
 // et /cgu et par la section « Mentions légales » des paramètres.
 //
-// ⚠️ À COMPLÉTER par l'éditrice avant publication (valeurs que je ne peux pas inventer) :
-//    formeJuridique, siret, adresse, majDate. Une relecture par un conseil juridique est
-//    recommandée (comme indiqué en tête des documents source).
+// Valeurs renseignées par l'éditrice. Les documents source (CGS, DPA, politique de
+// confidentialité, registre) sont tenus à jour dans OneDrive et relus par un conseil
+// juridique ; toute modification de fond doit rester cohérente avec eux.
 
 export const EDITEUR = {
   nom: 'Anne-Lise Caillet',
-  formeJuridique: 'Entreprise individuelle',
+  formeJuridique: 'Entreprise individuelle (micro-entrepreneur)',
   siret: '99040978100020',
-  adresse: '22 rue ramade, 13500 Martigues',
+  adresse: '22 rue Ramade, 13500 Martigues',
   contactEmail: 'anne-lise.caillet@outlook.com',
 }
 
 // Date de dernière mise à jour affichée en tête des pages légales.
+// MAJ_DATE : conditions générales d'utilisation (/cgu).
+// MAJ_CONF : politique de confidentialité (/confidentialite), alignée sur le document source.
 export const MAJ_DATE = '26/07/2026 — date de mise en ligne'
+export const MAJ_CONF = '24/09/2026'
 
-// Durées de conservation (valeurs par défaut recommandées — modifiables).
+// Durées de conservation — alignées sur la politique de confidentialité et le registre (art. 30).
 export const DUREES = {
-  compteApresResiliation: 'anonymisation ou suppression dans un délai de 12 mois après la fin du contrat',
-  journauxConnexion: '12 mois',
+  compteApresResiliation: '3 mois après la fin du contrat, puis suppression ou anonymisation définitive',
+  journauxConnexion: 'objectif : ne pas dépasser 6 mois',
 }
 
 export const APP_URL = 'https://www.batilis-app.fr'
