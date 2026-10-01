@@ -112,8 +112,16 @@ export const CATEGORIES_DOCUMENT = [
 export const CATEGORIES_PHOTO = ['avant', 'pendant', 'apres', 'maquette']
 
 // Sous-dossier(s) cible selon la catégorie du document. Renvoie un tableau de segments.
-export function sousDossiers(categorie, artisanNom) {
+//
+// lotNom (optionnel) : niveau « lot » inséré ENTRE l'artisan et la nature du document, pour
+// séparer les documents quand le MÊME artisan a plusieurs devis acceptés (lots) sur le même
+// chantier — « 4. Documents artisans/<Artisan>/<Lot>/… ». Fourni UNIQUEMENT par l'appelant qui
+// a constaté le multi-lots (cf. push/route.js) ; vide/absent → arborescence historique
+// inchangée (artisan mono-lot, et TOUS les documents écrits avant cette fonctionnalité).
+export function sousDossiers(categorie, artisanNom, lotNom) {
   const artisan = (artisanNom || 'Sans artisan').trim()
+  const lot = String(lotNom || '').trim()
+  const baseArtisan = lot ? ['4. Documents artisans', artisan, lot] : ['4. Documents artisans', artisan]
   switch (categorie) {
     case 'compte_rendu':
       return ['2. Comptes rendus']
@@ -123,11 +131,11 @@ export function sousDossiers(categorie, artisanNom) {
     case 'avis_virement':
     case 'pv_reception':
     case 'attestation_chantier':
-      return ['4. Documents artisans', artisan]
+      return [...baseArtisan]
     case 'facture_artisan':
-      return ['4. Documents artisans', artisan, 'Factures']
+      return [...baseArtisan, 'Factures']
     case 'autre_artisan':
-      return ['4. Documents artisans', artisan, 'Autre']
+      return [...baseArtisan, 'Autre']
     // Plans & techniques : plans, estimations, fiches techniques liées au chantier.
     case 'plans':
     case 'estimation':
@@ -162,7 +170,7 @@ export function chantierBaseSegments(statut, createdAt, clientNom, opts = {}) {
 
 // Chemin complet d'un DOCUMENT chantier.
 export function cheminChantier(statut, createdAt, clientNom, categorie, artisanNom, opts = {}) {
-  return [...chantierBaseSegments(statut, createdAt, clientNom, opts), ...sousDossiers(categorie, artisanNom)].map(nettoyerSegment)
+  return [...chantierBaseSegments(statut, createdAt, clientNom, opts), ...sousDossiers(categorie, artisanNom, opts.lotNom)].map(nettoyerSegment)
 }
 
 // Chemin complet d'une PHOTO chantier.

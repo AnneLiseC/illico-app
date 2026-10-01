@@ -1853,6 +1853,7 @@ export default function FicheChantier({ params }) {
         dans_restitution: options.dans_restitution ?? false,
         categorie: options.categorie ?? detecterCategorie(fichier.name),
         artisan_id: options.artisan_id ?? null,
+        devis_id: options.devis_id ?? null,   // lot de l'artisan (devis accepté) — null si hors lot
       }).select('id').single()
       if (insertErr) {
         echecsDoc++; derniereErreur = insertErr.message
@@ -5776,82 +5777,102 @@ export default function FicheChantier({ params }) {
               <div style={{padding:'6px 16px'}}>
                 {artisansChantier.map(a => {
                   const docsA = documents.filter(d => d.artisan_id === a.id)
-                  // Devis (lots) acceptés de cet artisan → 1 PV de réception par devis.
+                  // Lots de cet artisan = ses devis ACCEPTÉS (1 PV de réception par lot).
                   const devisArtisanA = devis.filter(d => d.artisan_id === a.id && d.statut === 'accepte')
+                  // Multi-lots : un même artisan sur plusieurs devis acceptés → on sépare ses
+                  // documents PAR LOT. Mono-lot : affichage historique (un seul bloc, pas de
+                  // niveau de lot superflu). La règle colle à celle du push Drive (taxonomie).
+                  const multiLots = devisArtisanA.length > 1
+                  const premierLotId = devisArtisanA[0]?.id || null
+                  const libelleLot = dv => (dv?.notes || '').trim() || (dv?.numero_devis || '').trim() || (dv ? `Lot ${String(dv.id).slice(0, 8)}` : '')
                   // Factures : PDF affichés ici (lecture seule) ; la gestion des factures est dans l'onglet Suivi financier.
                   const facturesA = factures.filter(f => f.pdf_path && devis.find(d => d.id === f.devis_id)?.artisan_id === a.id)
+                  // 1 bloc par lot en multi ; un seul bloc sinon. Les docs SANS devis_id (anciens,
+                  // ou ajoutés hors d'un lot) sont rattachés au 1er lot en multi → jamais perdus.
+                  const lots = devisArtisanA.length ? devisArtisanA : [null]
+                  const docsDuLot = dv => !multiLots ? docsA
+                    : docsA.filter(d => d.devis_id === dv?.id || (!d.devis_id && dv?.id === premierLotId))
+                  const facturesDuLot = dv => !multiLots ? facturesA : facturesA.filter(f => f.devis_id === dv?.id)
                   return (
                     <div key={a.id} style={{padding:'12px 8px', borderBottom:'1px solid var(--ink-100)'}}>
                       <div style={{fontSize:13, fontWeight:700, color:'var(--ink-900)', marginBottom:8}}>{a.entreprise}</div>
-                      <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
-                        {ARTISAN_DOCS.map(dt => {
-                          const n = docsA.filter(d => d.categorie === dt.k).length
-                          const ok = n > 0
-                          return (
-                            <div key={dt.k} style={{display:'flex', alignItems:'center', gap:8, background: ok ? 'rgba(22,163,74,0.08)' : 'var(--ink-100)', borderRadius:8, padding:'5px 8px 5px 10px'}}>
-                              <span style={{fontSize:12, color: ok ? '#15803d' : 'var(--ink-500)', fontWeight:600, whiteSpace:'nowrap'}}>
-                                {ok ? '✓' : '⌛'} {dt.l}{dt.multi && ok ? ` (${n})` : ''}
-                              </span>
-                              <label style={{cursor: uploadingDocChantier ? 'wait' : 'pointer', color:'var(--ink-900)', fontWeight:800, fontSize:15, lineHeight:1}} title={`Ajouter : ${dt.l}`}>
-                                +
-                                <input type="file" style={{display:'none'}} multiple disabled={uploadingDocChantier}
-                                  onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files), { categorie: dt.k, artisan_id: a.id, dans_restitution: dt.restit })} />
-                              </label>
+                      {lots.map((dv, iLot) => {
+                        const docsL = docsDuLot(dv)
+                        const facturesL = facturesDuLot(dv)
+                        const upOpts = { artisan_id: a.id, devis_id: dv?.id ?? null }
+                        return (
+                          <div key={dv?.id || 'sans-lot'} style={multiLots ? {marginTop: iLot ? 12 : 4, paddingLeft:10, borderLeft:'2px solid var(--ink-200)'} : undefined}>
+                            {multiLots && (
+                              <div style={{fontSize:12, fontWeight:700, color:'var(--ink-700)', margin:'4px 0 8px'}}>🔧 {libelleLot(dv)}</div>
+                            )}
+                            <div style={{display:'flex', flexWrap:'wrap', gap:8}}>
+                              {ARTISAN_DOCS.map(dt => {
+                                const n = docsL.filter(d => d.categorie === dt.k).length
+                                const ok = n > 0
+                                return (
+                                  <div key={dt.k} style={{display:'flex', alignItems:'center', gap:8, background: ok ? 'rgba(22,163,74,0.08)' : 'var(--ink-100)', borderRadius:8, padding:'5px 8px 5px 10px'}}>
+                                    <span style={{fontSize:12, color: ok ? '#15803d' : 'var(--ink-500)', fontWeight:600, whiteSpace:'nowrap'}}>
+                                      {ok ? '✓' : '⌛'} {dt.l}{dt.multi && ok ? ` (${n})` : ''}
+                                    </span>
+                                    <label style={{cursor: uploadingDocChantier ? 'wait' : 'pointer', color:'var(--ink-900)', fontWeight:800, fontSize:15, lineHeight:1}} title={`Ajouter : ${dt.l}`}>
+                                      +
+                                      <input type="file" style={{display:'none'}} multiple disabled={uploadingDocChantier}
+                                        onChange={e => e.target.files.length && uploadDocumentChantier(Array.from(e.target.files), { categorie: dt.k, dans_restitution: dt.restit, ...upOpts })} />
+                                    </label>
+                                  </div>
+                                )
+                              })}
                             </div>
-                          )
-                        })}
-                      </div>
-                      {/* PV de réception — 1 par devis (lot) de l'artisan, rattaché au devis (pv_path). */}
-                      {devisArtisanA.length > 0 && (
-                        <div style={{marginTop:10, display:'flex', flexDirection:'column', gap:6}}>
-                          {devisArtisanA.map(dv => (
-                            <div key={dv.id} style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-                              <span style={{fontSize:12, fontWeight:600, whiteSpace:'nowrap', color: dv.pv_path ? '#15803d' : 'var(--ink-500)'}}>
-                                {dv.pv_path ? '✓' : '⌛'} PV de réception{dv.notes ? ` — ${dv.notes}` : ''}
-                              </span>
-                              {dv.pv_path ? (
-                                <>
-                                  <button onClick={() => ouvrirDocument(dv.pv_path, `PV_${nomFichierClient(dossier)}_${a.entreprise}.pdf`)}
-                                    style={{background:'none', border:'none', color:'var(--ink-700)', cursor:'pointer', padding:0, fontSize:12, textDecoration:'underline'}}>voir</button>
-                                  <button onClick={() => supprimerPV(dv.id, dv.pv_path)} className="btn btn-ghost"
-                                    style={{padding:'2px 7px', color:'#b91c1c'}} title="Supprimer le PV"><span style={{fontSize:13, lineHeight:1}}>×</span></button>
-                                </>
-                              ) : (
-                                <label style={{cursor: uploadingDoc === dv.id ? 'wait' : 'pointer', color:'var(--ink-900)', fontWeight:800, fontSize:15, lineHeight:1}} title="Ajouter le PV de réception de ce devis">
-                                  +
-                                  <input type="file" style={{display:'none'}} accept="application/pdf" disabled={uploadingDoc === dv.id}
-                                    onChange={e => e.target.files[0] && uploadPV(dv.id, e.target.files[0])} />
-                                </label>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {docsA.length > 0 && (
-                        <div style={{marginTop:10, display:'flex', flexDirection:'column', gap:5}}>
-                          {docsA.map(doc => (
-                            <div key={doc.id} style={{display:'flex', alignItems:'center', gap:8}}>
-                              <button onClick={() => ouvrirDocument(doc.path, doc.nom)} className="clip-1"
-                                style={{background:'none', border:'none', color:'var(--ink-700)', cursor:'pointer', textAlign:'left', padding:0, flex:1, fontSize:12}}>
-                                {doc.nom}
-                              </button>
-                              <button onClick={() => supprimerDocumentChantier(doc.id, doc.path)} className="btn btn-ghost"
-                                style={{padding:'2px 7px', color:'#b91c1c'}} title="Supprimer"><span style={{fontSize:13, lineHeight:1}}>×</span></button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {facturesA.length > 0 && (
-                        <div style={{marginTop:8, display:'flex', flexDirection:'column', gap:5}}>
-                          <div style={{fontSize:11, color:'var(--ink-500)', fontWeight:700}}>🧾 Factures <span style={{fontWeight:500}}>(gestion dans l&apos;onglet Suivi financier)</span></div>
-                          {facturesA.map(f => (
-                            <button key={f.id} onClick={() => ouvrirDocument(f.pdf_path, `Facture_${nomFichierClient(dossier)}_${a.entreprise}.pdf`)} className="clip-1"
-                              style={{background:'none', border:'none', color:'var(--ink-700)', cursor:'pointer', textAlign:'left', padding:0, fontSize:12}}>
-                              {f.libelle || 'Facture'} — voir le PDF
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                            {/* PV de réception du lot, rattaché au devis (pv_path). */}
+                            {dv && (
+                              <div style={{marginTop:10, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                                <span style={{fontSize:12, fontWeight:600, whiteSpace:'nowrap', color: dv.pv_path ? '#15803d' : 'var(--ink-500)'}}>
+                                  {dv.pv_path ? '✓' : '⌛'} PV de réception{!multiLots && dv.notes ? ` — ${dv.notes}` : ''}
+                                </span>
+                                {dv.pv_path ? (
+                                  <>
+                                    <button onClick={() => ouvrirDocument(dv.pv_path, `PV_${nomFichierClient(dossier)}_${a.entreprise}.pdf`)}
+                                      style={{background:'none', border:'none', color:'var(--ink-700)', cursor:'pointer', padding:0, fontSize:12, textDecoration:'underline'}}>voir</button>
+                                    <button onClick={() => supprimerPV(dv.id, dv.pv_path)} className="btn btn-ghost"
+                                      style={{padding:'2px 7px', color:'#b91c1c'}} title="Supprimer le PV"><span style={{fontSize:13, lineHeight:1}}>×</span></button>
+                                  </>
+                                ) : (
+                                  <label style={{cursor: uploadingDoc === dv.id ? 'wait' : 'pointer', color:'var(--ink-900)', fontWeight:800, fontSize:15, lineHeight:1}} title="Ajouter le PV de réception de ce devis">
+                                    +
+                                    <input type="file" style={{display:'none'}} accept="application/pdf" disabled={uploadingDoc === dv.id}
+                                      onChange={e => e.target.files[0] && uploadPV(dv.id, e.target.files[0])} />
+                                  </label>
+                                )}
+                              </div>
+                            )}
+                            {docsL.length > 0 && (
+                              <div style={{marginTop:10, display:'flex', flexDirection:'column', gap:5}}>
+                                {docsL.map(doc => (
+                                  <div key={doc.id} style={{display:'flex', alignItems:'center', gap:8}}>
+                                    <button onClick={() => ouvrirDocument(doc.path, doc.nom)} className="clip-1"
+                                      style={{background:'none', border:'none', color:'var(--ink-700)', cursor:'pointer', textAlign:'left', padding:0, flex:1, fontSize:12}}>
+                                      {doc.nom}
+                                    </button>
+                                    <button onClick={() => supprimerDocumentChantier(doc.id, doc.path)} className="btn btn-ghost"
+                                      style={{padding:'2px 7px', color:'#b91c1c'}} title="Supprimer"><span style={{fontSize:13, lineHeight:1}}>×</span></button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {facturesL.length > 0 && (
+                              <div style={{marginTop:8, display:'flex', flexDirection:'column', gap:5}}>
+                                <div style={{fontSize:11, color:'var(--ink-500)', fontWeight:700}}>🧾 Factures <span style={{fontWeight:500}}>(gestion dans l&apos;onglet Suivi financier)</span></div>
+                                {facturesL.map(f => (
+                                  <button key={f.id} onClick={() => ouvrirDocument(f.pdf_path, `Facture_${nomFichierClient(dossier)}_${a.entreprise}.pdf`)} className="clip-1"
+                                    style={{background:'none', border:'none', color:'var(--ink-700)', cursor:'pointer', textAlign:'left', padding:0, fontSize:12}}>
+                                    {f.libelle || 'Facture'} — voir le PDF
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   )
                 })}

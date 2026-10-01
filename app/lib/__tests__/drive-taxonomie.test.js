@@ -68,6 +68,23 @@ describe('drive/taxonomie', () => {
     expect(sousDossiers('inconnue')).toEqual(['1. Administratif'])
   })
 
+  it('sousDossiers — niveau « lot » optionnel (artisan multi-devis)', () => {
+    // Avec un lot, le dossier de lot s'insère ENTRE l'artisan et la nature du document.
+    expect(sousDossiers('avis_virement', 'SARL Toiture', 'Toiture bât. A'))
+      .toEqual(['4. Documents artisans', 'SARL Toiture', 'Toiture bât. A'])
+    expect(sousDossiers('facture_artisan', 'SARL Toiture', 'Toiture bât. A'))
+      .toEqual(['4. Documents artisans', 'SARL Toiture', 'Toiture bât. A', 'Factures'])
+    expect(sousDossiers('autre_artisan', 'SARL Toiture', 'Toiture bât. A'))
+      .toEqual(['4. Documents artisans', 'SARL Toiture', 'Toiture bât. A', 'Autre'])
+    // lotNom vide → arbo historique inchangée (rétro-compatibilité stricte).
+    expect(sousDossiers('facture_artisan', 'SARL Toiture', ''))
+      .toEqual(['4. Documents artisans', 'SARL Toiture', 'Factures'])
+    expect(sousDossiers('facture_artisan', 'SARL Toiture', '   '))
+      .toEqual(['4. Documents artisans', 'SARL Toiture', 'Factures'])
+    // Le lot ne touche QUE les catégories artisan : aucun effet ailleurs.
+    expect(sousDossiers('plans', null, 'Toiture bât. A')).toEqual(['5. Plans & techniques'])
+  })
+
   it('photoSousDossiers — 6. Photos/<catégorie numérotée>', () => {
     expect(photoSousDossiers('avant')).toEqual(['6. Photos', '1. Avant'])
     expect(photoSousDossiers('pendant')).toEqual(['6. Photos', '2. Pendant'])
@@ -102,6 +119,9 @@ describe('drive/taxonomie', () => {
     // facture honoraires illiCO → 1. Administratif
     expect(cheminChantier('en_cours', '2026-07-25T00:00:00', 'Dupont', 'facture_honoraire', null))
       .toEqual(['01_CLIENTS', '1. En cours', '2026-07-25 DUPONT', '1. Administratif'])
+    // opts.lotNom propagé jusqu'au chemin complet (artisan multi-devis).
+    expect(cheminChantier('en_cours', '2026-07-25T00:00:00', 'Dupont', 'facture_artisan', 'SARL Toiture', { lotNom: 'Lot 1' }))
+      .toEqual(['01_CLIENTS', '1. En cours', '2026-07-25 DUPONT', '4. Documents artisans', 'SARL Toiture', 'Lot 1', 'Factures'])
   })
 
   it('cheminChantierPhoto — photo dans 6. Photos/<catégorie> du bon bucket', () => {

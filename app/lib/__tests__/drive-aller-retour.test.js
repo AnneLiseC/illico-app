@@ -148,3 +148,36 @@ describe('couverture : aucune catégorie ne peut être ajoutée sans décider de
     }
   })
 })
+
+// ── Le niveau LOT : même exigence d'aller-retour ─────────────────────────────────────────
+//
+// Quand un artisan a plusieurs devis acceptés, l'écriture insère un dossier de LOT entre
+// l'artisan et la nature du document. La relecture doit suivre ce niveau, exactement comme
+// elle a dû apprendre « Factures »/« Autre » et « maquette » le 10/09. On le vérifie ici par
+// le même aller-retour : écrire AVEC un lot, puis relire.
+describe('aller-retour LOT : un artisan multi-devis se relit malgré le niveau de lot', () => {
+  const LOT = 'Toiture bât. A'
+  // Mêmes attentes que la racine artisan : les natures distinguées par un sous-dossier
+  // (Factures/Autre) se relisent ; celles écrites à la racine du lot restent indécidables.
+  const CAS_LOT = [
+    { categorie: 'facture_artisan', attendu: 'facture_artisan' },
+    { categorie: 'autre_artisan',   attendu: 'autre_artisan' },
+    { categorie: 'avis_virement',   attendu: null },   // racine du lot, comme racine artisan
+    { categorie: 'pv_reception',    attendu: null },
+  ]
+  for (const cas of CAS_LOT) {
+    it(`${cas.categorie} sous un lot → « ${cas.attendu ?? 'racine de lot (indécidable)'} »`, () => {
+      const segments = cheminChantier(
+        DOSSIER.statut, DOSSIER.date_premier_rdv, CLIENT.nom, cas.categorie, ARTISAN,
+        { nom2: CLIENT.nom2, suffixe: '', lotNom: LOT },
+      )
+      // Le niveau lot est bien présent dans ce que l'appli écrit.
+      expect(segments).toContain(LOT)
+      const decision = deciderRattachement(cheminEcrit(segments), CANDIDATS, ARTISANS, 'doc.pdf')
+      expect(decision.destination).toBe('documents')
+      expect(decision.dossier_id).toBe('d1')
+      expect(decision.artisan_id, 'artisan perdu sous le niveau lot').toBe('a-mj')
+      expect(decision.categorie).toBe(cas.attendu)
+    })
+  }
+})
