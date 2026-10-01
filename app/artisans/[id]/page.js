@@ -102,6 +102,16 @@ export default function FicheArtisan({ params }) {
 
   const set = (champ, valeur) => setArtisan(a => ({ ...a, [champ]: valeur }))
 
+  // Modifie la date d'expiration de la décennale directement depuis la liste des
+  // documents officiels (sans passer par le formulaire « Modifier ») et l'enregistre aussitôt.
+  const majDecennaleExpiration = async (valeur) => {
+    const v = valeur || null
+    setArtisan(a => ({ ...a, decennale_expiration: v }))
+    const { error } = await supabase.from('artisans').update({ decennale_expiration: v }).eq('id', id)
+    if (error) setErreur(erreurAffichable(error))
+    else setSucces('Date de décennale mise à jour ✓')
+  }
+
   // Historique des documents officiels — le plus récent d'abord, dates inconnues en fin
   // (versions reprises de l'existant, dont la date de dépôt n'a jamais été enregistrée).
   const chargerHistorique = async () => {
@@ -503,7 +513,7 @@ export default function FicheArtisan({ params }) {
       <div style={{display:'grid', gridTemplateColumns:'3fr 2fr', gap:18, alignItems:'start'}}>
 
         {/* Gauche — Devis par chantier */}
-        <div className="card" style={{padding:0, overflow:'hidden'}}>
+        <div className="card" style={{padding:0, overflow:'hidden', minWidth:0}}>
           <div style={{padding:'14px 20px', borderBottom:'1px solid var(--ink-100)', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
             <div>
               <div style={{fontWeight:700, fontSize:14, color:'var(--ink-900)'}}>Devis par chantier</div>
@@ -561,7 +571,7 @@ export default function FicheArtisan({ params }) {
         </div>
 
         {/* Droite — Documents + Fiches */}
-        <div style={{display:'flex', flexDirection:'column', gap:12}}>
+        <div style={{display:'flex', flexDirection:'column', gap:12, minWidth:0}}>
 
           {/* Documents officiels */}
           <div className="card" style={{padding:0, overflow:'hidden'}}>
@@ -585,7 +595,15 @@ export default function FicheArtisan({ params }) {
                       <div style={{fontSize:11, color: artisan[doc.champ] ? '#15803d' : 'var(--ink-300)'}}>{artisan[doc.champ] ? 'Déposé' : 'Manquant'}</div>
                     </div>
                   </div>
-                  <div style={{display:'flex', gap:6, alignItems:'center'}}>
+                  <div style={{display:'flex', gap:6, alignItems:'center', flexWrap:'wrap', justifyContent:'flex-end'}}>
+                    {doc.key === 'decennale' && (
+                      <input className="input" type="date" value={artisan.decennale_expiration || ''}
+                        onChange={e => majDecennaleExpiration(e.target.value)}
+                        title="Date d'expiration de la décennale — modifiable ici"
+                        style={{fontSize:11.5, padding:'3px 8px', width:'auto', flexShrink:0,
+                          borderColor: diffDec != null && diffDec < 0 ? 'var(--bad)' : diffDec != null && diffDec < 60 ? '#a16207' : 'var(--ink-200)',
+                          color: diffDec != null && diffDec < 0 ? 'var(--bad)' : 'var(--ink-700)'}} />
+                    )}
                     {artisan[doc.champ] && (
                       <button className="btn btn-ghost" style={{fontSize:11.5, padding:'3px 9px'}} onClick={() => ouvrirDocument(artisan[doc.champ])}>Voir</button>
                     )}
