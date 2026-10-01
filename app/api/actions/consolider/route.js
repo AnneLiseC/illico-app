@@ -42,7 +42,8 @@ Réponds STRICTEMENT par un objet JSON (aucun texte autour, pas de markdown) :
       "titre": chaîne,        // titre court (~60 caractères), optionnel ("" si rien)
       "texte": chaîne,        // le point rédigé en UNE phrase TÉLÉGRAPHIQUE et courte (≤ 130 caractères), à jour
       "portee": "generale" | "lot",
-      "lot_nom": chaîne,      // si portee="lot" : nom du lot, choisi PARMI la liste fournie si possible ; sinon ""
+      "artisan": chaîne,      // l'ENTREPRISE/artisan EXACT de la liste (ex. "ESPRIT CUISINE", "D2M", "MJ RENOVATION") ; "" si aucun. C'EST LE CHAMP qui rattache au bon lot — le serveur en déduit le lot.
+      "lot_nom": chaîne,      // facultatif : nom du lot s'il figure dans la liste fournie ; sinon "". Ne l'invente pas.
       "statut": une des valeurs EXACTES: ${STATUTS.join(', ')},
       "statut_date": "AAAA-MM-JJ" | ""
     }
@@ -212,22 +213,46 @@ export async function POST(request) {
 
   // Coercition : on ne fait jamais confiance à la sortie brute.
   const dateOk = (s) => (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s)) ? s : null
+  // Mapping DÉTERMINISTE artisan → lot RÉEL (cf. /api/actions/suggest) : un lot_nom inventé est
+  // impossible, il ne passe que s'il correspond à un vrai lot du dossier.
+  const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[^a-z0-9]+/g, ' ').trim()
+  const lotsNorm = lots.map(l => ({ nom: l.nom, nomN: norm(l.nom), artN: norm(l.artisan) }))
+  const lotsParArtisan = (hint) => {
+    const h = norm(hint)
+    if (!h) return []
+    return lotsNorm.filter(l => l.artN && (l.artN === h || l.artN.includes(h) || h.includes(l.artN))).map(l => l.nom)
+  }
+  const lotParNom = (nom) => {
+    const n = norm(nom)
+    if (!n) return ''
+    const hit = lotsNorm.find(l => l.nomN === n)
+    return hit ? hit.nom : ''
+  }
+  // Artisan → 1 lot : on le prend. Plusieurs lots du même artisan → on ne devine pas (lot_nom du
+  // modèle seulement s'il est l'un d'eux, sinon "generale"). Pas d'artisan → lot_nom s'il est réel.
+  const resoudreLot = (artisan, lotNom) => {
+    const parArt = lotsParArtisan(artisan)
+    const parNom = lotParNom(lotNom)
+    if (parArt.length === 1) return parArt[0]
+    if (parArt.length > 1) return parArt.includes(parNom) ? parNom : ''
+    return parNom
+  }
   const actions = raw.actions.slice(0, 80).map(a => {
-    const portee = a?.portee === 'lot' ? 'lot' : 'generale'
     const statut = STATUT_SET.has(a?.statut) ? a.statut : 'en_cours'
+    const lot_nom = resoudreLot(a?.artisan, a?.lot_nom)
     return {
       titre: typeof a?.titre === 'string' ? a.titre.trim().slice(0, 120) : '',
       texte: typeof a?.texte === 'string' ? a.texte.trim().slice(0, 1500) : '',
-      portee,
-      lot_nom: portee === 'lot' && typeof a?.lot_nom === 'string' ? a.lot_nom.trim().slice(0, 120) : '',
+      portee: lot_nom ? 'lot' : 'generale',
+      lot_nom,
       statut,
       statut_date: dateOk(a?.statut_date),
     }
   }).filter(a => a.texte || a.titre)
 
-  // Dates de planning consolidées : une période par lot (la plus récente). lot_nom mappé côté client.
+  // Dates de planning consolidées : une période par lot. lot_nom coercé sur un vrai lot (sinon ignoré).
   const dates = (Array.isArray(raw.dates) ? raw.dates : []).slice(0, 80).map(d => {
-    const lot_nom = typeof d?.lot_nom === 'string' ? d.lot_nom.trim().slice(0, 120) : ''
+    const lot_nom = lotParNom(d?.lot_nom)
     let debut = dateOk(d?.date_debut), fin = dateOk(d?.date_fin)
     if (!lot_nom || !debut) return null
     if (!fin || fin < debut) fin = debut

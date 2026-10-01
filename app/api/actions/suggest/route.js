@@ -40,7 +40,8 @@ Réponds STRICTEMENT par un objet JSON (aucun texte autour, pas de markdown) :
       "titre": chaîne,        // titre court de l'action (~60 caractères), optionnel ("" si rien)
       "texte": chaîne,        // la remarque rédigée clairement, 1 à 3 phrases
       "portee": "generale" | "lot",   // "lot" si l'action concerne un corps d'état / artisan précis, sinon "generale"
-      "lot_nom": chaîne,      // si portee="lot" : le nom du lot concerné, choisi PARMI la liste fournie si possible ; sinon ""
+      "artisan": chaîne,      // l'ENTREPRISE/artisan EXACT indiqué entre parenthèses dans la note (ex. "ESPRIT CUISINE", "D2M", "MJ RENOVATION", "SUD RENOV ENERGIE") ; "" si aucun. C'EST LE CHAMP QUI COMPTE pour rattacher au bon lot — le serveur en déduit le lot.
+      "lot_nom": chaîne,      // facultatif : le nom du lot s'il figure dans la liste fournie ; sinon "". Ne l'invente pas — en cas de doute, laisse "" et renseigne "artisan".
       "statut": une des valeurs EXACTES: ${STATUTS.join(', ')},
       "statut_date": "AAAA-MM-JJ" | ""   // date d'échéance/statut si une date est mentionnée dans les notes, sinon ""
     }
@@ -199,14 +200,42 @@ export async function POST(request) {
   if (!raw || !Array.isArray(raw.actions)) return NextResponse.json({ error: 'Réponse IA illisible' }, { status: 502 })
   // Coercition : on ne fait jamais confiance à la sortie brute.
   const dateOk = (s) => (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s)) ? s : null
+  // Mapping DÉTERMINISTE artisan → lot RÉEL. Le modèle identifie l'artisan (entre parenthèses,
+  // fiable) ; le serveur en déduit le lot. Un lot_nom inventé (« Carrelage », « Meubles de
+  // cuisine »…) devient IMPOSSIBLE : s'il ne correspond à aucun lot du dossier, l'action passe
+  // en "generale". Robuste là où le prompt seul échouait (le modèle « améliorait » les noms).
+  const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[^a-z0-9]+/g, ' ').trim()
+  const lotsNorm = lots.map(l => ({ nom: l.nom, nomN: norm(l.nom), artN: norm(l.artisan) }))
+  // Artisan de la note → LOTS de cet artisan : égalité OU inclusion (ex. « d2m » ⊂ « d2m electricite »,
+  // « habitat francais » ⊂ « l habitat francais »). Renvoie TOUS les lots de l'artisan (il peut en avoir plusieurs).
+  const lotsParArtisan = (hint) => {
+    const h = norm(hint)
+    if (!h) return []
+    return lotsNorm.filter(l => l.artN && (l.artN === h || l.artN.includes(h) || h.includes(l.artN))).map(l => l.nom)
+  }
+  const lotParNom = (nom) => {
+    const n = norm(nom)
+    if (!n) return ''
+    const hit = lotsNorm.find(l => l.nomN === n)
+    return hit ? hit.nom : ''
+  }
   const actions = raw.actions.slice(0, 40).map(a => {
-    const portee = a?.portee === 'lot' ? 'lot' : 'generale'
     const statut = STATUT_SET.has(a?.statut) ? a.statut : 'en_cours'
+    // Lot : l'artisan fait foi. 1 seul lot pour cet artisan → on le prend. PLUSIEURS lots (même
+    // artisan sur plusieurs lots) → on ne devine pas : on ne garde le lot que si le modèle a donné
+    // un lot_nom qui est L'UN de ces lots ; sinon "generale" (l'humaine assignera). Aucun artisan
+    // reconnu → on retombe sur lot_nom s'il correspond à un vrai lot.
+    const parArt = lotsParArtisan(a?.artisan)
+    const parNom = lotParNom(a?.lot_nom)
+    let lot_nom = ''
+    if (parArt.length === 1) lot_nom = parArt[0]
+    else if (parArt.length > 1) lot_nom = parArt.includes(parNom) ? parNom : ''
+    else lot_nom = parNom
     return {
       titre: typeof a?.titre === 'string' ? a.titre.trim().slice(0, 120) : '',
       texte: typeof a?.texte === 'string' ? a.texte.trim().slice(0, 1500) : '',
-      portee,
-      lot_nom: portee === 'lot' && typeof a?.lot_nom === 'string' ? a.lot_nom.trim().slice(0, 120) : '',
+      portee: lot_nom ? 'lot' : 'generale',
+      lot_nom,
       statut,
       statut_date: dateOk(a?.statut_date),
     }
