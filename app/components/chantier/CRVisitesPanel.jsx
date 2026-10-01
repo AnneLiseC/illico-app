@@ -546,7 +546,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     try {
       const res = await apiFetch('/api/actions/suggest', {
         method: 'POST',
-        body: JSON.stringify({ notes, lots: lots.map(l => ({ id: l.id, nom: l.nom })), type_visite: visite?.type_visite || 'suivi', source: source || undefined, existantes }),
+        body: JSON.stringify({ notes, lots: lots.map(l => ({ id: l.id, nom: l.nom, artisan: l.artisan?.entreprise || null })), type_visite: visite?.type_visite || 'suivi', source: source || undefined, existantes }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) { setErreur?.(j.error || 'Analyse IA impossible.'); return }
@@ -638,7 +638,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     try {
       const res = await apiFetch('/api/actions/consolider', {
         method: 'POST',
-        body: JSON.stringify({ dossier_id: dossierId, lots: lots.map(l => ({ id: l.id, nom: l.nom })) }),
+        body: JSON.stringify({ dossier_id: dossierId, lots: lots.map(l => ({ id: l.id, nom: l.nom, artisan: l.artisan?.entreprise || null })) }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) { setErreur?.(j.error || 'Consolidation impossible.'); return }

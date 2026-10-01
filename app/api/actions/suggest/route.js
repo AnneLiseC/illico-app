@@ -53,13 +53,13 @@ RÈGLES :
 - ANALYSE D'ABORD, UNE PAR UNE, LES ACTIONS DÉJÀ PRÉSENTES avant de créer quoi que ce soit. Pour CHAQUE point des notes, demande-toi s'il fait AVANCER, précise, complète, débloque ou clôture une action déjà présente (même sujet, même lot, même ouvrage) — MÊME si la formulation diffère des notes brutes. Si OUI → c'est une MISE À JOUR (dans "updates") avec sa "ref" : écris l'avancement dans "texte" (il devient une note datée sur l'action) et mets à jour le "statut" s'il évolue. Ne crée une entrée dans "actions" QUE pour un sujet VRAIMENT nouveau, absent de la liste.
 - Sur une visite de SUIVI, la plupart des points sont des AVANCEMENTS d'actions existantes : privilégie donc les "updates". Une nouvelle action est l'exception, pas la règle.
 - L'ARTISAN / LOT FAIT FOI, et il est souvent écrit ENTRE PARENTHÈSES dans les notes (ex. « (ESPRIT CUISINE) », « (MJ RENOVATION) », « (D2M) », « (SUD RENOV ENERGIE) »). Ne rattache un point à une action existante QUE si c'est le MÊME artisan/lot ET le MÊME ouvrage/pièce. Si l'artisan entre parenthèses diffère de celui de l'action existante → ce n'est PAS la même action. Ne mélange JAMAIS deux artisans dans une même action ni dans une même note d'avancement (ex. un lavabo « (ESPRIT CUISINE) » ne va PAS dans une action de plomberie « (SUD RENOV ENERGIE) »).
-- UN SEUL ENDROIT PAR POINT : chaque point des notes va SOIT dans une mise à jour, SOIT dans une nouvelle action — JAMAIS les deux, et jamais répété dans deux entrées. Aucun doublon.
+- UN SEUL ENDROIT PAR POINT : chaque point des notes va SOIT dans une mise à jour, SOIT dans une nouvelle action — JAMAIS les deux, et jamais répété dans deux entrées. Un même avancement ne va JAMAIS dans deux mises à jour : s'il pourrait concerner plusieurs actions existantes, choisis LA PLUS SPÉCIFIQUE (ex. une action dédiée « LED » plutôt qu'une action large « finitions électriques ») et ne le mets qu'UNE fois. Aucun doublon.
 - GRANULARITÉ par ouvrage : un ouvrage / une pièce / une tâche distincte = une seule action. Ne fusionne pas des pièces ou des ouvrages différents dans une même action, même pour le même artisan (ex. ne mets pas la cave avec la salle de bain). Tu peux regrouper plusieurs avancements dans une même mise à jour UNIQUEMENT s'ils relèvent du MÊME ouvrage que l'action existante visée.
 - CONSERVE TELS QUELS les marqueurs écrits dans les notes : garde « (TS) » (travaux supplémentaires — enjeu de facturation) dans le "texte" ; « [à titre informatif] » → statut "information" (ou "garder_memoire"). Ne supprime jamais ces marqueurs.
 - Si aucune action existante ne correspond (ou aucune fournie), "updates" reste [].
 - "statut" par défaut = "en_cours". Utilise "date_limite" ou "a_programmer" si une échéance est donnée ; "information" pour une simple info ; "cloture" seulement si la note dit explicitement que c'est réglé.
 - Si une DATE est mentionnée (ex. "avant le 12/02", "semaine prochaine" → estime au mieux en AAAA-MM-JJ), mets-la dans "statut_date".
-- Rattache à un lot (portee="lot") seulement si c'est clair, en choisissant "lot_nom" dans la liste fournie quand elle correspond.`
+- "lot_nom" doit être COPIÉ EXACTEMENT depuis la LISTE DE LOTS fournie (le texte entre guillemets) — jamais inventé, jamais reformulé en corps d'état (n'écris PAS « Peinture », « Carrelage », « Meubles de cuisine » si ce n'est pas dans la liste). Pour choisir le bon lot : prends celui dont l'ARTISAN correspond à l'artisan indiqué entre parenthèses dans les notes. Si aucun lot de la liste ne correspond vraiment → portee="generale" et lot_nom="".`
 function parseJsonSafe(text) {
   if (!text) return null
   try { return JSON.parse(text) } catch { /* isole l'objet */ }
@@ -112,7 +112,14 @@ export async function POST(request) {
   try { body = await request.json() } catch { body = {} }
   const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, MAX_NOTES) : ''
   if (!notes) return NextResponse.json({ error: 'notes manquantes' }, { status: 400 })
-  const lots = Array.isArray(body.lots) ? body.lots.filter(l => l?.nom).map(l => l.nom).slice(0, 60) : []
+  // Lots du dossier AVEC leur artisan : l'artisan sert à router (les notes taguent l'artisan
+  // entre parenthèses) et "lot_nom" doit être copié EXACTEMENT depuis cette liste (jamais inventé).
+  const lots = Array.isArray(body.lots)
+    ? body.lots.filter(l => l?.nom).slice(0, 60).map(l => ({
+        nom: String(l.nom).slice(0, 120),
+        artisan: typeof l.artisan === 'string' ? l.artisan.slice(0, 120) : '',
+      }))
+    : []
   // Actions DÉJÀ présentes dans le rapport (reportées ou créées) → l'IA propose des MISES À JOUR
   // au lieu de recréer des doublons. Chaque entrée porte une "ref" (numéro) stable côté client.
   const existantes = (Array.isArray(body.existantes) ? body.existantes : [])
@@ -139,7 +146,10 @@ export async function POST(request) {
   const blocExistantes = existantes.length
     ? `\n\nACTIONS DÉJÀ PRÉSENTES dans ce rapport (ne PAS les recréer ; propose une MISE À JOUR via "updates" avec la "ref" si un point des notes les concerne) :\n${existantes.map(e => `[ref ${e.ref}] (${e.statut || '—'})${e.lot_nom ? ' [' + e.lot_nom + ']' : ''} ${e.titre || ''}${e.texte ? ' — ' + e.texte : ''}`.trim()).join('\n')}`
     : ''
-  const userText = `${enTete}${bloc}${blocExistantes}\n\nLots disponibles (pour "lot_nom") : ${lots.length ? lots.join(', ') : 'aucun'}\n\nRenvoie les mises à jour (updates) et les nouvelles actions au format JSON demandé, en français.`
+  const lotsListe = lots.length
+    ? lots.map(l => `- "${l.nom}"${l.artisan ? ` (artisan : ${l.artisan})` : ''}`).join('\n')
+    : 'aucun'
+  const userText = `${enTete}${bloc}${blocExistantes}\n\nLOTS DISPONIBLES — "lot_nom" doit être COPIÉ EXACTEMENT depuis cette liste (le texte entre guillemets), jamais inventé ni reformulé. L'artisan entre parenthèses dans les notes désigne le lot du MÊME artisan ci-dessous :\n${lotsListe}\n\nRenvoie les mises à jour (updates) et les nouvelles actions au format JSON demandé, en français.`
   const claudeBody = JSON.stringify({
     model: 'claude-sonnet-4-6',
     max_tokens: 8000,   // 4000 tronquait les grosses analyses CR → JSON coupé → « Réponse IA illisible ».
