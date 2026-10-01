@@ -3,7 +3,7 @@
 // Liste de visites → page par visite avec ses ACTIONS (portée générale ou par lot,
 // statut parmi les 16 + date). CRUD direct Supabase (RLS staff). Modèle ArchiReport.
 // Photos + checklist = 1c-2 ; aide IA = 1c-3 ; report d'une visite à l'autre = Lot 2.
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { compressImageToBlob } from '../../lib/images'
 import { apiFetch } from '../../lib/api-auth-client'
@@ -1103,11 +1103,31 @@ function renderInline(txt) {
   return out
 }
 
+// Zone de texte dont la hauteur suit le contenu : nombre de lignes réelles (retours à la
+// ligne compris), recalculée à chaque changement. Évite les blocs fixes trop grands.
+function AutoTextarea({ value, style, ...props }) {
+  const ref = useRef(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }, [value])
+  return <textarea ref={ref} value={value} style={{ ...style, overflowY: 'hidden' }} {...props} />
+}
+
 // Champ description avec mise en forme : sélectionner du texte puis B (gras) / S (barré).
 // Stocke des balises **…** / ~~…~~ (rendues dans l'app et dans le PDF). Sauvegarde au blur.
 function FormattedTextField({ defaultValue, placeholder, onSave }) {
   const ref = useRef(null)
   const [preview, setPreview] = useState(defaultValue || '')
+  // Hauteur alignée sur le contenu (comme AutoTextarea, mais ce champ a déjà sa ref/état).
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }, [preview])
   const wrap = (mark) => {
     const ta = ref.current; if (!ta) return
     const s = ta.selectionStart, e = ta.selectionEnd
@@ -1125,9 +1145,9 @@ function FormattedTextField({ defaultValue, placeholder, onSave }) {
         <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => wrap('~~')} className="btn btn-ghost" style={btn} title="Barré (sélectionne du texte d'abord)"><s>S</s></button>
         <span style={{ fontSize: 10.5, color: 'var(--ink-400)' }}>Sélectionne du texte puis B / S</span>
       </div>
-      <textarea ref={ref} defaultValue={defaultValue || ''} placeholder={placeholder} rows={4}
+      <textarea ref={ref} defaultValue={defaultValue || ''} placeholder={placeholder} rows={2}
         onChange={e => setPreview(e.target.value)} onBlur={e => onSave(e.target.value)}
-        className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical' }} />
+        className="input" style={{ padding: 10, fontSize: 12.5, lineHeight: 1.5, resize: 'none', overflowY: 'hidden' }} />
       {/(\*\*|~~)/.test(preview) && (
         <div style={{ fontSize: 12, color: 'var(--ink-600)', padding: '1px 2px' }}>Aperçu : {renderInline(preview)}</div>
       )}
@@ -1234,10 +1254,10 @@ function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifie
       {/* Ajout manuel d'une entrée de journal (tant que l'action n'est pas clôturée). */}
       {!ferme && onJournal && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-          <textarea value={note} onChange={e => setNote(e.target.value)}
+          <AutoTextarea value={note} onChange={e => setNote(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && note.trim()) { e.preventDefault(); onJournal(action.id, { texte: note }); setNote('') } }}
-            placeholder="+ Ajouter une note datée (avancement, décision…) — Entrée pour valider, Maj+Entrée pour un retour à la ligne" rows={4}
-            className="input" style={{ flex: 1, fontSize: 12.5, lineHeight: 1.5, resize: 'vertical' }} />
+            placeholder="+ Ajouter une note datée (avancement, décision…) — Entrée pour valider, Maj+Entrée pour un retour à la ligne" rows={2}
+            className="input" style={{ flex: 1, fontSize: 12.5, lineHeight: 1.5, resize: 'none' }} />
           <button onClick={() => { if (note.trim()) { onJournal(action.id, { texte: note }); setNote('') } }}
             disabled={!note.trim()} className="btn btn-ghost" style={{ fontSize: 11.5, padding: '3px 10px', opacity: note.trim() ? 1 : 0.5 }}>Ajouter</button>
         </div>

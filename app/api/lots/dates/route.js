@@ -9,7 +9,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
 
-export const maxDuration = 60
+export const maxDuration = 300   // aligné : évite les 504 quand l'appel IA + retries dépassent 60 s
 
 const CLAUDE_TIMEOUT_MS = 45_000
 const CLAUDE_RETRIES = 2

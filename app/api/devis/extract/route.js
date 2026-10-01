@@ -13,7 +13,7 @@ import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
 import { normaliserExtractionDevis } from '../../../lib/devis'
 
-export const maxDuration = 60
+export const maxDuration = 300   // aligné : évite les 504 quand l'appel IA + retries dépassent 60 s
 
 const MAX_PDF_BYTES = 10 * 1024 * 1024        // 10 Mo : un devis PDF tient largement
 const CLAUDE_TIMEOUT_MS = 45_000
