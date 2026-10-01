@@ -37,10 +37,14 @@ export async function POST(request) {
   const { data: client } = await db.from('clients').select('*').eq('id', dossier.client_id).maybeSingle()
 
   const ext = (hf.pdf_path?.split('.').pop() || 'pdf')
-  // « Facture_honoraires_<client>_<courtage|solde>.<ext> » : le suffixe distingue les 2 factures
-  // honoraires (elles partagent le dossier « 1. Administratif » → nom déterministe unique requis).
+  // « Facture_honoraires_<client>_<type>.<ext> » : toutes les factures honoraires partagent le
+  // dossier « 1. Administratif » et le miroir uploade en 'replace' → chaque type DOIT porter un
+  // nom déterministe UNIQUE, sinon elles s'écrasent entre elles sur le Drive. Clés :
+  //   'courtage' | 'solde_amo' (solde payé d'un coup) | 'frais_consultation' | id de tranche
+  //   échelonnée (uuid) → 'solde_<id8>' (une par tranche, sans collision).
   const clientSlug = slugNom(formatNomClient(client, { civilite: false }))
-  const cleSlug = hf.cle === 'courtage' ? 'courtage' : 'solde'
+  const CLE_SLUG = { courtage: 'courtage', solde_amo: 'solde', frais_consultation: 'frais_consultation' }
+  const cleSlug = CLE_SLUG[hf.cle] || `solde_${String(hf.cle).slice(0, 8)}`
   // Annee de classement : la CLOTURE d'abord (le clic), puis la fin de chantier (cf. taxonomie).
   const dateCloture = dossier.date_cloture || null
   const dateFin = dossier.date_fin_chantier || null
