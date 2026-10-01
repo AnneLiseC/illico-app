@@ -60,6 +60,7 @@ Réponds STRICTEMENT par un objet JSON (aucun texte autour, pas de markdown) :
 RÈGLES DE CONSOLIDATION (le cœur du travail) :
 - PRIORITÉ = EXHAUSTIVITÉ. Il vaut BEAUCOUP mieux garder un point de trop (que l'utilisatrice décochera) qu'en oublier un. EN CAS DE DOUTE, GARDE le point.
 - Ne FUSIONNE que des points VRAIMENT IDENTIQUES (même sujet, même travail). Deux points liés mais DISTINCTS restent SÉPARÉS — ex. « tirage électrique à 98 %, 2 % restants » et « finitions/appareillages en fin de chantier » et « passage de contrôle » sont TROIS actions différentes, pas une seule.
+- Ne fusionne JAMAIS des ouvrages ou des pièces DIFFÉRENTS dans une même action, même pour le même artisan (ex. ne mets pas la cuisine avec une chambre ou une salle de bain). Un artisan qui intervient sur 5 pièces/ouvrages → 5 actions distinctes.
 - Quand un même point revient à l'identique dans plusieurs rapports, garde-le UNE fois, avec le STATUT du rapport le PLUS RÉCENT.
 - N'EXCLUS JAMAIS un point de la liste, même terminé. Un point réalisé/réceptionné/soldé reste AFFICHÉ, avec le statut "cloture" (ou "quitus_transmis" si un quitus est mentionné) — c'est l'historique. On NE SUPPRIME pas, on change le statut.
 - GARDE tout : ouvert, en cours, en attente, à programmer, à surveiller, à venir, ET terminé — y compris les points de coordination / co-activité et les points de vigilance.
