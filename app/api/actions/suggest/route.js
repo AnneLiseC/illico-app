@@ -31,7 +31,7 @@ Réponds STRICTEMENT par un objet JSON (aucun texte autour, pas de markdown) :
     {
       "ref": nombre,          // le numéro de réf. de l'action existante concernée (dans la liste fournie)
       "statut": une des valeurs EXACTES ci-dessous | "",   // nouveau statut si les notes le font évoluer, sinon ""
-      "texte": chaîne | "",   // texte à jour SEULEMENT si les notes ajoutent une info ; sinon "" (on garde l'ancien)
+      "texte": chaîne | "",   // la NOTE D'AVANCEMENT à ajouter (datée) sur cette action : ce qui a évolué, factuel et clair (ex. « Cloison posée, reste les bandes à poncer »). Remplis-le dès qu'il y a du nouveau au-delà du simple statut ; "" uniquement si rien à noter.
       "note": chaîne          // en 1 phrase, ce qui change (pour que l'humaine comprenne). Ex : « passe en terminé »
     }
   ],
@@ -50,7 +50,8 @@ RÈGLES :
 - Écris TOUJOURS en FRANÇAIS, même si les notes sont dans une autre langue.
 - ORTHOGRAPHE, GRAMMAIRE, CONJUGAISON — PRIORITÉ ABSOLUE : chaque "titre" et "texte" doit être dans un français IMPECCABLE (orthographe, accords, conjugaison, ponctuation, majuscules). Corrige toutes les fautes des notes brutes / de la dictée. Le compte-rendu est envoyé au client : aucune faute n'est tolérée.
 - N'invente rien : uniquement ce qui est dans les notes. Une note = potentiellement une action.
-- Si des ACTIONS DÉJÀ PRÉSENTES te sont fournies : quand un point des notes CONCERNE l'une d'elles (même sujet / même lot), NE crée PAS de doublon → mets-le dans "updates" avec sa "ref" et le nouveau statut (et un texte à jour seulement si tu ajoutes une info). Ne mets dans "actions" QUE les points réellement nouveaux, absents de la liste.
+- ANALYSE D'ABORD, UNE PAR UNE, LES ACTIONS DÉJÀ PRÉSENTES avant de créer quoi que ce soit. Pour CHAQUE point des notes, demande-toi s'il fait AVANCER, précise, complète, débloque ou clôture une action déjà présente (même sujet, même lot, même ouvrage) — MÊME si la formulation diffère des notes brutes. Si OUI → c'est une MISE À JOUR (dans "updates") avec sa "ref" : écris l'avancement dans "texte" (il devient une note datée sur l'action) et mets à jour le "statut" s'il évolue. Ne crée une entrée dans "actions" QUE pour un sujet VRAIMENT nouveau, absent de la liste.
+- Sur une visite de SUIVI, la plupart des points sont des AVANCEMENTS d'actions existantes : privilégie donc les "updates". Une nouvelle action est l'exception, pas la règle. Dans le doute entre créer une action et mettre à jour une action existante proche (même lot / même ouvrage), choisis la MISE À JOUR.
 - Si aucune action existante ne correspond (ou aucune fournie), "updates" reste [].
 - "statut" par défaut = "en_cours". Utilise "date_limite" ou "a_programmer" si une échéance est donnée ; "information" pour une simple info ; "cloture" seulement si la note dit explicitement que c'est réglé.
 - Si une DATE est mentionnée (ex. "avant le 12/02", "semaine prochaine" → estime au mieux en AAAA-MM-JJ), mets-la dans "statut_date".
