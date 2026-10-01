@@ -231,7 +231,18 @@ export function deciderRattachement(parentPath, candidats, artisansParNom = new 
     // À la RACINE de l'artisan, en revanche, on ne tranche pas : cinq catégories y écrivent
     // (attestation de démarrage, déblocage d'acompte, avis de virement, PV de réception,
     // attestation de fin). Le dossier ne les distingue pas, donc le rattachement non plus.
-    const categorie = CATEGORIE_PAR_DOSSIER_ARTISAN[sous[2]] ?? null
+    //
+    // NIVEAU « LOT » (artisan multi-devis) : l'écriture peut insérer un dossier de LOT entre
+    // l'artisan et la nature — « <Artisan>/<Lot>/Factures ». La nature n'est alors plus au
+    // niveau 3 mais au niveau 4. On distingue les deux cas sans ambiguïté : « Factures » et
+    // « Autre » sont des noms RÉSERVÉS (cf. CATEGORIE_PAR_DOSSIER_ARTISAN) ; tout autre nom au
+    // niveau 3 est un dossier de lot. Sans ce décalage, une facture rangée sous un lot serait
+    // relue comme « racine de lot » (catégorie nulle) → le défaut que l'aller-retour interdit.
+    // Le lot lui-même n'est pas re-résolu en devis_id ici (perte assumée, comme la racine
+    // artisan) : le document reste rattaché au bon artisan et à la bonne nature, ce qui suffit.
+    const n3EstNature = CATEGORIE_PAR_DOSSIER_ARTISAN[sous[2]] !== undefined
+    const segNature = n3EstNature ? sous[2] : sous[3]
+    const categorie = CATEGORIE_PAR_DOSSIER_ARTISAN[segNature] ?? null
     return { destination: 'documents', dossier_id: dossier.id, categorie, artisan_id: artisanId }
   }
 

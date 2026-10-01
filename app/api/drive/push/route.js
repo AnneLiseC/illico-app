@@ -37,11 +37,11 @@ export async function POST(request) {
   let src
   if (body.document_id) {
     const { data: doc } = await db.from('chantier_documents')
-      .select('id, dossier_id, path, nom, categorie, artisan_id, type_mime').eq('id', body.document_id).maybeSingle()
+      .select('id, dossier_id, path, nom, categorie, artisan_id, devis_id, type_mime').eq('id', body.document_id).maybeSingle()
     if (!doc) return NextResponse.json({ error: 'Document introuvable' }, { status: 404 })
     src = { kind: 'document', indexCol: 'document_id', indexVal: doc.id, dossierId: doc.dossier_id,
       bucket: 'documents', storagePath: doc.path, fileName: doc.nom, mime: doc.type_mime,
-      categorie: doc.categorie, artisanId: doc.artisan_id }
+      categorie: doc.categorie, artisanId: doc.artisan_id, devisId: doc.devis_id }
   } else if (body.photo_id) {
     const { data: ph } = await db.from('photos')
       .select('id, dossier_id, url, type_media, categorie').eq('id', body.photo_id).maybeSingle()
@@ -103,11 +103,27 @@ export async function POST(request) {
     src.fileName = `${clientSlug}_${catSlug}_${n}.${ext}`
   } else {
     let artisanNom = null
+    let lotNom = null
     if (src.artisanId) {
       const { data: a } = await db.from('artisans').select('entreprise').eq('id', src.artisanId).maybeSingle()
       artisanNom = a?.entreprise || null
+      // Niveau « lot » : UNIQUEMENT si cet artisan a PLUSIEURS devis acceptés sur le dossier
+      // (sinon le dossier de lot serait un niveau superflu). Le lot = le devis rattaché au
+      // document (src.devisId). Même règle de multi-lots que l'UI (statut 'accepte'), pour
+      // que l'arbo écrite corresponde au groupage affiché. Libellé : notes → numéro → « Lot
+      // <id> ». Un doc sans devis_id (ancien, ou ajouté hors d'un lot) reste à la racine
+      // artisan (lotNom = null) — rétro-compatible.
+      if (src.devisId) {
+        const { data: devisAcceptes } = await db.from('devis_artisans')
+          .select('id, notes, numero_devis')
+          .eq('dossier_id', dossier.id).eq('artisan_id', src.artisanId).eq('statut', 'accepte')
+        if ((devisAcceptes || []).length > 1) {
+          const dv = (devisAcceptes || []).find(d => d.id === src.devisId)
+          if (dv) lotNom = (dv.notes || '').trim() || (dv.numero_devis || '').trim() || `Lot ${String(dv.id).slice(0, 8)}`
+        }
+      }
     }
-    segments = cheminChantier(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, src.categorie, artisanNom, { dateCloture, dateFin, nom2: client?.nom2, suffixe })
+    segments = cheminChantier(dossier.statut, dossier.date_premier_rdv || dossier.created_at, client?.nom, src.categorie, artisanNom, { dateCloture, dateFin, nom2: client?.nom2, suffixe, lotNom })
   }
 
   try {

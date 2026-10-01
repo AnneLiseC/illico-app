@@ -61,6 +61,20 @@ describe('deciderRattachement — ce qui se rattache tout seul', () => {
       .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: null, artisan_id: 'a-mj' })
   })
 
+  it("un niveau LOT (artisan multi-devis) : la nature est lue AU-DELA du lot", () => {
+    // Quand le meme artisan a plusieurs devis acceptes, l'ecriture insere un dossier de LOT
+    // entre l'artisan et la nature : « <Artisan>/<Lot>/Factures ». « Factures »/« Autre »
+    // sont des noms RESERVES ; tout autre nom au niveau 3 est un lot, et la nature descend
+    // au niveau 4. Sans ce decalage, la facture serait relue comme « racine de lot » (null).
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/4. Documents artisans/MJ RENOVATION/Toiture bat A/Factures`))
+      .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: 'facture_artisan', artisan_id: 'a-mj' })
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/4. Documents artisans/MJ RENOVATION/Toiture bat A/Autre`))
+      .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: 'autre_artisan', artisan_id: 'a-mj' })
+    // A la racine d'un lot : indecidable comme la racine artisan, mais l'artisan reste sur.
+    expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE/4. Documents artisans/MJ RENOVATION/Toiture bat A`))
+      .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: null, artisan_id: 'a-mj' })
+  })
+
   it('un fichier a la racine du chantier : chantier connu, nature inconnue', () => {
     expect(decide(`${P}/1. En cours/2026-06-09 BARLOY-TEPPE`))
       .toEqual({ destination: 'documents', dossier_id: 'barloy', categorie: null, artisan_id: null })
