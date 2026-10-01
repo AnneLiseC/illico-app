@@ -102,6 +102,16 @@ export default function FicheArtisan({ params }) {
 
   const set = (champ, valeur) => setArtisan(a => ({ ...a, [champ]: valeur }))
 
+  // Modifie la date d'expiration de la décennale directement depuis la liste des
+  // documents officiels (sans passer par le formulaire « Modifier ») et l'enregistre aussitôt.
+  const majDecennaleExpiration = async (valeur) => {
+    const v = valeur || null
+    setArtisan(a => ({ ...a, decennale_expiration: v }))
+    const { error } = await supabase.from('artisans').update({ decennale_expiration: v }).eq('id', id)
+    if (error) setErreur(erreurAffichable(error))
+    else setSucces('Date de décennale mise à jour ✓')
+  }
+
   // Historique des documents officiels — le plus récent d'abord, dates inconnues en fin
   // (versions reprises de l'existant, dont la date de dépôt n'a jamais été enregistrée).
   const chargerHistorique = async () => {
@@ -586,11 +596,13 @@ export default function FicheArtisan({ params }) {
                     </div>
                   </div>
                   <div style={{display:'flex', gap:6, alignItems:'center', flexWrap:'wrap', justifyContent:'flex-end'}}>
-                    {doc.key === 'decennale' && artisan.decennale_expiration && (
-                      <span style={{fontSize:11, fontWeight:600, marginRight:2, whiteSpace:'nowrap',
-                        color: diffDec < 0 ? 'var(--bad)' : diffDec < 60 ? '#a16207' : 'var(--ink-500)'}}>
-                        {diffDec < 0 ? 'Expirée le ' : 'Expire le '}{fmtDate(artisan.decennale_expiration)}
-                      </span>
+                    {doc.key === 'decennale' && (
+                      <input className="input" type="date" value={artisan.decennale_expiration || ''}
+                        onChange={e => majDecennaleExpiration(e.target.value)}
+                        title="Date d'expiration de la décennale — modifiable ici"
+                        style={{fontSize:11.5, padding:'3px 8px', width:'auto', flexShrink:0,
+                          borderColor: diffDec != null && diffDec < 0 ? 'var(--bad)' : diffDec != null && diffDec < 60 ? '#a16207' : 'var(--ink-200)',
+                          color: diffDec != null && diffDec < 0 ? 'var(--bad)' : 'var(--ink-700)'}} />
                     )}
                     {artisan[doc.champ] && (
                       <button className="btn btn-ghost" style={{fontSize:11.5, padding:'3px 9px'}} onClick={() => ouvrirDocument(artisan[doc.champ])}>Voir</button>
