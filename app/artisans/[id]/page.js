@@ -503,7 +503,7 @@ export default function FicheArtisan({ params }) {
       <div style={{display:'grid', gridTemplateColumns:'3fr 2fr', gap:18, alignItems:'start'}}>
 
         {/* Gauche — Devis par chantier */}
-        <div className="card" style={{padding:0, overflow:'hidden'}}>
+        <div className="card" style={{padding:0, overflow:'hidden', minWidth:0}}>
           <div style={{padding:'14px 20px', borderBottom:'1px solid var(--ink-100)', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
             <div>
               <div style={{fontWeight:700, fontSize:14, color:'var(--ink-900)'}}>Devis par chantier</div>
@@ -561,7 +561,7 @@ export default function FicheArtisan({ params }) {
         </div>
 
         {/* Droite — Documents + Fiches */}
-        <div style={{display:'flex', flexDirection:'column', gap:12}}>
+        <div style={{display:'flex', flexDirection:'column', gap:12, minWidth:0}}>
 
           {/* Documents officiels */}
           <div className="card" style={{padding:0, overflow:'hidden'}}>
@@ -585,7 +585,13 @@ export default function FicheArtisan({ params }) {
                       <div style={{fontSize:11, color: artisan[doc.champ] ? '#15803d' : 'var(--ink-300)'}}>{artisan[doc.champ] ? 'Déposé' : 'Manquant'}</div>
                     </div>
                   </div>
-                  <div style={{display:'flex', gap:6, alignItems:'center'}}>
+                  <div style={{display:'flex', gap:6, alignItems:'center', flexWrap:'wrap', justifyContent:'flex-end'}}>
+                    {doc.key === 'decennale' && artisan.decennale_expiration && (
+                      <span style={{fontSize:11, fontWeight:600, marginRight:2, whiteSpace:'nowrap',
+                        color: diffDec < 0 ? 'var(--bad)' : diffDec < 60 ? '#a16207' : 'var(--ink-500)'}}>
+                        {diffDec < 0 ? 'Expirée le ' : 'Expire le '}{fmtDate(artisan.decennale_expiration)}
+                      </span>
+                    )}
                     {artisan[doc.champ] && (
                       <button className="btn btn-ghost" style={{fontSize:11.5, padding:'3px 9px'}} onClick={() => ouvrirDocument(artisan[doc.champ])}>Voir</button>
                     )}
