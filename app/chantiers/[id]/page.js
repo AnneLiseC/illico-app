@@ -5247,17 +5247,22 @@ export default function FicheChantier({ params }) {
               {/* Frais de consultation — cochable pour acter l'encaissement (date).
                   Verrouillé si le statut du dossier est déjà « réglé » (géré au dropdown). */}
               {(dossier.frais_consultation || 0) > 0 && dossier.frais_statut !== 'offerts' && (
-                <EcheanceRow
-                  label={dossier.typologie === 'estimo' ? 'Montant ESTIMO' : (dossier.frais_origine_estimo ? 'Frais de consultation (ESTIMO)' : 'Frais de consultation')}
-                  sub={`${fmt(dossier.frais_consultation)} TTC`}
-                  statut={fraisRecu ? 'regle' : 'en_attente'}
-                  date={suiviFrais?.date_paiement || null}
-                  onSetPaid={d => setFraisRecu(true, d)}
-                  onUnsetPaid={() => setFraisRecu(false)}
-                  lock={dossier.frais_statut === 'regle'}
-                  lockMsg={dossier.frais_statut === 'regle' ? 'Statut « facturés et réglés » défini dans les réglages du dossier.' : undefined}
-                  fmtDateFn={fmtD}
-                />
+                <>
+                  <EcheanceRow
+                    label={dossier.typologie === 'estimo' ? 'Montant ESTIMO' : (dossier.frais_origine_estimo ? 'Frais de consultation (ESTIMO)' : 'Frais de consultation')}
+                    sub={`${fmt(dossier.frais_consultation)} TTC`}
+                    statut={fraisRecu ? 'regle' : 'en_attente'}
+                    date={suiviFrais?.date_paiement || null}
+                    onSetPaid={d => setFraisRecu(true, d)}
+                    onUnsetPaid={() => setFraisRecu(false)}
+                    lock={dossier.frais_statut === 'regle'}
+                    lockMsg={dossier.frais_statut === 'regle' ? 'Statut « facturés et réglés » défini dans les réglages du dossier.' : undefined}
+                    fmtDateFn={fmtD}
+                  />
+                  {/* Facture PDF optionnelle, DÉCOUPLÉE du statut réglé (une facture manquante
+                      n'implique jamais un paiement non réglé). */}
+                  {honoPdfSlot('frais_consultation')}
+                </>
               )}
 
               {/* Honoraires courtage — AMO, ou courtage SANS travaux supplémentaires (inchangé) */}
@@ -5360,6 +5365,9 @@ export default function FicheChantier({ params }) {
                           onUnsetPaid={() => majSuiviChantier('solde_amo', honorairesAMOPrev - honorairesCourtagePrev, 'en_attente')}
                           fmtDateFn={fmtD}
                         />
+                        {/* Facture PDF du solde payé d'un coup, DÉCOUPLÉE du statut réglé
+                            (parité avec le courtage et les tranches échelonnées). */}
+                        {honoPdfSlot('solde_amo')}
                         <button type="button" className="suivi-amo-add-link" onClick={() => setSoldeAmoDeplie(v => !v)}>
                           + paiement échelonné
                         </button>
