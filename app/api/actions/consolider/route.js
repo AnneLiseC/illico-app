@@ -68,7 +68,7 @@ RÈGLES DE CONSOLIDATION (le cœur du travail) :
 - STATUT — choisis le PLUS PRÉCIS parmi les 16, il y a de la nuance : "en_attente", "a_surveiller", "a_programmer", "programme", "en_cours", "en_retard", "date_limite", "urgent", "rappel", "information", "acte", "constate", "garder_memoire"…
 - ATTENTION "cloture" et "quitus_transmis" FERMENT le point : il sort du suivi et ne se reporte plus. Ne les utilise QUE si un rapport dit EXPLICITEMENT que c'est terminé/soldé. Dans le doute, choisis un statut OUVERT (jamais "cloture" par précaution). Un point simplement ancien n'est PAS clôturé.
 - statut_date : la date d'échéance/statut la plus récente et pertinente si une date est donnée, sinon "".
-- Rattache à un lot (portee="lot") seulement si c'est clair, en choisissant "lot_nom" dans la liste fournie quand elle correspond.
+- "lot_nom" doit être COPIÉ EXACTEMENT depuis la LISTE DE LOTS fournie (le texte entre guillemets) — jamais inventé, jamais reformulé en corps d'état (n'écris PAS « Peinture », « Carrelage », « Meubles de cuisine » si ce n'est pas dans la liste). Pour choisir le bon lot, utilise l'ARTISAN de la liste. Si aucun lot ne correspond vraiment → portee="generale" et lot_nom="".
 
 DATES DE PLANNING ("dates") : liste TOUTES les périodes d'intervention distinctes mentionnées, par lot. Un lot peut intervenir en PLUSIEURS phases → sors-les TOUTES (ne garde pas seulement la plus récente). Ne dédoublonne QUE des périodes strictement identiques (mêmes dates, même lot). N'invente aucune date. "lot_nom" doit venir de la liste fournie. Si aucune date n'est donnée pour un lot, ne l'inclus pas dans "dates".
 
@@ -126,7 +126,14 @@ export async function POST(request) {
   const acces = await assertDossierAccessible(dossierId, auth.profile)
   if (acces.error) return acces.error
 
-  const lots = Array.isArray(body.lots) ? body.lots.filter(l => l?.nom).map(l => l.nom).slice(0, 60) : []
+  // Lots AVEC artisan : "lot_nom" doit être copié EXACTEMENT depuis cette liste (jamais inventé),
+  // l'artisan sert à router vers le bon lot.
+  const lots = Array.isArray(body.lots)
+    ? body.lots.filter(l => l?.nom).slice(0, 60).map(l => ({
+        nom: String(l.nom).slice(0, 120),
+        artisan: typeof l.artisan === 'string' ? l.artisan.slice(0, 120) : '',
+      }))
+    : []
 
   const db = admin()
   // Rapports PROSE (ancien système) = ceux qui ont un contenu_final. Ordre chronologique
@@ -155,7 +162,10 @@ export async function POST(request) {
     blocs.push(bloc)
   }
 
-  const userText = `Voici ${blocs.length} rapport(s) de visite du même chantier, du plus ancien au plus récent :\n\n${blocs.join('\n\n')}\n\nLots disponibles (pour "lot_nom") : ${lots.length ? lots.join(', ') : 'aucun'}\n\nConsolide-les en UNE liste d'actions ouvertes dédoublonnée et à jour, au format JSON demandé, en français.`
+  const lotsListe = lots.length
+    ? lots.map(l => `- "${l.nom}"${l.artisan ? ` (artisan : ${l.artisan})` : ''}`).join('\n')
+    : 'aucun'
+  const userText = `Voici ${blocs.length} rapport(s) de visite du même chantier, du plus ancien au plus récent :\n\n${blocs.join('\n\n')}\n\nLOTS DISPONIBLES — "lot_nom" doit être COPIÉ EXACTEMENT depuis cette liste (le texte entre guillemets), jamais inventé ni reformulé en corps d'état. Utilise l'artisan pour choisir le bon lot :\n${lotsListe}\n\nConsolide-les en UNE liste d'actions ouvertes dédoublonnée et à jour, au format JSON demandé, en français.`
 
   const claudeBody = JSON.stringify({
     model: 'claude-sonnet-4-6',
