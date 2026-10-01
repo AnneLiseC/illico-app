@@ -60,7 +60,8 @@ RÈGLES :
 - Si aucune action existante ne correspond (ou aucune fournie), "updates" reste [].
 - "statut" par défaut = "en_cours". Utilise "date_limite" ou "a_programmer" si une échéance est donnée ; "information" pour une simple info ; "cloture" seulement si la note dit explicitement que c'est réglé.
 - Si une DATE est mentionnée (ex. "avant le 12/02", "semaine prochaine" → estime au mieux en AAAA-MM-JJ), mets-la dans "statut_date".
-- "lot_nom" doit être COPIÉ EXACTEMENT depuis la LISTE DE LOTS fournie (le texte entre guillemets) — jamais inventé, jamais reformulé en corps d'état (n'écris PAS « Peinture », « Carrelage », « Meubles de cuisine » si ce n'est pas dans la liste). Pour choisir le bon lot : prends celui dont l'ARTISAN correspond à l'artisan indiqué entre parenthèses dans les notes. Si aucun lot de la liste ne correspond vraiment → portee="generale" et lot_nom="".`
+- "lot_nom" doit être COPIÉ EXACTEMENT depuis la LISTE DE LOTS fournie (le texte entre guillemets) — jamais inventé, jamais reformulé en corps d'état (n'écris PAS « Peinture », « Carrelage », « Meubles de cuisine » si ce n'est pas dans la liste). Pour choisir le bon lot : prends celui dont l'ARTISAN correspond à l'artisan indiqué entre parenthèses dans les notes. Si aucun lot de la liste ne correspond vraiment → portee="generale" et lot_nom="".
+- N'ÉCRIS JAMAIS le nom de l'artisan / entreprise dans "titre", "texte" ni "note". Le nom entre parenthèses dans les notes (« (D2M) », « (ESPRIT CUISINE) »…) sert UNIQUEMENT à remplir le champ "artisan" et à router — il ne doit PAS apparaître dans le texte, qui est destiné au client. Garde en revanche « (TS) » et « [à titre informatif] ».`
 function parseJsonSafe(text) {
   if (!text) return null
   try { return JSON.parse(text) } catch { /* isole l'objet */ }
@@ -219,6 +220,14 @@ export async function POST(request) {
     const hit = lotsNorm.find(l => l.nomN === n)
     return hit ? hit.nom : ''
   }
+  // Le nom de l'artisan ne doit PAS apparaître dans le texte du CR (il sert au routage, pas à
+  // l'affichage client). On retire les parenthèses qui désignent un artisan connu — « (D2M) »,
+  // « (ESPRIT CUISINE) »… — en gardant « (TS) » et toute autre parenthèse de contenu.
+  const artisansNorm = [...new Set(lotsNorm.map(l => l.artN).filter(Boolean))]
+  const estArtisan = (c) => { const n = norm(c); return !!n && artisansNorm.some(a => a === n || a.includes(n)) }
+  const stripArtisans = (t) => String(t || '')
+    .replace(/\s*\(([^()]*)\)/g, (m, inner) => estArtisan(inner) ? '' : m)
+    .replace(/\s{2,}/g, ' ').replace(/\s+([.,])/g, '$1').trim()
   const actions = raw.actions.slice(0, 40).map(a => {
     const statut = STATUT_SET.has(a?.statut) ? a.statut : 'en_cours'
     // Lot : l'artisan fait foi. 1 seul lot pour cet artisan → on le prend. PLUSIEURS lots (même
@@ -232,8 +241,8 @@ export async function POST(request) {
     else if (parArt.length > 1) lot_nom = parArt.includes(parNom) ? parNom : ''
     else lot_nom = parNom
     return {
-      titre: typeof a?.titre === 'string' ? a.titre.trim().slice(0, 120) : '',
-      texte: typeof a?.texte === 'string' ? a.texte.trim().slice(0, 1500) : '',
+      titre: stripArtisans(typeof a?.titre === 'string' ? a.titre.trim().slice(0, 120) : ''),
+      texte: stripArtisans(typeof a?.texte === 'string' ? a.texte.trim().slice(0, 1500) : ''),
       portee: lot_nom ? 'lot' : 'generale',
       lot_nom,
       statut,
@@ -245,9 +254,10 @@ export async function POST(request) {
     const ref = Number(u?.ref)
     if (!refSet.has(ref)) return null
     const statut = STATUT_SET.has(u?.statut) ? u.statut : null
-    const texte = (typeof u?.texte === 'string' && u.texte.trim()) ? u.texte.trim().slice(0, 1500) : null
+    const texteBrut = (typeof u?.texte === 'string' && u.texte.trim()) ? stripArtisans(u.texte.trim().slice(0, 1500)) : null
+    const texte = texteBrut || null
     if (!statut && !texte) return null
-    return { ref, statut, texte, note: typeof u?.note === 'string' ? u.note.trim().slice(0, 200) : '' }
+    return { ref, statut, texte, note: stripArtisans(typeof u?.note === 'string' ? u.note.trim().slice(0, 200) : '') }
   }).filter(Boolean)
   return NextResponse.json({ actions, updates, tronquee })
 }
