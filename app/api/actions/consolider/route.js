@@ -70,6 +70,7 @@ RÈGLES DE CONSOLIDATION (le cœur du travail) :
 - ATTENTION "cloture" et "quitus_transmis" FERMENT le point : il sort du suivi et ne se reporte plus. Ne les utilise QUE si un rapport dit EXPLICITEMENT que c'est terminé/soldé. Dans le doute, choisis un statut OUVERT (jamais "cloture" par précaution). Un point simplement ancien n'est PAS clôturé.
 - statut_date : la date d'échéance/statut la plus récente et pertinente si une date est donnée, sinon "".
 - "lot_nom" doit être COPIÉ EXACTEMENT depuis la LISTE DE LOTS fournie (le texte entre guillemets) — jamais inventé, jamais reformulé en corps d'état (n'écris PAS « Peinture », « Carrelage », « Meubles de cuisine » si ce n'est pas dans la liste). Pour choisir le bon lot, utilise l'ARTISAN de la liste. Si aucun lot ne correspond vraiment → portee="generale" et lot_nom="".
+- N'ÉCRIS JAMAIS le nom de l'artisan / entreprise dans "titre" ni "texte". Il sert UNIQUEMENT à remplir "artisan" et à router — pas à s'afficher (le CR est pour le client). Garde « (TS) » et « [à titre informatif] ».
 
 DATES DE PLANNING ("dates") : liste TOUTES les périodes d'intervention distinctes mentionnées, par lot. Un lot peut intervenir en PLUSIEURS phases → sors-les TOUTES (ne garde pas seulement la plus récente). Ne dédoublonne QUE des périodes strictement identiques (mêmes dates, même lot). N'invente aucune date. "lot_nom" doit venir de la liste fournie. Si aucune date n'est donnée pour un lot, ne l'inclus pas dans "dates".
 
@@ -237,12 +238,19 @@ export async function POST(request) {
     if (parArt.length > 1) return parArt.includes(parNom) ? parNom : ''
     return parNom
   }
+  // L'artisan ne doit pas apparaître dans le texte (routage uniquement). On retire « (D2M) »,
+  // « (ESPRIT CUISINE) »… en gardant « (TS) » et les autres parenthèses de contenu.
+  const artisansNorm = [...new Set(lotsNorm.map(l => l.artN).filter(Boolean))]
+  const estArtisan = (c) => { const n = norm(c); return !!n && artisansNorm.some(a => a === n || a.includes(n)) }
+  const stripArtisans = (t) => String(t || '')
+    .replace(/\s*\(([^()]*)\)/g, (m, inner) => estArtisan(inner) ? '' : m)
+    .replace(/\s{2,}/g, ' ').replace(/\s+([.,])/g, '$1').trim()
   const actions = raw.actions.slice(0, 80).map(a => {
     const statut = STATUT_SET.has(a?.statut) ? a.statut : 'en_cours'
     const lot_nom = resoudreLot(a?.artisan, a?.lot_nom)
     return {
-      titre: typeof a?.titre === 'string' ? a.titre.trim().slice(0, 120) : '',
-      texte: typeof a?.texte === 'string' ? a.texte.trim().slice(0, 1500) : '',
+      titre: stripArtisans(typeof a?.titre === 'string' ? a.titre.trim().slice(0, 120) : ''),
+      texte: stripArtisans(typeof a?.texte === 'string' ? a.texte.trim().slice(0, 1500) : ''),
       portee: lot_nom ? 'lot' : 'generale',
       lot_nom,
       statut,
