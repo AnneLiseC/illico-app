@@ -9,7 +9,8 @@
 import { NextResponse } from 'next/server'
 import { requireRole } from '../../../lib/api-auth'
 import { reglesActions, TYPES_VISITE } from '../../../lib/crRegles'
-export const maxDuration = 60
+export const maxDuration = 300   // aligné sur /api/cr : l'appel IA + les retries (45 s chacun)
+                                 // pouvaient dépasser 60 s et provoquer un 504 côté Vercel.
 const CLAUDE_TIMEOUT_MS = 45_000
 const CLAUDE_RETRIES = 2
 const RETRIABLE_STATUS = new Set([408, 429, 500, 502, 503, 504, 529])
