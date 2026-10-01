@@ -63,6 +63,43 @@ function parseJsonSafe(text) {
   if (i === -1 || j === -1 || j <= i) return null
   try { return JSON.parse(text.slice(i, j + 1)) } catch { return null }
 }
+
+// Découpe un segment en objets JSON { … } BALANCÉS (gère les guillemets et échappements),
+// en ignorant le dernier objet incomplet d'une sortie tronquée. Même filet que
+// /api/actions/consolider.
+function objetsBalances(segment) {
+  const objets = []
+  let prof = 0, debut = -1, dansStr = false, echap = false
+  for (let k = 0; k < segment.length; k++) {
+    const ch = segment[k]
+    if (dansStr) {
+      if (echap) echap = false
+      else if (ch === '\\') echap = true
+      else if (ch === '"') dansStr = false
+      continue
+    }
+    if (ch === '"') dansStr = true
+    else if (ch === '{') { if (prof === 0) debut = k; prof++ }
+    else if (ch === '}') { if (prof > 0) { prof--; if (prof === 0 && debut !== -1) { objets.push(segment.slice(debut, k + 1)); debut = -1 } } }
+  }
+  return objets
+}
+
+// Filet de récupération quand la sortie IA est TRONQUÉE au plafond de tokens : le JSON global
+// est coupé donc illisible d'un bloc, mais les objets déjà émis dans "actions"/"updates" sont
+// complets. On les récupère un par un plutôt que de tout jeter (mieux vaut 18 actions sur 20
+// qu'un échec total). Schéma : { "updates": [ … ], "actions": [ … ] } (updates avant actions).
+function recupererActions(text) {
+  if (!text) return null
+  const iUpd = text.indexOf('"updates"')
+  const iAct = text.indexOf('"actions"')
+  const tryParse = (s) => { try { return JSON.parse(s) } catch { return null } }
+  const segAct = iAct === -1 ? '' : text.slice(text.indexOf('[', iAct) + 1)
+  const segUpd = iUpd === -1 ? '' : text.slice(text.indexOf('[', iUpd) + 1, iAct > iUpd ? iAct : undefined)
+  const actions = objetsBalances(segAct).map(tryParse).filter(Boolean)
+  const updates = objetsBalances(segUpd).map(tryParse).filter(Boolean)
+  return actions.length ? { actions, updates } : null
+}
 export async function POST(request) {
   const auth = await requireRole(request, ['admin', 'agente'])
   if (auth.error) return auth.error
@@ -100,7 +137,7 @@ export async function POST(request) {
   const userText = `${enTete}${bloc}${blocExistantes}\n\nLots disponibles (pour "lot_nom") : ${lots.length ? lots.join(', ') : 'aucun'}\n\nRenvoie les mises à jour (updates) et les nouvelles actions au format JSON demandé, en français.`
   const claudeBody = JSON.stringify({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4000,
+    max_tokens: 8000,   // 4000 tronquait les grosses analyses CR → JSON coupé → « Réponse IA illisible ».
     temperature: 0,
     system,
     messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
@@ -138,7 +175,12 @@ export async function POST(request) {
     return NextResponse.json({ error: err.error?.message || 'Erreur Claude API' }, { status: 500 })
   }
   const claudeData = await claudeRes.json()
-  const raw = parseJsonSafe(claudeData.content?.[0]?.text || '')
+  const claudeText = claudeData.content?.[0]?.text || ''
+  const tronquee = claudeData.stop_reason === 'max_tokens'   // sortie coupée par le plafond de tokens
+  let raw = parseJsonSafe(claudeText)
+  // Si le JSON global est illisible (typiquement une sortie tronquée), on tente de récupérer
+  // les objets complets déjà émis au lieu d'échouer en bloc.
+  if (!raw || !Array.isArray(raw.actions)) raw = recupererActions(claudeText)
   if (!raw || !Array.isArray(raw.actions)) return NextResponse.json({ error: 'Réponse IA illisible' }, { status: 502 })
   // Coercition : on ne fait jamais confiance à la sortie brute.
   const dateOk = (s) => (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s)) ? s : null
@@ -163,5 +205,5 @@ export async function POST(request) {
     if (!statut && !texte) return null
     return { ref, statut, texte, note: typeof u?.note === 'string' ? u.note.trim().slice(0, 200) : '' }
   }).filter(Boolean)
-  return NextResponse.json({ actions, updates })
+  return NextResponse.json({ actions, updates, tronquee })
 }
