@@ -1354,7 +1354,7 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
         {photos.map(ph => (
           <div key={ph.id} style={{ position: 'relative', flex: '0 0 auto' }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={ph.url} alt="" onClick={() => ph.url && setLightbox(ph.url)} title="Agrandir"
+            <img src={ph.url} alt="" loading="lazy" decoding="async" onClick={() => ph.url && setLightbox(ph.url)} title="Agrandir"
               style={{ width: 116, height: 116, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--ink-200)', cursor: 'zoom-in', display: 'block' }} />
             <button onClick={() => supprimer(ph)} title="Supprimer"
               style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, display: 'grid', placeItems: 'center' }}>✕</button>
@@ -1400,7 +1400,10 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
               <button key={p.id} type="button" onClick={() => attacher(p)} title={`Ajouter (${p.categorie || 'photo'})`}
                 style={{ flex: '0 0 auto', border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.thumb} alt="" style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--ink-200)' }} />
+                {/* loading="lazy" : ne télécharge que les vignettes visibles (bande scrollable) →
+                    évite la rafale de requêtes storage qui déclenchait des 429 sur un dossier
+                    avec beaucoup de photos. */}
+                <img src={p.thumb} alt="" loading="lazy" decoding="async" style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--ink-200)' }} />
               </button>
             ))}
           </div>
