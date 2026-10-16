@@ -1272,6 +1272,25 @@ function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifie
 }
 
 // ── Photos d'une action (upload compressé + annotation + suppression) ──
+// Miniatures LÉGÈRES pour les grilles du CR : une photo de chantier fait souvent plusieurs Mo /
+// 12 Mpx ; l'afficher en vignette 100 px en PLEIN format faisait tout ramer et planter l'affichage
+// (surtout sur ordinateur, après plusieurs remarques). On signe une version transformée ~500 px,
+// par LOTS de 6 pour ne pas saturer le Storage (429/544 sur une salve). Repli plein format via
+// onError si les transformations d'image ne sont pas disponibles.
+const THUMB_TRANSFORM_CR = { width: 500, height: 500, resize: 'cover', quality: 60 }
+async function signerThumbsCR(paths) {
+  const out = {}
+  const LOT = 6
+  for (let i = 0; i < paths.length; i += LOT) {
+    const tranche = await Promise.all(paths.slice(i, i + LOT).map(async (p) => {
+      const { data } = await supabase.storage.from('photos').createSignedUrl(p, 3600, { transform: THUMB_TRANSFORM_CR })
+      return [p, data?.signedUrl || '']
+    }))
+    for (const [p, u] of tranche) out[p] = u
+  }
+  return out
+}
+
 function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
   const [photos, setPhotos] = useState([])
   const [up, setUp] = useState(false)
@@ -1285,7 +1304,8 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
     if (!rows.length) { setPhotos([]); return }
     const { data: signed } = await supabase.storage.from('photos').createSignedUrls(rows.map(r => r.path), 3600)
     const urlByPath = Object.fromEntries((signed || []).map(s => [s.path, s.signedUrl]))
-    setPhotos(rows.map(r => ({ ...r, url: urlByPath[r.path] || '' })))
+    const thumbByPath = await signerThumbsCR(rows.map(r => r.path))   // vignettes légères pour la grille
+    setPhotos(rows.map(r => ({ ...r, url: urlByPath[r.path] || '', thumb: thumbByPath[r.path] || '' })))
   }, [action.id])
 
   useEffect(() => { (async () => { await recharger() })() }, [recharger])
@@ -1321,8 +1341,9 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
     const rows = data || []
     if (!rows.length) { setDossierPhotos([]); return }
     const { data: signed } = await supabase.storage.from('photos').createSignedUrls(rows.map(r => r.url), 3600)
-    const urlByPath = Object.fromEntries((signed || []).map(s => [s.path, s.signedUrl]))
-    setDossierPhotos(rows.map(r => ({ ...r, thumb: urlByPath[r.url] || '' })))
+    const fullByPath = Object.fromEntries((signed || []).map(s => [s.path, s.signedUrl]))   // repli onError
+    const thumbByPath = await signerThumbsCR(rows.map(r => r.url))                           // vignettes légères
+    setDossierPhotos(rows.map(r => ({ ...r, thumb: thumbByPath[r.url] || '', full: fullByPath[r.url] || '' })))
   }
   // Attache une photo du dossier : on COPIE vers un chemin propre à l'action → supprimer la
   // photo de l'action n'efface jamais l'originale du dossier.
@@ -1354,7 +1375,9 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
         {photos.map(ph => (
           <div key={ph.id} style={{ position: 'relative', flex: '0 0 auto' }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={ph.url} alt="" loading="lazy" decoding="async" onClick={() => ph.url && setLightbox(ph.url)} title="Agrandir"
+            <img src={ph.thumb || ph.url} alt="" loading="lazy" decoding="async"
+              onError={e => { if (ph.url && e.currentTarget.src !== ph.url) e.currentTarget.src = ph.url }}
+              onClick={() => ph.url && setLightbox(ph.url)} title="Agrandir"
               style={{ width: 116, height: 116, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--ink-200)', cursor: 'zoom-in', display: 'block' }} />
             <button onClick={() => supprimer(ph)} title="Supprimer"
               style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: '#dc2626', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, display: 'grid', placeItems: 'center' }}>✕</button>
@@ -1403,7 +1426,9 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
                 {/* loading="lazy" : ne télécharge que les vignettes visibles (bande scrollable) →
                     évite la rafale de requêtes storage qui déclenchait des 429 sur un dossier
                     avec beaucoup de photos. */}
-                <img src={p.thumb} alt="" loading="lazy" decoding="async" style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--ink-200)' }} />
+                <img src={p.thumb || p.full} alt="" loading="lazy" decoding="async"
+                  onError={e => { if (p.full && e.currentTarget.src !== p.full) e.currentTarget.src = p.full }}
+                  style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--ink-200)' }} />
               </button>
             ))}
           </div>
