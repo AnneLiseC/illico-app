@@ -44,6 +44,10 @@ const S = StyleSheet.create({
   tcStd:        { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, paddingHorizontal: 6, borderRadius: 4, marginTop: 4, backgroundColor: GRIS },
   tcLabel:      { color: 'white', fontSize: 9, fontFamily: 'Roboto-Bold' },
   tcValue:      { color: 'white', fontSize: 9, fontFamily: 'Roboto-Bold' },
+  // Mention sur la base de calcul des honoraires (affichée seulement si le dossier
+  // porte des frais de consultation). Petit + italique, gris discret. N'entre dans
+  // AUCUN calcul : c'est un texte informatif, les totaux sont inchangés.
+  mentionBase:  { fontSize: 7, fontStyle: 'italic', color: '#64748b', marginTop: 1, marginBottom: 2, paddingRight: 12 },
 })
 
 const fmt = (n) => {
@@ -71,6 +75,10 @@ const totalHon = (tauxLabel, value, key) =>
   h(View, { key, style: S.totalHonRow }, h(Text, { style: S.totalHonLbl }, `Total honoraire (${tauxLabel})`), h(Text, { style: S.totalHonVal }, fmt(value)))
 const totalChantier = (label, value, { std, bg } = {}, key) =>
   h(View, { key, style: std ? S.tcStd : [S.tc, { backgroundColor: bg }] }, h(Text, { style: S.tcLabel }, label), h(Text, { style: S.tcValue }, fmt(value)))
+// Mention « base de calcul » : honoraires assis sur le TTC des travaux, hors frais de
+// consultation. Texte informatif uniquement (aucun total n'en dépend).
+const mentionBase = (key) =>
+  h(Text, { key, style: S.mentionBase }, 'Honoraires calculés sur le montant TTC des travaux, hors frais de consultation.')
 
 export default function RecapHonoraires({ dossier, devis, suiviFinancier, preview = false }) {
   const typologie = dossier?.typologie || ''
@@ -186,6 +194,7 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
       ...(offertCourtage > 0 ? [ligneRemise(LBL_OFFERT, offertCourtage, BLEU, 'off')] : []),
       h(Text, { key: 'nr', style: S.niveau }, 'Votre tarif'),
       ...courtageReelLignes('cr'),
+      ...(fraisTTC > 0 ? [mentionBase('mbc1')] : []),
       ...(remiseFraisConso > 0 ? [ligneRemise('Remise commerciale sur frais de consultation', remiseFraisConso, VIOLET, 'crf')] : []),
       ...(totalCourtageRedondant ? [] : [totalHon(pct(tauxCourtage), round2(courtageReel - remiseFraisConso), 'thr')]),
       totalChantier('TOTAL CHANTIER si COURTAGE', totalChCourtageReel, { bg: BLEU }, 'tcr'),
@@ -193,6 +202,7 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
   } else {
     courtageChildren.push(
       ...courtageReelLignes('cn'),
+      ...(fraisTTC > 0 ? [mentionBase('mbc2')] : []),
       ...(remiseFraisConso > 0 ? [ligneRemise('Remise commerciale sur frais de consultation', remiseFraisConso, VIOLET, 'cnf')] : []),
       ...(totalCourtageRedondant ? [] : [totalHon(pct(tauxCourtage), round2(courtageReel - remiseFraisConso), 'thr')]),
       totalChantier('TOTAL CHANTIER si COURTAGE', totalChCourtageReel, { bg: BLEU }, 'tcr'),
@@ -238,6 +248,7 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
         h(Text, { key: 'nr', style: S.niveau }, 'Votre tarif'),
         // Acompte AMO NET (remise frais déjà annoncée en transition) → Total = somme des lignes.
         ligneHon(`Acompte AMO (${pct(tauxCourtage)}) — à la signature des devis`, round2(courtageReel - remiseFraisConso), 'ar'),
+        ...(fraisTTC > 0 ? [mentionBase('mba1')] : []),
         ligneHon(`Solde AMO (${pct(tauxAmoReel)}) — à l'avancement du chantier`, soldeReel, 'sr'),
         totalHon(pct(tauxCombineReel), round2(honReel - remiseFraisConso), 'thr'),
         totalChantier('TOTAL CHANTIER si AMO', totalChAmoReel, { bg: ORANGE_FONCE }, 'tcr'),
@@ -245,6 +256,7 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
     } else {
       amoChildren.push(
         ligneHon(`Acompte AMO (${pct(tauxCourtage)}) — à la signature des devis`, courtageReel, 'ar'),
+        ...(fraisTTC > 0 ? [mentionBase('mba2')] : []),
         ligneHon(`Solde AMO (${pct(tauxAmoReel)}) — à l'avancement du chantier`, soldeReel, 'sr'),
         ...(remiseFraisConso > 0 ? [ligneRemise('Remise commerciale sur frais de consultation', remiseFraisConso, VIOLET, 'anf')] : []),
         totalHon(pct(tauxCombineReel), round2(honReel - remiseFraisConso), 'thr'),
