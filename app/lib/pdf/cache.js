@@ -69,7 +69,9 @@ export const PREFIXE_CACHE = 'cache'
 //       page « Suivi des paiements » conditionnelle, nettoyage du résumé
 //   3 — 19/10 : couche texte PDF (capitales accentuées extractibles), mention « base de
 //       calcul » des honoraires, libellé du report courtage des TS sur l'AMO
-export const VERSION_GENERATEUR = 3
+//   4 — 19/10 : transition AMO tarif standard → votre tarif réécrite (remises au montant
+//       plein du %, report des TS porté par les libellés acompte/solde, plus de ligne report)
+export const VERSION_GENERATEUR = 4
 
 // Sérialisation STABLE : deux objets équivalents doivent produire la même chaîne, quel
 // que soit l'ordre des clés renvoyé par PostgREST. Sans ça, l'empreinte changerait au

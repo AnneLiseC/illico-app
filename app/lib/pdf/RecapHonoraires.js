@@ -229,6 +229,33 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
     const tauxAmoReel   = simule ? AMO_STANDARD : tauxAmo
     const amoRemise     = isAMO && tauxAmo < AMO_STANDARD
     const remiseAmoVal  = round2(amoStd - soldeReel - exclu.amoStdTTC)
+
+    // ── Report du courtage des travaux supplémentaires (TS) ──
+    // Sur un dossier AMO, le courtage des devis signés APRÈS le paiement du courtage est
+    // reporté sur l'AMO (finance.js, re-ventilation TS-1) : il n'est PAS remisé, il est
+    // encaissé plus tard dans le solde. On le sépare donc de la vraie remise de taux, pour
+    // ne montrer dans la transition que des baisses de prix réelles ; le report n'apparaît
+    // plus que dans les libellés de l'acompte et du solde « Votre tarif ».
+    //
+    // Dérivé des valeurs DÉJÀ exposées par finance.js (aucune modification de celui-ci) :
+    //   remiseCourtageVal = (vraie remise de taux courtage) + (report)   — identité algébrique
+    //   remiseAmoVal      = (vraie remise de taux AMO)       − (report)
+    // donc remiseCourtageVraie + remiseAmoPlein = remiseCourtageVal + remiseAmoVal : la somme
+    // des déductions ne bouge pas, le pont standard → votre tarif reste exact.
+    const baseHonTTC          = round2((courtageStd - offertCourtage) / COURTAGE_STANDARD) // base hors frais & hors exonérés
+    const remiseCourtageVraie = round2(baseHonTTC * (COURTAGE_STANDARD - tauxCourtage))     // 0 si le taux courtage n'a pas baissé
+    const reportTS            = round2(remiseCourtageVal - remiseCourtageVraie)             // courtage des TS reporté sur l'AMO
+    const remiseAmoPlein      = round2(remiseAmoVal + reportTS)                             // remise AMO au MONTANT PLEIN du %
+
+    // Libellés « Votre tarif » : le report (quand il existe) est porté par l'acompte et le
+    // solde, pas par une ligne de remise. Sans report → libellés inchangés (règle 5).
+    const libelleAcompte = reportTS > 0
+      ? `Acompte AMO (${pct(tauxCourtage)}, hors travaux supplémentaires)`
+      : `Acompte AMO (${pct(tauxCourtage)}) — à la signature des devis`
+    const libelleSolde = reportTS > 0
+      ? `Solde AMO (${pct(tauxAmoReel)}) + courtage des TS reporté (${fmt(reportTS)})`
+      : `Solde AMO (${pct(tauxAmoReel)}) — à l'avancement du chantier`
+
     // Même règle que le bloc courtage : on affiche le barré dès qu'il y a un écart.
     const remise        = courtageRemise || amoRemise || offertAmo > 0
     const honStd        = courtageStd + amoStd
@@ -248,36 +275,27 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
         totalHon(pct(tauxCombineStd), honStd, 'ths'),
         totalChantier('TOTAL CHANTIER si AMO (tarif standard)', totalChAmoStd, { std: true }, 'tcs'),
       )
-      // Remises expliquant le passage standard → votre tarif (frais d'abord, puis honoraires).
+      // Transition standard → votre tarif : UNIQUEMENT de vraies baisses de prix (règle 1).
+      // Chaque remise de taux est au MONTANT PLEIN du pourcentage annoncé. Le report du
+      // courtage des TS n'y figure pas (il est porté par les libellés acompte/solde).
       if (remiseFraisConso > 0) amoChildren.push(ligneRemise('Remise commerciale sur frais de consultation', remiseFraisConso, VIOLET, 'remf'))
-      // Écart courtage standard → votre tarif. Deux natures possibles :
-      //   • vraie remise de taux (taux_courtage < standard) → « Remise commerciale… (X%) » ;
-      //   • taux courtage inchangé mais montant déduit → c'est le courtage des travaux
-      //     supplémentaires (devis signés après le paiement du courtage) REPORTÉ sur l'AMO,
-      //     pas une remise : le client le paie via le solde AMO. On le dit explicitement
-      //     plutôt que d'afficher « (0,0%) », qui était trompeur.
-      if (remiseCourtageVal > 0) {
-        const libelleCourtage = courtageRemise
-          ? `Remise commerciale sur honoraire courtage${tauxEntreParentheses(COURTAGE_STANDARD - tauxCourtage)}`
-          : `Courtage des travaux supplémentaires reporté sur l'AMO`
-        amoChildren.push(ligneRemise(libelleCourtage, remiseCourtageVal, BLEU, 'remc'))
-      }
-      if (amoRemise && remiseAmoVal > 0) amoChildren.push(ligneRemise(`Remise commerciale sur honoraire AMO${tauxEntreParentheses(AMO_STANDARD - tauxAmo)}`, remiseAmoVal, ORANGE, 'rema'))
+      if (remiseCourtageVraie > 0) amoChildren.push(ligneRemise(`Remise commerciale sur honoraire courtage${tauxEntreParentheses(COURTAGE_STANDARD - tauxCourtage)}`, remiseCourtageVraie, BLEU, 'remc'))
+      if (amoRemise && remiseAmoPlein > 0) amoChildren.push(ligneRemise(`Remise commerciale sur honoraire AMO${tauxEntreParentheses(AMO_STANDARD - tauxAmo)}`, remiseAmoPlein, ORANGE, 'rema'))
       if (offertAmo > 0)                 amoChildren.push(ligneRemise(LBL_OFFERT, offertAmo, ORANGE, 'offa'))
       amoChildren.push(
         h(Text, { key: 'nr', style: S.niveau }, 'Votre tarif'),
         // Acompte AMO NET (remise frais déjà annoncée en transition) → Total = somme des lignes.
-        ligneHon(`Acompte AMO (${pct(tauxCourtage)}) — à la signature des devis`, round2(courtageReel - remiseFraisConso), 'ar'),
+        ligneHon(libelleAcompte, round2(courtageReel - remiseFraisConso), 'ar'),
         ...(fraisTTC > 0 ? [mentionBase('mba1')] : []),
-        ligneHon(`Solde AMO (${pct(tauxAmoReel)}) — à l'avancement du chantier`, soldeReel, 'sr'),
+        ligneHon(libelleSolde, soldeReel, 'sr'),
         totalHon(pct(tauxCombineReel), round2(honReel - remiseFraisConso), 'thr'),
         totalChantier('TOTAL CHANTIER si AMO', totalChAmoReel, { bg: ORANGE_FONCE }, 'tcr'),
       )
     } else {
       amoChildren.push(
-        ligneHon(`Acompte AMO (${pct(tauxCourtage)}) — à la signature des devis`, courtageReel, 'ar'),
+        ligneHon(libelleAcompte, courtageReel, 'ar'),
         ...(fraisTTC > 0 ? [mentionBase('mba2')] : []),
-        ligneHon(`Solde AMO (${pct(tauxAmoReel)}) — à l'avancement du chantier`, soldeReel, 'sr'),
+        ligneHon(libelleSolde, soldeReel, 'sr'),
         ...(remiseFraisConso > 0 ? [ligneRemise('Remise commerciale sur frais de consultation', remiseFraisConso, VIOLET, 'anf')] : []),
         totalHon(pct(tauxCombineReel), round2(honReel - remiseFraisConso), 'thr'),
         totalChantier('TOTAL CHANTIER si AMO', totalChAmoReel, { bg: ORANGE_FONCE }, 'tcr'),
