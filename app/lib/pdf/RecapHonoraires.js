@@ -57,6 +57,15 @@ const fmt = (n) => {
 }
 // Pourcentage à la française : 1 décimale, virgule (ex. « 6,0% », « 14,4% »).
 const pct = (taux) => (taux * 100).toFixed(1).replace('.', ',') + '%'
+// Taux entre parenthèses pour un libellé de remise, MAIS seulement s'il est réellement
+// non nul. Une remise peut exister SANS écart de taux : sur un dossier AMO, le courtage
+// des travaux supplémentaires (devis signés après le paiement du courtage) est reporté
+// sur l'AMO, ce qui ampute la base courtage et crée une ligne de remise courtage alors
+// que le taux n'a pas bougé. Afficher « (0,0%) » dans ce cas est trompeur → on l'omet.
+const tauxEntreParentheses = (ecart) => {
+  const p = pct(ecart)
+  return (p === '0,0%' || p === '-0,0%') ? '' : ` (${p})`
+}
 const toNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
 const round2 = (n) => Math.round((toNum(n) + Number.EPSILON) * 100) / 100
 
@@ -190,7 +199,7 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
       h(Text, { key: 'ns', style: S.niveau }, 'Tarif standard'),
       ligneHon('Honoraires courtage — à la signature des devis', courtageStd, 'hs'),
       totalChantier('TOTAL CHANTIER si COURTAGE (tarif standard)', totalChCourtageStd, { std: true }, 'tcs'),
-      ...(remiseCourtageVal > 0 ? [ligneRemise(`Remise commerciale sur honoraire courtage (${pct(COURTAGE_STANDARD - tauxCourtage)})`, remiseCourtageVal, BLEU, 'rem')] : []),
+      ...(remiseCourtageVal > 0 ? [ligneRemise(`Remise commerciale sur honoraire courtage${tauxEntreParentheses(COURTAGE_STANDARD - tauxCourtage)}`, remiseCourtageVal, BLEU, 'rem')] : []),
       ...(offertCourtage > 0 ? [ligneRemise(LBL_OFFERT, offertCourtage, BLEU, 'off')] : []),
       h(Text, { key: 'nr', style: S.niveau }, 'Votre tarif'),
       ...courtageReelLignes('cr'),
@@ -241,9 +250,20 @@ export default function RecapHonoraires({ dossier, devis, suiviFinancier, previe
       )
       // Remises expliquant le passage standard → votre tarif (frais d'abord, puis honoraires).
       if (remiseFraisConso > 0) amoChildren.push(ligneRemise('Remise commerciale sur frais de consultation', remiseFraisConso, VIOLET, 'remf'))
-      if (remiseCourtageVal > 0)         amoChildren.push(ligneRemise(`Remise commerciale sur honoraire courtage (${pct(COURTAGE_STANDARD - tauxCourtage)})`, remiseCourtageVal, BLEU, 'remc'))
-      if (amoRemise && remiseAmoVal > 0)  amoChildren.push(ligneRemise(`Remise commerciale sur honoraire AMO (${pct(AMO_STANDARD - tauxAmo)})`, remiseAmoVal, ORANGE, 'rema'))
-      if (offertAmo > 0)                  amoChildren.push(ligneRemise(LBL_OFFERT, offertAmo, ORANGE, 'offa'))
+      // Écart courtage standard → votre tarif. Deux natures possibles :
+      //   • vraie remise de taux (taux_courtage < standard) → « Remise commerciale… (X%) » ;
+      //   • taux courtage inchangé mais montant déduit → c'est le courtage des travaux
+      //     supplémentaires (devis signés après le paiement du courtage) REPORTÉ sur l'AMO,
+      //     pas une remise : le client le paie via le solde AMO. On le dit explicitement
+      //     plutôt que d'afficher « (0,0%) », qui était trompeur.
+      if (remiseCourtageVal > 0) {
+        const libelleCourtage = courtageRemise
+          ? `Remise commerciale sur honoraire courtage${tauxEntreParentheses(COURTAGE_STANDARD - tauxCourtage)}`
+          : `Courtage des travaux supplémentaires reporté sur l'AMO`
+        amoChildren.push(ligneRemise(libelleCourtage, remiseCourtageVal, BLEU, 'remc'))
+      }
+      if (amoRemise && remiseAmoVal > 0) amoChildren.push(ligneRemise(`Remise commerciale sur honoraire AMO${tauxEntreParentheses(AMO_STANDARD - tauxAmo)}`, remiseAmoVal, ORANGE, 'rema'))
+      if (offertAmo > 0)                 amoChildren.push(ligneRemise(LBL_OFFERT, offertAmo, ORANGE, 'offa'))
       amoChildren.push(
         h(Text, { key: 'nr', style: S.niveau }, 'Votre tarif'),
         // Acompte AMO NET (remise frais déjà annoncée en transition) → Total = somme des lignes.
