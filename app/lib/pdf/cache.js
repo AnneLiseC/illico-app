@@ -67,7 +67,9 @@ export const PREFIXE_CACHE = 'cache'
 //   1 — état d'origine
 //   2 — 09/09 : stade déduit des devis, Kbis/RIB de la franchise en présentation,
 //       page « Suivi des paiements » conditionnelle, nettoyage du résumé
-export const VERSION_GENERATEUR = 2
+//   3 — 19/10 : couche texte PDF (capitales accentuées extractibles), mention « base de
+//       calcul » des honoraires, libellé du report courtage des TS sur l'AMO
+export const VERSION_GENERATEUR = 3
 
 // Sérialisation STABLE : deux objets équivalents doivent produire la même chaîne, quel
 // que soit l'ordre des clés renvoyé par PostgREST. Sans ça, l'empreinte changerait au
