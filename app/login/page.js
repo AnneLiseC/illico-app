@@ -3,6 +3,15 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
+import { retourConsentementSur } from '../lib/oauth-consentement'
+
+// Retour après connexion vers la page de consentement OAuth (connecteur Claude), et
+// UNIQUEMENT elle : `next` est filtré par retourConsentementSur (aucune redirection
+// externe possible). Sans `next` valide → comportement habituel.
+function retourApresConnexion() {
+  if (typeof window === 'undefined') return null
+  return retourConsentementSur(new URLSearchParams(window.location.search).get('next'))
+}
 
 function redirectByRole(role, router) {
   if (role === 'client') router.replace('/espace-client')
@@ -21,7 +30,9 @@ export default function Login() {
 
   useEffect(() => {
     if (!initialized || !user || !profile) return
-    redirectByRole(profile.role, router)
+    const retour = retourApresConnexion()
+    if (retour) router.replace(retour)
+    else redirectByRole(profile.role, router)
   }, [initialized, user?.id, profile?.id, profile?.role, router])
 
   const handleLogin = async (e) => {
@@ -35,7 +46,7 @@ export default function Login() {
         setLoading(false)
         return
       }
-      window.location.replace('/dashboard')
+      window.location.replace(retourApresConnexion() || '/dashboard')
     } catch {
       setError('Erreur de connexion, veuillez réessayer')
       setLoading(false)
