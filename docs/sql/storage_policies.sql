@@ -215,3 +215,12 @@ CREATE POLICY "Remplacement factures agente" ON storage.objects
 -- ----------------------------------------------------------------------------
 -- SELECT policyname, cmd FROM pg_policies
 --   WHERE schemaname='storage' AND tablename='objects' ORDER BY cmd, policyname;
+
+-- ----------------------------------------------------------------------------
+-- POLITIQUES RESTRICTIVES « lecture seule OAuth » (connecteur MCP BATILIS)
+-- ----------------------------------------------------------------------------
+-- 3 politiques supplémentaires sur storage.objects (oauth_lecture_seule_insert /
+-- _update / _delete, AS RESTRICTIVE) : refus de toute écriture faite avec un jeton
+-- OAuth (claim client_id). Source unique : docs/sql/mcp_lecture_seule_oauth.sql
+-- (PARTIE 1), qui les crée avec celles du schéma public. Après application, le
+-- contrôle ci-dessus renvoie 8 + 3 = 11 policies.

@@ -7,6 +7,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { estJetonOAuth } from '../../../lib/jeton-oauth'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -27,6 +28,10 @@ export async function POST(request) {
   const token = extractToken(request)
   if (!token) {
     return NextResponse.json({ error: 'Non authentifié' }, { status: 401 })
+  }
+  // Jeton OAuth (application tierce) refusé : cette route écrit en service_role.
+  if (estJetonOAuth(token)) {
+    return NextResponse.json({ error: 'Accès refusé : jeton d\'application tierce non accepté sur cette route' }, { status: 403 })
   }
   const { data: userData, error: userError } = await getSupabaseAdmin().auth.getUser(token)
   if (userError || !userData?.user) {
