@@ -6,6 +6,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { isSuperAdminEmail } from './super-admin'
+import { estJetonOAuth } from './jeton-oauth'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -20,6 +21,12 @@ function extractToken(request) {
   return match ? match[1].trim() : null
 }
 
+// Jeton émis pour une application tierce (serveur OAuth Supabase) : refusé sur /api/*,
+// qui écrit en service_role. Seul /api/mcp (lecture seule) l'accepte. Cf. jeton-oauth.js.
+function refusJetonOAuth() {
+  return { error: NextResponse.json({ error: 'Accès refusé : jeton d\'application tierce non accepté sur cette route' }, { status: 403 }) }
+}
+
 /**
  * Vérifie qu'un appelant authentifié appelle la route.
  * @returns {Promise<{user, profile} | {error: NextResponse}>}
@@ -29,6 +36,7 @@ export async function requireUser(request) {
   if (!token) {
     return { error: NextResponse.json({ error: 'Non authentifié' }, { status: 401 }) }
   }
+  if (estJetonOAuth(token)) return refusJetonOAuth()
 
   const { data: userData, error: userError } = await getSupabaseAdmin().auth.getUser(token)
   if (userError || !userData?.user) {
@@ -106,6 +114,7 @@ export async function requireSuperAdmin(request) {
   if (!token) {
     return { error: NextResponse.json({ error: 'Non authentifié' }, { status: 401 }) }
   }
+  if (estJetonOAuth(token)) return refusJetonOAuth()
   const { data, error } = await getSupabaseAdmin().auth.getUser(token)
   if (error || !data?.user) {
     return { error: NextResponse.json({ error: 'Session invalide' }, { status: 401 }) }
