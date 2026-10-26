@@ -57,11 +57,17 @@ Part_admin  = Net × (1 − taux_choisi)
 
 ### Honoraires courtage
 ```
-base = Σ TTC des devis signés       (prévisionnel : tous devis actifs)
-hono = base × 6%                    (taux modifiable)
-Net  = hono − (hono × 5%)
+base     = Σ TTC des devis signés, hors frais de consultation   (prévisionnel : tous devis actifs)
+hono_TTC = base × 6%                (taux modifiable) − frais de consultation TTC si remboursés
+hono_HT  = hono_TTC ÷ 1,2           (TVA 20 % des honoraires) — JAMAIS taux × travaux HT
+roy      = hono_HT × 5%
+Net      = hono_HT − roy
 Partage sur le HT : part_agente = Net × taux_choisi
 ```
+**Règle (26/10/2026) : honoraires HT = honoraires TTC ÷ 1,2 (TVA 20 % des honoraires), jamais
+taux × travaux HT.** La TVA des devis artisans (10 %, 5,5 %) n'est pas celle des honoraires.
+Contrôle sur pièce réelle : facture CTP FA09260081 (Jadras, 08/09/2026) = 1 905,38 € TTC → 1 587,82 € HT.
+Même règle pour le solde AMO et chacune de ses tranches. Voir « Correction du 26/10/2026 » en fin de document.
 
 ### Honoraires AMO (double affichage)
 ```
@@ -144,3 +150,54 @@ Un seul `taux_choisi` au début du dossier s'applique à TOUS les flux partageab
 
 ## Bugs corrigés par ce document
 P0-6 (mode apporteur), P0-7 (parts après royalties, agente ET admin), P0-8 (royalties Marine visibles), P0-9 (chaque agente voit SES créances/dettes).
+
+## Correction du 26/10/2026 — HT des honoraires (application rétroactive)
+
+**Avant :** `honoraires.ht = taux × travaux HT` → le HT héritait de la TVA des devis (10 %) au lieu de
+celle des honoraires (20 %) : HT surévalué d'environ 9 %, et avec lui royalties, net et parts.
+
+**Après :** `honoraires.ht = honoraires.ttc ÷ 1,2` (`TVA_HONORAIRES` dans finance.js), pour TOUS les
+encaissements, passés et futurs. Aucune date d'effet, aucune branche historique.
+
+**Restitution :** le trop-perçu agente de **851,69 €** est restitué à CTP par **déduction sur la F1 de
+novembre 2026** (activité d'octobre) : **1 085,99 € → 234,30 €**, via le mécanisme existant de report des
+trop-perçus. L'historique des reports affiché dans Facturation agents de décembre 2025 à septembre 2026 est
+**recalculé à l'affichage, sans aucune modification en base** (statuts, clôtures et versements inchangés).
+Écart de 1 centime avec l'estimation de 851,70 € : arrondi de la part agente après partage (Eppinger 12/2025 : 163,75 et non 163,76).
+
+**Commissions apporteur / partenaire versées (contrôle du 26/10/2026, lecture seule) :** une seule commission
+apporteur a été versée sur un dossier avec honoraires : **2026-AM-002 (Eppinger)**, mode « par devis » (base =
+montant des devis, pas les honoraires), 5 lignes remboursées par CTP entre le 19/03 et le 17/04/2026.
+Versé 1 814,55 € HT, recalculé 1 814,55 € HT, **écart 0,00 €** (part agente 1 088,72 € inchangée). Aucune
+commission partenaire impactée : elle se calcule sur la commission du devis, jamais sur les honoraires.
+→ **Aucune commission apporteur ou partenaire versée n'est impactée par la correction.**
+
+### Annexe — simulation (vrai code de finances/page.js, données réelles, ancien vs nouveau finance.js)
+
+Mois payés dont le dû change (seuls les honoraires bougent ; frais, commissions et F2 identiques) :
+
+| Activité | F1 avant | F1 après | Écart |
+|---|---|---|---|
+| 2025-12 | 2 058,26 | 1 894,51 | −163,75 |
+| 2026-05 | 2 031,50 | 1 869,87 | −161,63 |
+| 2026-06 | 10 727,04 | 10 441,89 | −285,15 |
+| 2026-08 | 1 769,24 | 1 644,10 | −125,14 |
+| 2026-09 | 1 695,55 | 1 579,53 | −116,02 |
+| **Total** | | | **−851,69** |
+
+Report en cascade (badge affiché, facture = activité + 1 mois) :
+
+| Facture (activité) | Avant | Après |
+|---|---|---|
+| janv. 26 (déc. 25) | Trop-perçu 314,53 | Trop-perçu 478,28 |
+| fév. (janv.) | Clôturé | Clôturé |
+| mars (fév.) | Trop-perçu 657,94 | Trop-perçu 821,69 |
+| avril (mars) | Reporté 872,73 | Reporté 708,98 |
+| mai (avril) | Reporté 498,18 | Reporté 334,43 |
+| juin (mai) | Reporté 2 529,68 | Reporté 2 204,30 |
+| juil. (juin) | Reporté 4 808,03 | Reporté 4 197,50 |
+| août (juil.) | Trop-perçu 484,16 | Trop-perçu 1 094,69 |
+| sept. (août) | Trop-perçu 88,32 | Trop-perçu 823,99 |
+| oct. (sept.) | Soldé | Trop-perçu 851,69 |
+| **nov. (oct.)** | **dû 1 085,99** | **dû 234,30** |
+

@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   calculateCourtageTS, isHorsHonoraires,
-  TVA_FRAIS, TVA_TRAVAUX, ROYALTIES_RATE, COURTAGE_STANDARD, AMO_STANDARD, DEFAULT_PART_AGENTE,
+  TVA_FRAIS, TVA_TRAVAUX, TVA_HONORAIRES, ROYALTIES_RATE, COURTAGE_STANDARD, AMO_STANDARD, DEFAULT_PART_AGENTE,
   getPartAgente, getTauxCourtage, getTauxAmo,
   getActiveDevis, getSignedDevis,
   calculateFraisFinance,
@@ -175,11 +175,11 @@ describe('calculateCommissionsFinance', () => {
 // ── Honoraires courtage ───────────────────────────────────────────────────────
 describe('calculateHonorairesFinance — courtage', () => {
   const h = calculateHonorairesFinance(dossier({ typologie: 'courtage' }))
-  it('courtage 6% : brut 660 (TTC), ht 600, net 570, split 285/285', () => {
+  it('courtage 6% : brut 660 (TTC), ht 550 (= 660 / 1,2), net 522,5, split 261,25', () => {
     expect(h.courtage.brut).toBe(660)    // 11000 * 0.06
-    expect(h.courtage.ht).toBe(600)      // 10000 * 0.06
-    expect(h.courtage.net).toBe(570)     // 600 - 30 royalties
-    expect(h.courtage.parts).toEqual({ agente: 285, admin: 285 })
+    expect(h.courtage.ht).toBe(550)      // 660 TTC / 1,2 (TVA honoraires 20 %)
+    expect(h.courtage.net).toBe(522.5)   // 550 - 27,5 royalties
+    expect(h.courtage.parts).toEqual({ agente: 261.25, admin: 261.25 })
   })
   it('pas de solde AMO en courtage', () => {
     expect(h.soldeAmo.ttc).toBe(0)
@@ -199,15 +199,15 @@ describe('calculateHonorairesFinance — courtage', () => {
 // ── Honoraires AMO ────────────────────────────────────────────────────────────
 describe('calculateHonorairesFinance — AMO', () => {
   const h = calculateHonorairesFinance(dossier({ typologie: 'amo', honoraires_amo_taux: 9 }))
-  it('courtage 6% + solde AMO 9% (base HT 10000)', () => {
-    expect(h.courtage.ht).toBe(600)
+  it('courtage 6% + solde AMO 9% (base TTC 11000)', () => {
+    expect(h.courtage.ht).toBe(550)
     expect(h.soldeAmo.ttc).toBe(990)     // 11000 * 0.09
-    expect(h.soldeAmo.ht).toBe(900)      // 10000 * 0.09
-    expect(h.soldeAmo.net).toBe(855)     // 900 - 45
-    expect(h.soldeAmo.parts).toEqual({ agente: 427.5, admin: 427.5 })
+    expect(h.soldeAmo.ht).toBe(825)      // 990 / 1,2
+    expect(h.soldeAmo.net).toBe(783.75)  // 825 - 41,25
+    expect(h.soldeAmo.parts).toEqual({ agente: 391.88, admin: 391.87 })
   })
   it('total net = courtage.net + soldeAmo.net', () => {
-    expect(h.totalNet).toBe(1425)        // 570 + 855
+    expect(h.totalNet).toBe(1306.25)     // 522,5 + 783,75
   })
 })
 
@@ -223,8 +223,8 @@ describe('calculateSoldeAmoReel', () => {
     })
     const r = calculateSoldeAmoReel(d)
     expect(r.hasTranches).toBe(true)
-    expect(r.recognizedHt).toBe(900)     // 990 * (900/990)
-    expect(r.recognizedNet).toBe(855)
+    expect(r.recognizedHt).toBe(825)     // 990 / 1,2
+    expect(r.recognizedNet).toBe(783.75)
     expect(r.parts.agente + r.parts.admin).toBeCloseTo(r.recognizedNet, 2)
   })
   it('tranche « en attente » -> exclue du CA réel (reconnaissance à l\'encaissement)', () => {
@@ -237,7 +237,7 @@ describe('calculateSoldeAmoReel', () => {
     })
     const r = calculateSoldeAmoReel(d)
     expect(r.hasTranches).toBe(true)
-    expect(r.recognizedHt).toBe(900)   // seule la tranche réglée est reconnue (pas les 1980)
+    expect(r.recognizedHt).toBe(825)   // seule la tranche réglée est reconnue (pas les 1980)
   })
 })
 
@@ -548,3 +548,33 @@ describe('hors_honoraires — exonération d\'honoraires par devis', () => {
     expect(JSON.stringify(a)).toBe(JSON.stringify(b))
   })
 })
+
+// ── HT des honoraires = TTC ÷ 1,2 (correction du 26/10/2026) ──────────────────
+describe('HT des honoraires = TTC ÷ TVA_HONORAIRES (20 %)', () => {
+  it('TVA_HONORAIRES vaut 1,2', () => {
+    expect(TVA_HONORAIRES).toBe(1.2)
+  })
+
+  it('facture réelle CTP FA09260081 (Jadras, 08/09/2026) : 1 905,38 TTC → 1 587,82 HT à 1 ct près', () => {
+    const d = dossier({
+      typologie: 'amo', honoraires_amo_taux: 9,
+      suivi_financier: [{ type_echeance: 'solde_amo_paiement', montant_ttc: 1905.38, statut_client: 'regle', date_paiement: '2026-09-09' }],
+    })
+    const r = calculateSoldeAmoReel(d)
+    expect(Math.abs(r.recognizedHt - 1587.82)).toBeLessThanOrEqual(0.01)
+  })
+
+  it('report F1 : un mois payé avec l\'ancien HT génère un trop-perçu égal à la différence de part agente', () => {
+    // Courtage 6 % sur un devis 10 000 HT / 11 000 TTC, part agente 50 %.
+    // Ancienne règle (taux × travaux HT) : HT 600 → net 570 → part agente 285, PAYÉE à l'époque.
+    const partAgentePayee = 285
+    const h = calculateHonorairesFinance(dossier({ typologie: 'courtage' }))
+    const partAgenteNouvelle = h.courtage.parts.agente                  // 660 / 1,2 = 550 → net 522,5 → 261,25
+    expect(partAgenteNouvelle).toBe(261.25)
+    // Formule du report F1 (finances/page.js, FacturationAgentes) : reste = dû live + report − reçu.
+    const reste = Math.round((partAgenteNouvelle + 0 - partAgentePayee) * 100) / 100
+    expect(reste).toBe(-23.75)                                           // < 0 = trop-perçu reporté
+    expect(-reste).toBe(Math.round((partAgentePayee - partAgenteNouvelle) * 100) / 100)
+  })
+})
+

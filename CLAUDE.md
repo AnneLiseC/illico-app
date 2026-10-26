@@ -125,7 +125,11 @@ Langue de travail et de communication : **français**.
 ## 10. CONVENTIONS & DÉCISIONS ACTÉES (sessions récentes)
 
 **Finance — honoraires courtage/AMO (source : finance.js) :**
-- `honoraires.courtage.ttc` = taux × travaux **TTC** ; `.ht` = taux × travaux **HT**.
+- `honoraires.courtage.ttc` = taux × travaux **TTC** ; `.ht` = `.ttc` ÷ `TVA_HONORAIRES`
+  (1,2 — TVA 20 % des honoraires). JAMAIS taux × travaux HT : la TVA des devis (10 %, 5,5 %)
+  n'est pas celle des honoraires. Correction du 26/10/2026 appliquée RÉTROACTIVEMENT (aucune
+  date d'effet) ; trop-perçu agente 851,69 € restitué par déduction sur la F1 de novembre 2026
+  (détail : docs/VALIDE_04_finance.md).
   Le `.ttc` est LA valeur affichée partout (KPI, écritures suivi_financier, lignes
   « Autres échéances », honoraire client). **Ne jamais multiplier `.ttc` par 1,20**
   (double TVA). `soldeAmo.ttc` idem côté AMO ; solde AMO affiché = `honorairesAMO −

@@ -150,8 +150,9 @@ describe('commission apporteur sur les honoraires', () => {
   it('porte sur les honoraires, PAS sur les travaux', () => {
     const r = calculateApporteurFinance(dossierCourtage)
     expect(r.mode).toBe('honoraires')
-    // 10 % de 1 000 € d'honoraires = 100 €, et surtout PAS 10 % des 10 000 € de travaux.
-    expect(r.totalHT).toBeCloseTo(100, 2)
+    // Honoraires 10 % × 11 000 TTC = 1 100 TTC = 916,67 HT → 10 % = 91,67 €,
+    // et surtout PAS 10 % des 10 000 € de travaux.
+    expect(r.totalHT).toBeCloseTo(91.67, 2)
     expect(r.totalHT).not.toBeCloseTo(1000, 2)
   })
 
@@ -166,7 +167,7 @@ describe('commission apporteur sur les honoraires', () => {
       { type_echeance: 'acompte_artisan', devis_id: 'd1', statut_illico: 'recu' },
     ] }
     const r = calculateApporteurFinance(avec)
-    expect(r.partsReel.agente + r.partsReel.admin).toBeCloseTo(100, 2)
+    expect(r.partsReel.agente + r.partsReel.admin).toBeCloseTo(91.67, 2)
   })
 
   it('reste à zéro tant que l\'apporteur n\'est pas activé sur le chantier', () => {

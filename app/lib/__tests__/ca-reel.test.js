@@ -55,12 +55,12 @@ const dos = (o = {}) => ({
 })
 
 describe('computeFactureClient', () => {
-  it('courtage standard : frais 500 HT + honoraires 600 HT = 1100', () => {
+  it('courtage standard : frais 500 HT + honoraires 550 HT = 1050', () => {
     const r = computeFactureClient([dos()], 2025)
     expect(r.frais).toBe(500)
-    expect(r.honoraires).toBe(600)
-    expect(r.total).toBe(1100)
-    expect(r.parMois[3]).toBe(1100)   // mars
+    expect(r.honoraires).toBe(550)    // 660 TTC / 1,2
+    expect(r.total).toBe(1050)
+    expect(r.parMois[3]).toBe(1050)   // mars
   })
 
   it('base FACTURÉ par année de signature : autre année = 0', () => {
@@ -70,16 +70,16 @@ describe('computeFactureClient', () => {
   it("frais offerts = non facturés (0), honoraires intacts", () => {
     const r = computeFactureClient([dos({ frais_statut: 'offerts' })], 2025)
     expect(r.frais).toBe(0)
-    expect(r.honoraires).toBe(600)
-    expect(r.total).toBe(600)
+    expect(r.honoraires).toBe(550)
+    expect(r.total).toBe(550)
   })
 
   it('frais à rembourser : pas de double-comptage (total = honoraires brut)', () => {
-    // rembourse : honoraires.ht = htBrut − fraisHT = 600 − 500 = 100 ; frais = 500.
+    // rembourse : honoraires.ttc = 660 − 600 = 60 → ht = 60 / 1,2 = 50 ; frais = 500.
     const r = computeFactureClient([dos({ frais_statut: 'rembourse' })], 2025)
     expect(r.frais).toBe(500)
-    expect(r.honoraires).toBe(100)
-    expect(r.total).toBe(600)
+    expect(r.honoraires).toBe(50)
+    expect(r.total).toBe(550)
   })
 
   it('dossier non signé (pas de date_signature_contrat) = ignoré', () => {
@@ -88,6 +88,6 @@ describe('computeFactureClient', () => {
 
   it('agrège plusieurs dossiers', () => {
     const r = computeFactureClient([dos(), dos()], 2025)
-    expect(r.total).toBe(2200)
+    expect(r.total).toBe(2100)
   })
 })
