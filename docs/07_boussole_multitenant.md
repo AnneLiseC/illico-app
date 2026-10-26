@@ -3,8 +3,12 @@
 > **État vivant du projet.** Lue par Claude (binôme) et Claude Code en tête de chaque session.
 > Le détail historique (journal des commits, chantier finances) est dans `07_journal_multitenant.md`.
 
-> Dernière mise à jour : 27/08/2026.
+> Dernière mise à jour : 26/10/2026.
 > Statut : Multi-agence COMPLET. Bloc A sécurité soldé. App multi-tenant fonctionnelle, cloisonnée, sécurisée. Acquis antérieurs : erreurs avalées soldé, famille AMO close, ménage infra (policies Storage versionnées + placeholder fermé). Sprint 16-18/06 : refonte finances COMPLÈTE, dossier de fin, comparateur de devis, statut staff CLOS, stepper corrigé, contrat auto-signé, PDF CR assaini. AUDIT SÉCURITÉ COMPLET (10/07) : série d'inventaires 01→07 + confrontation croisée (branche audit/inventaires, code figé 91e0db1). Cloisonnement prouvé sur les 2 couches (corps DEFINER + policies RLS lues verbatim). REVOKE 5 fonctions + DROP 2 backups appliqués. Sécurité soldée sans astérisque.
+
+> **26/10 — CONNECTEUR MCP « BATILIS » (lecture seule, claude.ai)** — code livré, NON activé. Détail : `docs/mcp-batilis.md`.
+> - **LOT A (à déployer SEUL, en premier)** : `requireUser`/`requireSuperAdmin`/`create-societe` refusent tout jeton OAuth (claim `client_id`) — ces routes écrivent en service_role. SQL `docs/sql/mcp_lecture_seule_oauth.sql` (politiques RESTRICTIVES INSERT/UPDATE/DELETE sur les 49 tables public + storage.objects) : 🟡 **À APPLIQUER**.
+> - **LOT B** : `/api/mcp` (SDK officiel 1.32.2, sans état), 9 outils, page `/oauth/consent`, `/login?next=` filtré. ⛔ Ne pas activer le serveur OAuth Supabase avant LOT A + SQL. ⛔ T6 (changement email/mot de passe via l'API Auth avec un jeton OAuth) : si ça passe sans confirmation → serveur OAuth désactivé, connecteur abandonné.
 
 > **Depuis le 18/06 (à jour au 09/07)** :
 > - **C7 espace client + RLS client — COMPLET (20-23/06)** : vues definer scopées, étanchéité inter-client prouvée, devis/PDF/CR/messages durcis.

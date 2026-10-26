@@ -97,8 +97,9 @@ Langue de travail et de communication : **français**.
 - Test mental avant de livrer : « un ingénieur senior dirait-il que c'est sur-compliqué ? »
   Si oui, réécrire plus court.
 - Critère de succès et vérification : `npm run build` passe + le comportement est
-  conforme à `/docs`. Tant qu'il n'y a pas de tests automatisés dans le projet,
-  ne pas en inventer pour « vérifier » — ne pas installer d'infra de test sans validation.
+  conforme à `/docs`. Tests automatisés : vitest est en place (`npm test`, fichiers dans
+  `app/**/__tests__/`) — les lancer avant de livrer et en ajouter pour toute logique
+  nouvelle. Ne pas installer d'AUTRE infra de test sans validation.
 
   ## 8. BUILD LOCAL — ne pas réinstaller les dépendances entre sessions
 - Les `node_modules` ne sont pas persistés entre sessions Claude Code. Si `next` est
@@ -155,3 +156,13 @@ pas de kbis CTP. Même artisan sur plusieurs lots : kbis + assurance une seule f
 **Git / déploiement :** Anne-Lise committe et push elle-même depuis son terminal
 (`C:\Users\anne-\illico-app`). git via le pont Cowork échoue (identité + permissions
 `.git/objects`) — ne pas s'en servir pour committer : préparer le diff, donner les lignes.
+
+**Connecteur MCP « BATILIS » (claude.ai, lecture seule) — détail : `docs/mcp-batilis.md` :**
+- Le serveur MCP (`app/api/mcp`, `app/lib/mcp/*`) ne doit JAMAIS importer `api-auth.js` ni aucun
+  module qui utilise la `service_role` : client Supabase = clé publique + jeton de l'utilisatrice
+  (RLS). Le test « arbre de modules » (`app/lib/__tests__/mcp.test.js`) le vérifie.
+- Aucun outil n'écrit. Montants = `finance.js`, statut = `calcStatut`, jamais recalculés dans le MCP.
+- Toute route serveur qui valide un JWT (`auth.getUser(jeton)`) doit refuser les jetons OAuth
+  (`estJetonOAuth`, `app/lib/jeton-oauth.js`). Le test de recensement échoue sinon.
+- Nouvelle table `public` → ré-exécuter la PARTIE 1 de `docs/sql/mcp_lecture_seule_oauth.sql`
+  (politiques restrictives « pas d'écriture avec un jeton OAuth »).

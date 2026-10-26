@@ -19,6 +19,7 @@
     "@fullcalendar/luxon3": "^6.1.21",
     "@fullcalendar/react": "^6.1.20",
     "@fullcalendar/timegrid": "^6.1.20",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@react-pdf/pdfkit": "4.1.0",
     "@react-pdf/renderer": "^4.3.2",
     "@supabase/supabase-js": "^2.99.2",
@@ -37,7 +38,8 @@
     "pdf-lib": "^1.17.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "tsdav": "^2.3.0"
+    "tsdav": "^2.3.0",
+    "zod": "4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
