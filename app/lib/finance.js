@@ -3,6 +3,7 @@
 
 export const TVA_FRAIS = 1.2      // frais de consultation = TVA 20%
 export const TVA_TRAVAUX = 1.1    // devis travaux = TVA 10% (fallback TTC si montant_ttc absent)
+export const TVA_HONORAIRES = 1.2 // honoraires courtage/AMO facturés au client = TVA 20%
 export const ROYALTIES_RATE = 0.05
 export const COURTAGE_STANDARD = 0.06
 export const AMO_STANDARD = 0.09
@@ -354,7 +355,7 @@ export function calculateCommissionsFinance(dossier) {
 function honorairesCore(dossier, {
   totalHT: baseHT, totalTTC: baseTTC,
   totalHTHon, totalTTCHon,
-  totalHTApres: htApres = 0, totalTTCApres: ttcApres = 0,
+  totalTTCApres: ttcApres = 0,
   exclusPostPivot = false,
 }) {
   // Assiette HONORAIRES = base moins les devis exonérés. Absent → base pleine, donc
@@ -374,14 +375,12 @@ function honorairesCore(dossier, {
   // base courtage pleine → calcul ACTUEL strict (courtage-only : apres toujours 0).
   const reventile    = isAmo && ttcApres > 0
   const baseTTCCourt = reventile ? round2(baseTTCHon - ttcApres) : baseTTCHon
-  const baseHTCourt  = reventile ? round2(baseHTHon - htApres) : baseHTHon
 
   // Frais remboursés : on retire le PLEIN montant TTC des frais du courtage CALCULÉ
   // (après application du taux), uniquement si frais_statut === 'rembourse'.
   // La base honoraires n'est PAS amputée ; l'AMO n'est PAS affecté.
   const fraisRembourse    = dossier?.frais_statut === 'rembourse'
   const deductionFraisTTC = fraisRembourse ? round2(toNumber(dossier?.frais_consultation) || 0) : 0
-  const deductionFraisHT  = fraisRembourse ? round2((toNumber(dossier?.frais_consultation) || 0) / TVA_FRAIS) : 0
 
   let courtage = { brut: 0, ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
   if (isCourtage || isAmo) {
@@ -391,9 +390,10 @@ function honorairesCore(dossier, {
     // TS-1 : base courtage amputée des devis après pivot (baseTTCCourt = baseTTC
     // hors TS ; = baseTTC quand apres=0 → identique à l'existant).
     const brut      = round2(baseTTCCourt * tauxCourtage)
-    const htBrut    = round2(baseHTCourt * tauxCourtage)
     const ttc       = round2(brut - deductionFraisTTC)
-    const ht        = round2(htBrut - deductionFraisHT)
+    // HT = TTC facturé au client ÷ TVA honoraires (20 %), remise frais incluse.
+    // Jamais taux × travaux HT : la TVA des devis (10 %, 5,5 %…) n'est pas celle des honoraires.
+    const ht        = round2(ttc / TVA_HONORAIRES)
     const royalties = round2(ht * ROYALTIES_RATE)
     const net       = round2(ht - royalties)
     const parts     = split(net, partAgente)
@@ -408,9 +408,7 @@ function honorairesCore(dossier, {
     const ttc       = reventile
       ? round2((baseTTCHon - ttcApres) * tauxAmo + ttcApres * (tauxCourtage + tauxAmo))
       : round2(baseTTCHon * tauxAmo)
-    const ht        = reventile
-      ? round2((baseHTHon - htApres) * tauxAmo + htApres * (tauxCourtage + tauxAmo))
-      : round2(baseHTHon * tauxAmo)
+    const ht        = round2(ttc / TVA_HONORAIRES)
     const royalties = round2(ht * ROYALTIES_RATE)
     const net       = round2(ht - royalties)
     const parts     = split(net, partAgente)
