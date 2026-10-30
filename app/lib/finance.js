@@ -770,15 +770,18 @@ export function calculateDossierFinance(dossier) {
  * qui RESTE DÛ par le client, pas le nombre de pièces comptables reçues. Un acompte
  * encaissé est un montant qui ne sera pas redemandé, avec ou sans facture en face.
  *
- * On retire la part NON COUVERTE de l'acompte, jamais l'acompte entier : quand l'artisan a
- * bien émis sa facture d'acompte, elle figure déjà dans les factures, et la déduire une
- * seconde fois offrirait le montant deux fois au client.
+ * Pas de double comptage (30/10) : dès qu'au moins une facture d'acompte existe pour le
+ * devis, c'est LEUR SOMME qui fait foi (elle est déjà dans les factures) et l'acompte
+ * théorique est ignoré. Avant, on déduisait « théorique − facturé » : sur JADRAS (facture
+ * d'acompte 17 735,11 € pour un théorique de 17 753,11 €), 18 € fantômes disparaissaient
+ * du reste à facturer. Le théorique ne sert que si la case « Réglé » est cochée SANS
+ * aucune facture d'acompte.
  *
  * @param {object} p
  * @param {number} p.devisTTC          montant TTC du devis
  * @param {number} p.totalFactureTTC   somme de TOUTES les factures du devis (acompte compris)
  * @param {number} p.totalFactAcompteTTC somme des seules factures d'acompte
- * @param {number} p.acompteTTC        acompte théorique du devis
+ * @param {number} p.acompteTTC        acompte théorique du devis (ignoré s'il existe une facture d'acompte)
  * @param {boolean} p.acompteEncaisse  l'acompte client est-il coché « réglé »
  * @returns {{ reste:number, acompteNonFacture:number }}
  *   `acompteNonFacture` > 0 signale un encaissement SANS pièce comptable en face : l'écran
@@ -788,8 +791,8 @@ export function resteAFacturerDevis({
   devisTTC = 0, totalFactureTTC = 0, totalFactAcompteTTC = 0, acompteTTC = 0, acompteEncaisse = false,
 }) {
   const nb = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
-  const acompteNonFacture = acompteEncaisse
-    ? Math.max(0, round2(nb(acompteTTC) - nb(totalFactAcompteTTC)))
+  const acompteNonFacture = acompteEncaisse && nb(totalFactAcompteTTC) === 0
+    ? Math.max(0, round2(nb(acompteTTC)))
     : 0
   const reste = Math.max(0, round2(nb(devisTTC) - nb(totalFactureTTC) - acompteNonFacture))
   return { reste, acompteNonFacture }
