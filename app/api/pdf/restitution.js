@@ -6,7 +6,7 @@ import { renderToBuffer, Document, Page, Text, View, Image as PdfImage, StyleShe
 import '../../lib/pdf/fonts.js'
 import RecapHonoraires from '../../lib/pdf/RecapHonoraires.js'
 import { formatNomClient } from '../../lib/clients.js'
-import { TVA_FRAIS, calculateHonorairesFinance } from '../../lib/finance.js'
+import { TVA_FRAIS, calculateHonorairesFinance, calculateDevisFinance, resteAPayerDevis, montantRegleFacture, estFactureAcompte } from '../../lib/finance.js'
 import { PDFDocument, degrees, rgb, StandardFonts } from 'pdf-lib'
 import { SEP_PAGE_GARDE } from '../../lib/sep_page_garde.js'
 import { SEP_DESCRIPTIF }    from '../../lib/sep_descriptif.js'
@@ -268,47 +268,38 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
         return da - db
       })
 
-    // Construction des lignes de paiement
+    // Lignes de paiement : une par facture (montant RÉGLÉ, pas facturé), plus l'acompte
+    // coché « Réglé » sans facture d'acompte (règle du 11/09). Totaux = finance.js.
+    const suiviAcompte = (suiviFinancier || []).find(s =>
+      s.type_echeance === 'acompte_artisan' && s.devis_id === d.id && s.statut_client === 'regle'
+    )
+    const acompteTheorique = calculateDevisFinance(d, dossier).acompte
+    const { reste: resteDu, tropVerse, regle: totalPaye } = resteAPayerDevis({
+      devisTTC: ttc, factures: facturesDevis, acompteTTC: acompteTheorique, acompteEncaisse: !!suiviAcompte,
+    })
     const lignes = []
-    let totalPaye = 0
-
-    if (facturesDevis.length > 0) {
-      // Option A : les factures sont la source de vérité, on ignore l'acompte suivi_financier
-      for (const f of facturesDevis) {
-        const mt = toNum(f.montant_ttc)
-        const date = f.date_paiement ? new Date(f.date_paiement).toLocaleDateString('fr-FR') : '—'
-        const paye = f.statut === 'paye'
-        if (paye) totalPaye += mt
-        lignes.push({
-          libelle: f.libelle || 'Facture',
-          date,
-          montant: mt,
-          paye,
-        })
-      }
-    } else {
-      // Pas de factures : on tombe sur suivi_financier pour l'acompte
-      const suiviAcompte = (suiviFinancier || []).find(s =>
-        s.type_echeance === 'acompte_artisan' &&
-        s.devis_id === d.id &&
-        s.statut_client === 'regle'
-      )
-      if (suiviAcompte) {
-        const acompteMontant = d.acompte_pourcentage === -1
-          ? toNum(d.acompte_montant_fixe)
-          : ttc * (toNum(d.acompte_pourcentage ?? 30) / 100)
-        const date = suiviAcompte.date_paiement ? new Date(suiviAcompte.date_paiement).toLocaleDateString('fr-FR') : '—'
-        totalPaye += acompteMontant
-        lignes.push({
-          libelle: 'Acompte',
-          date,
-          montant: acompteMontant,
-          paye: true,
-        })
-      }
+    if (suiviAcompte && !facturesDevis.some(estFactureAcompte)) {
+      lignes.push({
+        libelle: 'Acompte',
+        date: suiviAcompte.date_paiement ? new Date(suiviAcompte.date_paiement).toLocaleDateString('fr-FR') : '—',
+        montant: acompteTheorique,
+        statut: 'Payé', couleur: '#16a34a',
+      })
     }
-
-    const reste = ttc - totalPaye
+    for (const f of facturesDevis) {
+      const facture = toNum(f.montant_ttc)
+      const regle = montantRegleFacture(f)
+      // Libellés neutres pour le client (30/10) : jamais « impayé ».
+      const statut = regle >= facture && regle > 0 ? 'Payé'
+        : regle > 0 ? `Réglé ${fmt(regle)}`
+        : 'En attente'
+      lignes.push({
+        libelle: f.libelle || 'Facture',
+        date: f.date_paiement ? new Date(f.date_paiement).toLocaleDateString('fr-FR') : '—',
+        montant: facture,
+        statut, couleur: statut === 'Payé' ? '#16a34a' : '#d97706',
+      })
+    }
 
     const children = [
       React.createElement(View, { key: 'head', style: CS.paiementHeader },
@@ -328,16 +319,16 @@ export function buildSuiviPaiementsSection({ devisList, factures, suiviFinancier
             React.createElement(Text, { style: [CS.paiementCol, { flex: 2.5, color: GRIS }] }, l.libelle),
             React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, l.date),
             React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right' }] }, fmt(l.montant)),
-            React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: l.paye ? '#16a34a' : '#d97706', fontFamily: 'Roboto-Bold' }] },
-              l.paye ? 'Payé' : 'En attente'),
+            React.createElement(Text, { style: [CS.paiementCol, { flex: 1, textAlign: 'right', color: l.couleur, fontFamily: 'Roboto-Bold' }] },
+              l.statut),
           )
         )
       })
     }
 
     // Ligne total
-    const resteColor = reste > 0 ? '#d97706' : reste < 0 ? '#dc2626' : '#00578e'
-    const resteLabel = reste < 0 ? `Trop-perçu : ${fmt(Math.abs(reste))}` : `Reste : ${fmt(reste)}`
+    const resteColor = resteDu > 0 ? '#d97706' : tropVerse > 0 ? '#dc2626' : '#00578e'
+    const resteLabel = tropVerse > 0 ? `Trop-perçu : ${fmt(tropVerse)}` : `Reste dû : ${fmt(resteDu)}`
     children.push(
       React.createElement(View, { key: 'total', style: CS.paiementTotal },
         React.createElement(Text, { style: [CS.paiementCol, { flex: 2.5, fontFamily: 'Roboto-Bold' }] }, 'Total payé'),

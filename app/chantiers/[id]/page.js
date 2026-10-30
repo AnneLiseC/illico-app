@@ -8,7 +8,7 @@ import { formatNomClient } from '../../lib/clients'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement, calculerEtapes, ETAPES_LABELS, detecterCategorie } from '../../lib/dossiers'
-import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, resteAFacturerDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, resteAFacturerDevis, resteAPayerDevis, reliquatFacture, estFactureAcompte, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
 import { apiFetch } from '../../lib/api-auth-client'
 import { lierOuCreerRdvVisite } from '../../lib/rdvVisite'
 import { buildDevisPayload } from '../../lib/devis'
@@ -803,6 +803,7 @@ export default function FicheChantier({ params }) {
   const [ajouterFacture, setAjouterFacture] = useState(null) // devisId en cours
   const [nouvelleFacture, setNouvelleFacture] = useState({
     montant_ttc: '',
+    montant_regle: '',
     date_paiement: '',
     statut: 'en_attente',
     fichier: null,
@@ -1938,12 +1939,16 @@ export default function FicheChantier({ params }) {
     const libelleFinal = nouvelleFacture.libelle === 'Autre'
       ? (nouvelleFacture.libelle_autre || 'Facture').trim()
       : nouvelleFacture.libelle
+    // Réglé : vide = rien de particulier (réglé en totalité si « Payé »).
+    const montantRegle = nouvelleFacture.montant_regle === '' ? null : parseFloat(nouvelleFacture.montant_regle)
+    if (!confirmerMontantRegle(montantRegle, parseFloat(nouvelleFacture.montant_ttc))) return
 
     const { data: factureInseree, error } = await supabase.from('factures_artisans').insert({
       dossier_id: id,
       devis_id: devisId,
       artisan_id: artisanId,
       montant_ttc: parseFloat(nouvelleFacture.montant_ttc),
+      montant_regle: montantRegle,
       date_paiement: nouvelleFacture.date_paiement || null,
       date_echeance: nouvelleFacture.date_echeance || null,
       statut: nouvelleFacture.statut,
@@ -1979,6 +1984,7 @@ export default function FicheChantier({ params }) {
     setAjouterFacture(null)
     setNouvelleFacture({
       montant_ttc: '',
+      montant_regle: '',
       date_paiement: '',
       statut: 'en_attente',
       fichier: null,
@@ -2008,12 +2014,13 @@ export default function FicheChantier({ params }) {
     const newStatut = statut === 'paye' ? 'en_attente' : 'paye'
     const facture = factures.find(f => f.id === factureId)
     const datePaye = facture?.date_paiement || (newStatut === 'paye' ? new Date().toISOString().slice(0, 10) : null)
-    const { error } = await supabase.from('factures_artisans').update({
-      statut: newStatut,
-      date_paiement: newStatut === 'paye' ? datePaye : null,
-    }).eq('id', factureId)
+    // Repasser « en attente » efface aussi le réglé saisi : sinon un montant fantôme
+    // continuerait de compter comme encaissé (même règle que la décoche de l'acompte).
+    const majStatut = { statut: newStatut, date_paiement: newStatut === 'paye' ? datePaye : null }
+    if (newStatut !== 'paye') majStatut.montant_regle = null
+    const { error } = await supabase.from('factures_artisans').update(majStatut).eq('id', factureId)
     if (error) { setErreur(erreurAffichable(error)); return }
-    setFactures(prev => prev.map(f => f.id === factureId ? { ...f, statut: newStatut, date_paiement: newStatut === 'paye' ? datePaye : null } : f))
+    setFactures(prev => prev.map(f => f.id === factureId ? { ...f, ...majStatut } : f))
     // E5 — synchro suivi_financier (acompte_artisan si libellé 'acompte', sinon facture_finale)
     if (facture?.artisan_id) {
       const libelle = (facture.libelle || '').toLowerCase()
@@ -2043,6 +2050,25 @@ export default function FicheChantier({ params }) {
       const devisIdSuivi = typeEch === 'acompte_artisan' ? facture.devis_id : null
       await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'date_paiement', d, devisIdSuivi)
     }
+  }
+
+  // Avertissement seulement (pas de blocage) : un trop-versé est possible.
+  const confirmerMontantRegle = (regle, facture) => {
+    if (regle === null) return true
+    if (!Number.isFinite(regle) || regle < 0) { setErreur('Montant réglé invalide.'); return false }
+    if (regle > facture) return window.confirm(`Montant réglé supérieur au facturé (trop-versé de ${fmt(regle - facture)}). Confirmer ?`)
+    return true
+  }
+
+  // Saisie du montant RÉELLEMENT réglé d'une facture existante (vide = réglé en totalité).
+  const majMontantRegle = async (facture) => {
+    const saisie = window.prompt('Montant réellement réglé par le client (TTC).\nLaisser vide = réglé en totalité.', facture.montant_regle ?? '')
+    if (saisie === null) return
+    const v = saisie.trim() === '' ? null : parseFloat(saisie.replace(',', '.'))
+    if (!confirmerMontantRegle(v, Number(facture.montant_ttc) || 0)) return
+    const { error } = await supabase.from('factures_artisans').update({ montant_regle: v }).eq('id', facture.id)
+    if (error) { setErreur(erreurAffichable(error)); return }
+    setFactures(prev => prev.map(f => f.id === facture.id ? { ...f, montant_regle: v } : f))
   }
 
   const uploadFacturePdf = async (factureId, fichier) => {
@@ -2952,6 +2978,15 @@ export default function FicheChantier({ params }) {
   const TONE_BG = { ok: 'rgba(22,163,74,0.12)', warn: 'rgba(245,158,11,0.13)', bad: 'rgba(220,38,38,0.10)', info: 'rgba(99,102,241,0.12)', mute: 'rgba(148,163,184,0.15)' }
   const TONE_FG = { ok: '#15803d', warn: '#a16207', bad: '#b91c1c', info: '#4338ca', mute: '#475569' }
 
+  // Badge écart facturé/réglé : reliquat dû par le client (> 0) ou trop-versé (< 0).
+  // Sur la ligne de facture ET sur la carte du devis (somme des écarts de ses factures).
+  const badgeReliquat = (ecart) => ecart === 0 ? null : (
+    <span className="tnum" style={{fontSize:'var(--text-xs)', fontWeight:700, padding:'1px 8px', borderRadius:99,
+      background: ecart > 0 ? TONE_BG.warn : TONE_BG.info, color: ecart > 0 ? TONE_FG.warn : TONE_FG.info}}>
+      {ecart > 0 ? `reliquat ${fmt(ecart)}` : `trop-versé ${fmt(-ecart)}`}
+    </span>
+  )
+
   const devisSignes = getSignedDevis({ ...dossier, devis_artisans: devis })
   const totalDevisTTCSignes = devisSignes.reduce((s, d) => s + (d.montant_ttc || 0), 0)
   const totalDevisHTSignes  = devisSignes.reduce((s, d) => s + (d.montant_ht  || 0), 0)
@@ -3049,17 +3084,15 @@ export default function FicheChantier({ params }) {
       (devisId ? f.devis_id === devisId : true) &&
       (f.libelle || '').toLowerCase().includes('acompte')
     )
+    // Décoche : le réglé saisi est effacé avec le statut (validé 30/10).
+    const majAcompte = { statut: paye ? 'paye' : 'en_attente', date_paiement: paye ? datePaye : null }
+    if (!paye) majAcompte.montant_regle = null
     for (const f of facturesAcompte) {
-      await supabase.from('factures_artisans').update({
-        statut: paye ? 'paye' : 'en_attente',
-        date_paiement: paye ? datePaye : null,
-      }).eq('id', f.id)
+      await supabase.from('factures_artisans').update(majAcompte).eq('id', f.id)
     }
     if (facturesAcompte.length > 0) {
       setFactures(prev => prev.map(f =>
-        facturesAcompte.find(fa => fa.id === f.id)
-          ? { ...f, statut: paye ? 'paye' : 'en_attente', date_paiement: paye ? datePaye : null }
-          : f
+        facturesAcompte.find(fa => fa.id === f.id) ? { ...f, ...majAcompte } : f
       ))
     }
   }
@@ -4456,7 +4489,8 @@ export default function FicheChantier({ params }) {
                           </div>
                         )}
                       </div>
-                      <div className="devis-badge">
+                      <div className="devis-badge" style={{gap:6}}>
+                        {badgeReliquat(Math.round(factures.filter(f => f.devis_id === d.id).reduce((s, f) => s + reliquatFacture(f), 0) * 100) / 100)}
                         {d.statut === 'accepte'    && <Badge tone="ok">Signé</Badge>}
                         {d.statut === 'recu'       && <Badge tone="info">Reçu</Badge>}
                         {d.statut === 'a_modifier' && <Badge tone="warn">À modifier</Badge>}
@@ -4909,13 +4943,18 @@ export default function FicheChantier({ params }) {
         const ligneFacture = (f) => (
           <div key={f.id} style={{background:'var(--surface-2)', borderRadius:8, padding:'var(--space-3)', display:'flex', flexDirection:'column', gap:'var(--space-2)'}}>
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:'var(--space-3)', flexWrap:'wrap'}}>
-              <span style={{fontSize:'var(--text-xs)', fontWeight:600, color:'var(--ink-700)'}}>
-                {f.libelle || 'Facture'} — <span className="tnum">{fmt(f.montant_ttc || 0)}</span> TTC
+              <span style={{fontSize:'var(--text-xs)', fontWeight:600, color:'var(--ink-700)', display:'inline-flex', alignItems:'center', gap:'var(--space-2)', flexWrap:'wrap'}}>
+                <span>{f.libelle || 'Facture'} — <span className="tnum">{fmt(f.montant_ttc || 0)}</span> TTC</span>
+                {badgeReliquat(reliquatFacture(f))}
               </span>
               <div style={{display:'flex', alignItems:'center', gap:'var(--space-3)'}}>
                 {/* Date de paiement : même visuel que les EcheanceRow (date pointillée
                     cliquable → DateConfirm ✓/✕, « ＋ date » si rien). */}
                 <FactureDatePill date={f.date_paiement} onSet={d => majDateFacture(f.id, d)} fmtDateFn={fmtD} />
+                <button onClick={() => majMontantRegle(f)} title="Saisir le montant réellement réglé (si différent du facturé)"
+                  style={{fontSize:'var(--text-xs)', color:'var(--ink-600)', background:'none', border:'none', cursor:'pointer', textDecoration:'underline', padding:0}}>
+                  {f.montant_regle != null ? `réglé ${fmt(f.montant_regle)}` : 'réglé…'}
+                </button>
                 <button onClick={() => toggleStatutFacture(f.id, f.statut)}
                   style={{
                     fontSize:'var(--text-xs)', padding:'2px 10px', borderRadius:99, fontWeight:700, border:'none', cursor:'pointer',
@@ -4988,7 +5027,7 @@ export default function FicheChantier({ params }) {
         const boutonFacturer = (dv, libelle, montant, texte, primary = false) => (
           <button onClick={() => {
             setAjouterFacture(dv.id)
-            setNouvelleFacture({ montant_ttc: montant > 0 ? montant.toFixed(2) : '', date_paiement: '', date_echeance: '', statut: 'en_attente', fichier: null, libelle, libelle_autre: '' })
+            setNouvelleFacture({ montant_ttc: montant > 0 ? montant.toFixed(2) : '', montant_regle: '', date_paiement: '', date_echeance: '', statut: 'en_attente', fichier: null, libelle, libelle_autre: '' })
           }}
             style={primary
               ? {fontSize:'var(--text-xs)', fontWeight:700, color:'#fff', border:'1px solid #4f46e5', padding:'var(--space-2) var(--space-6)', borderRadius:6, background:'#4f46e5', cursor:'pointer', alignSelf:'flex-start'}
@@ -5019,6 +5058,13 @@ export default function FicheChantier({ params }) {
               <ModalField label="Échéance (déclenche la relance)">
                 <input type="date" className="input" value={nouvelleFacture.date_echeance || ''}
                   onChange={e => setNouvelleFacture(f => ({ ...f, date_echeance: e.target.value }))}
+                  style={{height:32, padding:'0 10px', fontSize:'var(--text-sm)'}} />
+              </ModalField>
+              {/* Vide = réglé en totalité (si « Payé »). À remplir seulement si le client
+                  n'a pas versé exactement le facturé (oubli, paiement partiel, trop-versé). */}
+              <ModalField label="Montant réglé (si différent)">
+                <input type="number" step="0.01" className="input" value={nouvelleFacture.montant_regle}
+                  onChange={e => setNouvelleFacture(f => ({ ...f, montant_regle: e.target.value }))}
                   style={{height:32, padding:'0 10px', fontSize:'var(--text-sm)'}} />
               </ModalField>
             </div>
@@ -5129,7 +5175,7 @@ export default function FicheChantier({ params }) {
                     // Factures artisan de ce devis : acompte(s) sous « Acompte client »,
                     // le reste en « Autres factures ».
                     const factsDevis   = factures.filter(f => f.devis_id === dv.id)
-                    const estAcompte   = (f) => (f.libelle || '').toLowerCase().includes('acompte')
+                    const estAcompte   = estFactureAcompte
                     const factsAcompte = factsDevis.filter(estAcompte)
                     const factsAutres  = factsDevis.filter(f => !estAcompte(f))
                     const totalFacture = factsDevis.reduce((s, f) => s + (Number(f.montant_ttc) || 0), 0)
@@ -5158,6 +5204,13 @@ export default function FicheChantier({ params }) {
                       devisTTC: dv.montant_ttc,
                       totalFactureTTC: totalFacture,
                       totalFactAcompteTTC: factsAcompte.reduce((s, f) => s + (Number(f.montant_ttc) || 0), 0),
+                      acompteTTC: acompteMontant,
+                      acompteEncaisse: sf?.statut_client === 'regle',
+                    })
+                    // Reste à PAYER (argent du client) ≠ reste à facturer (pièces de l'artisan).
+                    const { reste: resteAPayer, tropVerse } = resteAPayerDevis({
+                      devisTTC: dv.montant_ttc,
+                      factures: factsDevis,
                       acompteTTC: acompteMontant,
                       acompteEncaisse: sf?.statut_client === 'regle',
                     })
@@ -5210,6 +5263,7 @@ export default function FicheChantier({ params }) {
                         <div style={{gridColumn:'1 / -1', display:'flex', flexDirection:'column', gap:'var(--space-3)', borderTop:'1px solid var(--ink-100)', paddingTop:'var(--space-4)'}}>
                           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:'var(--space-3)', flexWrap:'wrap'}}>
                             <span style={{fontSize:'var(--text-xs)', fontWeight:700, color:'var(--ink-500)', textTransform:'uppercase', letterSpacing:'0.04em'}}>Autres factures</span>
+                            <div style={{display:'flex', gap:'var(--space-3)', flexWrap:'wrap', alignItems:'center'}}>
                             <span className="tnum" style={resteAFacturer > 0
                               ? {fontSize:'var(--text-xs)', fontWeight:800, color:'var(--warn-strong)', background:'rgba(194,65,12,0.09)', padding:'2px 10px', borderRadius:99}
                               : {fontSize:'var(--text-xs)', fontWeight:600, color:'var(--ok-strong)'}}>
@@ -5224,6 +5278,14 @@ export default function FicheChantier({ params }) {
                                   ? `✓ Soldé · acompte de ${fmt(acompteNonFacture)} sans facture`
                                   : '✓ Entièrement facturé'}
                             </span>
+                            <span className="tnum" style={resteAPayer > 0
+                              ? {fontSize:'var(--text-xs)', fontWeight:800, color:'var(--warn-strong)', background:'rgba(194,65,12,0.09)', padding:'2px 10px', borderRadius:99}
+                              : {fontSize:'var(--text-xs)', fontWeight:600, color:'var(--ok-strong)'}}>
+                              {resteAPayer > 0
+                                ? `Reste à payer : ${fmt(resteAPayer)}`
+                                : tropVerse > 0 ? `✓ Payé · trop-versé ${fmt(tropVerse)}` : '✓ Entièrement payé'}
+                            </span>
+                            </div>
                           </div>
                           {factsAutres.map(ligneFacture)}
                           {formOuvert ? renderFormFacture(dv, finDv) : (

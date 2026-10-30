@@ -794,3 +794,53 @@ export function resteAFacturerDevis({
   const reste = Math.max(0, round2(nb(devisTTC) - nb(totalFactureTTC) - acompteNonFacture))
   return { reste, acompteNonFacture }
 }
+
+// Une facture artisan est « d'acompte » quand son libellé le dit (seule marque disponible).
+export function estFactureAcompte(f) {
+  return (f?.libelle || '').toLowerCase().includes('acompte')
+}
+
+/**
+ * MONTANT RÉGLÉ d'une facture artisan (30/10).
+ *
+ * `montant_ttc` est le FACTURÉ ; `montant_regle` le réellement encaissé quand il en
+ * diffère (client qui oublie 18 €, paiement partiel, trop-versé). NULL = rien de
+ * particulier : réglé en totalité si la facture est payée, rien sinon. Une facture
+ * en attente avec un `montant_regle` rempli est un paiement partiel : il compte.
+ */
+export function montantRegleFacture(f) {
+  const n = Number(f?.montant_regle)
+  if (f?.montant_regle != null && f.montant_regle !== '' && Number.isFinite(n)) return n
+  return f?.statut === 'paye' ? (Number(f?.montant_ttc) || 0) : 0
+}
+
+// Écart facturé − réglé, signalé UNIQUEMENT quand un réglé a été saisi : > 0 = reliquat dû
+// par le client, < 0 = trop-versé. Sans saisie, une facture en attente n'a pas de « reliquat ».
+export function reliquatFacture(f) {
+  if (f?.montant_regle == null || f.montant_regle === '') return 0
+  return round2((Number(f?.montant_ttc) || 0) - montantRegleFacture(f))
+}
+
+/**
+ * RESTE À PAYER (client) sur un devis = devis − somme des montants RÉGLÉS (30/10).
+ *
+ * Distinct du reste à facturer, qui suit les pièces de l'artisan. Règle du 11/09 conservée :
+ * acompte coché « Réglé » SANS facture d'acompte → compté réglé au montant théorique.
+ * MAIS, contrairement au reste à facturer, on ne déduit jamais la « part non couverte » de
+ * l'acompte quand une facture d'acompte existe : ce serait effacer le reliquat réel (JADRAS :
+ * acompte facturé 17 753,11, réglé 17 735,11 → 18 € restent dus).
+ *
+ * @param {object} p
+ * @param {number} p.devisTTC
+ * @param {object[]} p.factures        factures_artisans de CE devis
+ * @param {number} p.acompteTTC        acompte théorique du devis
+ * @param {boolean} p.acompteEncaisse  case « Réglé » de l'acompte client
+ * @returns {{ reste:number, tropVerse:number, regle:number }}
+ */
+export function resteAPayerDevis({ devisTTC = 0, factures = [], acompteTTC = 0, acompteEncaisse = false }) {
+  const nb = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
+  const acompteSansFacture = acompteEncaisse && !factures.some(estFactureAcompte) ? nb(acompteTTC) : 0
+  const regle = round2(factures.reduce((s, f) => s + montantRegleFacture(f), 0) + acompteSansFacture)
+  const ecart = round2(nb(devisTTC) - regle)
+  return { reste: Math.max(0, ecart), tropVerse: Math.max(0, -ecart), regle }
+}
