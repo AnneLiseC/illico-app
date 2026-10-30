@@ -5148,9 +5148,10 @@ export default function FicheChantier({ params }) {
                     // pas toujours de facture, c'est pour ça que ça doit être compté ». Ce
                     // compteur mesure donc ce qui RESTE DÛ, pas le nombre de pièces reçues.
                     //
-                    // Si une facture d'acompte existe, c'est elle qui fait foi (déjà dans
-                    // totalFacture) ; l'acompte théorique ne compte que coché « Réglé » SANS
-                    // facture d'acompte. Jamais les deux (30/10).
+                    // On soustrait la part NON COUVERTE de l'acompte, jamais l'acompte entier :
+                    // si l'artisan a bien émis sa facture d'acompte, elle est déjà dans
+                    // totalFacture, et la déduire une seconde fois offrirait le montant deux
+                    // fois. Le Math.max ramène ce cas à zéro.
                     // Le calcul lui-même vit dans finance.js, avec ses tests : c'est de
                     // l'argent, et une règle d'argent enfouie dans du JSX ne se vérifie pas.
                     const { reste: resteAFacturer, acompteNonFacture } = resteAFacturerDevis({

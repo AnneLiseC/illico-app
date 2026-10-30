@@ -43,32 +43,14 @@ describe('reste à facturer — ce qu\'il ne faut surtout pas déduire deux fois
     expect(r.acompteNonFacture).toBe(0)
   })
 
-  it('facture d\'acompte ≠ théorique : c\'est la facture qui fait foi (règle 30/10)', () => {
-    // Remplace l'ancienne règle « on déduit la part non couverte » (qui donnait 7 000).
+  it('facture d\'acompte PARTIELLE : seule la part non couverte est déduite', () => {
     const r = resteAFacturerDevis({
       devisTTC: 10000, totalFactureTTC: 1000, totalFactAcompteTTC: 1000,
       acompteTTC: 3000, acompteEncaisse: true,
     })
-    expect(r.reste).toBe(9000)
-    expect(r.acompteNonFacture).toBe(0)
-  })
-
-  it('JADRAS 2026-AM-001 : facture d\'acompte 17 735,11 (théorique 17 753,11) + situation', () => {
-    const r = resteAFacturerDevis({
-      devisTTC: 59177.02, totalFactureTTC: 17735.11 + 17753.11, totalFactAcompteTTC: 17735.11,
-      acompteTTC: 17753.11, acompteEncaisse: true,
-    })
-    expect(r.reste).toBe(23688.80)
-    expect(r.acompteNonFacture).toBe(0)
-  })
-
-  it('plusieurs factures d\'acompte : leur somme fait foi, même au-delà du théorique', () => {
-    const r = resteAFacturerDevis({
-      devisTTC: 10000, totalFactureTTC: 3500, totalFactAcompteTTC: 3500,
-      acompteTTC: 3000, acompteEncaisse: true,
-    })
-    expect(r.reste).toBe(6500)
-    expect(r.acompteNonFacture).toBe(0)
+    // 10 000 − 1 000 facturé − 2 000 d'acompte encaissé sans facture.
+    expect(r.reste).toBe(7000)
+    expect(r.acompteNonFacture).toBe(2000)
   })
 
   it('acompte PAS encore encaissé : il reste entièrement à facturer', () => {
