@@ -170,3 +170,25 @@ pas de kbis CTP. Même artisan sur plusieurs lots : kbis + assurance une seule f
   (`estJetonOAuth`, `app/lib/jeton-oauth.js`). Le test de recensement échoue sinon.
 - Nouvelle table `public` → ré-exécuter la PARTIE 1 de `docs/sql/mcp_lecture_seule_oauth.sql`
   (politiques restrictives « pas d'écriture avec un jeton OAuth »).
+
+**Conventions posées le 26/11/2026 (audit complet) :**
+- **Date « aujourd'hui »** : toujours `aujourdhuiParis()` (`app/lib/dates.js`), jamais
+  `new Date().toISOString().slice(0, 10)` — c'est la date UTC, la VEILLE entre minuit et 1-2 h.
+- **Écriture Supabase** : le résultat se vérifie TOUJOURS. Pour une écriture « secondaire »,
+  `ecrireOuSignaler(requete, setErreur, 'Quoi')` (`app/lib/erreurs.js`). Jamais un
+  `await supabase.from(…).update(…)` nu : l'échec doit se voir.
+- **Courtage FIGÉ** : une fois `honoraires_courtage` réglé, finance.js lit le montant gelé
+  (`getCourtageGele`) au lieu de recalculer. AMO : solde = total AMO de la base − courtage
+  brut figé. Courtage seul : les TS signés après paiement s'ajoutent (ligne
+  `honoraires_courtage_ts`). CA réel du courtage = `calculateCourtageReel` (montant figé +
+  chaque TS à SA date d'encaissement) — ne jamais relire `honoraires.courtage.net` pour le réel.
+- **Apporteur par devis** : case `devis_artisans.apporteur_inclus` (cochée par défaut) ;
+  règlement `apporteur_agente` clé `devis_id` en mode par devis, ligne unique (artisan et
+  devis NULL) en modes total chantier / sur honoraires. Lecture : `ligneApporteur` (ca-reel.js).
+- **Annulation d'un dossier** : trigger `dossier_annule_refuse_devis` → devis NON signés en
+  « refusé », signés intouchés. « Terminé » ne touche à rien.
+- **Photos côté client** : policy storage `client_read_photos` = uniquement les photos de la
+  table `photos` d'un dossier accessible (expiration comprise). Les photos `/cr/` et
+  `/actions/` ne sont jamais lisibles par un client.
+- **Lint** : 0 erreur, bloquant en CI. Les règles du React Compiler (non utilisé) sont en
+  avertissement — ne pas les repasser en erreur sans activer le compilateur.

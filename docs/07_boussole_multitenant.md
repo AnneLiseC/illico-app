@@ -3,11 +3,19 @@
 > **État vivant du projet.** Lue par Claude (binôme) et Claude Code en tête de chaque session.
 > Le détail historique (journal des commits, chantier finances) est dans `07_journal_multitenant.md`.
 
-> Dernière mise à jour : 26/10/2026.
+> Dernière mise à jour : 26/11/2026.
 > Statut : Multi-agence COMPLET. Bloc A sécurité soldé. App multi-tenant fonctionnelle, cloisonnée, sécurisée. Acquis antérieurs : erreurs avalées soldé, famille AMO close, ménage infra (policies Storage versionnées + placeholder fermé). Sprint 16-18/06 : refonte finances COMPLÈTE, dossier de fin, comparateur de devis, statut staff CLOS, stepper corrigé, contrat auto-signé, PDF CR assaini. AUDIT SÉCURITÉ COMPLET (10/07) : série d'inventaires 01→07 + confrontation croisée (branche audit/inventaires, code figé 91e0db1). Cloisonnement prouvé sur les 2 couches (corps DEFINER + policies RLS lues verbatim). REVOKE 5 fonctions + DROP 2 backups appliqués. Sécurité soldée sans astérisque.
 
+> **26/11 — AUDIT COMPLET + CORRECTIFS (PR #574→#579)** :
+> - **Demandes du jour** : bouton « Fiche client » dans le dossier ; NOMS clients en majuscules (liste + saisie + SQL rattrapage appliqué) ; cases du CR IA à hauteur auto ; règles du CR IA simplifiées (3-4 sections/type) ; bug « Planifier une intervention » en jours spécifiques ; **planning v2** (vue allégée Mes RDV/Agence, liste « Cette semaine », création directe au clic avec bascule RDV/Intervention, « Plus d'options »).
+> - **Sécurité** : Next 16.4.6 (failles critiques), zod 4.6.7 → **0 faille prod** ; photos client restreintes (plus de /cr/, expiration respectée) ; PDF client : ni brouillon ni accès expiré.
+> - **Finance** : **courtage figé** appliqué + CA réel du courtage par encaissement (TS compris) ; **apporteur par devis** (case « pris en compte », règlement par devis, mode « sur honoraires » réparé) ; annulation → devis non signés refusés (trigger).
+> - **Robustesse** : dates « aujourd'hui » à l'heure de Paris ; ~30 écritures qui échouaient en silence affichent l'erreur ; ordre suppression/annotation des photos de visite sécurisé ; textures SketchUp ignorées par le Drive ; lint 0 erreur et bloquant en CI.
+> - SQL appliqués : fix_client_read_photos, annulation_devis_refuses, apporteur_par_devis, clients_noms_majuscules, drive_inbox_menage (partie 1). Conventions → CLAUDE.md §10.
+> - 🟡 **RESTE** : 190 fichiers Drive « à rattacher » (décision d'Anne-Lise : ranger ou ignorer, dont 116 en « Sans suite ») ; 48 avertissements de lint assumés (30 exhaustive-deps volontaires).
+
 > **26/10 — CONNECTEUR MCP « BATILIS » (lecture seule, claude.ai)** — code livré, NON activé. Détail : `docs/mcp-batilis.md`.
-> - **LOT A (à déployer SEUL, en premier)** : `requireUser`/`requireSuperAdmin`/`create-societe` refusent tout jeton OAuth (claim `client_id`) — ces routes écrivent en service_role. SQL `docs/sql/mcp_lecture_seule_oauth.sql` (politiques RESTRICTIVES INSERT/UPDATE/DELETE sur les 49 tables public + storage.objects) : 🟡 **À APPLIQUER**.
+> - **LOT A (à déployer SEUL, en premier)** : `requireUser`/`requireSuperAdmin`/`create-societe` refusent tout jeton OAuth (claim `client_id`) — ces routes écrivent en service_role. SQL `docs/sql/mcp_lecture_seule_oauth.sql` (politiques RESTRICTIVES INSERT/UPDATE/DELETE sur les 49 tables public + storage.objects) : ✅ **APPLIQUÉ** (147 politiques constatées en base le 26/11).
 > - **LOT B** : `/api/mcp` (SDK officiel 1.32.2, sans état), 9 outils, page `/oauth/consent`, `/login?next=` filtré. ⛔ Ne pas activer le serveur OAuth Supabase avant LOT A + SQL. ⛔ T6 (changement email/mot de passe via l'API Auth avec un jeton OAuth) : si ça passe sans confirmation → serveur OAuth désactivé, connecteur abandonné.
 
 > **Depuis le 18/06 (à jour au 09/07)** :
