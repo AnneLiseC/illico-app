@@ -5,6 +5,7 @@
 // Photos + checklist = 1c-2 ; aide IA = 1c-3 ; report d'une visite à l'autre = Lot 2.
 import AutoTextarea from '../AutoTextarea'
 import { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react'
+import { ecrireOuSignaler } from '../../lib/erreurs'
 import { supabase } from '../../lib/supabase'
 import { compressImageToBlob } from '../../lib/images'
 import { apiFetch } from '../../lib/api-auth-client'
@@ -132,9 +133,9 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
     const { data: ouvertes } = await supabase.from('actions')
       .select('id, statut, texte').eq('dossier_id', id).is('supprime_at', null).not('statut', 'in', '(cloture,quitus_transmis,acte)')
     if (ouvertes && ouvertes.length) {
-      await supabase.from('cr_actions').insert(ouvertes.map(a => ({
+      await ecrireOuSignaler(supabase.from('cr_actions').insert(ouvertes.map(a => ({
         cr_id: data.id, action_id: a.id, statut_au_cr: a.statut, texte_au_cr: a.texte, inclus: true,
-      })))
+      }))), setErreur, 'Lien action/visite')
     }
     await rechargerVisites()
     setSelected(data.id)
@@ -166,9 +167,9 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
     // Recopie du rattachement des actions (système visites structurées).
     const { data: liens } = await supabase.from('cr_actions').select('action_id, statut_au_cr, texte_au_cr, inclus').eq('cr_id', src.id)
     if (liens && liens.length) {
-      await supabase.from('cr_actions').insert(liens.map(l => ({
+      await ecrireOuSignaler(supabase.from('cr_actions').insert(liens.map(l => ({
         cr_id: v2.id, action_id: l.action_id, statut_au_cr: l.statut_au_cr, texte_au_cr: l.texte_au_cr, inclus: l.inclus,
-      })))
+      }))), setErreur, 'Lien action/visite')
     }
     await rechargerVisites()
     setSelected(v2.id)
@@ -181,7 +182,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
   const supprimerVisite = async (v) => {
     if (v.valide) { setErreur?.('Une visite publiée ne peut pas être supprimée.'); return }
     if (!window.confirm(`Supprimer le brouillon « Visite ${v.numero_visite || ''} » ? Les actions créées dans ce brouillon seront supprimées.`)) return
-    await supabase.from('actions').delete().eq('cr_origine_id', v.id)
+    await ecrireOuSignaler(supabase.from('actions').delete().eq('cr_origine_id', v.id), setErreur, 'Action')
     const { error } = await supabase.from('comptes_rendus').delete().eq('id', v.id)
     if (error) { setErreur?.('Suppression : ' + error.message); return }
     if (selected === v.id) setSelected(null)
@@ -330,7 +331,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
                 statut: 'en_cours', statut_date: aujourdhuiParis(), ordre })
       .select('*, cibles:action_cibles(id, lot_id, intervenant_id)').single()
     if (error) { setErreur?.('Ajout action : ' + error.message); return }
-    await supabase.from('cr_actions').insert({ cr_id: visiteId, action_id: data.id, statut_au_cr: data.statut, texte_au_cr: data.texte, inclus: true })
+    await ecrireOuSignaler(supabase.from('cr_actions').insert({ cr_id: visiteId, action_id: data.id, statut_au_cr: data.statut, texte_au_cr: data.texte, inclus: true }), setErreur, 'Lien action/visite')
     setActions(prev => [...prev, data])
   }
 
@@ -341,7 +342,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     setActions(prev => prev.filter(a => a.id !== actionId))
     const { error } = await supabase.from('actions').update({ supprime_at: new Date().toISOString() }).eq('id', actionId)
     if (error) { setErreur?.('Archivage : ' + error.message); recharger(); return }
-    await supabase.from('cr_actions').upsert({ cr_id: visiteId, action_id: actionId, inclus: false }, { onConflict: 'cr_id,action_id' })
+    await ecrireOuSignaler(supabase.from('cr_actions').upsert({ cr_id: visiteId, action_id: actionId, inclus: false }, { onConflict: 'cr_id,action_id' }), setErreur, 'Lien action/visite')
   }
 
   // « Retirer du CR » (remarque reportée) = archivage.
@@ -405,7 +406,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
   const supprimerAction = async (actionId) => {
     if (!visite?.valide) {
       setActions(prev => prev.filter(a => a.id !== actionId))
-      await supabase.from('cr_actions').delete().eq('action_id', actionId)
+      await ecrireOuSignaler(supabase.from('cr_actions').delete().eq('action_id', actionId), setErreur, 'Lien action/visite')
       const { error } = await supabase.from('actions').delete().eq('id', actionId)
       if (error) { setErreur?.('Suppression : ' + error.message); recharger() }
       return
@@ -415,7 +416,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
 
   // Récupère une remarque ARCHIVÉE et la remet dans le CR courant (marqueur levé + inclus=true).
   const restaurer = async (actionId) => {
-    await supabase.from('actions').update({ supprime_at: null }).eq('id', actionId)
+    await ecrireOuSignaler(supabase.from('actions').update({ supprime_at: null }).eq('id', actionId), setErreur, 'Action')
     const { error } = await supabase.from('cr_actions').upsert({ cr_id: visiteId, action_id: actionId, inclus: true }, { onConflict: 'cr_id,action_id' })
     if (error) { setErreur?.('Récupération : ' + error.message); return }
     await recharger(); await chargerHistorique()
@@ -423,11 +424,11 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
 
   // Cible unique par lot pour 1c-1 (multi-cible = plus tard). Remplace la cible existante.
   const setCibleLot = async (action, lotId) => {
-    await supabase.from('action_cibles').delete().eq('action_id', action.id)
+    await ecrireOuSignaler(supabase.from('action_cibles').delete().eq('action_id', action.id), setErreur, 'Lots de l\'action')
     if (lotId) {
       // On rattache aussi l'artisan du lot (le lot porte déjà son artisan).
       const lotObj = lots.find(l => l.id === lotId)
-      await supabase.from('action_cibles').insert({ action_id: action.id, lot_id: lotId, intervenant_id: lotObj?.artisan_id || null })
+      await ecrireOuSignaler(supabase.from('action_cibles').insert({ action_id: action.id, lot_id: lotId, intervenant_id: lotObj?.artisan_id || null }), setErreur, 'Lots de l\'action')
     }
     recharger()
   }
@@ -594,7 +595,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
           .select().single()
         if (error) { setErreur?.('Import action : ' + error.message); continue }
         ordre++
-        await supabase.from('cr_actions').insert({ cr_id: visiteId, action_id: data.id, statut_au_cr: data.statut, texte_au_cr: data.texte, inclus: true })
+        await ecrireOuSignaler(supabase.from('cr_actions').insert({ cr_id: visiteId, action_id: data.id, statut_au_cr: data.statut, texte_au_cr: data.texte, inclus: true }), setErreur, 'Lien action/visite')
         if (c.portee === 'lot' && c.lot_nom) {
           const lot = lots.find(l => (l.nom || '').toLowerCase() === c.lot_nom.toLowerCase())
           if (lot) await supabase.from('action_cibles').insert({ action_id: data.id, lot_id: lot.id, intervenant_id: lot.artisan_id || null })
@@ -1309,7 +1310,7 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
         const path = `chantiers/${dossierId}/actions/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
         const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' })
         if (error) { setErreur?.('Envoi photo : ' + error.message); continue }
-        await supabase.from('action_photos').insert({ action_id: action.id, path, ordre: ordre++ })
+        await ecrireOuSignaler(supabase.from('action_photos').insert({ action_id: action.id, path, ordre: ordre++ }), setErreur, 'Photo')
       } catch { setErreur?.('Photo non traitée (format ?).') }
     }
     setUp(false)
@@ -1317,8 +1318,10 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
   }
 
   const supprimer = async (ph) => {
-    try { await supabase.storage.from('photos').remove([ph.path]) } catch { /* best effort */ }
-    await supabase.from('action_photos').delete().eq('id', ph.id)
+    // La ligne d'abord : si elle échoue, le fichier reste (pas de photo cassée à l'écran).
+    if (await ecrireOuSignaler(supabase.from('action_photos').delete().eq('id', ph.id), setErreur, 'Photo')) {
+      try { await supabase.storage.from('photos').remove([ph.path]) } catch { /* best effort */ }
+    }
     recharger()
   }
 
@@ -1340,7 +1343,7 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
     const dest = `chantiers/${dossierId}/actions/${crypto.randomUUID()}.jpg`
     const { error } = await supabase.storage.from('photos').copy(p.url, dest)
     if (error) { setErreur?.('Ajout depuis le dossier : ' + error.message); return }
-    await supabase.from('action_photos').insert({ action_id: action.id, path: dest, ordre: photos.length })
+    await ecrireOuSignaler(supabase.from('action_photos').insert({ action_id: action.id, path: dest, ordre: photos.length }), setErreur, 'Photo')
     setPicker(false)
     recharger()
   }
@@ -1351,8 +1354,10 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
       const path = `chantiers/${dossierId}/actions/${Date.now()}_annot_${Math.random().toString(36).slice(2)}.jpg`
       const { error } = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' })
       if (error) { setErreur?.('Annotation : ' + error.message); setAnnot?.(null); return }
-      await supabase.from('action_photos').update({ path }).eq('id', ph.id)
-      try { await supabase.storage.from('photos').remove([ph.path]) } catch { /* best effort */ }
+      // L'ancienne photo n'est effacée que si la nouvelle a bien été enregistrée.
+      if (await ecrireOuSignaler(supabase.from('action_photos').update({ path }).eq('id', ph.id), setErreur, 'Photo')) {
+        try { await supabase.storage.from('photos').remove([ph.path]) } catch { /* best effort */ }
+      }
       setAnnot?.(null); recharger()
     },
   })
@@ -1450,12 +1455,12 @@ function ActionChecklist({ action, setErreur }) {
   const cocher = async (item) => {
     const checked = !item.checked
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, checked } : i))
-    await supabase.from('action_checklist').update({ checked, checked_at: checked ? new Date().toISOString() : null }).eq('id', item.id)
+    await ecrireOuSignaler(supabase.from('action_checklist').update({ checked, checked_at: checked ? new Date().toISOString() : null }).eq('id', item.id), setErreur, 'Checklist')
   }
 
   const supprimer = async (item) => {
     setItems(prev => prev.filter(i => i.id !== item.id))
-    await supabase.from('action_checklist').delete().eq('id', item.id)
+    await ecrireOuSignaler(supabase.from('action_checklist').delete().eq('id', item.id), setErreur, 'Checklist')
   }
 
   const done = items.filter(i => i.checked).length
@@ -1548,7 +1553,7 @@ function PresencesVisite({ dossierId, visiteId, visitePubliee, setErreur }) {
     if (visitePubliee) return
     const existant = rows[artisanId]
     if (existant?.id) {
-      await supabase.from('cr_presences').update({ convoque_prochaine: convoque }).eq('id', existant.id)
+      await ecrireOuSignaler(supabase.from('cr_presences').update({ convoque_prochaine: convoque }).eq('id', existant.id), setErreur, 'Convocation')
       setRows(r => ({ ...r, [artisanId]: { ...existant, convoque } }))
     } else if (convoque) {
       const { data } = await supabase.from('cr_presences').insert({ cr_id: visiteId, artisan_id: artisanId, convoque_prochaine: true }).select('id').single()
