@@ -230,7 +230,6 @@ function SuiviGraphes({ anneeSelectionnee, rowsReelScoped, scopedDossiers, getKe
     let frais = 0, com = 0, hon = 0
     rowsReelScoped.forEach(([k, agg]) => { if (!k.startsWith(String(anneeSelectionnee))) return; frais += (agg.fraisNet||0); com += (agg.comReelNet||0); hon += (agg.honReel||0) })
     return { frais: round2(frais), com: round2(com), hon: round2(hon) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowsReelScoped, anneeSelectionnee])
 
   const donutBase = {

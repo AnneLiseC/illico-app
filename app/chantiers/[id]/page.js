@@ -6906,6 +6906,7 @@ export default function FicheChantier({ params }) {
                               return { ...f, photos: cur.includes(ph.url) ? cur.filter(u => u !== ph.url) : [...cur, ph.url] }
                             })}
                             style={{position:'relative', padding:0, border:'none', background:'none', cursor:'pointer', aspectRatio:'1', borderRadius:8, overflow:'hidden'}}>
+                            {/* eslint-disable-next-line @next/next/no-img-element -- URL signée Supabase : next/image inadapté */}
                             <img src={ph.url_thumb || ph.url_signee} alt="" loading="lazy" decoding="async"
                               onError={e => { if (ph.url_signee && e.currentTarget.src !== ph.url_signee) e.currentTarget.src = ph.url_signee }}
                               style={{width:'100%', height:'100%', objectFit:'cover', display:'block', borderRadius:8, border: on ? '2px solid #4f46e5' : '1px solid var(--ink-200)', opacity: on ? 1 : 0.85}} />
@@ -6930,6 +6931,7 @@ export default function FicheChantier({ params }) {
                             return (
                               <div key={url} style={{display:'flex', flexDirection:'column', alignItems:'center', gap:3, width:64}}>
                                 <div style={{position:'relative', width:56, height:56, borderRadius:8, overflow:'hidden', border:'1px solid var(--ink-200)'}}>
+                                  {/* eslint-disable-next-line @next/next/no-img-element -- URL signée Supabase : next/image inadapté */}
                                   {ph && <img src={ph.url_thumb || ph.url_signee} alt="" style={{width:'100%', height:'100%', objectFit:'cover'}} />}
                                   <span style={{position:'absolute', top:2, left:2, minWidth:16, height:16, padding:'0 3px', borderRadius:8, background:'#4f46e5', color:'#fff', fontSize:10, display:'grid', placeItems:'center', fontWeight:700}}>{i + 1}</span>
                                 </div>

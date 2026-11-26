@@ -6,6 +6,7 @@
 // route est exemptée du guard onboarding (cf. onboarding-guard.js).
 import Link from 'next/link'
 import { EDITEUR } from './lib/legal'
+import Image from 'next/image'
 
 export const metadata = {
   title: 'Batilis - Gestion pour courtiers et AMO en travaux',
@@ -29,7 +30,7 @@ export default function Home() {
       {/* ── Barre haute ── */}
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 28px', maxWidth: 1100, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <img src="/logo_VF.png" alt="Logo Batilis" width={40} height={40} style={{ borderRadius: 10, display: 'block' }} />
+          <Image src="/logo_VF.png" alt="Logo Batilis" width={40} height={40} priority style={{ borderRadius: 10, display: 'block' }} />
           <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.01em' }}>Batilis</span>
         </div>
         <Link href="/login" style={{ background: 'var(--brand-700)', color: '#fff', textDecoration: 'none', padding: '10px 18px', borderRadius: 9, fontSize: 14, fontWeight: 700 }}>

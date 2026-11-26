@@ -46,3 +46,9 @@ jobs:
       # est verte aujourd'hui, et ne passera au rouge que pour un symbole qui n'existe pas.
       - name: Symboles non définis
         run: npm run lint:undef
+
+      # Lint complet — ajouté le 26/11/2026 : le dépôt est passé à 0 erreur (les règles du
+      # React Compiler, non utilisé ici, sont rétrogradées en avertissement). Les
+      # avertissements ne bloquent pas ; toute nouvelle ERREUR fait échouer la PR.
+      - name: Lint
+        run: npm run lint

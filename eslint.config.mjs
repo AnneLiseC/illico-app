@@ -42,6 +42,25 @@ const eslintConfig = defineConfig([
     },
     rules: { "no-undef": "error" },
   },
+  // ═══════════════════════════════════════════════════════════════════════════════════
+  // Règles « React Compiler » rétrogradées en AVERTISSEMENT (26/11/2026).
+  //
+  // eslint-plugin-react-hooks v7 (tiré par eslint-config-next 16) active deux règles
+  // écrites pour le React Compiler, que BATILIS n'utilise PAS (rien dans next.config) :
+  //   · set-state-in-effect        — 13 occurrences, toutes des motifs volontaires et sains
+  //     (portail monté côté navigateur, fermer le menu au changement de page, vue liste
+  //     sur mobile, champ initialisé quand le profil arrive…) ;
+  //   · preserve-manual-memoization — « compilation ignorée » : purement informatif sans
+  //     le compilateur.
+  // Les réécrire n'apporterait rien à l'utilisatrice et risquerait des régressions. Elles
+  // restent visibles en avertissement ; `npm run lint` ne remonte ainsi que de vraies erreurs.
+  // ═══════════════════════════════════════════════════════════════════════════════════
+  {
+    rules: {
+      "react-hooks/set-state-in-effect": "warn",
+      "react-hooks/preserve-manual-memoization": "warn",
+    },
+  },
   {
     // Fichiers de test : les globales de Vitest (describe, it, expect, vi…).
     files: ["**/__tests__/**/*.{js,jsx}", "**/*.test.{js,jsx}"],
