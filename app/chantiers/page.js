@@ -238,10 +238,11 @@ function ChantierPreview({ d, onOpen, onBack, backLabel, isMobile, onRefresh }) 
     x.devis_id === dv.id &&
     x.statut_illico === 'recu')).length
   const facturesTotal      = devisAcceptes.length
+  // Facture finale : par devis, réglée côté client (voir fiche dossier).
   const facturesPayees     = devisAcceptes.filter(dv => sf.find(x =>
     x.type_echeance === 'facture_finale' &&
-    x.artisan_id === (dv.artisan_id || dv.artisan?.id) &&
-    x.statut_illico === 'recu')).length
+    x.devis_id === dv.id &&
+    x.statut_client === 'regle')).length
   const commissionsHT      = calculateDossierFinance(d).commissions.comHT
 
   // Menu ⋮ : annuler le chantier (→ statut 'annule', il bascule en Archivés) ou
@@ -523,7 +524,7 @@ function ChantiersInner() {
     if (!profile) return
     let query = supabase
       .from('dossiers')
-      .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse, telephone, email, type_client, forme_juridique, raison_sociale), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, artisan_id, artisan:artisans(id, entreprise, metier, ville)), comptes_rendus(id, type_visite), rendez_vous(type_rdv, date_heure), suivi_financier(type_echeance, montant_ttc, statut_illico, statut_client, artisan_id)')
+      .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse, telephone, email, type_client, forme_juridique, raison_sociale), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, artisan_id, artisan:artisans(id, entreprise, metier, ville)), comptes_rendus(id, type_visite), rendez_vous(type_rdv, date_heure), suivi_financier(type_echeance, montant_ttc, statut_illico, statut_client, artisan_id, devis_id)')
       .eq('archive', false)
       .order('created_at', { ascending: false })
     if (profile.role === 'agente') query = query.eq('referente_id', profile.id)

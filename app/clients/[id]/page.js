@@ -101,7 +101,7 @@ function FicheClientInner({ params }) {
           .select('*, referente:profiles!clients_referente_fkey(id, prenom, nom, role)')
           .eq('id', id).single(),
         supabase.from('dossiers')
-          .select('*, rendez_vous(id, type_rdv, titre, date_heure), devis_artisans(id, statut, montant_ttc), suivi_financier(type_echeance, date_reglement, statut_client, montant_ttc)')
+          .select('*, rendez_vous(id, type_rdv, titre, date_heure), devis_artisans(id, statut, montant_ttc), suivi_financier(type_echeance, date_paiement, date_reglement, statut_client, montant_ttc)')
           .eq('client_id', id)
           .order('created_at', { ascending: false }),
       ])
@@ -261,10 +261,11 @@ function FicheClientInner({ params }) {
       date: rdv.date_heure,
     })),
     ...dossiers.flatMap(d => (d.suivi_financier || [])
-      .filter(sf => sf.statut_client === 'regle' && sf.date_reglement)
+      // Les écritures posent date_paiement ; date_reglement reste en repli pour l'historique.
+      .filter(sf => sf.statut_client === 'regle' && (sf.date_paiement || sf.date_reglement))
       .map(sf => ({
         text: ECHEANCE_LABELS[sf.type_echeance] || sf.type_echeance,
-        date: sf.date_reglement,
+        date: sf.date_paiement || sf.date_reglement,
         montant: sf.montant_ttc,
       }))
     ),
